@@ -62,11 +62,12 @@ This section is updated after verification. No scenario is marked passing from s
 | Source version history | API `GET /api/v1/admin/sources/:id/versions`, memory test and PostgreSQL integration assertion | pass locally |
 | Tenant-scoped ingestion job list | API `GET /api/v1/admin/ingestion-jobs`, app assertion and Angular job panel | pass (API/build; manual browser verification pending) |
 | Tenant domain management | API domain CRUD, tenant-scoped memory/PostgreSQL store methods, migration `013-tenant-domains.sql`, Angular tenant-admin panel and tenant-bound approved URL-job validation | pass locally; manual browser verification pending |
-| Public chat origin binding | Tenant-admin channel API/UI, exact-origin enforcement for public sessions/config, production requires configured origin | pass locally; manual browser verification pending |
+| Public chat origin binding | Tenant-admin channel API/UI, exact-origin enforcement plus tenant-origin CORS preflight for public sessions/config, production requires configured origin | pass locally; manual browser verification pending |
 | Tenant member management | Existing tenant-scoped member API wired into Angular tenant-admin panel; API role and cross-tenant coverage in `app.test.ts` | pass locally; manual browser verification pending |
 | PostgreSQL backup/restore rehearsal | Local `pg_dump`/`psql` round trip to explicit scratch database `agentic_rag_restore_check`; restored schema verified, scratch database removed | pass locally; managed production backup/retention/restore schedule remains open |
 | Redacted operational telemetry | Authorized service-health response and Angular health panel report request count, 5xx count, average latency and last-observed timestamp without request bodies or tenant content | pass locally; production metrics backend/alerts remain open |
 | Tenant ingestion counters | Memory/PostgreSQL dashboard metrics and Angular queued/failed job card are tenant-scoped | pass locally; manual browser verification pending |
+| Platform tenant lifecycle controls | Platform API status transition plus Angular suspend/reactivate/archive actions | pass locally; manual browser verification pending |
 | Revoked-source purge | API negative/positive test; PostgreSQL delete uses tenant + revoked predicates | pass (memory API; SQL path covered by query contract) |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally after Angular 21 / Next 16 upgrade |
 | Latest workspace test run | `npm test` | Admin 1 + web 1 + API 34 + contracts 1 passed; 1 PostgreSQL test skipped by default |
@@ -74,6 +75,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Durable admin session revocation | `auth.test.ts` and API logout assertion backed by store session records; PostgreSQL migration `010-auth-sessions.sql` | pass (memory + migration applied locally) |
 | Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |
 | Dependency audit | `npm audit --omit=dev --audit-level=high` | pass: 0 vulnerabilities after Angular 21.2.25, Next 16.4.1, React 19.3.1 and TypeScript 5.9.3 upgrade |
+| Reproducible install dry run | `npm ci --dry-run` | pass locally |
 
 ## Blockers and risks
 
