@@ -69,6 +69,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Redacted operational telemetry | Authorized service-health response and Angular health panel report request count, 5xx count, average latency and last-observed timestamp without request bodies or tenant content | pass locally; production metrics backend/alerts remain open |
 | Tenant ingestion counters | Memory/PostgreSQL dashboard metrics and Angular queued/failed job card are tenant-scoped | pass locally; manual browser verification pending |
 | Platform tenant lifecycle controls | Platform API status transition plus Angular suspend/reactivate/archive actions | pass locally; manual browser verification pending |
+| Platform aggregate dashboard | Angular platform view loads tenant totals and active/suspended/archived cards from the authorized overview API | pass locally; manual browser verification pending |
 | Tenant workflow and audit operations | Tenant-scoped workflow-run and audit APIs are rendered in the Angular workspace; API test proves A/B isolation | pass locally; manual browser verification pending |
 | Duplicate chat idempotency | API repeats a completed `clientMessageId` and returns the same response without a second durable user message | pass (memory API; PostgreSQL unique constraint and store lookup covered) |
 | Bounded API input and abuse control | API suite verifies typed 413 oversized JSON and 429 rate-limit responses | pass locally |
