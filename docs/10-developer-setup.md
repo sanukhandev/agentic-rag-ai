@@ -1,10 +1,10 @@
-# Developer environment and deployment (planned)
+# Developer environment and deployment (local implementation)
 
 ## Repository baseline
-As of 15 Oct 2026 the root docker-compose.yml declares **only an n8n service** with persistent n8n_data volume. It does not launch Node, PostgreSQL, pgvector, Next.js, Angular, Python worker or AI Foundry emulator. Do not invent a one-command full-stack start sequence.
+The root `docker-compose.yml` declares **only an n8n service** with persistent `n8n_data` volume. Local application services are run from npm workspaces, while `infra/docker-compose.dev.yml` runs a private pgvector/PostgreSQL container. This is development infrastructure only; no VM deployment is performed by the repository.
 
 ## Intended workstation prerequisites
-Git, Docker Engine/Compose, a supported Node.js LTS, an agreed JS workspace package manager (TBD), Python 3.x with venv, a PostgreSQL client and Azure credentials with an approved model deployment. Version pinning, scripts and package manager will be chosen in the bootstrap task; don't assume any are installed by this repository.
+Git, Docker Engine/Compose, Node.js 22+, npm, Python 3.x with venv, a PostgreSQL client and optional Azure credentials with an approved model deployment.
 
 ## Inspecting existing n8n
 ```sh
@@ -15,7 +15,7 @@ docker compose logs --tail=100 n8n
 ```
 **Security:** the present Compose binds the editor to all interfaces over plaintext HTTP with insecure cookies. Use only in a controlled disposable environment with network isolation; before external access or any real customer data, follow docs/06-security-and-privacy.md and replace exposed settings. Do not paste real credentials into screenshots, terminal logs or GitHub issues.
 
-## Python venv convention (when ingestion folder exists)
+## Python venv convention
 ```sh
 cd tools/ingestion
 python -m venv .venv
@@ -23,7 +23,7 @@ python -m venv .venv
 # Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 ```
-requirements.txt is **not present yet**; the command is illustrative and will work only after the ingestion bootstrap. Ignore .venv in git.
+The pinned requirements are in `tools/ingestion/requirements.txt`; `.venv` is ignored by Git.
 
 ## Proposed environment contract (names TBD until implementation)
 | Secret/config family | Consumer | Handling |

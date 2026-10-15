@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AzureFoundryModel } from './model.js';
+import { AzureFoundryModel, validateCitations } from './model.js';
 
 describe('Azure Foundry model adapter', () => {
   it('sends a masked grounded prompt and validates strict JSON output', async () => {
@@ -18,5 +18,10 @@ describe('Azure Foundry model adapter', () => {
     const model = new AzureFoundryModel('https://foundry.example', 'gpt-4.1-mini', 'server-key');
     await expect(model.draft({ maskedMessage: 'question', personaName: 'Ava', evidence: [] })).rejects.toThrow('grounded response contract');
     vi.restoreAllMocks();
+  });
+
+  it('drops citation IDs outside the authorized evidence set', () => {
+    const citation = { sourceId: 'source', versionId: 'version', chunkId: 'known', title: 'FAQ', locator: 'section 1' };
+    expect(validateCitations({ answer: 'answer', citationIds: ['unknown', 'known'], proposedIntent: null }, [{ citation, content: 'answer' }])).toEqual([citation]);
   });
 });

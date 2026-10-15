@@ -24,6 +24,7 @@ describe('API vertical slice', () => {
     const platformToken = platform.body.token as string;
     const tenantA = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platformToken}`).send({ name: 'Tenant A', slug: 'tenant-a', adminEmail: 'admin-a@example.test', adminPassword: 'TenantA1Password' }).expect(201);
     const tenantB = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platformToken}`).send({ name: 'Tenant B', slug: 'tenant-b', adminEmail: 'admin-b@example.test', adminPassword: 'TenantB1Password' }).expect(201);
+    expect((await api.get('/api/v1/admin/platform/overview').set('Authorization', `Bearer ${platformToken}`).expect(200)).body.tenants).toMatchObject({ total: 2, active: 2 });
     const adminA = await api.post('/api/v1/auth/login').send({ email: 'admin-a@example.test', password: 'TenantA1Password' }).expect(200);
     const adminToken = adminA.body.token as string;
     const member = await api.post('/api/v1/admin/members').set('Authorization', `Bearer ${adminToken}`).send({ email: 'editor-a@example.test', password: 'EditorA1Password', role: 'tenant_editor' }).expect(201);
