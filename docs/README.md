@@ -22,6 +22,8 @@ These documents describe the **target system**, not a completed implementation. 
 | [15-complete-feature-brief](15-complete-feature-brief.md) | Canonical multi-tenant admin, agent, sources and chat feature requirements |
 | [16-autonomous-codex-execution-plan](16-autonomous-codex-execution-plan.md) | Implementable P00–P10 phases and gates |
 | [17-acceptance-test-matrix](17-acceptance-test-matrix.md) | Required test scenarios and proof of completion |
+| [openapi](openapi.yaml) | Implemented local API endpoint contract |
+| [19-data-model](19-data-model.md) | Local tenant/source/chat/workflow ER model and invariants |
 | [18-codex-master-prompt](18-codex-master-prompt.md) | Ready-to-copy implementation directive |
 
 **Requirements precedence:** AGENTS.md security invariants + docs/15 feature brief govern new feature requirements; docs/16–18 govern execution/acceptance. Existing numbered docs describe background architecture. Resolve contradictions by tightening isolation, not by relaxing it, and update all affected documentation.

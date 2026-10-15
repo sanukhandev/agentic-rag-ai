@@ -1,0 +1,348 @@
+openapi: 3.1.0
+info:
+  title: Agentic RAG AI local API
+  version: 0.1.0
+  description: >-
+    Implemented local Node API surface. Runtime Zod schemas and tenant checks
+    remain authoritative; live identity, Azure and n8n integrations are not
+    implied by this document.
+servers:
+  - url: http://localhost:4000
+    description: Local development
+tags:
+  - name: Health
+  - name: Auth
+  - name: Platform
+  - name: Tenant admin
+  - name: Chat
+  - name: Internal
+paths:
+  /api/v1/health/live:
+    get:
+      tags: [Health]
+      responses:
+        '200': { description: Liveness, content: { application/json: { schema: { $ref: '#/components/schemas/HealthLive' } } } }
+  /api/v1/health/ready:
+    get:
+      tags: [Health]
+      responses:
+        '200': { description: Store is ready }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /api/v1/auth/register-platform:
+    post:
+      tags: [Auth]
+      description: Development-only first-user bootstrap; returns 404 in production.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Credentials' } } } }
+      responses:
+        '201': { $ref: '#/components/responses/AuthResult' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Login' } } } }
+      responses:
+        '200': { $ref: '#/components/responses/AuthResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      responses: { '204': { description: Session revoked } }
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Verified current user, content: { application/json: { schema: { type: object, required: [user], properties: { user: { $ref: '#/components/schemas/AuthContext' } } } } } }
+  /api/v1/admin/tenants:
+    get:
+      tags: [Platform]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Tenant catalog } }
+    post:
+      tags: [Platform]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateTenant' } } } }
+      responses: { '201': { description: Tenant and owner created }, '409': { $ref: '#/components/responses/Conflict' } }
+  /api/v1/admin/tenants/{id}/status:
+    patch:
+      tags: [Platform]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [active, suspended, archived] } } } } } }
+      responses: { '200': { description: Tenant lifecycle updated } }
+  /api/v1/admin/platform/overview:
+    get:
+      tags: [Platform]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Aggregate tenant metrics } }
+  /api/v1/admin/members:
+    get:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Tenant-scoped member list } }
+    post:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateMember' } } } }
+      responses: { '201': { description: Member created } }
+  /api/v1/admin/members/{id}:
+    patch:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [role], properties: { role: { type: string, enum: [tenant_editor, tenant_viewer, tenant_agent] } } } } } }
+      responses: { '200': { description: Member role updated } }
+  /api/v1/admin/domains:
+    get:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Tenant-approved source domains } }
+    post:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [hostname], properties: { hostname: { type: string, format: hostname } } } } } }
+      responses: { '201': { description: Domain added } }
+  /api/v1/admin/domains/{id}:
+    delete:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses: { '204': { description: Domain removed } }
+  /api/v1/admin/channel:
+    get:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Public chat configuration } }
+    patch:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ChannelConfig' } } } }
+      responses: { '200': { description: Public chat configuration updated } }
+  /api/v1/admin/dashboard/overview:
+    get:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Tenant-scoped operational metrics } }
+  /api/v1/admin/services/health:
+    get:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Redacted service health and telemetry }, '503': { $ref: '#/components/responses/ServiceUnavailable' } }
+  /api/v1/admin/persona:
+    get:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Active tenant persona } }
+    put:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Persona' } } } }
+      responses: { '200': { description: Persona published } }
+  /api/v1/admin/persona/drafts:
+    post:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Persona' } } } }
+      responses: { '201': { description: Draft created } }
+  /api/v1/admin/persona/versions:
+    get:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Tenant persona history } }
+  /api/v1/admin/persona/versions/{id}/publish:
+    post:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses: { '200': { description: Persona version published } }
+  /api/v1/admin/persona/preview:
+    post:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/Persona' }, { type: object, required: [message], properties: { message: { type: string, maxLength: 4000 } } }] } } } }
+      responses: { '200': { description: Grounded persona preview } }
+  /api/v1/admin/sources:
+    get:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Tenant-scoped source catalog } }
+    post:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TextSource' } } } }
+      responses: { '201': { description: Source staged for review }, '202': { description: Idempotent source result } }
+  /api/v1/admin/sources/upload:
+    post:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      description: Queues a bounded base64 file for the authenticated Python ingestion worker.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UploadSource' } } } }
+      responses: { '202': { description: Private file staged } }
+  /api/v1/admin/sources/{id}/versions:
+    get:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses: { '200': { description: Tenant-scoped source version history } }
+  /api/v1/admin/sources/{id}/publish:
+    post:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses: { '200': { description: Source approved for retrieval } }
+  /api/v1/admin/sources/{id}/revoke:
+    post:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses: { '200': { description: Source excluded from retrieval } }
+  /api/v1/admin/sources/{id}:
+    delete:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      description: Purges only a previously revoked source.
+      responses: { '204': { description: Source purged } }
+  /api/v1/admin/sources/{id}/reindex:
+    post:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses: { '200': { description: New source version staged for review } }
+  /api/v1/admin/ingestion-jobs:
+    get:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Tenant-scoped ingestion jobs } }
+    post:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/IngestionRequest' } } } }
+      responses: { '202': { description: Ingestion job queued } }
+  /api/v1/admin/ingestion-jobs/{id}:
+    get:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses: { '200': { description: Ingestion job detail without staged bytes } }
+  /api/v1/admin/ingestion-jobs/{id}/retry:
+    post:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses: { '202': { description: Failed job requeued } }
+  /api/v1/admin/retention/purge-sessions:
+    post:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [before], properties: { before: { type: string, format: date-time } } } } } }
+      responses: { '200': { description: Tenant session retention result } }
+  /api/v1/admin/workflow-runs:
+    get:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Tenant-scoped workflow status } }
+  /api/v1/admin/audit:
+    get:
+      tags: [Tenant admin]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Tenant-scoped audit metadata } }
+  /api/v1/chat/config:
+    get:
+      tags: [Chat]
+      parameters: [{ name: tenantSlug, in: query, required: true, schema: { type: string } }]
+      responses: { '200': { description: Public tenant persona configuration } }
+  /api/v1/chat/sessions:
+    post:
+      tags: [Chat]
+      security: [{ bearerAuth: [] }]
+      description: Anonymous callers must use a tenant slug and the configured public origin; authenticated callers are tenant-scoped.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SessionRequest' } } } }
+      responses: { '201': { description: Chat session created } }
+  /api/v1/chat/sessions/{id}:
+    get:
+      tags: [Chat]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }, { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }]
+      responses: { '200': { description: Masked, authorized chat history } }
+  /api/v1/chat/messages:
+    post:
+      tags: [Chat]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MessageRequest' } } } }
+      responses: { '200': { description: Grounded response with validated citations }, '503': { $ref: '#/components/responses/ServiceUnavailable' } }
+  /api/v1/chat/actions/{id}/confirm:
+    post:
+      tags: [Chat]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [sessionId, confirmed], properties: { sessionId: { type: string, format: uuid }, confirmed: { const: true } } } } } }
+      responses: { '200': { description: Idempotent workflow action result } }
+  /api/v1/chat/actions/{id}:
+    get:
+      tags: [Chat]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }, { name: sessionId, in: query, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Authorized workflow action status } }
+  /api/v1/internal/ingestion-jobs/{id}/claim:
+    post:
+      tags: [Internal]
+      security: [{ ingestionWorker: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses: { '200': { description: Claimed job or no claim } }
+  /api/v1/internal/ingestion-jobs/{id}/input:
+    get:
+      tags: [Internal]
+      security: [{ ingestionWorker: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses: { '200': { description: Worker input locator or URL } }
+  /api/v1/internal/ingestion-jobs/{id}/result:
+    post:
+      tags: [Internal]
+      security: [{ ingestionWorker: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [chunks], properties: { chunks: { type: array, items: { $ref: '#/components/schemas/ChunkResult' } } } } } } }
+      responses: { '200': { description: Worker result accepted } }
+  /api/v1/internal/n8n/callback:
+    post:
+      tags: [Internal]
+      description: Signed, replay-protected callback; never exposed as a public client endpoint.
+      parameters:
+        - { name: x-agentic-timestamp, in: header, required: true, schema: { type: string } }
+        - { name: x-agentic-nonce, in: header, required: true, schema: { type: string } }
+        - { name: x-agentic-signature, in: header, required: true, schema: { type: string } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/WorkflowCallback' } } } }
+      responses: { '200': { description: Callback accepted }, '401': { $ref: '#/components/responses/Unauthorized' } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+    ingestionWorker: { type: apiKey, in: header, name: x-ingestion-worker-secret }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+  responses:
+    AuthResult: { description: Authentication result, content: { application/json: { schema: { type: object, required: [token, user], properties: { token: { type: string }, user: { $ref: '#/components/schemas/User' } } } } } }
+    Unauthorized: { description: Authentication or signature failed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Conflict: { description: Conflict, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    ServiceUnavailable: { description: Dependency unavailable, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties: { error: { type: object, required: [code, message], properties: { code: { type: string }, message: { type: string } } } }
+    HealthLive: { type: object, required: [status], properties: { status: { const: ok } } }
+    Credentials: { type: object, required: [email, password], properties: { email: { type: string, format: email }, password: { type: string, minLength: 8, maxLength: 128 } } }
+    Login: { type: object, required: [email, password], properties: { email: { type: string, format: email }, password: { type: string, minLength: 1 } } }
+    AuthContext: { type: object, required: [userId, email, role, tenantId], properties: { userId: { type: string, format: uuid }, email: { type: string, format: email }, role: { type: string, enum: [platform_admin, tenant_admin, tenant_editor, tenant_viewer, tenant_agent] }, tenantId: { type: [string, 'null'], format: uuid } } }
+    User: { type: object, required: [id, email, role, tenantId], properties: { id: { type: string, format: uuid }, email: { type: string, format: email }, role: { type: string }, tenantId: { type: [string, 'null'], format: uuid } } }
+    CreateTenant: { type: object, required: [name, slug, adminEmail, adminPassword], properties: { name: { type: string, minLength: 2, maxLength: 120 }, slug: { type: string, pattern: '^[a-z0-9-]+$' }, adminEmail: { type: string, format: email }, adminPassword: { type: string, minLength: 8, maxLength: 128 } } }
+    CreateMember: { type: object, required: [email, password, role], properties: { email: { type: string, format: email }, password: { type: string }, role: { type: string, enum: [tenant_editor, tenant_viewer, tenant_agent] } } }
+    ChannelConfig: { type: object, required: [publicOrigin], properties: { publicOrigin: { type: string, format: uri }, publicChatEnabled: { type: boolean } } }
+    Persona: { type: object, required: [name, greeting, personality, tone, speakingStyle, permittedLanguages], properties: { name: { type: string }, greeting: { type: string }, personality: { type: string }, tone: { type: string }, speakingStyle: { type: string }, permittedLanguages: { type: array, minItems: 1, maxItems: 10, items: { type: string } } } }
+    TextSource: { type: object, required: [title, mimeType, content], properties: { title: { type: string }, mimeType: { type: string }, sourceUrl: { type: string, format: uri }, audience: { type: string, enum: [public, internal] }, content: { type: string, maxLength: 200000 } } }
+    UploadSource: { type: object, required: [title, fileName, mimeType, contentBase64], properties: { title: { type: string }, fileName: { type: string }, mimeType: { type: string }, audience: { type: string, enum: [public, internal] }, contentBase64: { type: string } } }
+    IngestionRequest: { type: object, required: [title, mimeType], properties: { title: { type: string }, mimeType: { type: string }, sourceUrl: { type: string, format: uri }, audience: { type: string, enum: [public, internal] } } }
+    SessionRequest: { type: object, properties: { tenantSlug: { type: string }, tenantId: { type: string, format: uuid } } }
+    MessageRequest: { type: object, required: [sessionId, message, clientMessageId], properties: { sessionId: { type: string, format: uuid }, message: { type: string, minLength: 1, maxLength: 4000 }, clientMessageId: { type: string, minLength: 1, maxLength: 128 } } }
+    ChunkResult: { type: object, required: [ordinal, locator, content, contentHash], properties: { ordinal: { type: integer, minimum: 0 }, locator: { type: string }, content: { type: string }, contentHash: { type: string } } }
+    WorkflowCallback: { type: object, required: [actionId, tenantId, state, externalReference], properties: { actionId: { type: string, format: uuid }, tenantId: { type: string, format: uuid }, state: { type: string, enum: [completed, failed] }, externalReference: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$' } } }

@@ -13,7 +13,7 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 - [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; durable callback nonce replay guard added; live n8n blocked)
 - [ ] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics including ingestion state, RBAC, lifecycle, rate limits, CORS, callback replay guard, durable admin session revocation, tenant session purge, local backup/restore rehearsal and redacted request telemetry added; production observability remains)
 - [x] P06: PII vault and conversation API (AES-GCM session vault, structured-name masking, lazy token expiry purge, session expiry/purge, rate limiting and Postgres persistence verified; production KMS-backed vault remains open)
-- [ ] P07–P10: full persona/version workflow, operations hardening, clean-room acceptance and go-live review (persona draft/publish/version API, session-pinned persona selection, grounded preview API/UI, history/publish/rollback and tenant domain UI added; final operations remain)
+- [ ] P07–P10: full persona/version workflow, operations hardening, clean-room acceptance and go-live review (persona draft/publish/version API, session-pinned persona selection, grounded preview API/UI, history/publish/rollback, tenant domain UI, implemented local OpenAPI contract and ER model added; final operations remain)
 
 ## Decisions for this local vertical slice
 
@@ -101,6 +101,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Dependency audit | `npm audit --omit=dev --audit-level=high` | pass: 0 vulnerabilities after Angular 21.2.25, Next 16.4.1, React 19.3.1 and TypeScript 5.9.3 upgrade |
 | Reproducible install dry run | `npm ci --dry-run` | pass locally |
 | Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, Admin 2 + Web 3 + API 50 + Contracts 3, synthetic five-source acceptance, builds, 0 audit vulnerabilities and Python 16 |
+| API/ER documentation | `docs/openapi.yaml`, `docs/19-data-model.md` | present for the implemented local route and persistence surface; runtime schemas/migrations remain authoritative |
 | n8n compose security defaults | `npm run verify:compose` / `docker compose config` | pass: digest-pinned image and default `127.0.0.1:5678`; public bind requires explicit overrides |
 
 ## Blockers and risks
