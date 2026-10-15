@@ -55,6 +55,8 @@ Enforce server-side RBAC/ABAC for each handler. Browser cannot choose an arbitra
 }
 ```
 
+Action confirmation requests must include the originating `sessionId` alongside `confirmed: true`; Node verifies that the action and session belong together before executing it.
+
 ## Suggested response shape
 ```json
 {

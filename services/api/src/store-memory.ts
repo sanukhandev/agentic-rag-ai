@@ -39,7 +39,7 @@ export class MemoryStore implements Store {
     this.tenants.set(id, updated);
     return updated;
   }
-  async setTenantPublicOrigin(id: string, publicOrigin: string): Promise<Tenant | null> {
+  async setTenantPublicOrigin(id: string, publicOrigin: string | null): Promise<Tenant | null> {
     const tenant = this.tenants.get(id);
     if (!tenant) return null;
     const updated = { ...tenant, publicOrigin };

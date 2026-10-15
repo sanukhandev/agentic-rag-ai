@@ -20,6 +20,7 @@ export const chatMessageRequestSchema = z.object({
 export type ChatMessageRequest = z.infer<typeof chatMessageRequestSchema>;
 
 export const actionConfirmationSchema = z.object({
+  sessionId: z.string().uuid(),
   confirmed: z.literal(true),
 });
 

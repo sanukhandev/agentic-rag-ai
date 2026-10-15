@@ -171,7 +171,7 @@ export interface Store {
   getTenantBySlug(slug: string): Promise<Tenant | null>;
   listTenants(): Promise<Tenant[]>;
   setTenantStatus(id: string, status: TenantStatus): Promise<Tenant | null>;
-  setTenantPublicOrigin(id: string, publicOrigin: string): Promise<Tenant | null>;
+  setTenantPublicOrigin(id: string, publicOrigin: string | null): Promise<Tenant | null>;
   setTenantPublicChatEnabled(id: string, enabled: boolean): Promise<Tenant | null>;
   listUsers(tenantId: string): Promise<User[]>;
   listDomains(tenantId: string): Promise<TenantDomain[]>;
