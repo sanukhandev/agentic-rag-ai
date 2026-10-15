@@ -58,7 +58,7 @@ tools/ingestion/.venv/Scripts/python.exe -m pip install -r tools/ingestion/requi
 npm run verify:local
 ```
 
-`verify:local` requires the local venv, defaults `DATABASE_URL` to the private development database when it is not already set, runs lint/typecheck, the PostgreSQL-backed workspace tests, production builds, the dependency audit and all Python ingestion tests. It does not start or deploy any VM service.
+`verify:local` requires the local venv, defaults `DATABASE_URL` to the private development database when it is not already set, runs lint/typecheck, the compose security-default check, the PostgreSQL-backed workspace tests, production builds, the dependency audit and all Python ingestion tests. It does not start or deploy any VM service.
 
 For public chat channel binding, a tenant administrator saves the exact web origin and enabled state in the **Public chat channel** panel. When enabled, `/api/v1/chat/config` and public session creation require the matching browser `Origin`; disabling the channel rejects public preflight/session requests. Production tenants must configure one.
 
