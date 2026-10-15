@@ -125,5 +125,8 @@ describe('API vertical slice', () => {
     expect(reindexed.body.source).toMatchObject({ id: result.body.source.id, status: 'awaiting_review' });
     expect(reindexed.body.source.versionId).not.toBe(result.body.source.versionId);
     expect(reindexed.body.job).toMatchObject({ status: 'completed', sourceId: result.body.source.id });
+    const versions = await api.get(`/api/v1/admin/sources/${result.body.source.id}/versions`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    expect(versions.body.items).toHaveLength(2);
+    expect(versions.body.items[0]).toMatchObject({ sourceId: result.body.source.id, versionId: reindexed.body.source.versionId });
   });
 });

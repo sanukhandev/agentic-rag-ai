@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, Chunk, Citation, IngestionJob, Message, Persona, Session, Source, SourceStatus, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionRequest, AuditEvent, Chunk, Citation, IngestionJob, Message, Persona, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
 
 const iso = (value: Date | string): string => value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 const vectorLiteral = (values: number[]): string => `[${values.join(',')}]`;
@@ -9,6 +9,7 @@ type TenantRow = { id: string; name: string; slug: string; status?: TenantStatus
 type UserRow = { id: string; email: string; password_hash: string; role: User['role']; tenant_id: string | null; created_at: DbTimestamp };
 type PersonaRow = { tenant_id: string; name: string; greeting: string; personality: string; tone: string; speaking_style: string; permitted_languages: string[] };
 type SourceRow = { id: string; tenant_id: string; title: string; mime_type: string; source_url: string | null; audience: 'public' | 'internal'; status: SourceStatus; version_id: string; content_hash: string; created_at: DbTimestamp; approved_at: DbTimestamp | null };
+type SourceVersionRow = { source_id: string; tenant_id: string; version_id: string; content_hash: string; created_at: DbTimestamp };
 type MessageRow = { id: string; session_id: string; tenant_id: string; role: Message['role']; masked_content: string; citations: Citation[]; client_message_id: string | null; response?: Record<string, unknown> | null; created_at: DbTimestamp };
 type ActionRow = { id: string; tenant_id: string; session_id: string; workflow_key: ActionRequest['workflowKey']; idempotency_key: string; state: ActionRequest['state']; opaque_reference: string; result?: { external_reference?: string; externalReference?: string } | null; created_at: DbTimestamp };
 type IngestionJobRow = { id: string; tenant_id: string; title: string; mime_type: string; source_url: string | null; audience: 'public' | 'internal'; source_id: string | null; status: IngestionJob['status']; attempts: number; error_code: string | null; lease_expires_at: DbTimestamp | null; created_at: DbTimestamp; updated_at: DbTimestamp };
@@ -32,6 +33,7 @@ export class PostgresStore implements Store {
     try {
       await client.query('BEGIN');
       const result = await client.query('INSERT INTO knowledge_sources (id,tenant_id,title,mime_type,source_url,audience,status,version_id,content_hash) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *', [input.id, input.tenantId, input.title, input.mimeType, input.sourceUrl, input.audience, input.status, input.versionId, input.contentHash]);
+      await client.query('INSERT INTO source_versions (source_id,tenant_id,version_id,content_hash,created_at) VALUES ($1,$2,$3,$4,$5)', [input.id, input.tenantId, input.versionId, input.contentHash, result.rows[0].created_at]);
       for (const chunk of input.chunks) await client.query('INSERT INTO source_chunks (id,source_id,tenant_id,version_id,ordinal,locator,content,content_hash,embedding) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::vector)', [chunk.id, chunk.sourceId, chunk.tenantId, chunk.versionId, chunk.ordinal, chunk.locator, chunk.content, chunk.contentHash, vectorLiteral(chunk.embedding)]);
       await client.query('COMMIT');
       return this.source(result.rows[0]);
@@ -42,11 +44,13 @@ export class PostgresStore implements Store {
   async listSources(tenantId: string): Promise<Source[]> { const result = await this.pool.query('SELECT * FROM knowledge_sources WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId]); return result.rows.map((row) => this.source(row)); }
   async setSourceStatus(id: string, tenantId: string, status: SourceStatus): Promise<Source | null> { const result = await this.pool.query('UPDATE knowledge_sources SET status=$1,approved_at=CASE WHEN $1=\'active\' THEN now() ELSE approved_at END WHERE id=$2 AND tenant_id=$3 RETURNING *', [status, id, tenantId]); return result.rows[0] ? this.source(result.rows[0]) : null; }
   async listSourceChunks(sourceId: string, tenantId: string): Promise<Chunk[]> { const result = await this.pool.query('SELECT c.* , c.embedding::text AS embedding_text FROM source_chunks c JOIN knowledge_sources s ON s.id=c.source_id AND s.version_id=c.version_id WHERE c.source_id=$1 AND c.tenant_id=$2 ORDER BY c.ordinal', [sourceId, tenantId]); return result.rows.map((row) => ({ id: row.id, sourceId: row.source_id, tenantId: row.tenant_id, versionId: row.version_id, ordinal: row.ordinal, locator: row.locator, content: row.content, contentHash: row.content_hash, embedding: String(row.embedding_text).replace(/[\[\]]/g, '').split(',').filter(Boolean).map(Number) })); }
+  async listSourceVersions(sourceId: string, tenantId: string): Promise<SourceVersion[]> { const result = await this.pool.query<SourceVersionRow>('SELECT source_id,tenant_id,version_id,content_hash,created_at FROM source_versions WHERE source_id=$1 AND tenant_id=$2 ORDER BY created_at DESC', [sourceId, tenantId]); return result.rows.map((row) => ({ sourceId: row.source_id, tenantId: row.tenant_id, versionId: row.version_id, contentHash: row.content_hash, createdAt: iso(row.created_at) })); }
   async replaceSourceVersion(input: { sourceId: string; tenantId: string; versionId: string; contentHash: string; chunks: Chunk[] }): Promise<Source | null> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
       for (const chunk of input.chunks) await client.query('INSERT INTO source_chunks (id,source_id,tenant_id,version_id,ordinal,locator,content,content_hash,embedding) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::vector)', [chunk.id, chunk.sourceId, chunk.tenantId, chunk.versionId, chunk.ordinal, chunk.locator, chunk.content, chunk.contentHash, vectorLiteral(chunk.embedding)]);
+      await client.query('INSERT INTO source_versions (source_id,tenant_id,version_id,content_hash) VALUES ($1,$2,$3,$4)', [input.sourceId, input.tenantId, input.versionId, input.contentHash]);
       const result = await client.query('UPDATE knowledge_sources SET version_id=$1,content_hash=$2,status=\'awaiting_review\',approved_at=NULL WHERE id=$3 AND tenant_id=$4 RETURNING *', [input.versionId, input.contentHash, input.sourceId, input.tenantId]);
       await client.query('COMMIT');
       return result.rows[0] ? this.source(result.rows[0]) : null;

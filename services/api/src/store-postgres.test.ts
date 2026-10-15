@@ -37,6 +37,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       const nextVersion = randomUUID();
       const reindexed = await store.replaceSourceVersion({ sourceId: source.id, tenantId: tenant.id, versionId: nextVersion, contentHash: source.contentHash, chunks: [{ ...currentChunks[0]!, id: randomUUID(), versionId: nextVersion }] });
       expect(reindexed).toMatchObject({ id: source.id, versionId: nextVersion, status: 'awaiting_review' });
+      expect(await store.listSourceVersions(source.id, tenant.id)).toHaveLength(2);
     } finally {
       await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
       await pool.end();

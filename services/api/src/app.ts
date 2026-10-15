@@ -232,6 +232,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     } catch (error) { next(error); }
   });
   app.get('/api/v1/admin/sources', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listSources(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.get('/api/v1/admin/sources/:id/versions', protectedApi, async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const source = await store.getSource(routeParam(req, 'id'));
+      if (!source || source.tenantId !== tenantId) throw new HttpError(404, 'SOURCE_NOT_FOUND', 'Source not found.');
+      res.json({ items: await store.listSourceVersions(source.id, tenantId) });
+    } catch (error) { next(error); }
+  });
   const setSourceStatus = (status: SourceStatus) => async (req: Request, res: Response, next: NextFunction) => {
     try { const tenantId = await tenantForRequest(store, req); await activeTenant(store, tenantId); const source = await store.setSourceStatus(routeParam(req, 'id'), tenantId, status); if (!source) throw new HttpError(404, 'SOURCE_NOT_FOUND', 'Source not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: `source.${status}`, metadata: { sourceId: source.id }, createdAt: new Date().toISOString() }); res.json({ source }); } catch (error) { next(error); }
   };

@@ -48,6 +48,14 @@ export interface Source {
   approvedAt: string | null;
 }
 
+export interface SourceVersion {
+  sourceId: string;
+  tenantId: string;
+  versionId: string;
+  contentHash: string;
+  createdAt: string;
+}
+
 export interface IngestionJob {
   id: string;
   tenantId: string;
@@ -151,6 +159,7 @@ export interface Store {
   listSources(tenantId: string): Promise<Source[]>;
   setSourceStatus(id: string, tenantId: string, status: SourceStatus): Promise<Source | null>;
   listSourceChunks(sourceId: string, tenantId: string): Promise<Chunk[]>;
+  listSourceVersions(sourceId: string, tenantId: string): Promise<SourceVersion[]>;
   replaceSourceVersion(input: { sourceId: string; tenantId: string; versionId: string; contentHash: string; chunks: Chunk[] }): Promise<Source | null>;
   createIngestionJob(input: { id: string; tenantId: string; title: string; mimeType: string; sourceUrl: string | null; audience: Audience }): Promise<IngestionJob>;
   getIngestionJob(id: string): Promise<IngestionJob | null>;

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, Chunk, IngestionJob, Message, Persona, Session, Source, SourceStatus, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionRequest, AuditEvent, Chunk, IngestionJob, Message, Persona, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -9,6 +9,7 @@ export class MemoryStore implements Store {
   private readonly users = new Map<string, User>();
   private readonly personas = new Map<string, Persona>();
   private readonly sources = new Map<string, Source>();
+  private readonly sourceVersions = new Map<string, SourceVersion[]>();
   private readonly ingestionJobs = new Map<string, IngestionJob>();
   private readonly chunks = new Map<string, Chunk>();
   private readonly sessions = new Map<string, Session>();
@@ -51,6 +52,7 @@ export class MemoryStore implements Store {
   async createSource(input: Omit<Source, 'createdAt' | 'approvedAt'> & { chunks: Chunk[] }): Promise<Source> {
     const source: Source = { ...input, createdAt: now(), approvedAt: null };
     this.sources.set(source.id, source);
+    this.sourceVersions.set(source.id, [{ sourceId: source.id, tenantId: source.tenantId, versionId: source.versionId, contentHash: source.contentHash, createdAt: source.createdAt }]);
     for (const chunk of input.chunks) this.chunks.set(chunk.id, chunk);
     return source;
   }
@@ -65,10 +67,13 @@ export class MemoryStore implements Store {
     return updated;
   }
   async listSourceChunks(sourceId: string, tenantId: string): Promise<Chunk[]> { const source = this.sources.get(sourceId); return source && source.tenantId === tenantId ? [...this.chunks.values()].filter((chunk) => chunk.sourceId === sourceId && chunk.tenantId === tenantId && chunk.versionId === source.versionId).sort((left, right) => left.ordinal - right.ordinal) : []; }
+  async listSourceVersions(sourceId: string, tenantId: string): Promise<SourceVersion[]> { const source = this.sources.get(sourceId); return source && source.tenantId === tenantId ? [...(this.sourceVersions.get(sourceId) ?? [])].sort((left, right) => right.createdAt.localeCompare(left.createdAt)) : []; }
   async replaceSourceVersion(input: { sourceId: string; tenantId: string; versionId: string; contentHash: string; chunks: Chunk[] }): Promise<Source | null> {
     const source = this.sources.get(input.sourceId);
     if (!source || source.tenantId !== input.tenantId) return null;
     for (const chunk of input.chunks) this.chunks.set(chunk.id, chunk);
+    const createdAt = now();
+    this.sourceVersions.set(source.id, [...(this.sourceVersions.get(source.id) ?? []), { sourceId: source.id, tenantId: source.tenantId, versionId: input.versionId, contentHash: input.contentHash, createdAt }]);
     const updated: Source = { ...source, versionId: input.versionId, contentHash: input.contentHash, status: 'awaiting_review', approvedAt: null };
     this.sources.set(source.id, updated);
     return updated;
