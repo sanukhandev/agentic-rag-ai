@@ -61,10 +61,14 @@ describe('API vertical slice', () => {
     expect(() => createApp({ nodeEnv: 'production', jwtSecret: 'production-jwt-secret', tokenVault: new TokenVault('production-vault-secret') })).toThrow('Production Azure, embedding, workflow, callback and ingestion adapters are required.');
   });
 
+  it('rejects invalid usage cost rates', () => {
+    expect(() => createApp({ nodeEnv: 'test', inputCostUsdPerMillion: -1 })).toThrow('MODEL_INPUT_COST_USD_PER_MILLION');
+  });
+
   it('onboards tenants, isolates sources, grounds answers, masks PII, and confirms one workflow', async () => {
     const model = new CapturingModel();
     const workflow = new MockWorkflowAdapter();
-    const runtime = createApp({ jwtSecret: 'test-secret', model, workflow, nodeEnv: 'test', n8nCallbackSecret: 'callback-secret' });
+    const runtime = createApp({ jwtSecret: 'test-secret', model, workflow, nodeEnv: 'test', n8nCallbackSecret: 'callback-secret', inputCostUsdPerMillion: 1, outputCostUsdPerMillion: 2 });
     const api = request(runtime.app);
     await api.get('/api/v1/admin/tenants').expect(401);
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform@example.test', password: 'Platform1Password' }).expect(201);
@@ -179,9 +183,12 @@ describe('API vertical slice', () => {
     const dashboard = await api.get('/api/v1/admin/dashboard/overview').set('Authorization', `Bearer ${adminToken}`).expect(200);
     expect(dashboard.body.metrics.sourceCounts.active).toBe(2);
     const health = await api.get('/api/v1/admin/services/health').set('Authorization', `Bearer ${adminToken}`).expect(200);
-    expect(health.body.telemetry).toMatchObject({ requests: expect.any(Number), serverErrors: expect.any(Number), averageLatencyMs: expect.any(Number), chatResponses: expect.any(Number), groundedResponses: expect.any(Number), abstentions: expect.any(Number), actionProposals: expect.any(Number), groundingRate: expect.any(Number), abstentionRate: expect.any(Number) });
+    expect(health.body.telemetry).toMatchObject({ requests: expect.any(Number), serverErrors: expect.any(Number), averageLatencyMs: expect.any(Number), chatResponses: expect.any(Number), groundedResponses: expect.any(Number), abstentions: expect.any(Number), actionProposals: expect.any(Number), groundingRate: expect.any(Number), abstentionRate: expect.any(Number), estimatedInputTokens: expect.any(Number), estimatedOutputTokens: expect.any(Number), estimatedCostUsd: expect.any(Number) });
     expect(health.body.telemetry.chatResponses).toBeGreaterThan(0);
     expect(health.body.telemetry.groundedResponses + health.body.telemetry.abstentions).toBe(health.body.telemetry.chatResponses);
+    expect(health.body.telemetry.estimatedInputTokens).toBeGreaterThan(0);
+    expect(health.body.telemetry.estimatedOutputTokens).toBeGreaterThan(0);
+    expect(health.body.telemetry.estimatedCostUsd).toBeGreaterThan(0);
     const tenantBHealth = await api.get('/api/v1/admin/services/health').set('Authorization', `Bearer ${adminBToken}`).expect(200);
     expect(tenantBHealth.body.telemetry.requests).toBeLessThan(health.body.telemetry.requests);
     await api.patch(`/api/v1/admin/tenants/${tenantA.body.tenant.id}/status`).set('Authorization', `Bearer ${platformToken}`).send({ status: 'suspended' }).expect(200);
