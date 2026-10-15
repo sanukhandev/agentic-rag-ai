@@ -107,7 +107,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const gateway = new ActionGateway(store, workflow);
   const app = express();
   const responseCache = new Map<string, unknown>();
-  const callbackNonces = new Map<string, number>();
   const rateLimits = new Map<string, { count: number; resetAt: number }>();
 
   app.disable('x-powered-by');
@@ -402,10 +401,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const signature = req.header('x-agentic-signature') ?? '';
       const body = JSON.stringify(req.body);
       if (!verifyN8nPayload(n8nCallbackSecret, timestamp, nonce, body, signature)) throw new HttpError(401, 'INVALID_CALLBACK', 'Callback authentication failed.');
-      const now = Date.now();
-      for (const [key, expiry] of callbackNonces) if (expiry <= now) callbackNonces.delete(key);
-      if (callbackNonces.has(nonce)) throw new HttpError(401, 'REPLAYED_CALLBACK', 'Callback replay rejected.');
-      callbackNonces.set(nonce, now + 300_000);
+      if (!(await store.claimCallbackNonce(nonce, new Date(Date.now() + 300_000).toISOString()))) throw new HttpError(401, 'REPLAYED_CALLBACK', 'Callback replay rejected.');
       const input = parse(z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['completed', 'failed']), externalReference: z.string().min(1).max(200) }), req.body);
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');

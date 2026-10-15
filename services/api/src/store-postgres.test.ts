@@ -22,6 +22,8 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       const completedJob = await store.updateIngestionJob({ ...claimedJob!, sourceId: source.id, status: 'completed', errorCode: null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
       expect(await store.getIngestionJob(job.id)).toMatchObject({ id: job.id, sourceId: source.id, status: 'completed', attempts: 1 });
       expect(completedJob.errorCode).toBeNull();
+      expect(await store.claimCallbackNonce('nonce-1', new Date(Date.now() + 60_000).toISOString())).toBe(true);
+      expect(await store.claimCallbackNonce('nonce-1', new Date(Date.now() + 60_000).toISOString())).toBe(false);
       await store.setSourceStatus(source.id, tenant.id, 'active');
       expect((await store.listSearchableChunks(tenant.id, 'public')).length).toBe(1);
       expect((await store.searchSearchableChunks(tenant.id, 'public', [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8], 4)).length).toBe(1);

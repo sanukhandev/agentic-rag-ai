@@ -161,6 +161,7 @@ export interface Store {
   createAuthSession(session: AuthSession): Promise<AuthSession>;
   getAuthSession(tokenHash: string): Promise<AuthSession | null>;
   revokeAuthSession(tokenHash: string): Promise<void>;
+  claimCallbackNonce(nonce: string, expiresAt: string): Promise<boolean>;
   setPersona(persona: Persona): Promise<Persona>;
   getPersona(tenantId: string): Promise<Persona | null>;
   createSource(input: Omit<Source, 'createdAt' | 'approvedAt'> & { chunks: Chunk[] }): Promise<Source>;

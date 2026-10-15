@@ -10,7 +10,7 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 - [ ] P01: workspace, API, UI, database migration, ingestion and CI foundation (CI added; hosted run not observed)
 - [ ] P02: validated source ingestion, versioning, approval and retrieval (durable job state/lease, authenticated worker-result boundary, SQL vector filtering/order, transactional reindex-to-review, explicit source version history, guarded revoked-source purge and approved HTTPS worker snapshots added; private file staging, retention policy and selected production embedding remain)
 - [ ] P03: tenant-aware chat, PII masking, citations and fail-closed model boundary (synthetic API gate passing; conflict refusal, scoped history and invalid-citation abstention added)
-- [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; live n8n blocked)
+- [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; durable callback nonce replay guard added; live n8n blocked)
 - [ ] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics, RBAC, lifecycle, rate limits, CORS, callback replay guard and durable admin session revocation added; retention/backup pending)
 - [ ] P06: PII vault and conversation API (AES-GCM session vault and Postgres persistence verified; retention/rate limits pending)
 - [ ] P07–P10: full persona/version workflow, operations hardening, clean-room acceptance and go-live review
@@ -38,7 +38,8 @@ This section is updated after verification. No scenario is marked passing from s
 | Invalid model citation cannot publish an ungrounded answer | `app.test.ts` invalid-citation model test | pass |
 | Prompt injection in source is treated as data | persona rejection, explicit-intent gate, source-only model prompt | partial; adversarial corpus expansion pending |
 | Conflicting active evidence is not chosen arbitrarily | `knowledge.test.ts`, API conflict guard | pass (numeric contradiction heuristic) |
-| Confirmed action is idempotent and audited | `actions.test.ts`, API integration test | pass (mock adapter); callback route pending |
+| Confirmed action is idempotent and audited | `actions.test.ts`, API integration test | pass (mock adapter) |
+| Callback replay is rejected across store-backed instances | API callback replay assertion plus `claimCallbackNonce` memory/PostgreSQL tests and migration `011-callback-nonces.sql` | pass locally; live n8n blocked |
 | Next web chat flow builds | `npm run build` | pass |
 | Angular admin flow builds | `npm run build` | pass |
 | Python ingestion tests pass | `tools/ingestion/test_ingestion.py` | pass (7 tests, local venv) |

@@ -8,6 +8,7 @@ export class MemoryStore implements Store {
   private readonly tenants = new Map<string, Tenant>();
   private readonly users = new Map<string, User>();
   private readonly authSessions = new Map<string, AuthSession>();
+  private readonly callbackNonces = new Map<string, string>();
   private readonly personas = new Map<string, Persona>();
   private readonly sources = new Map<string, Source>();
   private readonly sourceVersions = new Map<string, SourceVersion[]>();
@@ -49,6 +50,12 @@ export class MemoryStore implements Store {
   async createAuthSession(session: AuthSession): Promise<AuthSession> { this.authSessions.set(session.tokenHash, session); return session; }
   async getAuthSession(tokenHash: string): Promise<AuthSession | null> { return this.authSessions.get(tokenHash) ?? null; }
   async revokeAuthSession(tokenHash: string): Promise<void> { const session = this.authSessions.get(tokenHash); if (session) this.authSessions.set(tokenHash, { ...session, revokedAt: now() }); }
+  async claimCallbackNonce(nonce: string, expiresAt: string): Promise<boolean> {
+    const current = this.callbackNonces.get(nonce);
+    if (current && Date.parse(current) > Date.now()) return false;
+    this.callbackNonces.set(nonce, expiresAt);
+    return true;
+  }
 
   async setPersona(persona: Persona): Promise<Persona> { this.personas.set(persona.tenantId, persona); return persona; }
   async getPersona(tenantId: string): Promise<Persona | null> { return this.personas.get(tenantId) ?? null; }
