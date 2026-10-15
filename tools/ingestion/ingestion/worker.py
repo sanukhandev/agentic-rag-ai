@@ -8,6 +8,7 @@ from typing import Any
 import requests
 
 from .pipeline import IngestedSource, ingest_file, ingest_url
+from .staging import LocalStaging
 
 
 def result_payload(source: IngestedSource) -> dict[str, Any]:
@@ -40,6 +41,7 @@ def main() -> None:
     source.add_argument("--url")
     parser.add_argument("--title")
     parser.add_argument("--allowed-host", action="append", default=[])
+    parser.add_argument("--staging-root", type=Path, help="Private local staging directory for file inputs.")
     parser.add_argument("--api-base", required=True)
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--worker-secret", required=True)
@@ -49,7 +51,16 @@ def main() -> None:
             parser.error("--url requires --title and at least one --allowed-host")
         ingested = ingest_url(args.title, args.url, set(args.allowed_host))
     else:
-        ingested = ingest_file(args.path)
+        staging_root = args.staging_root
+        if staging_root:
+            staging = LocalStaging(staging_root)
+            staged = staging.stage(args.path)
+            try:
+                ingested = ingest_file(staged)
+            finally:
+                staging.purge(staged)
+        else:
+            ingested = ingest_file(args.path)
     submit_result(args.api_base, args.job_id, args.worker_secret, ingested)
 
 

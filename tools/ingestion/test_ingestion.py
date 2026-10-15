@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 from pathlib import Path
 
 from ingestion.pipeline import chunk_text, extract_file, fetch_authorized_https, ingest_file, ingest_text, ingest_url, sanitize
+from ingestion.staging import LocalStaging
 from ingestion.worker import result_payload, submit_result
 
 
@@ -33,6 +34,18 @@ class IngestionTests(unittest.TestCase):
             path.write_bytes(b"not allowed")
             with self.assertRaises(ValueError):
                 ingest_file(path)
+
+    def test_private_staging_copies_and_purges_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.txt"
+            root = Path(directory) / "private-staging"
+            source.write_text("Private source", encoding="utf-8")
+            staging = LocalStaging(root)
+            staged = staging.stage(source)
+            self.assertEqual(staged.parent, root.resolve())
+            self.assertEqual(staged.read_text(encoding="utf-8"), "Private source")
+            staging.purge(staged)
+            self.assertFalse(staged.exists())
 
     def test_legacy_office_formats_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

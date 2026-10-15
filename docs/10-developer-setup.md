@@ -28,7 +28,7 @@ The pinned requirements are in `tools/ingestion/requirements.txt`; `.venv` is ig
 To submit a parsed file to a queued API job, run the worker from the ingestion directory after the tenant admin creates a job:
 
 ```powershell
-\.venv\Scripts\python.exe -m ingestion.worker --path .\faq.docx --api-base http://localhost:4000 --job-id <job-id> --worker-secret <local-worker-secret>
+\.venv\Scripts\python.exe -m ingestion.worker --path .\faq.docx --staging-root .\private-staging --api-base http://localhost:4000 --job-id <job-id> --worker-secret <local-worker-secret>
 ```
 
 For an approved HTTPS snapshot, create a queued `text/html` job and run:
@@ -37,7 +37,7 @@ For an approved HTTPS snapshot, create a queued `text/html` job and run:
 \.venv\Scripts\python.exe -m ingestion.worker --url https://approved.example/faq --title "Approved FAQ" --allowed-host approved.example --api-base http://localhost:4000 --job-id <job-id> --worker-secret <local-worker-secret>
 ```
 
-The worker sends only sanitized normalized content, chunk hashes and locators. The API revalidates hashes, re-sanitizes chunks and performs embedding before staging the source for approval.
+The worker copies file inputs into the private staging root for the attempt, extracts from the staged copy, and purges it before sending only sanitized normalized content, chunk hashes and locators. The API revalidates hashes, re-sanitizes chunks and performs embedding before staging the source for approval. Keep the staging directory private and outside any web-served path.
 
 ## Proposed environment contract (names TBD until implementation)
 | Secret/config family | Consumer | Handling |
