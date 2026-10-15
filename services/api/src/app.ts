@@ -12,7 +12,7 @@ import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import type { Session, SourceStatus, Store, TenantStatus } from './types.js';
 
-type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null };
+type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number };
 
 const passwordSchema = z.string().min(8).max(128).regex(/[A-Z]/, 'Password must contain an uppercase letter.').regex(/\d/, 'Password must contain a number.');
 const tenantSchema = z.object({ name: z.string().trim().min(2).max(120), slug: z.string().trim().regex(/^[a-z0-9-]+$/).max(80), adminEmail: z.string().email(), adminPassword: passwordSchema });
@@ -139,9 +139,20 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const gateway = new ActionGateway(store, workflow);
   const app = express();
   const rateLimits = new Map<string, { count: number; resetAt: number }>();
-  const telemetry: Telemetry = { requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null };
+  const newTelemetry = (): Telemetry => ({ requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null, chatResponses: 0, groundedResponses: 0, abstentions: 0, actionProposals: 0 });
+  const telemetry = newTelemetry();
   const tenantTelemetry = new Map<string, Telemetry>();
-  const observedTelemetry = (value: Telemetry) => ({ requests: value.requests, serverErrors: value.serverErrors, averageLatencyMs: value.requests ? Math.round(value.totalLatencyMs / value.requests) : 0, lastRequestAt: value.lastRequestAt });
+  const recordChatOutcome = (tenantId: string, grounded: boolean, proposedAction: boolean): void => {
+    const scoped = tenantTelemetry.get(tenantId) ?? newTelemetry();
+    for (const value of [telemetry, scoped]) {
+      value.chatResponses += 1;
+      if (grounded) value.groundedResponses += 1;
+      else value.abstentions += 1;
+      if (proposedAction) value.actionProposals += 1;
+    }
+    tenantTelemetry.set(tenantId, scoped);
+  };
+  const observedTelemetry = (value: Telemetry) => ({ requests: value.requests, serverErrors: value.serverErrors, averageLatencyMs: value.requests ? Math.round(value.totalLatencyMs / value.requests) : 0, lastRequestAt: value.lastRequestAt, chatResponses: value.chatResponses, groundedResponses: value.groundedResponses, abstentions: value.abstentions, actionProposals: value.actionProposals, groundingRate: value.chatResponses ? value.groundedResponses / value.chatResponses : 0, abstentionRate: value.chatResponses ? value.abstentions / value.chatResponses : 0 });
 
   app.disable('x-powered-by');
   // shortcut: one bounded JSON parser supports local 5 MiB base64 uploads; replace with streaming/object storage before production.
@@ -157,7 +168,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     next();
   });
   app.use((req: AuthedRequest, res: Response, next: NextFunction) => { req.requestId = req.header('x-request-id') ?? randomUUID(); res.setHeader('x-request-id', req.requestId); next(); });
-  app.use((req, res, next) => { const started = Date.now(); res.once('finish', () => { const elapsed = Date.now() - started; const failed = res.statusCode >= 500 ? 1 : 0; const timestamp = new Date().toISOString(); telemetry.requests += 1; telemetry.serverErrors += failed; telemetry.totalLatencyMs += elapsed; telemetry.lastRequestAt = timestamp; const tenantId = (req as AuthedRequest).auth?.tenantId; if (tenantId) { const scoped = tenantTelemetry.get(tenantId) ?? { requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null }; scoped.requests += 1; scoped.serverErrors += failed; scoped.totalLatencyMs += elapsed; scoped.lastRequestAt = timestamp; tenantTelemetry.set(tenantId, scoped); } }); next(); });
+  app.use((req, res, next) => { const started = Date.now(); res.once('finish', () => { const elapsed = Date.now() - started; const failed = res.statusCode >= 500 ? 1 : 0; const timestamp = new Date().toISOString(); telemetry.requests += 1; telemetry.serverErrors += failed; telemetry.totalLatencyMs += elapsed; telemetry.lastRequestAt = timestamp; const tenantId = (req as AuthedRequest).auth?.tenantId; if (tenantId) { const scoped = tenantTelemetry.get(tenantId) ?? newTelemetry(); scoped.requests += 1; scoped.serverErrors += failed; scoped.totalLatencyMs += elapsed; scoped.lastRequestAt = timestamp; tenantTelemetry.set(tenantId, scoped); } }); next(); });
   app.use((req, res, next) => {
     if (!req.path.startsWith('/api/')) { next(); return; }
     const now = Date.now();
@@ -238,7 +249,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.json({ purged, before });
     } catch (error) { next(error); }
   });
-  app.get('/api/v1/admin/services/health', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, _next) => { const checkedAt = new Date().toISOString(); const auth = getAuth(req); const observed = observedTelemetry(auth?.role === 'platform_admin' ? telemetry : tenantTelemetry.get(auth?.tenantId ?? '') ?? { requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null }); try { await store.countUsers(); res.json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'ok' }, model: { status: 'adapter' }, embedding: { status: 'adapter' }, workflow: { status: 'adapter' }, ingestion: { status: 'not_observed' } } }); } catch { res.status(503).json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'down' } } }); } });
+  app.get('/api/v1/admin/services/health', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, _next) => { const checkedAt = new Date().toISOString(); const auth = getAuth(req); const observed = observedTelemetry(auth?.role === 'platform_admin' ? telemetry : tenantTelemetry.get(auth?.tenantId ?? '') ?? newTelemetry()); try { await store.countUsers(); res.json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'ok' }, model: { status: 'adapter' }, embedding: { status: 'adapter' }, workflow: { status: 'adapter' }, ingestion: { status: 'not_observed' } } }); } catch { res.status(503).json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'down' } } }); } });
 
   app.put('/api/v1/admin/persona', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
     try { const tenantId = await tenantForRequest(store, req); const input = parse(personaSchema, req.body); const version = await store.createPersonaVersion({ tenantId, ...input, status: 'draft' }); await store.publishPersonaVersion(tenantId, version.id); const persona = await store.getPersona(tenantId); res.json({ persona }); } catch (error) { next(error); }
@@ -521,6 +532,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const persistedResponse = { ...response, answer: maskedAnswer };
       await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: maskedAnswer, citations: safeCitations, clientMessageId: null, response: null, createdAt: new Date().toISOString() });
       await store.updateMessage({ ...userMessage, response: persistedResponse });
+      recordChatOutcome(session.tenantId, grounded, Boolean(action));
       res.json(response);
     } catch (error) { next(error); }
   });

@@ -160,7 +160,9 @@ describe('API vertical slice', () => {
     const dashboard = await api.get('/api/v1/admin/dashboard/overview').set('Authorization', `Bearer ${adminToken}`).expect(200);
     expect(dashboard.body.metrics.sourceCounts.active).toBe(2);
     const health = await api.get('/api/v1/admin/services/health').set('Authorization', `Bearer ${adminToken}`).expect(200);
-    expect(health.body.telemetry).toMatchObject({ requests: expect.any(Number), serverErrors: expect.any(Number), averageLatencyMs: expect.any(Number) });
+    expect(health.body.telemetry).toMatchObject({ requests: expect.any(Number), serverErrors: expect.any(Number), averageLatencyMs: expect.any(Number), chatResponses: expect.any(Number), groundedResponses: expect.any(Number), abstentions: expect.any(Number), actionProposals: expect.any(Number), groundingRate: expect.any(Number), abstentionRate: expect.any(Number) });
+    expect(health.body.telemetry.chatResponses).toBeGreaterThan(0);
+    expect(health.body.telemetry.groundedResponses + health.body.telemetry.abstentions).toBe(health.body.telemetry.chatResponses);
     const tenantBHealth = await api.get('/api/v1/admin/services/health').set('Authorization', `Bearer ${adminBToken}`).expect(200);
     expect(tenantBHealth.body.telemetry.requests).toBeLessThan(health.body.telemetry.requests);
     await api.patch(`/api/v1/admin/tenants/${tenantA.body.tenant.id}/status`).set('Authorization', `Bearer ${platformToken}`).send({ status: 'suspended' }).expect(200);
