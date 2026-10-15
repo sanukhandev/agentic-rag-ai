@@ -7,6 +7,7 @@ type Source = { id: string; title: string; status: string; audience: string; mim
 type IngestionJob = { id: string; title: string; sourceUrl: string | null; status: string; attempts: number; errorCode: string | null; updatedAt: string };
 type Metrics = { sourceCounts: Record<string, number>; sessions: number; messages: number; actions: number; auditEvents: number };
 type Persona = { name: string; greeting: string; personality: string; tone: string; speakingStyle: string; permittedLanguages: string[] };
+type PersonaVersion = Persona & { id: string; version: number; status: 'draft' | 'published'; createdAt: string; publishedAt: string | null };
 type Tenant = { id: string; name: string; slug: string; status: string };
 const api = 'http://localhost:4000';
 
@@ -16,6 +17,7 @@ export class AppComponent {
   email = 'admin@example.test'; password = ''; token = ''; role = ''; error = ''; sources: Source[] = []; ingestionJobs: IngestionJob[] = []; tenants: Tenant[] = []; metrics: Metrics | null = null; persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: ['en'] };
   title = ''; content = ''; sourceUrl = ''; audience = 'public';
   tenantName = ''; tenantSlug = ''; tenantAdminEmail = ''; tenantAdminPassword = '';
+  personaVersions: PersonaVersion[] = [];
 
   login(): void { this.http.post<{ token: string; user: { role: string } }>(`${api}/api/v1/auth/login`, { email: this.email, password: this.password }).subscribe({ next: (body) => { this.token = body.token; this.role = body.user.role; if (this.role === 'platform_admin') this.loadTenants(); else { this.loadSources(); this.loadJobs(); this.loadDashboard(); this.loadPersona(); } }, error: () => { this.error = 'Login failed.'; } }); }
   loadTenants(): void { this.http.get<{ items: Tenant[] }>(`${api}/api/v1/admin/tenants`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.tenants = body.items; }, error: () => { this.error = 'Could not load tenants.'; } }); }
@@ -24,6 +26,9 @@ export class AppComponent {
   loadJobs(): void { this.http.get<{ items: IngestionJob[] }>(`${api}/api/v1/admin/ingestion-jobs`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.ingestionJobs = body.items; }, error: () => { this.error = 'Could not load ingestion jobs.'; } }); }
   loadDashboard(): void { this.http.get<{ metrics: Metrics }>(`${api}/api/v1/admin/dashboard/overview`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.metrics = body.metrics; }, error: () => { this.error = 'Could not load dashboard metrics.'; } }); }
   loadPersona(): void { this.http.get<{ persona: Persona | null }>(`${api}/api/v1/admin/persona`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { if (body.persona) this.persona = body.persona; }, error: () => { this.error = 'Could not load persona.'; } }); }
+  loadPersonaVersions(): void { this.http.get<{ items: PersonaVersion[] }>(`${api}/api/v1/admin/persona/versions`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.personaVersions = body.items; }, error: () => { this.error = 'Could not load persona versions.'; } }); }
+  savePersonaDraft(): void { this.http.post(`${api}/api/v1/admin/persona/drafts`, this.persona, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadPersonaVersions(), error: () => { this.error = 'Persona draft could not be saved.'; } }); }
+  publishPersonaVersion(version: PersonaVersion): void { this.http.post(`${api}/api/v1/admin/persona/versions/${version.id}/publish`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.loadPersona(); this.loadPersonaVersions(); }, error: () => { this.error = 'Persona version could not be published.'; } }); }
   savePersona(): void { this.http.put(`${api}/api/v1/admin/persona`, this.persona, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.error = ''; }, error: () => { this.error = 'Persona could not be saved.'; } }); }
   stage(): void { this.http.post(`${api}/api/v1/admin/sources`, { title: this.title, mimeType: 'text/plain', audience: this.audience, content: this.content }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.title = ''; this.content = ''; this.loadSources(); this.loadJobs(); }, error: () => { this.error = 'Source could not be staged.'; } }); }
   queueUrl(): void { this.http.post(`${api}/api/v1/admin/ingestion-jobs`, { title: this.title, mimeType: 'text/html', sourceUrl: this.sourceUrl, audience: this.audience }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.title = ''; this.sourceUrl = ''; this.loadJobs(); }, error: () => { this.error = 'URL ingestion could not be queued.'; } }); }
