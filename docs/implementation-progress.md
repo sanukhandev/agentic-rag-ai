@@ -9,7 +9,7 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 - [x] P00: repository audit, security constraints, spec set and threat review
 - [ ] P01: workspace, API, UI, database migration, ingestion and CI foundation (CI added; hosted run not observed)
 - [ ] P02: validated source ingestion, versioning, approval and retrieval (durable job state/lease, authenticated worker-result boundary, SQL vector filtering/order, transactional reindex-to-review, explicit source version history, guarded revoked-source purge and approved HTTPS worker snapshots added; private file staging, retention policy and selected production embedding remain)
-- [ ] P03: tenant-aware chat, PII masking, citations and fail-closed model boundary (synthetic API gate passing; conflict refusal, scoped history and invalid-citation abstention added)
+- [ ] P03: tenant-aware chat, PII masking, citations and fail-closed model boundary (synthetic API gate passing; conflict refusal, scoped history, invalid-citation abstention and permitted-language refusal added)
 - [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; durable callback nonce replay guard added; live n8n blocked)
 - [ ] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics, RBAC, lifecycle, rate limits, CORS, callback replay guard and durable admin session revocation added; retention/backup pending)
 - [ ] P06: PII vault and conversation API (AES-GCM session vault, structured-name masking and Postgres persistence verified; retention/rate limits pending)
@@ -37,6 +37,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Approved evidence is cited | API integration test | pass (deterministic model) |
 | Unsupported facts are refused | API integration test | pass |
 | Invalid model citation cannot publish an ungrounded answer | `app.test.ts` invalid-citation model test | pass |
+| Unsupported chat language is refused before model call | `app.test.ts` + `model.test.ts` language tests | pass for Arabic/English family detection |
 | Prompt injection in source is treated as data | persona rejection, explicit-intent gate, source-only model prompt | partial; adversarial corpus expansion pending |
 | Conflicting active evidence is not chosen arbitrarily | `knowledge.test.ts`, API conflict guard | pass (numeric contradiction heuristic) |
 | Confirmed action is idempotent and audited | `actions.test.ts`, API integration test | pass (mock adapter) |

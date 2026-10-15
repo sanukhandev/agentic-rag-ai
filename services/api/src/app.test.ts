@@ -125,6 +125,23 @@ describe('API vertical slice', () => {
     expect(response.body.answer).not.toContain('unsupported invented answer');
   });
 
+  it('does not call the model for a language outside the published persona', async () => {
+    const model = new CapturingModel();
+    const runtime = createApp({ nodeEnv: 'test', model });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-language@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Language Tenant', slug: 'language-tenant', adminEmail: 'admin-language@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-language@example.test', password: 'TenantA1Password' }).expect(200);
+    await api.put('/api/v1/admin/persona').set('Authorization', `Bearer ${admin.body.token}`).send({ name: 'Ava', greeting: 'Hello', personality: 'Precise', tone: 'Clear', speakingStyle: 'Short', permittedLanguages: ['en'] }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Language FAQ', mimeType: 'text/plain', audience: 'public', content: 'Approved answer.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const response = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'ما هو الجواب؟', clientMessageId: 'language-1' }).expect(200);
+    expect(response.body.grounded).toBe(false);
+    expect(response.body.answer).toContain('permitted languages');
+    expect(model.prompts).toHaveLength(0);
+  });
+
   it('requires revocation before tenant-scoped source purge', async () => {
     const runtime = createApp({ nodeEnv: 'test' });
     const api = request(runtime.app);

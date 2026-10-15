@@ -5,7 +5,7 @@ import { ActionGateway, MockWorkflowAdapter, verifyN8nPayload, type WorkflowAdap
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, rankChunksWithVector } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
-import { DeterministicGroundedModel, validateCitations, type ChatModel, type ModelDraft } from './model.js';
+import { DeterministicGroundedModel, isPermittedLanguage, validateCitations, type ChatModel, type ModelDraft } from './model.js';
 import { assertKnownTokens, maskPii, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import type { SourceStatus, Store, TenantStatus } from './types.js';
@@ -363,13 +363,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const ranked = rankChunksWithVector(masked.masked, rows, queryEmbedding, 4);
       const evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: chunk.content }));
       const persona = await store.getPersona(session.tenantId);
+      const languageAllowed = !persona || isPermittedLanguage(masked.masked, persona.permittedLanguages);
       let draft: ModelDraft;
       if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null };
+      else if (!languageAllowed) draft = { answer: `I can only answer in the permitted languages: ${persona?.permittedLanguages.join(', ')}.`, citationIds: [], proposedIntent: null };
       else try { draft = await model.draft({ maskedMessage: masked.masked, evidence, personaName: persona?.name ?? 'Sales assistant' }); } catch { throw new HttpError(503, 'MODEL_UNAVAILABLE', 'The assistant is currently unable to verify an answer.'); }
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       const citations = validateCitations(draft, evidence);
       const grounded = evidence.length > 0 && citations.length > 0;
-      const answer = grounded ? draft.answer : `I’m ${persona?.name ?? 'Sales assistant'}. The approved knowledge does not establish an answer to that question, so I won’t guess.`;
+      const answer = !languageAllowed ? draft.answer : grounded ? draft.answer : `I’m ${persona?.name ?? 'Sales assistant'}. The approved knowledge does not establish an answer to that question, so I won’t guess.`;
       const explicitLeadRequest = /\b(contact|call|email|interested|demo|quote)\b/i.test(masked.masked);
       const action = draft.proposedIntent === 'lead.capture' && explicitLeadRequest ? await gateway.propose(session.tenantId, session.id, input.clientMessageId) : null;
       const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, answer, tokenVault), grounded, citations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'Please confirm that you want to submit a contact request.', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };

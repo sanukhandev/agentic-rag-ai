@@ -64,6 +64,9 @@ export class AzureFoundryModel implements ChatModel {
   }
 }
 
+export const detectedLanguage = (text: string): string => /[\u0600-\u06ff]/u.test(text) ? 'ar' : 'en';
+export const isPermittedLanguage = (text: string, permittedLanguages: string[]): boolean => permittedLanguages.some((language) => language.toLowerCase().split('-')[0] === detectedLanguage(text));
+
 export const validateCitations = (draft: ModelDraft, evidence: ModelEvidence[]): Citation[] => {
   const allowed = new Map(evidence.map((item) => [item.citation.chunkId, item.citation]));
   return draft.citationIds.map((id) => allowed.get(id)).filter((citation): citation is Citation => Boolean(citation));
