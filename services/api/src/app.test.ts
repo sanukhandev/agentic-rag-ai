@@ -38,6 +38,13 @@ class InjectedIntentModel implements ChatModel {
   }
 }
 
+class RawPiiModel implements ChatModel {
+  async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
+    const evidence = input.evidence[0];
+    return evidence ? { answer: `${evidence.content} Email alice@example.com.`, citationIds: [evidence.citation.chunkId], proposedIntent: null } : { answer: 'No approved evidence supports that answer.', citationIds: [], proposedIntent: null };
+  }
+}
+
 describe('API vertical slice', () => {
   it('refuses production startup with local model, embedding, workflow or worker fallbacks', () => {
     expect(() => createApp({ nodeEnv: 'production', jwtSecret: 'production-jwt-secret', tokenVault: new TokenVault('production-vault-secret') })).toThrow('Production Azure, embedding, workflow, callback and ingestion adapters are required.');
@@ -391,5 +398,23 @@ describe('API vertical slice', () => {
     const retried = await api.post(`/api/v1/admin/ingestion-jobs/${failed.id}/retry`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     expect(retried.body.job).toMatchObject({ id: failed.id, tenantId: tenant.body.tenant.id, status: 'queued', errorCode: null });
     await api.post(`/api/v1/admin/ingestion-jobs/${failed.id}/retry`).set('Authorization', `Bearer ${admin.body.token}`).expect(409);
+  });
+
+  it('persists assistant responses with masked PII and rehydrates only at the API boundary', async () => {
+    const runtime = createApp({ nodeEnv: 'test', model: new RawPiiModel(), jwtSecret: 'pii-response-test-secret' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-pii-response@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'PII Response Tenant', slug: 'pii-response-tenant', adminEmail: 'admin-pii-response@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-pii-response@example.test', password: 'TenantA1Password' }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Contact FAQ', mimeType: 'text/plain', audience: 'public', content: 'Contact support for details.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const reply = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Please email alice@example.com for contact support details.', clientMessageId: 'pii-response-1' }).expect(200);
+    expect(reply.body.answer).toContain('alice@example.com');
+    const stored = await runtime.store.getMessageByClientId(session.body.sessionId, 'pii-response-1');
+    expect(JSON.stringify(stored?.response)).not.toContain('alice@example.com');
+    expect(stored?.response?.answer).toMatch(/\[EMAIL_\d+\]/);
+    const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'ignored duplicate', clientMessageId: 'pii-response-1' }).expect(200);
+    expect(duplicate.body.answer).toContain('alice@example.com');
   });
 });

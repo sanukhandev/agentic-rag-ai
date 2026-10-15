@@ -106,6 +106,26 @@ export const assertKnownTokens = (session: Session, text: string, vault: TokenVa
 
 export const saveTokens = (session: Session, values: MaskResult['tokens'], vault: TokenVault = defaultVault): void => vault.save(session, values);
 
+export const maskPiiForSession = (session: Session, input: string, vault: TokenVault = defaultVault): string => {
+  const result = maskPii(input);
+  if (result.tokens.length === 0) return input;
+  const used = new Set(session.tokenMap.keys());
+  const replacements = new Map<string, string>();
+  const values = result.tokens.map((item) => {
+    const kind = item.token.slice(1, item.token.indexOf('_'));
+    let index = 1;
+    let replacement = `[${kind}_${index}]`;
+    while (used.has(replacement)) { index += 1; replacement = `[${kind}_${index}]`; }
+    used.add(replacement);
+    replacements.set(item.token, replacement);
+    return { token: replacement, value: item.value };
+  });
+  let masked = result.masked;
+  for (const [from, to] of replacements) masked = masked.replaceAll(from, to);
+  vault.save(session, values);
+  return masked;
+};
+
 export const rehydrateForSession = (session: Session, text: string, vault: TokenVault = defaultVault, purpose: RehydrationPurpose = 'assistant_response'): string => {
   let result = text;
   for (const placeholder of session.tokenMap.keys()) {

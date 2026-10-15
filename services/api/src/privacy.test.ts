@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertKnownTokens, maskPii, rehydrateForSession, saveTokens, TokenVault } from './privacy.js';
+import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, saveTokens, TokenVault } from './privacy.js';
 
 describe('privacy boundary', () => {
   it('masks email and phone values before an external boundary and rehydrates only in the same session', () => {
@@ -25,6 +25,17 @@ describe('privacy boundary', () => {
     expect(result.masked).not.toContain('Alice Karim');
     expect(rehydrateForSession(session, result.masked, vault, 'workflow_payload')).not.toContain('Alice Karim');
     expect(rehydrateForSession(session, result.masked, vault, 'assistant_response')).toContain('Alice Karim');
+  });
+
+  it('allocates response tokens without overwriting earlier session values', () => {
+    const session = { id: 'session-output', tenantId: 'tenant', createdAt: new Date().toISOString(), tokenMap: new Map<string, string>() };
+    const vault = new TokenVault('test-vault-secret-2026');
+    const input = maskPii('Please email alice@example.com.');
+    saveTokens(session, input.tokens, vault);
+    const output = maskPiiForSession(session, 'Please contact bob@example.com.', vault);
+    expect(output).toBe('Please contact [EMAIL_2].');
+    expect(rehydrateForSession(session, input.masked, vault)).toContain('alice@example.com');
+    expect(rehydrateForSession(session, output, vault)).toContain('bob@example.com');
   });
 
   it('supports key rotation and expiry without exposing the old value', () => {

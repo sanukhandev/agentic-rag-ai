@@ -33,6 +33,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Two tenants remain isolated during retrieval | `services/api/src/app.test.ts` | pass (memory store) |
 | Tenant admin can approve and revoke a source | `services/api/src/app.test.ts` | pass (memory API) |
 | PII is masked before model/embedding/workflow boundaries | `privacy.test.ts`, `embedding.test.ts`, API model-spy test, PostgresStore session test | pass for local adapters; live provider blocked |
+| Persisted assistant response PII boundary | `privacy.test.ts` collision-safe output-token test and `app.test.ts` raw-model-output API test | pass: response rehydrates only at the API boundary; stored response and assistant content remain masked |
 | Structured name, email and phone masking | `privacy.test.ts` token-vault boundary assertions | pass for supported phrase patterns; general name detection remains a production classifier decision |
 | Approved evidence is cited | API integration test | pass (deterministic model) |
 | Unsupported facts are refused | API integration test | pass |
@@ -84,13 +85,13 @@ This section is updated after verification. No scenario is marked passing from s
 | Tenant source purge control | Angular shows a confirmation-gated purge action only for revoked sources | pass locally; manual browser verification pending |
 | Tenant session retention control | Tenant-admin Angular action requests a past 24-hour cutoff through the audited retention API and refreshes metrics/audit | pass locally; manual browser verification pending |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally after Angular 21 / Next 16 upgrade |
-| Latest workspace test run | `DATABASE_URL=... npm test` | Admin 2 + web 2 + API 45 (including PostgreSQL) + contracts 1 passed |
+| Latest workspace test run | `DATABASE_URL=... npm test` | Admin 2 + Web 3 + API 47 (including PostgreSQL) + Contracts 1 passed |
 | Chat resume/history | `GET /api/v1/chat/sessions/:id` API assertion | pass (masked, tenant-scoped messages) |
 | Durable admin session revocation and expiry | `auth.test.ts` covers logout revocation and expired durable sessions; API logout assertion backed by store session records; PostgreSQL migration `010-auth-sessions.sql` | pass (memory + migration applied locally) |
 | Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |
 | Dependency audit | `npm audit --omit=dev --audit-level=high` | pass: 0 vulnerabilities after Angular 21.2.25, Next 16.4.1, React 19.3.1 and TypeScript 5.9.3 upgrade |
 | Reproducible install dry run | `npm ci --dry-run` | pass locally |
-| Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, Admin 2 + Web 3 + API 45 + Contracts 1, builds, 0 audit vulnerabilities and Python 14 |
+| Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, Admin 2 + Web 3 + API 47 + Contracts 1, builds, 0 audit vulnerabilities and Python 14 |
 | n8n compose security defaults | `npm run verify:compose` / `docker compose config` | pass: digest-pinned image and default `127.0.0.1:5678`; public bind requires explicit overrides |
 
 ## Blockers and risks

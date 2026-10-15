@@ -80,7 +80,7 @@ The system is considered **locally complete** only with automated synthetic fixt
 | RAG-06 | Pass: injected source text cannot authorize a workflow. |
 | RAG-07 | Pass: invalid citation IDs are discarded and the answer fails closed. |
 | RAG-08 | Pass: unsupported language is refused before model invocation. |
-| PII-01 | Pass for local adapters: privacy/embedding/model/action spies contain no raw synthetic PII; live provider delivery remains blocked. |
+| PII-01 | Pass for local adapters: privacy/embedding/model/action spies and persisted chat responses contain no raw synthetic PII; live provider delivery remains blocked. |
 | PII-02 | Pass: vault tokens are session-scoped, expire and cannot be resolved from an unknown session. |
 | PII-03 | Pass: rehydration is purpose-limited to the assistant response path. |
 | PII-04 | Pass locally: source text is sanitized before chunking/embedding and uploaded bytes remain private until worker success. |
@@ -95,7 +95,7 @@ The system is considered **locally complete** only with automated synthetic fixt
 | END-01 | Pass for API vertical slice: `app.test.ts` covers onboarding→source→publish→chat→citation→action; web/admin browser journey remains manual. |
 | END-02 | Pass for API isolation: tenant A/B personas, sources, histories and operations remain separated. |
 | BUILD-01 | Pass: `npm ci --dry-run`, migrations and documented local commands; hosted CI run `38735524333` for `6a92d21` provisioned pgvector, applied ordered migrations and completed successfully. |
-| BUILD-02 | Pass locally: `npm run verify:local` completed with Admin 2 + Web 3 + API 45 (including PostgreSQL) + contracts 1, Python ingestion 14, lint/typecheck/build, and 0 audit vulnerabilities. |
+| BUILD-02 | Pass locally: `npm run verify:local` completed with Admin 2 + Web 3 + API 47 (including PostgreSQL) + contracts 1, Python ingestion 14, lint/typecheck/build, and 0 audit vulnerabilities. |
 | SEC-01 | Pass for local defaults: `npm run verify:compose` confirms digest-pinned n8n and localhost-only `127.0.0.1:5678`; production remains blocked on authenticated HTTPS ingress, identity and operational controls. |
 | EXT-01 | Blocked: live chat smoke was previously observed, but the configured embedding deployment is missing; deterministic embeddings are used locally. |
 | EXT-02 | Blocked: live private n8n credentials/environment are unavailable; signed HTTP adapter and mock tests pass. |

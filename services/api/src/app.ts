@@ -7,10 +7,10 @@ import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedReq
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, rankChunksWithVector } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { DeterministicGroundedModel, hasSufficientEvidence, isPermittedLanguage, validateCitations, type ChatModel, type ModelDraft } from './model.js';
-import { assertKnownTokens, maskPii, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
+import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
-import type { SourceStatus, Store, TenantStatus } from './types.js';
+import type { Session, SourceStatus, Store, TenantStatus } from './types.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null };
 
@@ -122,6 +122,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   if (nodeEnv === 'production' && (!dependencies.model || !dependencies.embedding || !dependencies.workflow || !n8nCallbackSecret || !ingestionWorkerSecret)) throw new Error('Production Azure, embedding, workflow, callback and ingestion adapters are required.');
   if (!Number.isFinite(chatSessionTtlMs) || chatSessionTtlMs <= 0) throw new Error('CHAT_SESSION_TTL_MS must be a positive number.');
   const ensureLiveSession = (createdAt: string): void => { if (sessionExpired(createdAt, chatSessionTtlMs)) throw new HttpError(410, 'SESSION_EXPIRED', 'This chat session has expired.'); };
+  const rehydrateStoredResponse = (session: Session, stored: Record<string, unknown>): Record<string, unknown> => {
+    const answer = stored.answer;
+    return typeof answer === 'string' ? { ...stored, answer: rehydrateForSession(session, answer, tokenVault) } : stored;
+  };
   const workerApi = (req: Request, _res: Response, next: NextFunction): void => {
     if (!ingestionWorkerSecret) { next(new HttpError(503, 'WORKER_UNAVAILABLE', 'Ingestion worker authentication is not configured.')); return; }
     const provided = req.header('x-ingestion-worker-secret') ?? '';
@@ -485,7 +489,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       enforcePublicChatEnabled(req, tenant);
       if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.');
       const durableDuplicate = await store.getMessageByClientId(session.id, input.clientMessageId);
-      if (durableDuplicate?.response) { res.json(durableDuplicate.response); return; }
+      if (durableDuplicate?.response) { res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
       if (durableDuplicate) throw new HttpError(409, 'MESSAGE_IN_PROGRESS', 'A request with this client message ID is already being processed.');
       const cacheKey = `${session.id}:${input.clientMessageId}`;
       const cached = responseCache.get(cacheKey);
@@ -511,11 +515,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const grounded = evidence.length > 0 && hasSufficientEvidence(draft.answer, evidence, citations);
       const safeCitations = grounded ? citations : [];
       const answer = !languageAllowed ? draft.answer : grounded ? draft.answer : `I’m ${persona?.name ?? 'Sales assistant'}. The approved knowledge does not establish an answer to that question, so I won’t guess.`;
+      const maskedAnswer = maskPiiForSession(session, answer, tokenVault);
+      try { assertKnownTokens(session, maskedAnswer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
+      await store.updateSession(session);
       const explicitLeadRequest = /\b(contact|call|email|interested|demo|quote)\b/i.test(masked.masked);
       const action = draft.proposedIntent === 'lead.capture' && explicitLeadRequest ? await gateway.propose(session.tenantId, session.id, input.clientMessageId) : null;
-      const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, answer, tokenVault), grounded, citations: safeCitations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'Please confirm that you want to submit a contact request.', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
-      await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: draft.answer, citations: safeCitations, clientMessageId: null, response: null, createdAt: new Date().toISOString() });
-      await store.updateMessage({ ...userMessage, response });
+      const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, maskedAnswer, tokenVault), grounded, citations: safeCitations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'Please confirm that you want to submit a contact request.', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
+      const persistedResponse = { ...response, answer: maskedAnswer };
+      await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: maskedAnswer, citations: safeCitations, clientMessageId: null, response: null, createdAt: new Date().toISOString() });
+      await store.updateMessage({ ...userMessage, response: persistedResponse });
       responseCache.set(cacheKey, response);
       res.json(response);
     } catch (error) { next(error); }
