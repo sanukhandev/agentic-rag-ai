@@ -108,6 +108,12 @@ describe('API vertical slice', () => {
     await api.post(`/api/v1/chat/actions/${proposalId}/confirm`).send({ sessionId: publicSession.body.sessionId, confirmed: true }).expect(200);
     await api.post(`/api/v1/chat/actions/${proposalId}/confirm`).send({ sessionId: publicSession.body.sessionId, confirmed: true }).expect(200);
     expect(workflow.calls).toHaveLength(1);
+    const tenantARuns = await api.get('/api/v1/admin/workflow-runs').set('Authorization', `Bearer ${adminToken}`).expect(200);
+    expect(tenantARuns.body.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: proposalId, state: 'completed' })]));
+    const tenantAAudit = await api.get('/api/v1/admin/audit').set('Authorization', `Bearer ${adminToken}`).expect(200);
+    expect(tenantAAudit.body.items.some((event: { eventName: string }) => event.eventName === 'workflow.completed')).toBe(true);
+    expect((await api.get('/api/v1/admin/workflow-runs').set('Authorization', `Bearer ${adminBToken}`).expect(200)).body.items).toHaveLength(0);
+    expect((await api.get('/api/v1/admin/audit').set('Authorization', `Bearer ${adminBToken}`).expect(200)).body.items.some((event: { eventName: string }) => event.eventName === 'workflow.completed')).toBe(false);
     const callbackReply = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'Please contact me for a demo.', clientMessageId: 'callback-proposal' }).expect(200);
     const callbackActionId = callbackReply.body.actionProposal.id as string;
     const callbackBody = { actionId: callbackActionId, tenantId: tenantA.body.tenant.id as string, state: 'completed', externalReference: 'n8n-callback-1' };
