@@ -2,6 +2,7 @@ import tempfile
 import unittest
 import zipfile
 import sys
+import requests
 from unittest.mock import Mock, patch
 from pathlib import Path
 
@@ -178,6 +179,8 @@ class IngestionTests(unittest.TestCase):
         source = ingest_text("FAQ", "Email alice@example.com.\n\nPricing is 42 credits.", "text/plain")
         payload = result_payload(source)
         self.assertNotIn("alice@example.com", payload["normalizedContent"])
+        self.assertEqual(payload["chunks"][0]["contentHash"], source.chunks[0].content_hash)
+        self.assertNotIn("content_hash", payload["chunks"][0])
         session = Mock()
         claim_response = Mock()
         result_response = Mock()
@@ -207,6 +210,16 @@ class IngestionTests(unittest.TestCase):
         submit_result("http://localhost:4000", "job-1", "worker-secret", source, session, claim=False)
         self.assertEqual(session.post.call_count, 1)
         self.assertIn("/api/v1/internal/ingestion-jobs/job-1/result", session.post.call_args.args[0])
+
+    def test_worker_preserves_safe_api_error_code(self) -> None:
+        source = ingest_text("FAQ", "Approved content", "text/plain")
+        session = Mock()
+        response = Mock()
+        response.raise_for_status.side_effect = requests.HTTPError("422 Client Error")
+        response.json.return_value = {"error": {"code": "CHUNK_HASH_MISMATCH"}}
+        session.post.return_value = response
+        with self.assertRaisesRegex(requests.HTTPError, "CHUNK_HASH_MISMATCH"):
+            submit_result("http://localhost:4000", "job-1", "worker-secret", source, session, claim=False)
 
     def test_worker_claims_before_extracting_path_or_url_inputs(self) -> None:
         source = ingest_text("FAQ", "Approved content", "text/plain")

@@ -29,5 +29,6 @@ run('compose security defaults', npm, ['run', 'verify:compose']);
 run('tests with PostgreSQL', npm, ['test']);
 run('production builds', npm, ['run', 'build']);
 run('dependency audit', npm, ['audit', '--omit=dev', '--audit-level=high']);
+run('synthetic five-source acceptance', npm, ['run', 'acceptance:local']);
 run('Python ingestion tests', python, ['-m', 'unittest', 'discover', '-s', 'tools/ingestion', '-p', 'test_*.py']);
 console.log('\nLocal verification passed.');

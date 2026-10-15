@@ -92,10 +92,10 @@ The system is considered **locally complete** only with automated synthetic fixt
 | FLOW-04 | Pass: adapter failure becomes `unknown`, never `completed`. |
 | OPS-01 | Pass: forced store outage returns timestamped `503/down` health state. |
 | OPS-02 | Pass: tenant dashboard/telemetry counters, bounded token estimates and optional configured cost estimate are scoped and redacted; manual dashboard verification remains pending. |
-| END-01 | Pass locally: `npm run seed:local` completed the tenant A onboarding→source→publish→grounded/refused chat→citation→confirmed mock action journey; web/admin browser journey remains manual. |
+| END-01 | Pass locally: `npm run acceptance:local` completed real TXT/DOCX/XLSX/text-PDF upload→Python worker→publish plus a deterministic approved HTTPS snapshot and grounded public chat; `npm run seed:local` separately covers citation/refusal/confirmed mock action; web/admin browser journey remains manual. |
 | END-02 | Pass locally: `npm run seed:local` completed against synthetic tenant A/B with different sources/personas and verified cross-tenant refusal; API tests also cover histories and operations. |
 | BUILD-01 | Pass: `npm ci --dry-run`, migrations and documented local commands; `npm run verify:local` provisions/checks the local PostgreSQL-backed path. Hosted GitHub Actions is intentionally not configured. |
-| BUILD-02 | Pass locally: `npm run verify:local` completed with Admin 2 + Web 3 + API 49 (including PostgreSQL) + Contracts 3, Python ingestion 15, lint/typecheck/build, and 0 audit vulnerabilities. |
+| BUILD-02 | Pass locally: `npm run verify:local` completed with Admin 2 + Web 3 + API 49 (including PostgreSQL) + Contracts 3, Python ingestion 16, synthetic five-source acceptance, lint/typecheck/build, and 0 audit vulnerabilities. |
 | SEC-01 | Pass for local defaults: `npm run verify:compose` confirms digest-pinned n8n and localhost-only `127.0.0.1:5678`; production remains blocked on authenticated HTTPS ingress, identity and operational controls. |
 | EXT-01 | Blocked: live chat smoke was previously observed, but the configured embedding deployment is missing; deterministic embeddings are used locally. |
 | EXT-02 | Blocked: live private n8n credentials/environment are unavailable; signed HTTP adapter and mock tests pass. |

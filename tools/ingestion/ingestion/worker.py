@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -12,12 +11,29 @@ from .pipeline import IngestedSource, ingest_file, ingest_url
 from .staging import LocalStaging
 
 
+def raise_for_api_status(response: requests.Response) -> None:
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as error:
+        try:
+            body = response.json()
+            error_body = body.get("error") if isinstance(body, dict) else None
+            code = error_body.get("code") if isinstance(error_body, dict) else None
+            message = error_body.get("message") if isinstance(error_body, dict) else None
+        except (ValueError, TypeError):
+            code = None
+        if isinstance(code, str) and code:
+            detail = f": {message[:200]}" if isinstance(message, str) and message else ""
+            raise requests.HTTPError(f"{error}: {code}{detail}", response=response) from error
+        raise
+
+
 def result_payload(source: IngestedSource) -> dict[str, Any]:
     return {
         "normalizedContent": source.normalized_content,
         "contentHash": source.content_hash,
         "parserVersion": source.parser_version,
-        "chunks": [asdict(chunk) for chunk in source.chunks],
+        "chunks": [{"ordinal": chunk.ordinal, "locator": chunk.locator, "content": chunk.content, "contentHash": chunk.content_hash} for chunk in source.chunks],
     }
 
 
@@ -26,13 +42,13 @@ def claim_job(api_base: str, job_id: str, worker_secret: str, session: requests.
     headers = {"x-ingestion-worker-secret": worker_secret}
     base = api_base.rstrip("/")
     claim = client.post(f"{base}/api/v1/internal/ingestion-jobs/{job_id}/claim", headers=headers, timeout=15)
-    claim.raise_for_status()
+    raise_for_api_status(claim)
 
 
 def fetch_job_input(api_base: str, job_id: str, worker_secret: str, session: requests.Session | None = None) -> tuple[str, str, bytes]:
     client = session or requests.Session()
     response = client.get(f"{api_base.rstrip('/')}/api/v1/internal/ingestion-jobs/{job_id}/input", headers={"x-ingestion-worker-secret": worker_secret}, timeout=30)
-    response.raise_for_status()
+    raise_for_api_status(response)
     body = response.json()
     if not isinstance(body, dict) or not isinstance(body.get("fileName"), str) or not isinstance(body.get("mimeType"), str) or not isinstance(body.get("contentBase64"), str):
         raise ValueError("The ingestion API returned an invalid file input.")
@@ -52,7 +68,7 @@ def submit_result(api_base: str, job_id: str, worker_secret: str, source: Ingest
     if claim:
         claim_job(base, job_id, worker_secret, client)
     result = client.post(f"{base}/api/v1/internal/ingestion-jobs/{job_id}/result", headers=headers, json=result_payload(source), timeout=30)
-    result.raise_for_status()
+    raise_for_api_status(result)
     body = result.json()
     if not isinstance(body, dict):
         raise ValueError("The ingestion API returned an invalid result.")

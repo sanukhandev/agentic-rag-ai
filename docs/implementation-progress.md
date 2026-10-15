@@ -52,7 +52,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Web workflow result status | Next client maps API action states to completed/failed/unknown status, keeps unknown actions retryable, and unit-tests the state mapper | pass locally; manual browser verification pending |
 | Angular admin flow builds | `npm run build` | pass |
 | Frontend unit checks | `apps/admin/src/app/upload-utils.test.ts`, `apps/admin/src/app/persona-utils.test.ts`, `apps/web/app/chat-utils.test.ts` | pass (2 admin + 3 web tests; no browser automation) |
-| Python ingestion tests pass | `tools/ingestion/test_ingestion.py` | pass (15 tests, local venv via `unittest`; pytest is not installed) |
+| Python ingestion tests pass | `tools/ingestion/test_ingestion.py` | pass (16 tests, local venv via `unittest`; pytest is not installed) |
 | PostgreSQL/pgvector persistence smoke | `services/api/src/store-postgres.test.ts` with `DATABASE_URL` | pass (local container) |
 | Ingestion job state and lease persistence | API job assertion and `store-postgres.test.ts` with migration `008-ingestion-jobs.sql` | pass (memory + PostgreSQL) |
 | Authenticated worker result boundary | `app.test.ts` worker flow; hash, ordinal and locator validation | pass (synthetic Python result) |
@@ -76,6 +76,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Redacted chat outcome telemetry | Tenant/global health counters report chat responses, grounded answers, abstentions, action proposals and derived rates without prompts, source text or PII; API and Angular contracts updated | pass locally; durable metrics/alerting remains a production decision |
 | Redacted usage telemetry | Health and Angular admin report bounded input/output token estimates; USD cost is only calculated when both explicit rate settings are configured, otherwise it reports unconfigured | pass locally; provider usage metadata and durable metrics remain production decisions |
 | Synthetic local acceptance runner | `npm run seed:local` exercises tenant A/B setup, persona/channel/source publication, cited and unsupported chat, cross-tenant refusal and duplicate mock workflow confirmation against a running local API | pass locally on 2026-10-15; both tenants grounded/refused as expected and mock workflow completed idempotently |
+| Clean-room five-source acceptance runner | `npm run acceptance:local` starts a disposable API and processes real TXT, DOCX, XLSX and text-PDF uploads through the Python worker, a deterministic approved HTTPS snapshot, publication and grounded XLSX chat | pass locally; five sources published and grounded public chat verified without browser or external network |
 | Tenant ingestion counters | Memory/PostgreSQL dashboard metrics and Angular queued/failed job card are tenant-scoped | pass locally; manual browser verification pending |
 | Platform tenant lifecycle controls | Platform API status transition plus Angular suspend/reactivate/archive actions | pass locally; manual browser verification pending |
 | Platform aggregate dashboard | Angular platform view loads tenant totals and active/suspended/archived cards from the authorized overview API | pass locally; manual browser verification pending |
@@ -99,7 +100,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |
 | Dependency audit | `npm audit --omit=dev --audit-level=high` | pass: 0 vulnerabilities after Angular 21.2.25, Next 16.4.1, React 19.3.1 and TypeScript 5.9.3 upgrade |
 | Reproducible install dry run | `npm ci --dry-run` | pass locally |
-| Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, Admin 2 + Web 3 + API 49 + Contracts 3, builds, 0 audit vulnerabilities and Python 15 |
+| Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, Admin 2 + Web 3 + API 49 + Contracts 3, synthetic five-source acceptance, builds, 0 audit vulnerabilities and Python 16 |
 | n8n compose security defaults | `npm run verify:compose` / `docker compose config` | pass: digest-pinned image and default `127.0.0.1:5678`; public bind requires explicit overrides |
 
 ## Blockers and risks

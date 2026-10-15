@@ -62,6 +62,8 @@ npm run verify:local
 
 To run the synthetic API journey against a locally running development API, use `npm run seed:local`. It bootstraps or finds synthetic tenants A/B, publishes isolated FAQ sources and personas, checks cited and unsupported answers, verifies a cross-tenant refusal, and confirms the mock workflow twice with one completed result. Set `SEED_API_URL` or the `SEED_*` credential variables to override local defaults; never use real credentials.
 
+For the clean-room ingestion/API acceptance journey, run `npm run acceptance:local`. It starts a disposable in-memory API, generates real TXT/DOCX/XLSX/text-PDF fixtures, uploads and processes them through the Python worker, processes an approved HTTPS snapshot with a deterministic HTTP double, publishes all five sources and verifies grounded public chat. The harness stops the API and removes its scratch staging directory when finished.
+
 For public chat channel binding, a tenant administrator saves the exact web origin and enabled state in the **Public chat channel** panel. When enabled, `/api/v1/chat/config` and public session creation require the matching browser `Origin`; disabling the channel rejects public preflight/session requests. Production tenants must configure one.
 
 ## Local PostgreSQL backup/restore rehearsal
