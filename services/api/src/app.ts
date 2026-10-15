@@ -117,11 +117,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const app = express();
   const responseCache = new Map<string, unknown>();
   const rateLimits = new Map<string, { count: number; resetAt: number }>();
+  const telemetry = { requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null as string | null };
 
   app.disable('x-powered-by');
   app.use(express.json({ limit: '300kb' }));
   app.use((req, res, next) => { const origin = req.header('origin'); const allowed = new Set([process.env.WEB_ORIGIN ?? 'http://localhost:3000', process.env.ADMIN_ORIGIN ?? 'http://localhost:4200']); if (origin && allowed.has(origin)) { res.setHeader('access-control-allow-origin', origin); res.setHeader('access-control-allow-headers', 'content-type,authorization,x-request-id'); res.setHeader('access-control-allow-methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS'); res.setHeader('vary', 'Origin'); } if (req.method === 'OPTIONS') { res.status(origin && allowed.has(origin) ? 204 : 403).end(); return; } next(); });
   app.use((req: AuthedRequest, res: Response, next: NextFunction) => { req.requestId = req.header('x-request-id') ?? randomUUID(); res.setHeader('x-request-id', req.requestId); next(); });
+  app.use((_req, res, next) => { const started = Date.now(); res.once('finish', () => { telemetry.requests += 1; telemetry.serverErrors += res.statusCode >= 500 ? 1 : 0; telemetry.totalLatencyMs += Date.now() - started; telemetry.lastRequestAt = new Date().toISOString(); }); next(); });
   app.use((req, res, next) => {
     if (!req.path.startsWith('/api/')) { next(); return; }
     const now = Date.now();
@@ -199,7 +201,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.json({ purged, before });
     } catch (error) { next(error); }
   });
-  app.get('/api/v1/admin/services/health', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (_req, res, _next) => { const checkedAt = new Date().toISOString(); try { await store.countUsers(); res.json({ checkedAt, checks: { api: { status: 'ok' }, store: { status: 'ok' }, model: { status: 'adapter' }, embedding: { status: 'adapter' }, workflow: { status: 'adapter' }, ingestion: { status: 'not_observed' } } }); } catch { res.status(503).json({ checkedAt, checks: { api: { status: 'ok' }, store: { status: 'down' } } }); } });
+  app.get('/api/v1/admin/services/health', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (_req, res, _next) => { const checkedAt = new Date().toISOString(); const observed = { requests: telemetry.requests, serverErrors: telemetry.serverErrors, averageLatencyMs: telemetry.requests ? Math.round(telemetry.totalLatencyMs / telemetry.requests) : 0, lastRequestAt: telemetry.lastRequestAt }; try { await store.countUsers(); res.json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'ok' }, model: { status: 'adapter' }, embedding: { status: 'adapter' }, workflow: { status: 'adapter' }, ingestion: { status: 'not_observed' } } }); } catch { res.status(503).json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'down' } } }); } });
 
   app.put('/api/v1/admin/persona', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
     try { const tenantId = await tenantForRequest(store, req); const input = parse(personaSchema, req.body); const persona = await store.setPersona({ tenantId, ...input }); await store.createPersonaVersion({ ...persona, status: 'published' }); res.json({ persona }); } catch (error) { next(error); }

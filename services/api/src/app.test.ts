@@ -122,6 +122,8 @@ describe('API vertical slice', () => {
     expect(crossTenant.body.grounded).toBe(false);
     const dashboard = await api.get('/api/v1/admin/dashboard/overview').set('Authorization', `Bearer ${adminToken}`).expect(200);
     expect(dashboard.body.metrics.sourceCounts.active).toBe(2);
+    const health = await api.get('/api/v1/admin/services/health').set('Authorization', `Bearer ${adminToken}`).expect(200);
+    expect(health.body.telemetry).toMatchObject({ requests: expect.any(Number), serverErrors: expect.any(Number), averageLatencyMs: expect.any(Number) });
     await api.patch(`/api/v1/admin/tenants/${tenantA.body.tenant.id}/status`).set('Authorization', `Bearer ${platformToken}`).send({ status: 'suspended' }).expect(200);
     await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(423);
     await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${adminToken}`).send({ title: 'Blocked', mimeType: 'text/plain', audience: 'public', content: 'Blocked indexing.' }).expect(423);
