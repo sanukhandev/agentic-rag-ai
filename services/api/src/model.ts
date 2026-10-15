@@ -66,6 +66,14 @@ export class AzureFoundryModel implements ChatModel {
 
 export const detectedLanguage = (text: string): string => /[\u0600-\u06ff]/u.test(text) ? 'ar' : 'en';
 export const isPermittedLanguage = (text: string, permittedLanguages: string[]): boolean => permittedLanguages.some((language) => language.toLowerCase().split('-')[0] === detectedLanguage(text));
+export const hasSufficientEvidence = (answer: string, evidence: ModelEvidence[], citations: Citation[]): boolean => {
+  if (citations.length === 0) return false;
+  const citedContent = evidence.filter((item) => citations.some((citation) => citation.chunkId === item.citation.chunkId)).map((item) => item.content.toLowerCase()).join(' ');
+  const numbers = answer.match(/\b\d+(?:[.,]\d+)?\b/g) ?? [];
+  if (numbers.some((number) => !citedContent.includes(number.toLowerCase()))) return false;
+  const terms = (answer.toLowerCase().match(/[a-z\u00c0-\u024f]{4,}/gu) ?? []).filter((term, index, values) => !['that', 'this', 'with', 'from', 'your', 'approved', 'answer'].includes(term) && values.indexOf(term) === index);
+  return terms.length === 0 || terms.some((term) => citedContent.includes(term));
+};
 
 export const validateCitations = (draft: ModelDraft, evidence: ModelEvidence[]): Citation[] => {
   const allowed = new Map(evidence.map((item) => [item.citation.chunkId, item.citation]));

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AzureFoundryModel, detectedLanguage, isPermittedLanguage, validateCitations } from './model.js';
+import { AzureFoundryModel, detectedLanguage, hasSufficientEvidence, isPermittedLanguage, validateCitations } from './model.js';
 
 describe('Azure Foundry model adapter', () => {
   it('detects and enforces configured language families', () => {
@@ -43,5 +43,12 @@ describe('Azure Foundry model adapter', () => {
   it('drops citation IDs outside the authorized evidence set', () => {
     const citation = { sourceId: 'source', versionId: 'version', chunkId: 'known', title: 'FAQ', locator: 'section 1' };
     expect(validateCitations({ answer: 'answer', citationIds: ['unknown', 'known'], proposedIntent: null }, [{ citation, content: 'answer' }])).toEqual([citation]);
+  });
+
+  it('rejects unsupported numeric claims even when the citation ID is valid', () => {
+    const citation = { sourceId: 'source', versionId: 'version', chunkId: 'known', title: 'FAQ', locator: 'section 1' };
+    const evidence = [{ citation, content: 'The approved price is 42 credits.' }];
+    expect(hasSufficientEvidence('The approved price is 999 credits.', evidence, [citation])).toBe(false);
+    expect(hasSufficientEvidence('The approved price is 42 credits.', evidence, [citation])).toBe(true);
   });
 });

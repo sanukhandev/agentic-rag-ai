@@ -18,6 +18,13 @@ class InvalidCitationModel implements ChatModel {
   async draft(): Promise<ModelDraft> { return { answer: 'An unsupported invented answer.', citationIds: ['00000000-0000-0000-0000-000000000000'], proposedIntent: null }; }
 }
 
+class UnsupportedClaimModel implements ChatModel {
+  async draft(input: { evidence: Array<{ citation: { sourceId: string; versionId: string; chunkId: string; title: string; locator: string }; content: string }> }): Promise<ModelDraft> {
+    const citation = input.evidence[0]?.citation;
+    return citation ? { answer: 'The approved price is 999 credits.', citationIds: [citation.chunkId], proposedIntent: null } : { answer: 'No approved evidence supports that answer.', citationIds: [], proposedIntent: null };
+  }
+}
+
 describe('API vertical slice', () => {
   it('onboards tenants, isolates sources, grounds answers, masks PII, and confirms one workflow', async () => {
     const model = new CapturingModel();
@@ -145,6 +152,21 @@ describe('API vertical slice', () => {
     expect(response.body.grounded).toBe(false);
     expect(response.body.answer).toContain('permitted languages');
     expect(model.prompts).toHaveLength(0);
+  });
+
+  it('refuses an unsupported numeric claim with a valid citation', async () => {
+    const runtime = createApp({ nodeEnv: 'test', model: new UnsupportedClaimModel() });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-claim@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Claim Tenant', slug: 'claim-tenant', adminEmail: 'admin-claim@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-claim@example.test', password: 'TenantA1Password' }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Claim FAQ', mimeType: 'text/plain', audience: 'public', content: 'The approved price is 42 credits.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const response = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is the price?', clientMessageId: 'unsupported-claim-1' }).expect(200);
+    expect(response.body.grounded).toBe(false);
+    expect(response.body.citations).toHaveLength(0);
+    expect(response.body.answer).not.toContain('999');
   });
 
   it('requires revocation before tenant-scoped source purge', async () => {
