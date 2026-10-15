@@ -28,6 +28,19 @@ class LocalStaging:
             pass
         return destination
 
+    def stage_bytes(self, suffix: str, content: bytes) -> Path:
+        if not suffix.startswith(".") or "/" in suffix or "\\" in suffix:
+            raise ValueError("Invalid staged file suffix.")
+        if not content or len(content) > MAX_BYTES:
+            raise ValueError("Input is empty or exceeds the 5 MiB ingestion limit.")
+        destination = self.root / f"{secrets.token_hex(16)}{suffix.lower()}"
+        destination.write_bytes(content)
+        try:
+            destination.chmod(0o600)
+        except OSError:
+            pass
+        return destination
+
     def purge(self, staged: Path) -> None:
         staged = staged.resolve()
         if self.root not in staged.parents:

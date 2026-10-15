@@ -18,7 +18,7 @@ const api = 'http://localhost:4000';
 export class AppComponent {
   private readonly http = inject(HttpClient);
   email = 'admin@example.test'; password = ''; token = ''; role = ''; error = ''; sources: Source[] = []; ingestionJobs: IngestionJob[] = []; tenants: Tenant[] = []; domains: TenantDomain[] = []; members: Member[] = []; health: Health | null = null; metrics: Metrics | null = null; persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: ['en'] };
-  title = ''; content = ''; sourceUrl = ''; audience = 'public';
+  title = ''; content = ''; sourceUrl = ''; audience = 'public'; selectedFile: File | null = null;
   tenantName = ''; tenantSlug = ''; tenantAdminEmail = ''; tenantAdminPassword = '';
   personaVersions: PersonaVersion[] = [];
   domainHostname = '';
@@ -43,6 +43,22 @@ export class AppComponent {
   previewPersona(): void { this.http.post<{ preview: { answer: string; grounded: boolean } }>(`${api}/api/v1/admin/persona/preview`, { ...this.persona, message: this.previewMessage }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.previewAnswer = body.preview.answer; this.previewGrounded = body.preview.grounded; }, error: () => { this.error = 'Persona preview could not be generated.'; } }); }
   publishPersonaVersion(version: PersonaVersion): void { this.http.post(`${api}/api/v1/admin/persona/versions/${version.id}/publish`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.loadPersona(); this.loadPersonaVersions(); }, error: () => { this.error = 'Persona version could not be published.'; } }); }
   savePersona(): void { this.http.put(`${api}/api/v1/admin/persona`, this.persona, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.error = ''; }, error: () => { this.error = 'Persona could not be saved.'; } }); }
+  onFileSelected(event: Event): void { this.selectedFile = (event.target as HTMLInputElement).files?.[0] ?? null; }
+  uploadFile(): void {
+    const file = this.selectedFile;
+    if (!file) { this.error = 'Choose a TXT, PDF, DOCX or XLSX file first.'; return; }
+    const extension = file.name.toLowerCase().split('.').pop() ?? '';
+    const mimeType = ({ txt: 'text/plain', md: 'text/markdown', pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } as Record<string, string>)[extension];
+    if (!mimeType) { this.error = 'Unsupported file type.'; return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const encoded = typeof reader.result === 'string' ? reader.result.split(',')[1] : undefined;
+      if (!encoded) { this.error = 'The file could not be read.'; return; }
+      this.http.post(`${api}/api/v1/admin/sources/upload`, { title: this.title || file.name, fileName: file.name, mimeType, audience: this.audience, contentBase64: encoded }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.title = ''; this.selectedFile = null; this.loadJobs(); }, error: () => { this.error = 'File could not be queued for ingestion.'; } });
+    };
+    reader.onerror = () => { this.error = 'The file could not be read.'; };
+    reader.readAsDataURL(file);
+  }
   stage(): void { this.http.post(`${api}/api/v1/admin/sources`, { title: this.title, mimeType: 'text/plain', audience: this.audience, content: this.content }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.title = ''; this.content = ''; this.loadSources(); this.loadJobs(); }, error: () => { this.error = 'Source could not be staged.'; } }); }
   queueUrl(): void { this.http.post(`${api}/api/v1/admin/ingestion-jobs`, { title: this.title, mimeType: 'text/html', sourceUrl: this.sourceUrl, audience: this.audience }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.title = ''; this.sourceUrl = ''; this.loadJobs(); }, error: () => { this.error = 'URL ingestion could not be queued.'; } }); }
   reindex(source: Source): void { this.http.post(`${api}/api/v1/admin/sources/${source.id}/reindex`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.loadSources(); this.loadJobs(); }, error: () => { this.error = 'Source could not be reindexed.'; } }); }

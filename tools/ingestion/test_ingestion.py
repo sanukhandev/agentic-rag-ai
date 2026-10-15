@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ingestion.pipeline import chunk_text, extract_file, fetch_authorized_https, ingest_file, ingest_text, ingest_url, sanitize
 from ingestion.staging import LocalStaging
-from ingestion.worker import result_payload, submit_result
+from ingestion.worker import fetch_job_input, result_payload, submit_result
 
 
 class IngestionTests(unittest.TestCase):
@@ -46,6 +46,9 @@ class IngestionTests(unittest.TestCase):
             self.assertEqual(staged.read_text(encoding="utf-8"), "Private source")
             staging.purge(staged)
             self.assertFalse(staged.exists())
+            staged_bytes = staging.stage_bytes(".txt", b"private bytes")
+            self.assertEqual(staged_bytes.read_bytes(), b"private bytes")
+            staging.purge(staged_bytes)
 
     def test_legacy_office_formats_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -141,6 +144,25 @@ class IngestionTests(unittest.TestCase):
         self.assertEqual(session.post.call_count, 2)
         self.assertEqual(session.post.call_args_list[0].args[0], "http://localhost:4000/api/v1/internal/ingestion-jobs/job-1/claim")
         self.assertEqual(session.post.call_args_list[1].kwargs["json"]["contentHash"], source.content_hash)
+
+    def test_worker_fetches_api_file_input_after_claim(self) -> None:
+        session = Mock()
+        response = Mock()
+        response.json.return_value = {"fileName": "job-1.txt", "mimeType": "text/plain", "contentBase64": "RkFRIGRhdGE="}
+        session.get.return_value = response
+        file_name, mime_type, content = fetch_job_input("http://localhost:4000/", "job-1", "worker-secret", session)
+        self.assertEqual((file_name, mime_type, content), ("job-1.txt", "text/plain", b"FAQ data"))
+        self.assertEqual(session.get.call_args.args[0], "http://localhost:4000/api/v1/internal/ingestion-jobs/job-1/input")
+
+    def test_worker_submits_without_reclaiming_an_already_claimed_upload(self) -> None:
+        source = ingest_text("FAQ", "Approved content", "text/plain")
+        session = Mock()
+        response = Mock()
+        response.json.return_value = {"job": {"status": "completed"}}
+        session.post.return_value = response
+        submit_result("http://localhost:4000", "job-1", "worker-secret", source, session, claim=False)
+        self.assertEqual(session.post.call_count, 1)
+        self.assertIn("/api/v1/internal/ingestion-jobs/job-1/result", session.post.call_args.args[0])
 
 
 if __name__ == "__main__":

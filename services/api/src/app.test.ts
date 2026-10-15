@@ -1,3 +1,6 @@
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
@@ -259,5 +262,29 @@ describe('API vertical slice', () => {
     const jobs = await api.get('/api/v1/admin/ingestion-jobs').set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     expect(jobs.body.items.length).toBeGreaterThanOrEqual(1);
     expect(jobs.body.items[0]).toMatchObject({ tenantId: tenant.body.tenant.id, status: 'completed' });
+  });
+
+  it('queues a bounded private file upload for the Python worker and purges it after success', async () => {
+    const stagingRoot = await mkdtemp(join(tmpdir(), 'agentic-upload-'));
+    try {
+      const api = request(createApp({ nodeEnv: 'test', ingestionWorkerSecret: 'worker-secret', ingestionStagingRoot: stagingRoot }).app);
+      const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-upload@example.test', password: 'Platform1Password' }).expect(201);
+      const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Upload Tenant', slug: 'upload-tenant', adminEmail: 'admin-upload@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+      const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-upload@example.test', password: 'TenantA1Password' }).expect(200);
+      const content = 'Uploaded FAQ: support is available by email.';
+      const queued = await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Uploaded FAQ', fileName: 'faq.txt', mimeType: 'text/plain', audience: 'public', contentBase64: Buffer.from(content).toString('base64') }).expect(202);
+      expect(queued.body.job).toMatchObject({ tenantId: tenant.body.tenant.id, status: 'queued', mimeType: 'text/plain' });
+      expect(await readdir(stagingRoot)).toHaveLength(1);
+      await api.get(`/api/v1/internal/ingestion-jobs/${queued.body.job.id}/input`).set('x-ingestion-worker-secret', 'worker-secret').expect(409);
+      await api.post(`/api/v1/internal/ingestion-jobs/${queued.body.job.id}/claim`).set('x-ingestion-worker-secret', 'worker-secret').expect(200);
+      const input = await api.get(`/api/v1/internal/ingestion-jobs/${queued.body.job.id}/input`).set('x-ingestion-worker-secret', 'worker-secret').expect(200);
+      expect(Buffer.from(input.body.contentBase64, 'base64').toString()).toBe(content);
+      const result = await api.post(`/api/v1/internal/ingestion-jobs/${queued.body.job.id}/result`).set('x-ingestion-worker-secret', 'worker-secret').send({ normalizedContent: content, contentHash: contentHash(content), parserVersion: 'test-parser', chunks: [{ ordinal: 0, locator: 'section 1', content, contentHash: contentHash(content) }] }).expect(201);
+      expect(result.body.source).toMatchObject({ tenantId: tenant.body.tenant.id, title: 'Uploaded FAQ', status: 'awaiting_review' });
+      expect(await readdir(stagingRoot)).toHaveLength(0);
+      await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Bad extension', fileName: 'faq.pdf', mimeType: 'text/plain', audience: 'public', contentBase64: Buffer.from(content).toString('base64') }).expect(422);
+    } finally {
+      await rm(stagingRoot, { recursive: true, force: true });
+    }
   });
 });

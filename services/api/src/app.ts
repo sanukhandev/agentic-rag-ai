@@ -1,5 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { join } from 'node:path';
 import { z } from 'zod';
 import { ActionGateway, MockWorkflowAdapter, verifyN8nPayload, type WorkflowAdapter } from './actions.js';
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
@@ -8,6 +9,7 @@ import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedd
 import { DeterministicGroundedModel, hasSufficientEvidence, isPermittedLanguage, validateCitations, type ChatModel, type ModelDraft } from './model.js';
 import { assertKnownTokens, maskPii, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
 import { MemoryStore, contentHash } from './store-memory.js';
+import { IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import type { SourceStatus, Store, TenantStatus } from './types.js';
 
 const passwordSchema = z.string().min(8).max(128).regex(/[A-Z]/, 'Password must contain an uppercase letter.').regex(/\d/, 'Password must contain a number.');
@@ -18,6 +20,7 @@ const safePersonaText = (max: number) => z.string().trim().min(1).max(max).refin
 const personaSchema = z.object({ name: safePersonaText(80), greeting: safePersonaText(500), personality: safePersonaText(500), tone: safePersonaText(200), speakingStyle: safePersonaText(200), permittedLanguages: z.array(z.string().min(2).max(12)).min(1).max(10) });
 const personaPreviewSchema = personaSchema.extend({ message: z.string().trim().min(1).max(4000) });
 const sourceSchema = z.object({ title: z.string().trim().min(1).max(200), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'text/html', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']), sourceUrl: z.string().url().optional(), audience: z.enum(['public', 'internal']).default('public'), content: z.string().trim().min(1).max(200_000) });
+const uploadSchema = z.object({ title: z.string().trim().min(1).max(200), fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.enum(['text/plain', 'text/markdown', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']), audience: z.enum(['public', 'internal']).default('public'), contentBase64: z.string().min(1).max(7_000_000) });
 const ingestionRequestSchema = sourceSchema.omit({ content: true });
 const ingestionResultSchema = z.object({
   normalizedContent: z.string().min(1).max(200_000),
@@ -84,6 +87,7 @@ export interface AppDependencies {
   embedding?: EmbeddingProvider;
   n8nCallbackSecret?: string;
   ingestionWorkerSecret?: string;
+  ingestionStagingRoot?: string;
   chatSessionTtlMs?: number;
   rateLimitMax?: number;
   rateLimitWindowMs?: number;
@@ -101,6 +105,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const embedding = dependencies.embedding ?? new DeterministicEmbeddingProvider();
   const n8nCallbackSecret = dependencies.n8nCallbackSecret ?? process.env.N8N_WEBHOOK_SECRET ?? '';
   const ingestionWorkerSecret = dependencies.ingestionWorkerSecret ?? process.env.INGESTION_WORKER_SECRET ?? '';
+  const ingestionStaging = new IngestionStaging(dependencies.ingestionStagingRoot ?? process.env.INGESTION_STAGING_ROOT ?? join(process.cwd(), 'data', 'ingestion-staging'));
   const chatSessionTtlMs = dependencies.chatSessionTtlMs ?? Number(process.env.CHAT_SESSION_TTL_MS ?? 24 * 60 * 60 * 1000);
   if (!Number.isFinite(chatSessionTtlMs) || chatSessionTtlMs <= 0) throw new Error('CHAT_SESSION_TTL_MS must be a positive number.');
   const ensureLiveSession = (createdAt: string): void => { if (sessionExpired(createdAt, chatSessionTtlMs)) throw new HttpError(410, 'SESSION_EXPIRED', 'This chat session has expired.'); };
@@ -120,7 +125,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const telemetry = { requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null as string | null };
 
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '300kb' }));
+  app.use(express.json({ limit: '8mb' }));
   app.use((req, res, next) => { const origin = req.header('origin'); const allowed = new Set([process.env.WEB_ORIGIN ?? 'http://localhost:3000', process.env.ADMIN_ORIGIN ?? 'http://localhost:4200']); if (origin && allowed.has(origin)) { res.setHeader('access-control-allow-origin', origin); res.setHeader('access-control-allow-headers', 'content-type,authorization,x-request-id'); res.setHeader('access-control-allow-methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS'); res.setHeader('vary', 'Origin'); } if (req.method === 'OPTIONS') { res.status(origin && allowed.has(origin) ? 204 : 403).end(); return; } next(); });
   app.use((req: AuthedRequest, res: Response, next: NextFunction) => { req.requestId = req.header('x-request-id') ?? randomUUID(); res.setHeader('x-request-id', req.requestId); next(); });
   app.use((_req, res, next) => { const started = Date.now(); res.once('finish', () => { telemetry.requests += 1; telemetry.serverErrors += res.statusCode >= 500 ? 1 : 0; telemetry.totalLatencyMs += Date.now() - started; telemetry.lastRequestAt = new Date().toISOString(); }); next(); });
@@ -282,6 +287,28 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
     } catch (error) { next(error); }
   });
+  app.post('/api/v1/admin/sources/upload', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      await activeTenant(store, tenantId);
+      const input = parse(uploadSchema, req.body);
+      const extension = ingestionStaging.extensionFor(input.mimeType);
+      if (!extension || !input.fileName.toLowerCase().endsWith(extension)) throw new HttpError(422, 'FILE_TYPE_MISMATCH', 'The file extension does not match the selected type.');
+      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(input.contentBase64)) throw new HttpError(422, 'INVALID_FILE_ENCODING', 'The file content must be valid base64.');
+      const content = Buffer.from(input.contentBase64, 'base64');
+      if (content.length === 0 || content.length > MAX_INGESTION_FILE_BYTES || content.toString('base64').replace(/=+$/, '') !== input.contentBase64.replace(/=+$/, '')) throw new HttpError(422, 'INVALID_FILE_CONTENT', 'The file is empty, malformed or exceeds the 5 MiB limit.');
+      const jobId = randomUUID();
+      try {
+        await ingestionStaging.write(jobId, input.mimeType, content);
+        const job = await store.createIngestionJob({ id: jobId, tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: null, audience: input.audience ?? 'public' });
+        await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'ingestion.file_queued', metadata: { jobId, mimeType: input.mimeType, bytes: content.length }, createdAt: new Date().toISOString() });
+        res.status(202).json({ job });
+      } catch (error) {
+        await ingestionStaging.purge(jobId, input.mimeType);
+        throw error;
+      }
+    } catch (error) { next(error); }
+  });
   app.get('/api/v1/admin/sources', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listSources(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/sources/:id/versions', protectedApi, async (req, res, next) => {
     try {
@@ -344,6 +371,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.json({ job: claimed });
     } catch (error) { next(error); }
   });
+  app.get('/api/v1/internal/ingestion-jobs/:id/input', workerApi, async (req, res, next) => {
+    try {
+      const job = await store.getIngestionJob(routeParam(req, 'id'));
+      if (!job) throw new HttpError(404, 'JOB_NOT_FOUND', 'Ingestion job not found.');
+      if (job.status !== 'processing' || !job.leaseExpiresAt || Date.parse(job.leaseExpiresAt) <= Date.now()) throw new HttpError(409, 'INGESTION_NOT_CLAIMED', 'The ingestion job is not actively leased.');
+      const content = await ingestionStaging.read(job.id, job.mimeType);
+      if (!content) throw new HttpError(404, 'INGESTION_INPUT_NOT_FOUND', 'No private file input is attached to this job.');
+      const extension = ingestionStaging.extensionFor(job.mimeType);
+      res.json({ fileName: `${job.id}${extension ?? ''}`, mimeType: job.mimeType, contentBase64: content.toString('base64') });
+    } catch (error) { next(error); }
+  });
   app.post('/api/v1/internal/ingestion-jobs/:id/result', workerApi, async (req, res, next) => {
     try {
       const job = await store.getIngestionJob(routeParam(req, 'id'));
@@ -359,6 +397,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const existing = await store.findSourceByHash(job.tenantId, input.contentHash);
       if (existing) {
         const completed = await store.updateIngestionJob({ ...job, sourceId: existing.id, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        await ingestionStaging.purge(job.id, job.mimeType);
         res.status(200).json({ job: completed, source: existing, idempotent: true });
         return;
       }
@@ -368,6 +407,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const embeddedChunks = await buildIngestionChunksWithEmbeddings({ id: sourceId, tenantId: job.tenantId, versionId }, safeChunks, embedding);
         const source = await store.createSource({ id: sourceId, tenantId: job.tenantId, title: job.title, mimeType: job.mimeType, sourceUrl: job.sourceUrl, audience: job.audience, status: 'awaiting_review', versionId, contentHash: input.contentHash, chunks: embeddedChunks });
         const completed = await store.updateIngestionJob({ ...job, sourceId: source.id, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        await ingestionStaging.purge(job.id, job.mimeType);
         await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'source.ingested', metadata: { sourceId, jobId: job.id, parserVersion: input.parserVersion, chunks: embeddedChunks.length }, createdAt: new Date().toISOString() });
         res.status(201).json({ job: completed, source, ingestion: { status: 'awaiting_review', chunks: embeddedChunks.length } });
       } catch (error) {
