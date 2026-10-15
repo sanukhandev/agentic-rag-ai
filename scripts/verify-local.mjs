@@ -31,6 +31,7 @@ run('repository secret audit', npm, ['run', 'verify:secrets']);
 run('tests with PostgreSQL', npm, ['test']);
 run('production builds', npm, ['run', 'build']);
 run('dependency audit', npm, ['audit', '--omit=dev', '--audit-level=high']);
+run('synthetic tenant A/B acceptance', npm, ['run', 'acceptance:seed']);
 run('synthetic five-source acceptance', npm, ['run', 'acceptance:local']);
 run('Python ingestion tests', python, ['-m', 'unittest', 'discover', '-s', 'tools/ingestion', '-p', 'test_*.py']);
 console.log('\nLocal verification passed.');

@@ -68,7 +68,7 @@ npm run dev:web
 npm run dev:admin
 ```
 
-With the API running, `npm run seed:local` creates synthetic tenant A/B data and asserts the local grounded-chat, refusal, isolation and mock-workflow journey.
+`npm run acceptance:seed` starts a disposable local API, creates synthetic tenant A/B data and asserts the local grounded-chat, refusal, isolation and idempotent mock-workflow journey. With an API already running, `npm run seed:local` runs the same checks against `SEED_API_URL` (default `http://127.0.0.1:4000`).
 
 `npm run acceptance:local` starts a disposable local API and runs the clean-room ingestion journey: real TXT, DOCX, XLSX and text-PDF uploads through Node staging and the Python worker, a deterministic approved HTTPS snapshot, publication of all five sources and a grounded public-chat query. It uses no browser automation or external network calls.
 

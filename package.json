@@ -13,6 +13,7 @@
     "verify:secrets:test": "node --test scripts/verify-secrets.test.mjs",
     "verify:local": "node scripts/verify-local.mjs",
     "acceptance:local": "node scripts/acceptance-local.mjs",
+    "acceptance:seed": "node scripts/seed-acceptance-local.mjs",
     "seed:local": "node scripts/seed-local.mjs",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
