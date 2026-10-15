@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import Mock, patch
 from pathlib import Path
 
@@ -87,7 +88,7 @@ class IngestionTests(unittest.TestCase):
     def test_pdf_locators_and_ocr_only_rejection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "faq.pdf"
-            path.write_bytes(b"synthetic")
+            path.write_bytes(b"%PDF-1.7 synthetic")
             page = Mock()
             page.extract_text.return_value = "Pricing is 100 credits."
             with patch("pypdf.PdfReader", return_value=Mock(pages=[page])):
@@ -99,6 +100,19 @@ class IngestionTests(unittest.TestCase):
             with patch("pypdf.PdfReader", return_value=Mock(pages=[empty_page])):
                 with self.assertRaisesRegex(ValueError, "OCR-only"):
                     extract_file(path)
+
+    def test_office_container_signatures_and_macros_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fake_docx = Path(directory) / "fake.docx"
+            fake_docx.write_bytes(b"not a zip")
+            with self.assertRaisesRegex(ValueError, "signature"):
+                extract_file(fake_docx)
+
+            macro_docx = Path(directory) / "macro.docx"
+            with zipfile.ZipFile(macro_docx, "w") as archive:
+                archive.writestr("word/vbaProject.bin", b"macro")
+            with self.assertRaisesRegex(ValueError, "Macro"):
+                extract_file(macro_docx)
 
     def test_website_ingestion_blocks_private_dns_and_redirects(self) -> None:
         with patch("ingestion.pipeline.socket.getaddrinfo", return_value=[(None, None, None, None, ("127.0.0.1", 443))]), patch("requests.get") as request:

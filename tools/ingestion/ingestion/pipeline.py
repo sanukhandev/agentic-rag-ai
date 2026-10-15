@@ -6,6 +6,7 @@ import ipaddress
 import json
 import re
 import socket
+import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -79,6 +80,22 @@ def _safe_path(path: Path) -> Path:
     return resolved
 
 
+def _validate_file_container(path: Path) -> None:
+    suffix = path.suffix.lower()
+    with path.open("rb") as handle:
+        header = handle.read(5)
+    if suffix == ".pdf" and header != b"%PDF-":
+        raise ValueError("File signature does not match PDF.")
+    if suffix not in {".docx", ".xlsx"}:
+        return
+    if not zipfile.is_zipfile(path):
+        raise ValueError("File signature does not match Office Open XML.")
+    with zipfile.ZipFile(path) as archive:
+        names = {name.lower() for name in archive.namelist()}
+        if any(name.endswith("vbaproject.bin") for name in names):
+            raise ValueError("Macro-enabled Office files are unsupported.")
+
+
 def _public_addresses(hostname: str, port: int) -> set[ipaddress.IPv4Address | ipaddress.IPv6Address]:
     try:
         addresses = {ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)}
@@ -103,6 +120,7 @@ def _response_peer(response: object) -> ipaddress.IPv4Address | ipaddress.IPv6Ad
 
 def extract_file(path: Path) -> tuple[str, str]:
     path = _safe_path(path)
+    _validate_file_container(path)
     suffix = path.suffix.lower()
     if suffix in {".txt", ".md"}:
         return path.read_text(encoding="utf-8"), "text/markdown" if suffix == ".md" else "text/plain"

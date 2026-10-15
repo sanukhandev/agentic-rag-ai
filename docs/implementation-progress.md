@@ -49,16 +49,16 @@ This section is updated after verification. No scenario is marked passing from s
 | Web chat session continuity | Next client restores masked assistant history from the tenant-scoped session API, persists the session key, and provides reset/retry controls; history mapper unit-tested | pass locally; manual browser verification pending |
 | Angular admin flow builds | `npm run build` | pass |
 | Frontend unit checks | `apps/admin/src/app/upload-utils.test.ts`, `apps/admin/src/app/persona-utils.test.ts`, `apps/web/app/chat-utils.test.ts` | pass (2 admin + 2 web tests; no browser automation) |
-| Python ingestion tests pass | `tools/ingestion/test_ingestion.py` | pass (13 tests, local venv via `unittest`; pytest is not installed) |
+| Python ingestion tests pass | `tools/ingestion/test_ingestion.py` | pass (14 tests, local venv via `unittest`; pytest is not installed) |
 | PostgreSQL/pgvector persistence smoke | `services/api/src/store-postgres.test.ts` with `DATABASE_URL` | pass (local container) |
 | Ingestion job state and lease persistence | API job assertion and `store-postgres.test.ts` with migration `008-ingestion-jobs.sql` | pass (memory + PostgreSQL) |
 | Authenticated worker result boundary | `app.test.ts` worker flow; hash, ordinal and locator validation | pass (synthetic Python result) |
 | Python file-to-API worker client | `tools/ingestion/test_ingestion.py` worker submission test | pass (mock transport) |
 | Tenant-admin binary file upload bridge | API upload test, `IngestionStaging`, Angular upload panel, Python worker API-input test | pass locally; manual browser/worker run pending |
 | Failed ingestion retry | Tenant-scoped audited `failed` → `queued` API transition and Angular retry action | pass locally |
-| Private file staging | Node `ingestion-staging.test.ts`, Python `tools/ingestion/ingestion/staging.py` unittest copy/purge assertion, worker `--staging-root` | pass locally; production object storage/malware scanning remains open |
+| Private file staging | Node `ingestion-staging.test.ts`, API upload signature/size checks, Python `tools/ingestion/ingestion/staging.py` unittest copy/purge assertion, worker `--staging-root` | pass locally; production object storage/malware scanning remains open |
 | Python approved HTTPS-to-API worker client | `tools/ingestion/test_ingestion.py` URL snapshot test; CLI supports `--url`, `--title` and repeated `--allowed-host` | pass (mock transport) |
-| Unsafe ingestion inputs | Python tests reject `.doc`/`.xls`, private DNS targets, redirects and DNS-rebinding address changes | pass locally |
+| Unsafe ingestion inputs | Node/Python tests reject mismatched file signatures, macro-enabled Office containers, `.doc`/`.xls`, private DNS targets, redirects and DNS-rebinding address changes | pass locally |
 | SQL-level vector retrieval filters | `store-postgres.test.ts` with pgvector query | pass (local vector dimension) |
 | Source reindex lifecycle | API and `store-postgres.test.ts` version replacement assertions; failure test verifies the prior active version remains active | pass locally (new version returns to review and failed reindex preserves active version) |
 | Source version history | API `GET /api/v1/admin/sources/:id/versions`, memory test and PostgreSQL integration assertion | pass locally |

@@ -9,7 +9,7 @@ import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedd
 import { DeterministicGroundedModel, hasSufficientEvidence, isPermittedLanguage, validateCitations, type ChatModel, type ModelDraft } from './model.js';
 import { assertKnownTokens, maskPii, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
 import { MemoryStore, contentHash } from './store-memory.js';
-import { IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
+import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import type { SourceStatus, Store, TenantStatus } from './types.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null };
@@ -325,6 +325,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(input.contentBase64)) throw new HttpError(422, 'INVALID_FILE_ENCODING', 'The file content must be valid base64.');
       const content = Buffer.from(input.contentBase64, 'base64');
       if (content.length === 0 || content.length > MAX_INGESTION_FILE_BYTES || content.toString('base64').replace(/=+$/, '') !== input.contentBase64.replace(/=+$/, '')) throw new HttpError(422, 'INVALID_FILE_CONTENT', 'The file is empty, malformed or exceeds the 5 MiB limit.');
+      if (!hasValidFileSignature(input.mimeType, content)) throw new HttpError(422, 'INVALID_FILE_SIGNATURE', 'The file signature does not match its declared type.');
       const jobId = randomUUID();
       try {
         await ingestionStaging.write(jobId, input.mimeType, content);

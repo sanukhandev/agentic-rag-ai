@@ -68,7 +68,7 @@ The system is considered **locally complete** only with automated synthetic fixt
 | SRC-04 | Pass: text PDF page locators and OCR-only rejection in `test_ingestion.py`. |
 | SRC-05 | Pass: allowlisted HTTPS snapshot and source URL provenance in `test_ingestion.py`; API domain allowlist covered in `app.test.ts`. |
 | SRC-06 | Pass locally: private DNS, redirects and DNS-rebinding address changes are rejected by Python tests. |
-| SRC-07 | Pass locally: legacy `.doc`/`.xls` and OCR-only PDF inputs fail visibly; encrypted-parser behavior remains a production parser-policy decision. |
+| SRC-07 | Pass locally: mismatched signatures, macro-enabled Office containers, legacy `.doc`/`.xls` and OCR-only PDF inputs fail visibly; encrypted-parser behavior remains a production parser-policy decision. |
 | SRC-08 | Pass: API duplicate content is idempotent; action proposal races recover from PostgreSQL unique conflicts. |
 | SRC-09 | Pass: failed reindex test proves the prior active source remains active. |
 | SRC-10 | Pass: revoke immediately removes a source from retrieval; purge requires prior revocation. |
@@ -95,7 +95,7 @@ The system is considered **locally complete** only with automated synthetic fixt
 | END-01 | Pass for API vertical slice: `app.test.ts` covers onboarding→source→publish→chat→citation→action; web/admin browser journey remains manual. |
 | END-02 | Pass for API isolation: tenant A/B personas, sources, histories and operations remain separated. |
 | BUILD-01 | Pass: `npm ci --dry-run`, migrations and documented local commands; hosted CI run `38731191121` for `6ea5d04` provisioned pgvector, applied ordered migrations and completed successfully. |
-| BUILD-02 | Pass locally: `DATABASE_URL=... npm test` is Admin 2 + web 2 + API 43 (including PostgreSQL) + contracts 1, Python ingestion is 13 passed in the pinned venv, and lint/typecheck/build pass. |
+| BUILD-02 | Pass locally: `DATABASE_URL=... npm test` is Admin 2 + web 2 + API 43 (including PostgreSQL) + contracts 1, Python ingestion is 14 passed in the pinned venv, and lint/typecheck/build pass. |
 | SEC-01 | Partial/blocked for production: secret guard, audit and private DB compose checks pass, but the user-requested root n8n compose remains public HTTP development configuration. |
 | EXT-01 | Blocked: live chat smoke was previously observed, but the configured embedding deployment is missing; deterministic embeddings are used locally. |
 | EXT-02 | Blocked: live private n8n credentials/environment are unavailable; signed HTTP adapter and mock tests pass. |

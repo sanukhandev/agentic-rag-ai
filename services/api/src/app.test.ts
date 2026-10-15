@@ -335,6 +335,7 @@ describe('API vertical slice', () => {
       expect(result.body.source).toMatchObject({ tenantId: tenant.body.tenant.id, title: 'Uploaded FAQ', status: 'awaiting_review' });
       expect(await readdir(stagingRoot)).toHaveLength(0);
       await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Bad extension', fileName: 'faq.pdf', mimeType: 'text/plain', audience: 'public', contentBase64: Buffer.from(content).toString('base64') }).expect(422);
+      await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Bad signature', fileName: 'faq.pdf', mimeType: 'application/pdf', audience: 'public', contentBase64: Buffer.from(content).toString('base64') }).expect(422);
       await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Binary bypass', mimeType: 'application/pdf', audience: 'public', content: content }).expect(422);
     } finally {
       await rm(stagingRoot, { recursive: true, force: true });

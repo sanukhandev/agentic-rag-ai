@@ -11,6 +11,15 @@ const extensions: Record<string, string> = {
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
 };
 
+const zipSignature = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+
+export const hasValidFileSignature = (mimeType: string, content: Buffer): boolean => {
+  if (mimeType === 'text/plain' || mimeType === 'text/markdown') return !content.includes(0);
+  if (mimeType === 'application/pdf') return content.subarray(0, 5).toString('ascii') === '%PDF-';
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return content.subarray(0, 4).equals(zipSignature);
+  return false;
+};
+
 const safeJobId = (jobId: string): void => {
   if (!/^[0-9a-f-]{36}$/i.test(jobId)) throw new Error('Invalid ingestion job ID.');
 };
@@ -25,6 +34,7 @@ export class IngestionStaging {
     safeJobId(jobId);
     if (!extension) throw new Error('Unsupported ingestion file type.');
     if (content.length > MAX_INGESTION_FILE_BYTES) throw new Error('Input exceeds the 5 MiB ingestion limit.');
+    if (!hasValidFileSignature(mimeType, content)) throw new Error('Input file signature does not match its declared type.');
     await mkdir(this.root, { recursive: true, mode: 0o700 });
     await chmod(this.root, 0o700);
     const target = join(this.root, `${jobId}${extension}`);
