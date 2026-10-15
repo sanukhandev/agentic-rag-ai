@@ -160,5 +160,10 @@ def ingest_file(path: Path) -> IngestedSource:
     return ingest_text(path.stem, text, mime_type)
 
 
+def ingest_url(title: str, url: str, allowed_hosts: set[str]) -> IngestedSource:
+    text, mime_type = fetch_authorized_https(url, allowed_hosts)
+    return ingest_text(title, text, mime_type, url)
+
+
 def to_json(source: IngestedSource) -> str:
     return json.dumps(asdict(source), indent=2, sort_keys=True)

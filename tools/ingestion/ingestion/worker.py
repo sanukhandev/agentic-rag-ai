@@ -7,7 +7,7 @@ from typing import Any
 
 import requests
 
-from .pipeline import IngestedSource, ingest_file
+from .pipeline import IngestedSource, ingest_file, ingest_url
 
 
 def result_payload(source: IngestedSource) -> dict[str, Any]:
@@ -35,13 +35,22 @@ def submit_result(api_base: str, job_id: str, worker_secret: str, source: Ingest
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run safe source extraction and submit one ingestion job result.")
-    parser.add_argument("path", type=Path)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--path", type=Path)
+    source.add_argument("--url")
+    parser.add_argument("--title")
+    parser.add_argument("--allowed-host", action="append", default=[])
     parser.add_argument("--api-base", required=True)
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--worker-secret", required=True)
     args = parser.parse_args()
-    source = ingest_file(args.path)
-    submit_result(args.api_base, args.job_id, args.worker_secret, source)
+    if args.url:
+        if not args.title or not args.allowed_host:
+            parser.error("--url requires --title and at least one --allowed-host")
+        ingested = ingest_url(args.title, args.url, set(args.allowed_host))
+    else:
+        ingested = ingest_file(args.path)
+    submit_result(args.api_base, args.job_id, args.worker_secret, ingested)
 
 
 if __name__ == "__main__":

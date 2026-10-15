@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import Mock, patch
 from pathlib import Path
 
-from ingestion.pipeline import chunk_text, extract_file, fetch_authorized_https, ingest_file, ingest_text, sanitize
+from ingestion.pipeline import chunk_text, extract_file, fetch_authorized_https, ingest_file, ingest_text, ingest_url, sanitize
 from ingestion.worker import result_payload, submit_result
 
 
@@ -89,6 +89,16 @@ class IngestionTests(unittest.TestCase):
             text, mime = fetch_authorized_https("https://approved.example/faq", {"approved.example"})
         self.assertEqual(mime, "text/html")
         self.assertIn("Approved FAQ", text)
+
+    def test_url_ingestion_keeps_approved_snapshot_url_and_sanitizes_content(self) -> None:
+        response = Mock(status_code=200, encoding="utf-8")
+        response.iter_content.return_value = [b"<html><body>Pricing is 42 credits. Email alice@example.com</body></html>"]
+        response.raise_for_status.return_value = None
+        with patch("ingestion.pipeline.socket.getaddrinfo", return_value=[(None, None, None, None, ("93.184.216.34", 443))]), patch("requests.get", return_value=response):
+            source = ingest_url("Approved FAQ", "https://approved.example/faq", {"approved.example"})
+        self.assertEqual(source.source_url, "https://approved.example/faq")
+        self.assertIn("Pricing is 42 credits.", source.normalized_content)
+        self.assertNotIn("alice@example.com", source.normalized_content)
 
     def test_worker_payload_is_sanitized_and_submission_claims_then_publishes(self) -> None:
         source = ingest_text("FAQ", "Email alice@example.com.\n\nPricing is 42 credits.", "text/plain")
