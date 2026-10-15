@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, Chunk, Message, Persona, Session, Source, SourceStatus, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionRequest, AuditEvent, Chunk, IngestionJob, Message, Persona, Session, Source, SourceStatus, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -9,6 +9,7 @@ export class MemoryStore implements Store {
   private readonly users = new Map<string, User>();
   private readonly personas = new Map<string, Persona>();
   private readonly sources = new Map<string, Source>();
+  private readonly ingestionJobs = new Map<string, IngestionJob>();
   private readonly chunks = new Map<string, Chunk>();
   private readonly sessions = new Map<string, Session>();
   private readonly messages = new Map<string, Message>();
@@ -63,6 +64,23 @@ export class MemoryStore implements Store {
     this.sources.set(id, updated);
     return updated;
   }
+  async createIngestionJob(input: { id: string; tenantId: string }): Promise<IngestionJob> {
+    const timestamp = now();
+    const job: IngestionJob = { id: input.id, tenantId: input.tenantId, sourceId: null, status: 'queued', attempts: 0, errorCode: null, leaseExpiresAt: null, createdAt: timestamp, updatedAt: timestamp };
+    this.ingestionJobs.set(job.id, job);
+    return job;
+  }
+  async getIngestionJob(id: string): Promise<IngestionJob | null> { return this.ingestionJobs.get(id) ?? null; }
+  async claimIngestionJob(id: string, leaseMs: number): Promise<IngestionJob | null> {
+    const job = this.ingestionJobs.get(id);
+    if (!job) return null;
+    const nowMs = Date.now();
+    if (job.status !== 'queued' && !(job.status === 'processing' && job.leaseExpiresAt && Date.parse(job.leaseExpiresAt) <= nowMs)) return null;
+    const updated: IngestionJob = { ...job, status: 'processing', attempts: job.attempts + 1, leaseExpiresAt: new Date(nowMs + leaseMs).toISOString(), updatedAt: now() };
+    this.ingestionJobs.set(id, updated);
+    return updated;
+  }
+  async updateIngestionJob(job: IngestionJob): Promise<IngestionJob> { this.ingestionJobs.set(job.id, job); return job; }
   async listSearchableChunks(tenantId: string, audience: 'public' | 'internal'): Promise<Array<{ source: Source; chunk: Chunk }>> {
     return [...this.chunks.values()]
       .filter((chunk) => chunk.tenantId === tenantId)

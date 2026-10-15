@@ -8,7 +8,7 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 
 - [x] P00: repository audit, security constraints, spec set and threat review
 - [ ] P01: workspace, API, UI, database migration, ingestion and CI foundation (CI added; hosted run not observed)
-- [ ] P02: validated source ingestion, versioning, approval and retrieval (local pgvector and lifecycle migration verified; worker job orchestration pending)
+- [ ] P02: validated source ingestion, versioning, approval and retrieval (durable ingestion job state/lease tracking added; Python worker execution and full source-version pipeline remain)
 - [ ] P03: tenant-aware chat, PII masking, citations and fail-closed model boundary (synthetic API gate passing; conflict refusal and scoped history added)
 - [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; live n8n blocked)
 - [ ] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics, RBAC, lifecycle, rate limits, CORS and callback replay guard added; retention/backup pending)
@@ -42,6 +42,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Angular admin flow builds | `npm run build` | pass |
 | Python ingestion tests pass | `tools/ingestion/test_ingestion.py` | pass (7 tests, local venv) |
 | PostgreSQL/pgvector persistence smoke | `services/api/src/store-postgres.test.ts` with `DATABASE_URL` | pass (local container) |
+| Ingestion job state and lease persistence | API job assertion and `store-postgres.test.ts` with migration `008-ingestion-jobs.sql` | pass (memory + PostgreSQL) |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally |
 | Chat resume/history | `GET /api/v1/chat/sessions/:id` API assertion | pass (masked, tenant-scoped messages) |
 | Dependency audit | `npm audit --omit=dev --audit-level=high` | blocked: 9 advisories remain in Angular 19/PostCSS; remediation requires a major framework/toolchain upgrade and was not applied unverified |

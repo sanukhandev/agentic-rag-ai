@@ -16,6 +16,12 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       const sourceId = randomUUID();
       const versionId = randomUUID();
       const source = await store.createSource({ id: sourceId, tenantId: tenant.id, title: 'FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'awaiting_review', versionId, contentHash: 'hash', chunks: [{ id: randomUUID(), sourceId, tenantId: tenant.id, versionId, ordinal: 0, locator: 'section 1', content: 'Pricing is 100 credits.', contentHash: 'chunk-hash', embedding: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8] }] });
+      const job = await store.createIngestionJob({ id: randomUUID(), tenantId: tenant.id });
+      const claimedJob = await store.claimIngestionJob(job.id, 60_000);
+      expect(claimedJob).toMatchObject({ status: 'processing', attempts: 1 });
+      const completedJob = await store.updateIngestionJob({ ...claimedJob!, sourceId: source.id, status: 'completed', errorCode: null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+      expect(await store.getIngestionJob(job.id)).toMatchObject({ id: job.id, sourceId: source.id, status: 'completed', attempts: 1 });
+      expect(completedJob.errorCode).toBeNull();
       await store.setSourceStatus(source.id, tenant.id, 'active');
       expect((await store.listSearchableChunks(tenant.id, 'public')).length).toBe(1);
       const userMessage = await store.addMessage({ id: randomUUID(), sessionId: session.id, tenantId: tenant.id, role: 'user', maskedContent: 'What is pricing?', citations: [], clientMessageId: 'client-1', response: null, createdAt: new Date().toISOString() });

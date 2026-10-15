@@ -171,15 +171,30 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       const sourceId = randomUUID();
       const versionId = randomUUID();
+      const jobId = randomUUID();
+      const createdJob = await store.createIngestionJob({ id: jobId, tenantId });
+      const job = await store.claimIngestionJob(createdJob.id, 60_000);
+      if (!job) throw new HttpError(409, 'INGESTION_BUSY', 'The ingestion job could not be claimed.');
       const sourceBase = { id: sourceId, tenantId, versionId };
       const safeContent = sanitizeKnowledgeText(input.content);
       const safeContentHash = contentHash(safeContent);
       const existing = await store.findSourceByHash(tenantId, safeContentHash);
-      if (existing) { res.status(200).json({ source: existing, ingestion: { status: existing.status, chunks: 0 }, idempotent: true }); return; }
-      const chunks = await buildChunksWithEmbeddings(sourceBase, safeContent, embedding);
-      const source = await store.createSource({ id: sourceId, tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl ?? null, audience: input.audience ?? 'public', status: 'awaiting_review', versionId, contentHash: safeContentHash, chunks });
-      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'source.staged', metadata: { sourceId, chunks: chunks.length }, createdAt: new Date().toISOString() });
-      res.status(201).json({ source, ingestion: { status: 'awaiting_review', chunks: chunks.length } });
+      if (existing) {
+        await store.updateIngestionJob({ ...job, sourceId: existing.id, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        res.status(200).json({ source: existing, ingestion: { jobId, status: 'completed', sourceStatus: existing.status, chunks: 0 }, idempotent: true });
+        return;
+      }
+      try {
+        const chunks = await buildChunksWithEmbeddings(sourceBase, safeContent, embedding);
+        const source = await store.createSource({ id: sourceId, tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl ?? null, audience: input.audience ?? 'public', status: 'awaiting_review', versionId, contentHash: safeContentHash, chunks });
+        await store.updateIngestionJob({ ...job, sourceId: source.id, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'source.staged', metadata: { sourceId, chunks: chunks.length, jobId }, createdAt: new Date().toISOString() });
+        res.status(201).json({ source, ingestion: { jobId, status: 'completed', sourceStatus: 'awaiting_review', chunks: chunks.length } });
+      } catch (error) {
+        const errorCode = error instanceof HttpError ? error.code : 'INGESTION_FAILED';
+        await store.updateIngestionJob({ ...job, status: 'failed', errorCode, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        throw error;
+      }
     } catch (error) { next(error); }
   });
   app.get('/api/v1/admin/sources', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listSources(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
@@ -188,7 +203,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   };
   app.post('/api/v1/admin/sources/:id/publish', protectedApi, requireRoles('tenant_admin'), setSourceStatus('active'));
   app.post('/api/v1/admin/sources/:id/revoke', protectedApi, requireRoles('tenant_admin'), setSourceStatus('revoked'));
-  app.get('/api/v1/admin/ingestion-jobs/:id', protectedApi, async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const source = await store.getSource(routeParam(req, 'id')); if (!source || source.tenantId !== tenantId) throw new HttpError(404, 'JOB_NOT_FOUND', 'Ingestion job not found.'); res.json({ id: source.id, status: source.status, sourceId: source.id, versionId: source.versionId }); } catch (error) { next(error); } });
+  app.get('/api/v1/admin/ingestion-jobs/:id', protectedApi, async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const job = await store.getIngestionJob(routeParam(req, 'id')); if (!job || job.tenantId !== tenantId) throw new HttpError(404, 'JOB_NOT_FOUND', 'Ingestion job not found.'); const source = job.sourceId ? await store.getSource(job.sourceId) : null; res.json({ job, source: source ? { id: source.id, versionId: source.versionId, status: source.status } : null }); } catch (error) { next(error); } });
 
   app.post('/api/v1/chat/sessions', optionalApi, async (req, res, next) => {
     try {

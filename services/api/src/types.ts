@@ -3,6 +3,7 @@ export type Audience = 'public' | 'internal';
 export type SourceStatus = 'awaiting_review' | 'active' | 'revoked';
 export type ActionState = 'awaiting_confirmation' | 'completed' | 'failed' | 'unknown';
 export type TenantStatus = 'provisioning' | 'active' | 'suspended' | 'archived';
+export type IngestionJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 
 export interface Tenant {
   id: string;
@@ -45,6 +46,18 @@ export interface Source {
   contentHash: string;
   createdAt: string;
   approvedAt: string | null;
+}
+
+export interface IngestionJob {
+  id: string;
+  tenantId: string;
+  sourceId: string | null;
+  status: IngestionJobStatus;
+  attempts: number;
+  errorCode: string | null;
+  leaseExpiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Chunk {
@@ -133,6 +146,10 @@ export interface Store {
   findSourceByHash(tenantId: string, contentHash: string): Promise<Source | null>;
   listSources(tenantId: string): Promise<Source[]>;
   setSourceStatus(id: string, tenantId: string, status: SourceStatus): Promise<Source | null>;
+  createIngestionJob(input: { id: string; tenantId: string }): Promise<IngestionJob>;
+  getIngestionJob(id: string): Promise<IngestionJob | null>;
+  claimIngestionJob(id: string, leaseMs: number): Promise<IngestionJob | null>;
+  updateIngestionJob(job: IngestionJob): Promise<IngestionJob>;
   listSearchableChunks(tenantId: string, audience: Audience): Promise<Array<{ source: Source; chunk: Chunk }>>;
   createSession(tenantId: string): Promise<Session>;
   getSession(id: string): Promise<Session | null>;
