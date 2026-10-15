@@ -125,6 +125,21 @@ describe('API vertical slice', () => {
     expect(response.body.answer).not.toContain('unsupported invented answer');
   });
 
+  it('requires revocation before tenant-scoped source purge', async () => {
+    const runtime = createApp({ nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-purge@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Purge Tenant', slug: 'purge-tenant', adminEmail: 'admin-purge@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-purge@example.test', password: 'TenantA1Password' }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Purge FAQ', mimeType: 'text/plain', audience: 'public', content: 'Temporary approved content.' }).expect(201);
+    await api.delete(`/api/v1/admin/sources/${source.body.source.id}`).set('Authorization', `Bearer ${admin.body.token}`).expect(409);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/revoke`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    await api.delete(`/api/v1/admin/sources/${source.body.source.id}`).set('Authorization', `Bearer ${admin.body.token}`).expect(204);
+    await api.get('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).expect(200).expect((response) => expect(response.body.items).toHaveLength(0));
+    await api.get(`/api/v1/admin/sources/${source.body.source.id}/versions`).set('Authorization', `Bearer ${admin.body.token}`).expect(404);
+    expect(tenant.body.tenant.id).toBeTruthy();
+  });
+
   it('accepts an authenticated, claimed Python ingestion result and preserves locators', async () => {
     const api = request(createApp({ nodeEnv: 'test', ingestionWorkerSecret: 'worker-secret' }).app);
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-worker@example.test', password: 'Platform1Password' }).expect(201);

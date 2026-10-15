@@ -168,6 +168,7 @@ export interface Store {
   findSourceByHash(tenantId: string, contentHash: string): Promise<Source | null>;
   listSources(tenantId: string): Promise<Source[]>;
   setSourceStatus(id: string, tenantId: string, status: SourceStatus): Promise<Source | null>;
+  purgeSource(id: string, tenantId: string): Promise<boolean>;
   listSourceChunks(sourceId: string, tenantId: string): Promise<Chunk[]>;
   listSourceVersions(sourceId: string, tenantId: string): Promise<SourceVersion[]>;
   replaceSourceVersion(input: { sourceId: string; tenantId: string; versionId: string; contentHash: string; chunks: Chunk[] }): Promise<Source | null>;

@@ -70,6 +70,14 @@ export class MemoryStore implements Store {
     this.sources.set(id, updated);
     return updated;
   }
+  async purgeSource(id: string, tenantId: string): Promise<boolean> {
+    const source = this.sources.get(id);
+    if (!source || source.tenantId !== tenantId || source.status !== 'revoked') return false;
+    this.sources.delete(id);
+    this.sourceVersions.delete(id);
+    for (const [chunkId, chunk] of this.chunks) if (chunk.sourceId === id) this.chunks.delete(chunkId);
+    return true;
+  }
   async listSourceChunks(sourceId: string, tenantId: string): Promise<Chunk[]> { const source = this.sources.get(sourceId); return source && source.tenantId === tenantId ? [...this.chunks.values()].filter((chunk) => chunk.sourceId === sourceId && chunk.tenantId === tenantId && chunk.versionId === source.versionId).sort((left, right) => left.ordinal - right.ordinal) : []; }
   async listSourceVersions(sourceId: string, tenantId: string): Promise<SourceVersion[]> { const source = this.sources.get(sourceId); return source && source.tenantId === tenantId ? [...(this.sourceVersions.get(sourceId) ?? [])].sort((left, right) => right.createdAt.localeCompare(left.createdAt)) : []; }
   async replaceSourceVersion(input: { sourceId: string; tenantId: string; versionId: string; contentHash: string; chunks: Chunk[] }): Promise<Source | null> {
