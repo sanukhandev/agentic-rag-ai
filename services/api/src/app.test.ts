@@ -51,6 +51,9 @@ describe('API vertical slice', () => {
     const unsupported = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the office location?', clientMessageId: 'unknown-1' }).expect(200);
     expect(unsupported.body.grounded).toBe(false);
     expect(unsupported.body.citations).toHaveLength(0);
+    const history = await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}`).expect(200);
+    expect(history.body.messages.length).toBeGreaterThanOrEqual(4);
+    expect(JSON.stringify(history.body.messages)).not.toContain('alice@example.com');
     const pii = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'Please contact alice@example.com about pricing', clientMessageId: 'lead-1' }).expect(200);
     expect(pii.body.actionProposal).not.toBeNull();
     expect(model.prompts.at(-1)).not.toContain('alice@example.com');

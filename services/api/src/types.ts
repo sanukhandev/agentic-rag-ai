@@ -140,6 +140,7 @@ export interface Store {
   addMessage(message: Message): Promise<Message>;
   updateMessage(message: Message): Promise<Message>;
   getMessageByClientId(sessionId: string, clientMessageId: string): Promise<Message | null>;
+  listMessages(sessionId: string, tenantId: string): Promise<Message[]>;
   createAction(action: ActionRequest): Promise<ActionRequest>;
   getAction(id: string): Promise<ActionRequest | null>;
   getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null>;
