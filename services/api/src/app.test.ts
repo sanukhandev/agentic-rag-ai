@@ -13,8 +13,10 @@ import { TokenVault } from './privacy.js';
 
 class CapturingModel implements ChatModel {
   public readonly prompts: string[] = [];
+  public readonly personaNames: string[] = [];
   async draft(input: { maskedMessage: string; evidence: Array<{ citation: { sourceId: string; versionId: string; chunkId: string; title: string; locator: string }; content: string }>; personaName: string }): Promise<ModelDraft> {
     this.prompts.push(input.maskedMessage);
+    this.personaNames.push(input.personaName);
     const evidence = input.evidence[0];
     return evidence ? { answer: evidence.content, citationIds: [evidence.citation.chunkId], proposedIntent: /contact/i.test(input.maskedMessage) ? 'lead.capture' : null } : { answer: 'No approved evidence supports that answer.', citationIds: [], proposedIntent: null };
   }
@@ -69,6 +71,8 @@ describe('API vertical slice', () => {
     expect(member.body.user.role).toBe('tenant_editor');
     await api.patch(`/api/v1/admin/members/${member.body.user.id}`).set('Authorization', `Bearer ${adminToken}`).send({ role: 'tenant_viewer' }).expect(200);
     expect((await api.get('/api/v1/admin/members').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.items.find((user: { id: string }) => user.id === member.body.user.id).role).toBe('tenant_viewer');
+    const viewer = await api.post('/api/v1/auth/login').send({ email: 'editor-a@example.test', password: 'EditorA1Password' }).expect(200);
+    await api.post('/api/v1/admin/retention/purge-sessions').set('Authorization', `Bearer ${viewer.body.token}`).send({ before: new Date().toISOString() }).expect(403);
     await api.patch(`/api/v1/admin/members/${member.body.user.id}`).set('Authorization', `Bearer ${adminBToken}`).send({ role: 'tenant_agent' }).expect(404);
     await api.patch(`/api/v1/admin/members/${adminA.body.user.id}`).set('Authorization', `Bearer ${adminToken}`).send({ role: 'tenant_viewer' }).expect(404);
     expect((await api.get('/api/v1/admin/members').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.items).toHaveLength(2);
@@ -104,9 +108,15 @@ describe('API vertical slice', () => {
     expect(preview.body.preview).toMatchObject({ grounded: true, persona: { name: 'Preview Ava' } });
     expect(preview.body.preview.citations).toHaveLength(1);
     const publicSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
+    const newerPersona = await api.post('/api/v1/admin/persona/drafts').set('Authorization', `Bearer ${adminToken}`).send({ name: 'Ava New', greeting: 'Welcome', personality: 'Warm', tone: 'Friendly', speakingStyle: 'Short', permittedLanguages: ['en'] }).expect(201);
+    await api.post(`/api/v1/admin/persona/versions/${newerPersona.body.version.id}/publish`).set('Authorization', `Bearer ${adminToken}`).expect(200);
     const grounded = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-1' }).expect(200);
     expect(grounded.body.grounded).toBe(true);
     expect(grounded.body.citations).toHaveLength(1);
+    expect(model.personaNames.at(-1)).toBe('Ava 2');
+    const newerSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: newerSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-new-persona' }).expect(200);
+    expect(model.personaNames.at(-1)).toBe('Ava New');
     const duplicateGrounded = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-1' }).expect(200);
     expect(duplicateGrounded.body).toEqual(grounded.body);
     const duplicateHistory = await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}`).expect(200);

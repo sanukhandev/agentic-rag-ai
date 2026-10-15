@@ -17,11 +17,12 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       const domain = await store.addDomain({ tenantId: tenant.id, hostname: 'chat.postgres.example' });
       expect(await store.listDomains(tenant.id)).toMatchObject([{ id: domain.id, hostname: 'chat.postgres.example' }]);
       expect(await store.removeDomain(domain.id, tenant.id)).toBe(true);
-      const session = await store.createSession(tenant.id);
       const personaVersion = await store.createPersonaVersion({ tenantId: tenant.id, name: 'Ava', greeting: 'Hello', personality: 'Precise', tone: 'Clear', speakingStyle: 'Short', permittedLanguages: ['en'], status: 'draft' });
       expect(personaVersion.version).toBe(1);
       await expect(store.publishPersonaVersion(tenant.id, personaVersion.id)).resolves.toMatchObject({ status: 'published', version: 1 });
       expect(await store.getPersona(tenant.id)).toMatchObject({ name: 'Ava' });
+      const session = await store.createSession(tenant.id, personaVersion.id);
+      expect((await store.getSession(session.id))?.personaVersionId).toBe(personaVersion.id);
       session.tokenMap.set('[EMAIL_1]', 'v1.ciphertext');
       await store.updateSession(session);
       expect((await store.getSession(session.id))?.tokenMap.get('[EMAIL_1]')).toBe('v1.ciphertext');

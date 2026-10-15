@@ -110,6 +110,7 @@ export interface Session {
   id: string;
   tenantId: string;
   createdAt: string;
+  personaVersionId: string | null;
   tokenMap: Map<string, string>;
 }
 
@@ -188,6 +189,7 @@ export interface Store {
   getPersona(tenantId: string): Promise<Persona | null>;
   createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion>;
   listPersonaVersions(tenantId: string): Promise<PersonaVersion[]>;
+  getPersonaVersion(tenantId: string, versionId: string): Promise<PersonaVersion | null>;
   publishPersonaVersion(tenantId: string, versionId: string): Promise<PersonaVersion | null>;
   createSource(input: Omit<Source, 'createdAt' | 'approvedAt'> & { chunks: Chunk[] }): Promise<Source>;
   getSource(id: string): Promise<Source | null>;
@@ -205,7 +207,7 @@ export interface Store {
   updateIngestionJob(job: IngestionJob): Promise<IngestionJob>;
   listSearchableChunks(tenantId: string, audience: Audience): Promise<Array<{ source: Source; chunk: Chunk }>>;
   searchSearchableChunks(tenantId: string, audience: Audience, queryEmbedding: number[], limit: number): Promise<Array<{ source: Source; chunk: Chunk }>>;
-  createSession(tenantId: string): Promise<Session>;
+  createSession(tenantId: string, personaVersionId?: string | null): Promise<Session>;
   getSession(id: string): Promise<Session | null>;
   purgeExpiredSessions(tenantId: string, before: string): Promise<number>;
   updateSession(session: Session): Promise<Session>;

@@ -13,7 +13,7 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 - [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; durable callback nonce replay guard added; live n8n blocked)
 - [ ] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics including ingestion state, RBAC, lifecycle, rate limits, CORS, callback replay guard, durable admin session revocation, tenant session purge, local backup/restore rehearsal and redacted request telemetry added; production observability remains)
 - [x] P06: PII vault and conversation API (AES-GCM session vault, structured-name masking, lazy token expiry purge, session expiry/purge, rate limiting and Postgres persistence verified; production KMS-backed vault remains open)
-- [ ] P07–P10: full persona/version workflow, operations hardening, clean-room acceptance and go-live review (persona draft/publish/version API, grounded preview API/UI, history/publish/rollback and tenant domain UI added; final operations remain)
+- [ ] P07–P10: full persona/version workflow, operations hardening, clean-room acceptance and go-live review (persona draft/publish/version API, session-pinned persona selection, grounded preview API/UI, history/publish/rollback and tenant domain UI added; final operations remain)
 
 ## Decisions for this local vertical slice
 
@@ -41,6 +41,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Valid citation cannot support an invented numeric claim | `app.test.ts` and `model.test.ts` evidence-sufficiency tests | pass |
 | Unsupported chat language is refused before model call | `app.test.ts` + `model.test.ts` language tests | pass for Arabic/English family detection |
 | Persona draft/publish/version history and preview | API app test, PostgreSQL version/publish assertion, grounded preview route/model contract, migration `012-persona-versions.sql` and Angular version/preview panels | pass locally; manual browser verification pending |
+| Persona version pinned to chat session | Memory/API and PostgreSQL tests prove an existing session keeps its published persona after a newer version is published, while a new session uses the newer version; migration `014-session-persona.sql` | pass locally; manual browser verification pending |
 | Persona editor fields | Angular tenant editor now exposes personality and permitted languages; draft, preview and publish payloads use normalized language values with unit coverage | pass locally; manual browser verification pending |
 | Prompt injection in source is treated as data | model prompt contract plus API test where injected evidence proposes a lead without explicit user intent | pass for the local deterministic/mock boundary; broader adversarial corpus remains a production hardening task |
 | Conflicting active evidence is not chosen arbitrarily | `knowledge.test.ts`, API conflict guard | pass (numeric contradiction heuristic) |

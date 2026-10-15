@@ -89,6 +89,7 @@ export class MemoryStore implements Store {
     return version;
   }
   async listPersonaVersions(tenantId: string): Promise<PersonaVersion[]> { return [...(this.personaVersions.get(tenantId) ?? [])].sort((left, right) => right.version - left.version); }
+  async getPersonaVersion(tenantId: string, versionId: string): Promise<PersonaVersion | null> { return (this.personaVersions.get(tenantId) ?? []).find((version) => version.id === versionId) ?? null; }
   async publishPersonaVersion(tenantId: string, versionId: string): Promise<PersonaVersion | null> {
     const versions = this.personaVersions.get(tenantId) ?? [];
     const selected = versions.find((version) => version.id === versionId);
@@ -166,8 +167,8 @@ export class MemoryStore implements Store {
   }
   async searchSearchableChunks(tenantId: string, audience: 'public' | 'internal', _queryEmbedding: number[], limit: number): Promise<Array<{ source: Source; chunk: Chunk }>> { return (await this.listSearchableChunks(tenantId, audience)).slice(0, limit); }
 
-  async createSession(tenantId: string): Promise<Session> {
-    const session: Session = { id: randomUUID(), tenantId, createdAt: now(), tokenMap: new Map() };
+  async createSession(tenantId: string, personaVersionId: string | null = null): Promise<Session> {
+    const session: Session = { id: randomUUID(), tenantId, createdAt: now(), personaVersionId, tokenMap: new Map() };
     this.sessions.set(session.id, session);
     return session;
   }

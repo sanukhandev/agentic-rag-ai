@@ -265,7 +265,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       await activeTenant(store, tenantId);
       const input = parse(personaPreviewSchema, req.body);
       const masked = maskPii(input.message);
-      const previewSession = { id: randomUUID(), tenantId, createdAt: new Date().toISOString(), tokenMap: new Map<string, string>() };
+      const previewSession = { id: randomUUID(), tenantId, createdAt: new Date().toISOString(), personaVersionId: null, tokenMap: new Map<string, string>() };
       saveTokens(previewSession, masked.tokens, tokenVault);
       const queryEmbedding = await embedding.embed(masked.masked);
       const ranked = rankChunksWithVector(masked.masked, await store.searchSearchableChunks(tenantId, 'internal', queryEmbedding, 4), queryEmbedding, 4);
@@ -484,7 +484,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!getAuth(req)) enforcePublicOrigin(req, tenant, nodeEnv);
       if (tenant.status !== 'active') throw new HttpError(423, 'TENANT_UNAVAILABLE', 'This tenant is not accepting public chat.');
       enforcePublicChatEnabled(req, tenant);
-      const session = await store.createSession(tenant.id);
+      const publishedPersona = (await store.listPersonaVersions(tenant.id)).find((version) => version.status === 'published');
+      const session = await store.createSession(tenant.id, publishedPersona?.id ?? null);
       res.status(201).json({ sessionId: session.id, tenantId: tenant.id, createdAt: session.createdAt });
     } catch (error) { next(error); }
   });
@@ -512,7 +513,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const rows = await store.searchSearchableChunks(session.tenantId, internal ? 'internal' : 'public', queryEmbedding, 24);
       const ranked = rankChunksWithVector(masked.masked, rows, queryEmbedding, 4);
       const evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: chunk.content }));
-      const persona = await store.getPersona(session.tenantId);
+      const persona = session.personaVersionId
+        ? await store.getPersonaVersion(session.tenantId, session.personaVersionId)
+        : await store.getPersona(session.tenantId);
       const languageAllowed = !persona || isPermittedLanguage(masked.masked, persona.permittedLanguages);
       let draft: ModelDraft;
       if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null };
