@@ -328,7 +328,9 @@ describe('API vertical slice', () => {
     await api.options('/api/v1/chat/sessions').set('Origin', 'https://other.example').set('Access-Control-Request-Method', 'POST').expect(403);
     await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(403);
     await api.get('/api/v1/chat/config').query({ tenantSlug: tenant.body.tenant.slug }).expect(403);
-    await api.post('/api/v1/chat/sessions').set('Origin', 'https://chat.channel.example').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const session = await api.post('/api/v1/chat/sessions').set('Origin', 'https://chat.channel.example').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).set('Origin', 'https://other.example').expect(403);
+    await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).set('Origin', 'https://chat.channel.example').expect(200);
     await api.post('/api/v1/chat/sessions').set('Origin', 'https://other.example').send({ tenantSlug: tenant.body.tenant.slug }).expect(403);
   });
 
