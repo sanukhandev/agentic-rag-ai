@@ -61,5 +61,5 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
       await pool.end();
     }
-  });
+  }, 20_000);
 });
