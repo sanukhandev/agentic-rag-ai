@@ -12,6 +12,8 @@ import { MemoryStore, contentHash } from './store-memory.js';
 import { IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import type { SourceStatus, Store, TenantStatus } from './types.js';
 
+type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null };
+
 const passwordSchema = z.string().min(8).max(128).regex(/[A-Z]/, 'Password must contain an uppercase letter.').regex(/\d/, 'Password must contain a number.');
 const tenantSchema = z.object({ name: z.string().trim().min(2).max(120), slug: z.string().trim().regex(/^[a-z0-9-]+$/).max(80), adminEmail: z.string().email(), adminPassword: passwordSchema });
 const memberSchema = z.object({ email: z.string().email(), password: passwordSchema, role: z.enum(['tenant_editor', 'tenant_viewer', 'tenant_agent']) });
@@ -122,13 +124,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const app = express();
   const responseCache = new Map<string, unknown>();
   const rateLimits = new Map<string, { count: number; resetAt: number }>();
-  const telemetry = { requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null as string | null };
+  const telemetry: Telemetry = { requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null };
+  const tenantTelemetry = new Map<string, Telemetry>();
+  const observedTelemetry = (value: Telemetry) => ({ requests: value.requests, serverErrors: value.serverErrors, averageLatencyMs: value.requests ? Math.round(value.totalLatencyMs / value.requests) : 0, lastRequestAt: value.lastRequestAt });
 
   app.disable('x-powered-by');
   app.use(express.json({ limit: '8mb' }));
   app.use((req, res, next) => { const origin = req.header('origin'); const allowed = new Set([process.env.WEB_ORIGIN ?? 'http://localhost:3000', process.env.ADMIN_ORIGIN ?? 'http://localhost:4200']); if (origin && allowed.has(origin)) { res.setHeader('access-control-allow-origin', origin); res.setHeader('access-control-allow-headers', 'content-type,authorization,x-request-id'); res.setHeader('access-control-allow-methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS'); res.setHeader('vary', 'Origin'); } if (req.method === 'OPTIONS') { res.status(origin && allowed.has(origin) ? 204 : 403).end(); return; } next(); });
   app.use((req: AuthedRequest, res: Response, next: NextFunction) => { req.requestId = req.header('x-request-id') ?? randomUUID(); res.setHeader('x-request-id', req.requestId); next(); });
-  app.use((_req, res, next) => { const started = Date.now(); res.once('finish', () => { telemetry.requests += 1; telemetry.serverErrors += res.statusCode >= 500 ? 1 : 0; telemetry.totalLatencyMs += Date.now() - started; telemetry.lastRequestAt = new Date().toISOString(); }); next(); });
+  app.use((req, res, next) => { const started = Date.now(); res.once('finish', () => { const elapsed = Date.now() - started; const failed = res.statusCode >= 500 ? 1 : 0; const timestamp = new Date().toISOString(); telemetry.requests += 1; telemetry.serverErrors += failed; telemetry.totalLatencyMs += elapsed; telemetry.lastRequestAt = timestamp; const tenantId = (req as AuthedRequest).auth?.tenantId; if (tenantId) { const scoped = tenantTelemetry.get(tenantId) ?? { requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null }; scoped.requests += 1; scoped.serverErrors += failed; scoped.totalLatencyMs += elapsed; scoped.lastRequestAt = timestamp; tenantTelemetry.set(tenantId, scoped); } }); next(); });
   app.use((req, res, next) => {
     if (!req.path.startsWith('/api/')) { next(); return; }
     const now = Date.now();
@@ -206,7 +210,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.json({ purged, before });
     } catch (error) { next(error); }
   });
-  app.get('/api/v1/admin/services/health', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (_req, res, _next) => { const checkedAt = new Date().toISOString(); const observed = { requests: telemetry.requests, serverErrors: telemetry.serverErrors, averageLatencyMs: telemetry.requests ? Math.round(telemetry.totalLatencyMs / telemetry.requests) : 0, lastRequestAt: telemetry.lastRequestAt }; try { await store.countUsers(); res.json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'ok' }, model: { status: 'adapter' }, embedding: { status: 'adapter' }, workflow: { status: 'adapter' }, ingestion: { status: 'not_observed' } } }); } catch { res.status(503).json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'down' } } }); } });
+  app.get('/api/v1/admin/services/health', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, _next) => { const checkedAt = new Date().toISOString(); const auth = getAuth(req); const observed = observedTelemetry(auth?.role === 'platform_admin' ? telemetry : tenantTelemetry.get(auth?.tenantId ?? '') ?? { requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null }); try { await store.countUsers(); res.json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'ok' }, model: { status: 'adapter' }, embedding: { status: 'adapter' }, workflow: { status: 'adapter' }, ingestion: { status: 'not_observed' } } }); } catch { res.status(503).json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'down' } } }); } });
 
   app.put('/api/v1/admin/persona', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
     try { const tenantId = await tenantForRequest(store, req); const input = parse(personaSchema, req.body); const persona = await store.setPersona({ tenantId, ...input }); await store.createPersonaVersion({ ...persona, status: 'published' }); res.json({ persona }); } catch (error) { next(error); }
