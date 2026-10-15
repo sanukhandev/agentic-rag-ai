@@ -181,6 +181,8 @@ describe('API vertical slice', () => {
     const tenantBSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-b' }).expect(201);
     const crossTenant = await api.post('/api/v1/chat/messages').send({ sessionId: tenantBSession.body.sessionId, message: 'What is Tenant A pricing?', clientMessageId: 'cross-1' }).expect(200);
     expect(crossTenant.body.grounded).toBe(false);
+    expect((await api.get('/api/v1/chat/config').query({ tenantSlug: 'tenant-a' }).set('Authorization', `Bearer ${adminToken}`).expect(200)).body.tenant.slug).toBe('tenant-a');
+    await api.get('/api/v1/chat/config').query({ tenantSlug: 'tenant-b' }).set('Authorization', `Bearer ${adminToken}`).expect(403);
     const malformedAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenantA.body.tenant.id, sessionId: tenantBSession.body.sessionId, workflowKey: 'lead.capture', idempotencyKey: 'malformed-cross-tenant', state: 'awaiting_confirmation', opaqueReference: 'lead-cross-tenant', createdAt: new Date().toISOString(), result: null });
     await api.post(`/api/v1/chat/actions/${malformedAction.id}/confirm`).send({ sessionId: tenantBSession.body.sessionId, confirmed: true }).expect(403);
     await api.get(`/api/v1/chat/actions/${malformedAction.id}`).query({ sessionId: tenantBSession.body.sessionId }).expect(404);

@@ -55,7 +55,7 @@ The system is considered **locally complete** only with automated synthetic fixt
 | ID | Evidence and outcome |
 | --- | --- |
 | AUTH-01 | Pass: `services/api/src/auth.test.ts` covers issue, logout revocation and expired durable sessions; `app.test.ts` covers `/auth/me` current-user resolution and unauthorized access after logout. |
-| AUTH-02 | Pass: `services/api/src/app.test.ts` proves tenant A/B source, job, domain, member, workflow and audit isolation. |
+| AUTH-02 | Pass: `services/api/src/app.test.ts` proves tenant A/B source, job, domain, member, workflow, audit and authenticated chat-config isolation. |
 | AUTH-03 | Pass: `app.test.ts` denies unauthenticated admin access and public tenant-ID sessions. |
 | TEN-01 | Pass: `app.test.ts` provisions two tenants, owners and audited creation. |
 | TEN-02 | Pass: `app.test.ts` suspends a tenant and rejects new chat/indexing, then reactivates it. |
