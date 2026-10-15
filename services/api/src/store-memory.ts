@@ -150,6 +150,16 @@ export class MemoryStore implements Store {
     return session;
   }
   async getSession(id: string): Promise<Session | null> { return this.sessions.get(id) ?? null; }
+  async purgeExpiredSessions(tenantId: string, before: string): Promise<number> {
+    const cutoff = Date.parse(before);
+    const expired = [...this.sessions.values()].filter((session) => session.tenantId === tenantId && Date.parse(session.createdAt) < cutoff);
+    for (const session of expired) {
+      this.sessions.delete(session.id);
+      for (const [messageId, message] of this.messages) if (message.sessionId === session.id) this.messages.delete(messageId);
+      for (const [actionId, action] of this.actions) if (action.sessionId === session.id) this.actions.delete(actionId);
+    }
+    return expired.length;
+  }
   async updateSession(session: Session): Promise<Session> { this.sessions.set(session.id, session); return session; }
   async addMessage(message: Message): Promise<Message> { this.messages.set(message.id, message); return message; }
   async updateMessage(message: Message): Promise<Message> { this.messages.set(message.id, message); return message; }

@@ -193,6 +193,7 @@ export interface Store {
   searchSearchableChunks(tenantId: string, audience: Audience, queryEmbedding: number[], limit: number): Promise<Array<{ source: Source; chunk: Chunk }>>;
   createSession(tenantId: string): Promise<Session>;
   getSession(id: string): Promise<Session | null>;
+  purgeExpiredSessions(tenantId: string, before: string): Promise<number>;
   updateSession(session: Session): Promise<Session>;
   addMessage(message: Message): Promise<Message>;
   updateMessage(message: Message): Promise<Message>;

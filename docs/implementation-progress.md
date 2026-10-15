@@ -11,8 +11,8 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 - [ ] P02: validated source ingestion, versioning, approval and retrieval (durable job state/lease, authenticated worker-result boundary, SQL vector filtering/order, transactional reindex-to-review, explicit source version history, guarded revoked-source purge and approved HTTPS worker snapshots added; private file staging, retention policy and selected production embedding remain)
 - [ ] P03: tenant-aware chat, PII masking, citations and fail-closed model boundary (synthetic API gate passing; conflict refusal, scoped history, invalid-citation abstention and permitted-language refusal added)
 - [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; durable callback nonce replay guard added; live n8n blocked)
-- [ ] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics, RBAC, lifecycle, rate limits, CORS, callback replay guard and durable admin session revocation added; retention/backup pending)
-- [ ] P06: PII vault and conversation API (AES-GCM session vault, structured-name masking and Postgres persistence verified; retention/rate limits pending)
+- [ ] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics, RBAC, lifecycle, rate limits, CORS, callback replay guard, durable admin session revocation and tenant session purge added; backup/telemetry pending)
+- [ ] P06: PII vault and conversation API (AES-GCM session vault, structured-name masking, session expiry/purge and Postgres persistence verified; token-vault retention/rate limits pending)
 - [ ] P07–P10: full persona/version workflow, operations hardening, clean-room acceptance and go-live review (persona draft/publish/version API and storage added; UI preview/rollback and final operations remain)
 
 ## Decisions for this local vertical slice
@@ -60,6 +60,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Latest workspace test run | `npm test` | API 27 passed + 1 PostgreSQL test skipped by default; contracts 1 passed |
 | Chat resume/history | `GET /api/v1/chat/sessions/:id` API assertion | pass (masked, tenant-scoped messages) |
 | Durable admin session revocation | `auth.test.ts` and API logout assertion backed by store session records; PostgreSQL migration `010-auth-sessions.sql` | pass (memory + migration applied locally) |
+| Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |
 | Dependency audit | `npm audit --omit=dev --audit-level=high` | blocked: 9 advisories remain in Angular 19/PostCSS; remediation requires a major framework/toolchain upgrade and was not applied unverified |
 
 ## Blockers and risks

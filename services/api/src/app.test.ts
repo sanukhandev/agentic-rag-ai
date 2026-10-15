@@ -2,7 +2,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
 import { MockWorkflowAdapter, signN8nPayload } from './actions.js';
-import { contentHash } from './store-memory.js';
+import { MemoryStore, contentHash } from './store-memory.js';
 import type { ChatModel, ModelDraft } from './model.js';
 
 class CapturingModel implements ChatModel {
@@ -160,6 +160,22 @@ describe('API vertical slice', () => {
     await api.get('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).expect(200).expect((response) => expect(response.body.items).toHaveLength(0));
     await api.get(`/api/v1/admin/sources/${source.body.source.id}/versions`).set('Authorization', `Bearer ${admin.body.token}`).expect(404);
     expect(tenant.body.tenant.id).toBeTruthy();
+  });
+
+  it('expires and purges tenant chat sessions', async () => {
+    const store = new MemoryStore();
+    const runtime = createApp({ store, nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-retention@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Retention Tenant', slug: 'retention-tenant', adminEmail: 'admin-retention@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-retention@example.test', password: 'TenantA1Password' }).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const stored = await store.getSession(session.body.sessionId);
+    await store.updateSession({ ...stored!, createdAt: new Date(Date.now() - 86_400_000).toISOString() });
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Expired?', clientMessageId: 'expired-1' }).expect(410);
+    const purge = await api.post('/api/v1/admin/retention/purge-sessions').set('Authorization', `Bearer ${admin.body.token}`).send({ before: new Date().toISOString() }).expect(200);
+    expect(purge.body.purged).toBe(1);
+    await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).expect(404);
   });
 
   it('accepts an authenticated, claimed Python ingestion result and preserves locators', async () => {
