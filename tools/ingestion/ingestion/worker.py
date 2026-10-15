@@ -73,10 +73,13 @@ def main() -> None:
     args = parser.parse_args()
     if not args.path and not args.url and not args.staging_root:
         parser.error("--staging-root is required when processing an uploaded API file")
+    if args.url and (not args.title or not args.allowed_host):
+        parser.error("--url requires --title and at least one --allowed-host")
     claim = True
+    if args.path or args.url:
+        claim_job(args.api_base, args.job_id, args.worker_secret)
+        claim = False
     if args.url:
-        if not args.title or not args.allowed_host:
-            parser.error("--url requires --title and at least one --allowed-host")
         ingested = ingest_url(args.title, args.url, set(args.allowed_host))
     elif args.path:
         staging_root = args.staging_root

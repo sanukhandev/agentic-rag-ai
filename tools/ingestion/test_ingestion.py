@@ -1,12 +1,13 @@
 import tempfile
 import unittest
 import zipfile
+import sys
 from unittest.mock import Mock, patch
 from pathlib import Path
 
 from ingestion.pipeline import chunk_text, extract_file, fetch_authorized_https, ingest_file, ingest_text, ingest_url, sanitize
 from ingestion.staging import LocalStaging
-from ingestion.worker import fetch_job_input, result_payload, submit_result
+from ingestion.worker import fetch_job_input, main as worker_main, result_payload, submit_result
 
 
 class IngestionTests(unittest.TestCase):
@@ -206,6 +207,25 @@ class IngestionTests(unittest.TestCase):
         submit_result("http://localhost:4000", "job-1", "worker-secret", source, session, claim=False)
         self.assertEqual(session.post.call_count, 1)
         self.assertIn("/api/v1/internal/ingestion-jobs/job-1/result", session.post.call_args.args[0])
+
+    def test_worker_claims_before_extracting_path_or_url_inputs(self) -> None:
+        source = ingest_text("FAQ", "Approved content", "text/plain")
+        events: list[str] = []
+
+        def claim(*_args: object, **_kwargs: object) -> None:
+            events.append("claim")
+
+        def extract(_path: Path) -> object:
+            events.append("extract")
+            return source
+
+        def submit(*_args: object, **kwargs: object) -> None:
+            events.append(f"submit:{kwargs['claim']}")
+
+        with patch.object(sys, "argv", ["worker", "--path", "faq.txt", "--api-base", "http://localhost:4000", "--job-id", "job-1", "--worker-secret", "secret"]), patch("ingestion.worker.claim_job", side_effect=claim), patch("ingestion.worker.ingest_file", side_effect=extract), patch("ingestion.worker.submit_result", side_effect=submit):
+            worker_main()
+
+        self.assertEqual(events, ["claim", "extract", "submit:False"])
 
 
 if __name__ == "__main__":

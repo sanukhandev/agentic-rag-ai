@@ -37,7 +37,7 @@ For an approved HTTPS snapshot, create a queued `text/html` job and run:
 \.venv\Scripts\python.exe -m ingestion.worker --url https://approved.example/faq --title "Approved FAQ" --allowed-host approved.example --api-base http://localhost:4000 --job-id <job-id> --worker-secret <local-worker-secret>
 ```
 
-The worker copies file inputs into the private staging root for the attempt, extracts from the staged copy, and purges it before sending only sanitized normalized content, chunk hashes and locators. The API revalidates hashes, re-sanitizes chunks and performs embedding before staging the source for approval. Keep the staging directory private and outside any web-served path.
+The worker claims path/URL jobs before fetching or extracting, copies file inputs into the private staging root for the attempt, extracts from the staged copy, and purges it before sending only sanitized normalized content, chunk hashes and locators. The API revalidates hashes, re-sanitizes chunks and performs embedding before staging the source for approval. Keep the staging directory private and outside any web-served path.
 
 The Angular tenant-admin panel can also queue a TXT, PDF, DOCX or XLSX upload. It is stored by the Node API in `INGESTION_STAGING_ROOT` (default `data/ingestion-staging`) with a generated job key, mode `0600`, and a 5 MiB limit. Run the worker without `--path` or `--url` to retrieve that private input after claiming the job:
 

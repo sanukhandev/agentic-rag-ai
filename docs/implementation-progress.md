@@ -52,11 +52,11 @@ This section is updated after verification. No scenario is marked passing from s
 | Web workflow result status | Next client maps API action states to completed/failed/unknown status, keeps unknown actions retryable, and unit-tests the state mapper | pass locally; manual browser verification pending |
 | Angular admin flow builds | `npm run build` | pass |
 | Frontend unit checks | `apps/admin/src/app/upload-utils.test.ts`, `apps/admin/src/app/persona-utils.test.ts`, `apps/web/app/chat-utils.test.ts` | pass (2 admin + 3 web tests; no browser automation) |
-| Python ingestion tests pass | `tools/ingestion/test_ingestion.py` | pass (14 tests, local venv via `unittest`; pytest is not installed) |
+| Python ingestion tests pass | `tools/ingestion/test_ingestion.py` | pass (15 tests, local venv via `unittest`; pytest is not installed) |
 | PostgreSQL/pgvector persistence smoke | `services/api/src/store-postgres.test.ts` with `DATABASE_URL` | pass (local container) |
 | Ingestion job state and lease persistence | API job assertion and `store-postgres.test.ts` with migration `008-ingestion-jobs.sql` | pass (memory + PostgreSQL) |
 | Authenticated worker result boundary | `app.test.ts` worker flow; hash, ordinal and locator validation | pass (synthetic Python result) |
-| Python file-to-API worker client | `tools/ingestion/test_ingestion.py` worker submission test | pass (mock transport) |
+| Python file-to-API worker client | `tools/ingestion/test_ingestion.py` worker submission and claim-before-extraction tests | pass (mock transport; jobs are claimed before path/URL work) |
 | Tenant-admin binary file upload bridge | API upload test, `IngestionStaging`, Angular upload panel, Python worker API-input test | pass locally; manual browser/worker run pending |
 | Failed ingestion retry | Tenant-scoped audited `failed` → `queued` API transition and Angular retry action | pass locally |
 | Private file staging | Node `ingestion-staging.test.ts`, API upload signature/size checks, Python `tools/ingestion/ingestion/staging.py` unittest copy/purge assertion, worker `--staging-root` | pass locally; production object storage/malware scanning remains open |
@@ -99,7 +99,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |
 | Dependency audit | `npm audit --omit=dev --audit-level=high` | pass: 0 vulnerabilities after Angular 21.2.25, Next 16.4.1, React 19.3.1 and TypeScript 5.9.3 upgrade |
 | Reproducible install dry run | `npm ci --dry-run` | pass locally |
-| Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, Admin 2 + Web 3 + API 49 + Contracts 3, builds, 0 audit vulnerabilities and Python 14 |
+| Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, Admin 2 + Web 3 + API 49 + Contracts 3, builds, 0 audit vulnerabilities and Python 15 |
 | n8n compose security defaults | `npm run verify:compose` / `docker compose config` | pass: digest-pinned image and default `127.0.0.1:5678`; public bind requires explicit overrides |
 
 ## Blockers and risks
