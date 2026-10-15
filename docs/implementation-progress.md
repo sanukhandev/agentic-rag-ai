@@ -45,8 +45,9 @@ This section is updated after verification. No scenario is marked passing from s
 | Confirmed action is idempotent and audited | `actions.test.ts`, API integration test | pass (mock adapter) |
 | Callback replay is rejected across store-backed instances | API callback replay assertion plus `claimCallbackNonce` memory/PostgreSQL tests and migration `011-callback-nonces.sql` | pass locally; live n8n blocked |
 | Next web chat flow builds | `npm run build` | pass |
+| Web chat session continuity | Next client restores masked assistant history from the tenant-scoped session API, persists the session key, and provides reset/retry controls; history mapper unit-tested | pass locally; manual browser verification pending |
 | Angular admin flow builds | `npm run build` | pass |
-| Frontend unit checks | `apps/admin/src/app/upload-utils.test.ts`, `apps/web/app/chat-utils.test.ts` | pass (1 admin + 1 web test; no browser automation) |
+| Frontend unit checks | `apps/admin/src/app/upload-utils.test.ts`, `apps/web/app/chat-utils.test.ts` | pass (1 admin + 2 web tests; no browser automation) |
 | Python ingestion tests pass | `tools/ingestion/test_ingestion.py` | pass (13 tests, local venv via `unittest`; pytest is not installed) |
 | PostgreSQL/pgvector persistence smoke | `services/api/src/store-postgres.test.ts` with `DATABASE_URL` | pass (local container) |
 | Ingestion job state and lease persistence | API job assertion and `store-postgres.test.ts` with migration `008-ingestion-jobs.sql` | pass (memory + PostgreSQL) |
@@ -74,7 +75,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Observed health outage | API suite forces the store check to fail and verifies timestamped 503/down reporting | pass locally |
 | Revoked-source purge | API negative/positive test; PostgreSQL delete uses tenant + revoked predicates | pass (memory API; SQL path covered by query contract) |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally after Angular 21 / Next 16 upgrade |
-| Latest workspace test run | `npm test` | Admin 1 + web 1 + API 36 + contracts 1 passed; 1 PostgreSQL test skipped by default |
+| Latest workspace test run | `npm test` | Last full run: Admin 1 + web 1 + API 36 + contracts 1 passed; current web suite is 2 tests; 1 PostgreSQL test skipped by default |
 | Chat resume/history | `GET /api/v1/chat/sessions/:id` API assertion | pass (masked, tenant-scoped messages) |
 | Durable admin session revocation | `auth.test.ts` and API logout assertion backed by store session records; PostgreSQL migration `010-auth-sessions.sql` | pass (memory + migration applied locally) |
 | Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |
