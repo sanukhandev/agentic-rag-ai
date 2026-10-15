@@ -1,5 +1,6 @@
 import type { Citation } from './types.js';
 import { z } from 'zod';
+import { assertExternalEndpoint } from './runtime-security.js';
 
 export interface ModelEvidence { citation: Citation; content: string; }
 export interface ModelPersona { name: string; greeting: string; personality: string; tone: string; speakingStyle: string; permittedLanguages: string[]; }
@@ -29,7 +30,7 @@ export class DeterministicGroundedModel implements ChatModel {
 }
 
 export class AzureFoundryModel implements ChatModel {
-  constructor(private readonly endpoint: string, private readonly deployment: string, private readonly apiKey: string, private readonly apiVersion = '2024-10-21') {}
+  constructor(private readonly endpoint: string, private readonly deployment: string, private readonly apiKey: string, private readonly apiVersion = '2024-10-21') { assertExternalEndpoint(endpoint, 'Azure AI'); }
 
   async draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; persona?: ModelPersona }): Promise<ModelDraft> {
     if (!this.endpoint || !this.deployment || !this.apiKey) throw new Error('Azure AI Foundry is not configured.');

@@ -2,12 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { ActionRequest, Store } from './types.js';
 import { opaqueReference } from './privacy.js';
+import { assertExternalEndpoint } from './runtime-security.js';
 
 export interface WorkflowResult { externalReference: string; }
 export interface WorkflowAdapter { execute(input: { workflowKey: string; tenantId: string; opaqueReference: string; idempotencyKey: string }): Promise<WorkflowResult>; }
 
 export class HttpN8nWorkflowAdapter implements WorkflowAdapter {
-  constructor(private readonly baseUrl: string, private readonly secret: string, private readonly timeoutMs = 5000) {}
+  constructor(private readonly baseUrl: string, private readonly secret: string, private readonly timeoutMs = 5000) { assertExternalEndpoint(baseUrl, 'n8n'); }
 
   async execute(input: { workflowKey: string; tenantId: string; opaqueReference: string; idempotencyKey: string }): Promise<WorkflowResult> {
     if (!this.baseUrl || !this.secret) throw new Error('Private n8n adapter is not configured.');

@@ -77,12 +77,13 @@ This section is updated after verification. No scenario is marked passing from s
 | Duplicate chat idempotency | API repeats a completed `clientMessageId` and returns the same response without a second durable user message | pass (memory API; PostgreSQL unique constraint and store lookup covered) |
 | Bounded API input and abuse control | API suite verifies typed 413 oversized JSON and 429 rate-limit responses | pass locally |
 | Production startup safety | `app.test.ts` refuses deterministic model/embedding/mock workflow and missing worker/callback adapters in production; `index.ts` refuses non-PostgreSQL or missing `DATABASE_URL` production startup | pass locally |
+| External endpoint transport safety | `runtime-security.test.ts` and Azure/n8n adapter construction reject credentials, unsupported schemes and plaintext production endpoints | pass locally |
 | Observed health outage | API suite forces the store check to fail and verifies timestamped 503/down reporting | pass locally |
 | Revoked-source purge | API negative/positive test; PostgreSQL delete uses tenant + revoked predicates | pass (memory API; SQL path covered by query contract) |
 | Tenant source purge control | Angular shows a confirmation-gated purge action only for revoked sources | pass locally; manual browser verification pending |
 | Tenant session retention control | Tenant-admin Angular action requests a past 24-hour cutoff through the audited retention API and refreshes metrics/audit | pass locally; manual browser verification pending |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally after Angular 21 / Next 16 upgrade |
-| Latest workspace test run | `DATABASE_URL=... npm test` | Admin 2 + web 2 + API 44 (including PostgreSQL) + contracts 1 passed |
+| Latest workspace test run | `DATABASE_URL=... npm test` | Admin 2 + web 2 + API 45 (including PostgreSQL) + contracts 1 passed |
 | Chat resume/history | `GET /api/v1/chat/sessions/:id` API assertion | pass (masked, tenant-scoped messages) |
 | Durable admin session revocation and expiry | `auth.test.ts` covers logout revocation and expired durable sessions; API logout assertion backed by store session records; PostgreSQL migration `010-auth-sessions.sql` | pass (memory + migration applied locally) |
 | Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |

@@ -1,3 +1,5 @@
+import { assertExternalEndpoint } from './runtime-security.js';
+
 export interface EmbeddingProvider {
   readonly model: string;
   readonly dimension: number;
@@ -16,6 +18,7 @@ export class DeterministicEmbeddingProvider implements EmbeddingProvider {
 export class AzureEmbeddingProvider implements EmbeddingProvider {
   readonly dimension: number;
   constructor(private readonly endpoint: string, private readonly deployment: string, private readonly apiKey: string, private readonly apiVersion: string, dimension: number) {
+    assertExternalEndpoint(endpoint, 'Azure embedding');
     this.dimension = dimension;
   }
 
