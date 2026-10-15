@@ -9,6 +9,8 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "verify:compose": "node scripts/verify-compose.mjs",
+    "verify:secrets": "node scripts/verify-secrets.mjs",
+    "verify:secrets:test": "node --test scripts/verify-secrets.test.mjs",
     "verify:local": "node scripts/verify-local.mjs",
     "acceptance:local": "node scripts/acceptance-local.mjs",
     "seed:local": "node scripts/seed-local.mjs",
