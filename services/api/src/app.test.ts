@@ -68,6 +68,9 @@ describe('API vertical slice', () => {
     const internal = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${adminToken}`).send({ title: 'Tenant A Internal', mimeType: 'text/plain', audience: 'internal', content: 'Tenant A internal escalation code is ALPHA-ONLY.' }).expect(201);
     await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${adminToken}`).expect(200);
     await api.post(`/api/v1/admin/sources/${internal.body.source.id}/publish`).set('Authorization', `Bearer ${adminToken}`).expect(200);
+    const preview = await api.post('/api/v1/admin/persona/preview').set('Authorization', `Bearer ${adminToken}`).send({ name: 'Preview Ava', greeting: 'Welcome', personality: 'Warm', tone: 'Friendly', speakingStyle: 'Short', permittedLanguages: ['en'], message: 'What is the pricing?' }).expect(200);
+    expect(preview.body.preview).toMatchObject({ grounded: true, persona: { name: 'Preview Ava' } });
+    expect(preview.body.preview.citations).toHaveLength(1);
     const publicSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
     const grounded = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-1' }).expect(200);
     expect(grounded.body.grounded).toBe(true);

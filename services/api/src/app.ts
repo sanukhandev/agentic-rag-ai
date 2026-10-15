@@ -16,6 +16,7 @@ const memberSchema = z.object({ email: z.string().email(), password: passwordSch
 const domainSchema = z.object({ hostname: z.string().trim().toLowerCase().regex(/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/, 'A valid hostname is required.') });
 const safePersonaText = (max: number) => z.string().trim().min(1).max(max).refine((value) => !/\b(ignore (?:all )?rules|system prompt|search the web|reveal secrets|bypass security)\b/i.test(value), 'Persona contains an unsafe instruction.');
 const personaSchema = z.object({ name: safePersonaText(80), greeting: safePersonaText(500), personality: safePersonaText(500), tone: safePersonaText(200), speakingStyle: safePersonaText(200), permittedLanguages: z.array(z.string().min(2).max(12)).min(1).max(10) });
+const personaPreviewSchema = personaSchema.extend({ message: z.string().trim().min(1).max(4000) });
 const sourceSchema = z.object({ title: z.string().trim().min(1).max(200), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'text/html', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']), sourceUrl: z.string().url().optional(), audience: z.enum(['public', 'internal']).default('public'), content: z.string().trim().min(1).max(200_000) });
 const ingestionRequestSchema = sourceSchema.omit({ content: true });
 const ingestionResultSchema = z.object({
@@ -208,6 +209,31 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.get('/api/v1/admin/persona/versions', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listPersonaVersions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.post('/api/v1/admin/persona/versions/:id/publish', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const version = await store.publishPersonaVersion(tenantId, routeParam(req, 'id')); if (!version) throw new HttpError(404, 'PERSONA_VERSION_NOT_FOUND', 'Persona version not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'persona.published', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() }); res.json({ version }); } catch (error) { next(error); } });
 
+  app.post('/api/v1/admin/persona/preview', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      await activeTenant(store, tenantId);
+      const input = parse(personaPreviewSchema, req.body);
+      const masked = maskPii(input.message);
+      const previewSession = { id: randomUUID(), tenantId, createdAt: new Date().toISOString(), tokenMap: new Map<string, string>() };
+      saveTokens(previewSession, masked.tokens, tokenVault);
+      const queryEmbedding = await embedding.embed(masked.masked);
+      const ranked = rankChunksWithVector(masked.masked, await store.searchSearchableChunks(tenantId, 'internal', queryEmbedding, 4), queryEmbedding, 4);
+      const evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: chunk.content }));
+      const languageAllowed = isPermittedLanguage(masked.masked, input.permittedLanguages);
+      let draft: ModelDraft;
+      if (!languageAllowed) draft = { answer: `I can only answer in the permitted languages: ${input.permittedLanguages.join(', ')}.`, citationIds: [], proposedIntent: null };
+      else if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null };
+      else draft = await model.draft({ maskedMessage: masked.masked, evidence, personaName: input.name, persona: input });
+      assertKnownTokens(previewSession, draft.answer, tokenVault);
+      const citations = validateCitations(draft, evidence);
+      const grounded = languageAllowed && hasSufficientEvidence(draft.answer, evidence, citations);
+      const safeCitations = grounded ? citations : [];
+      const answer = !languageAllowed ? draft.answer : grounded ? draft.answer : `I’m ${input.name}. The approved knowledge does not establish an answer to that question, so I won’t guess.`;
+      res.json({ preview: { answer: rehydrateForSession(previewSession, answer, tokenVault), grounded, citations: safeCitations, persona: { name: input.name, permittedLanguages: input.permittedLanguages } } });
+    } catch (error) { next(error); }
+  });
+
   app.post('/api/v1/admin/ingestion-jobs', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
     try {
       const tenantId = await tenantForRequest(store, req);
@@ -392,7 +418,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       let draft: ModelDraft;
       if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null };
       else if (!languageAllowed) draft = { answer: `I can only answer in the permitted languages: ${persona?.permittedLanguages.join(', ')}.`, citationIds: [], proposedIntent: null };
-      else try { draft = await model.draft({ maskedMessage: masked.masked, evidence, personaName: persona?.name ?? 'Sales assistant' }); } catch { throw new HttpError(503, 'MODEL_UNAVAILABLE', 'The assistant is currently unable to verify an answer.'); }
+      else try { const modelInput = { maskedMessage: masked.masked, evidence, personaName: persona?.name ?? 'Sales assistant' }; draft = await model.draft(persona ? { ...modelInput, persona } : modelInput); } catch { throw new HttpError(503, 'MODEL_UNAVAILABLE', 'The assistant is currently unable to verify an answer.'); }
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       const citations = validateCitations(draft, evidence);
       const grounded = evidence.length > 0 && hasSufficientEvidence(draft.answer, evidence, citations);
