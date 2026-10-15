@@ -88,7 +88,7 @@ Examples illustrate schema only; they are not live data and do not imply a shipp
 - **streaming**: optional later SSE design; do not stream unchecked model tokens that may contain PII or unverified claims. Buffer and validate or build a secure streaming gate before enabling.
 
 ## Backend-only action contract
-Node → n8n: workflow allowlist ID, tenant-scoped opaque business reference, correlation ID, idempotency key, validated minimal payload and authenticated signature/service identity. n8n → Node: schema-validated status (accepted, completed, failed, unknown), external reference and sanitized error reason. No direct client webhook path.
+Node → n8n: workflow allowlist ID, tenant-scoped opaque business reference, correlation ID, idempotency key, validated minimal payload and authenticated signature/service identity. n8n → Node: schema-validated status (accepted, completed, failed, unknown), a bounded opaque external identifier (`[A-Za-z0-9][A-Za-z0-9._:-]{0,199}`) and sanitized error reason. No direct client webhook path; arbitrary text or customer identifiers are rejected at the callback/adapter boundary.
 
 ## Anti-replay
 Duplicate clientMessageId or action idempotency key must not create duplicate customer contacts or repeated workflow effects. Use transactional reservations, action state machine and TTLs. Failed executions should be recoverable without unknown double delivery.

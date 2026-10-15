@@ -7,6 +7,8 @@ import { assertExternalEndpoint } from './runtime-security.js';
 export interface WorkflowResult { externalReference: string; }
 export interface WorkflowAdapter { execute(input: { workflowKey: string; tenantId: string; opaqueReference: string; idempotencyKey: string }): Promise<WorkflowResult>; }
 
+export const isSafeExternalReference = (value: string): boolean => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
+
 export class HttpN8nWorkflowAdapter implements WorkflowAdapter {
   constructor(private readonly baseUrl: string, private readonly secret: string, private readonly timeoutMs = 5000) { assertExternalEndpoint(baseUrl, 'n8n'); }
 
@@ -18,7 +20,7 @@ export class HttpN8nWorkflowAdapter implements WorkflowAdapter {
     const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}/lead-capture`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-agentic-timestamp': String(payload.timestamp), 'x-agentic-nonce': payload.nonce, 'x-agentic-signature': signature, 'x-agentic-idempotency-key': input.idempotencyKey }, body, signal: AbortSignal.timeout(this.timeoutMs) });
     if (!response.ok) throw new Error(`Private n8n request failed with status ${response.status}.`);
     const result = await response.json() as { externalReference?: unknown };
-    if (typeof result.externalReference !== 'string' || !result.externalReference) throw new Error('Private n8n response was invalid.');
+    if (typeof result.externalReference !== 'string' || !isSafeExternalReference(result.externalReference)) throw new Error('Private n8n response was invalid.');
     return { externalReference: result.externalReference };
   }
 }

@@ -166,6 +166,10 @@ describe('API vertical slice', () => {
     const callbackTimestamp = Date.now();
     const callbackNonce = 'callback-nonce-1';
     await api.post('/api/v1/internal/n8n/callback').set('x-agentic-timestamp', String(callbackTimestamp)).set('x-agentic-nonce', callbackNonce).set('x-agentic-signature', 'bad').send(callbackBody).expect(401);
+    const invalidReferenceBody = { ...callbackBody, externalReference: 'alice@example.com' };
+    const invalidReferenceNonce = 'callback-nonce-invalid-reference';
+    const invalidReferenceSignature = signN8nPayload('callback-secret', callbackTimestamp, invalidReferenceNonce, JSON.stringify(invalidReferenceBody));
+    await api.post('/api/v1/internal/n8n/callback').set('x-agentic-timestamp', String(callbackTimestamp)).set('x-agentic-nonce', invalidReferenceNonce).set('x-agentic-signature', invalidReferenceSignature).send(invalidReferenceBody).expect(422);
     const callbackSignature = signN8nPayload('callback-secret', callbackTimestamp, callbackNonce, JSON.stringify(callbackBody));
     const wrongTenantBody = { ...callbackBody, tenantId: tenantB.body.tenant.id as string };
     const wrongTenantSignature = signN8nPayload('callback-secret', callbackTimestamp, 'callback-nonce-wrong-tenant', JSON.stringify(wrongTenantBody));

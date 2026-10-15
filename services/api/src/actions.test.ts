@@ -101,4 +101,11 @@ describe('action gateway', () => {
     expect(request.headers).toMatchObject({ 'x-agentic-idempotency-key': 'client-1' });
     fetchMock.mockRestore();
   });
+
+  it('rejects external references that are not opaque identifiers', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ externalReference: 'alice@example.com' }), { status: 200 }));
+    const adapter = new HttpN8nWorkflowAdapter('https://n8n.internal', 'shared-secret');
+    await expect(adapter.execute({ workflowKey: 'lead.capture', tenantId: 'tenant-a', opaqueReference: 'lead-1', idempotencyKey: 'client-1' })).rejects.toThrow('Private n8n response was invalid.');
+    vi.restoreAllMocks();
+  });
 });
