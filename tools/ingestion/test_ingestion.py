@@ -114,6 +114,16 @@ class IngestionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Macro"):
                 extract_file(macro_docx)
 
+            unsafe_docx = Path(directory) / "unsafe.docx"
+            with zipfile.ZipFile(unsafe_docx, "w") as archive:
+                archive.writestr("../outside.txt", b"unsafe")
+            with self.assertRaisesRegex(ValueError, "unsafe path"):
+                extract_file(unsafe_docx)
+
+            with patch("ingestion.pipeline.MAX_CONTAINER_UNCOMPRESSED_BYTES", 1):
+                with self.assertRaisesRegex(ValueError, "extraction limits"):
+                    extract_file(macro_docx)
+
     def test_website_ingestion_blocks_private_dns_and_redirects(self) -> None:
         with patch("ingestion.pipeline.socket.getaddrinfo", return_value=[(None, None, None, None, ("127.0.0.1", 443))]), patch("requests.get") as request:
             with self.assertRaisesRegex(ValueError, "Private"):

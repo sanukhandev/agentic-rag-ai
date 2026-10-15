@@ -9,9 +9,12 @@ import socket
 import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
 MAX_BYTES = 5 * 1024 * 1024
+MAX_CONTAINER_ENTRIES = 2_000
+MAX_CONTAINER_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 PARSER_VERSION = "python-ingestion-0.1.0"
 
 
@@ -91,7 +94,12 @@ def _validate_file_container(path: Path) -> None:
     if not zipfile.is_zipfile(path):
         raise ValueError("File signature does not match Office Open XML.")
     with zipfile.ZipFile(path) as archive:
-        names = {name.lower() for name in archive.namelist()}
+        entries = archive.infolist()
+        if len(entries) > MAX_CONTAINER_ENTRIES or sum(entry.file_size for entry in entries) > MAX_CONTAINER_UNCOMPRESSED_BYTES:
+            raise ValueError("Office container exceeds safe extraction limits.")
+        if any(PurePosixPath(entry.filename).is_absolute() or ".." in PurePosixPath(entry.filename).parts for entry in entries):
+            raise ValueError("Office container contains an unsafe path.")
+        names = {entry.filename.lower() for entry in entries}
         if any(name.endswith("vbaproject.bin") for name in names):
             raise ValueError("Macro-enabled Office files are unsupported.")
 

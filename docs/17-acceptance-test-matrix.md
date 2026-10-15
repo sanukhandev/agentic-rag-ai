@@ -68,7 +68,7 @@ The system is considered **locally complete** only with automated synthetic fixt
 | SRC-04 | Pass: text PDF page locators and OCR-only rejection in `test_ingestion.py`. |
 | SRC-05 | Pass: allowlisted HTTPS snapshot and source URL provenance in `test_ingestion.py`; API domain allowlist covered in `app.test.ts`. |
 | SRC-06 | Pass locally: private DNS, redirects and DNS-rebinding address changes are rejected by Python tests. |
-| SRC-07 | Pass locally: mismatched signatures, macro-enabled Office containers, legacy `.doc`/`.xls` and OCR-only PDF inputs fail visibly; encrypted-parser behavior remains a production parser-policy decision. |
+| SRC-07 | Pass locally: mismatched signatures, macro/path-traversal Office containers, legacy `.doc`/`.xls` and OCR-only PDF inputs fail visibly; bounded decompression limits are enforced and encrypted-parser behavior remains a production parser-policy decision. |
 | SRC-08 | Pass: API duplicate content is idempotent; action proposal races recover from PostgreSQL unique conflicts. |
 | SRC-09 | Pass: failed reindex test proves the prior active source remains active. |
 | SRC-10 | Pass: revoke immediately removes a source from retrieval; purge requires prior revocation. |
