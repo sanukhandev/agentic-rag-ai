@@ -9,6 +9,7 @@ import { MockWorkflowAdapter, signN8nPayload } from './actions.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import type { EmbeddingProvider } from './embedding.js';
 import type { ChatModel, ModelDraft } from './model.js';
+import { TokenVault } from './privacy.js';
 
 class CapturingModel implements ChatModel {
   public readonly prompts: string[] = [];
@@ -38,6 +39,10 @@ class InjectedIntentModel implements ChatModel {
 }
 
 describe('API vertical slice', () => {
+  it('refuses production startup with local model, embedding, workflow or worker fallbacks', () => {
+    expect(() => createApp({ nodeEnv: 'production', jwtSecret: 'production-jwt-secret', tokenVault: new TokenVault('production-vault-secret') })).toThrow('Production Azure, embedding, workflow, callback and ingestion adapters are required.');
+  });
+
   it('onboards tenants, isolates sources, grounds answers, masks PII, and confirms one workflow', async () => {
     const model = new CapturingModel();
     const workflow = new MockWorkflowAdapter();

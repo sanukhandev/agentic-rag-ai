@@ -76,6 +76,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Tenant workflow and audit operations | Tenant-scoped workflow-run and audit APIs are rendered in the Angular workspace; API test proves A/B isolation | pass locally; manual browser verification pending |
 | Duplicate chat idempotency | API repeats a completed `clientMessageId` and returns the same response without a second durable user message | pass (memory API; PostgreSQL unique constraint and store lookup covered) |
 | Bounded API input and abuse control | API suite verifies typed 413 oversized JSON and 429 rate-limit responses | pass locally |
+| Production startup safety | `app.test.ts` refuses deterministic model/embedding/mock workflow and missing worker/callback adapters in production; `index.ts` refuses non-PostgreSQL or missing `DATABASE_URL` production startup | pass locally |
 | Observed health outage | API suite forces the store check to fail and verifies timestamped 503/down reporting | pass locally |
 | Revoked-source purge | API negative/positive test; PostgreSQL delete uses tenant + revoked predicates | pass (memory API; SQL path covered by query contract) |
 | Tenant source purge control | Angular shows a confirmation-gated purge action only for revoked sources | pass locally; manual browser verification pending |
