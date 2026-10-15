@@ -32,6 +32,9 @@ export class AppComponent {
   previewMessage = 'What can you help me with?'; previewAnswer = ''; previewGrounded = false;
   permittedLanguageText = 'en';
 
+  get canEditSources(): boolean { return this.role === 'tenant_admin' || this.role === 'tenant_editor'; }
+  get canManagePersona(): boolean { return this.role === 'tenant_admin'; }
+
   login(): void { this.http.post<{ token: string; user: { role: string } }>(`${api}/api/v1/auth/login`, { email: this.email, password: this.password }).subscribe({ next: (body) => { this.token = body.token; this.role = body.user.role; this.loadHealth(); if (this.role === 'platform_admin') { this.loadTenants(); this.loadPlatformOverview(); } else { this.loadSources(); this.loadJobs(); this.loadDashboard(); this.loadWorkflowRuns(); this.loadAudit(); this.loadPersona(); this.loadPersonaVersions(); if (this.role === 'tenant_admin') { this.loadDomains(); this.loadMembers(); this.loadChannel(); } } }, error: () => { this.error = 'Login failed.'; } }); }
   loadTenants(): void { this.http.get<{ items: Tenant[] }>(`${api}/api/v1/admin/tenants`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.tenants = body.items; }, error: () => { this.error = 'Could not load tenants.'; } }); }
   loadPlatformOverview(): void { this.http.get<PlatformOverview>(`${api}/api/v1/admin/platform/overview`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.platformOverview = body; }, error: () => { this.error = 'Could not load platform overview.'; } }); }
