@@ -72,7 +72,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const nodeEnv = dependencies.nodeEnv ?? process.env.NODE_ENV ?? 'development';
   const jwtSecret = dependencies.jwtSecret ?? process.env.JWT_SECRET ?? 'local-development-only-change-me';
   const vaultSecret = process.env.PII_VAULT_KEY ?? 'local-development-pii-vault-key';
-  if (nodeEnv === 'production' && (!dependencies.jwtSecret && !process.env.JWT_SECRET || !process.env.PII_VAULT_KEY)) throw new Error('Production JWT_SECRET and PII_VAULT_KEY are required.');
+  if (nodeEnv === 'production' && ((!dependencies.jwtSecret && !process.env.JWT_SECRET) || (!dependencies.tokenVault && !process.env.PII_VAULT_KEY))) throw new Error('Production JWT_SECRET and PII_VAULT_KEY are required.');
   const tokenVault = dependencies.tokenVault ?? new TokenVault(vaultSecret);
   const embedding = dependencies.embedding ?? new DeterministicEmbeddingProvider();
   const n8nCallbackSecret = dependencies.n8nCallbackSecret ?? process.env.N8N_WEBHOOK_SECRET ?? '';
