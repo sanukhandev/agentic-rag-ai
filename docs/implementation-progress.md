@@ -94,7 +94,7 @@ This section is updated after verification. No scenario is marked passing from s
 
 - Live identity-provider and production n8n credentials are unavailable; live Azure chat is verified locally, while embedding remains blocked by the missing deployment.
 - Azure Foundry chat credentials are now configured locally from the user-provided private note; a live GPT-4.1-mini v1 request returned HTTP 200 with valid JSON. The configured resource does not have an embedding deployment available (`DeploymentNotFound` for `text-embedding-3-small`), so local runs keep the deterministic embedding provider until a deployed embedding model name is supplied.
-- Hosted CI run `38733428519` for commit `95d1688` passed in 1m31s, including pgvector migrations, all Node tests/builds, dependency audit, secret guard and Python ingestion tests; GitHub reported non-blocking action-runtime/runner migration annotations.
+- Hosted CI run `38733984440` for commit `ff91cc3` passed in 1m41s, including pgvector migrations, all Node tests/builds, dependency audit, secret guard and Python ingestion tests; GitHub reported non-blocking action-runtime/runner migration annotations.
 - The framework dependency audit is clean locally; lockfile integrity and hosted CI still need verification in the repository CI environment.
 - No browser automation was used; UI validation is build/typecheck-only per the requested unit-test-only constraint.
 - The existing root n8n Compose file is still a public HTTP development deployment and is not a production security baseline.

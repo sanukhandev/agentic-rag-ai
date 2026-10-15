@@ -94,7 +94,7 @@ The system is considered **locally complete** only with automated synthetic fixt
 | OPS-02 | Pass: tenant dashboard/telemetry counters are scoped and redacted; manual dashboard verification remains pending. |
 | END-01 | Pass for API vertical slice: `app.test.ts` covers onboarding→source→publish→chat→citation→action; web/admin browser journey remains manual. |
 | END-02 | Pass for API isolation: tenant A/B personas, sources, histories and operations remain separated. |
-| BUILD-01 | Pass: `npm ci --dry-run`, migrations and documented local commands; hosted CI run `38733428519` for `95d1688` provisioned pgvector, applied ordered migrations and completed successfully. |
+| BUILD-01 | Pass: `npm ci --dry-run`, migrations and documented local commands; hosted CI run `38733984440` for `ff91cc3` provisioned pgvector, applied ordered migrations and completed successfully. |
 | BUILD-02 | Pass locally: `DATABASE_URL=... npm test` is Admin 2 + web 2 + API 45 (including PostgreSQL) + contracts 1, Python ingestion is 14 passed in the pinned venv, and lint/typecheck/build pass. |
 | SEC-01 | Partial/blocked for production: secret guard, audit, startup fallback guard, external HTTPS endpoint guard and private DB compose checks pass, but the user-requested root n8n compose remains public HTTP development configuration. |
 | EXT-01 | Blocked: live chat smoke was previously observed, but the configured embedding deployment is missing; deterministic embeddings are used locally. |
