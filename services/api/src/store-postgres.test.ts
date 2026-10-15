@@ -10,6 +10,8 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
     const tenant = await store.createTenant({ name: 'Postgres Test', slug: `postgres-${randomUUID()}` });
     try {
       expect((await store.setTenantPublicOrigin(tenant.id, 'https://store.example'))?.publicOrigin).toBe('https://store.example');
+      const member = await store.createUser({ email: `member-${randomUUID()}@example.test`, passwordHash: 'hash', role: 'tenant_editor', tenantId: tenant.id });
+      expect(await store.updateUserRole(member.id, tenant.id, 'tenant_viewer')).toMatchObject({ id: member.id, role: 'tenant_viewer' });
       const domain = await store.addDomain({ tenantId: tenant.id, hostname: 'chat.postgres.example' });
       expect(await store.listDomains(tenant.id)).toMatchObject([{ id: domain.id, hostname: 'chat.postgres.example' }]);
       expect(await store.removeDomain(domain.id, tenant.id)).toBe(true);
@@ -52,6 +54,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       expect(await store.listSourceVersions(source.id, tenant.id)).toHaveLength(2);
       expect(await store.purgeExpiredSessions(tenant.id, new Date(Date.now() + 1_000).toISOString())).toBe(1);
     } finally {
+      await pool.query('DELETE FROM users WHERE tenant_id=$1', [tenant.id]);
       await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
       await pool.end();
     }
