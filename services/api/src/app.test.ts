@@ -47,6 +47,15 @@ class RawPiiModel implements ChatModel {
   }
 }
 
+class FailsOnceModel implements ChatModel {
+  private attempts = 0;
+  async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
+    if (this.attempts++ === 0) throw new Error('temporary model outage');
+    const evidence = input.evidence[0];
+    return evidence ? { answer: evidence.content, citationIds: [evidence.citation.chunkId], proposedIntent: null } : { answer: 'No approved evidence supports that answer.', citationIds: [], proposedIntent: null };
+  }
+}
+
 describe('API vertical slice', () => {
   it('refuses production startup with local model, embedding, workflow or worker fallbacks', () => {
     expect(() => createApp({ nodeEnv: 'production', jwtSecret: 'production-jwt-secret', tokenVault: new TokenVault('production-vault-secret') })).toThrow('Production Azure, embedding, workflow, callback and ingestion adapters are required.');
@@ -434,5 +443,22 @@ describe('API vertical slice', () => {
     expect(stored?.response?.answer).toMatch(/\[EMAIL_\d+\]/);
     const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'ignored duplicate', clientMessageId: 'pii-response-1' }).expect(200);
     expect(duplicate.body.answer).toContain('alice@example.com');
+  });
+
+  it('allows a failed model turn to retry once with the same masked idempotency record', async () => {
+    const runtime = createApp({ nodeEnv: 'test', model: new FailsOnceModel() });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-retry-message@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Retry Message Tenant', slug: 'retry-message-tenant', adminEmail: 'admin-retry-message@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-retry-message@example.test', password: 'TenantA1Password' }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Retry FAQ', mimeType: 'text/plain', audience: 'public', content: 'Retry pricing is 50 credits.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is retry pricing?', clientMessageId: 'retry-message-1' }).expect(503).expect((response) => expect(response.body.error.code).toBe('MODEL_UNAVAILABLE'));
+    const retry = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is retry pricing?', clientMessageId: 'retry-message-1' }).expect(200);
+    expect(retry.body.grounded).toBe(true);
+    expect((await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).expect(200)).body.messages.filter((message: { clientMessageId: string | null }) => message.clientMessageId === 'retry-message-1')).toHaveLength(1);
+    const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Different retry content', clientMessageId: 'retry-message-1' }).expect(200);
+    expect(duplicate.body.messageId).toBe(retry.body.messageId);
   });
 });

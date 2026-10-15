@@ -10,7 +10,7 @@ import { DeterministicGroundedModel, hasSufficientEvidence, isPermittedLanguage,
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
-import type { Session, SourceStatus, Store, TenantStatus } from './types.js';
+import type { Message, Session, SourceStatus, Store, TenantStatus } from './types.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number };
 
@@ -491,6 +491,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
 
   app.post('/api/v1/chat/messages', optionalApi, async (req, res, next) => {
+    let pendingMessage: Message | null = null;
     try {
       const input = parse(messageSchema, req.body);
       const session = await store.getSession(input.sessionId);
@@ -500,13 +501,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!getAuth(req)) enforcePublicOrigin(req, tenant, nodeEnv);
       enforcePublicChatEnabled(req, tenant);
       if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.');
-      const durableDuplicate = await store.getMessageByClientId(session.id, input.clientMessageId);
-      if (durableDuplicate?.response) { res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
-      if (durableDuplicate) throw new HttpError(409, 'MESSAGE_IN_PROGRESS', 'A request with this client message ID is already being processed.');
       const masked = maskPii(input.message);
+      const durableDuplicate = await store.getMessageByClientId(session.id, input.clientMessageId);
+      const retryableDuplicate = durableDuplicate?.response?.retryable === true;
+      if (durableDuplicate?.response && !retryableDuplicate) { res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
+      if (durableDuplicate && !retryableDuplicate) throw new HttpError(409, 'MESSAGE_IN_PROGRESS', 'A request with this client message ID is already being processed.');
+      if (durableDuplicate && durableDuplicate.maskedContent !== masked.masked) throw new HttpError(409, 'MESSAGE_RETRY_MISMATCH', 'Retry must use the original message content.');
       saveTokens(session, masked.tokens, tokenVault);
       await store.updateSession(session);
-      const userMessage = await store.addMessage({ id: randomUUID(), sessionId: session.id, tenantId: session.tenantId, role: 'user', maskedContent: masked.masked, citations: [], clientMessageId: input.clientMessageId, response: null, createdAt: new Date().toISOString() });
+      const userMessage = durableDuplicate ?? await store.addMessage({ id: randomUUID(), sessionId: session.id, tenantId: session.tenantId, role: 'user', maskedContent: masked.masked, citations: [], clientMessageId: input.clientMessageId, response: null, createdAt: new Date().toISOString() });
+      pendingMessage = userMessage;
       const internal = ensureTenant(req, session.tenantId) && getAuth(req)?.role !== undefined;
       let queryEmbedding: number[];
       try { queryEmbedding = await embedding.embed(masked.masked); } catch { throw new HttpError(503, 'EMBEDDING_UNAVAILABLE', 'The assistant is currently unable to search approved knowledge.'); }
@@ -537,7 +541,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       await store.updateMessage({ ...userMessage, response: persistedResponse });
       recordChatOutcome(session.tenantId, grounded, Boolean(action));
       res.json(response);
-    } catch (error) { next(error); }
+    } catch (error) {
+      if (pendingMessage && !pendingMessage.response) {
+        try { await store.updateMessage({ ...pendingMessage, response: { retryable: true } }); } catch { /* preserve the original failure response */ }
+      }
+      next(error);
+    }
   });
 
   app.post('/api/v1/chat/actions/:id/confirm', optionalApi, async (req, res, next) => {

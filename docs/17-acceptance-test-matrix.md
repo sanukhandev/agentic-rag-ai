@@ -85,7 +85,7 @@ The system is considered **locally complete** only with automated synthetic fixt
 | PII-03 | Pass: rehydration is purpose-limited to the assistant response path. |
 | PII-04 | Pass locally: source text is sanitized before chunking/embedding and uploaded bytes remain private until worker success. |
 | API-01 | Pass: bounded JSON returns 413 and configured abuse bursts return 429. |
-| API-02 | Pass: duplicate `clientMessageId` returns the durable response without a second user message. |
+| API-02 | Pass: duplicate `clientMessageId` returns the durable response without a second user message; a failed model turn is retryable under the same masked idempotency record. |
 | FLOW-01 | Pass: confirmation is required and prompt injection alone produces no action. |
 | FLOW-02 | Pass: mock adapter receives exactly one opaque, confirmed action and audit result. |
 | FLOW-03 | Pass: forged, wrong-tenant and replayed callbacks are rejected; nonce claims are store-backed. |
