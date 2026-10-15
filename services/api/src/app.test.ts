@@ -151,6 +151,12 @@ describe('API vertical slice', () => {
     expect(limited.body.error.code).toBe('RATE_LIMITED');
   });
 
+  it('rejects oversized JSON with a typed bounded-input error', async () => {
+    const api = request(createApp({ nodeEnv: 'test' }).app);
+    const oversized = await api.post('/api/v1/auth/login').send({ padding: 'x'.repeat(9 * 1024 * 1024) }).expect(413);
+    expect(oversized.body.error.code).toBe('PAYLOAD_TOO_LARGE');
+  });
+
   it('abstains when the model answer has no authorized citation', async () => {
     const runtime = createApp({ nodeEnv: 'test', model: new InvalidCitationModel() });
     const api = request(runtime.app);
