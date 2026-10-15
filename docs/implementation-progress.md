@@ -100,7 +100,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |
 | Dependency audit | `npm audit --omit=dev --audit-level=high` | pass: 0 vulnerabilities after Angular 21.2.25, Next 16.4.1, React 19.3.1 and TypeScript 5.9.3 upgrade |
 | Reproducible install dry run | `npm ci --dry-run` | pass locally |
-| Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, Admin 2 + Web 3 + API 50 + Contracts 3, synthetic five-source acceptance, builds, 0 audit vulnerabilities and Python 16 |
+| Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, Admin 2 + Web 3 + API 52 + Contracts 3, synthetic five-source acceptance, builds, 0 audit vulnerabilities and Python 16 |
 | API/ER documentation | `docs/openapi.yaml`, `docs/19-data-model.md` | present for the implemented local route and persistence surface; runtime schemas/migrations remain authoritative |
 | n8n compose security defaults | `npm run verify:compose` / `docker compose config` | pass: digest-pinned image and default `127.0.0.1:5678`; public bind requires explicit overrides |
 
