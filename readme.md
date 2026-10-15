@@ -1,6 +1,6 @@
 # Agentic RAG AI
 
-A planned **privacy-first, multi-tenant, RAG-grounded sales assistant platform**. Platform admins onboard organizations; tenant admins manage approved Word/Excel/text/PDF/URL knowledge and individual agent names, tone, languages and styles. Angular admins monitor service health through Node APIs; website visitors use a Next.js tenant-scoped, source-grounded chat. The first client channel is a web chat; the architecture allows additional sales channels via validated channel adapters.
+A local **privacy-first, multi-tenant, RAG-grounded sales assistant vertical slice**. Platform admins onboard organizations; tenant admins manage approved Word/Excel/text/PDF/URL knowledge and individual agent names, tone, languages and styles. Angular admins monitor service health through Node APIs; website visitors use a Next.js tenant-scoped, source-grounded chat. The first client channel is a web chat; the architecture allows additional sales channels via validated channel adapters.
 
 **Status: local MVP vertical slice in progress.** The repository now contains the Next.js customer chat, Angular admin surface, Node/Express API, typed contracts, deterministic source-grounded retrieval, encrypted session PII vault, PostgreSQL/pgvector schema/adapter, Python ingestion tool, and guarded mock/private workflow adapters. Production identity, live Azure calls and live private n8n calls remain explicitly blocked until their contracts and credentials are approved.
 
