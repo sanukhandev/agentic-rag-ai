@@ -78,6 +78,7 @@ describe('API vertical slice', () => {
     expect((await api.get('/api/v1/admin/platform/overview').set('Authorization', `Bearer ${platformToken}`).expect(200)).body.tenants).toMatchObject({ total: 2, active: 2 });
     const adminA = await api.post('/api/v1/auth/login').send({ email: 'admin-a@example.test', password: 'TenantA1Password' }).expect(200);
     const adminToken = adminA.body.token as string;
+    expect((await api.get('/api/v1/auth/me').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.user).toMatchObject({ email: 'admin-a@example.test', role: 'tenant_admin', tenantId: tenantA.body.tenant.id });
     const adminB = await api.post('/api/v1/auth/login').send({ email: 'admin-b@example.test', password: 'TenantB1Password' }).expect(200);
     const adminBToken = adminB.body.token as string;
     const member = await api.post('/api/v1/admin/members').set('Authorization', `Bearer ${adminToken}`).send({ email: 'editor-a@example.test', password: 'EditorA1Password', role: 'tenant_editor' }).expect(201);
@@ -180,6 +181,9 @@ describe('API vertical slice', () => {
     const tenantBSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-b' }).expect(201);
     const crossTenant = await api.post('/api/v1/chat/messages').send({ sessionId: tenantBSession.body.sessionId, message: 'What is Tenant A pricing?', clientMessageId: 'cross-1' }).expect(200);
     expect(crossTenant.body.grounded).toBe(false);
+    const malformedAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenantA.body.tenant.id, sessionId: tenantBSession.body.sessionId, workflowKey: 'lead.capture', idempotencyKey: 'malformed-cross-tenant', state: 'awaiting_confirmation', opaqueReference: 'lead-cross-tenant', createdAt: new Date().toISOString(), result: null });
+    await api.post(`/api/v1/chat/actions/${malformedAction.id}/confirm`).send({ sessionId: tenantBSession.body.sessionId, confirmed: true }).expect(403);
+    await api.get(`/api/v1/chat/actions/${malformedAction.id}`).query({ sessionId: tenantBSession.body.sessionId }).expect(404);
     const dashboard = await api.get('/api/v1/admin/dashboard/overview').set('Authorization', `Bearer ${adminToken}`).expect(200);
     expect(dashboard.body.metrics.sourceCounts.active).toBe(2);
     const health = await api.get('/api/v1/admin/services/health').set('Authorization', `Bearer ${adminToken}`).expect(200);

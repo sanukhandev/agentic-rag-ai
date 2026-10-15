@@ -19,6 +19,7 @@ The local vertical slice implements these routes with runtime Zod validation and
 | --- | --- | --- |
 | POST /api/v1/auth/register-platform | One-time local bootstrap | Disabled in production; first-user guard |
 | POST /api/v1/auth/login | Issue a tenant/platform session | Password verification and durable session record |
+| GET /api/v1/auth/me | Return the verified current user context | Authentication middleware; no password or token material |
 | POST /api/v1/auth/logout | Revoke the current session | Server-side revocation |
 | POST /api/v1/admin/tenants | Provision a tenant and owner | Platform-admin RBAC, unique slug/email, audit |
 | GET /api/v1/admin/platform/overview | Aggregate tenant metrics | Platform-admin RBAC; no customer content |

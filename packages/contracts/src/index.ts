@@ -3,6 +3,14 @@ import { z } from 'zod';
 export const roleSchema = z.enum(['platform_admin', 'tenant_admin', 'tenant_editor', 'tenant_viewer', 'tenant_agent']);
 export type Role = z.infer<typeof roleSchema>;
 
+export const authContextSchema = z.object({
+  userId: z.string().uuid(),
+  email: z.string().email(),
+  role: roleSchema,
+  tenantId: z.string().uuid().nullable(),
+});
+export type AuthContext = z.infer<typeof authContextSchema>;
+
 export const citationSchema = z.object({
   sourceId: z.string().uuid(),
   versionId: z.string().uuid(),

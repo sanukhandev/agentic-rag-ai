@@ -54,7 +54,7 @@ The system is considered **locally complete** only with automated synthetic fixt
 
 | ID | Evidence and outcome |
 | --- | --- |
-| AUTH-01 | Pass: `services/api/src/auth.test.ts` covers issue, logout revocation and expired durable sessions; `app.test.ts` covers unauthorized access after logout. |
+| AUTH-01 | Pass: `services/api/src/auth.test.ts` covers issue, logout revocation and expired durable sessions; `app.test.ts` covers `/auth/me` current-user resolution and unauthorized access after logout. |
 | AUTH-02 | Pass: `services/api/src/app.test.ts` proves tenant A/B source, job, domain, member, workflow and audit isolation. |
 | AUTH-03 | Pass: `app.test.ts` denies unauthenticated admin access and public tenant-ID sessions. |
 | TEN-01 | Pass: `app.test.ts` provisions two tenants, owners and audited creation. |
@@ -95,7 +95,7 @@ The system is considered **locally complete** only with automated synthetic fixt
 | END-01 | Pass locally: `npm run seed:local` completed the tenant A onboarding→source→publish→grounded/refused chat→citation→confirmed mock action journey; web/admin browser journey remains manual. |
 | END-02 | Pass locally: `npm run seed:local` completed against synthetic tenant A/B with different sources/personas and verified cross-tenant refusal; API tests also cover histories and operations. |
 | BUILD-01 | Pass: `npm ci --dry-run`, migrations and documented local commands; `npm run verify:local` provisions/checks the local PostgreSQL-backed path. Hosted GitHub Actions is intentionally not configured. |
-| BUILD-02 | Pass locally: `npm run verify:local` completed with Admin 2 + Web 3 + API 49 (including PostgreSQL) + contracts 2, Python ingestion 14, lint/typecheck/build, and 0 audit vulnerabilities. |
+| BUILD-02 | Pass locally: `npm run verify:local` completed with Admin 2 + Web 3 + API 49 (including PostgreSQL) + Contracts 3, Python ingestion 14, lint/typecheck/build, and 0 audit vulnerabilities. |
 | SEC-01 | Pass for local defaults: `npm run verify:compose` confirms digest-pinned n8n and localhost-only `127.0.0.1:5678`; production remains blocked on authenticated HTTPS ingress, identity and operational controls. |
 | EXT-01 | Blocked: live chat smoke was previously observed, but the configured embedding deployment is missing; deterministic embeddings are used locally. |
 | EXT-02 | Blocked: live private n8n credentials/environment are unavailable; signed HTTP adapter and mock tests pass. |
