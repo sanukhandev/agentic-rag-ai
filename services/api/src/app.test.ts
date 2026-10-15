@@ -14,6 +14,10 @@ class CapturingModel implements ChatModel {
   }
 }
 
+class InvalidCitationModel implements ChatModel {
+  async draft(): Promise<ModelDraft> { return { answer: 'An unsupported invented answer.', citationIds: ['00000000-0000-0000-0000-000000000000'], proposedIntent: null }; }
+}
+
 describe('API vertical slice', () => {
   it('onboards tenants, isolates sources, grounds answers, masks PII, and confirms one workflow', async () => {
     const model = new CapturingModel();
@@ -104,6 +108,21 @@ describe('API vertical slice', () => {
     await api.post('/api/v1/auth/login').send({ email: 'bad@example.test', password: 'wrong' }).expect(401);
     const limited = await api.post('/api/v1/auth/login').send({ email: 'bad@example.test', password: 'wrong' }).expect(429);
     expect(limited.body.error.code).toBe('RATE_LIMITED');
+  });
+
+  it('abstains when the model answer has no authorized citation', async () => {
+    const runtime = createApp({ nodeEnv: 'test', model: new InvalidCitationModel() });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-citation@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Citation Tenant', slug: 'citation-tenant', adminEmail: 'admin-citation@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-citation@example.test', password: 'TenantA1Password' }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Citation FAQ', mimeType: 'text/plain', audience: 'public', content: 'Approved answer.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const response = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is approved?', clientMessageId: 'invalid-citation-1' }).expect(200);
+    expect(response.body.grounded).toBe(false);
+    expect(response.body.citations).toHaveLength(0);
+    expect(response.body.answer).not.toContain('unsupported invented answer');
   });
 
   it('accepts an authenticated, claimed Python ingestion result and preserves locators', async () => {

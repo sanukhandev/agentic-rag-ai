@@ -358,10 +358,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       const citations = validateCitations(draft, evidence);
       const grounded = evidence.length > 0 && citations.length > 0;
+      const answer = grounded ? draft.answer : `I’m ${persona?.name ?? 'Sales assistant'}. The approved knowledge does not establish an answer to that question, so I won’t guess.`;
       const explicitLeadRequest = /\b(contact|call|email|interested|demo|quote)\b/i.test(masked.masked);
       const action = draft.proposedIntent === 'lead.capture' && explicitLeadRequest ? await gateway.propose(session.tenantId, session.id, input.clientMessageId) : null;
-      const answer = rehydrateForSession(session, draft.answer, tokenVault);
-      const response = { messageId: randomUUID(), sessionId: session.id, answer, grounded, citations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'Please confirm that you want to submit a contact request.', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
+      const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, answer, tokenVault), grounded, citations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'Please confirm that you want to submit a contact request.', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
       await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: draft.answer, citations, clientMessageId: null, response: null, createdAt: new Date().toISOString() });
       await store.updateMessage({ ...userMessage, response });
       responseCache.set(cacheKey, response);
