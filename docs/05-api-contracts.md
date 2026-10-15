@@ -7,7 +7,7 @@ The local vertical slice implements these routes with runtime Zod validation and
 | --- | --- | --- |
 | POST /api/v1/chat/sessions | Start or resume channel session | Origin controls, throttling, scoped opaque IDs |
 | POST /api/v1/chat/messages | Submit user turn and receive grounded answer | Message size, session scope, mask→retrieve→verify |
-| GET /api/v1/chat/sessions/:id | Get permitted sanitized history | Session ownership, pagination |
+| GET /api/v1/chat/sessions/:id | Get permitted sanitized history (default 100, maximum 200 messages; newest window returned in chronological order) | Session ownership, bounded response |
 | POST /api/v1/chat/actions/:proposalId/confirm | Confirm sensitive action | Explicit confirmation, expiry, idempotency |
 | GET /api/v1/chat/actions/:id | Poll authorized action outcome | Session ownership, no PII leak |
 | GET /api/v1/health/live | Lightweight liveness | No secrets/dependency disclosure |

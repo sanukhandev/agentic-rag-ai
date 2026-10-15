@@ -44,6 +44,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       await store.updateMessage({ ...userMessage, response: { answer: 'Pricing is 100 credits.' } });
       expect((await store.getMessageByClientId(session.id, 'client-1'))?.response).toMatchObject({ answer: 'Pricing is 100 credits.' });
       expect(await store.listMessages(session.id, tenant.id)).toHaveLength(1);
+      expect(await store.listMessages(session.id, tenant.id, 1)).toHaveLength(1);
       const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'lead.capture', idempotencyKey: 'action-1', state: 'awaiting_confirmation', opaqueReference: 'lead-1', createdAt: new Date().toISOString(), result: null });
       await store.updateAction({ ...action, state: 'completed', result: { externalReference: 'run-1' } });
       expect((await store.getAction(action.id))?.result).toEqual({ externalReference: 'run-1' });

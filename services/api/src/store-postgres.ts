@@ -93,7 +93,13 @@ export class PostgresStore implements Store {
   async addMessage(message: Message): Promise<Message> { await this.pool.query('INSERT INTO chat_messages (id,session_id,tenant_id,role,masked_content,citations,client_message_id,response) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [message.id, message.sessionId, message.tenantId, message.role, message.maskedContent, JSON.stringify(message.citations), message.clientMessageId, message.response ? JSON.stringify(message.response) : null]); return message; }
   async updateMessage(message: Message): Promise<Message> { await this.pool.query('UPDATE chat_messages SET response=$1 WHERE id=$2 AND tenant_id=$3', [message.response ? JSON.stringify(message.response) : null, message.id, message.tenantId]); return message; }
   async getMessageByClientId(sessionId: string, clientMessageId: string): Promise<Message | null> { const result = await this.pool.query('SELECT * FROM chat_messages WHERE session_id=$1 AND client_message_id=$2', [sessionId, clientMessageId]); return result.rows[0] ? this.message(result.rows[0]) : null; }
-  async listMessages(sessionId: string, tenantId: string): Promise<Message[]> { const result = await this.pool.query('SELECT * FROM chat_messages WHERE session_id=$1 AND tenant_id=$2 ORDER BY created_at', [sessionId, tenantId]); return result.rows.map((row) => this.message(row)); }
+  async listMessages(sessionId: string, tenantId: string, limit?: number): Promise<Message[]> {
+    const result = limit === undefined
+      ? await this.pool.query('SELECT * FROM chat_messages WHERE session_id=$1 AND tenant_id=$2 ORDER BY created_at,id', [sessionId, tenantId])
+      : await this.pool.query('SELECT * FROM chat_messages WHERE session_id=$1 AND tenant_id=$2 ORDER BY created_at DESC,id DESC LIMIT $3', [sessionId, tenantId, limit]);
+    const messages = result.rows.map((row) => this.message(row));
+    return limit === undefined ? messages : messages.reverse();
+  }
   async createAction(action: ActionRequest): Promise<ActionRequest> { await this.pool.query('INSERT INTO action_requests (id,tenant_id,session_id,workflow_key,idempotency_key,state,opaque_reference) VALUES ($1,$2,$3,$4,$5,$6,$7)', [action.id, action.tenantId, action.sessionId, action.workflowKey, action.idempotencyKey, action.state, action.opaqueReference]); return action; }
   async getAction(id: string): Promise<ActionRequest | null> { const result = await this.pool.query('SELECT * FROM action_requests WHERE id=$1', [id]); return result.rows[0] ? this.action(result.rows[0]) : null; }
   async getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null> { const result = await this.pool.query('SELECT * FROM action_requests WHERE tenant_id=$1 AND idempotency_key=$2', [tenantId, idempotencyKey]); return result.rows[0] ? this.action(result.rows[0]) : null; }

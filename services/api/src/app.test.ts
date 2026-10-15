@@ -85,6 +85,8 @@ describe('API vertical slice', () => {
     await api.put('/api/v1/admin/persona').set('Authorization', `Bearer ${adminToken}`).send({ name: 'Ava', greeting: 'Hello', personality: 'Precise', tone: 'Clear', speakingStyle: 'Short', permittedLanguages: ['en'] }).expect(200);
     const personaVersions = await api.get('/api/v1/admin/persona/versions').set('Authorization', `Bearer ${adminToken}`).expect(200);
     expect(personaVersions.body.items).toHaveLength(1);
+    await api.put('/api/v1/admin/persona').set('Authorization', `Bearer ${adminToken}`).send({ name: 'Ava Updated', greeting: 'Hello again', personality: 'Precise', tone: 'Clear', speakingStyle: 'Short', permittedLanguages: ['en'] }).expect(200);
+    expect((await api.get('/api/v1/admin/persona/versions').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.items.filter((version: { status: string }) => version.status === 'published')).toHaveLength(1);
     const draft = await api.post('/api/v1/admin/persona/drafts').set('Authorization', `Bearer ${adminToken}`).send({ name: 'Ava 2', greeting: 'Welcome', personality: 'Warm', tone: 'Friendly', speakingStyle: 'Short', permittedLanguages: ['en', 'ar'] }).expect(201);
     await api.post(`/api/v1/admin/persona/versions/${draft.body.version.id}/publish`).set('Authorization', `Bearer ${adminToken}`).expect(200);
     expect((await api.get('/api/v1/admin/persona').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.persona.name).toBe('Ava 2');
@@ -119,6 +121,8 @@ describe('API vertical slice', () => {
     const history = await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}`).expect(200);
     expect(history.body.messages.length).toBeGreaterThanOrEqual(4);
     expect(JSON.stringify(history.body.messages)).not.toContain('alice@example.com');
+    expect((await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}?limit=2`).expect(200)).body.messages).toHaveLength(2);
+    await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}?limit=201`).expect(422);
     const pii = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'Please contact alice@example.com about pricing', clientMessageId: 'lead-1' }).expect(200);
     expect(pii.body.actionProposal).not.toBeNull();
     expect(model.prompts.at(-1)).not.toContain('alice@example.com');
