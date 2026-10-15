@@ -30,11 +30,11 @@
 | SSRF via document URLs | No arbitrary file/resource fetching; outbound egress allowlist |
 | Supply chain compromise | Lockfiles, dependency audits, pinned images, automated scanning |
 
-## Existing n8n Compose — immediate risk
-As inspected 15 Oct 2026, docker-compose.yml contains: public bind **0.0.0.0:5678:5678**, N8N_PROTOCOL=http, editor/webhook URL with a literal public IP, N8N_SECURE_COOKIE=false, and image n8nio/n8n:latest. These are **not a production security baseline**. This documentation change intentionally does not edit the Compose file.
+## Existing n8n Compose — development defaults
+The root `docker-compose.yml` is intentionally development-only. It now uses a digest-pinned n8n image, binds **127.0.0.1:5678:5678** by default, and uses localhost HTTP URLs with `N8N_SECURE_COOKIE=false` only because the local default has no TLS. These defaults are not a production security baseline.
 
 Before a public or real-customer rollout:
-- Remove public direct exposure; bind localhost/private network or put behind an authenticated HTTPS reverse proxy.
+- Keep the default private bind; for controlled staging, put n8n behind an authenticated HTTPS reverse proxy before changing the bind address.
 - Enable TLS, secure cookies, strong user auth/access control, workflow credential vault and restricted administrative access.
 - Set correct public HTTPS editor/webhook URLs if needed, enforce webhook authentication, IP/rate limits and network controls.
 - Pin a tested n8n image version; back up n8n_data securely; restrict container permissions and egress.

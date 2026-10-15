@@ -7,7 +7,7 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 ## Phase gates
 
 - [x] P00: repository audit, security constraints, spec set and threat review
-- [ ] P01: workspace, API, UI, database migration, ingestion and CI foundation (clean `npm ci --dry-run`, local gates and CI workflow with a pgvector service/migrations are valid; hosted CI passed, but the root n8n development exposure keeps the full phase gate open)
+- [x] P01: workspace, API, UI, database migration, ingestion and CI foundation (clean `npm ci --dry-run`, local gates and CI workflow with a pgvector service/migrations are valid; root n8n compose is digest-pinned and localhost-only by default; no VM deployment)
 - [ ] P02: validated source ingestion, versioning, approval and retrieval (durable job state/lease/retry, authenticated worker-result boundary, tenant-admin TXT/PDF/DOCX/XLSX upload to private Node staging, Python worker retrieval/extraction, SQL vector filtering/order, transactional reindex-to-review, explicit source version history, guarded revoked-source purge and approved HTTPS worker snapshots added; production staging/object storage, retention policy, malware scanning and production embedding remain)
 - [x] P03: tenant-aware chat, PII masking, citations and fail-closed model boundary (synthetic API gate passing; conflict refusal, scoped history, invalid-citation abstention, numeric claim verification, permitted-language refusal, tenant domain management and configured public chat-origin binding verified)
 - [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; durable callback nonce replay guard added; live n8n blocked)
@@ -90,6 +90,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Dependency audit | `npm audit --omit=dev --audit-level=high` | pass: 0 vulnerabilities after Angular 21.2.25, Next 16.4.1, React 19.3.1 and TypeScript 5.9.3 upgrade |
 | Reproducible install dry run | `npm ci --dry-run` | pass locally |
 | Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, Admin 2 + Web 2 + API 45 + Contracts 1, builds, 0 audit vulnerabilities and Python 14 |
+| n8n compose security defaults | `npm run verify:compose` / `docker compose config` | pass: digest-pinned image and default `127.0.0.1:5678`; public bind requires explicit overrides |
 
 ## Blockers and risks
 
@@ -98,4 +99,4 @@ This section is updated after verification. No scenario is marked passing from s
 - Hosted CI run `38733984440` for commit `ff91cc3` passed in 1m41s, including pgvector migrations, all Node tests/builds, dependency audit, secret guard and Python ingestion tests; GitHub reported non-blocking action-runtime/runner migration annotations.
 - The framework dependency audit is clean locally; lockfile integrity and hosted CI still need verification in the repository CI environment.
 - No browser automation was used; UI validation is build/typecheck-only per the requested unit-test-only constraint.
-- The existing root n8n Compose file is still a public HTTP development deployment and is not a production security baseline.
+- The root n8n Compose file remains a development HTTP deployment and is not a production security baseline; its default bind is localhost-only and any staging exposure requires explicit HTTPS/reverse-proxy configuration.

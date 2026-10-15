@@ -1,7 +1,7 @@
 # Developer environment and deployment (local implementation)
 
 ## Repository baseline
-The root `docker-compose.yml` declares **only an n8n service** with persistent `n8n_data` volume. Local application services are run from npm workspaces, while `infra/docker-compose.dev.yml` runs a private pgvector/PostgreSQL container. This is development infrastructure only; no VM deployment is performed by the repository.
+The root `docker-compose.yml` declares **only an n8n service** with a digest-pinned image and persistent `n8n_data` volume. Its default binding is localhost-only (`127.0.0.1:5678`) over development HTTP. Local application services are run from npm workspaces, while `infra/docker-compose.dev.yml` runs a private pgvector/PostgreSQL container. This is development infrastructure only; no VM deployment is performed by the repository.
 
 ## Intended workstation prerequisites
 Git, Docker Engine/Compose, Node.js 22+, npm, Python 3.x with venv, a PostgreSQL client and optional Azure credentials with an approved model deployment.
@@ -13,7 +13,7 @@ docker compose up -d n8n
 docker compose ps
 docker compose logs --tail=100 n8n
 ```
-**Security:** the present Compose binds the editor to all interfaces over plaintext HTTP with insecure cookies. Use only in a controlled disposable environment with network isolation; before external access or any real customer data, follow docs/06-security-and-privacy.md and replace exposed settings. Do not paste real credentials into screenshots, terminal logs or GitHub issues.
+**Security:** the default Compose binding is localhost-only plaintext HTTP with insecure cookies because it is a disposable local development profile. If a controlled staging reverse proxy is intentionally configured, override `N8N_BIND_ADDRESS`, `N8N_HOST`, `N8N_PROTOCOL`, `N8N_EDITOR_BASE_URL`, `N8N_WEBHOOK_URL` and `N8N_SECURE_COOKIE` explicitly; direct public HTTP exposure is not a production configuration. Do not paste real credentials into screenshots, terminal logs or GitHub issues.
 
 ## Python venv convention
 ```sh

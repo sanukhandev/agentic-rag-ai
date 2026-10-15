@@ -25,6 +25,7 @@ const run = (label, command, args) => {
 
 run('lint', npm, ['run', 'lint']);
 run('typecheck', npm, ['run', 'typecheck']);
+run('compose security defaults', npm, ['run', 'verify:compose']);
 run('tests with PostgreSQL', npm, ['test']);
 run('production builds', npm, ['run', 'build']);
 run('dependency audit', npm, ['audit', '--omit=dev', '--audit-level=high']);
