@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, AuthSession, Chunk, IngestionJob, Message, Persona, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionRequest, AuditEvent, AuthSession, Chunk, IngestionJob, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -10,6 +10,7 @@ export class MemoryStore implements Store {
   private readonly authSessions = new Map<string, AuthSession>();
   private readonly callbackNonces = new Map<string, string>();
   private readonly personas = new Map<string, Persona>();
+  private readonly personaVersions = new Map<string, PersonaVersion[]>();
   private readonly sources = new Map<string, Source>();
   private readonly sourceVersions = new Map<string, SourceVersion[]>();
   private readonly ingestionJobs = new Map<string, IngestionJob>();
@@ -59,6 +60,23 @@ export class MemoryStore implements Store {
 
   async setPersona(persona: Persona): Promise<Persona> { this.personas.set(persona.tenantId, persona); return persona; }
   async getPersona(tenantId: string): Promise<Persona | null> { return this.personas.get(tenantId) ?? null; }
+  async createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion> {
+    const versions = this.personaVersions.get(input.tenantId) ?? [];
+    const version: PersonaVersion = { ...input, id: randomUUID(), version: versions.length + 1, createdAt: now(), publishedAt: input.status === 'published' ? now() : null };
+    this.personaVersions.set(input.tenantId, [...versions, version]);
+    return version;
+  }
+  async listPersonaVersions(tenantId: string): Promise<PersonaVersion[]> { return [...(this.personaVersions.get(tenantId) ?? [])].sort((left, right) => right.version - left.version); }
+  async publishPersonaVersion(tenantId: string, versionId: string): Promise<PersonaVersion | null> {
+    const versions = this.personaVersions.get(tenantId) ?? [];
+    const selected = versions.find((version) => version.id === versionId);
+    if (!selected) return null;
+    const publishedAt = now();
+    const updated = versions.map((version) => ({ ...version, status: version.id === versionId ? 'published' as const : 'draft' as const, publishedAt: version.id === versionId ? publishedAt : version.publishedAt }));
+    this.personaVersions.set(tenantId, updated);
+    await this.setPersona({ tenantId, name: selected.name, greeting: selected.greeting, personality: selected.personality, tone: selected.tone, speakingStyle: selected.speakingStyle, permittedLanguages: selected.permittedLanguages });
+    return updated.find((version) => version.id === versionId) ?? null;
+  }
 
   async createSource(input: Omit<Source, 'createdAt' | 'approvedAt'> & { chunks: Chunk[] }): Promise<Source> {
     const source: Source = { ...input, createdAt: now(), approvedAt: null };

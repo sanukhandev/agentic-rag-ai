@@ -13,7 +13,7 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 - [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; durable callback nonce replay guard added; live n8n blocked)
 - [ ] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics, RBAC, lifecycle, rate limits, CORS, callback replay guard and durable admin session revocation added; retention/backup pending)
 - [ ] P06: PII vault and conversation API (AES-GCM session vault, structured-name masking and Postgres persistence verified; retention/rate limits pending)
-- [ ] P07–P10: full persona/version workflow, operations hardening, clean-room acceptance and go-live review
+- [ ] P07–P10: full persona/version workflow, operations hardening, clean-room acceptance and go-live review (persona draft/publish/version API and storage added; UI preview/rollback and final operations remain)
 
 ## Decisions for this local vertical slice
 
@@ -38,6 +38,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Unsupported facts are refused | API integration test | pass |
 | Invalid model citation cannot publish an ungrounded answer | `app.test.ts` invalid-citation model test | pass |
 | Unsupported chat language is refused before model call | `app.test.ts` + `model.test.ts` language tests | pass for Arabic/English family detection |
+| Persona draft/publish/version history | API app test plus PostgreSQL version/publish assertion; migration `012-persona-versions.sql` | pass locally; preview/rollback UI pending |
 | Prompt injection in source is treated as data | persona rejection, explicit-intent gate, source-only model prompt | partial; adversarial corpus expansion pending |
 | Conflicting active evidence is not chosen arbitrarily | `knowledge.test.ts`, API conflict guard | pass (numeric contradiction heuristic) |
 | Confirmed action is idempotent and audited | `actions.test.ts`, API integration test | pass (mock adapter) |

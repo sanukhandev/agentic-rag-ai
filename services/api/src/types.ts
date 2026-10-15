@@ -34,6 +34,14 @@ export interface Persona {
   permittedLanguages: string[];
 }
 
+export interface PersonaVersion extends Persona {
+  id: string;
+  version: number;
+  status: 'draft' | 'published';
+  createdAt: string;
+  publishedAt: string | null;
+}
+
 export interface Source {
   id: string;
   tenantId: string;
@@ -164,6 +172,9 @@ export interface Store {
   claimCallbackNonce(nonce: string, expiresAt: string): Promise<boolean>;
   setPersona(persona: Persona): Promise<Persona>;
   getPersona(tenantId: string): Promise<Persona | null>;
+  createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion>;
+  listPersonaVersions(tenantId: string): Promise<PersonaVersion[]>;
+  publishPersonaVersion(tenantId: string, versionId: string): Promise<PersonaVersion | null>;
   createSource(input: Omit<Source, 'createdAt' | 'approvedAt'> & { chunks: Chunk[] }): Promise<Source>;
   getSource(id: string): Promise<Source | null>;
   findSourceByHash(tenantId: string, contentHash: string): Promise<Source | null>;
