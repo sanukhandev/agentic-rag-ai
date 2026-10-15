@@ -33,6 +33,17 @@ describe('action gateway', () => {
     expect(verifyN8nPayload('shared-secret', String(timestamp - 301_000), 'nonce-1', body, signature, timestamp)).toBe(false);
   });
 
+  it('retries an unknown workflow with the original idempotency key', async () => {
+    const store = new MemoryStore();
+    let attempts = 0;
+    const workflow = { execute: async (input: { idempotencyKey: string }) => { attempts += 1; expect(input.idempotencyKey).toBe('retryable'); if (attempts === 1) throw new Error('timeout'); return { externalReference: 'recovered-run' }; } };
+    const gateway = new ActionGateway(store, workflow);
+    const action = await gateway.propose('tenant-a', 'session-a', 'retryable');
+    await expect(gateway.confirm(action.id, 'tenant-a')).resolves.toMatchObject({ state: 'unknown' });
+    await expect(gateway.confirm(action.id, 'tenant-a')).resolves.toMatchObject({ state: 'completed', result: { externalReference: 'recovered-run' } });
+    expect(attempts).toBe(2);
+  });
+
   it('does not execute an expired confirmation', async () => {
     const store = new MemoryStore();
     const workflow = new MockWorkflowAdapter();

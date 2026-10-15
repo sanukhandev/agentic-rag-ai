@@ -84,7 +84,7 @@ export class ActionGateway {
     const action = await this.store.getAction(actionId);
     if (!action || action.tenantId !== tenantId) throw new Error('Action not found.');
     if (action.state === 'completed') return action;
-    if (action.state !== 'awaiting_confirmation') throw new Error('Action is not confirmable.');
+    if (action.state !== 'awaiting_confirmation' && action.state !== 'unknown') throw new Error('Action is not confirmable.');
     if (!Number.isFinite(Date.parse(action.createdAt)) || Date.now() - Date.parse(action.createdAt) > 15 * 60_000) {
       const expired = { ...action, state: 'failed' as const };
       await this.store.updateAction(expired);
