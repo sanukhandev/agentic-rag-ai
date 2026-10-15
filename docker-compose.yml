@@ -1,0 +1,22 @@
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:5678:5678"
+    environment:
+      N8N_HOST: 74.225.184.215
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      N8N_EDITOR_BASE_URL: http://74.225.184.215:5678/
+      N8N_WEBHOOK_URL: http://74.225.184.215:5678/
+      N8N_SECURE_COOKIE: "false"
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      GENERIC_TIMEZONE: Asia/Dubai
+      TZ: Asia/Dubai
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
