@@ -11,7 +11,7 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 - [ ] P02: validated source ingestion, versioning, approval and retrieval (local pgvector and lifecycle migration verified; worker job orchestration pending)
 - [ ] P03: tenant-aware chat, PII masking, citations and fail-closed model boundary (synthetic API gate passing; conflict refusal added)
 - [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; live n8n blocked)
-- [ ] P05: admin operations, audit, observability and security regression coverage (metrics, tenant lifecycle and logout added; rate limits/callback route pending)
+- [ ] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics, RBAC, lifecycle, rate limits, CORS and callback replay guard added; retention/backup pending)
 - [ ] P06: PII vault and conversation API (AES-GCM session vault and Postgres persistence verified; retention/rate limits pending)
 - [ ] P07–P10: full persona/version workflow, operations hardening, clean-room acceptance and go-live review
 
@@ -43,9 +43,12 @@ This section is updated after verification. No scenario is marked passing from s
 | Python ingestion tests pass | `tools/ingestion/test_ingestion.py` | pass (7 tests, local venv) |
 | PostgreSQL/pgvector persistence smoke | `services/api/src/store-postgres.test.ts` with `DATABASE_URL` | pass (local container) |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally |
+| Dependency audit | `npm audit --omit=dev --audit-level=high` | blocked: 9 advisories remain in Angular 19/PostCSS; remediation requires a major framework/toolchain upgrade and was not applied unverified |
 
 ## Blockers and risks
 
 - Live Azure, identity-provider or production n8n credentials are unavailable. Live calls are intentionally not attempted.
 - CI was added but its hosted run has not been observed from this local session.
+- `npm audit` reports high-severity Angular 19 and PostCSS advisories; upgrading Angular/Next across major versions is a separate verified dependency task.
+- No browser automation was used; UI validation is build/typecheck-only per the requested unit-test-only constraint.
 - The existing root n8n Compose file is still a public HTTP development deployment and is not a production security baseline.
