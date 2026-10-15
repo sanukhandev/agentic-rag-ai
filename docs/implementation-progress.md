@@ -40,6 +40,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Valid citation cannot support an invented numeric claim | `app.test.ts` and `model.test.ts` evidence-sufficiency tests | pass |
 | Unsupported chat language is refused before model call | `app.test.ts` + `model.test.ts` language tests | pass for Arabic/English family detection |
 | Persona draft/publish/version history and preview | API app test, PostgreSQL version/publish assertion, grounded preview route/model contract, migration `012-persona-versions.sql` and Angular version/preview panels | pass locally; manual browser verification pending |
+| Persona editor fields | Angular tenant editor now exposes personality and permitted languages; draft, preview and publish payloads use normalized language values with unit coverage | pass locally; manual browser verification pending |
 | Prompt injection in source is treated as data | model prompt contract plus API test where injected evidence proposes a lead without explicit user intent | pass for the local deterministic/mock boundary; broader adversarial corpus remains a production hardening task |
 | Conflicting active evidence is not chosen arbitrarily | `knowledge.test.ts`, API conflict guard | pass (numeric contradiction heuristic) |
 | Confirmed action is idempotent and audited | `actions.test.ts`, API integration test | pass (mock adapter) |
@@ -47,7 +48,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Next web chat flow builds | `npm run build` | pass |
 | Web chat session continuity | Next client restores masked assistant history from the tenant-scoped session API, persists the session key, and provides reset/retry controls; history mapper unit-tested | pass locally; manual browser verification pending |
 | Angular admin flow builds | `npm run build` | pass |
-| Frontend unit checks | `apps/admin/src/app/upload-utils.test.ts`, `apps/web/app/chat-utils.test.ts` | pass (1 admin + 2 web tests; no browser automation) |
+| Frontend unit checks | `apps/admin/src/app/upload-utils.test.ts`, `apps/admin/src/app/persona-utils.test.ts`, `apps/web/app/chat-utils.test.ts` | pass (2 admin + 2 web tests; no browser automation) |
 | Python ingestion tests pass | `tools/ingestion/test_ingestion.py` | pass (13 tests, local venv via `unittest`; pytest is not installed) |
 | PostgreSQL/pgvector persistence smoke | `services/api/src/store-postgres.test.ts` with `DATABASE_URL` | pass (local container) |
 | Ingestion job state and lease persistence | API job assertion and `store-postgres.test.ts` with migration `008-ingestion-jobs.sql` | pass (memory + PostgreSQL) |
@@ -76,7 +77,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Observed health outage | API suite forces the store check to fail and verifies timestamped 503/down reporting | pass locally |
 | Revoked-source purge | API negative/positive test; PostgreSQL delete uses tenant + revoked predicates | pass (memory API; SQL path covered by query contract) |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally after Angular 21 / Next 16 upgrade |
-| Latest workspace test run | `npm test` | Admin 1 + web 2 + API 36 + contracts 1 passed; 1 PostgreSQL test skipped by default |
+| Latest workspace test run | `npm test` | Previous full run: Admin 1 + web 2 + API 36 + contracts 1; current admin suite is 2 tests; 1 PostgreSQL test skipped by default |
 | Chat resume/history | `GET /api/v1/chat/sessions/:id` API assertion | pass (masked, tenant-scoped messages) |
 | Durable admin session revocation | `auth.test.ts` and API logout assertion backed by store session records; PostgreSQL migration `010-auth-sessions.sql` | pass (memory + migration applied locally) |
 | Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |

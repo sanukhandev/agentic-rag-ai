@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { fileMimeType } from './upload-utils';
+import { parsePermittedLanguages } from './persona-utils';
 
 type Source = { id: string; title: string; status: string; audience: string; mimeType: string };
 type IngestionJob = { id: string; title: string; sourceUrl: string | null; status: string; attempts: number; errorCode: string | null; updatedAt: string };
@@ -29,6 +30,7 @@ export class AppComponent {
   domainHostname = '';
   memberEmail = ''; memberPassword = ''; memberRole = 'tenant_editor';
   previewMessage = 'What can you help me with?'; previewAnswer = ''; previewGrounded = false;
+  permittedLanguageText = 'en';
 
   login(): void { this.http.post<{ token: string; user: { role: string } }>(`${api}/api/v1/auth/login`, { email: this.email, password: this.password }).subscribe({ next: (body) => { this.token = body.token; this.role = body.user.role; this.loadHealth(); if (this.role === 'platform_admin') { this.loadTenants(); this.loadPlatformOverview(); } else { this.loadSources(); this.loadJobs(); this.loadDashboard(); this.loadWorkflowRuns(); this.loadAudit(); this.loadPersona(); this.loadPersonaVersions(); if (this.role === 'tenant_admin') { this.loadDomains(); this.loadMembers(); this.loadChannel(); } } }, error: () => { this.error = 'Login failed.'; } }); }
   loadTenants(): void { this.http.get<{ items: Tenant[] }>(`${api}/api/v1/admin/tenants`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.tenants = body.items; }, error: () => { this.error = 'Could not load tenants.'; } }); }
@@ -48,12 +50,13 @@ export class AppComponent {
   saveChannel(): void { this.http.patch<Channel>(`${api}/api/v1/admin/channel`, { publicOrigin: this.publicOrigin }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.publicOrigin = body.publicOrigin ?? ''; }, error: () => { this.error = 'Chat origin could not be saved.'; } }); }
   loadMembers(): void { this.http.get<{ items: Member[] }>(`${api}/api/v1/admin/members`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.members = body.items; }, error: () => { this.error = 'Could not load members.'; } }); }
   addMember(): void { this.http.post(`${api}/api/v1/admin/members`, { email: this.memberEmail, password: this.memberPassword, role: this.memberRole }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.memberEmail = ''; this.memberPassword = ''; this.loadMembers(); }, error: () => { this.error = 'Member could not be added.'; } }); }
-  loadPersona(): void { this.http.get<{ persona: Persona | null }>(`${api}/api/v1/admin/persona`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { if (body.persona) this.persona = body.persona; }, error: () => { this.error = 'Could not load persona.'; } }); }
+  loadPersona(): void { this.http.get<{ persona: Persona | null }>(`${api}/api/v1/admin/persona`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { if (body.persona) { this.persona = body.persona; this.permittedLanguageText = body.persona.permittedLanguages.join(', '); } }, error: () => { this.error = 'Could not load persona.'; } }); }
   loadPersonaVersions(): void { this.http.get<{ items: PersonaVersion[] }>(`${api}/api/v1/admin/persona/versions`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.personaVersions = body.items; }, error: () => { this.error = 'Could not load persona versions.'; } }); }
-  savePersonaDraft(): void { this.http.post(`${api}/api/v1/admin/persona/drafts`, this.persona, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadPersonaVersions(), error: () => { this.error = 'Persona draft could not be saved.'; } }); }
-  previewPersona(): void { this.http.post<{ preview: { answer: string; grounded: boolean } }>(`${api}/api/v1/admin/persona/preview`, { ...this.persona, message: this.previewMessage }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.previewAnswer = body.preview.answer; this.previewGrounded = body.preview.grounded; }, error: () => { this.error = 'Persona preview could not be generated.'; } }); }
+  personaPayload(): Persona { return { ...this.persona, permittedLanguages: parsePermittedLanguages(this.permittedLanguageText) }; }
+  savePersonaDraft(): void { this.http.post(`${api}/api/v1/admin/persona/drafts`, this.personaPayload(), { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadPersonaVersions(), error: () => { this.error = 'Persona draft could not be saved.'; } }); }
+  previewPersona(): void { this.http.post<{ preview: { answer: string; grounded: boolean } }>(`${api}/api/v1/admin/persona/preview`, { ...this.personaPayload(), message: this.previewMessage }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.previewAnswer = body.preview.answer; this.previewGrounded = body.preview.grounded; }, error: () => { this.error = 'Persona preview could not be generated.'; } }); }
   publishPersonaVersion(version: PersonaVersion): void { this.http.post(`${api}/api/v1/admin/persona/versions/${version.id}/publish`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.loadPersona(); this.loadPersonaVersions(); }, error: () => { this.error = 'Persona version could not be published.'; } }); }
-  savePersona(): void { this.http.put(`${api}/api/v1/admin/persona`, this.persona, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.error = ''; }, error: () => { this.error = 'Persona could not be saved.'; } }); }
+  savePersona(): void { this.http.put(`${api}/api/v1/admin/persona`, this.personaPayload(), { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.error = ''; }, error: () => { this.error = 'Persona could not be saved.'; } }); }
   onFileSelected(event: Event): void { this.selectedFile = (event.target as HTMLInputElement).files?.[0] ?? null; }
   uploadFile(): void {
     const file = this.selectedFile;
