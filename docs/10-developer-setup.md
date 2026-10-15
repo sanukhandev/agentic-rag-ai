@@ -25,6 +25,14 @@ python -m pip install -r requirements.txt
 ```
 The pinned requirements are in `tools/ingestion/requirements.txt`; `.venv` is ignored by Git.
 
+To submit a parsed file to a queued API job, run the worker from the ingestion directory after the tenant admin creates a job:
+
+```powershell
+\.venv\Scripts\python.exe -m ingestion.worker .\faq.docx --api-base http://localhost:4000 --job-id <job-id> --worker-secret <local-worker-secret>
+```
+
+The worker sends only sanitized normalized content, chunk hashes and locators. The API revalidates hashes, re-sanitizes chunks and performs embedding before staging the source for approval.
+
 ## Proposed environment contract (names TBD until implementation)
 | Secret/config family | Consumer | Handling |
 | --- | --- | --- |

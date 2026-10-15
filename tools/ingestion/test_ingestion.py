@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 from pathlib import Path
 
 from ingestion.pipeline import chunk_text, extract_file, fetch_authorized_https, ingest_file, ingest_text, sanitize
+from ingestion.worker import result_payload, submit_result
 
 
 class IngestionTests(unittest.TestCase):
@@ -88,6 +89,21 @@ class IngestionTests(unittest.TestCase):
             text, mime = fetch_authorized_https("https://approved.example/faq", {"approved.example"})
         self.assertEqual(mime, "text/html")
         self.assertIn("Approved FAQ", text)
+
+    def test_worker_payload_is_sanitized_and_submission_claims_then_publishes(self) -> None:
+        source = ingest_text("FAQ", "Email alice@example.com.\n\nPricing is 42 credits.", "text/plain")
+        payload = result_payload(source)
+        self.assertNotIn("alice@example.com", payload["normalizedContent"])
+        session = Mock()
+        claim_response = Mock()
+        result_response = Mock()
+        result_response.json.return_value = {"job": {"status": "completed"}}
+        session.post.side_effect = [claim_response, result_response]
+        output = submit_result("http://localhost:4000/", "job-1", "worker-secret", source, session)
+        self.assertEqual(output["job"]["status"], "completed")
+        self.assertEqual(session.post.call_count, 2)
+        self.assertEqual(session.post.call_args_list[0].args[0], "http://localhost:4000/api/v1/internal/ingestion-jobs/job-1/claim")
+        self.assertEqual(session.post.call_args_list[1].kwargs["json"]["contentHash"], source.content_hash)
 
 
 if __name__ == "__main__":

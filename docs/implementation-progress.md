@@ -44,6 +44,7 @@ This section is updated after verification. No scenario is marked passing from s
 | PostgreSQL/pgvector persistence smoke | `services/api/src/store-postgres.test.ts` with `DATABASE_URL` | pass (local container) |
 | Ingestion job state and lease persistence | API job assertion and `store-postgres.test.ts` with migration `008-ingestion-jobs.sql` | pass (memory + PostgreSQL) |
 | Authenticated worker result boundary | `app.test.ts` worker flow; hash, ordinal and locator validation | pass (synthetic Python result) |
+| Python file-to-API worker client | `tools/ingestion/test_ingestion.py` worker submission test | pass (mock transport) |
 | SQL-level vector retrieval filters | `store-postgres.test.ts` with pgvector query | pass (local vector dimension) |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally |
 | Chat resume/history | `GET /api/v1/chat/sessions/:id` API assertion | pass (masked, tenant-scoped messages) |
