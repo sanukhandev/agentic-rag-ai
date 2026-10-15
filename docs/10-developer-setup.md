@@ -47,6 +47,8 @@ The Angular tenant-admin panel can also queue a TXT, PDF, DOCX or XLSX upload. I
 
 The API deletes the Node-side staged bytes after a successful or idempotent result. Failed jobs remain available for retry; configure a scheduled private-staging retention/purge policy before production.
 
+For public chat channel binding, a tenant administrator saves the exact web origin in the **Public chat origin** panel. Once set, `/api/v1/chat/config` and public session creation require the matching browser `Origin`; production tenants must configure one.
+
 ## Local PostgreSQL backup/restore rehearsal
 
 The local pgvector container supports a schema/data rehearsal without touching the development database: dump `agentic_rag` to a temporary `agentic_rag_restore_check` database, verify the restored tables, then drop only that explicitly named scratch database. Production must use managed encrypted backups, retention and a scheduled restore test.

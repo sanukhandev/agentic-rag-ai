@@ -8,7 +8,7 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 
 - [x] P00: repository audit, security constraints, spec set and threat review
 - [ ] P01: workspace, API, UI, database migration, ingestion and CI foundation (clean `npm ci --dry-run`, local gates and CI workflow are valid; hosted run not observed)
-- [ ] P02: validated source ingestion, versioning, approval and retrieval (durable job state/lease, authenticated worker-result boundary, tenant-admin TXT/PDF/DOCX/XLSX upload to private Node staging, Python worker retrieval/extraction, SQL vector filtering/order, transactional reindex-to-review, explicit source version history, guarded revoked-source purge and approved HTTPS worker snapshots added; production staging/object storage, retention policy, malware scanning and production embedding remain)
+- [ ] P02: validated source ingestion, versioning, approval and retrieval (durable job state/lease/retry, authenticated worker-result boundary, tenant-admin TXT/PDF/DOCX/XLSX upload to private Node staging, Python worker retrieval/extraction, SQL vector filtering/order, transactional reindex-to-review, explicit source version history, guarded revoked-source purge and approved HTTPS worker snapshots added; production staging/object storage, retention policy, malware scanning and production embedding remain)
 - [x] P03: tenant-aware chat, PII masking, citations and fail-closed model boundary (synthetic API gate passing; conflict refusal, scoped history, invalid-citation abstention, numeric claim verification, permitted-language refusal, tenant domain management and configured public chat-origin binding verified)
 - [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; durable callback nonce replay guard added; live n8n blocked)
 - [ ] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics, RBAC, lifecycle, rate limits, CORS, callback replay guard, durable admin session revocation, tenant session purge, local backup/restore rehearsal and redacted request telemetry added; production observability remains)
@@ -52,6 +52,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Authenticated worker result boundary | `app.test.ts` worker flow; hash, ordinal and locator validation | pass (synthetic Python result) |
 | Python file-to-API worker client | `tools/ingestion/test_ingestion.py` worker submission test | pass (mock transport) |
 | Tenant-admin binary file upload bridge | API upload test, `IngestionStaging`, Angular upload panel, Python worker API-input test | pass locally; manual browser/worker run pending |
+| Failed ingestion retry | Tenant-scoped audited `failed` → `queued` API transition and Angular retry action | pass locally |
 | Private file staging | `tools/ingestion/ingestion/staging.py` and unittest copy/purge assertion; worker `--staging-root` | pass locally; production object storage/malware scanning remains open |
 | Python approved HTTPS-to-API worker client | `tools/ingestion/test_ingestion.py` URL snapshot test; CLI supports `--url`, `--title` and repeated `--allowed-host` | pass (mock transport) |
 | Unsafe ingestion inputs | Python tests reject `.doc`/`.xls`, private DNS targets and redirects | pass locally |

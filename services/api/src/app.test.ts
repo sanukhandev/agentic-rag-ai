@@ -302,4 +302,17 @@ describe('API vertical slice', () => {
     await api.post('/api/v1/chat/sessions').set('Origin', 'https://chat.channel.example').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
     await api.post('/api/v1/chat/sessions').set('Origin', 'https://other.example').send({ tenantSlug: tenant.body.tenant.slug }).expect(403);
   });
+
+  it('allows only failed tenant ingestion jobs to be retried', async () => {
+    const runtime = createApp({ nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-retry@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Retry Tenant', slug: 'retry-tenant', adminEmail: 'admin-retry@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-retry@example.test', password: 'TenantA1Password' }).expect(200);
+    const created = await api.post('/api/v1/admin/ingestion-jobs').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Retry FAQ', mimeType: 'text/plain', audience: 'public' }).expect(202);
+    const failed = await runtime.store.updateIngestionJob({ ...created.body.job, status: 'failed', errorCode: 'INGESTION_FAILED', updatedAt: new Date().toISOString() });
+    const retried = await api.post(`/api/v1/admin/ingestion-jobs/${failed.id}/retry`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    expect(retried.body.job).toMatchObject({ id: failed.id, tenantId: tenant.body.tenant.id, status: 'queued', errorCode: null });
+    await api.post(`/api/v1/admin/ingestion-jobs/${failed.id}/retry`).set('Authorization', `Bearer ${admin.body.token}`).expect(409);
+  });
 });
