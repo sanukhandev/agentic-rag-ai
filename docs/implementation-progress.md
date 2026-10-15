@@ -60,7 +60,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Python approved HTTPS-to-API worker client | `tools/ingestion/test_ingestion.py` URL snapshot test; CLI supports `--url`, `--title` and repeated `--allowed-host` | pass (mock transport) |
 | Unsafe ingestion inputs | Python tests reject `.doc`/`.xls`, private DNS targets, redirects and DNS-rebinding address changes | pass locally |
 | SQL-level vector retrieval filters | `store-postgres.test.ts` with pgvector query | pass (local vector dimension) |
-| Source reindex lifecycle | API and `store-postgres.test.ts` version replacement assertions | pass (new version returns to review) |
+| Source reindex lifecycle | API and `store-postgres.test.ts` version replacement assertions; failure test verifies the prior active version remains active | pass locally (new version returns to review and failed reindex preserves active version) |
 | Source version history | API `GET /api/v1/admin/sources/:id/versions`, memory test and PostgreSQL integration assertion | pass locally |
 | Tenant-scoped ingestion job list | API `GET /api/v1/admin/ingestion-jobs`, app assertion and Angular job panel | pass (API/build; manual browser verification pending) |
 | Tenant domain management | API domain CRUD, tenant-scoped memory/PostgreSQL store methods, migration `013-tenant-domains.sql`, Angular tenant-admin panel and tenant-bound approved URL-job validation | pass locally; manual browser verification pending |

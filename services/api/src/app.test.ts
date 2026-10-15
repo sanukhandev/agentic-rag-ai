@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
 import { MockWorkflowAdapter, signN8nPayload } from './actions.js';
 import { MemoryStore, contentHash } from './store-memory.js';
+import type { EmbeddingProvider } from './embedding.js';
 import type { ChatModel, ModelDraft } from './model.js';
 
 class CapturingModel implements ChatModel {
@@ -251,6 +253,24 @@ describe('API vertical slice', () => {
     await api.get('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).expect(200).expect((response) => expect(response.body.items).toHaveLength(0));
     await api.get(`/api/v1/admin/sources/${source.body.source.id}/versions`).set('Authorization', `Bearer ${admin.body.token}`).expect(404);
     expect(tenant.body.tenant.id).toBeTruthy();
+  });
+
+  it('keeps the active source version when reindexing fails', async () => {
+    const store = new MemoryStore();
+    const embedding: EmbeddingProvider = { model: 'failing-test', dimension: 8, embed: async () => { throw new Error('embedding unavailable'); } };
+    const runtime = createApp({ store, embedding, jwtSecret: 'test-secret', nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-reindex-failure@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Reindex Failure Tenant', slug: 'reindex-failure-tenant', adminEmail: 'admin-reindex-failure@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-reindex-failure@example.test', password: 'TenantA1Password' }).expect(200);
+    const sourceId = randomUUID();
+    const versionId = randomUUID();
+    const content = 'The previously approved answer.';
+    await store.createSource({ id: sourceId, tenantId: tenant.body.tenant.id, title: 'Stable FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'awaiting_review', versionId, contentHash: contentHash(content), chunks: [{ id: randomUUID(), sourceId, tenantId: tenant.body.tenant.id, versionId, ordinal: 0, locator: 'section 1', content, contentHash: contentHash(content), embedding: [0, 0, 0, 0, 0, 0, 0, 0] }] });
+    await store.setSourceStatus(sourceId, tenant.body.tenant.id, 'active');
+    await api.post(`/api/v1/admin/sources/${sourceId}/reindex`).set('Authorization', `Bearer ${admin.body.token}`).expect(500);
+    expect((await store.getSource(sourceId))?.status).toBe('active');
+    expect((await store.listIngestionJobs(tenant.body.tenant.id))[0]).toMatchObject({ status: 'failed', errorCode: 'INGESTION_FAILED' });
   });
 
   it('expires and purges tenant chat sessions', async () => {
