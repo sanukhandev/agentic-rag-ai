@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Chunk, Source } from './types.js';
 import { contentHash } from './store-memory.js';
+import type { EmbeddingProvider } from './embedding.js';
 
 export const EMBEDDING_MODEL = 'deterministic-demo-8d-v1';
 
@@ -45,6 +46,13 @@ export const buildChunks = (source: Pick<Source, 'id' | 'tenantId' | 'versionId'
     embedding: embedText(chunk),
   }));
 
+export const buildChunksWithEmbeddings = async (source: Pick<Source, 'id' | 'tenantId' | 'versionId'>, content: string, provider: EmbeddingProvider): Promise<Chunk[]> => {
+  const chunks = chunkText(content);
+  const result: Chunk[] = [];
+  for (const [ordinal, chunk] of chunks.entries()) result.push({ id: randomUUID(), sourceId: source.id, tenantId: source.tenantId, versionId: source.versionId, ordinal, locator: `section ${ordinal + 1}`, content: chunk, contentHash: contentHash(chunk), embedding: await provider.embed(chunk) });
+  return result;
+};
+
 const cosine = (left: number[], right: number[]): number => {
   const length = Math.min(left.length, right.length);
   let dot = 0;
@@ -60,8 +68,7 @@ const cosine = (left: number[], right: number[]): number => {
   return leftMagnitude && rightMagnitude ? dot / Math.sqrt(leftMagnitude * rightMagnitude) : 0;
 };
 
-export const rankChunks = <T extends { chunk: { embedding: number[] } }>(query: string, rows: T[], limit = 4): T[] => {
-  const queryEmbedding = embedText(query);
+const rankWithEmbedding = <T extends { chunk: { embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit: number): T[] => {
   const terms = query.toLowerCase().match(/[a-z0-9]{4,}/g) ?? [];
   return rows.map((row) => {
     const content = JSON.stringify(row).toLowerCase();
@@ -73,3 +80,7 @@ export const rankChunks = <T extends { chunk: { embedding: number[] } }>(query: 
     .filter(({ score, overlap }) => score >= 0.45 && overlap > 0)
     .map(({ row }) => row);
 };
+
+export const rankChunks = <T extends { chunk: { embedding: number[] } }>(query: string, rows: T[], limit = 4): T[] => rankWithEmbedding(query, rows, embedText(query), limit);
+
+export const rankChunksWithEmbedding = async <T extends { chunk: { embedding: number[] } }>(query: string, rows: T[], provider: EmbeddingProvider, limit = 4): Promise<T[]> => rankWithEmbedding(query, rows, await provider.embed(query), limit);

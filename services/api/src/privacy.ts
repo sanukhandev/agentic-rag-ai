@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import type { Session } from './types.js';
 
 export interface MaskResult {
@@ -7,6 +7,49 @@ export interface MaskResult {
 }
 
 const token = (kind: string, index: number): string => `[${kind}_${index}]`;
+
+export type RehydrationPurpose = 'assistant_response' | 'workflow_payload';
+
+export class TokenVault {
+  private readonly masterKey: Buffer;
+  constructor(secret: string) {
+    if (secret.length < 16) throw new Error('PII vault secret must be at least 16 characters.');
+    this.masterKey = createHmac('sha256', secret).update('agentic-rag-pii-vault').digest();
+  }
+
+  private key(sessionId: string): Buffer { return createHmac('sha256', this.masterKey).update(`session:${sessionId}`).digest(); }
+
+  private encrypt(sessionId: string, value: string): string {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', this.key(sessionId), iv);
+    const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+    return `v1.${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${ciphertext.toString('base64url')}`;
+  }
+
+  private decrypt(sessionId: string, encoded: string): string | null {
+    try {
+      const [version, ivText, tagText, ciphertextText] = encoded.split('.');
+      if (version !== 'v1' || !ivText || !tagText || !ciphertextText) return null;
+      const decipher = createDecipheriv('aes-256-gcm', this.key(sessionId), Buffer.from(ivText, 'base64url'));
+      decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+      return Buffer.concat([decipher.update(Buffer.from(ciphertextText, 'base64url')), decipher.final()]).toString('utf8');
+    } catch { return null; }
+  }
+
+  save(session: Session, values: MaskResult['tokens']): void {
+    for (const item of values) session.tokenMap.set(item.token, this.encrypt(session.id, item.value));
+  }
+
+  has(session: Session, placeholder: string): boolean { return Boolean(session.tokenMap.get(placeholder) && this.decrypt(session.id, session.tokenMap.get(placeholder)!) !== null); }
+
+  resolve(session: Session, placeholder: string, purpose: RehydrationPurpose): string | null {
+    if (purpose !== 'assistant_response') return null;
+    const ciphertext = session.tokenMap.get(placeholder);
+    return ciphertext ? this.decrypt(session.id, ciphertext) : null;
+  }
+}
+
+const defaultVault = new TokenVault(process.env.PII_VAULT_KEY ?? 'local-development-pii-vault-key');
 
 export const maskPii = (input: string): MaskResult => {
   const tokens: Array<{ token: string; value: string }> = [];
@@ -29,18 +72,19 @@ export const sanitizeKnowledgeText = (input: string): string => input
   .replace(/(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)/g, '[REDACTED_PHONE]')
   .replace(/(api[_ -]?key|secret|password|token)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED_SECRET]');
 
-export const assertKnownTokens = (session: Session, text: string): void => {
+export const assertKnownTokens = (session: Session, text: string, vault: TokenVault = defaultVault): void => {
   const placeholders = text.match(/\[(?:EMAIL|PHONE|ID)_\d+\]/g) ?? [];
-  for (const placeholder of placeholders) if (!session.tokenMap.has(placeholder)) throw new Error('Model returned an unknown privacy token.');
+  for (const placeholder of placeholders) if (!vault.has(session, placeholder)) throw new Error('Model returned an unknown privacy token.');
 };
 
-export const saveTokens = (session: Session, values: MaskResult['tokens']): void => {
-  for (const item of values) session.tokenMap.set(item.token, item.value);
-};
+export const saveTokens = (session: Session, values: MaskResult['tokens'], vault: TokenVault = defaultVault): void => vault.save(session, values);
 
-export const rehydrateForSession = (session: Session, text: string): string => {
+export const rehydrateForSession = (session: Session, text: string, vault: TokenVault = defaultVault, purpose: RehydrationPurpose = 'assistant_response'): string => {
   let result = text;
-  for (const [placeholder, value] of session.tokenMap.entries()) result = result.replaceAll(placeholder, value);
+  for (const placeholder of session.tokenMap.keys()) {
+    const value = vault.resolve(session, placeholder, purpose);
+    if (value) result = result.replaceAll(placeholder, value);
+  }
   return result;
 };
 

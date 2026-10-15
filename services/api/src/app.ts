@@ -3,9 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { ActionGateway, MockWorkflowAdapter, type WorkflowAdapter } from './actions.js';
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
-import { buildChunks, rankChunks } from './knowledge.js';
+import { buildChunksWithEmbeddings, rankChunksWithEmbedding } from './knowledge.js';
+import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { DeterministicGroundedModel, validateCitations, type ChatModel } from './model.js';
-import { assertKnownTokens, maskPii, rehydrateForSession, sanitizeKnowledgeText, saveTokens } from './privacy.js';
+import { assertKnownTokens, maskPii, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import type { Audience, Citation, SourceStatus, Store } from './types.js';
 
@@ -48,12 +49,16 @@ export interface AppDependencies {
   workflow?: WorkflowAdapter;
   jwtSecret?: string;
   nodeEnv?: string;
+  tokenVault?: TokenVault;
+  embedding?: EmbeddingProvider;
 }
 
 export const createApp = (dependencies: AppDependencies = {}) => {
   const store = dependencies.store ?? new MemoryStore();
   const model = dependencies.model ?? new DeterministicGroundedModel();
   const workflow = dependencies.workflow ?? new MockWorkflowAdapter();
+  const tokenVault = dependencies.tokenVault ?? new TokenVault(process.env.PII_VAULT_KEY ?? 'local-development-pii-vault-key');
+  const embedding = dependencies.embedding ?? new DeterministicEmbeddingProvider();
   const auth = new AuthService(store, dependencies.jwtSecret ?? process.env.JWT_SECRET ?? 'local-development-only-change-me');
   const gateway = new ActionGateway(store, workflow);
   const app = express();
@@ -123,7 +128,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const versionId = randomUUID();
       const sourceBase = { id: sourceId, tenantId, versionId };
       const safeContent = sanitizeKnowledgeText(input.content);
-      const chunks = buildChunks(sourceBase, safeContent);
+       const chunks = await buildChunksWithEmbeddings(sourceBase, safeContent, embedding);
       const source = await store.createSource({ id: sourceId, tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl ?? null, audience: input.audience ?? 'public', status: 'awaiting_review', versionId, contentHash: contentHash(safeContent), chunks });
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'source.staged', metadata: { sourceId, chunks: chunks.length }, createdAt: new Date().toISOString() });
       res.status(201).json({ source, ingestion: { status: 'awaiting_review', chunks: chunks.length } });
@@ -158,20 +163,21 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const cached = responseCache.get(cacheKey);
       if (cached) { res.json(cached); return; }
       const masked = maskPii(input.message);
-      saveTokens(session, masked.tokens);
+      saveTokens(session, masked.tokens, tokenVault);
       await store.addMessage({ id: randomUUID(), sessionId: session.id, tenantId: session.tenantId, role: 'user', maskedContent: masked.masked, citations: [], clientMessageId: input.clientMessageId, createdAt: new Date().toISOString() });
       const internal = getAuth(req)?.tenantId === session.tenantId && ['tenant_admin', 'tenant_agent', 'platform_admin'].includes(getAuth(req)?.role ?? '');
       const rows = await store.listSearchableChunks(session.tenantId, internal ? 'internal' : 'public');
-      const ranked = rankChunks(masked.masked, rows, 4);
+       const ranked = await rankChunksWithEmbedding(masked.masked, rows, embedding, 4);
       const evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: chunk.content }));
       const persona = await store.getPersona(session.tenantId);
       let draft;
       try { draft = await model.draft({ maskedMessage: masked.masked, evidence, personaName: persona?.name ?? 'Sales assistant' }); } catch { throw new HttpError(503, 'MODEL_UNAVAILABLE', 'The assistant is currently unable to verify an answer.'); }
-      try { assertKnownTokens(session, draft.answer); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
+      try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       const citations = validateCitations(draft, evidence);
       const grounded = evidence.length > 0 && citations.length > 0;
-      const action = draft.proposedIntent === 'lead.capture' ? await gateway.propose(session.tenantId, session.id, input.clientMessageId) : null;
-      const answer = rehydrateForSession(session, draft.answer);
+      const explicitLeadRequest = /\b(contact|call|email|interested|demo|quote)\b/i.test(masked.masked);
+      const action = draft.proposedIntent === 'lead.capture' && explicitLeadRequest ? await gateway.propose(session.tenantId, session.id, input.clientMessageId) : null;
+      const answer = rehydrateForSession(session, draft.answer, tokenVault);
       const response = { messageId: randomUUID(), sessionId: session.id, answer, grounded, citations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'Please confirm that you want to submit a contact request.', expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
       await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: draft.answer, citations, clientMessageId: null, createdAt: new Date().toISOString() });
       responseCache.set(cacheKey, response);

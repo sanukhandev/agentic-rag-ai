@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { ActionGateway, MockWorkflowAdapter } from './actions.js';
+import { describe, expect, it, vi } from 'vitest';
+import { ActionGateway, HttpN8nWorkflowAdapter, MockWorkflowAdapter, signN8nPayload, verifyN8nPayload } from './actions.js';
 import { MemoryStore } from './store-memory.js';
 
 describe('action gateway', () => {
@@ -18,5 +18,28 @@ describe('action gateway', () => {
     expect(workflow.calls[0]).not.toHaveProperty('message');
     expect((await gateway.confirm(first.id, 'tenant-a')).result).toEqual(completed.result);
     expect(workflow.calls).toHaveLength(1);
+  });
+
+  it('marks provider failures unknown and verifies replay-resistant signatures', async () => {
+    const store = new MemoryStore();
+    const gateway = new ActionGateway(store, { execute: async () => { throw new Error('timeout'); } });
+    const action = await gateway.propose('tenant-a', 'session-a', 'client-2');
+    await expect(gateway.confirm(action.id, 'tenant-a')).resolves.toMatchObject({ state: 'unknown' });
+    expect((await store.listAudit('tenant-a')).at(-1)?.eventName).toBe('workflow.unknown');
+    const timestamp = Date.now();
+    const body = JSON.stringify({ opaqueReference: 'lead-1' });
+    const signature = signN8nPayload('shared-secret', timestamp, 'nonce-1', body);
+    expect(verifyN8nPayload('shared-secret', String(timestamp), 'nonce-1', body, signature, timestamp)).toBe(true);
+    expect(verifyN8nPayload('shared-secret', String(timestamp - 301_000), 'nonce-1', body, signature, timestamp)).toBe(false);
+  });
+
+  it('sends the private n8n request with a signature and no raw customer fields', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ externalReference: 'n8n-1' }), { status: 200 }));
+    const adapter = new HttpN8nWorkflowAdapter('https://n8n.internal', 'shared-secret');
+    await expect(adapter.execute({ workflowKey: 'lead.capture', tenantId: 'tenant-a', opaqueReference: 'lead-1', idempotencyKey: 'client-1' })).resolves.toEqual({ externalReference: 'n8n-1' });
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(String(request.body)).not.toContain('email');
+    expect(request.headers).toMatchObject({ 'x-agentic-idempotency-key': 'client-1' });
+    fetchMock.mockRestore();
   });
 });
