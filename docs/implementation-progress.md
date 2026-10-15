@@ -7,7 +7,7 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 ## Phase gates
 
 - [x] P00: repository audit, security constraints, spec set and threat review
-- [x] P01: workspace, API, UI, database migration, ingestion and CI foundation (clean `npm ci --dry-run`, local gates and CI workflow with a pgvector service/migrations are valid; root n8n compose is digest-pinned and localhost-only by default; no VM deployment)
+- [x] P01: workspace, API, UI, database migration, ingestion and local verification foundation (clean `npm ci --dry-run`, local gate with a pgvector service/migrations is valid; hosted GitHub Actions verification is intentionally removed; root n8n compose is digest-pinned and localhost-only by default; no VM deployment)
 - [ ] P02: validated source ingestion, versioning, approval and retrieval (durable job state/lease/retry, authenticated worker-result boundary, tenant-admin TXT/PDF/DOCX/XLSX upload to private Node staging, Python worker retrieval/extraction, SQL vector filtering/order, transactional reindex-to-review, explicit source version history, guarded revoked-source purge and approved HTTPS worker snapshots added; production staging/object storage, retention policy, malware scanning and production embedding remain)
 - [x] P03: tenant-aware chat, PII masking, citations and fail-closed model boundary (synthetic API gate passing; conflict refusal, scoped history, invalid-citation abstention, numeric claim verification, permitted-language refusal, tenant domain management and configured public chat-origin binding verified)
 - [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; durable callback nonce replay guard added; live n8n blocked)
@@ -101,7 +101,7 @@ This section is updated after verification. No scenario is marked passing from s
 
 - Live identity-provider and production n8n credentials are unavailable; live Azure chat is verified locally, while embedding remains blocked by the missing deployment.
 - Azure Foundry chat credentials are now configured locally from the user-provided private note; a live GPT-4.1-mini v1 request returned HTTP 200 with valid JSON. The configured resource does not have an embedding deployment available (`DeploymentNotFound` for `text-embedding-3-small`), so local runs keep the deterministic embedding provider until a deployed embedding model name is supplied.
-- Hosted CI run `38735524333` for commit `6a92d21` passed in 1m40s, including pgvector migrations, all Node tests/builds, dependency audit, secret guard and Python ingestion tests; GitHub reported non-blocking action-runtime/runner migration annotations.
-- The framework dependency audit is clean locally; lockfile integrity and hosted CI still need verification in the repository CI environment.
+- Hosted GitHub Actions verification is intentionally not configured; `npm run verify:local` is the authoritative repository gate.
+- The framework dependency audit and lockfile integrity are clean locally.
 - No browser automation was used; UI validation is build/typecheck-only per the requested unit-test-only constraint.
 - The root n8n Compose file remains a development HTTP deployment and is not a production security baseline; its default bind is localhost-only and any staging exposure requires explicit HTTPS/reverse-proxy configuration.
