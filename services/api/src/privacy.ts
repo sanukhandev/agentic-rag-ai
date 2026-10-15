@@ -80,6 +80,7 @@ export const maskPii = (input: string): MaskResult => {
   };
   replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, 'EMAIL');
   replace(/(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)/g, 'PHONE');
+  replace(/\b(?:my name is|i am|i'm)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?/gi, 'NAME');
   replace(/\b(?:passport|account|customer|member)[ #:-]*[A-Z0-9-]{4,}\b/gi, 'ID');
   return { masked, tokens };
 };
@@ -90,7 +91,7 @@ export const sanitizeKnowledgeText = (input: string): string => input
   .replace(/(api[_ -]?key|secret|password|token)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED_SECRET]');
 
 export const assertKnownTokens = (session: Session, text: string, vault: TokenVault = defaultVault): void => {
-  const placeholders = text.match(/\[(?:EMAIL|PHONE|ID)_\d+\]/g) ?? [];
+  const placeholders = text.match(/\[(?:EMAIL|PHONE|NAME|ID)_\d+\]/g) ?? [];
   for (const placeholder of placeholders) if (!vault.has(session, placeholder)) throw new Error('Model returned an unknown privacy token.');
 };
 

@@ -12,7 +12,7 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 - [ ] P03: tenant-aware chat, PII masking, citations and fail-closed model boundary (synthetic API gate passing; conflict refusal, scoped history and invalid-citation abstention added)
 - [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; durable callback nonce replay guard added; live n8n blocked)
 - [ ] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics, RBAC, lifecycle, rate limits, CORS, callback replay guard and durable admin session revocation added; retention/backup pending)
-- [ ] P06: PII vault and conversation API (AES-GCM session vault and Postgres persistence verified; retention/rate limits pending)
+- [ ] P06: PII vault and conversation API (AES-GCM session vault, structured-name masking and Postgres persistence verified; retention/rate limits pending)
 - [ ] P07–P10: full persona/version workflow, operations hardening, clean-room acceptance and go-live review
 
 ## Decisions for this local vertical slice
@@ -33,6 +33,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Two tenants remain isolated during retrieval | `services/api/src/app.test.ts` | pass (memory store) |
 | Tenant admin can approve and revoke a source | `services/api/src/app.test.ts` | pass (memory API) |
 | PII is masked before model/embedding/workflow boundaries | `privacy.test.ts`, `embedding.test.ts`, API model-spy test, PostgresStore session test | pass for local adapters; live provider blocked |
+| Structured name, email and phone masking | `privacy.test.ts` token-vault boundary assertions | pass for supported phrase patterns; general name detection remains a production classifier decision |
 | Approved evidence is cited | API integration test | pass (deterministic model) |
 | Unsupported facts are refused | API integration test | pass |
 | Invalid model citation cannot publish an ungrounded answer | `app.test.ts` invalid-citation model test | pass |

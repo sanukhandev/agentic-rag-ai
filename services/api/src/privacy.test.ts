@@ -17,6 +17,16 @@ describe('privacy boundary', () => {
     expect(() => assertKnownTokens(session, '[EMAIL_99]', vault)).toThrow('unknown privacy token');
   });
 
+  it('masks structured names before external boundaries', () => {
+    const session = { id: 'session-name', tenantId: 'tenant', createdAt: new Date().toISOString(), tokenMap: new Map<string, string>() };
+    const vault = new TokenVault('test-vault-secret-2026');
+    const result = maskPii('My name is Alice Karim and I need a quote.');
+    saveTokens(session, result.tokens, vault);
+    expect(result.masked).not.toContain('Alice Karim');
+    expect(rehydrateForSession(session, result.masked, vault, 'workflow_payload')).not.toContain('Alice Karim');
+    expect(rehydrateForSession(session, result.masked, vault, 'assistant_response')).toContain('Alice Karim');
+  });
+
   it('supports key rotation and expiry without exposing the old value', () => {
     const session = { id: 'session-rotate', tenantId: 'tenant', createdAt: new Date().toISOString(), tokenMap: new Map<string, string>() };
     const vault = new TokenVault('test-vault-secret-2026');
