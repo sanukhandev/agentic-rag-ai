@@ -1,6 +1,6 @@
-# Provisional API contracts (design only)
+# Local API contracts
 
-**These routes do not yet exist.** They describe a target versioned boundary; finalize OpenAPI and runtime validators during API bootstrap.
+The local vertical slice implements these routes with runtime Zod validation and tenant-scoped repository checks. The development JWT is a local authentication adapter; production identity, TLS and deployment policy remain separate decisions.
 
 ## External web API
 | Route | Purpose | Required controls |
@@ -13,15 +13,35 @@
 | GET /api/v1/health/live | Lightweight liveness | No secrets/dependency disclosure |
 | GET /api/v1/health/ready | Restricted readiness | Safe dependency status |
 
+## Authentication and platform administration
+
+| Route | Purpose | Required controls |
+| --- | --- | --- |
+| POST /api/v1/auth/register-platform | One-time local bootstrap | Disabled in production; first-user guard |
+| POST /api/v1/auth/login | Issue a tenant/platform session | Password verification and durable session record |
+| POST /api/v1/auth/logout | Revoke the current session | Server-side revocation |
+| POST /api/v1/admin/tenants | Provision a tenant and owner | Platform-admin RBAC, unique slug/email, audit |
+| GET /api/v1/admin/platform/overview | Aggregate tenant metrics | Platform-admin RBAC; no customer content |
+| PATCH /api/v1/admin/tenants/:id/status | Suspend/reactivate/archive a tenant | Platform-admin RBAC, audited lifecycle transition |
+
 ## Admin API (authenticated role-based access)
-| Route | Purpose |
-| --- | --- |
-| POST /api/v1/admin/sources | Stage validated file/metadata |
-| GET /api/v1/admin/sources | Tenant-filtered source catalog |
-| POST /api/v1/admin/sources/:id/publish | Approve and activate version |
-| POST /api/v1/admin/sources/:id/revoke | Immediately exclude source from retrieval |
-| GET /api/v1/admin/ingestion-jobs/:id | Sanitized job progress |
-| GET /api/v1/admin/workflow-runs | Tenant-scoped redacted status/audit |
+| Route | Purpose | Required controls |
+| --- | --- | --- |
+| POST /api/v1/admin/sources | Stage validated file/metadata | Tenant-admin/editor RBAC and active tenant |
+| GET /api/v1/admin/sources | Tenant-filtered source catalog | Tenant scope from the session |
+| POST /api/v1/admin/sources/:id/publish | Approve and activate version | Tenant-admin RBAC and source ownership |
+| POST /api/v1/admin/sources/:id/revoke | Immediately exclude source from retrieval | Tenant-admin RBAC and source ownership |
+| GET /api/v1/admin/ingestion-jobs/:id | Sanitized job progress | Tenant scope and no raw staged bytes |
+| GET /api/v1/admin/workflow-runs | Tenant-scoped redacted status/audit | Tenant scope and no vault values |
+| GET /api/v1/admin/dashboard/overview | Tenant-scoped operational counters | Tenant identity from the session |
+| GET /api/v1/admin/services/health | Redacted service and telemetry status | Platform/tenant-admin RBAC |
+| GET/PATCH /api/v1/admin/channel | Configure exact public origin and enablement | Tenant-admin RBAC, origin validation, audited |
+| GET/PUT /api/v1/admin/persona | Read/update the active persona | Tenant scope, persona safety validation |
+| POST /api/v1/admin/persona/drafts | Create a persona version | Tenant-admin RBAC, bounded fields |
+| GET /api/v1/admin/persona/versions | List tenant persona history | Tenant scope |
+| POST /api/v1/admin/persona/versions/:id/publish | Publish or roll back to a version | Tenant-admin RBAC, tenant-bound version |
+| POST /api/v1/admin/sources/upload | Queue a bounded private file for Python ingestion | Tenant-admin/editor RBAC, type/size/base64 validation |
+| POST /api/v1/admin/retention/purge-sessions | Purge sessions before an explicit cutoff | Tenant-admin RBAC, audited retention action |
 
 Enforce server-side RBAC/ABAC for each handler. Browser cannot choose an arbitrary tenant or receive a vault mapping.
 
