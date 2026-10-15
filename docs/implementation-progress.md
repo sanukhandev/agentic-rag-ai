@@ -47,8 +47,9 @@ This section is updated after verification. No scenario is marked passing from s
 | Callback replay is rejected across store-backed instances | API callback replay assertion plus `claimCallbackNonce` memory/PostgreSQL tests and migration `011-callback-nonces.sql` | pass locally; live n8n blocked |
 | Next web chat flow builds | `npm run build` | pass |
 | Web chat session continuity | Next client restores masked assistant history from the tenant-scoped session API, persists the session key, and provides reset/retry controls; history mapper unit-tested | pass locally; manual browser verification pending |
+| Web workflow result status | Next client maps API action states to completed/failed/unknown status, keeps unknown actions retryable, and unit-tests the state mapper | pass locally; manual browser verification pending |
 | Angular admin flow builds | `npm run build` | pass |
-| Frontend unit checks | `apps/admin/src/app/upload-utils.test.ts`, `apps/admin/src/app/persona-utils.test.ts`, `apps/web/app/chat-utils.test.ts` | pass (2 admin + 2 web tests; no browser automation) |
+| Frontend unit checks | `apps/admin/src/app/upload-utils.test.ts`, `apps/admin/src/app/persona-utils.test.ts`, `apps/web/app/chat-utils.test.ts` | pass (2 admin + 3 web tests; no browser automation) |
 | Python ingestion tests pass | `tools/ingestion/test_ingestion.py` | pass (14 tests, local venv via `unittest`; pytest is not installed) |
 | PostgreSQL/pgvector persistence smoke | `services/api/src/store-postgres.test.ts` with `DATABASE_URL` | pass (local container) |
 | Ingestion job state and lease persistence | API job assertion and `store-postgres.test.ts` with migration `008-ingestion-jobs.sql` | pass (memory + PostgreSQL) |
@@ -89,7 +90,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |
 | Dependency audit | `npm audit --omit=dev --audit-level=high` | pass: 0 vulnerabilities after Angular 21.2.25, Next 16.4.1, React 19.3.1 and TypeScript 5.9.3 upgrade |
 | Reproducible install dry run | `npm ci --dry-run` | pass locally |
-| Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, Admin 2 + Web 2 + API 45 + Contracts 1, builds, 0 audit vulnerabilities and Python 14 |
+| Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, Admin 2 + Web 3 + API 45 + Contracts 1, builds, 0 audit vulnerabilities and Python 14 |
 | n8n compose security defaults | `npm run verify:compose` / `docker compose config` | pass: digest-pinned image and default `127.0.0.1:5678`; public bind requires explicit overrides |
 
 ## Blockers and risks
