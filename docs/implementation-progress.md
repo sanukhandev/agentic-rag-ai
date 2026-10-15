@@ -56,7 +56,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Python file-to-API worker client | `tools/ingestion/test_ingestion.py` worker submission test | pass (mock transport) |
 | Tenant-admin binary file upload bridge | API upload test, `IngestionStaging`, Angular upload panel, Python worker API-input test | pass locally; manual browser/worker run pending |
 | Failed ingestion retry | Tenant-scoped audited `failed` → `queued` API transition and Angular retry action | pass locally |
-| Private file staging | `tools/ingestion/ingestion/staging.py` and unittest copy/purge assertion; worker `--staging-root` | pass locally; production object storage/malware scanning remains open |
+| Private file staging | Node `ingestion-staging.test.ts`, Python `tools/ingestion/ingestion/staging.py` unittest copy/purge assertion, worker `--staging-root` | pass locally; production object storage/malware scanning remains open |
 | Python approved HTTPS-to-API worker client | `tools/ingestion/test_ingestion.py` URL snapshot test; CLI supports `--url`, `--title` and repeated `--allowed-host` | pass (mock transport) |
 | Unsafe ingestion inputs | Python tests reject `.doc`/`.xls`, private DNS targets and redirects | pass locally |
 | SQL-level vector retrieval filters | `store-postgres.test.ts` with pgvector query | pass (local vector dimension) |
@@ -80,7 +80,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Tenant source purge control | Angular shows a confirmation-gated purge action only for revoked sources | pass locally; manual browser verification pending |
 | Tenant session retention control | Tenant-admin Angular action requests a past 24-hour cutoff through the audited retention API and refreshes metrics/audit | pass locally; manual browser verification pending |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally after Angular 21 / Next 16 upgrade |
-| Latest workspace test run | `npm test` | Admin 2 + web 2 + API 36 + contracts 1 passed; 1 PostgreSQL test skipped by default |
+| Latest workspace test run | `npm test` | Admin 2 + web 2 + API 37 + contracts 1 passed; 1 PostgreSQL test skipped by default |
 | Chat resume/history | `GET /api/v1/chat/sessions/:id` API assertion | pass (masked, tenant-scoped messages) |
 | Durable admin session revocation | `auth.test.ts` and API logout assertion backed by store session records; PostgreSQL migration `010-auth-sessions.sql` | pass (memory + migration applied locally) |
 | Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |
