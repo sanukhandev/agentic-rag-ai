@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, AuthSession, Chunk, Citation, IngestionJob, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionRequest, AuditEvent, AuthSession, Chunk, Citation, IngestionJob, IngestionJobStatus, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
 
 const iso = (value: Date | string): string => value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 const vectorLiteral = (values: number[]): string => `[${values.join(',')}]`;
@@ -104,8 +104,11 @@ export class PostgresStore implements Store {
     const counts: Record<SourceStatus, number> = { awaiting_review: 0, active: 0, revoked: 0 };
     for (const row of result.rows) counts[row.status] = Number(row.count);
     const totals = await this.pool.query<{ sessions: string; messages: string; actions: string; audit_events: string }>('SELECT (SELECT count(*) FROM chat_sessions WHERE tenant_id=$1)::text AS sessions, (SELECT count(*) FROM chat_messages WHERE tenant_id=$1)::text AS messages, (SELECT count(*) FROM action_requests WHERE tenant_id=$1)::text AS actions, (SELECT count(*) FROM audit_events WHERE tenant_id=$1)::text AS audit_events', [tenantId]);
+    const jobs = await this.pool.query<{ status: IngestionJobStatus; count: string }>('SELECT status, count(*)::text AS count FROM ingestion_jobs WHERE tenant_id=$1 GROUP BY status', [tenantId]);
+    const jobCounts: Record<IngestionJobStatus, number> = { queued: 0, processing: 0, completed: 0, failed: 0 };
+    for (const job of jobs.rows) jobCounts[job.status] = Number(job.count);
     const row = totals.rows[0];
-    return { sourceCounts: counts, sessions: Number(row?.sessions ?? 0), messages: Number(row?.messages ?? 0), actions: Number(row?.actions ?? 0), auditEvents: Number(row?.audit_events ?? 0) };
+    return { sourceCounts: counts, ingestionJobs: jobCounts, sessions: Number(row?.sessions ?? 0), messages: Number(row?.messages ?? 0), actions: Number(row?.actions ?? 0), auditEvents: Number(row?.audit_events ?? 0) };
   }
 
   private tenant(row: TenantRow): Tenant { return { id: row.id, name: row.name, slug: row.slug, status: row.status ?? 'active', publicChatEnabled: row.public_chat_enabled ?? true, publicOrigin: row.public_origin ?? null, createdAt: iso(row.created_at) }; }

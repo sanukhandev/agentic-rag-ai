@@ -156,6 +156,7 @@ export interface AuditEvent {
 
 export interface TenantStats {
   sourceCounts: Record<SourceStatus, number>;
+  ingestionJobs: Record<IngestionJobStatus, number>;
   sessions: number;
   messages: number;
   actions: number;

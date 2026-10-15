@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 
 type Source = { id: string; title: string; status: string; audience: string; mimeType: string };
 type IngestionJob = { id: string; title: string; sourceUrl: string | null; status: string; attempts: number; errorCode: string | null; updatedAt: string };
-type Metrics = { sourceCounts: Record<string, number>; sessions: number; messages: number; actions: number; auditEvents: number };
+type Metrics = { sourceCounts: Record<string, number>; ingestionJobs: Record<string, number>; sessions: number; messages: number; actions: number; auditEvents: number };
 type Persona = { name: string; greeting: string; personality: string; tone: string; speakingStyle: string; permittedLanguages: string[] };
 type PersonaVersion = Persona & { id: string; version: number; status: 'draft' | 'published'; createdAt: string; publishedAt: string | null };
 type Tenant = { id: string; name: string; slug: string; status: string };
