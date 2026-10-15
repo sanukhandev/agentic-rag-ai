@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, AuthSession, Chunk, IngestionJob, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionRequest, AuditEvent, AuthSession, Chunk, IngestionJob, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
 
 const now = (): string => new Date().toISOString();
 
 export class MemoryStore implements Store {
   private readonly tenants = new Map<string, Tenant>();
   private readonly users = new Map<string, User>();
+  private readonly domains = new Map<string, TenantDomain>();
   private readonly authSessions = new Map<string, AuthSession>();
   private readonly callbackNonces = new Map<string, string>();
   private readonly personas = new Map<string, Persona>();
@@ -39,6 +40,18 @@ export class MemoryStore implements Store {
     return updated;
   }
   async listUsers(tenantId: string): Promise<User[]> { return [...this.users.values()].filter((user) => user.tenantId === tenantId); }
+  async listDomains(tenantId: string): Promise<TenantDomain[]> { return [...this.domains.values()].filter((domain) => domain.tenantId === tenantId); }
+  async addDomain(input: { tenantId: string; hostname: string }): Promise<TenantDomain> {
+    const domain: TenantDomain = { id: randomUUID(), tenantId: input.tenantId, hostname: input.hostname, createdAt: now() };
+    this.domains.set(domain.id, domain);
+    return domain;
+  }
+  async removeDomain(id: string, tenantId: string): Promise<boolean> {
+    const domain = this.domains.get(id);
+    if (!domain || domain.tenantId !== tenantId) return false;
+    this.domains.delete(id);
+    return true;
+  }
 
   async createUser(input: { email: string; passwordHash: string; role: User['role']; tenantId: string | null }): Promise<User> {
     const user: User = { id: randomUUID(), email: input.email.toLowerCase(), passwordHash: input.passwordHash, role: input.role, tenantId: input.tenantId, createdAt: now() };

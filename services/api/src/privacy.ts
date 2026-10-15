@@ -37,6 +37,7 @@ export class TokenVault {
   }
 
   save(session: Session, values: MaskResult['tokens']): void {
+    this.purgeExpired(session);
     for (const item of values) session.tokenMap.set(item.token, this.encrypt(session.id, JSON.stringify({ value: item.value, expiresAt: Date.now() + this.ttlMs })));
   }
 
@@ -46,8 +47,16 @@ export class TokenVault {
     if (!encoded) return null;
     try {
       const entry = JSON.parse(encoded) as { value?: unknown; expiresAt?: unknown };
-      return typeof entry.value === 'string' && typeof entry.expiresAt === 'number' && entry.expiresAt > Date.now() ? entry.value : null;
+      if (typeof entry.value !== 'string' || typeof entry.expiresAt !== 'number') return null;
+      if (entry.expiresAt <= Date.now()) session.tokenMap.delete(placeholder);
+      return entry.expiresAt > Date.now() ? entry.value : null;
     } catch { return null; }
+  }
+
+  purgeExpired(session: Session): number {
+    const before = session.tokenMap.size;
+    for (const placeholder of [...session.tokenMap.keys()]) this.resolveValue(session, placeholder);
+    return before - session.tokenMap.size;
   }
 
   has(session: Session, placeholder: string): boolean { return this.resolveValue(session, placeholder) !== null; }

@@ -9,6 +9,9 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
     const store = new PostgresStore(pool);
     const tenant = await store.createTenant({ name: 'Postgres Test', slug: `postgres-${randomUUID()}` });
     try {
+      const domain = await store.addDomain({ tenantId: tenant.id, hostname: 'chat.postgres.example' });
+      expect(await store.listDomains(tenant.id)).toMatchObject([{ id: domain.id, hostname: 'chat.postgres.example' }]);
+      expect(await store.removeDomain(domain.id, tenant.id)).toBe(true);
       const session = await store.createSession(tenant.id);
       const personaVersion = await store.createPersonaVersion({ tenantId: tenant.id, name: 'Ava', greeting: 'Hello', personality: 'Precise', tone: 'Clear', speakingStyle: 'Short', permittedLanguages: ['en'], status: 'draft' });
       expect(personaVersion.version).toBe(1);

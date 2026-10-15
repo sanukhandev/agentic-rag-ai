@@ -64,6 +64,13 @@ export interface SourceVersion {
   createdAt: string;
 }
 
+export interface TenantDomain {
+  id: string;
+  tenantId: string;
+  hostname: string;
+  createdAt: string;
+}
+
 export interface AuthSession {
   tokenHash: string;
   userId: string;
@@ -163,6 +170,9 @@ export interface Store {
   listTenants(): Promise<Tenant[]>;
   setTenantStatus(id: string, status: TenantStatus): Promise<Tenant | null>;
   listUsers(tenantId: string): Promise<User[]>;
+  listDomains(tenantId: string): Promise<TenantDomain[]>;
+  addDomain(input: { tenantId: string; hostname: string }): Promise<TenantDomain>;
+  removeDomain(id: string, tenantId: string): Promise<boolean>;
   createUser(input: { email: string; passwordHash: string; role: Role; tenantId: string | null }): Promise<User>;
   getUserByEmail(email: string): Promise<User | null>;
   getUser(id: string): Promise<User | null>;

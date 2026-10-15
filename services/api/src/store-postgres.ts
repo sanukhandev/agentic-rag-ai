@@ -1,11 +1,12 @@
 import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, AuthSession, Chunk, Citation, IngestionJob, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionRequest, AuditEvent, AuthSession, Chunk, Citation, IngestionJob, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
 
 const iso = (value: Date | string): string => value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 const vectorLiteral = (values: number[]): string => `[${values.join(',')}]`;
 type DbTimestamp = Date | string;
 type TenantRow = { id: string; name: string; slug: string; status?: TenantStatus; public_chat_enabled?: boolean; public_origin?: string | null; created_at: DbTimestamp };
+type TenantDomainRow = { id: string; tenant_id: string; hostname: string; created_at: DbTimestamp };
 type UserRow = { id: string; email: string; password_hash: string; role: User['role']; tenant_id: string | null; created_at: DbTimestamp };
 type AuthSessionRow = { token_hash: string; user_id: string; expires_at: DbTimestamp; revoked_at: DbTimestamp | null };
 type PersonaRow = { tenant_id: string; name: string; greeting: string; personality: string; tone: string; speaking_style: string; permitted_languages: string[] };
@@ -25,6 +26,9 @@ export class PostgresStore implements Store {
   async listTenants(): Promise<Tenant[]> { const result = await this.pool.query('SELECT * FROM tenants ORDER BY created_at'); return result.rows.map((row) => this.tenant(row)); }
   async setTenantStatus(id: string, status: TenantStatus): Promise<Tenant | null> { const result = await this.pool.query('UPDATE tenants SET status=$1 WHERE id=$2 RETURNING *', [status, id]); return result.rows[0] ? this.tenant(result.rows[0]) : null; }
   async listUsers(tenantId: string): Promise<User[]> { const result = await this.pool.query('SELECT * FROM users WHERE tenant_id=$1 ORDER BY created_at', [tenantId]); return result.rows.map((row) => this.user(row)); }
+  async listDomains(tenantId: string): Promise<TenantDomain[]> { const result = await this.pool.query<TenantDomainRow>('SELECT id,tenant_id,hostname,created_at FROM tenant_domains WHERE tenant_id=$1 ORDER BY hostname', [tenantId]); return result.rows.map((row) => this.domain(row)); }
+  async addDomain(input: { tenantId: string; hostname: string }): Promise<TenantDomain> { const result = await this.pool.query<TenantDomainRow>('INSERT INTO tenant_domains (id,tenant_id,hostname) VALUES ($1,$2,$3) RETURNING id,tenant_id,hostname,created_at', [randomUUID(), input.tenantId, input.hostname]); return this.domain(result.rows[0]!); }
+  async removeDomain(id: string, tenantId: string): Promise<boolean> { const result = await this.pool.query('DELETE FROM tenant_domains WHERE id=$1 AND tenant_id=$2', [id, tenantId]); return (result.rowCount ?? 0) === 1; }
   async createUser(input: { email: string; passwordHash: string; role: User['role']; tenantId: string | null }): Promise<User> { const result = await this.pool.query('INSERT INTO users (id,email,password_hash,role,tenant_id) VALUES ($1,$2,$3,$4,$5) RETURNING *', [randomUUID(), input.email.toLowerCase(), input.passwordHash, input.role, input.tenantId]); return this.user(result.rows[0]); }
   async getUserByEmail(email: string): Promise<User | null> { const result = await this.pool.query('SELECT * FROM users WHERE email=$1', [email.toLowerCase()]); return result.rows[0] ? this.user(result.rows[0]) : null; }
   async getUser(id: string): Promise<User | null> { const result = await this.pool.query('SELECT * FROM users WHERE id=$1', [id]); return result.rows[0] ? this.user(result.rows[0]) : null; }
@@ -104,6 +108,7 @@ export class PostgresStore implements Store {
   }
 
   private tenant(row: TenantRow): Tenant { return { id: row.id, name: row.name, slug: row.slug, status: row.status ?? 'active', publicChatEnabled: row.public_chat_enabled ?? true, publicOrigin: row.public_origin ?? null, createdAt: iso(row.created_at) }; }
+  private domain(row: TenantDomainRow): TenantDomain { return { id: row.id, tenantId: row.tenant_id, hostname: row.hostname, createdAt: iso(row.created_at) }; }
   private user(row: UserRow): User { return { id: row.id, email: row.email, passwordHash: row.password_hash, role: row.role, tenantId: row.tenant_id, createdAt: iso(row.created_at) }; }
   private persona(row: PersonaRow): Persona { return { tenantId: row.tenant_id, name: row.name, greeting: row.greeting, personality: row.personality, tone: row.tone, speakingStyle: row.speaking_style, permittedLanguages: row.permitted_languages }; }
   private personaVersion(row: PersonaVersionRow): PersonaVersion { return { id: row.id, tenantId: row.tenant_id, version: row.version, status: row.status, name: row.name, greeting: row.greeting, personality: row.personality, tone: row.tone, speakingStyle: row.speaking_style, permittedLanguages: row.permitted_languages, createdAt: iso(row.created_at), publishedAt: row.published_at ? iso(row.published_at) : null }; }

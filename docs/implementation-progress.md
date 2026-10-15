@@ -9,11 +9,11 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 - [x] P00: repository audit, security constraints, spec set and threat review
 - [ ] P01: workspace, API, UI, database migration, ingestion and CI foundation (CI added; hosted run not observed)
 - [ ] P02: validated source ingestion, versioning, approval and retrieval (durable job state/lease, authenticated worker-result boundary, SQL vector filtering/order, transactional reindex-to-review, explicit source version history, guarded revoked-source purge and approved HTTPS worker snapshots added; private file staging, retention policy and selected production embedding remain)
-- [ ] P03: tenant-aware chat, PII masking, citations and fail-closed model boundary (synthetic API gate passing; conflict refusal, scoped history, invalid-citation abstention, numeric claim verification and permitted-language refusal added)
+- [ ] P03: tenant-aware chat, PII masking, citations and fail-closed model boundary (synthetic API gate passing; conflict refusal, scoped history, invalid-citation abstention, numeric claim verification, permitted-language refusal and tenant domain management added)
 - [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; durable callback nonce replay guard added; live n8n blocked)
 - [ ] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics, RBAC, lifecycle, rate limits, CORS, callback replay guard, durable admin session revocation and tenant session purge added; backup/telemetry pending)
-- [ ] P06: PII vault and conversation API (AES-GCM session vault, structured-name masking, session expiry/purge and Postgres persistence verified; token-vault retention/rate limits pending)
-- [ ] P07–P10: full persona/version workflow, operations hardening, clean-room acceptance and go-live review (persona draft/publish/version API and UI history/publish/rollback added; preview and final operations remain)
+- [ ] P06: PII vault and conversation API (AES-GCM session vault, structured-name masking, lazy token expiry purge, session expiry/purge, rate limiting and Postgres persistence verified; production KMS-backed vault remains open)
+- [ ] P07–P10: full persona/version workflow, operations hardening, clean-room acceptance and go-live review (persona draft/publish/version API and UI history/publish/rollback plus tenant domain UI added; preview and final operations remain)
 
 ## Decisions for this local vertical slice
 
@@ -46,7 +46,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Callback replay is rejected across store-backed instances | API callback replay assertion plus `claimCallbackNonce` memory/PostgreSQL tests and migration `011-callback-nonces.sql` | pass locally; live n8n blocked |
 | Next web chat flow builds | `npm run build` | pass |
 | Angular admin flow builds | `npm run build` | pass |
-| Python ingestion tests pass | `tools/ingestion/test_ingestion.py` | pass (9 tests, local venv) |
+| Python ingestion tests pass | `tools/ingestion/test_ingestion.py` | pass (10 tests, local venv via `unittest`; pytest is not installed) |
 | PostgreSQL/pgvector persistence smoke | `services/api/src/store-postgres.test.ts` with `DATABASE_URL` | pass (local container) |
 | Ingestion job state and lease persistence | API job assertion and `store-postgres.test.ts` with migration `008-ingestion-jobs.sql` | pass (memory + PostgreSQL) |
 | Authenticated worker result boundary | `app.test.ts` worker flow; hash, ordinal and locator validation | pass (synthetic Python result) |
@@ -57,19 +57,20 @@ This section is updated after verification. No scenario is marked passing from s
 | Source reindex lifecycle | API and `store-postgres.test.ts` version replacement assertions | pass (new version returns to review) |
 | Source version history | API `GET /api/v1/admin/sources/:id/versions`, memory test and PostgreSQL integration assertion | pass locally |
 | Tenant-scoped ingestion job list | API `GET /api/v1/admin/ingestion-jobs`, app assertion and Angular job panel | pass (API/build; manual browser verification pending) |
+| Tenant domain management | API domain CRUD, tenant-scoped memory/PostgreSQL store methods, migration `013-tenant-domains.sql` and Angular tenant-admin panel | pass locally; manual browser verification pending |
 | Revoked-source purge | API negative/positive test; PostgreSQL delete uses tenant + revoked predicates | pass (memory API; SQL path covered by query contract) |
-| Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally |
-| Latest workspace test run | `npm test` | API 27 passed + 1 PostgreSQL test skipped by default; contracts 1 passed |
+| Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally after Angular 21 / Next 16 upgrade |
+| Latest workspace test run | `npm test` | API 30 passed + 1 PostgreSQL test skipped by default; contracts 1 passed |
 | Chat resume/history | `GET /api/v1/chat/sessions/:id` API assertion | pass (masked, tenant-scoped messages) |
 | Durable admin session revocation | `auth.test.ts` and API logout assertion backed by store session records; PostgreSQL migration `010-auth-sessions.sql` | pass (memory + migration applied locally) |
 | Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |
-| Dependency audit | `npm audit --omit=dev --audit-level=high` | blocked: 9 advisories remain in Angular 19/PostCSS; remediation requires a major framework/toolchain upgrade and was not applied unverified |
+| Dependency audit | `npm audit --omit=dev --audit-level=high` | pass: 0 vulnerabilities after Angular 21.2.25, Next 16.4.1, React 19.3.1 and TypeScript 5.9.3 upgrade |
 
 ## Blockers and risks
 
 - Live identity-provider and production n8n credentials are unavailable; live Azure chat is verified locally, while embedding remains blocked by the missing deployment.
 - Azure Foundry chat credentials are now configured locally from the user-provided private note; a live GPT-4.1-mini v1 request returned HTTP 200 with valid JSON. The configured resource does not have an embedding deployment available (`DeploymentNotFound` for `text-embedding-3-small`), so local runs keep the deterministic embedding provider until a deployed embedding model name is supplied.
 - CI was added but its hosted run has not been observed from this local session.
-- `npm audit` reports high-severity Angular 19 and PostCSS advisories; upgrading Angular/Next across major versions is a separate verified dependency task.
+- The framework dependency audit is clean locally; lockfile integrity and hosted CI still need verification in the repository CI environment.
 - No browser automation was used; UI validation is build/typecheck-only per the requested unit-test-only constraint.
 - The existing root n8n Compose file is still a public HTTP development deployment and is not a production security baseline.
