@@ -9,6 +9,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
     const store = new PostgresStore(pool);
     const tenant = await store.createTenant({ name: 'Postgres Test', slug: `postgres-${randomUUID()}` });
     try {
+      expect((await store.setTenantPublicOrigin(tenant.id, 'https://store.example'))?.publicOrigin).toBe('https://store.example');
       const domain = await store.addDomain({ tenantId: tenant.id, hostname: 'chat.postgres.example' });
       expect(await store.listDomains(tenant.id)).toMatchObject([{ id: domain.id, hostname: 'chat.postgres.example' }]);
       expect(await store.removeDomain(domain.id, tenant.id)).toBe(true);

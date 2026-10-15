@@ -169,6 +169,7 @@ export interface Store {
   getTenantBySlug(slug: string): Promise<Tenant | null>;
   listTenants(): Promise<Tenant[]>;
   setTenantStatus(id: string, status: TenantStatus): Promise<Tenant | null>;
+  setTenantPublicOrigin(id: string, publicOrigin: string): Promise<Tenant | null>;
   listUsers(tenantId: string): Promise<User[]>;
   listDomains(tenantId: string): Promise<TenantDomain[]>;
   addDomain(input: { tenantId: string; hostname: string }): Promise<TenantDomain>;

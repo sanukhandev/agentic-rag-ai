@@ -10,6 +10,7 @@ type Persona = { name: string; greeting: string; personality: string; tone: stri
 type PersonaVersion = Persona & { id: string; version: number; status: 'draft' | 'published'; createdAt: string; publishedAt: string | null };
 type Tenant = { id: string; name: string; slug: string; status: string };
 type TenantDomain = { id: string; hostname: string; createdAt: string };
+type Channel = { publicOrigin: string | null };
 type Member = { id: string; email: string; role: string };
 type Health = { checkedAt: string; telemetry: { requests: number; serverErrors: number; averageLatencyMs: number; lastRequestAt: string | null }; checks: Record<string, { status: string }> };
 const api = 'http://localhost:4000';
@@ -19,13 +20,13 @@ export class AppComponent {
   private readonly http = inject(HttpClient);
   email = 'admin@example.test'; password = ''; token = ''; role = ''; error = ''; sources: Source[] = []; ingestionJobs: IngestionJob[] = []; tenants: Tenant[] = []; domains: TenantDomain[] = []; members: Member[] = []; health: Health | null = null; metrics: Metrics | null = null; persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: ['en'] };
   title = ''; content = ''; sourceUrl = ''; audience = 'public'; selectedFile: File | null = null;
-  tenantName = ''; tenantSlug = ''; tenantAdminEmail = ''; tenantAdminPassword = '';
+  tenantName = ''; tenantSlug = ''; tenantAdminEmail = ''; tenantAdminPassword = ''; publicOrigin = '';
   personaVersions: PersonaVersion[] = [];
   domainHostname = '';
   memberEmail = ''; memberPassword = ''; memberRole = 'tenant_editor';
   previewMessage = 'What can you help me with?'; previewAnswer = ''; previewGrounded = false;
 
-  login(): void { this.http.post<{ token: string; user: { role: string } }>(`${api}/api/v1/auth/login`, { email: this.email, password: this.password }).subscribe({ next: (body) => { this.token = body.token; this.role = body.user.role; this.loadHealth(); if (this.role === 'platform_admin') this.loadTenants(); else { this.loadSources(); this.loadJobs(); this.loadDashboard(); this.loadPersona(); this.loadPersonaVersions(); if (this.role === 'tenant_admin') { this.loadDomains(); this.loadMembers(); } } }, error: () => { this.error = 'Login failed.'; } }); }
+  login(): void { this.http.post<{ token: string; user: { role: string } }>(`${api}/api/v1/auth/login`, { email: this.email, password: this.password }).subscribe({ next: (body) => { this.token = body.token; this.role = body.user.role; this.loadHealth(); if (this.role === 'platform_admin') this.loadTenants(); else { this.loadSources(); this.loadJobs(); this.loadDashboard(); this.loadPersona(); this.loadPersonaVersions(); if (this.role === 'tenant_admin') { this.loadDomains(); this.loadMembers(); this.loadChannel(); } } }, error: () => { this.error = 'Login failed.'; } }); }
   loadTenants(): void { this.http.get<{ items: Tenant[] }>(`${api}/api/v1/admin/tenants`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.tenants = body.items; }, error: () => { this.error = 'Could not load tenants.'; } }); }
   createTenant(): void { this.http.post(`${api}/api/v1/admin/tenants`, { name: this.tenantName, slug: this.tenantSlug, adminEmail: this.tenantAdminEmail, adminPassword: this.tenantAdminPassword }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.tenantName = ''; this.tenantSlug = ''; this.tenantAdminEmail = ''; this.tenantAdminPassword = ''; this.loadTenants(); }, error: () => { this.error = 'Tenant could not be created.'; } }); }
   loadSources(): void { this.http.get<{ items: Source[] }>(`${api}/api/v1/admin/sources`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.sources = body.items; }, error: () => { this.error = 'Could not load sources.'; } }); }
@@ -35,6 +36,8 @@ export class AppComponent {
   loadDomains(): void { this.http.get<{ items: TenantDomain[] }>(`${api}/api/v1/admin/domains`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.domains = body.items; }, error: () => { this.error = 'Could not load domains.'; } }); }
   addDomain(): void { this.http.post(`${api}/api/v1/admin/domains`, { hostname: this.domainHostname }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.domainHostname = ''; this.loadDomains(); }, error: () => { this.error = 'Domain could not be added.'; } }); }
   removeDomain(domain: TenantDomain): void { this.http.delete(`${api}/api/v1/admin/domains/${domain.id}`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadDomains(), error: () => { this.error = 'Domain could not be removed.'; } }); }
+  loadChannel(): void { this.http.get<Channel>(`${api}/api/v1/admin/channel`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.publicOrigin = body.publicOrigin ?? ''; }, error: () => { this.error = 'Could not load chat channel.'; } }); }
+  saveChannel(): void { this.http.patch<Channel>(`${api}/api/v1/admin/channel`, { publicOrigin: this.publicOrigin }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.publicOrigin = body.publicOrigin ?? ''; }, error: () => { this.error = 'Chat origin could not be saved.'; } }); }
   loadMembers(): void { this.http.get<{ items: Member[] }>(`${api}/api/v1/admin/members`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.members = body.items; }, error: () => { this.error = 'Could not load members.'; } }); }
   addMember(): void { this.http.post(`${api}/api/v1/admin/members`, { email: this.memberEmail, password: this.memberPassword, role: this.memberRole }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.memberEmail = ''; this.memberPassword = ''; this.loadMembers(); }, error: () => { this.error = 'Member could not be added.'; } }); }
   loadPersona(): void { this.http.get<{ persona: Persona | null }>(`${api}/api/v1/admin/persona`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { if (body.persona) this.persona = body.persona; }, error: () => { this.error = 'Could not load persona.'; } }); }

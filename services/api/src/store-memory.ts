@@ -39,6 +39,13 @@ export class MemoryStore implements Store {
     this.tenants.set(id, updated);
     return updated;
   }
+  async setTenantPublicOrigin(id: string, publicOrigin: string): Promise<Tenant | null> {
+    const tenant = this.tenants.get(id);
+    if (!tenant) return null;
+    const updated = { ...tenant, publicOrigin };
+    this.tenants.set(id, updated);
+    return updated;
+  }
   async listUsers(tenantId: string): Promise<User[]> { return [...this.users.values()].filter((user) => user.tenantId === tenantId); }
   async listDomains(tenantId: string): Promise<TenantDomain[]> { return [...this.domains.values()].filter((domain) => domain.tenantId === tenantId); }
   async addDomain(input: { tenantId: string; hostname: string }): Promise<TenantDomain> {
