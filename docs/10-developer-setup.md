@@ -47,6 +47,19 @@ The Angular tenant-admin panel can also queue a TXT, PDF, DOCX or XLSX upload. I
 
 The API deletes the Node-side staged bytes after a successful or idempotent result. Failed jobs remain available for retry; configure a scheduled private-staging retention/purge policy before production.
 
+## Repeatable local verification
+
+After starting and migrating the private PostgreSQL container and creating the pinned Python venv, run the complete local gate from the repository root:
+
+```powershell
+npm run db:up
+npm run db:migrate
+tools/ingestion/.venv/Scripts/python.exe -m pip install -r tools/ingestion/requirements.txt
+npm run verify:local
+```
+
+`verify:local` requires the local venv, defaults `DATABASE_URL` to the private development database when it is not already set, runs lint/typecheck, the PostgreSQL-backed workspace tests, production builds, the dependency audit and all Python ingestion tests. It does not start or deploy any VM service.
+
 For public chat channel binding, a tenant administrator saves the exact web origin and enabled state in the **Public chat channel** panel. When enabled, `/api/v1/chat/config` and public session creation require the matching browser `Origin`; disabling the channel rejects public preflight/session requests. Production tenants must configure one.
 
 ## Local PostgreSQL backup/restore rehearsal

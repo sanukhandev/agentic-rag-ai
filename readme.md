@@ -74,4 +74,4 @@ The root `docker-compose.yml` remains the existing n8n-only development deployme
 
 ## Current verification and limitations
 
-The verified local commands are `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, `npm run db:migrate`, the PostgresStore integration test with `DATABASE_URL`, and the Python unittest suite. Azure GPT-4.1-mini chat has been smoke-tested with the supplied local credentials; the configured resource still lacks an embedding deployment, while production identity-provider and live n8n calls remain blockers. See [implementation progress](docs/implementation-progress.md).
+The verified local command is `npm run verify:local` (after PostgreSQL and the Python venv are prepared); it runs lint, typecheck, the PostgreSQL-backed workspace suite, builds, dependency audit and Python ingestion tests. Azure GPT-4.1-mini chat has been smoke-tested with the supplied local credentials; the configured resource still lacks an embedding deployment, while production identity-provider and live n8n calls remain blockers. See [implementation progress](docs/implementation-progress.md).

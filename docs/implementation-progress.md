@@ -89,6 +89,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |
 | Dependency audit | `npm audit --omit=dev --audit-level=high` | pass: 0 vulnerabilities after Angular 21.2.25, Next 16.4.1, React 19.3.1 and TypeScript 5.9.3 upgrade |
 | Reproducible install dry run | `npm ci --dry-run` | pass locally |
+| Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, Admin 2 + Web 2 + API 45 + Contracts 1, builds, 0 audit vulnerabilities and Python 14 |
 
 ## Blockers and risks
 
