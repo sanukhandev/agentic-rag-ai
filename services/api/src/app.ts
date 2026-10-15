@@ -472,7 +472,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const session = await store.getSession(input.sessionId);
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
       ensureLiveSession(session.createdAt);
-      await activeTenant(store, session.tenantId);
+      const tenant = await activeTenant(store, session.tenantId);
+      if (!getAuth(req)) enforcePublicOrigin(req, tenant, nodeEnv);
       if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.');
       const durableDuplicate = await store.getMessageByClientId(session.id, input.clientMessageId);
       if (durableDuplicate?.response) { res.json(durableDuplicate.response); return; }
@@ -517,13 +518,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const action = await store.getAction(routeParam(req, 'id'));
       if (!action || action.sessionId !== input.sessionId) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
       const session = await store.getSession(input.sessionId);
-      if (!session || (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== action.tenantId)) throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.');
+      const tenant = await store.getTenant(action.tenantId);
+      if (!session || !tenant || (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== action.tenantId)) throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.');
+      if (!getAuth(req)) enforcePublicOrigin(req, tenant, nodeEnv);
       ensureLiveSession(session.createdAt);
       await activeTenant(store, action.tenantId);
       res.json({ action: await gateway.confirm(action.id, action.tenantId) });
     } catch (error) { next(error); }
   });
-  app.get('/api/v1/chat/actions/:id', optionalApi, async (req, res, next) => { try { const action = await store.getAction(routeParam(req, 'id')); if (!action) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); const sessionId = req.query.sessionId; if (typeof sessionId !== 'string' || sessionId !== action.sessionId) throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.'); res.json({ action }); } catch (error) { next(error); } });
+  app.get('/api/v1/chat/actions/:id', optionalApi, async (req, res, next) => { try { const action = await store.getAction(routeParam(req, 'id')); if (!action) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); const sessionId = req.query.sessionId; if (typeof sessionId !== 'string' || sessionId !== action.sessionId) throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.'); const session = await store.getSession(action.sessionId); const tenant = await store.getTenant(action.tenantId); if (!session || !tenant) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); if (!getAuth(req)) enforcePublicOrigin(req, tenant, nodeEnv); else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== action.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.'); res.json({ action }); } catch (error) { next(error); } });
 
   app.post('/api/v1/internal/n8n/callback', async (req, res, next) => {
     try {
