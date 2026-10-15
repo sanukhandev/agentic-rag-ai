@@ -331,6 +331,7 @@ describe('API vertical slice', () => {
     const session = await api.post('/api/v1/chat/sessions').set('Origin', 'https://chat.channel.example').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
     await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).set('Origin', 'https://other.example').expect(403);
     await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).set('Origin', 'https://chat.channel.example').expect(200);
+    await api.post('/api/v1/chat/messages').set('Origin', 'https://other.example').send({ sessionId: session.body.sessionId, message: 'Blocked origin', clientMessageId: 'channel-action-denied' }).expect(403);
     const proposal = await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'Please contact me for a demo.', clientMessageId: 'channel-action-1' }).expect(200);
     const actionId = proposal.body.actionProposal.id as string;
     await api.get(`/api/v1/chat/actions/${actionId}`).query({ sessionId: session.body.sessionId }).set('Origin', 'https://other.example').expect(403);
