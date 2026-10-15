@@ -2,11 +2,15 @@ export type Role = 'platform_admin' | 'tenant_admin' | 'tenant_agent';
 export type Audience = 'public' | 'internal';
 export type SourceStatus = 'awaiting_review' | 'active' | 'revoked';
 export type ActionState = 'awaiting_confirmation' | 'completed' | 'failed' | 'unknown';
+export type TenantStatus = 'provisioning' | 'active' | 'suspended' | 'archived';
 
 export interface Tenant {
   id: string;
   name: string;
   slug: string;
+  status: TenantStatus;
+  publicChatEnabled: boolean;
+  publicOrigin: string | null;
   createdAt: string;
 }
 
@@ -108,6 +112,8 @@ export interface Store {
   getTenant(id: string): Promise<Tenant | null>;
   getTenantBySlug(slug: string): Promise<Tenant | null>;
   listTenants(): Promise<Tenant[]>;
+  setTenantStatus(id: string, status: TenantStatus): Promise<Tenant | null>;
+  listUsers(tenantId: string): Promise<User[]>;
   createUser(input: { email: string; passwordHash: string; role: Role; tenantId: string | null }): Promise<User>;
   getUserByEmail(email: string): Promise<User | null>;
   getUser(id: string): Promise<User | null>;
@@ -115,6 +121,7 @@ export interface Store {
   getPersona(tenantId: string): Promise<Persona | null>;
   createSource(input: Omit<Source, 'createdAt' | 'approvedAt'> & { chunks: Chunk[] }): Promise<Source>;
   getSource(id: string): Promise<Source | null>;
+  findSourceByHash(tenantId: string, contentHash: string): Promise<Source | null>;
   listSources(tenantId: string): Promise<Source[]>;
   setSourceStatus(id: string, tenantId: string, status: SourceStatus): Promise<Source | null>;
   listSearchableChunks(tenantId: string, audience: Audience): Promise<Array<{ source: Source; chunk: Chunk }>>;

@@ -10,7 +10,7 @@ services:
       - "127.0.0.1:54329:5432"
     volumes:
       - agentic_pgdata:/var/lib/postgresql/data
-      - ./postgres/001-schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+      - ./postgres:/docker-entrypoint-initdb.d:ro
 
 volumes:
   agentic_pgdata:

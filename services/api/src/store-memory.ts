@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, Chunk, Message, Persona, Session, Source, SourceStatus, Store, Tenant, User } from './types.js';
+import type { ActionRequest, AuditEvent, Chunk, Message, Persona, Session, Source, SourceStatus, Store, Tenant, TenantStatus, User } from './types.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -18,7 +18,7 @@ export class MemoryStore implements Store {
   async countUsers(): Promise<number> { return this.users.size; }
 
   async createTenant(input: { name: string; slug: string }): Promise<Tenant> {
-    const tenant: Tenant = { id: randomUUID(), name: input.name, slug: input.slug, createdAt: now() };
+    const tenant: Tenant = { id: randomUUID(), name: input.name, slug: input.slug, status: 'active', publicChatEnabled: true, publicOrigin: null, createdAt: now() };
     this.tenants.set(tenant.id, tenant);
     return tenant;
   }
@@ -26,6 +26,14 @@ export class MemoryStore implements Store {
   async getTenant(id: string): Promise<Tenant | null> { return this.tenants.get(id) ?? null; }
   async getTenantBySlug(slug: string): Promise<Tenant | null> { return [...this.tenants.values()].find((tenant) => tenant.slug === slug) ?? null; }
   async listTenants(): Promise<Tenant[]> { return [...this.tenants.values()]; }
+  async setTenantStatus(id: string, status: TenantStatus): Promise<Tenant | null> {
+    const tenant = this.tenants.get(id);
+    if (!tenant) return null;
+    const updated = { ...tenant, status, publicChatEnabled: status === 'active' && tenant.publicChatEnabled };
+    this.tenants.set(id, updated);
+    return updated;
+  }
+  async listUsers(tenantId: string): Promise<User[]> { return [...this.users.values()].filter((user) => user.tenantId === tenantId); }
 
   async createUser(input: { email: string; passwordHash: string; role: User['role']; tenantId: string | null }): Promise<User> {
     const user: User = { id: randomUUID(), email: input.email.toLowerCase(), passwordHash: input.passwordHash, role: input.role, tenantId: input.tenantId, createdAt: now() };
@@ -46,6 +54,7 @@ export class MemoryStore implements Store {
     return source;
   }
   async getSource(id: string): Promise<Source | null> { return this.sources.get(id) ?? null; }
+  async findSourceByHash(tenantId: string, hash: string): Promise<Source | null> { return [...this.sources.values()].find((source) => source.tenantId === tenantId && source.contentHash === hash) ?? null; }
   async listSources(tenantId: string): Promise<Source[]> { return [...this.sources.values()].filter((source) => source.tenantId === tenantId); }
   async setSourceStatus(id: string, tenantId: string, status: SourceStatus): Promise<Source | null> {
     const source = this.sources.get(id);

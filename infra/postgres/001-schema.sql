@@ -4,6 +4,9 @@ CREATE TABLE IF NOT EXISTS tenants (
   id uuid PRIMARY KEY,
   name text NOT NULL,
   slug text NOT NULL UNIQUE,
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('provisioning', 'active', 'suspended', 'archived')),
+  public_chat_enabled boolean NOT NULL DEFAULT true,
+  public_origin text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 

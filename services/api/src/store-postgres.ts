@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, Chunk, Message, Persona, Session, Source, SourceStatus, Store, Tenant, User } from './types.js';
+import type { ActionRequest, AuditEvent, Chunk, Message, Persona, Session, Source, SourceStatus, Store, Tenant, TenantStatus, User } from './types.js';
 
 const iso = (value: Date | string): string => value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 const vectorLiteral = (values: number[]): string => `[${values.join(',')}]`;
@@ -12,6 +12,8 @@ export class PostgresStore implements Store {
   async getTenant(id: string): Promise<Tenant | null> { const result = await this.pool.query('SELECT * FROM tenants WHERE id=$1', [id]); return result.rows[0] ? this.tenant(result.rows[0]) : null; }
   async getTenantBySlug(slug: string): Promise<Tenant | null> { const result = await this.pool.query('SELECT * FROM tenants WHERE slug=$1', [slug]); return result.rows[0] ? this.tenant(result.rows[0]) : null; }
   async listTenants(): Promise<Tenant[]> { const result = await this.pool.query('SELECT * FROM tenants ORDER BY created_at'); return result.rows.map((row) => this.tenant(row)); }
+  async setTenantStatus(id: string, status: TenantStatus): Promise<Tenant | null> { const result = await this.pool.query('UPDATE tenants SET status=$1,public_chat_enabled=($1=\'active\' AND public_chat_enabled) WHERE id=$2 RETURNING *', [status, id]); return result.rows[0] ? this.tenant(result.rows[0]) : null; }
+  async listUsers(tenantId: string): Promise<User[]> { const result = await this.pool.query('SELECT * FROM users WHERE tenant_id=$1 ORDER BY created_at', [tenantId]); return result.rows.map((row) => this.user(row)); }
   async createUser(input: { email: string; passwordHash: string; role: User['role']; tenantId: string | null }): Promise<User> { const result = await this.pool.query('INSERT INTO users (id,email,password_hash,role,tenant_id) VALUES ($1,$2,$3,$4,$5) RETURNING *', [randomUUID(), input.email.toLowerCase(), input.passwordHash, input.role, input.tenantId]); return this.user(result.rows[0]); }
   async getUserByEmail(email: string): Promise<User | null> { const result = await this.pool.query('SELECT * FROM users WHERE email=$1', [email.toLowerCase()]); return result.rows[0] ? this.user(result.rows[0]) : null; }
   async getUser(id: string): Promise<User | null> { const result = await this.pool.query('SELECT * FROM users WHERE id=$1', [id]); return result.rows[0] ? this.user(result.rows[0]) : null; }
@@ -28,6 +30,7 @@ export class PostgresStore implements Store {
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
   async getSource(id: string): Promise<Source | null> { const result = await this.pool.query('SELECT * FROM knowledge_sources WHERE id=$1', [id]); return result.rows[0] ? this.source(result.rows[0]) : null; }
+  async findSourceByHash(tenantId: string, hash: string): Promise<Source | null> { const result = await this.pool.query('SELECT * FROM knowledge_sources WHERE tenant_id=$1 AND content_hash=$2 ORDER BY created_at DESC LIMIT 1', [tenantId, hash]); return result.rows[0] ? this.source(result.rows[0]) : null; }
   async listSources(tenantId: string): Promise<Source[]> { const result = await this.pool.query('SELECT * FROM knowledge_sources WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId]); return result.rows.map((row) => this.source(row)); }
   async setSourceStatus(id: string, tenantId: string, status: SourceStatus): Promise<Source | null> { const result = await this.pool.query('UPDATE knowledge_sources SET status=$1,approved_at=CASE WHEN $1=\'active\' THEN now() ELSE approved_at END WHERE id=$2 AND tenant_id=$3 RETURNING *', [status, id, tenantId]); return result.rows[0] ? this.source(result.rows[0]) : null; }
   async listSearchableChunks(tenantId: string, audience: 'public' | 'internal'): Promise<Array<{ source: Source; chunk: Chunk }>> {
@@ -46,7 +49,7 @@ export class PostgresStore implements Store {
   async addAudit(event: AuditEvent): Promise<void> { await this.pool.query('INSERT INTO audit_events (id,tenant_id,actor_id,event_name,metadata) VALUES ($1,$2,$3,$4,$5)', [event.id, event.tenantId, event.actorId, event.eventName, JSON.stringify(event.metadata)]); }
   async listAudit(tenantId: string): Promise<AuditEvent[]> { const result = await this.pool.query('SELECT * FROM audit_events WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId]); return result.rows.map((row) => ({ id: row.id, tenantId: row.tenant_id, actorId: row.actor_id, eventName: row.event_name, metadata: row.metadata, createdAt: iso(row.created_at) })); }
 
-  private tenant(row: any): Tenant { return { id: row.id, name: row.name, slug: row.slug, createdAt: iso(row.created_at) }; }
+  private tenant(row: any): Tenant { return { id: row.id, name: row.name, slug: row.slug, status: row.status ?? 'active', publicChatEnabled: row.public_chat_enabled ?? true, publicOrigin: row.public_origin ?? null, createdAt: iso(row.created_at) }; }
   private user(row: any): User { return { id: row.id, email: row.email, passwordHash: row.password_hash, role: row.role, tenantId: row.tenant_id, createdAt: iso(row.created_at) }; }
   private persona(row: any): Persona { return { tenantId: row.tenant_id, name: row.name, greeting: row.greeting, personality: row.personality, tone: row.tone, speakingStyle: row.speaking_style, permittedLanguages: row.permitted_languages }; }
   private source(row: any): Source { return { id: row.id, tenantId: row.tenant_id, title: row.title, mimeType: row.mime_type, sourceUrl: row.source_url, audience: row.audience, status: row.status, versionId: row.version_id, contentHash: row.content_hash, createdAt: iso(row.created_at), approvedAt: row.approved_at ? iso(row.approved_at) : null }; }
