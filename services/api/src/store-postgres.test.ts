@@ -24,6 +24,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       expect(completedJob.errorCode).toBeNull();
       await store.setSourceStatus(source.id, tenant.id, 'active');
       expect((await store.listSearchableChunks(tenant.id, 'public')).length).toBe(1);
+      expect((await store.searchSearchableChunks(tenant.id, 'public', [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8], 4)).length).toBe(1);
       const userMessage = await store.addMessage({ id: randomUUID(), sessionId: session.id, tenantId: tenant.id, role: 'user', maskedContent: 'What is pricing?', citations: [], clientMessageId: 'client-1', response: null, createdAt: new Date().toISOString() });
       await store.updateMessage({ ...userMessage, response: { answer: 'Pricing is 100 credits.' } });
       expect((await store.getMessageByClientId(session.id, 'client-1'))?.response).toMatchObject({ answer: 'Pricing is 100 credits.' });

@@ -90,6 +90,7 @@ export class MemoryStore implements Store {
         return [{ source, chunk }];
       });
   }
+  async searchSearchableChunks(tenantId: string, audience: 'public' | 'internal', _queryEmbedding: number[], limit: number): Promise<Array<{ source: Source; chunk: Chunk }>> { return (await this.listSearchableChunks(tenantId, audience)).slice(0, limit); }
 
   async createSession(tenantId: string): Promise<Session> {
     const session: Session = { id: randomUUID(), tenantId, createdAt: now(), tokenMap: new Map() };

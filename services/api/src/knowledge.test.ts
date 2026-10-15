@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DeterministicEmbeddingProvider } from './embedding.js';
 import { contentHash } from './store-memory.js';
-import { buildChunks, buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, chunkText, embedText, hasConflictingEvidence, rankChunks, rankChunksWithEmbedding } from './knowledge.js';
+import { buildChunks, buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, chunkText, embedText, hasConflictingEvidence, rankChunks, rankChunksWithEmbedding, rankChunksWithVector } from './knowledge.js';
 
 describe('knowledge pipeline primitives', () => {
   it('chunks deterministically and emits the configured local vector dimension', () => {
@@ -27,6 +27,7 @@ describe('knowledge pipeline primitives', () => {
     const rows = [{ source: { id: 'source', title: 'Catalog' }, chunk: chunks[0]! }];
     expect(chunks[0]?.embedding).toHaveLength(provider.dimension);
     expect(await rankChunksWithEmbedding('What is the pricing?', rows, provider)).toHaveLength(1);
+    expect(rankChunksWithVector('What is the pricing?', rows, await provider.embed('What is the pricing?'))).toHaveLength(1);
     expect(rankChunks('What is the pricing?', rows)).toHaveLength(1);
   });
 

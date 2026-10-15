@@ -95,6 +95,8 @@ export const rankChunks = <T extends { chunk: { embedding: number[] } }>(query: 
 
 export const rankChunksWithEmbedding = async <T extends { chunk: { embedding: number[] } }>(query: string, rows: T[], provider: EmbeddingProvider, limit = 4): Promise<T[]> => rankWithEmbedding(query, rows, await provider.embed(query), limit);
 
+export const rankChunksWithVector = <T extends { chunk: { embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit = 4): T[] => rankWithEmbedding(query, rows, queryEmbedding, limit);
+
 export const hasConflictingEvidence = (contents: string[]): boolean => {
   for (let leftIndex = 0; leftIndex < contents.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < contents.length; rightIndex += 1) {

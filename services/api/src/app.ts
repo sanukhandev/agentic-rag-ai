@@ -3,7 +3,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { ActionGateway, MockWorkflowAdapter, verifyN8nPayload, type WorkflowAdapter } from './actions.js';
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
-import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, rankChunksWithEmbedding } from './knowledge.js';
+import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, rankChunksWithVector } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { DeterministicGroundedModel, validateCitations, type ChatModel, type ModelDraft } from './model.js';
 import { assertKnownTokens, maskPii, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
@@ -312,8 +312,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       await store.updateSession(session);
       const userMessage = await store.addMessage({ id: randomUUID(), sessionId: session.id, tenantId: session.tenantId, role: 'user', maskedContent: masked.masked, citations: [], clientMessageId: input.clientMessageId, response: null, createdAt: new Date().toISOString() });
       const internal = ensureTenant(req, session.tenantId) && getAuth(req)?.role !== undefined;
-      const rows = await store.listSearchableChunks(session.tenantId, internal ? 'internal' : 'public');
-       const ranked = await rankChunksWithEmbedding(masked.masked, rows, embedding, 4);
+      let queryEmbedding: number[];
+      try { queryEmbedding = await embedding.embed(masked.masked); } catch { throw new HttpError(503, 'EMBEDDING_UNAVAILABLE', 'The assistant is currently unable to search approved knowledge.'); }
+      const rows = await store.searchSearchableChunks(session.tenantId, internal ? 'internal' : 'public', queryEmbedding, 24);
+      const ranked = rankChunksWithVector(masked.masked, rows, queryEmbedding, 4);
       const evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: chunk.content }));
       const persona = await store.getPersona(session.tenantId);
       let draft: ModelDraft;
