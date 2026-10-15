@@ -50,6 +50,56 @@ The system is considered **locally complete** only with automated synthetic fixt
 | EXT-01 | Live Azure Chat/Embedding, if configured | Explicit opt-in smoke + cost guard + actual result | Manual/staging |
 | EXT-02 | Live n8n private webhook, if configured | Verified authentication, status and replay handling | Manual/staging |
 
+## Local execution record (2026-10-15)
+
+| ID | Evidence and outcome |
+| --- | --- |
+| AUTH-01 | Pass: `services/api/src/auth.test.ts` covers issue, logout revocation and expired durable sessions; `app.test.ts` covers unauthorized access after logout. |
+| AUTH-02 | Pass: `services/api/src/app.test.ts` proves tenant A/B source, job, domain, member, workflow and audit isolation. |
+| AUTH-03 | Pass: `app.test.ts` denies unauthenticated admin access and public tenant-ID sessions. |
+| TEN-01 | Pass: `app.test.ts` provisions two tenants, owners and audited creation. |
+| TEN-02 | Pass: `app.test.ts` suspends a tenant and rejects new chat/indexing, then reactivates it. |
+| TEN-03 | Pass: tenant scope is resolved from verified auth/slug; guessed cross-tenant IDs return 403/404 in `app.test.ts`. |
+| PER-01 | Pass for local persona/language policy: API persona version and language tests; browser style verification remains manual. |
+| PER-02 | Pass: unsafe persona text and injected source instructions are rejected/treated as data in `app.test.ts`. |
+| SRC-01 | Pass: DOCX extraction preserves headings/tables in `tools/ingestion/test_ingestion.py`; API worker result preserves locators. |
+| SRC-02 | Pass: XLSX extraction preserves sheet/header/value structure without formula execution in `test_ingestion.py`. |
+| SRC-03 | Pass: deterministic UTF-8 text normalization/chunking in `test_ingestion.py` and API source flow. |
+| SRC-04 | Pass: text PDF page locators and OCR-only rejection in `test_ingestion.py`. |
+| SRC-05 | Pass: allowlisted HTTPS snapshot and source URL provenance in `test_ingestion.py`; API domain allowlist covered in `app.test.ts`. |
+| SRC-06 | Pass locally: private DNS, redirects and DNS-rebinding address changes are rejected by Python tests. |
+| SRC-07 | Pass locally: legacy `.doc`/`.xls` and OCR-only PDF inputs fail visibly; encrypted-parser behavior remains a production parser-policy decision. |
+| SRC-08 | Pass: API duplicate content is idempotent; action proposal races recover from PostgreSQL unique conflicts. |
+| SRC-09 | Pass: failed reindex test proves the prior active source remains active. |
+| SRC-10 | Pass: revoke immediately removes a source from retrieval; purge requires prior revocation. |
+| RAG-01 | Pass: deterministic grounded FAQ response with validated citation in `app.test.ts`. |
+| RAG-02 | Pass: unsupported question returns abstention without a business claim. |
+| RAG-03 | Pass: conflicting evidence refusal in `knowledge.test.ts` and API flow. |
+| RAG-04 | Pass: tenant A/B retrieval isolation in API and PostgreSQL query predicates. |
+| RAG-05 | Pass: internal evidence is available only to authenticated tenant scope; public session is refused. |
+| RAG-06 | Pass: injected source text cannot authorize a workflow. |
+| RAG-07 | Pass: invalid citation IDs are discarded and the answer fails closed. |
+| RAG-08 | Pass: unsupported language is refused before model invocation. |
+| PII-01 | Pass for local adapters: privacy/embedding/model/action spies contain no raw synthetic PII; live provider delivery remains blocked. |
+| PII-02 | Pass: vault tokens are session-scoped, expire and cannot be resolved from an unknown session. |
+| PII-03 | Pass: rehydration is purpose-limited to the assistant response path. |
+| PII-04 | Pass locally: source text is sanitized before chunking/embedding and uploaded bytes remain private until worker success. |
+| API-01 | Pass: bounded JSON returns 413 and configured abuse bursts return 429. |
+| API-02 | Pass: duplicate `clientMessageId` returns the durable response without a second user message. |
+| FLOW-01 | Pass: confirmation is required and prompt injection alone produces no action. |
+| FLOW-02 | Pass: mock adapter receives exactly one opaque, confirmed action and audit result. |
+| FLOW-03 | Pass: forged, wrong-tenant and replayed callbacks are rejected; nonce claims are store-backed. |
+| FLOW-04 | Pass: adapter failure becomes `unknown`, never `completed`. |
+| OPS-01 | Pass: forced store outage returns timestamped `503/down` health state. |
+| OPS-02 | Pass: tenant dashboard/telemetry counters are scoped and redacted; manual dashboard verification remains pending. |
+| END-01 | Pass for API vertical slice: `app.test.ts` covers onboarding→source→publish→chat→citation→action; web/admin browser journey remains manual. |
+| END-02 | Pass for API isolation: tenant A/B personas, sources, histories and operations remain separated. |
+| BUILD-01 | Pass locally: `npm ci --dry-run`, migrations and documented local commands; hosted CI run not observed. |
+| BUILD-02 | Pass locally: latest `npm test` is Admin 2 + web 2 + API 41 + contracts 1, with explicit PostgreSQL 1 passed; lint/typecheck/build pass. |
+| SEC-01 | Partial/blocked for production: secret guard, audit and private DB compose checks pass, but the user-requested root n8n compose remains public HTTP development configuration. |
+| EXT-01 | Blocked: live chat smoke was previously observed, but the configured embedding deployment is missing; deterministic embeddings are used locally. |
+| EXT-02 | Blocked: live private n8n credentials/environment are unavailable; signed HTTP adapter and mock tests pass. |
+
 ## Fixture expectations
 Create tenant_a and tenant_b fixture accounts and strictly distinct DOCX/XLSX/TXT/PDF/URL knowledge; include a conflicting FAQ, expired pricing, a malicious 'ignore safety' document and synthetic PII. Use deterministic model/embedding/n8n test doubles that log sanitized calls in memory; never assert real provider success from mocks.
 
