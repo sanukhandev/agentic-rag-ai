@@ -131,6 +131,7 @@ class IngestionTests(unittest.TestCase):
             request.assert_not_called()
 
         response = Mock(status_code=200, encoding="utf-8")
+        response.headers = {"content-type": "text/html; charset=utf-8"}
         response.iter_content.return_value = [b"<html><body>Approved FAQ</body></html>"]
         response.raise_for_status.return_value = None
         with patch("ingestion.pipeline.socket.getaddrinfo", return_value=[(None, None, None, None, ("93.184.216.34", 443))]), patch("requests.get", return_value=response):
@@ -145,6 +146,7 @@ class IngestionTests(unittest.TestCase):
                 fetch_authorized_https("https://approved.example/redirect", {"approved.example"})
 
         response = Mock(status_code=200, encoding="utf-8")
+        response.headers = {"content-type": "text/html"}
         response.iter_content.return_value = [b"<html><body>Rebound</body></html>"]
         response.raise_for_status.return_value = None
         public = (None, None, None, None, ("93.184.216.34", 443))
@@ -156,6 +158,7 @@ class IngestionTests(unittest.TestCase):
 
     def test_url_ingestion_keeps_approved_snapshot_url_and_sanitizes_content(self) -> None:
         response = Mock(status_code=200, encoding="utf-8")
+        response.headers = {"content-type": "text/html"}
         response.iter_content.return_value = [b"<html><body>Pricing is 42 credits. Email alice@example.com</body></html>"]
         response.raise_for_status.return_value = None
         with patch("ingestion.pipeline.socket.getaddrinfo", return_value=[(None, None, None, None, ("93.184.216.34", 443))]), patch("requests.get", return_value=response):
@@ -163,6 +166,12 @@ class IngestionTests(unittest.TestCase):
         self.assertEqual(source.source_url, "https://approved.example/faq")
         self.assertIn("Pricing is 42 credits.", source.normalized_content)
         self.assertNotIn("alice@example.com", source.normalized_content)
+
+        binary = Mock(status_code=200, encoding="utf-8", headers={"content-type": "application/zip"})
+        binary.raise_for_status.return_value = None
+        with patch("ingestion.pipeline.socket.getaddrinfo", return_value=[(None, None, None, None, ("93.184.216.34", 443))]), patch("requests.get", return_value=binary):
+            with self.assertRaisesRegex(ValueError, "text content"):
+                fetch_authorized_https("https://approved.example/archive", {"approved.example"})
 
     def test_worker_payload_is_sanitized_and_submission_claims_then_publishes(self) -> None:
         source = ingest_text("FAQ", "Email alice@example.com.\n\nPricing is 42 credits.", "text/plain")

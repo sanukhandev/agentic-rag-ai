@@ -179,6 +179,9 @@ def fetch_authorized_https(url: str, allowed_hosts: set[str]) -> tuple[str, str]
     response.raise_for_status()
     if 300 <= response.status_code < 400:
         raise ValueError("Redirects are not accepted for website ingestion; approve the final host explicitly.")
+    content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type not in {"text/html", "application/xhtml+xml", "text/plain"}:
+        raise ValueError("Website response must be text content.")
     rebound_addresses = _public_addresses(hostname, parsed.port or 443)
     peer = _response_peer(response)
     if peer and (peer.is_private or peer.is_loopback or peer.is_link_local or peer.is_reserved or peer.is_multicast or peer.is_unspecified or peer not in addresses | rebound_addresses):
