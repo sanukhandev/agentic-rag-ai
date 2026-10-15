@@ -46,6 +46,7 @@ export class MemoryStore implements Store {
     this.tenants.set(id, updated);
     return updated;
   }
+  async setTenantPublicChatEnabled(id: string, enabled: boolean): Promise<Tenant | null> { const tenant = this.tenants.get(id); if (!tenant) return null; const updated = { ...tenant, publicChatEnabled: enabled }; this.tenants.set(id, updated); return updated; }
   async updateUserRole(userId: string, tenantId: string, role: Exclude<User['role'], 'platform_admin' | 'tenant_admin'>): Promise<User | null> { const user = this.users.get(userId); if (!user || user.tenantId !== tenantId || user.role === 'tenant_admin') return null; const updated = { ...user, role }; this.users.set(userId, updated); return updated; }
   async listUsers(tenantId: string): Promise<User[]> { return [...this.users.values()].filter((user) => user.tenantId === tenantId); }
   async listDomains(tenantId: string): Promise<TenantDomain[]> { return [...this.domains.values()].filter((domain) => domain.tenantId === tenantId); }

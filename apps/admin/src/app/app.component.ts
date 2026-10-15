@@ -12,7 +12,7 @@ type Persona = { name: string; greeting: string; personality: string; tone: stri
 type PersonaVersion = Persona & { id: string; version: number; status: 'draft' | 'published'; createdAt: string; publishedAt: string | null };
 type Tenant = { id: string; name: string; slug: string; status: string };
 type TenantDomain = { id: string; hostname: string; createdAt: string };
-type Channel = { publicOrigin: string | null };
+type Channel = { publicOrigin: string | null; publicChatEnabled: boolean };
 type Member = { id: string; email: string; role: string };
 type Health = { checkedAt: string; telemetry: { requests: number; serverErrors: number; averageLatencyMs: number; lastRequestAt: string | null }; checks: Record<string, { status: string }> };
 type WorkflowRun = { id: string; workflowKey: string; state: string; createdAt: string; result: { externalReference: string } | null };
@@ -25,7 +25,7 @@ export class AppComponent {
   private readonly http = inject(HttpClient);
   email = 'admin@example.test'; password = ''; token = ''; role = ''; error = ''; sources: Source[] = []; ingestionJobs: IngestionJob[] = []; tenants: Tenant[] = []; domains: TenantDomain[] = []; members: Member[] = []; workflowRuns: WorkflowRun[] = []; auditEvents: AuditEvent[] = []; platformOverview: PlatformOverview | null = null; health: Health | null = null; metrics: Metrics | null = null; persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: ['en'] };
   title = ''; content = ''; sourceUrl = ''; audience = 'public'; selectedFile: File | null = null;
-  tenantName = ''; tenantSlug = ''; tenantAdminEmail = ''; tenantAdminPassword = ''; publicOrigin = '';
+  tenantName = ''; tenantSlug = ''; tenantAdminEmail = ''; tenantAdminPassword = ''; publicOrigin = ''; publicChatEnabled = true;
   personaVersions: PersonaVersion[] = [];
   domainHostname = '';
   memberEmail = ''; memberPassword = ''; memberRole = 'tenant_editor';
@@ -46,8 +46,8 @@ export class AppComponent {
   loadDomains(): void { this.http.get<{ items: TenantDomain[] }>(`${api}/api/v1/admin/domains`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.domains = body.items; }, error: () => { this.error = 'Could not load domains.'; } }); }
   addDomain(): void { this.http.post(`${api}/api/v1/admin/domains`, { hostname: this.domainHostname }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.domainHostname = ''; this.loadDomains(); }, error: () => { this.error = 'Domain could not be added.'; } }); }
   removeDomain(domain: TenantDomain): void { this.http.delete(`${api}/api/v1/admin/domains/${domain.id}`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadDomains(), error: () => { this.error = 'Domain could not be removed.'; } }); }
-  loadChannel(): void { this.http.get<Channel>(`${api}/api/v1/admin/channel`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.publicOrigin = body.publicOrigin ?? ''; }, error: () => { this.error = 'Could not load chat channel.'; } }); }
-  saveChannel(): void { this.http.patch<Channel>(`${api}/api/v1/admin/channel`, { publicOrigin: this.publicOrigin }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.publicOrigin = body.publicOrigin ?? ''; }, error: () => { this.error = 'Chat origin could not be saved.'; } }); }
+  loadChannel(): void { this.http.get<Channel>(`${api}/api/v1/admin/channel`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.publicOrigin = body.publicOrigin ?? ''; this.publicChatEnabled = body.publicChatEnabled; }, error: () => { this.error = 'Could not load chat channel.'; } }); }
+  saveChannel(): void { this.http.patch<Channel>(`${api}/api/v1/admin/channel`, { publicOrigin: this.publicOrigin, publicChatEnabled: this.publicChatEnabled }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.publicOrigin = body.publicOrigin ?? ''; this.publicChatEnabled = body.publicChatEnabled; }, error: () => { this.error = 'Chat channel could not be saved.'; } }); }
   loadMembers(): void { this.http.get<{ items: Member[] }>(`${api}/api/v1/admin/members`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.members = body.items; }, error: () => { this.error = 'Could not load members.'; } }); }
   addMember(): void { this.http.post(`${api}/api/v1/admin/members`, { email: this.memberEmail, password: this.memberPassword, role: this.memberRole }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.memberEmail = ''; this.memberPassword = ''; this.loadMembers(); }, error: () => { this.error = 'Member could not be added.'; } }); }
   updateMemberRole(member: Member): void { this.http.patch(`${api}/api/v1/admin/members/${member.id}`, { role: member.role }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadMembers(), error: () => { this.error = 'Member role could not be updated.'; } }); }

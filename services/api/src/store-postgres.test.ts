@@ -10,6 +10,8 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
     const tenant = await store.createTenant({ name: 'Postgres Test', slug: `postgres-${randomUUID()}` });
     try {
       expect((await store.setTenantPublicOrigin(tenant.id, 'https://store.example'))?.publicOrigin).toBe('https://store.example');
+      expect((await store.setTenantPublicChatEnabled(tenant.id, false))?.publicChatEnabled).toBe(false);
+      expect((await store.setTenantPublicChatEnabled(tenant.id, true))?.publicChatEnabled).toBe(true);
       const member = await store.createUser({ email: `member-${randomUUID()}@example.test`, passwordHash: 'hash', role: 'tenant_editor', tenantId: tenant.id });
       expect(await store.updateUserRole(member.id, tenant.id, 'tenant_viewer')).toMatchObject({ id: member.id, role: 'tenant_viewer' });
       const domain = await store.addDomain({ tenantId: tenant.id, hostname: 'chat.postgres.example' });
