@@ -157,6 +157,16 @@ describe('API vertical slice', () => {
     expect(oversized.body.error.code).toBe('PAYLOAD_TOO_LARGE');
   });
 
+  it('reports store failure as an observed health outage', async () => {
+    const store = new MemoryStore();
+    const api = request(createApp({ nodeEnv: 'test', store }).app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-health@example.test', password: 'Platform1Password' }).expect(201);
+    store.countUsers = async () => { throw new Error('store unavailable'); };
+    const health = await api.get('/api/v1/admin/services/health').set('Authorization', `Bearer ${platform.body.token}`).expect(503);
+    expect(health.body.checks.store.status).toBe('down');
+    expect(health.body.checkedAt).toEqual(expect.any(String));
+  });
+
   it('abstains when the model answer has no authorized citation', async () => {
     const runtime = createApp({ nodeEnv: 'test', model: new InvalidCitationModel() });
     const api = request(runtime.app);
