@@ -20,6 +20,21 @@ describe('Azure Foundry model adapter', () => {
     vi.restoreAllMocks();
   });
 
+  it('uses the Azure OpenAI v1 endpoint with the deployment as model', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: 'v1 answer', citationIds: [], proposedIntent: null }) } }] }), { status: 200 }));
+    const model = new AzureFoundryModel('https://foundry.example/openai/v1', 'gpt-4.1-mini', 'server-key');
+    await expect(model.draft({ maskedMessage: 'question', personaName: 'Ava', evidence: [] })).resolves.toMatchObject({ answer: 'v1 answer' });
+    expect(fetchMock).toHaveBeenCalledWith('https://foundry.example/openai/v1/chat/completions', expect.objectContaining({ body: expect.stringContaining('"model":"gpt-4.1-mini"') }));
+    fetchMock.mockRestore();
+  });
+
+  it('normalizes Azure empty intent output to no proposed action', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: 'grounded', citationIds: [], proposedIntent: '' }) } }] }), { status: 200 }));
+    const model = new AzureFoundryModel('https://foundry.example/openai/v1', 'gpt-4.1-mini', 'server-key');
+    await expect(model.draft({ maskedMessage: 'question', personaName: 'Ava', evidence: [] })).resolves.toMatchObject({ proposedIntent: null });
+    vi.restoreAllMocks();
+  });
+
   it('drops citation IDs outside the authorized evidence set', () => {
     const citation = { sourceId: 'source', versionId: 'version', chunkId: 'known', title: 'FAQ', locator: 'section 1' };
     expect(validateCitations({ answer: 'answer', citationIds: ['unknown', 'known'], proposedIntent: null }, [{ citation, content: 'answer' }])).toEqual([citation]);

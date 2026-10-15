@@ -23,8 +23,13 @@ export class AzureEmbeddingProvider implements EmbeddingProvider {
 
   async embed(text: string): Promise<number[]> {
     if (!this.endpoint || !this.deployment || !this.apiKey || !this.apiVersion) throw new Error('Azure embedding provider is not configured.');
-    const url = `${this.endpoint.replace(/\/$/, '')}/openai/deployments/${encodeURIComponent(this.deployment)}/embeddings?api-version=${encodeURIComponent(this.apiVersion)}`;
-    const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'api-key': this.apiKey }, body: JSON.stringify({ input: text }) });
+    const endpoint = this.endpoint.replace(/\/$/, '');
+    const v1 = /\/openai\/v1$/i.test(endpoint);
+    const url = v1
+      ? `${endpoint}/embeddings`
+      : `${endpoint}/openai/deployments/${encodeURIComponent(this.deployment)}/embeddings?api-version=${encodeURIComponent(this.apiVersion)}`;
+    const requestBody = v1 ? { model: this.deployment, input: text } : { input: text };
+    const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'api-key': this.apiKey }, body: JSON.stringify(requestBody) });
     if (!response.ok) throw new Error(`Azure embedding request failed with status ${response.status}.`);
     const body = await response.json() as { data?: Array<{ embedding?: unknown }> };
     const vector = body.data?.[0]?.embedding;

@@ -48,7 +48,8 @@ This section is updated after verification. No scenario is marked passing from s
 
 ## Blockers and risks
 
-- Live Azure, identity-provider or production n8n credentials are unavailable. Live calls are intentionally not attempted.
+- Live identity-provider and production n8n credentials are unavailable; live Azure chat is verified locally, while embedding remains blocked by the missing deployment.
+- Azure Foundry chat credentials are now configured locally from the user-provided private note; a live GPT-4.1-mini v1 request returned HTTP 200 with valid JSON. The configured resource does not have an embedding deployment available (`DeploymentNotFound` for `text-embedding-3-small`), so local runs keep the deterministic embedding provider until a deployed embedding model name is supplied.
 - CI was added but its hosted run has not been observed from this local session.
 - `npm audit` reports high-severity Angular 19 and PostCSS advisories; upgrading Angular/Next across major versions is a separate verified dependency task.
 - No browser automation was used; UI validation is build/typecheck-only per the requested unit-test-only constraint.

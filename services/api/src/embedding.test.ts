@@ -9,4 +9,12 @@ describe('Azure embedding adapter', () => {
     expect(fetchMock).toHaveBeenCalledWith('https://foundry.example/openai/deployments/embed-v1/embeddings?api-version=2026-01-01', expect.objectContaining({ method: 'POST', body: JSON.stringify({ input: 'masked [EMAIL_1]' }) }));
     fetchMock.mockRestore();
   });
+
+  it('uses the Azure OpenAI v1 endpoint with the deployment as model', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), { status: 200 }));
+    const provider = new AzureEmbeddingProvider('https://foundry.example/openai/v1', 'text-embedding-3-small', 'server-key', '2026-01-01', 2);
+    await expect(provider.embed('masked [EMAIL_1]')).resolves.toEqual([0.1, 0.2]);
+    expect(fetchMock).toHaveBeenCalledWith('https://foundry.example/openai/v1/embeddings', expect.objectContaining({ body: JSON.stringify({ model: 'text-embedding-3-small', input: 'masked [EMAIL_1]' }) }));
+    fetchMock.mockRestore();
+  });
 });

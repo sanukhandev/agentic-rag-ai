@@ -68,10 +68,10 @@ npm run dev:web
 npm run dev:admin
 ```
 
-For the PostgreSQL/pgvector adapter, run `npm run db:migrate`, set `STORE=postgres` and `DATABASE_URL` from `.env.example`, then start the API. The Python worker is under `tools/ingestion`; it supports TXT, Markdown, CSV, DOCX, XLSX, text PDF and bounded allowlisted HTTPS snapshots, and must run in a project venv. No real customer data or credentials belong in the repository.
+For the PostgreSQL/pgvector adapter, run `npm run db:migrate`, set `STORE=postgres` and `DATABASE_URL` from `.env.example`, then start the API. The API loads an ignored local `.env` when present; keep real credentials there, never in Git. The Python worker is under `tools/ingestion`; it supports TXT, Markdown, CSV, DOCX, XLSX, text PDF and bounded allowlisted HTTPS snapshots, and must run in a project venv. No real customer data or credentials belong in the repository.
 
 The root `docker-compose.yml` remains the existing n8n-only development deployment. `infra/docker-compose.dev.yml` is the private local PostgreSQL/pgvector service; neither compose file is a production deployment.
 
 ## Current verification and limitations
 
-The verified local commands are `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, `npm run db:migrate`, the PostgresStore integration test with `DATABASE_URL`, and the Python unittest suite. Azure AI Foundry, production identity-provider, and live n8n calls are adapter-level blockers, not claimed successes. See [implementation progress](docs/implementation-progress.md).
+The verified local commands are `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, `npm run db:migrate`, the PostgresStore integration test with `DATABASE_URL`, and the Python unittest suite. Azure GPT-4.1-mini chat has been smoke-tested with the supplied local credentials; the configured resource still lacks an embedding deployment, while production identity-provider and live n8n calls remain blockers. See [implementation progress](docs/implementation-progress.md).

@@ -32,11 +32,16 @@ export class AzureFoundryModel implements ChatModel {
 
   async draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string }): Promise<ModelDraft> {
     if (!this.endpoint || !this.deployment || !this.apiKey) throw new Error('Azure AI Foundry is not configured.');
-    const url = `${this.endpoint.replace(/\/$/, '')}/openai/deployments/${encodeURIComponent(this.deployment)}/chat/completions?api-version=${encodeURIComponent(this.apiVersion)}`;
+    const endpoint = this.endpoint.replace(/\/$/, '');
+    const v1 = /\/openai\/v1$/i.test(endpoint);
+    const url = v1
+      ? `${endpoint}/chat/completions`
+      : `${endpoint}/openai/deployments/${encodeURIComponent(this.deployment)}/chat/completions?api-version=${encodeURIComponent(this.apiVersion)}`;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'api-key': this.apiKey },
       body: JSON.stringify({
+        ...(v1 ? { model: this.deployment } : {}),
         temperature: 0,
         response_format: { type: 'json_object' },
         messages: [
@@ -49,7 +54,11 @@ export class AzureFoundryModel implements ChatModel {
     const body = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> };
     const content = body.choices?.[0]?.message?.content;
     if (typeof content !== 'string') throw new Error('Azure AI Foundry response did not contain a text message.');
-    const result = z.object({ answer: z.string().min(1).max(8000), citationIds: z.array(z.string().min(1)).max(8), proposedIntent: z.literal('lead.capture').nullable() }).strict().safeParse(JSON.parse(content));
+    const result = z.object({
+      answer: z.string().min(1).max(8000),
+      citationIds: z.array(z.string().min(1)).max(8),
+      proposedIntent: z.preprocess((value) => value === '' ? null : value, z.literal('lead.capture').nullable()),
+    }).strict().safeParse(JSON.parse(content));
     if (!result.success) throw new Error('Azure AI Foundry response did not match the grounded response contract.');
     return result.data;
   }
