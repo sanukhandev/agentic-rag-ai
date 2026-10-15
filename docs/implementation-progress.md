@@ -40,7 +40,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Valid citation cannot support an invented numeric claim | `app.test.ts` and `model.test.ts` evidence-sufficiency tests | pass |
 | Unsupported chat language is refused before model call | `app.test.ts` + `model.test.ts` language tests | pass for Arabic/English family detection |
 | Persona draft/publish/version history and preview | API app test, PostgreSQL version/publish assertion, grounded preview route/model contract, migration `012-persona-versions.sql` and Angular version/preview panels | pass locally; manual browser verification pending |
-| Prompt injection in source is treated as data | persona rejection, explicit-intent gate, source-only model prompt | partial; adversarial corpus expansion pending |
+| Prompt injection in source is treated as data | model prompt contract plus API test where injected evidence proposes a lead without explicit user intent | pass for the local deterministic/mock boundary; broader adversarial corpus remains a production hardening task |
 | Conflicting active evidence is not chosen arbitrarily | `knowledge.test.ts`, API conflict guard | pass (numeric contradiction heuristic) |
 | Confirmed action is idempotent and audited | `actions.test.ts`, API integration test | pass (mock adapter) |
 | Callback replay is rejected across store-backed instances | API callback replay assertion plus `claimCallbackNonce` memory/PostgreSQL tests and migration `011-callback-nonces.sql` | pass locally; live n8n blocked |
@@ -61,7 +61,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Tenant domain management | API domain CRUD, tenant-scoped memory/PostgreSQL store methods, migration `013-tenant-domains.sql` and Angular tenant-admin panel | pass locally; manual browser verification pending |
 | Revoked-source purge | API negative/positive test; PostgreSQL delete uses tenant + revoked predicates | pass (memory API; SQL path covered by query contract) |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally after Angular 21 / Next 16 upgrade |
-| Latest workspace test run | `npm test` | API 30 passed + 1 PostgreSQL test skipped by default; contracts 1 passed |
+| Latest workspace test run | `npm test` | API 31 passed + 1 PostgreSQL test skipped by default; contracts 1 passed |
 | Chat resume/history | `GET /api/v1/chat/sessions/:id` API assertion | pass (masked, tenant-scoped messages) |
 | Durable admin session revocation | `auth.test.ts` and API logout assertion backed by store session records; PostgreSQL migration `010-auth-sessions.sql` | pass (memory + migration applied locally) |
 | Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |
