@@ -34,6 +34,14 @@ class IngestionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ingest_file(path)
 
+    def test_legacy_office_formats_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            for suffix in (".doc", ".xls"):
+                path = Path(directory) / f"legacy{suffix}"
+                path.write_bytes(b"not supported")
+                with self.assertRaisesRegex(ValueError, "Unsupported file type"):
+                    ingest_file(path)
+
     def test_docx_and_xlsx_preserve_structured_values(self) -> None:
         from docx import Document
         from openpyxl import Workbook
@@ -89,6 +97,12 @@ class IngestionTests(unittest.TestCase):
             text, mime = fetch_authorized_https("https://approved.example/faq", {"approved.example"})
         self.assertEqual(mime, "text/html")
         self.assertIn("Approved FAQ", text)
+
+        redirect = Mock(status_code=302, encoding="utf-8")
+        redirect.raise_for_status.return_value = None
+        with patch("ingestion.pipeline.socket.getaddrinfo", return_value=[(None, None, None, None, ("93.184.216.34", 443))]), patch("requests.get", return_value=redirect):
+            with self.assertRaisesRegex(ValueError, "Redirects"):
+                fetch_authorized_https("https://approved.example/redirect", {"approved.example"})
 
     def test_url_ingestion_keeps_approved_snapshot_url_and_sanitizes_content(self) -> None:
         response = Mock(status_code=200, encoding="utf-8")
