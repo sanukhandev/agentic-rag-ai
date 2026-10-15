@@ -13,6 +13,10 @@ import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } fro
 import type { Message, Session, SourceStatus, Store, TenantStatus } from './types.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null };
+export type RateLimitEntry = { count: number; resetAt: number };
+export const pruneExpiredRateLimits = (entries: Map<string, RateLimitEntry>, now = Date.now()): void => {
+  for (const [key, entry] of entries) if (entry.resetAt <= now) entries.delete(key);
+};
 
 const passwordSchema = z.string().min(8).max(128).regex(/[A-Z]/, 'Password must contain an uppercase letter.').regex(/\d/, 'Password must contain a number.');
 const tenantSchema = z.object({ name: z.string().trim().min(2).max(120), slug: z.string().trim().regex(/^[a-z0-9-]+$/).max(80), adminEmail: z.string().email(), adminPassword: passwordSchema });
@@ -145,7 +149,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const auth = new AuthService(store, jwtSecret);
   const gateway = new ActionGateway(store, workflow);
   const app = express();
-  const rateLimits = new Map<string, { count: number; resetAt: number }>();
+  const rateLimits = new Map<string, RateLimitEntry>();
   const newTelemetry = (): Telemetry => ({ requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null, chatResponses: 0, groundedResponses: 0, abstentions: 0, actionProposals: 0, estimatedInputTokens: 0, estimatedOutputTokens: 0, estimatedCostUsd: inputCostUsdPerMillion !== null && outputCostUsdPerMillion !== null ? 0 : null });
   const telemetry = newTelemetry();
   const tenantTelemetry = new Map<string, Telemetry>();
@@ -182,6 +186,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.use((req, res, next) => {
     if (!req.path.startsWith('/api/')) { next(); return; }
     const now = Date.now();
+    pruneExpiredRateLimits(rateLimits, now);
     const key = req.ip ?? 'unknown';
     const current = rateLimits.get(key);
     const limit = dependencies.rateLimitMax ?? 120;
