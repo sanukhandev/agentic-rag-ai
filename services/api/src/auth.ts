@@ -16,32 +16,35 @@ export type AuthedRequest = Request & { auth?: AuthContext; requestId?: string }
 const userToContext = (user: User): AuthContext => ({ userId: user.id, email: user.email, role: user.role, tenantId: user.tenantId });
 
 export class AuthService {
-  private readonly revoked = new Map<string, number>();
   constructor(private readonly store: Store, private readonly secret: string) {}
 
   async hashPassword(password: string): Promise<string> { return bcrypt.hash(password, 12); }
   async verifyPassword(password: string, passwordHash: string): Promise<boolean> { return bcrypt.compare(password, passwordHash); }
 
-  issue(user: User): string { return jwt.sign(userToContext(user), this.secret, { expiresIn: '2h', issuer: 'agentic-rag-api' }); }
+  async issue(user: User): Promise<string> {
+    const token = jwt.sign(userToContext(user), this.secret, { expiresIn: '2h', issuer: 'agentic-rag-api' });
+    await this.store.createAuthSession({ tokenHash: this.hashToken(token), userId: user.id, expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), revokedAt: null });
+    return token;
+  }
 
-  revoke(token: string): void { this.revoked.set(createHash('sha256').update(token).digest('hex'), Date.now() + 2 * 60 * 60 * 1000); }
+  async revoke(token: string): Promise<void> { await this.store.revokeAuthSession(this.hashToken(token)); }
 
   async verify(token: string): Promise<AuthContext | null> {
     try {
-      const tokenHash = createHash('sha256').update(token).digest('hex');
-      const expiry = this.revoked.get(tokenHash);
-      if (expiry && expiry > Date.now()) return null;
-      if (expiry) this.revoked.delete(tokenHash);
       const decoded = jwt.verify(token, this.secret, { issuer: 'agentic-rag-api' });
       if (!decoded || typeof decoded === 'string') return null;
       const payload = decoded as jwt.JwtPayload & Partial<AuthContext>;
       if (typeof payload.userId !== 'string' || typeof payload.email !== 'string' || typeof payload.role !== 'string') return null;
+      const session = await this.store.getAuthSession(this.hashToken(token));
+      if (!session || session.userId !== payload.userId || session.revokedAt || Date.parse(session.expiresAt) <= Date.now()) return null;
       const user = await this.store.getUser(payload.userId);
       return user ? userToContext(user) : null;
     } catch {
       return null;
     }
   }
+
+  private hashToken(token: string): string { return createHash('sha256').update(token).digest('hex'); }
 }
 
 export const authMiddleware = (authService: AuthService, required = true) => async (req: Request, res: Response, next: NextFunction): Promise<void> => {

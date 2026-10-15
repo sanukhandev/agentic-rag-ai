@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, Chunk, IngestionJob, Message, Persona, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionRequest, AuditEvent, AuthSession, Chunk, IngestionJob, Message, Persona, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
 
 const now = (): string => new Date().toISOString();
 
 export class MemoryStore implements Store {
   private readonly tenants = new Map<string, Tenant>();
   private readonly users = new Map<string, User>();
+  private readonly authSessions = new Map<string, AuthSession>();
   private readonly personas = new Map<string, Persona>();
   private readonly sources = new Map<string, Source>();
   private readonly sourceVersions = new Map<string, SourceVersion[]>();
@@ -45,6 +46,9 @@ export class MemoryStore implements Store {
 
   async getUserByEmail(email: string): Promise<User | null> { return [...this.users.values()].find((user) => user.email === email.toLowerCase()) ?? null; }
   async getUser(id: string): Promise<User | null> { return this.users.get(id) ?? null; }
+  async createAuthSession(session: AuthSession): Promise<AuthSession> { this.authSessions.set(session.tokenHash, session); return session; }
+  async getAuthSession(tokenHash: string): Promise<AuthSession | null> { return this.authSessions.get(tokenHash) ?? null; }
+  async revokeAuthSession(tokenHash: string): Promise<void> { const session = this.authSessions.get(tokenHash); if (session) this.authSessions.set(tokenHash, { ...session, revokedAt: now() }); }
 
   async setPersona(persona: Persona): Promise<Persona> { this.personas.set(persona.tenantId, persona); return persona; }
   async getPersona(tenantId: string): Promise<Persona | null> { return this.personas.get(tenantId) ?? null; }

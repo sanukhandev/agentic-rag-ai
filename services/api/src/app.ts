@@ -138,7 +138,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (await store.countUsers() > 0) throw new HttpError(409, 'BOOTSTRAP_COMPLETE', 'Platform bootstrap is already complete.');
       const input = parse(z.object({ email: z.string().email(), password: passwordSchema }), req.body);
       const user = await store.createUser({ email: input.email, passwordHash: await auth.hashPassword(input.password), role: 'platform_admin', tenantId: null });
-      res.status(201).json({ token: auth.issue(user), user: publicUser(user) });
+      res.status(201).json({ token: await auth.issue(user), user: publicUser(user) });
     } catch (error) { next(error); }
   });
 
@@ -147,14 +147,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const input = parse(z.object({ email: z.string().email(), password: z.string().min(1) }), req.body);
       const user = await store.getUserByEmail(input.email);
       if (!user || !(await auth.verifyPassword(input.password, user.passwordHash))) throw new HttpError(401, 'INVALID_CREDENTIALS', 'Invalid credentials.');
-      res.json({ token: auth.issue(user), user: publicUser(user) });
+      res.json({ token: await auth.issue(user), user: publicUser(user) });
     } catch (error) { next(error); }
   });
 
   const protectedApi = authMiddleware(auth);
   const optionalApi = authMiddleware(auth, false);
 
-  app.post('/api/v1/auth/logout', protectedApi, (req, res) => { const token = req.header('authorization')?.slice(7); if (token) auth.revoke(token); res.status(204).send(); });
+  app.post('/api/v1/auth/logout', protectedApi, async (req, res) => { const token = req.header('authorization')?.slice(7); if (token) await auth.revoke(token); res.status(204).send(); });
 
   app.post('/api/v1/admin/tenants', protectedApi, requireRoles('platform_admin'), async (req, res, next) => {
     try {

@@ -9,9 +9,9 @@ describe('development auth boundary', () => {
     const user = await store.createUser({ email: 'Admin@Example.test', passwordHash: await auth.hashPassword('Password1'), role: 'tenant_admin', tenantId: 'tenant-a' });
     expect(await auth.verifyPassword('Password1', user.passwordHash)).toBe(true);
     expect(await auth.verifyPassword('wrong', user.passwordHash)).toBe(false);
-    const token = auth.issue(user);
+    const token = await auth.issue(user);
     await expect(auth.verify(token)).resolves.toMatchObject({ userId: user.id, email: 'admin@example.test', role: 'tenant_admin', tenantId: 'tenant-a' });
-    auth.revoke(token);
+    await auth.revoke(token);
     await expect(auth.verify(token)).resolves.toBeNull();
   });
 });

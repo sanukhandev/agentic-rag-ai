@@ -11,7 +11,7 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 - [ ] P02: validated source ingestion, versioning, approval and retrieval (durable job state/lease, authenticated worker-result boundary, SQL vector filtering/order, transactional reindex-to-review, explicit source version history and approved HTTPS worker snapshots added; private file staging, retention lifecycle and selected production embedding remain)
 - [ ] P03: tenant-aware chat, PII masking, citations and fail-closed model boundary (synthetic API gate passing; conflict refusal and scoped history added)
 - [x] P04: guarded, confirmed, idempotent mock/private n8n action (unit/API gate passing; live n8n blocked)
-- [ ] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics, RBAC, lifecycle, rate limits, CORS and callback replay guard added; retention/backup pending)
+- [ ] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics, RBAC, lifecycle, rate limits, CORS, callback replay guard and durable admin session revocation added; retention/backup pending)
 - [ ] P06: PII vault and conversation API (AES-GCM session vault and Postgres persistence verified; retention/rate limits pending)
 - [ ] P07–P10: full persona/version workflow, operations hardening, clean-room acceptance and go-live review
 
@@ -51,6 +51,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Source version history | API `GET /api/v1/admin/sources/:id/versions`, memory test and PostgreSQL integration assertion | pass locally |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally |
 | Chat resume/history | `GET /api/v1/chat/sessions/:id` API assertion | pass (masked, tenant-scoped messages) |
+| Durable admin session revocation | `auth.test.ts` and API logout assertion backed by store session records; PostgreSQL migration `010-auth-sessions.sql` | pass (memory + migration applied locally) |
 | Dependency audit | `npm audit --omit=dev --audit-level=high` | blocked: 9 advisories remain in Angular 19/PostCSS; remediation requires a major framework/toolchain upgrade and was not applied unverified |
 
 ## Blockers and risks

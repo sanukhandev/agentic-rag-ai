@@ -56,6 +56,13 @@ export interface SourceVersion {
   createdAt: string;
 }
 
+export interface AuthSession {
+  tokenHash: string;
+  userId: string;
+  expiresAt: string;
+  revokedAt: string | null;
+}
+
 export interface IngestionJob {
   id: string;
   tenantId: string;
@@ -151,6 +158,9 @@ export interface Store {
   createUser(input: { email: string; passwordHash: string; role: Role; tenantId: string | null }): Promise<User>;
   getUserByEmail(email: string): Promise<User | null>;
   getUser(id: string): Promise<User | null>;
+  createAuthSession(session: AuthSession): Promise<AuthSession>;
+  getAuthSession(tokenHash: string): Promise<AuthSession | null>;
+  revokeAuthSession(tokenHash: string): Promise<void>;
   setPersona(persona: Persona): Promise<Persona>;
   getPersona(tenantId: string): Promise<Persona | null>;
   createSource(input: Omit<Source, 'createdAt' | 'approvedAt'> & { chunks: Chunk[] }): Promise<Source>;

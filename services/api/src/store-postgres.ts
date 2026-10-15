@@ -1,12 +1,13 @@
 import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, Chunk, Citation, IngestionJob, Message, Persona, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionRequest, AuditEvent, AuthSession, Chunk, Citation, IngestionJob, Message, Persona, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
 
 const iso = (value: Date | string): string => value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 const vectorLiteral = (values: number[]): string => `[${values.join(',')}]`;
 type DbTimestamp = Date | string;
 type TenantRow = { id: string; name: string; slug: string; status?: TenantStatus; public_chat_enabled?: boolean; public_origin?: string | null; created_at: DbTimestamp };
 type UserRow = { id: string; email: string; password_hash: string; role: User['role']; tenant_id: string | null; created_at: DbTimestamp };
+type AuthSessionRow = { token_hash: string; user_id: string; expires_at: DbTimestamp; revoked_at: DbTimestamp | null };
 type PersonaRow = { tenant_id: string; name: string; greeting: string; personality: string; tone: string; speaking_style: string; permitted_languages: string[] };
 type SourceRow = { id: string; tenant_id: string; title: string; mime_type: string; source_url: string | null; audience: 'public' | 'internal'; status: SourceStatus; version_id: string; content_hash: string; created_at: DbTimestamp; approved_at: DbTimestamp | null };
 type SourceVersionRow = { source_id: string; tenant_id: string; version_id: string; content_hash: string; created_at: DbTimestamp };
@@ -26,6 +27,9 @@ export class PostgresStore implements Store {
   async createUser(input: { email: string; passwordHash: string; role: User['role']; tenantId: string | null }): Promise<User> { const result = await this.pool.query('INSERT INTO users (id,email,password_hash,role,tenant_id) VALUES ($1,$2,$3,$4,$5) RETURNING *', [randomUUID(), input.email.toLowerCase(), input.passwordHash, input.role, input.tenantId]); return this.user(result.rows[0]); }
   async getUserByEmail(email: string): Promise<User | null> { const result = await this.pool.query('SELECT * FROM users WHERE email=$1', [email.toLowerCase()]); return result.rows[0] ? this.user(result.rows[0]) : null; }
   async getUser(id: string): Promise<User | null> { const result = await this.pool.query('SELECT * FROM users WHERE id=$1', [id]); return result.rows[0] ? this.user(result.rows[0]) : null; }
+  async createAuthSession(session: AuthSession): Promise<AuthSession> { await this.pool.query('INSERT INTO auth_sessions (token_hash,user_id,expires_at,revoked_at) VALUES ($1,$2,$3,$4)', [session.tokenHash, session.userId, session.expiresAt, session.revokedAt]); return session; }
+  async getAuthSession(tokenHash: string): Promise<AuthSession | null> { const result = await this.pool.query<AuthSessionRow>('SELECT token_hash,user_id,expires_at,revoked_at FROM auth_sessions WHERE token_hash=$1', [tokenHash]); const row = result.rows[0]; return row ? { tokenHash: row.token_hash, userId: row.user_id, expiresAt: iso(row.expires_at), revokedAt: row.revoked_at ? iso(row.revoked_at) : null } : null; }
+  async revokeAuthSession(tokenHash: string): Promise<void> { await this.pool.query('UPDATE auth_sessions SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL', [tokenHash]); }
   async setPersona(persona: Persona): Promise<Persona> { const result = await this.pool.query('INSERT INTO agent_personas (tenant_id,name,greeting,personality,tone,speaking_style,permitted_languages) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (tenant_id) DO UPDATE SET name=EXCLUDED.name,greeting=EXCLUDED.greeting,personality=EXCLUDED.personality,tone=EXCLUDED.tone,speaking_style=EXCLUDED.speaking_style,permitted_languages=EXCLUDED.permitted_languages,updated_at=now() RETURNING *', [persona.tenantId, persona.name, persona.greeting, persona.personality, persona.tone, persona.speakingStyle, persona.permittedLanguages]); return this.persona(result.rows[0]); }
   async getPersona(tenantId: string): Promise<Persona | null> { const result = await this.pool.query('SELECT * FROM agent_personas WHERE tenant_id=$1', [tenantId]); return result.rows[0] ? this.persona(result.rows[0]) : null; }
   async createSource(input: Omit<Source, 'createdAt' | 'approvedAt'> & { chunks: Chunk[] }): Promise<Source> {
