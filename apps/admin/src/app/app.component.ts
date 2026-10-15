@@ -10,19 +10,21 @@ type Persona = { name: string; greeting: string; personality: string; tone: stri
 type PersonaVersion = Persona & { id: string; version: number; status: 'draft' | 'published'; createdAt: string; publishedAt: string | null };
 type Tenant = { id: string; name: string; slug: string; status: string };
 type TenantDomain = { id: string; hostname: string; createdAt: string };
+type Member = { id: string; email: string; role: string };
 const api = 'http://localhost:4000';
 
 @Component({ selector: 'app-root', standalone: true, imports: [CommonModule, FormsModule], templateUrl: './app.component.html' })
 export class AppComponent {
   private readonly http = inject(HttpClient);
-  email = 'admin@example.test'; password = ''; token = ''; role = ''; error = ''; sources: Source[] = []; ingestionJobs: IngestionJob[] = []; tenants: Tenant[] = []; domains: TenantDomain[] = []; metrics: Metrics | null = null; persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: ['en'] };
+  email = 'admin@example.test'; password = ''; token = ''; role = ''; error = ''; sources: Source[] = []; ingestionJobs: IngestionJob[] = []; tenants: Tenant[] = []; domains: TenantDomain[] = []; members: Member[] = []; metrics: Metrics | null = null; persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: ['en'] };
   title = ''; content = ''; sourceUrl = ''; audience = 'public';
   tenantName = ''; tenantSlug = ''; tenantAdminEmail = ''; tenantAdminPassword = '';
   personaVersions: PersonaVersion[] = [];
   domainHostname = '';
+  memberEmail = ''; memberPassword = ''; memberRole = 'tenant_editor';
   previewMessage = 'What can you help me with?'; previewAnswer = ''; previewGrounded = false;
 
-  login(): void { this.http.post<{ token: string; user: { role: string } }>(`${api}/api/v1/auth/login`, { email: this.email, password: this.password }).subscribe({ next: (body) => { this.token = body.token; this.role = body.user.role; if (this.role === 'platform_admin') this.loadTenants(); else { this.loadSources(); this.loadJobs(); this.loadDashboard(); this.loadPersona(); this.loadPersonaVersions(); if (this.role === 'tenant_admin') this.loadDomains(); } }, error: () => { this.error = 'Login failed.'; } }); }
+  login(): void { this.http.post<{ token: string; user: { role: string } }>(`${api}/api/v1/auth/login`, { email: this.email, password: this.password }).subscribe({ next: (body) => { this.token = body.token; this.role = body.user.role; if (this.role === 'platform_admin') this.loadTenants(); else { this.loadSources(); this.loadJobs(); this.loadDashboard(); this.loadPersona(); this.loadPersonaVersions(); if (this.role === 'tenant_admin') { this.loadDomains(); this.loadMembers(); } } }, error: () => { this.error = 'Login failed.'; } }); }
   loadTenants(): void { this.http.get<{ items: Tenant[] }>(`${api}/api/v1/admin/tenants`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.tenants = body.items; }, error: () => { this.error = 'Could not load tenants.'; } }); }
   createTenant(): void { this.http.post(`${api}/api/v1/admin/tenants`, { name: this.tenantName, slug: this.tenantSlug, adminEmail: this.tenantAdminEmail, adminPassword: this.tenantAdminPassword }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.tenantName = ''; this.tenantSlug = ''; this.tenantAdminEmail = ''; this.tenantAdminPassword = ''; this.loadTenants(); }, error: () => { this.error = 'Tenant could not be created.'; } }); }
   loadSources(): void { this.http.get<{ items: Source[] }>(`${api}/api/v1/admin/sources`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.sources = body.items; }, error: () => { this.error = 'Could not load sources.'; } }); }
@@ -31,6 +33,8 @@ export class AppComponent {
   loadDomains(): void { this.http.get<{ items: TenantDomain[] }>(`${api}/api/v1/admin/domains`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.domains = body.items; }, error: () => { this.error = 'Could not load domains.'; } }); }
   addDomain(): void { this.http.post(`${api}/api/v1/admin/domains`, { hostname: this.domainHostname }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.domainHostname = ''; this.loadDomains(); }, error: () => { this.error = 'Domain could not be added.'; } }); }
   removeDomain(domain: TenantDomain): void { this.http.delete(`${api}/api/v1/admin/domains/${domain.id}`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadDomains(), error: () => { this.error = 'Domain could not be removed.'; } }); }
+  loadMembers(): void { this.http.get<{ items: Member[] }>(`${api}/api/v1/admin/members`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.members = body.items; }, error: () => { this.error = 'Could not load members.'; } }); }
+  addMember(): void { this.http.post(`${api}/api/v1/admin/members`, { email: this.memberEmail, password: this.memberPassword, role: this.memberRole }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.memberEmail = ''; this.memberPassword = ''; this.loadMembers(); }, error: () => { this.error = 'Member could not be added.'; } }); }
   loadPersona(): void { this.http.get<{ persona: Persona | null }>(`${api}/api/v1/admin/persona`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { if (body.persona) this.persona = body.persona; }, error: () => { this.error = 'Could not load persona.'; } }); }
   loadPersonaVersions(): void { this.http.get<{ items: PersonaVersion[] }>(`${api}/api/v1/admin/persona/versions`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.personaVersions = body.items; }, error: () => { this.error = 'Could not load persona versions.'; } }); }
   savePersonaDraft(): void { this.http.post(`${api}/api/v1/admin/persona/drafts`, this.persona, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadPersonaVersions(), error: () => { this.error = 'Persona draft could not be saved.'; } }); }
@@ -43,5 +47,5 @@ export class AppComponent {
   purge(source: Source): void { this.http.delete(`${api}/api/v1/admin/sources/${source.id}`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.loadSources(); }, error: () => { this.error = 'Only revoked sources can be purged.'; } }); }
   publish(source: Source): void { this.http.post(`${api}/api/v1/admin/sources/${source.id}/publish`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadSources(), error: () => { this.error = 'Source could not be published.'; } }); }
   revoke(source: Source): void { this.http.post(`${api}/api/v1/admin/sources/${source.id}/revoke`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadSources(), error: () => { this.error = 'Source could not be revoked.'; } }); }
-  logout(): void { this.http.post(`${api}/api/v1/auth/logout`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.token = ''; this.role = ''; this.metrics = null; this.ingestionJobs = []; this.domains = []; }, error: () => { this.token = ''; this.role = ''; } }); }
+  logout(): void { this.http.post(`${api}/api/v1/auth/logout`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.token = ''; this.role = ''; this.metrics = null; this.ingestionJobs = []; this.domains = []; this.members = []; }, error: () => { this.token = ''; this.role = ''; } }); }
 }
