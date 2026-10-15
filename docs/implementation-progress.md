@@ -82,7 +82,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Tenant source purge control | Angular shows a confirmation-gated purge action only for revoked sources | pass locally; manual browser verification pending |
 | Tenant session retention control | Tenant-admin Angular action requests a past 24-hour cutoff through the audited retention API and refreshes metrics/audit | pass locally; manual browser verification pending |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally after Angular 21 / Next 16 upgrade |
-| Latest workspace test run | `DATABASE_URL=... npm test` | Admin 2 + web 2 + API 43 (including PostgreSQL) + contracts 1 passed |
+| Latest workspace test run | `DATABASE_URL=... npm test` | Admin 2 + web 2 + API 44 (including PostgreSQL) + contracts 1 passed |
 | Chat resume/history | `GET /api/v1/chat/sessions/:id` API assertion | pass (masked, tenant-scoped messages) |
 | Durable admin session revocation and expiry | `auth.test.ts` covers logout revocation and expired durable sessions; API logout assertion backed by store session records; PostgreSQL migration `010-auth-sessions.sql` | pass (memory + migration applied locally) |
 | Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |
