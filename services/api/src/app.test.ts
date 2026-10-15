@@ -53,6 +53,10 @@ describe('API vertical slice', () => {
     const adminBToken = adminB.body.token as string;
     const member = await api.post('/api/v1/admin/members').set('Authorization', `Bearer ${adminToken}`).send({ email: 'editor-a@example.test', password: 'EditorA1Password', role: 'tenant_editor' }).expect(201);
     expect(member.body.user.role).toBe('tenant_editor');
+    await api.patch(`/api/v1/admin/members/${member.body.user.id}`).set('Authorization', `Bearer ${adminToken}`).send({ role: 'tenant_viewer' }).expect(200);
+    expect((await api.get('/api/v1/admin/members').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.items.find((user: { id: string }) => user.id === member.body.user.id).role).toBe('tenant_viewer');
+    await api.patch(`/api/v1/admin/members/${member.body.user.id}`).set('Authorization', `Bearer ${adminBToken}`).send({ role: 'tenant_agent' }).expect(404);
+    await api.patch(`/api/v1/admin/members/${adminA.body.user.id}`).set('Authorization', `Bearer ${adminToken}`).send({ role: 'tenant_viewer' }).expect(404);
     expect((await api.get('/api/v1/admin/members').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.items).toHaveLength(2);
     const domain = await api.post('/api/v1/admin/domains').set('Authorization', `Bearer ${adminToken}`).send({ hostname: 'chat.tenant-a.example' }).expect(201);
     expect((await api.get('/api/v1/admin/domains').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.items).toHaveLength(1);
