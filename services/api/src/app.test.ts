@@ -333,6 +333,7 @@ describe('API vertical slice', () => {
     await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(403);
     await api.get('/api/v1/chat/config').query({ tenantSlug: tenant.body.tenant.slug }).expect(403);
     await api.patch('/api/v1/admin/channel').set('Authorization', `Bearer ${admin.body.token}`).send({ publicOrigin: 'https://chat.channel.example', publicChatEnabled: false }).expect(200);
+    await api.options('/api/v1/chat/sessions').set('Origin', 'https://chat.channel.example').set('Access-Control-Request-Method', 'POST').expect(403);
     await api.post('/api/v1/chat/sessions').set('Origin', 'https://chat.channel.example').send({ tenantSlug: tenant.body.tenant.slug }).expect(423);
     await api.patch('/api/v1/admin/channel').set('Authorization', `Bearer ${admin.body.token}`).send({ publicOrigin: 'https://chat.channel.example', publicChatEnabled: true }).expect(200);
     const session = await api.post('/api/v1/chat/sessions').set('Origin', 'https://chat.channel.example').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
