@@ -95,7 +95,7 @@ The system is considered **locally complete** only with automated synthetic fixt
 | END-01 | Pass for API vertical slice: `app.test.ts` covers onboarding→source→publish→chat→citation→action; web/admin browser journey remains manual. |
 | END-02 | Pass for API isolation: tenant A/B personas, sources, histories and operations remain separated. |
 | BUILD-01 | Pass locally: `npm ci --dry-run`, migrations and documented local commands; hosted CI run not observed. |
-| BUILD-02 | Pass locally: latest `npm test` is Admin 2 + web 2 + API 42 + contracts 1, with explicit PostgreSQL 1 passed; lint/typecheck/build pass. |
+| BUILD-02 | Pass locally: latest `npm test` is Admin 2 + web 2 + API 42 + contracts 1, Python ingestion is 13 passed in the pinned venv, explicit PostgreSQL is 1 passed, and lint/typecheck/build pass. |
 | SEC-01 | Partial/blocked for production: secret guard, audit and private DB compose checks pass, but the user-requested root n8n compose remains public HTTP development configuration. |
 | EXT-01 | Blocked: live chat smoke was previously observed, but the configured embedding deployment is missing; deterministic embeddings are used locally. |
 | EXT-02 | Blocked: live private n8n credentials/environment are unavailable; signed HTTP adapter and mock tests pass. |
