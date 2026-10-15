@@ -10,6 +10,7 @@
     "build": "npm run build --workspaces --if-present",
     "verify:compose": "node scripts/verify-compose.mjs",
     "verify:local": "node scripts/verify-local.mjs",
+    "seed:local": "node scripts/seed-local.mjs",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",

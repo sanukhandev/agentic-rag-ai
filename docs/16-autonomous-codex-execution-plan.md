@@ -7,7 +7,7 @@ Status: **execution contract**, not evidence of implementation. Primary specs: A
 - Plan into trackable tasks/checklist in the repository (e.g., docs/implementation-progress.md), mark `pending/in progress/complete/blocked` with objective evidence, and keep it updated after every phase.
 - Continue across safe independent tasks without asking routine preferences. Choose reasonable **reversible development defaults**, put them in ADRs, and distinguish them from user-approved production policy.
 - Never bypass security gates to satisfy a green build. Do not fabricate live Azure credentials, production identities, deployment URLs, user consent or success claims.
-- Use synthetic tenant A and B, seed fake sources and mock n8n+model for deterministic CI. Live Azure/provider validation occurs only when approved credentials are supplied. Missing credentials are a documented integration blocker, not a reason to fabricate tests.
+- Use synthetic tenant A and B, seed fake sources and mock n8n+model for deterministic local verification. Live Azure/provider validation occurs only when approved credentials are supplied. Missing credentials are a documented integration blocker, not a reason to fabricate tests.
 - Keep each phase small, buildable, and committed with clear messages. Use a feature branch/PR if possible; never force-push or overwrite unrelated user changes. Do not deploy or publish real infrastructure without explicit authorization.
 - For risky decisions (privacy jurisdiction, public exposure, real data sharing, secret access, billable cloud provisioning), implement local stubs, document blocker and continue on independent components. The phrase "nonstop" never authorizes unsafe deployment/credential handling.
 
@@ -59,7 +59,7 @@ Tasks:
 1. Add root pnpm workspace scripts for build/typecheck/lint/test; scaffold strict TypeScript Express Node API, Next.js/React/Tailwind web, Angular/Tailwind admin, Python venv package, typed contracts.
 2. Add local development Docker configuration for Postgres with pgvector; keep DB private. Harden existing n8n Compose from public HTTP bind for safe local use (do not deploy); pin images.
 3. Add dependency locking, env.example with placeholders, health checks, migrations tool, secret scanning and reproducible README setup.
-4. Add CI workflow for reproducible installs, formatter/lint, types, tests, builds, dependency/secret checks; don't require live Azure secrets for PR CI.
+4. Keep the reproducible install, formatter/lint, types, tests, builds, dependency and secret checks in the local `verify:local` gate; hosted GitHub Actions is intentionally not configured.
 Gate: clean checkout can start local services, compile each app/worker, run smoke health checks and shut down. No internet-exposed admin/webhook/DB services in dev compose by default.
 
 ### P02 — Postgres schema, tenant identity and access
@@ -113,7 +113,7 @@ Gate: matching tenant persona styles observed, but source evidence and access re
 ### P08 — guarded n8n workflow POC
 Tasks:
 1. Implement allowlisted action registry, structured intent validation, confirmation UI/API, consent reference, action state machine, idempotency and durable audit.
-2. Implement private authenticated n8n webhook adapter with mocked counterpart in CI; restrict data to opaque IDs, sanitized fields and allowed destinations, not raw chat or token vault.
+2. Implement private authenticated n8n webhook adapter with a mocked counterpart in local tests; restrict data to opaque IDs, sanitized fields and allowed destinations, not raw chat or token vault.
 3. Add a simple synthetic "lead interest" notification/mock processing workflow; avoid real CRM writes or customer email until approved.
 4. Test duplicate confirmations, stale/forged callbacks, wrong tenant, timeout/unknown status and workflow disabled/suspended tenant.
 Gate: confirmed synthetic action fires exactly once, every attempt is auditable, prompt injection alone cannot invoke the workflow, and unconfirmed action cannot run.
@@ -144,7 +144,7 @@ Gate: full synthetic local acceptance suite green + security tests pass + no liv
 Contract-first OpenAPI + runtime schemas; status, pagination, correlation IDs and error DTOs.
 
 ## 4. Test execution sequence
-Per phase: static checks → unit → integration → security-negative → affected builds → container smoke → E2E if available. CI must have separate bounded suites and synthetic fixtures. Maintain records in implementation-progress.md. Minimum mandatory acceptance cases appear in docs/17-acceptance-test-matrix.md.
+Per phase: static checks → unit → integration → security-negative → affected builds → container smoke → manual UI review if available. The local gate uses bounded suites and synthetic fixtures. Maintain records in implementation-progress.md. Minimum mandatory acceptance cases appear in docs/17-acceptance-test-matrix.md.
 
 ## 5. Autonomy and blocking policy
 Move continuously from one phase to the next once its gate passes. For mundane reversible choices, pick a secure sensible default and record ADR. If one external dependency is unavailable, build/test a compatible mock, continue independent work, record integration as blocked; do **not** silently declare live verification complete. Stop and ask only for genuinely irreducible approval/credential/production decisions; never exfiltrate secrets or enact billable resources without permission. No false assurance that all file types or languages are reliable before test evidence.

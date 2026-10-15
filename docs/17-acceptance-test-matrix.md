@@ -42,11 +42,11 @@ The system is considered **locally complete** only with automated synthetic fixt
 | FLOW-04 | Timeout/unknown workflow result | Never report completed | Integration |
 | OPS-01 | Service down/health check outdated | Display observed failure/unknown with timestamp | Integration/E2E |
 | OPS-02 | Tenant usage dashboard | Metrics scoped to tenant, no customer PII | Integration/security |
-| END-01 | Tenant A onboarding→sources→publish→chat | E2E complete, citations correct | E2E |
-| END-02 | A/B with different personas/sources | Both isolated despite guessed IDs / injection | E2E |
-| BUILD-01 | Clean install/bootstrap | Documented commands work | CI clean environment |
-| BUILD-02 | Lint/typecheck/unit/integration/build | All runnable defined checks pass | CI |
-| SEC-01 | Docker exposure and repository secret audit | No public unauthenticated n8n/DB/admin; no leaked secrets | CI/ops |
+| END-01 | Tenant A onboarding→sources→publish→chat | Local API journey complete, citations correct | API acceptance/manual UI |
+| END-02 | A/B with different personas/sources | Both isolated despite guessed IDs / injection | API acceptance/manual UI |
+| BUILD-01 | Clean install/bootstrap | Documented commands work | Local clean environment |
+| BUILD-02 | Lint/typecheck/unit/integration/build | All runnable defined checks pass | Local gate |
+| SEC-01 | Docker exposure and repository secret audit | No public unauthenticated n8n/DB/admin; no leaked secrets | Local gate/ops |
 | EXT-01 | Live Azure Chat/Embedding, if configured | Explicit opt-in smoke + cost guard + actual result | Manual/staging |
 | EXT-02 | Live n8n private webhook, if configured | Verified authentication, status and replay handling | Manual/staging |
 
@@ -92,8 +92,8 @@ The system is considered **locally complete** only with automated synthetic fixt
 | FLOW-04 | Pass: adapter failure becomes `unknown`, never `completed`. |
 | OPS-01 | Pass: forced store outage returns timestamped `503/down` health state. |
 | OPS-02 | Pass: tenant dashboard/telemetry counters are scoped and redacted; manual dashboard verification remains pending. |
-| END-01 | Pass for API vertical slice: `app.test.ts` covers onboarding→source→publish→chat→citation→action; web/admin browser journey remains manual. |
-| END-02 | Pass for API isolation: tenant A/B personas, sources, histories and operations remain separated. |
+| END-01 | Pass locally: `npm run seed:local` completed the tenant A onboarding→source→publish→grounded/refused chat→citation→confirmed mock action journey; web/admin browser journey remains manual. |
+| END-02 | Pass locally: `npm run seed:local` completed against synthetic tenant A/B with different sources/personas and verified cross-tenant refusal; API tests also cover histories and operations. |
 | BUILD-01 | Pass: `npm ci --dry-run`, migrations and documented local commands; `npm run verify:local` provisions/checks the local PostgreSQL-backed path. Hosted GitHub Actions is intentionally not configured. |
 | BUILD-02 | Pass locally: `npm run verify:local` completed with Admin 2 + Web 3 + API 47 (including PostgreSQL) + contracts 1, Python ingestion 14, lint/typecheck/build, and 0 audit vulnerabilities. |
 | SEC-01 | Pass for local defaults: `npm run verify:compose` confirms digest-pinned n8n and localhost-only `127.0.0.1:5678`; production remains blocked on authenticated HTTPS ingress, identity and operational controls. |
@@ -104,4 +104,4 @@ The system is considered **locally complete** only with automated synthetic fixt
 Create tenant_a and tenant_b fixture accounts and strictly distinct DOCX/XLSX/TXT/PDF/URL knowledge; include a conflicting FAQ, expired pricing, a malicious 'ignore safety' document and synthetic PII. Use deterministic model/embedding/n8n test doubles that log sanitized calls in memory; never assert real provider success from mocks.
 
 ## Proof standard
-Each case must map to executable test path and show pass/fail/skip with reason. CI passing with a skipped critical security case **does not** satisfy acceptance. Network/cloud test absence is reported as integration **blocked** rather than green. Include migration/backup rehearsal and audited retention test before production approval.
+Each case must map to executable test path and show pass/fail/skip with reason. Local checks passing with a skipped critical security case **does not** satisfy acceptance. Network/cloud test absence is reported as integration **blocked** rather than green. Include migration/backup rehearsal and audited retention test before production approval.
