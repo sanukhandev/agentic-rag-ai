@@ -137,7 +137,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const auth = new AuthService(store, jwtSecret);
   const gateway = new ActionGateway(store, workflow);
   const app = express();
-  const responseCache = new Map<string, unknown>();
   const rateLimits = new Map<string, { count: number; resetAt: number }>();
   const telemetry: Telemetry = { requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null };
   const tenantTelemetry = new Map<string, Telemetry>();
@@ -491,9 +490,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const durableDuplicate = await store.getMessageByClientId(session.id, input.clientMessageId);
       if (durableDuplicate?.response) { res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
       if (durableDuplicate) throw new HttpError(409, 'MESSAGE_IN_PROGRESS', 'A request with this client message ID is already being processed.');
-      const cacheKey = `${session.id}:${input.clientMessageId}`;
-      const cached = responseCache.get(cacheKey);
-      if (cached) { res.json(cached); return; }
       const masked = maskPii(input.message);
       saveTokens(session, masked.tokens, tokenVault);
       await store.updateSession(session);
@@ -524,7 +520,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const persistedResponse = { ...response, answer: maskedAnswer };
       await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: maskedAnswer, citations: safeCitations, clientMessageId: null, response: null, createdAt: new Date().toISOString() });
       await store.updateMessage({ ...userMessage, response: persistedResponse });
-      responseCache.set(cacheKey, response);
       res.json(response);
     } catch (error) { next(error); }
   });
