@@ -39,6 +39,17 @@ For an approved HTTPS snapshot, create a queued `text/html` job and run:
 
 The worker copies file inputs into the private staging root for the attempt, extracts from the staged copy, and purges it before sending only sanitized normalized content, chunk hashes and locators. The API revalidates hashes, re-sanitizes chunks and performs embedding before staging the source for approval. Keep the staging directory private and outside any web-served path.
 
+## Local PostgreSQL backup/restore rehearsal
+
+The local pgvector container supports a schema/data rehearsal without touching the development database: dump `agentic_rag` to a temporary `agentic_rag_restore_check` database, verify the restored tables, then drop only that explicitly named scratch database. Production must use managed encrypted backups, retention and a scheduled restore test.
+
+```powershell
+docker compose -f infra/docker-compose.dev.yml exec -T postgres createdb -U agentic agentic_rag_restore_check
+docker compose -f infra/docker-compose.dev.yml exec -T postgres pg_dump -U agentic -d agentic_rag --format=plain --no-owner --no-privileges | docker compose -f infra/docker-compose.dev.yml exec -T postgres psql -U agentic -d agentic_rag_restore_check -v ON_ERROR_STOP=1
+docker compose -f infra/docker-compose.dev.yml exec -T postgres psql -U agentic -d agentic_rag_restore_check -Atc "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'"
+docker compose -f infra/docker-compose.dev.yml exec -T postgres dropdb -U agentic agentic_rag_restore_check
+```
+
 ## Proposed environment contract (names TBD until implementation)
 | Secret/config family | Consumer | Handling |
 | --- | --- | --- |
