@@ -53,6 +53,16 @@ export const buildChunksWithEmbeddings = async (source: Pick<Source, 'id' | 'ten
   return result;
 };
 
+export const buildIngestionChunksWithEmbeddings = async (
+  source: Pick<Source, 'id' | 'tenantId' | 'versionId'>,
+  chunks: Array<{ ordinal: number; locator: string; content: string; contentHash: string }>,
+  provider: EmbeddingProvider,
+): Promise<Chunk[]> => {
+  const result: Chunk[] = [];
+  for (const chunk of chunks) result.push({ id: randomUUID(), sourceId: source.id, tenantId: source.tenantId, versionId: source.versionId, ordinal: chunk.ordinal, locator: chunk.locator, content: chunk.content, contentHash: chunk.contentHash, embedding: await provider.embed(chunk.content) });
+  return result;
+};
+
 const cosine = (left: number[], right: number[]): number => {
   const length = Math.min(left.length, right.length);
   let dot = 0;

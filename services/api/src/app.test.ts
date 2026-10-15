@@ -2,6 +2,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
 import { MockWorkflowAdapter, signN8nPayload } from './actions.js';
+import { contentHash } from './store-memory.js';
 import type { ChatModel, ModelDraft } from './model.js';
 
 class CapturingModel implements ChatModel {
@@ -103,5 +104,21 @@ describe('API vertical slice', () => {
     await api.post('/api/v1/auth/login').send({ email: 'bad@example.test', password: 'wrong' }).expect(401);
     const limited = await api.post('/api/v1/auth/login').send({ email: 'bad@example.test', password: 'wrong' }).expect(429);
     expect(limited.body.error.code).toBe('RATE_LIMITED');
+  });
+
+  it('accepts an authenticated, claimed Python ingestion result and preserves locators', async () => {
+    const api = request(createApp({ nodeEnv: 'test', ingestionWorkerSecret: 'worker-secret' }).app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-worker@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Worker Tenant', slug: 'worker-tenant', adminEmail: 'admin-worker@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-worker@example.test', password: 'TenantA1Password' }).expect(200);
+    const normalizedContent = 'The approved worker price is 42 credits.';
+    const chunkContent = normalizedContent;
+    const job = await api.post('/api/v1/admin/ingestion-jobs').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Worker FAQ', mimeType: 'text/plain', audience: 'public' }).expect(202);
+    await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/claim`).expect(401);
+    const claimed = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/claim`).set('x-ingestion-worker-secret', 'worker-secret').expect(200);
+    expect(claimed.body.job.status).toBe('processing');
+    const result = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/result`).set('x-ingestion-worker-secret', 'worker-secret').send({ normalizedContent, contentHash: contentHash(normalizedContent), parserVersion: 'test-parser', chunks: [{ ordinal: 0, locator: 'page 2', content: chunkContent, contentHash: contentHash(chunkContent) }] }).expect(201);
+    expect(result.body.source).toMatchObject({ tenantId: tenant.body.tenant.id, title: 'Worker FAQ', status: 'awaiting_review' });
+    expect((await api.get(`/api/v1/admin/ingestion-jobs/${job.body.job.id}`).set('Authorization', `Bearer ${admin.body.token}`).expect(200)).body.job).toMatchObject({ status: 'completed', sourceId: result.body.source.id, attempts: 1 });
   });
 });

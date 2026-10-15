@@ -64,9 +64,9 @@ export class MemoryStore implements Store {
     this.sources.set(id, updated);
     return updated;
   }
-  async createIngestionJob(input: { id: string; tenantId: string }): Promise<IngestionJob> {
+  async createIngestionJob(input: { id: string; tenantId: string; title: string; mimeType: string; sourceUrl: string | null; audience: 'public' | 'internal' }): Promise<IngestionJob> {
     const timestamp = now();
-    const job: IngestionJob = { id: input.id, tenantId: input.tenantId, sourceId: null, status: 'queued', attempts: 0, errorCode: null, leaseExpiresAt: null, createdAt: timestamp, updatedAt: timestamp };
+    const job: IngestionJob = { id: input.id, tenantId: input.tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl, audience: input.audience, sourceId: null, status: 'queued', attempts: 0, errorCode: null, leaseExpiresAt: null, createdAt: timestamp, updatedAt: timestamp };
     this.ingestionJobs.set(job.id, job);
     return job;
   }

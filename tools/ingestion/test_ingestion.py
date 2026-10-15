@@ -20,6 +20,7 @@ class IngestionTests(unittest.TestCase):
             first = ingest_file(path)
             second = ingest_file(path)
             self.assertEqual(first.content_hash, second.content_hash)
+            self.assertEqual(first.normalized_content, "Pricing is published.\n\nSupport is available.")
             self.assertEqual(first.chunks, second.chunks)
 
     def test_chunk_bound_is_enforced(self) -> None:

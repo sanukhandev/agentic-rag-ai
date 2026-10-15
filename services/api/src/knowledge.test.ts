@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DeterministicEmbeddingProvider } from './embedding.js';
-import { buildChunks, buildChunksWithEmbeddings, chunkText, embedText, hasConflictingEvidence, rankChunks, rankChunksWithEmbedding } from './knowledge.js';
+import { contentHash } from './store-memory.js';
+import { buildChunks, buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, chunkText, embedText, hasConflictingEvidence, rankChunks, rankChunksWithEmbedding } from './knowledge.js';
 
 describe('knowledge pipeline primitives', () => {
   it('chunks deterministically and emits the configured local vector dimension', () => {
@@ -27,6 +28,14 @@ describe('knowledge pipeline primitives', () => {
     expect(chunks[0]?.embedding).toHaveLength(provider.dimension);
     expect(await rankChunksWithEmbedding('What is the pricing?', rows, provider)).toHaveLength(1);
     expect(rankChunks('What is the pricing?', rows)).toHaveLength(1);
+  });
+
+  it('preserves worker locators and ordinals while embedding chunks', async () => {
+    const provider = new DeterministicEmbeddingProvider();
+    const content = 'Approved content';
+    const chunks = await buildIngestionChunksWithEmbeddings({ id: 'source', tenantId: 'tenant', versionId: 'version' }, [{ ordinal: 0, locator: 'page 2', content, contentHash: contentHash(content) }], provider);
+    expect(chunks[0]).toMatchObject({ ordinal: 0, locator: 'page 2', content, contentHash: contentHash(content) });
+    expect(chunks[0]?.embedding).toHaveLength(provider.dimension);
   });
 
   it('flags active evidence that shares a topic but disagrees on numeric facts', () => {

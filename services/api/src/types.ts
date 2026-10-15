@@ -51,6 +51,10 @@ export interface Source {
 export interface IngestionJob {
   id: string;
   tenantId: string;
+  title: string;
+  mimeType: string;
+  sourceUrl: string | null;
+  audience: Audience;
   sourceId: string | null;
   status: IngestionJobStatus;
   attempts: number;
@@ -146,7 +150,7 @@ export interface Store {
   findSourceByHash(tenantId: string, contentHash: string): Promise<Source | null>;
   listSources(tenantId: string): Promise<Source[]>;
   setSourceStatus(id: string, tenantId: string, status: SourceStatus): Promise<Source | null>;
-  createIngestionJob(input: { id: string; tenantId: string }): Promise<IngestionJob>;
+  createIngestionJob(input: { id: string; tenantId: string; title: string; mimeType: string; sourceUrl: string | null; audience: Audience }): Promise<IngestionJob>;
   getIngestionJob(id: string): Promise<IngestionJob | null>;
   claimIngestionJob(id: string, leaseMs: number): Promise<IngestionJob | null>;
   updateIngestionJob(job: IngestionJob): Promise<IngestionJob>;

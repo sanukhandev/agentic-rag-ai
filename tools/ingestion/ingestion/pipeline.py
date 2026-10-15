@@ -27,6 +27,7 @@ class IngestedSource:
     title: str
     mime_type: str
     source_url: str | None
+    normalized_content: str
     content_hash: str
     parser_version: str
     chunks: list[Chunk]
@@ -151,7 +152,7 @@ def fetch_authorized_https(url: str, allowed_hosts: set[str]) -> tuple[str, str]
 def ingest_text(title: str, text: str, mime_type: str, source_url: str | None = None) -> IngestedSource:
     cleaned = sanitize(normalize(text))
     chunks = chunk_text(cleaned)
-    return IngestedSource(title=title, mime_type=mime_type, source_url=source_url, content_hash=hashlib.sha256(cleaned.encode()).hexdigest(), parser_version=PARSER_VERSION, chunks=chunks)
+    return IngestedSource(title=title, mime_type=mime_type, source_url=source_url, normalized_content=cleaned, content_hash=hashlib.sha256(cleaned.encode()).hexdigest(), parser_version=PARSER_VERSION, chunks=chunks)
 
 
 def ingest_file(path: Path) -> IngestedSource:

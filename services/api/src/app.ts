@@ -1,9 +1,9 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { ActionGateway, MockWorkflowAdapter, verifyN8nPayload, type WorkflowAdapter } from './actions.js';
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
-import { buildChunksWithEmbeddings, hasConflictingEvidence, rankChunksWithEmbedding } from './knowledge.js';
+import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, rankChunksWithEmbedding } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { DeterministicGroundedModel, validateCitations, type ChatModel, type ModelDraft } from './model.js';
 import { assertKnownTokens, maskPii, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
@@ -16,6 +16,13 @@ const memberSchema = z.object({ email: z.string().email(), password: passwordSch
 const safePersonaText = (max: number) => z.string().trim().min(1).max(max).refine((value) => !/\b(ignore (?:all )?rules|system prompt|search the web|reveal secrets|bypass security)\b/i.test(value), 'Persona contains an unsafe instruction.');
 const personaSchema = z.object({ name: safePersonaText(80), greeting: safePersonaText(500), personality: safePersonaText(500), tone: safePersonaText(200), speakingStyle: safePersonaText(200), permittedLanguages: z.array(z.string().min(2).max(12)).min(1).max(10) });
 const sourceSchema = z.object({ title: z.string().trim().min(1).max(200), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']), sourceUrl: z.string().url().optional(), audience: z.enum(['public', 'internal']).default('public'), content: z.string().trim().min(1).max(200_000) });
+const ingestionRequestSchema = sourceSchema.omit({ content: true });
+const ingestionResultSchema = z.object({
+  normalizedContent: z.string().min(1).max(200_000),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+  parserVersion: z.string().trim().min(1).max(120),
+  chunks: z.array(z.object({ ordinal: z.number().int().nonnegative(), locator: z.string().trim().min(1).max(200), content: z.string().trim().min(1).max(20_000), contentHash: z.string().regex(/^[a-f0-9]{64}$/) })).min(1).max(2_000),
+});
 const sessionSchema = z.object({ tenantId: z.string().uuid().optional(), tenantSlug: z.string().regex(/^[a-z0-9-]+$/).optional() }).refine((value) => Boolean(value.tenantId || value.tenantSlug), 'tenantId or tenantSlug is required.');
 const messageSchema = z.object({ sessionId: z.string().uuid(), message: z.string().trim().min(1).max(4000), clientMessageId: z.string().trim().min(1).max(128) });
 const confirmSchema = z.object({ sessionId: z.string().uuid(), confirmed: z.literal(true) });
@@ -52,6 +59,16 @@ const activeTenant = async (store: Store, tenantId: string) => {
   return tenant;
 };
 
+const validateSourceUrl = (sourceUrl: string | undefined): void => {
+  if (!sourceUrl) return;
+  if (!sourceUrl.startsWith('https://')) throw new HttpError(422, 'UNSAFE_SOURCE_URL', 'Only authorized HTTPS source URLs are accepted.');
+  const hostname = new URL(sourceUrl).hostname;
+  const allowedHosts = (process.env.ALLOWED_SOURCE_HOSTS ?? '').split(',').map((host) => host.trim()).filter(Boolean);
+  if (allowedHosts.length === 0 || !allowedHosts.includes(hostname)) throw new HttpError(422, 'UNAUTHORIZED_SOURCE_HOST', 'The HTTPS source host is not allowlisted.');
+};
+
+const canonicalKnowledgeText = (input: string): string => sanitizeKnowledgeText(input.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
+
 export interface AppDependencies {
   store?: Store;
   model?: ChatModel;
@@ -61,6 +78,7 @@ export interface AppDependencies {
   tokenVault?: TokenVault;
   embedding?: EmbeddingProvider;
   n8nCallbackSecret?: string;
+  ingestionWorkerSecret?: string;
   rateLimitMax?: number;
   rateLimitWindowMs?: number;
 }
@@ -76,6 +94,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const tokenVault = dependencies.tokenVault ?? new TokenVault(vaultSecret);
   const embedding = dependencies.embedding ?? new DeterministicEmbeddingProvider();
   const n8nCallbackSecret = dependencies.n8nCallbackSecret ?? process.env.N8N_WEBHOOK_SECRET ?? '';
+  const ingestionWorkerSecret = dependencies.ingestionWorkerSecret ?? process.env.INGESTION_WORKER_SECRET ?? '';
+  const workerApi = (req: Request, _res: Response, next: NextFunction): void => {
+    if (!ingestionWorkerSecret) { next(new HttpError(503, 'WORKER_UNAVAILABLE', 'Ingestion worker authentication is not configured.')); return; }
+    const provided = req.header('x-ingestion-worker-secret') ?? '';
+    const expectedBuffer = Buffer.from(ingestionWorkerSecret);
+    const providedBuffer = Buffer.from(provided);
+    if (expectedBuffer.length !== providedBuffer.length || !timingSafeEqual(expectedBuffer, providedBuffer)) { next(new HttpError(401, 'WORKER_UNAUTHORIZED', 'Ingestion worker authentication failed.')); return; }
+    next();
+  };
   const auth = new AuthService(store, jwtSecret);
   const gateway = new ActionGateway(store, workflow);
   const app = express();
@@ -158,21 +185,28 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
   app.get('/api/v1/admin/persona', protectedApi, async (req, res, next) => { try { res.json({ persona: await store.getPersona(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
 
+  app.post('/api/v1/admin/ingestion-jobs', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      await activeTenant(store, tenantId);
+      const input = parse(ingestionRequestSchema, req.body);
+      validateSourceUrl(input.sourceUrl);
+      const job = await store.createIngestionJob({ id: randomUUID(), tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl ?? null, audience: input.audience ?? 'public' });
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'ingestion.queued', metadata: { jobId: job.id }, createdAt: new Date().toISOString() });
+      res.status(202).json({ job });
+    } catch (error) { next(error); }
+  });
+
   app.post('/api/v1/admin/sources', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
     try {
       const tenantId = await tenantForRequest(store, req);
       await activeTenant(store, tenantId);
       const input = parse(sourceSchema, req.body);
-      if (input.sourceUrl && !input.sourceUrl.startsWith('https://')) throw new HttpError(422, 'UNSAFE_SOURCE_URL', 'Only authorized HTTPS source URLs are accepted.');
-      if (input.sourceUrl) {
-        const hostname = new URL(input.sourceUrl).hostname;
-        const allowedHosts = (process.env.ALLOWED_SOURCE_HOSTS ?? '').split(',').map((host) => host.trim()).filter(Boolean);
-        if (allowedHosts.length === 0 || !allowedHosts.includes(hostname)) throw new HttpError(422, 'UNAUTHORIZED_SOURCE_HOST', 'The HTTPS source host is not allowlisted.');
-      }
+      validateSourceUrl(input.sourceUrl);
       const sourceId = randomUUID();
       const versionId = randomUUID();
       const jobId = randomUUID();
-      const createdJob = await store.createIngestionJob({ id: jobId, tenantId });
+      const createdJob = await store.createIngestionJob({ id: jobId, tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl ?? null, audience: input.audience ?? 'public' });
       const job = await store.claimIngestionJob(createdJob.id, 60_000);
       if (!job) throw new HttpError(409, 'INGESTION_BUSY', 'The ingestion job could not be claimed.');
       const sourceBase = { id: sourceId, tenantId, versionId };
@@ -204,6 +238,48 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.post('/api/v1/admin/sources/:id/publish', protectedApi, requireRoles('tenant_admin'), setSourceStatus('active'));
   app.post('/api/v1/admin/sources/:id/revoke', protectedApi, requireRoles('tenant_admin'), setSourceStatus('revoked'));
   app.get('/api/v1/admin/ingestion-jobs/:id', protectedApi, async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const job = await store.getIngestionJob(routeParam(req, 'id')); if (!job || job.tenantId !== tenantId) throw new HttpError(404, 'JOB_NOT_FOUND', 'Ingestion job not found.'); const source = job.sourceId ? await store.getSource(job.sourceId) : null; res.json({ job, source: source ? { id: source.id, versionId: source.versionId, status: source.status } : null }); } catch (error) { next(error); } });
+  app.post('/api/v1/internal/ingestion-jobs/:id/claim', workerApi, async (req, res, next) => {
+    try {
+      const job = await store.getIngestionJob(routeParam(req, 'id'));
+      if (!job) throw new HttpError(404, 'JOB_NOT_FOUND', 'Ingestion job not found.');
+      const claimed = await store.claimIngestionJob(job.id, 60_000);
+      if (!claimed) throw new HttpError(409, 'INGESTION_BUSY', 'The ingestion job is already claimed or complete.');
+      res.json({ job: claimed });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/ingestion-jobs/:id/result', workerApi, async (req, res, next) => {
+    try {
+      const job = await store.getIngestionJob(routeParam(req, 'id'));
+      if (!job) throw new HttpError(404, 'JOB_NOT_FOUND', 'Ingestion job not found.');
+      if (job.status !== 'processing' || !job.leaseExpiresAt || Date.parse(job.leaseExpiresAt) <= Date.now()) throw new HttpError(409, 'INGESTION_NOT_CLAIMED', 'The ingestion job is not actively leased.');
+      const input = parse(ingestionResultSchema, req.body);
+      const normalizedContent = canonicalKnowledgeText(input.normalizedContent);
+      if (contentHash(normalizedContent) !== input.contentHash) throw new HttpError(422, 'CONTENT_HASH_MISMATCH', 'The normalized content hash does not match the worker result.');
+      const chunks = [...input.chunks].sort((left, right) => left.ordinal - right.ordinal);
+      if (chunks.some((chunk, index) => chunk.ordinal !== index)) throw new HttpError(422, 'INVALID_CHUNK_ORDER', 'Worker chunks must use contiguous ordinals.');
+      const safeChunks = chunks.map((chunk) => ({ ...chunk, content: sanitizeKnowledgeText(chunk.content) }));
+      if (safeChunks.some((chunk) => contentHash(chunk.content) !== chunk.contentHash)) throw new HttpError(422, 'CHUNK_HASH_MISMATCH', 'A worker chunk hash does not match sanitized content.');
+      const existing = await store.findSourceByHash(job.tenantId, input.contentHash);
+      if (existing) {
+        const completed = await store.updateIngestionJob({ ...job, sourceId: existing.id, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        res.status(200).json({ job: completed, source: existing, idempotent: true });
+        return;
+      }
+      try {
+        const sourceId = randomUUID();
+        const versionId = randomUUID();
+        const embeddedChunks = await buildIngestionChunksWithEmbeddings({ id: sourceId, tenantId: job.tenantId, versionId }, safeChunks, embedding);
+        const source = await store.createSource({ id: sourceId, tenantId: job.tenantId, title: job.title, mimeType: job.mimeType, sourceUrl: job.sourceUrl, audience: job.audience, status: 'awaiting_review', versionId, contentHash: input.contentHash, chunks: embeddedChunks });
+        const completed = await store.updateIngestionJob({ ...job, sourceId: source.id, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'source.ingested', metadata: { sourceId, jobId: job.id, parserVersion: input.parserVersion, chunks: embeddedChunks.length }, createdAt: new Date().toISOString() });
+        res.status(201).json({ job: completed, source, ingestion: { status: 'awaiting_review', chunks: embeddedChunks.length } });
+      } catch (error) {
+        const errorCode = error instanceof HttpError ? error.code : 'INGESTION_FAILED';
+        await store.updateIngestionJob({ ...job, status: 'failed', errorCode, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        throw error;
+      }
+    } catch (error) { next(error); }
+  });
 
   app.post('/api/v1/chat/sessions', optionalApi, async (req, res, next) => {
     try {
