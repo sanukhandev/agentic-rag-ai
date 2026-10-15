@@ -326,7 +326,8 @@ describe('API vertical slice', () => {
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-channel@example.test', password: 'Platform1Password' }).expect(201);
     const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Channel Tenant', slug: 'channel-tenant', adminEmail: 'admin-channel@example.test', adminPassword: 'TenantA1Password' }).expect(201);
     const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-channel@example.test', password: 'TenantA1Password' }).expect(200);
-    await api.patch('/api/v1/admin/channel').set('Authorization', `Bearer ${admin.body.token}`).send({ publicOrigin: 'https://chat.channel.example' }).expect(200);
+    await api.patch('/api/v1/admin/channel').set('Authorization', `Bearer ${admin.body.token}`).send({ publicOrigin: '', publicChatEnabled: false }).expect(200);
+    await api.patch('/api/v1/admin/channel').set('Authorization', `Bearer ${admin.body.token}`).send({ publicOrigin: 'https://chat.channel.example', publicChatEnabled: true }).expect(200);
     const preflight = await api.options('/api/v1/chat/sessions').set('Origin', 'https://chat.channel.example').set('Access-Control-Request-Method', 'POST').expect(204);
     expect(preflight.headers['access-control-allow-origin']).toBe('https://chat.channel.example');
     await api.options('/api/v1/chat/sessions').set('Origin', 'https://other.example').set('Access-Control-Request-Method', 'POST').expect(403);
