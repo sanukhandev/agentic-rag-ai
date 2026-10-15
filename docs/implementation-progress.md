@@ -68,6 +68,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Redacted operational telemetry | Authorized service-health response and Angular health panel report request count, 5xx count, average latency and last-observed timestamp without request bodies or tenant content | pass locally; production metrics backend/alerts remain open |
 | Tenant ingestion counters | Memory/PostgreSQL dashboard metrics and Angular queued/failed job card are tenant-scoped | pass locally; manual browser verification pending |
 | Platform tenant lifecycle controls | Platform API status transition plus Angular suspend/reactivate/archive actions | pass locally; manual browser verification pending |
+| Duplicate chat idempotency | API repeats a completed `clientMessageId` and returns the same response without a second durable user message | pass (memory API; PostgreSQL unique constraint and store lookup covered) |
 | Revoked-source purge | API negative/positive test; PostgreSQL delete uses tenant + revoked predicates | pass (memory API; SQL path covered by query contract) |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally after Angular 21 / Next 16 upgrade |
 | Latest workspace test run | `npm test` | Admin 1 + web 1 + API 34 + contracts 1 passed; 1 PostgreSQL test skipped by default |

@@ -87,6 +87,10 @@ describe('API vertical slice', () => {
     const grounded = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-1' }).expect(200);
     expect(grounded.body.grounded).toBe(true);
     expect(grounded.body.citations).toHaveLength(1);
+    const duplicateGrounded = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-1' }).expect(200);
+    expect(duplicateGrounded.body).toEqual(grounded.body);
+    const duplicateHistory = await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}`).expect(200);
+    expect(duplicateHistory.body.messages.filter((message: { clientMessageId: string | null }) => message.clientMessageId === 'pricing-1')).toHaveLength(1);
     await api.post(`/api/v1/admin/sources/${source.body.source.id}/revoke`).set('Authorization', `Bearer ${adminToken}`).expect(200);
     const revoked = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the pricing now?', clientMessageId: 'pricing-revoked' }).expect(200);
     expect(revoked.body.grounded).toBe(false);
