@@ -33,6 +33,8 @@ export const verifyN8nPayload = (secret: string, timestamp: string, nonce: strin
   return provided.length === calculated.length && timingSafeEqual(provided, calculated);
 };
 
+const isUniqueViolation = (error: unknown): boolean => typeof error === 'object' && error !== null && 'code' in error && error.code === '23505';
+
 export class MockWorkflowAdapter implements WorkflowAdapter {
   public readonly calls: Array<{ workflowKey: string; tenantId: string; opaqueReference: string; idempotencyKey: string }> = [];
   async execute(input: { workflowKey: string; tenantId: string; opaqueReference: string; idempotencyKey: string }): Promise<WorkflowResult> {
@@ -44,14 +46,29 @@ export class MockWorkflowAdapter implements WorkflowAdapter {
 export class ActionGateway {
   // shortcut: the local API runs one process; replace with a database claim/transaction before multi-instance deployment.
   private readonly confirmations = new Map<string, Promise<ActionRequest>>();
+  private readonly proposals = new Map<string, Promise<ActionRequest>>();
 
   constructor(private readonly store: Store, private readonly adapter: WorkflowAdapter) {}
 
   async propose(tenantId: string, sessionId: string, idempotencyKey: string): Promise<ActionRequest> {
+    const key = `${tenantId}:${idempotencyKey}`;
+    const pending = this.proposals.get(key);
+    if (pending) return pending;
+    const proposal = this.proposeInternal(tenantId, sessionId, idempotencyKey);
+    this.proposals.set(key, proposal);
+    try { return await proposal; } finally { this.proposals.delete(key); }
+  }
+
+  private async proposeInternal(tenantId: string, sessionId: string, idempotencyKey: string): Promise<ActionRequest> {
     const existing = await this.store.getActionByIdempotency(tenantId, idempotencyKey);
     if (existing) return existing;
     const action: ActionRequest = { id: randomUUID(), tenantId, sessionId, workflowKey: 'lead.capture', idempotencyKey, state: 'awaiting_confirmation', opaqueReference: opaqueReference(), createdAt: new Date().toISOString(), result: null };
-    return this.store.createAction(action);
+    try { return await this.store.createAction(action); } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      const raced = await this.store.getActionByIdempotency(tenantId, idempotencyKey);
+      if (raced) return raced;
+      throw error;
+    }
   }
 
   async confirm(actionId: string, tenantId: string): Promise<ActionRequest> {

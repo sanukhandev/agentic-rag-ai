@@ -61,6 +61,23 @@ describe('action gateway', () => {
     expect(retried).toEqual(completed);
   });
 
+  it('recovers an idempotency race reported by PostgreSQL', async () => {
+    class UniqueRaceStore extends MemoryStore {
+      private firstInsert = true;
+      override async createAction(action: Parameters<MemoryStore['createAction']>[0]) {
+        const created = await super.createAction(action);
+        if (this.firstInsert) {
+          this.firstInsert = false;
+          throw Object.assign(new Error('duplicate action'), { code: '23505' });
+        }
+        return created;
+      }
+    }
+    const store = new UniqueRaceStore();
+    const gateway = new ActionGateway(store, new MockWorkflowAdapter());
+    await expect(gateway.propose('tenant-a', 'session-a', 'raced')).resolves.toMatchObject({ idempotencyKey: 'raced', state: 'awaiting_confirmation' });
+  });
+
   it('sends the private n8n request with a signature and no raw customer fields', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ externalReference: 'n8n-1' }), { status: 200 }));
     const adapter = new HttpN8nWorkflowAdapter('https://n8n.internal', 'shared-secret');
