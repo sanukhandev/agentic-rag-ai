@@ -77,6 +77,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Observed health outage | API suite forces the store check to fail and verifies timestamped 503/down reporting | pass locally |
 | Revoked-source purge | API negative/positive test; PostgreSQL delete uses tenant + revoked predicates | pass (memory API; SQL path covered by query contract) |
 | Tenant source purge control | Angular shows a confirmation-gated purge action only for revoked sources | pass locally; manual browser verification pending |
+| Tenant session retention control | Tenant-admin Angular action requests a past 24-hour cutoff through the audited retention API and refreshes metrics/audit | pass locally; manual browser verification pending |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally after Angular 21 / Next 16 upgrade |
 | Latest workspace test run | `npm test` | Admin 2 + web 2 + API 36 + contracts 1 passed; 1 PostgreSQL test skipped by default |
 | Chat resume/history | `GET /api/v1/chat/sessions/:id` API assertion | pass (masked, tenant-scoped messages) |
