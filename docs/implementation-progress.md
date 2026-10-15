@@ -61,7 +61,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Tenant domain management | API domain CRUD, tenant-scoped memory/PostgreSQL store methods, migration `013-tenant-domains.sql` and Angular tenant-admin panel | pass locally; manual browser verification pending |
 | Tenant member management | Existing tenant-scoped member API wired into Angular tenant-admin panel; API role and cross-tenant coverage in `app.test.ts` | pass locally; manual browser verification pending |
 | PostgreSQL backup/restore rehearsal | Local `pg_dump`/`psql` round trip to explicit scratch database `agentic_rag_restore_check`; restored schema verified, scratch database removed | pass locally; managed production backup/retention/restore schedule remains open |
-| Redacted operational telemetry | Authorized service-health response reports request count, 5xx count, average latency and last-observed timestamp without request bodies or tenant content | pass locally; production metrics backend/alerts remain open |
+| Redacted operational telemetry | Authorized service-health response and Angular health panel report request count, 5xx count, average latency and last-observed timestamp without request bodies or tenant content | pass locally; production metrics backend/alerts remain open |
 | Revoked-source purge | API negative/positive test; PostgreSQL delete uses tenant + revoked predicates | pass (memory API; SQL path covered by query contract) |
 | Lint/typecheck/build | `npm run lint`, `npm run typecheck`, `npm run build` | pass locally after Angular 21 / Next 16 upgrade |
 | Latest workspace test run | `npm test` | API 31 passed + 1 PostgreSQL test skipped by default; contracts 1 passed |
