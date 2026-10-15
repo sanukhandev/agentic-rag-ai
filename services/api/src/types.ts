@@ -1,4 +1,4 @@
-export type Role = 'platform_admin' | 'tenant_admin' | 'tenant_agent';
+export type Role = 'platform_admin' | 'tenant_admin' | 'tenant_editor' | 'tenant_viewer' | 'tenant_agent';
 export type Audience = 'public' | 'internal';
 export type SourceStatus = 'awaiting_review' | 'active' | 'revoked';
 export type ActionState = 'awaiting_confirmation' | 'completed' | 'failed' | 'unknown';

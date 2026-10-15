@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const roleSchema = z.enum(['platform_admin', 'tenant_admin', 'tenant_agent']);
+export const roleSchema = z.enum(['platform_admin', 'tenant_admin', 'tenant_editor', 'tenant_viewer', 'tenant_agent']);
 export type Role = z.infer<typeof roleSchema>;
 
 export const citationSchema = z.object({

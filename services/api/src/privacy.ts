@@ -12,7 +12,7 @@ export type RehydrationPurpose = 'assistant_response' | 'workflow_payload';
 
 export class TokenVault {
   private readonly masterKey: Buffer;
-  constructor(secret: string) {
+  constructor(secret: string, private readonly ttlMs = 15 * 60_000) {
     if (secret.length < 16) throw new Error('PII vault secret must be at least 16 characters.');
     this.masterKey = createHmac('sha256', secret).update('agentic-rag-pii-vault').digest();
   }
@@ -37,15 +37,32 @@ export class TokenVault {
   }
 
   save(session: Session, values: MaskResult['tokens']): void {
-    for (const item of values) session.tokenMap.set(item.token, this.encrypt(session.id, item.value));
+    for (const item of values) session.tokenMap.set(item.token, this.encrypt(session.id, JSON.stringify({ value: item.value, expiresAt: Date.now() + this.ttlMs })));
   }
 
-  has(session: Session, placeholder: string): boolean { return Boolean(session.tokenMap.get(placeholder) && this.decrypt(session.id, session.tokenMap.get(placeholder)!) !== null); }
+  private resolveValue(session: Session, placeholder: string): string | null {
+    const ciphertext = session.tokenMap.get(placeholder);
+    const encoded = ciphertext ? this.decrypt(session.id, ciphertext) : null;
+    if (!encoded) return null;
+    try {
+      const entry = JSON.parse(encoded) as { value?: unknown; expiresAt?: unknown };
+      return typeof entry.value === 'string' && typeof entry.expiresAt === 'number' && entry.expiresAt > Date.now() ? entry.value : null;
+    } catch { return null; }
+  }
+
+  has(session: Session, placeholder: string): boolean { return this.resolveValue(session, placeholder) !== null; }
 
   resolve(session: Session, placeholder: string, purpose: RehydrationPurpose): string | null {
     if (purpose !== 'assistant_response') return null;
-    const ciphertext = session.tokenMap.get(placeholder);
-    return ciphertext ? this.decrypt(session.id, ciphertext) : null;
+    return this.resolveValue(session, placeholder);
+  }
+
+  rotate(session: Session, nextVault: TokenVault): void {
+    const values = [...session.tokenMap.keys()].flatMap((placeholder) => {
+      const value = this.resolveValue(session, placeholder);
+      return value ? [{ token: placeholder, value }] : [];
+    });
+    nextVault.save(session, values);
   }
 }
 

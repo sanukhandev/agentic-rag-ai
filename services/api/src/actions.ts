@@ -56,6 +56,12 @@ export class ActionGateway {
     if (!action || action.tenantId !== tenantId) throw new Error('Action not found.');
     if (action.state === 'completed') return action;
     if (action.state !== 'awaiting_confirmation') throw new Error('Action is not confirmable.');
+    if (!Number.isFinite(Date.parse(action.createdAt)) || Date.now() - Date.parse(action.createdAt) > 15 * 60_000) {
+      const expired = { ...action, state: 'failed' as const };
+      await this.store.updateAction(expired);
+      await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.expired', metadata: { actionId }, createdAt: new Date().toISOString() });
+      return expired;
+    }
     try {
       const result = await this.adapter.execute({ workflowKey: action.workflowKey, tenantId, opaqueReference: action.opaqueReference, idempotencyKey: action.idempotencyKey });
       const updated = { ...action, state: 'completed' as const, result };

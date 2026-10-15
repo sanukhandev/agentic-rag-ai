@@ -33,6 +33,16 @@ describe('action gateway', () => {
     expect(verifyN8nPayload('shared-secret', String(timestamp - 301_000), 'nonce-1', body, signature, timestamp)).toBe(false);
   });
 
+  it('does not execute an expired confirmation', async () => {
+    const store = new MemoryStore();
+    const workflow = new MockWorkflowAdapter();
+    const gateway = new ActionGateway(store, workflow);
+    const action = await gateway.propose('tenant-a', 'session-a', 'expired');
+    await store.updateAction({ ...action, createdAt: new Date(Date.now() - 16 * 60_000).toISOString() });
+    await expect(gateway.confirm(action.id, 'tenant-a')).resolves.toMatchObject({ state: 'failed' });
+    expect(workflow.calls).toHaveLength(0);
+  });
+
   it('sends the private n8n request with a signature and no raw customer fields', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ externalReference: 'n8n-1' }), { status: 200 }));
     const adapter = new HttpN8nWorkflowAdapter('https://n8n.internal', 'shared-secret');

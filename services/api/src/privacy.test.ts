@@ -15,4 +15,18 @@ describe('privacy boundary', () => {
     expect(rehydrateForSession(session, result.masked, vault, 'workflow_payload')).not.toContain('alice@example.com');
     expect(rehydrateForSession({ ...session, id: 'other-session' }, result.masked, vault)).not.toContain('alice@example.com');
   });
+
+  it('supports key rotation and expiry without exposing the old value', () => {
+    const session = { id: 'session-rotate', tenantId: 'tenant', createdAt: new Date().toISOString(), tokenMap: new Map<string, string>() };
+    const vault = new TokenVault('test-vault-secret-2026');
+    const rotated = new TokenVault('rotated-vault-secret-2026');
+    const masked = maskPii('alice@example.com');
+    saveTokens(session, masked.tokens, vault);
+    vault.rotate(session, rotated);
+    expect(rehydrateForSession(session, masked.masked, vault)).not.toContain('alice@example.com');
+    expect(rehydrateForSession(session, masked.masked, rotated)).toContain('alice@example.com');
+    const expiredSession = { id: 'session-expired', tenantId: 'tenant', createdAt: new Date().toISOString(), tokenMap: new Map<string, string>() };
+    saveTokens(expiredSession, masked.tokens, new TokenVault('expired-vault-secret-2026', -1));
+    expect(rehydrateForSession(expiredSession, masked.masked, new TokenVault('expired-vault-secret-2026'))).not.toContain('alice@example.com');
+  });
 });

@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
   id uuid PRIMARY KEY,
   email text NOT NULL UNIQUE,
   password_hash text NOT NULL,
-  role text NOT NULL CHECK (role IN ('platform_admin', 'tenant_admin', 'tenant_agent')),
+  role text NOT NULL CHECK (role IN ('platform_admin', 'tenant_admin', 'tenant_editor', 'tenant_viewer', 'tenant_agent')),
   tenant_id uuid REFERENCES tenants(id),
   created_at timestamptz NOT NULL DEFAULT now()
 );

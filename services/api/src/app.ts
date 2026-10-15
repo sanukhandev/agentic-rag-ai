@@ -12,6 +12,7 @@ import type { SourceStatus, Store, TenantStatus } from './types.js';
 
 const passwordSchema = z.string().min(8).max(128).regex(/[A-Z]/, 'Password must contain an uppercase letter.').regex(/\d/, 'Password must contain a number.');
 const tenantSchema = z.object({ name: z.string().trim().min(2).max(120), slug: z.string().trim().regex(/^[a-z0-9-]+$/).max(80), adminEmail: z.string().email(), adminPassword: passwordSchema });
+const memberSchema = z.object({ email: z.string().email(), password: passwordSchema, role: z.enum(['tenant_editor', 'tenant_viewer', 'tenant_agent']) });
 const safePersonaText = (max: number) => z.string().trim().min(1).max(max).refine((value) => !/\b(ignore (?:all )?rules|system prompt|search the web|reveal secrets|bypass security)\b/i.test(value), 'Persona contains an unsafe instruction.');
 const personaSchema = z.object({ name: safePersonaText(80), greeting: safePersonaText(500), personality: safePersonaText(500), tone: safePersonaText(200), speakingStyle: safePersonaText(200), permittedLanguages: z.array(z.string().min(2).max(12)).min(1).max(10) });
 const sourceSchema = z.object({ title: z.string().trim().min(1).max(200), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']), sourceUrl: z.string().url().optional(), audience: z.enum(['public', 'internal']).default('public'), content: z.string().trim().min(1).max(200_000) });
@@ -68,10 +69,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const store = dependencies.store ?? new MemoryStore();
   const model = dependencies.model ?? new DeterministicGroundedModel();
   const workflow = dependencies.workflow ?? new MockWorkflowAdapter();
-  const tokenVault = dependencies.tokenVault ?? new TokenVault(process.env.PII_VAULT_KEY ?? 'local-development-pii-vault-key');
+  const nodeEnv = dependencies.nodeEnv ?? process.env.NODE_ENV ?? 'development';
+  const jwtSecret = dependencies.jwtSecret ?? process.env.JWT_SECRET ?? 'local-development-only-change-me';
+  const vaultSecret = process.env.PII_VAULT_KEY ?? 'local-development-pii-vault-key';
+  if (nodeEnv === 'production' && (!dependencies.jwtSecret && !process.env.JWT_SECRET || !process.env.PII_VAULT_KEY)) throw new Error('Production JWT_SECRET and PII_VAULT_KEY are required.');
+  const tokenVault = dependencies.tokenVault ?? new TokenVault(vaultSecret);
   const embedding = dependencies.embedding ?? new DeterministicEmbeddingProvider();
   const n8nCallbackSecret = dependencies.n8nCallbackSecret ?? process.env.N8N_WEBHOOK_SECRET ?? '';
-  const auth = new AuthService(store, dependencies.jwtSecret ?? process.env.JWT_SECRET ?? 'local-development-only-change-me');
+  const auth = new AuthService(store, jwtSecret);
   const gateway = new ActionGateway(store, workflow);
   const app = express();
   const responseCache = new Map<string, unknown>();
@@ -80,6 +85,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
 
   app.disable('x-powered-by');
   app.use(express.json({ limit: '300kb' }));
+  app.use((req, res, next) => { const origin = req.header('origin'); const allowed = new Set([process.env.WEB_ORIGIN ?? 'http://localhost:3000', process.env.ADMIN_ORIGIN ?? 'http://localhost:4200']); if (origin && allowed.has(origin)) { res.setHeader('access-control-allow-origin', origin); res.setHeader('access-control-allow-headers', 'content-type,authorization,x-request-id'); res.setHeader('access-control-allow-methods', 'GET,POST,PUT,PATCH,OPTIONS'); res.setHeader('vary', 'Origin'); } if (req.method === 'OPTIONS') { res.status(origin && allowed.has(origin) ? 204 : 403).end(); return; } next(); });
   app.use((req: AuthedRequest, res: Response, next: NextFunction) => { req.requestId = req.header('x-request-id') ?? randomUUID(); res.setHeader('x-request-id', req.requestId); next(); });
   app.use((req, res, next) => {
     if (!req.path.startsWith('/api/')) { next(); return; }
@@ -101,7 +107,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
 
   app.post('/api/v1/auth/register-platform', async (req, res, next) => {
     try {
-      if ((dependencies.nodeEnv ?? process.env.NODE_ENV ?? 'development') === 'production') throw new HttpError(404, 'NOT_FOUND', 'Not found.');
+       if (nodeEnv === 'production') throw new HttpError(404, 'NOT_FOUND', 'Not found.');
       if (await store.countUsers() > 0) throw new HttpError(409, 'BOOTSTRAP_COMPLETE', 'Platform bootstrap is already complete.');
       const input = parse(z.object({ email: z.string().email(), password: passwordSchema }), req.body);
       const user = await store.createUser({ email: input.email, passwordHash: await auth.hashPassword(input.password), role: 'platform_admin', tenantId: null });
@@ -131,6 +137,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const tenant = await store.createTenant({ name: input.name, slug: input.slug });
       const user = await store.createUser({ email: input.adminEmail, passwordHash: await auth.hashPassword(input.adminPassword), role: 'tenant_admin', tenantId: tenant.id });
       await store.setPersona({ tenantId: tenant.id, name: 'Sales assistant', greeting: 'How can I help?', personality: 'Helpful and precise.', tone: 'Clear', speakingStyle: 'Concise', permittedLanguages: ['en'] });
+      await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: getAuth(req)?.userId ?? null, eventName: 'tenant.created', metadata: { slug: tenant.slug }, createdAt: new Date().toISOString() });
       res.status(201).json({ tenant, admin: publicUser(user) });
     } catch (error) { next(error); }
   });
@@ -141,14 +148,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
 
   app.get('/api/v1/admin/members', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { res.json({ items: (await store.listUsers(await tenantForRequest(store, req))).map(publicUser) }); } catch (error) { next(error); } });
+  app.post('/api/v1/admin/members', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const input = parse(memberSchema, req.body); if (await store.getUserByEmail(input.email)) throw new HttpError(409, 'USER_EXISTS', 'Member email already exists.'); const user = await store.createUser({ email: input.email, passwordHash: await auth.hashPassword(input.password), role: input.role, tenantId }); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'member.created', metadata: { memberId: user.id, role: user.role }, createdAt: new Date().toISOString() }); res.status(201).json({ user: publicUser(user) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/dashboard/overview', protectedApi, async (req, res, next) => { try { res.json({ tenantId: await tenantForRequest(store, req), metrics: await store.getTenantStats(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.get('/api/v1/admin/services/health', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (_req, res, _next) => { const checkedAt = new Date().toISOString(); try { await store.countUsers(); res.json({ checkedAt, checks: { api: { status: 'ok' }, store: { status: 'ok' }, model: { status: 'adapter' }, embedding: { status: 'adapter' }, workflow: { status: 'adapter' }, ingestion: { status: 'not_observed' } } }); } catch { res.status(503).json({ checkedAt, checks: { api: { status: 'ok' }, store: { status: 'down' } } }); } });
 
   app.put('/api/v1/admin/persona', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
     try { const tenantId = await tenantForRequest(store, req); const input = parse(personaSchema, req.body); res.json({ persona: await store.setPersona({ tenantId, ...input }) }); } catch (error) { next(error); }
   });
   app.get('/api/v1/admin/persona', protectedApi, async (req, res, next) => { try { res.json({ persona: await store.getPersona(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
 
-  app.post('/api/v1/admin/sources', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
+  app.post('/api/v1/admin/sources', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
     try {
       const tenantId = await tenantForRequest(store, req);
       await activeTenant(store, tenantId);
@@ -210,7 +219,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       saveTokens(session, masked.tokens, tokenVault);
       await store.updateSession(session);
       const userMessage = await store.addMessage({ id: randomUUID(), sessionId: session.id, tenantId: session.tenantId, role: 'user', maskedContent: masked.masked, citations: [], clientMessageId: input.clientMessageId, response: null, createdAt: new Date().toISOString() });
-      const internal = getAuth(req)?.tenantId === session.tenantId && ['tenant_admin', 'tenant_agent', 'platform_admin'].includes(getAuth(req)?.role ?? '');
+      const internal = ensureTenant(req, session.tenantId) && getAuth(req)?.role !== undefined;
       const rows = await store.listSearchableChunks(session.tenantId, internal ? 'internal' : 'public');
        const ranked = await rankChunksWithEmbedding(masked.masked, rows, embedding, 4);
       const evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: chunk.content }));
@@ -224,7 +233,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const explicitLeadRequest = /\b(contact|call|email|interested|demo|quote)\b/i.test(masked.masked);
       const action = draft.proposedIntent === 'lead.capture' && explicitLeadRequest ? await gateway.propose(session.tenantId, session.id, input.clientMessageId) : null;
       const answer = rehydrateForSession(session, draft.answer, tokenVault);
-      const response = { messageId: randomUUID(), sessionId: session.id, answer, grounded, citations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'Please confirm that you want to submit a contact request.', expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
+      const response = { messageId: randomUUID(), sessionId: session.id, answer, grounded, citations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'Please confirm that you want to submit a contact request.', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
       await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: draft.answer, citations, clientMessageId: null, response: null, createdAt: new Date().toISOString() });
       await store.updateMessage({ ...userMessage, response });
       responseCache.set(cacheKey, response);
