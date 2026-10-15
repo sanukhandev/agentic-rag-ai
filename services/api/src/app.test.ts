@@ -53,6 +53,8 @@ describe('API vertical slice', () => {
     expect((await api.get('/api/v1/admin/members').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.items).toHaveLength(2);
     const domain = await api.post('/api/v1/admin/domains').set('Authorization', `Bearer ${adminToken}`).send({ hostname: 'chat.tenant-a.example' }).expect(201);
     expect((await api.get('/api/v1/admin/domains').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.items).toHaveLength(1);
+    await api.post('/api/v1/admin/ingestion-jobs').set('Authorization', `Bearer ${adminToken}`).send({ title: 'Approved URL', mimeType: 'text/html', sourceUrl: 'https://chat.tenant-a.example/faq', audience: 'public' }).expect(202);
+    await api.post('/api/v1/admin/ingestion-jobs').set('Authorization', `Bearer ${adminToken}`).send({ title: 'Unapproved URL', mimeType: 'text/html', sourceUrl: 'https://other.example/faq', audience: 'public' }).expect(422);
     await api.post('/api/v1/admin/domains').set('Authorization', `Bearer ${adminToken}`).send({ hostname: 'CHAT.TENANT-A.EXAMPLE' }).expect(409);
     await api.post('/api/v1/admin/domains').set('Authorization', `Bearer ${adminToken}`).send({ hostname: 'localhost' }).expect(422);
     await api.delete(`/api/v1/admin/domains/${domain.body.domain.id}`).set('Authorization', `Bearer ${adminBToken}`).expect(404);

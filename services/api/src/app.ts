@@ -64,11 +64,11 @@ const activeTenant = async (store: Store, tenantId: string) => {
 
 const sessionExpired = (createdAt: string, ttlMs: number): boolean => !Number.isFinite(Date.parse(createdAt)) || Date.parse(createdAt) + ttlMs <= Date.now();
 
-const validateSourceUrl = (sourceUrl: string | undefined): void => {
+const validateSourceUrl = async (store: Store, tenantId: string, sourceUrl: string | undefined): Promise<void> => {
   if (!sourceUrl) return;
   if (!sourceUrl.startsWith('https://')) throw new HttpError(422, 'UNSAFE_SOURCE_URL', 'Only authorized HTTPS source URLs are accepted.');
-  const hostname = new URL(sourceUrl).hostname;
-  const allowedHosts = (process.env.ALLOWED_SOURCE_HOSTS ?? '').split(',').map((host) => host.trim()).filter(Boolean);
+  const hostname = new URL(sourceUrl).hostname.toLowerCase();
+  const allowedHosts = (await store.listDomains(tenantId)).map((domain) => domain.hostname);
   if (allowedHosts.length === 0 || !allowedHosts.includes(hostname)) throw new HttpError(422, 'UNAUTHORIZED_SOURCE_HOST', 'The HTTPS source host is not allowlisted.');
 };
 
@@ -241,7 +241,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const tenantId = await tenantForRequest(store, req);
       await activeTenant(store, tenantId);
       const input = parse(ingestionRequestSchema, req.body);
-      validateSourceUrl(input.sourceUrl);
+      await validateSourceUrl(store, tenantId, input.sourceUrl);
       const job = await store.createIngestionJob({ id: randomUUID(), tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl ?? null, audience: input.audience ?? 'public' });
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'ingestion.queued', metadata: { jobId: job.id }, createdAt: new Date().toISOString() });
       res.status(202).json({ job });
@@ -253,7 +253,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const tenantId = await tenantForRequest(store, req);
       await activeTenant(store, tenantId);
       const input = parse(sourceSchema, req.body);
-      validateSourceUrl(input.sourceUrl);
+      await validateSourceUrl(store, tenantId, input.sourceUrl);
       const sourceId = randomUUID();
       const versionId = randomUUID();
       const jobId = randomUUID();

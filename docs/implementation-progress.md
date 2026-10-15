@@ -58,7 +58,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Source reindex lifecycle | API and `store-postgres.test.ts` version replacement assertions | pass (new version returns to review) |
 | Source version history | API `GET /api/v1/admin/sources/:id/versions`, memory test and PostgreSQL integration assertion | pass locally |
 | Tenant-scoped ingestion job list | API `GET /api/v1/admin/ingestion-jobs`, app assertion and Angular job panel | pass (API/build; manual browser verification pending) |
-| Tenant domain management | API domain CRUD, tenant-scoped memory/PostgreSQL store methods, migration `013-tenant-domains.sql` and Angular tenant-admin panel | pass locally; manual browser verification pending |
+| Tenant domain management | API domain CRUD, tenant-scoped memory/PostgreSQL store methods, migration `013-tenant-domains.sql`, Angular tenant-admin panel and tenant-bound approved URL-job validation | pass locally; manual browser verification pending |
 | Tenant member management | Existing tenant-scoped member API wired into Angular tenant-admin panel; API role and cross-tenant coverage in `app.test.ts` | pass locally; manual browser verification pending |
 | PostgreSQL backup/restore rehearsal | Local `pg_dump`/`psql` round trip to explicit scratch database `agentic_rag_restore_check`; restored schema verified, scratch database removed | pass locally; managed production backup/retention/restore schedule remains open |
 | Redacted operational telemetry | Authorized service-health response and Angular health panel report request count, 5xx count, average latency and last-observed timestamp without request bodies or tenant content | pass locally; production metrics backend/alerts remain open |
