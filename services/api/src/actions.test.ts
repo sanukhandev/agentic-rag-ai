@@ -22,10 +22,13 @@ describe('action gateway', () => {
 
   it('marks provider failures unknown and verifies replay-resistant signatures', async () => {
     const store = new MemoryStore();
-    const gateway = new ActionGateway(store, { execute: async () => { throw new Error('timeout'); } });
+    const gateway = new ActionGateway(store, { execute: async () => { throw new Error('alice@example.com timeout'); } });
     const action = await gateway.propose('tenant-a', 'session-a', 'client-2');
     await expect(gateway.confirm(action.id, 'tenant-a')).resolves.toMatchObject({ state: 'unknown' });
-    expect((await store.listAudit('tenant-a')).at(-1)?.eventName).toBe('workflow.unknown');
+    const audit = (await store.listAudit('tenant-a')).at(-1);
+    expect(audit?.eventName).toBe('workflow.unknown');
+    expect(audit?.metadata).toMatchObject({ reason: 'adapter_error' });
+    expect(JSON.stringify(audit?.metadata)).not.toContain('alice@example.com');
     const timestamp = Date.now();
     const body = JSON.stringify({ opaqueReference: 'lead-1' });
     const signature = signN8nPayload('shared-secret', timestamp, 'nonce-1', body);

@@ -98,10 +98,10 @@ export class ActionGateway {
       await this.store.updateAction(updated);
       await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.completed', metadata: { actionId, workflowKey: action.workflowKey }, createdAt: new Date().toISOString() });
       return updated;
-    } catch (error) {
+    } catch {
       const unknown = { ...action, state: 'unknown' as const };
       await this.store.updateAction(unknown);
-      await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.unknown', metadata: { actionId, workflowKey: action.workflowKey, reason: error instanceof Error ? error.message.slice(0, 160) : 'adapter_error' }, createdAt: new Date().toISOString() });
+      await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.unknown', metadata: { actionId, workflowKey: action.workflowKey, reason: 'adapter_error' }, createdAt: new Date().toISOString() });
       return unknown;
     }
   }
