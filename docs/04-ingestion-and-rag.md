@@ -4,7 +4,7 @@
 Only admin-approved, active, tenant-authorized documents are knowledge evidence. Original provenance, checksum, ownership, version, access policy, approval timestamp, effective/expiry dates, page and section must be recorded. A business answer must be traceable to specific approved source chunks. When two active sources conflict, do not choose arbitrarily; flag uncertainty or request owner review.
 
 ## Extensible file pipeline
-No system can accurately support literally every file type by default. Define a parser registry and explicit supported MIME extensions. Start with **UTF-8 TXT, Markdown, text-based PDF, DOCX and CSV** after proving safe parsing. Add XLSX, PPTX, HTML, JSON, images/OCR, email, archives and legacy formats behind isolated adapters with per-format validation. Scanned PDFs require dedicated OCR and quality checks. Reject unsupported, encrypted, corrupt or suspicious files with a visible reason.
+No system can accurately support literally every file type by default. Define a parser registry and explicit supported MIME extensions. Start the MVP with **DOCX (Word), XLSX (Excel), UTF-8 TXT, text-based PDF and admin-approved HTTPS webpage URL snapshots** after proving safe parsing and provenance. Markdown/CSV/PPTX/HTML-as-file/JSON, legacy .doc/.xls and OCR/image formats are extensions requiring explicit tested adapters. URL ingestion is bounded and authorized; see below. Scanned PDFs require dedicated OCR and quality checks. Reject unsupported, encrypted, corrupt or suspicious files with a visible reason.
 
 ## Pipeline stages
 1. **Receive**: admin identity, tenant, source catalog, expected MIME, size, upload cap, ACL, effective dates, version and permitted audience.
@@ -35,3 +35,6 @@ Use test corpora: small FAQ, contradictory pricing versions, expired terms, tena
 
 ## Unresolved
 Choose embedding deployment, upload storage, parser libraries, permitted external processing jurisdiction, vector dimensions, initial supported formats and quality thresholds before building this pipeline.
+
+## Initial URL source security (mandatory)
+Links are submitted by an authenticated tenant admin. Capture explicitly permitted HTTPS URL/hostname; enforce DNS/IP restrictions against loopback, private, link-local, multicast, metadata services and internal hostnames, including each redirect and DNS rebinding risk. Refuse credentials in URL, unsafe schemes, oversized pages, non-text types and fetch timeouts. Apply robots/terms policy. Do not recursively crawl by default; any crawl requires an explicitly bounded scope and approvals. Save URL/time/title/content checksum as source provenance. Only published snapshots are searchable; chat itself must not perform general web retrieval. Source ACL distinguishes `public_for_chat` from `internal_admin_only`; anonymous chat gets only approved public chunks.

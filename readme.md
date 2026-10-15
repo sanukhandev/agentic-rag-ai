@@ -1,6 +1,6 @@
 # Agentic RAG AI
 
-A planned **privacy-first, RAG-grounded omnichannel sales assistant platform**. The first client channel is a web chat; the architecture allows additional sales channels via validated channel adapters.
+A planned **privacy-first, multi-tenant, RAG-grounded sales assistant platform**. Platform admins onboard organizations; tenant admins manage approved Word/Excel/text/PDF/URL knowledge and individual agent names, tone, languages and styles. Angular admins monitor service health through Node APIs; website visitors use a Next.js tenant-scoped, source-grounded chat. The first client channel is a web chat; the architecture allows additional sales channels via validated channel adapters.
 
 **Status: documentation / architecture baseline.** The repository currently has an n8n-only Docker Compose configuration. The Next.js web app, Angular admin app, Node/Express API, Python ingestion tooling, PostgreSQL schema, pgvector retrieval, AI Foundry integration, and cross-channel orchestration are **planned, not yet implemented**.
 
@@ -29,6 +29,14 @@ A planned **privacy-first, RAG-grounded omnichannel sales assistant platform**. 
 6. Node rehydrates approved placeholders for the correct recipient, persists redacted history and returns the response.
 
 Unanswered/unsupported business questions are answered with a transparent knowledge gap—not a guess.
+
+## Build specifications
+- [Complete multi-tenant feature brief](docs/15-complete-feature-brief.md)
+- [Autonomous Codex execution plan](docs/16-autonomous-codex-execution-plan.md)
+- [Acceptance test matrix](docs/17-acceptance-test-matrix.md)
+- [Codex master prompt](docs/18-codex-master-prompt.md)
+
+**Critical:** tenant A data must never leak to tenant B. Public chat uses only knowledge explicitly classified and approved for external display; internal tenant documents remain inaccessible to visitors. Approved Azure AI processing is a separate external processor boundary, subject to minimization and policy.
 
 ## Start here
 - [Agent instructions](AGENTS.md)

@@ -34,3 +34,6 @@ Given an approved source set, answer cited business questions correctly; reject 
 
 ## Nonfunctional targets to define before go-live
 SLOs (availability and p95), ingest file limits, session retention, source update latency, RAG citation accuracy, supported languages, budget ceiling, model deployment region, accessibility target and privacy compliance jurisdiction. These are not yet selected.
+
+## Confirmed multi-tenant MVP extension (15 October 2026)
+The product is explicitly multi-tenant. The platform owner onboards organizations; organization admins log into an Angular control plane to manage their tenant, ingest DOCX/XLSX/TXT/text-PDF and approved HTTPS link snapshots, publish approved knowledge and customize name, speaking style, personality and languages. Admin dashboards monitor Node API and dependent services with tenant-scoped metrics. Each organization's Next.js website chat accesses only that organization's **publicly approved** knowledge. Unsupported factual questions abstain; no factual general-knowledge fallback. Cross-organization and restricted-source disclosure are forbidden. Full functional requirements and acceptance criteria: docs/15-complete-feature-brief.md and docs/17-acceptance-test-matrix.md.

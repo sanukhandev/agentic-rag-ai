@@ -37,3 +37,6 @@ Node stores scope-limited **masked** summaries/turns, retention and redaction ru
 
 ## Operations
 Version prompts and schemas in code, with test fixtures and release notes. Monitor grounded answer accuracy, refusal accuracy, citation precision, PII leakage rate (target zero), prompt-injection successes (target zero), token usage, latency and cost. Model/provider changes require compatibility and privacy review.
+
+## Tenant-specific persona contract
+Tenant admin may version and publish agent display name, greeting, conversational style, tone/formality, default/allowed languages and no-evidence fallback. This is presentation-only and must be constrained by immutable platform/security/tenant-ACL/grounding instructions. Disallow arbitrary tenant-provided system or tool instructions. A user's request to change persona/language cannot change accessible sources or create unsupported facts. Translations must preserve source facts, units, amounts and citations. All substantive **factual** responses must be grounded in the organization's active approved audience-visible corpus; greeting, clarification and abstention are the only non-evidence conversational exceptions. No unsourced generic world facts and no runtime internet research.

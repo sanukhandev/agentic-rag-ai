@@ -8,6 +8,15 @@ Build a source-grounded, privacy-preserving, omnichannel sales conversation plat
 ## Repository reality (15 Oct 2026)
 Only docker-compose.yml (n8n) and a placeholder readme.md existed when this documentation was written. All application directories, schemas, endpoints, commands, features, and CI below are **proposed contracts**, not implemented capabilities. Inspect actual files and history before changing anything. Never claim a feature works solely because it is described in docs.
 
+## Confirmed multi-tenant product contract
+- A **platform owner** onboards organizations/tenants. Each tenant has a verified identity/domain scope, independent approved knowledge, sessions, persona, memberships, workflows and audit. Tenant administrators only administer assigned organizations.
+- Angular admin: authenticated login and Node API-driven service/usage dashboard, tenant onboarding, source management, indexing status, persona editing, and workflow monitoring.
+- Next.js web: tenant-bound public chat via Node; no direct DB, Foundry or n8n browser calls. Visitors see only explicitly approved **public-for-chat** source facts for that tenant.
+- Initial ingest: Word DOCX, Excel XLSX, TXT, text-based PDF and explicitly approved HTTPS webpage links; safe parsing and URL snapshot ingestion. Unsupported/legacy formats require explicit adapter support.
+- Per-tenant agent name, greeting, personality/tone, speaking style, default/allowed languages and fallback are **presentation-only**. They never override grounding, security, tool, privacy or tenant access rules.
+- Strict source-only answering for all factual statements (beyond greetings, clarifications and abstentions), no online browsing or generic world-fact fallback. Strict tenant + source visibility isolation and no unapproved data disclosure.
+- Azure-hosted AI receives minimal approved masked source excerpts, which is cross-boundary processing requiring provider/data-owner review. Never claim cloud processing entails zero transfer outside the organization. See docs/15-complete-feature-brief.md and docs/16-autonomous-codex-execution-plan.md.
+
 ## Non-negotiable rules
 1. Ground **every factual business/product/service claim** in authorized, active retrieved sources. If evidence is missing, contradictory, unauthorized, stale, or low-confidence, acknowledge the gap. No invented prices, offers, eligibility, timelines, locations, guarantees, citations, or policies.
 2. Keep customer PII and reversible token mappings **inside the trusted Node/backend + secured PostgreSQL boundary**. Sanitize inputs, conversation memory, telemetry, workflow payloads, embeddings, and prompts before sending to Azure AI Foundry or n8n. No customer secrets in prompts.
@@ -61,3 +70,7 @@ A feature includes source-of-truth path, data-flow diagram (if new integration),
 - docs/12-delivery-roadmap.md — implementation sequence
 - docs/13-decisions-and-open-questions.md — decisions yet to make
 - docs/14-feature-request-template.md — task prompt template
+- docs/15-complete-feature-brief.md — definitive multi-tenant feature brief
+- docs/16-autonomous-codex-execution-plan.md — phased build and quality gates
+- docs/17-acceptance-test-matrix.md — exhaustive positive/negative validation
+- docs/18-codex-master-prompt.md — ready-to-use autonomous implementation prompt

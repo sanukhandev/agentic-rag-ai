@@ -39,3 +39,6 @@ Use this template in a new coding agent task. Replace placeholders and include r
 
 ## Mandatory stop conditions
 Request a decision rather than fabricate customer policies, price/service data, legal basis, real integration credentials, embedding dimensions, token rehydration recipients, production domains or unauthorized workflows. Do not claim that actions ran if tools/credentials are unavailable.
+
+## Multi-tenant feature requirements
+Include explicit persona version, audience scope (`public_for_chat` vs internal), affected tenant, authorized roles, and whether data is permitted to reach Azure. For source features, require DOCX/XLSX/TXT/PDF/URL-specific fixtures and malformed/SSRF tests. For dashboard features, require Node-only metrics APIs and tenant-isolated redacted output. Refer to docs/15-complete-feature-brief.md, docs/16-autonomous-codex-execution-plan.md, and docs/17-acceptance-test-matrix.md.

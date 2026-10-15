@@ -33,3 +33,6 @@ Start with a small **synthetic** FAQ corpus: upload → parse → embed → appr
 - Normal and negative test evidence recorded
 - Operator failure/rollback path documented
 - Feature marked complete only if implementation and checks exist
+
+## Detailed phased execution
+The canonical execution breakdown and gate checklist are in docs/16-autonomous-codex-execution-plan.md (P00–P10). In the current project scope, tenant administration, authentication, source lifecycle and persona are **core MVP**, not optional future features. Move them before end-to-end acceptance. See docs/17-acceptance-test-matrix.md and docs/18-codex-master-prompt.md.

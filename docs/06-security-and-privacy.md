@@ -49,3 +49,8 @@ Use service-specific DB roles: application records, knowledge search, ingestion 
 
 ## Go-live blockers
 Public HTTP n8n, missing auth, unsecured key management, absence of tests for prompt injection/cross-tenant leaks/token rehydration, unapproved model data region, unreviewed PII in embeddings, and missing source ACL enforcement are launch blockers.
+
+## Multi-tenant publication and external processing clarification
+Enforce strict cross-organization isolation for sources, files, vectors, session history, personas, analytics, token vault and actions. Tenant-scoped authentication and SQL/pgvector/RLS guardrails apply even when IDs are guessed or prompts are malicious. Classify sources as explicit `public_for_chat` or internal; only published public content is returned to outside website visitors. Internal material may not be exposed outside its authorized organization.
+
+Azure AI Foundry and separate embedding deployments are external processing boundaries unless hosted within an approved organizational environment. Sending permitted source excerpts to a cloud model **does transmit content to a processor**; implement tenant-level processing approval, appropriate agreements, region and minimization, or choose private/local models if org policy truly forbids external transmission. Never assert absolute non-disclosure with a cloud dependency. Source URLs must be independently validated against SSRF, malicious redirects and private-network addresses on every request.

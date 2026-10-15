@@ -7,6 +7,11 @@ This log explicitly separates accepted requirements from pending architecture ch
 - Source data may arrive in diverse file formats; Python transforms approved extractable content into vector embeddings and stores them in pgvector.
 - Azure AI Foundry GPT-4.1-mini handles response generation; Node orchestrates conversation, evidence, identity and n8n actions.
 - Start with web; preserve a common Node API for later sales channels.
+- Multi-tenant organizations are in initial scope; platform admin provisions tenants, tenant admins manage their workspace, and source/chat/persona/analytics are strictly isolated.
+- Angular admin requires authenticated login and Node API-based service/usage dashboards.
+- Initial source formats are Word DOCX, Excel XLSX, TXT, text-based PDF and HTTPS link snapshots after safe validation.
+- Each tenant configures the agent's name, greeting, tone/style and default/allowed languages; persona never changes permissions or facts.
+- Public visitor chat sees only tenant-approved publicly publishable content, never internal tenant material.
 - RAG is authoritative for factual company claims; no unsupported assumptions.
 - Node masks/tokenizes customer details and is the sole authorized reversible-identity boundary.
 - n8n executes approved workflow actions; Node—not the LLM—authorizes invocation.
@@ -21,7 +26,7 @@ This log explicitly separates accepted requirements from pending architecture ch
 ## Open decisions requiring explicit approval
 | ID | Topic | Decision needed |
 | --- | --- | --- |
-| D-01 | Tenant scope | Single business vs multi-tenant MVP; how identity maps to tenant |
+| D-01 | Tenant scope | **Multi-tenant is confirmed**; decide verified public channel binding, domains, invitation flow and tenant ID resolution |
 | D-02 | Auth | Anonymous web chat, customer identity, admin SSO/RBAC, channel verification |
 | D-03 | Azure | Foundry resource region, endpoint/API, credential mode, exact GPT-4.1-mini deployment |
 | D-04 | Embeddings | Approved embedding model/deployment, dimensions, rate limits, re-embed strategy |
