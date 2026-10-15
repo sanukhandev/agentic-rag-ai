@@ -49,5 +49,15 @@ This log explicitly separates accepted requirements from pending architecture ch
 - **Medium**: variable format extraction fidelity, particularly OCR, charts and table units.
 - **Medium**: embedding provider/model migration alters dimensions and recall; require versioning/re-index.
 
+## Implementation decisions — local MVP vertical slice
+
+These decisions are scoped to the local implementation and do not approve production rollout.
+
+- **D-12 local implementation**: npm workspaces, Node 22, TypeScript strict mode, Vitest, and Python 3.12 in a containerized venv/test command.
+- **D-04 local implementation**: deterministic 8-dimensional embeddings for tests and demo data. A separate embedding adapter boundary is required before selecting a real Azure embedding deployment or changing pgvector dimensions.
+- **D-02 local implementation**: signed development JWTs with tenant memberships and roles. Replace with approved SSO/MFA before real users or customer traffic.
+- **D-10 local implementation**: one `lead.capture` mock action through an injectable private workflow adapter. It accepts only a masked opaque reference, requires confirmation, is idempotent, and records an audit event.
+- **D-05 local implementation**: source text is staged in the application repository boundary for deterministic tests. Production storage must move to approved private object storage with malware scanning and retention controls.
+
 ## ADR template
 ID / status (proposed|accepted|superseded) / date / context / alternatives / decision / consequences / security-review owner / affected docs/tests. Only mark accepted following an explicit product/engineering decision.

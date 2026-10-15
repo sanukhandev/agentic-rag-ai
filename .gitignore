@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.next/
+out/
+coverage/
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+tools/ingestion/.venv/
+tools/ingestion/__pycache__/
+tools/ingestion/**/*.pyc
+data/
+.angular/
+
+login

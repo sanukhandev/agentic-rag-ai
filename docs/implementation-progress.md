@@ -1,0 +1,47 @@
+# Implementation progress
+
+Status: in progress (local MVP vertical slice)
+
+The requested `docs/15-complete-feature-brief.md`, `docs/16-autonomous-codex-execution-plan.md`, `docs/17-acceptance-test-matrix.md`, and `docs/18-codex-master-prompt.md` are not present in the repository. Until they are added, `AGENTS.md` and `docs/01–14` are the source of truth. This file records actual implementation and verification; a checked box means the corresponding command or test was executed successfully.
+
+## Phase gates
+
+- [x] P00: repository audit, security constraints, missing-document gap recorded
+- [ ] P01: workspace, API, UI, database migration, ingestion and CI foundation
+- [ ] P02: validated source ingestion, versioning, approval and retrieval
+- [ ] P03: tenant-aware chat, PII masking, citations and fail-closed model boundary
+- [ ] P04: guarded, confirmed, idempotent mock n8n action
+- [ ] P05: admin operations, audit, observability and security regression coverage
+- [ ] P06–P10: future channels, production identity, provider hardening, load/restore and go-live review
+
+## Decisions for this local vertical slice
+
+- npm workspaces with Node 22 and TypeScript strict mode.
+- A deterministic 8-dimensional embedding double is used locally; the production embedding deployment and dimension remain configurable and must be selected before real data. The pgvector migration is explicitly marked local-demo-only.
+- In-memory repositories make unit and deterministic end-to-end tests repeatable. A parameterized PostgreSQL/pgvector adapter and migration are included for integration and deployment work.
+- Azure AI Foundry and n8n are injectable adapters. Tests use deterministic model and private mock workflow doubles; no live credential or production call is claimed.
+- Authentication is a signed development JWT boundary with RBAC and tenant resolution. Production SSO/MFA/KMS decisions remain open.
+- The admin and web applications call only the Node API; secrets are server-side.
+
+## Acceptance evidence ledger
+
+This section is updated after verification. No scenario is marked passing from source inspection alone.
+
+| Scenario | Evidence | Status |
+| --- | --- | --- |
+| Two tenants remain isolated during retrieval | API integration test | pending |
+| Tenant admin can approve and revoke a source | API integration test | pending |
+| PII is masked before model/embedding/workflow boundaries | privacy unit/integration tests | pending |
+| Approved evidence is cited | RAG unit/integration tests | pending |
+| Unsupported facts are refused | grounding test | pending |
+| Prompt injection in source is treated as data | security test | pending |
+| Confirmed action is idempotent and audited | action gateway test | pending |
+| Next web chat flow builds | web build | pending |
+| Angular admin flow builds | admin build | pending |
+| Python ingestion tests pass | containerized Python test | pending |
+
+## Blockers and risks
+
+- The local workstation has no Python executable, so Python checks must use the pinned container image until Python is installed or CI is available.
+- No Azure, identity-provider or production n8n credentials are available. Live calls are intentionally not attempted.
+- The existing root n8n Compose file is still a public HTTP development deployment and is not a production security baseline.

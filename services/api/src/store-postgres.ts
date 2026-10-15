@@ -1,0 +1,55 @@
+import { Pool } from 'pg';
+import { randomUUID } from 'node:crypto';
+import type { ActionRequest, AuditEvent, Chunk, Message, Persona, Session, Source, SourceStatus, Store, Tenant, User } from './types.js';
+
+const iso = (value: Date | string): string => value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+const vectorLiteral = (values: number[]): string => `[${values.join(',')}]`;
+
+export class PostgresStore implements Store {
+  constructor(private readonly pool: Pool) {}
+  async countUsers(): Promise<number> { const result = await this.pool.query<{ count: string }>('SELECT count(*)::text AS count FROM users'); return Number(result.rows[0]?.count ?? 0); }
+  async createTenant(input: { name: string; slug: string }): Promise<Tenant> { const result = await this.pool.query('INSERT INTO tenants (id,name,slug) VALUES ($1,$2,$3) RETURNING *', [randomUUID(), input.name, input.slug]); return this.tenant(result.rows[0]); }
+  async getTenant(id: string): Promise<Tenant | null> { const result = await this.pool.query('SELECT * FROM tenants WHERE id=$1', [id]); return result.rows[0] ? this.tenant(result.rows[0]) : null; }
+  async getTenantBySlug(slug: string): Promise<Tenant | null> { const result = await this.pool.query('SELECT * FROM tenants WHERE slug=$1', [slug]); return result.rows[0] ? this.tenant(result.rows[0]) : null; }
+  async listTenants(): Promise<Tenant[]> { const result = await this.pool.query('SELECT * FROM tenants ORDER BY created_at'); return result.rows.map((row) => this.tenant(row)); }
+  async createUser(input: { email: string; passwordHash: string; role: User['role']; tenantId: string | null }): Promise<User> { const result = await this.pool.query('INSERT INTO users (id,email,password_hash,role,tenant_id) VALUES ($1,$2,$3,$4,$5) RETURNING *', [randomUUID(), input.email.toLowerCase(), input.passwordHash, input.role, input.tenantId]); return this.user(result.rows[0]); }
+  async getUserByEmail(email: string): Promise<User | null> { const result = await this.pool.query('SELECT * FROM users WHERE email=$1', [email.toLowerCase()]); return result.rows[0] ? this.user(result.rows[0]) : null; }
+  async getUser(id: string): Promise<User | null> { const result = await this.pool.query('SELECT * FROM users WHERE id=$1', [id]); return result.rows[0] ? this.user(result.rows[0]) : null; }
+  async setPersona(persona: Persona): Promise<Persona> { const result = await this.pool.query('INSERT INTO agent_personas (tenant_id,name,greeting,personality,tone,speaking_style,permitted_languages) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (tenant_id) DO UPDATE SET name=EXCLUDED.name,greeting=EXCLUDED.greeting,personality=EXCLUDED.personality,tone=EXCLUDED.tone,speaking_style=EXCLUDED.speaking_style,permitted_languages=EXCLUDED.permitted_languages,updated_at=now() RETURNING *', [persona.tenantId, persona.name, persona.greeting, persona.personality, persona.tone, persona.speakingStyle, persona.permittedLanguages]); return this.persona(result.rows[0]); }
+  async getPersona(tenantId: string): Promise<Persona | null> { const result = await this.pool.query('SELECT * FROM agent_personas WHERE tenant_id=$1', [tenantId]); return result.rows[0] ? this.persona(result.rows[0]) : null; }
+  async createSource(input: Omit<Source, 'createdAt' | 'approvedAt'> & { chunks: Chunk[] }): Promise<Source> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query('INSERT INTO knowledge_sources (id,tenant_id,title,mime_type,source_url,audience,status,version_id,content_hash) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *', [input.id, input.tenantId, input.title, input.mimeType, input.sourceUrl, input.audience, input.status, input.versionId, input.contentHash]);
+      for (const chunk of input.chunks) await client.query('INSERT INTO source_chunks (id,source_id,tenant_id,version_id,ordinal,locator,content,content_hash,embedding) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::vector)', [chunk.id, chunk.sourceId, chunk.tenantId, chunk.versionId, chunk.ordinal, chunk.locator, chunk.content, chunk.contentHash, vectorLiteral(chunk.embedding)]);
+      await client.query('COMMIT');
+      return this.source(result.rows[0]);
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+  }
+  async getSource(id: string): Promise<Source | null> { const result = await this.pool.query('SELECT * FROM knowledge_sources WHERE id=$1', [id]); return result.rows[0] ? this.source(result.rows[0]) : null; }
+  async listSources(tenantId: string): Promise<Source[]> { const result = await this.pool.query('SELECT * FROM knowledge_sources WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId]); return result.rows.map((row) => this.source(row)); }
+  async setSourceStatus(id: string, tenantId: string, status: SourceStatus): Promise<Source | null> { const result = await this.pool.query('UPDATE knowledge_sources SET status=$1,approved_at=CASE WHEN $1=\'active\' THEN now() ELSE approved_at END WHERE id=$2 AND tenant_id=$3 RETURNING *', [status, id, tenantId]); return result.rows[0] ? this.source(result.rows[0]) : null; }
+  async listSearchableChunks(tenantId: string, audience: 'public' | 'internal'): Promise<Array<{ source: Source; chunk: Chunk }>> {
+    const result = await this.pool.query('SELECT s.*,c.id AS chunk_id,c.source_id AS chunk_source_id,c.tenant_id AS chunk_tenant_id,c.version_id AS chunk_version_id,c.ordinal,c.locator,c.content,c.content_hash AS chunk_content_hash,c.embedding::text AS embedding_text FROM knowledge_sources s JOIN source_chunks c ON c.source_id=s.id AND c.version_id=s.version_id WHERE s.tenant_id=$1 AND s.status=\'active\' AND (s.audience=\'public\' OR $2=\'internal\') ORDER BY c.ordinal', [tenantId, audience]);
+    return result.rows.map((row) => ({ source: this.source(row), chunk: { id: row.chunk_id, sourceId: row.chunk_source_id, tenantId: row.chunk_tenant_id, versionId: row.chunk_version_id, ordinal: row.ordinal, locator: row.locator, content: row.content, contentHash: row.chunk_content_hash, embedding: String(row.embedding_text).replace(/[\[\]]/g, '').split(',').filter(Boolean).map(Number) } }));
+  }
+  async createSession(tenantId: string): Promise<Session> { const id = randomUUID(); const result = await this.pool.query('INSERT INTO chat_sessions (id,tenant_id) VALUES ($1,$2) RETURNING *', [id, tenantId]); return { id: result.rows[0].id, tenantId: result.rows[0].tenant_id, createdAt: iso(result.rows[0].created_at), tokenMap: new Map() }; }
+  async getSession(id: string): Promise<Session | null> { const result = await this.pool.query('SELECT * FROM chat_sessions WHERE id=$1', [id]); return result.rows[0] ? { id: result.rows[0].id, tenantId: result.rows[0].tenant_id, createdAt: iso(result.rows[0].created_at), tokenMap: new Map() } : null; }
+  async addMessage(message: Message): Promise<Message> { await this.pool.query('INSERT INTO chat_messages (id,session_id,tenant_id,role,masked_content,citations,client_message_id) VALUES ($1,$2,$3,$4,$5,$6,$7)', [message.id, message.sessionId, message.tenantId, message.role, message.maskedContent, JSON.stringify(message.citations), message.clientMessageId]); return message; }
+  async getMessageByClientId(sessionId: string, clientMessageId: string): Promise<Message | null> { const result = await this.pool.query('SELECT * FROM chat_messages WHERE session_id=$1 AND client_message_id=$2', [sessionId, clientMessageId]); return result.rows[0] ? this.message(result.rows[0]) : null; }
+  async createAction(action: ActionRequest): Promise<ActionRequest> { await this.pool.query('INSERT INTO action_requests (id,tenant_id,session_id,workflow_key,idempotency_key,state,opaque_reference) VALUES ($1,$2,$3,$4,$5,$6,$7)', [action.id, action.tenantId, action.sessionId, action.workflowKey, action.idempotencyKey, action.state, action.opaqueReference]); return action; }
+  async getAction(id: string): Promise<ActionRequest | null> { const result = await this.pool.query('SELECT * FROM action_requests WHERE id=$1', [id]); return result.rows[0] ? this.action(result.rows[0]) : null; }
+  async getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null> { const result = await this.pool.query('SELECT * FROM action_requests WHERE tenant_id=$1 AND idempotency_key=$2', [tenantId, idempotencyKey]); return result.rows[0] ? this.action(result.rows[0]) : null; }
+  async updateAction(action: ActionRequest): Promise<ActionRequest> { await this.pool.query('UPDATE action_requests SET state=$1 WHERE id=$2 AND tenant_id=$3', [action.state, action.id, action.tenantId]); return action; }
+  async listActions(tenantId: string): Promise<ActionRequest[]> { const result = await this.pool.query('SELECT * FROM action_requests WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId]); return result.rows.map((row) => this.action(row)); }
+  async addAudit(event: AuditEvent): Promise<void> { await this.pool.query('INSERT INTO audit_events (id,tenant_id,actor_id,event_name,metadata) VALUES ($1,$2,$3,$4,$5)', [event.id, event.tenantId, event.actorId, event.eventName, JSON.stringify(event.metadata)]); }
+  async listAudit(tenantId: string): Promise<AuditEvent[]> { const result = await this.pool.query('SELECT * FROM audit_events WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId]); return result.rows.map((row) => ({ id: row.id, tenantId: row.tenant_id, actorId: row.actor_id, eventName: row.event_name, metadata: row.metadata, createdAt: iso(row.created_at) })); }
+
+  private tenant(row: any): Tenant { return { id: row.id, name: row.name, slug: row.slug, createdAt: iso(row.created_at) }; }
+  private user(row: any): User { return { id: row.id, email: row.email, passwordHash: row.password_hash, role: row.role, tenantId: row.tenant_id, createdAt: iso(row.created_at) }; }
+  private persona(row: any): Persona { return { tenantId: row.tenant_id, name: row.name, greeting: row.greeting, personality: row.personality, tone: row.tone, speakingStyle: row.speaking_style, permittedLanguages: row.permitted_languages }; }
+  private source(row: any): Source { return { id: row.id, tenantId: row.tenant_id, title: row.title, mimeType: row.mime_type, sourceUrl: row.source_url, audience: row.audience, status: row.status, versionId: row.version_id, contentHash: row.content_hash, createdAt: iso(row.created_at), approvedAt: row.approved_at ? iso(row.approved_at) : null }; }
+  private message(row: any): Message { return { id: row.id, sessionId: row.session_id, tenantId: row.tenant_id, role: row.role, maskedContent: row.masked_content, citations: row.citations, clientMessageId: row.client_message_id, createdAt: iso(row.created_at) }; }
+  private action(row: any): ActionRequest { return { id: row.id, tenantId: row.tenant_id, sessionId: row.session_id, workflowKey: row.workflow_key, idempotencyKey: row.idempotency_key, state: row.state, opaqueReference: row.opaque_reference, createdAt: iso(row.created_at), result: null }; }
+}

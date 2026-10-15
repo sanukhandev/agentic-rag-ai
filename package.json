@@ -1,0 +1,24 @@
+{
+  "name": "agentic-rag-ai",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "dev:api": "npm --workspace services/api run dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "dev:admin": "npm --workspace apps/admin run start",
+    "db:up": "docker compose -f infra/docker-compose.dev.yml up -d postgres",
+    "db:down": "docker compose -f infra/docker-compose.dev.yml down",
+    "db:migrate": "docker compose -f infra/docker-compose.dev.yml exec -T postgres psql -U agentic -d agentic_rag < infra/postgres/001-schema.sql"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
