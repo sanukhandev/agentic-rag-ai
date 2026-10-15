@@ -58,7 +58,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Failed ingestion retry | Tenant-scoped audited `failed` → `queued` API transition and Angular retry action | pass locally |
 | Private file staging | Node `ingestion-staging.test.ts`, Python `tools/ingestion/ingestion/staging.py` unittest copy/purge assertion, worker `--staging-root` | pass locally; production object storage/malware scanning remains open |
 | Python approved HTTPS-to-API worker client | `tools/ingestion/test_ingestion.py` URL snapshot test; CLI supports `--url`, `--title` and repeated `--allowed-host` | pass (mock transport) |
-| Unsafe ingestion inputs | Python tests reject `.doc`/`.xls`, private DNS targets and redirects | pass locally |
+| Unsafe ingestion inputs | Python tests reject `.doc`/`.xls`, private DNS targets, redirects and DNS-rebinding address changes | pass locally |
 | SQL-level vector retrieval filters | `store-postgres.test.ts` with pgvector query | pass (local vector dimension) |
 | Source reindex lifecycle | API and `store-postgres.test.ts` version replacement assertions | pass (new version returns to review) |
 | Source version history | API `GET /api/v1/admin/sources/:id/versions`, memory test and PostgreSQL integration assertion | pass locally |

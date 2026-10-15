@@ -120,6 +120,16 @@ class IngestionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Redirects"):
                 fetch_authorized_https("https://approved.example/redirect", {"approved.example"})
 
+        response = Mock(status_code=200, encoding="utf-8")
+        response.iter_content.return_value = [b"<html><body>Rebound</body></html>"]
+        response.raise_for_status.return_value = None
+        public = (None, None, None, None, ("93.184.216.34", 443))
+        private = (None, None, None, None, ("10.0.0.8", 443))
+        with patch("ingestion.pipeline.socket.getaddrinfo", side_effect=[[public], [private]]), patch("requests.get", return_value=response) as request:
+            with self.assertRaisesRegex(ValueError, "Private"):
+                fetch_authorized_https("https://approved.example/rebound", {"approved.example"})
+            request.assert_called_once()
+
     def test_url_ingestion_keeps_approved_snapshot_url_and_sanitizes_content(self) -> None:
         response = Mock(status_code=200, encoding="utf-8")
         response.iter_content.return_value = [b"<html><body>Pricing is 42 credits. Email alice@example.com</body></html>"]

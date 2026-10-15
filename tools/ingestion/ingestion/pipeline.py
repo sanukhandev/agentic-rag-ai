@@ -79,6 +79,28 @@ def _safe_path(path: Path) -> Path:
     return resolved
 
 
+def _public_addresses(hostname: str, port: int) -> set[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    try:
+        addresses = {ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)}
+    except (OSError, ValueError) as error:
+        raise ValueError("Website host could not be resolved safely.") from error
+    if any(address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_multicast or address.is_unspecified for address in addresses):
+        raise ValueError("Private and local network targets are not allowed.")
+    return addresses
+
+
+def _response_peer(response: object) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    raw = getattr(response, "raw", None)
+    connection = getattr(raw, "_connection", None) or getattr(raw, "connection", None)
+    sock = getattr(connection, "sock", None)
+    if sock is None:
+        return None
+    try:
+        return ipaddress.ip_address(sock.getpeername()[0])
+    except (OSError, ValueError, IndexError, TypeError):
+        return None
+
+
 def extract_file(path: Path) -> tuple[str, str]:
     path = _safe_path(path)
     suffix = path.suffix.lower()
@@ -123,12 +145,7 @@ def fetch_authorized_https(url: str, allowed_hosts: set[str]) -> tuple[str, str]
     allowed = {host.strip().lower() for host in allowed_hosts}
     if parsed.scheme != "https" or not hostname or hostname not in allowed or parsed.username or parsed.password or parsed.port not in (None, 443):
         raise ValueError("Website ingestion requires an allowlisted HTTPS host.")
-    try:
-        addresses = {ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(hostname, parsed.port or 443, type=socket.SOCK_STREAM)}
-    except (OSError, ValueError) as error:
-        raise ValueError("Website host could not be resolved safely.") from error
-    if any(address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_multicast or address.is_unspecified for address in addresses):
-        raise ValueError("Private and local network targets are not allowed.")
+    addresses = _public_addresses(hostname, parsed.port or 443)
     import requests
     from bs4 import BeautifulSoup
 
@@ -136,6 +153,10 @@ def fetch_authorized_https(url: str, allowed_hosts: set[str]) -> tuple[str, str]
     response.raise_for_status()
     if 300 <= response.status_code < 400:
         raise ValueError("Redirects are not accepted for website ingestion; approve the final host explicitly.")
+    rebound_addresses = _public_addresses(hostname, parsed.port or 443)
+    peer = _response_peer(response)
+    if peer and (peer.is_private or peer.is_loopback or peer.is_link_local or peer.is_reserved or peer.is_multicast or peer.is_unspecified or peer not in addresses | rebound_addresses):
+        raise ValueError("Website connection did not remain on an approved public address.")
     chunks: list[bytes] = []
     size = 0
     for chunk in response.iter_content(chunk_size=64 * 1024):
