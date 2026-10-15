@@ -74,6 +74,7 @@ export interface Message {
   maskedContent: string;
   citations: Citation[];
   clientMessageId: string | null;
+  response: Record<string, unknown> | null;
   createdAt: string;
 }
 
@@ -106,6 +107,14 @@ export interface AuditEvent {
   createdAt: string;
 }
 
+export interface TenantStats {
+  sourceCounts: Record<SourceStatus, number>;
+  sessions: number;
+  messages: number;
+  actions: number;
+  auditEvents: number;
+}
+
 export interface Store {
   countUsers(): Promise<number>;
   createTenant(input: { name: string; slug: string }): Promise<Tenant>;
@@ -127,7 +136,9 @@ export interface Store {
   listSearchableChunks(tenantId: string, audience: Audience): Promise<Array<{ source: Source; chunk: Chunk }>>;
   createSession(tenantId: string): Promise<Session>;
   getSession(id: string): Promise<Session | null>;
+  updateSession(session: Session): Promise<Session>;
   addMessage(message: Message): Promise<Message>;
+  updateMessage(message: Message): Promise<Message>;
   getMessageByClientId(sessionId: string, clientMessageId: string): Promise<Message | null>;
   createAction(action: ActionRequest): Promise<ActionRequest>;
   getAction(id: string): Promise<ActionRequest | null>;
@@ -136,4 +147,5 @@ export interface Store {
   listActions(tenantId: string): Promise<ActionRequest[]>;
   addAudit(event: AuditEvent): Promise<void>;
   listAudit(tenantId: string): Promise<AuditEvent[]>;
+  getTenantStats(tenantId: string): Promise<TenantStats>;
 }

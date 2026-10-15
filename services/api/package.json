@@ -25,6 +25,8 @@
     "@types/node": "^22.15.21",
     "@types/pg": "^8.15.4",
     "@types/supertest": "^6.0.3",
+    "@typescript-eslint/eslint-plugin": "^8.71.2",
+    "@typescript-eslint/parser": "^8.71.2",
     "eslint": "^9.22.0",
     "supertest": "^7.1.1",
     "tsx": "^4.19.3",

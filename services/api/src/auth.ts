@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { createHash } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import type { NextFunction, Request, Response } from 'express';
 import type { Role, Store, User } from './types.js';
@@ -15,6 +16,7 @@ export type AuthedRequest = Request & { auth?: AuthContext; requestId?: string }
 const userToContext = (user: User): AuthContext => ({ userId: user.id, email: user.email, role: user.role, tenantId: user.tenantId });
 
 export class AuthService {
+  private readonly revoked = new Map<string, number>();
   constructor(private readonly store: Store, private readonly secret: string) {}
 
   async hashPassword(password: string): Promise<string> { return bcrypt.hash(password, 12); }
@@ -22,8 +24,14 @@ export class AuthService {
 
   issue(user: User): string { return jwt.sign(userToContext(user), this.secret, { expiresIn: '2h', issuer: 'agentic-rag-api' }); }
 
+  revoke(token: string): void { this.revoked.set(createHash('sha256').update(token).digest('hex'), Date.now() + 2 * 60 * 60 * 1000); }
+
   async verify(token: string): Promise<AuthContext | null> {
     try {
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+      const expiry = this.revoked.get(tokenHash);
+      if (expiry && expiry > Date.now()) return null;
+      if (expiry) this.revoked.delete(tokenHash);
       const decoded = jwt.verify(token, this.secret, { issuer: 'agentic-rag-api' });
       if (!decoded || typeof decoded === 'string') return null;
       const payload = decoded as jwt.JwtPayload & Partial<AuthContext>;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DeterministicEmbeddingProvider } from './embedding.js';
-import { buildChunks, buildChunksWithEmbeddings, chunkText, embedText, rankChunks, rankChunksWithEmbedding } from './knowledge.js';
+import { buildChunks, buildChunksWithEmbeddings, chunkText, embedText, hasConflictingEvidence, rankChunks, rankChunksWithEmbedding } from './knowledge.js';
 
 describe('knowledge pipeline primitives', () => {
   it('chunks deterministically and emits the configured local vector dimension', () => {
@@ -27,5 +27,10 @@ describe('knowledge pipeline primitives', () => {
     expect(chunks[0]?.embedding).toHaveLength(provider.dimension);
     expect(await rankChunksWithEmbedding('What is the pricing?', rows, provider)).toHaveLength(1);
     expect(rankChunks('What is the pricing?', rows)).toHaveLength(1);
+  });
+
+  it('flags active evidence that shares a topic but disagrees on numeric facts', () => {
+    expect(hasConflictingEvidence(['The plan costs 100 credits per month.', 'The plan costs 200 credits per month.'])).toBe(true);
+    expect(hasConflictingEvidence(['The plan costs 100 credits.', 'Support is available by email.'])).toBe(false);
   });
 });

@@ -59,11 +59,19 @@ CREATE TABLE IF NOT EXISTS source_chunks (
 
 CREATE INDEX IF NOT EXISTS source_chunks_tenant_idx ON source_chunks (tenant_id, source_id, version_id);
 CREATE INDEX IF NOT EXISTS knowledge_sources_active_idx ON knowledge_sources (tenant_id, status, audience);
+CREATE UNIQUE INDEX IF NOT EXISTS knowledge_sources_tenant_hash_idx ON knowledge_sources (tenant_id, content_hash);
 
 CREATE TABLE IF NOT EXISTS chat_sessions (
   id uuid PRIMARY KEY,
   tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS session_tokens (
+  session_id uuid NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+  token text NOT NULL,
+  ciphertext text NOT NULL,
+  PRIMARY KEY (session_id, token)
 );
 
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -74,6 +82,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   masked_content text NOT NULL,
   citations jsonb NOT NULL DEFAULT '[]'::jsonb,
   client_message_id text,
+  response jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(session_id, client_message_id)
 );
@@ -86,6 +95,7 @@ CREATE TABLE IF NOT EXISTS action_requests (
   idempotency_key text NOT NULL,
   state text NOT NULL,
   opaque_reference text NOT NULL,
+  result jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(tenant_id, idempotency_key)
 );

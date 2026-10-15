@@ -2,7 +2,7 @@
 
 A planned **privacy-first, multi-tenant, RAG-grounded sales assistant platform**. Platform admins onboard organizations; tenant admins manage approved Word/Excel/text/PDF/URL knowledge and individual agent names, tone, languages and styles. Angular admins monitor service health through Node APIs; website visitors use a Next.js tenant-scoped, source-grounded chat. The first client channel is a web chat; the architecture allows additional sales channels via validated channel adapters.
 
-**Status: local MVP vertical slice in progress.** The repository now contains the Next.js customer chat, Angular admin surface, Node/Express API, typed contracts, deterministic source-grounded retrieval, PII masking, PostgreSQL/pgvector schema/adapter, Python ingestion tool, and guarded mock workflow path. Production identity, encryption-backed vault persistence, live Azure calls and live private n8n calls remain explicitly blocked until their contracts and credentials are approved.
+**Status: local MVP vertical slice in progress.** The repository now contains the Next.js customer chat, Angular admin surface, Node/Express API, typed contracts, deterministic source-grounded retrieval, encrypted session PII vault, PostgreSQL/pgvector schema/adapter, Python ingestion tool, and guarded mock/private workflow adapters. Production identity, live Azure calls and live private n8n calls remain explicitly blocked until their contracts and credentials are approved.
 
 ## Target stack
 
@@ -68,10 +68,10 @@ npm run dev:web
 npm run dev:admin
 ```
 
-For the PostgreSQL/pgvector adapter, apply the migration from `infra/postgres/001-schema.sql`, set `STORE=postgres` and `DATABASE_URL` from `.env.example`, then start the API. The Python worker is under `tools/ingestion`; it supports TXT, Markdown, CSV, DOCX, XLSX, text PDF and allowlisted HTTPS snapshots, and must run in a project venv. No real customer data or credentials belong in the repository.
+For the PostgreSQL/pgvector adapter, run `npm run db:migrate`, set `STORE=postgres` and `DATABASE_URL` from `.env.example`, then start the API. The Python worker is under `tools/ingestion`; it supports TXT, Markdown, CSV, DOCX, XLSX, text PDF and bounded allowlisted HTTPS snapshots, and must run in a project venv. No real customer data or credentials belong in the repository.
 
 The root `docker-compose.yml` remains the existing n8n-only development deployment. `infra/docker-compose.dev.yml` is the private local PostgreSQL/pgvector service; neither compose file is a production deployment.
 
 ## Current verification and limitations
 
-`npm run typecheck`, `npm test`, and `npm run build` pass for the checked-in work. The API tests exercise synthetic tenant A/B isolation, public/internal source visibility, citations, unsupported-answer refusal, PII masking and confirmed idempotent mock workflow execution. Python tests and a live PostgreSQL smoke test were not run on the original workstation because Python was unavailable and Docker Desktop was not running. Azure AI Foundry, identity-provider, and live n8n calls are adapter-level blockers, not claimed successes. See [implementation progress](docs/implementation-progress.md).
+The verified local commands are `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, `npm run db:migrate`, the PostgresStore integration test with `DATABASE_URL`, and the Python unittest suite. Azure AI Foundry, production identity-provider, and live n8n calls are adapter-level blockers, not claimed successes. See [implementation progress](docs/implementation-progress.md).

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type Citation = { title: string; locator: string };
 type Reply = { answer: string; grounded: boolean; citations: Citation[]; actionProposal?: { id: string; confirmation: string } | null };
+type Config = { tenant: { name: string; slug: string }; persona: { name: string; greeting: string; tone: string; speakingStyle: string; permittedLanguages: string[] } | null };
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 export default function Home() {
@@ -13,6 +14,15 @@ export default function Home() {
   const [replies, setReplies] = useState<Reply[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [config, setConfig] = useState<Config | null>(null);
+
+  useEffect(() => {
+    if (!/^[a-z0-9-]+$/.test(tenantSlug)) { setConfig(null); return; }
+    void fetch(`${api}/api/v1/chat/config?tenantSlug=${encodeURIComponent(tenantSlug)}`).then(async (response) => {
+      if (!response.ok) throw new Error('Tenant chat is unavailable.');
+      setConfig(await response.json() as Config);
+    }).catch(() => setConfig(null));
+  }, [tenantSlug]);
 
   const send = async () => {
     setBusy(true); setError('');
@@ -39,7 +49,7 @@ export default function Home() {
   };
 
   return <main className="mx-auto flex min-h-screen max-w-4xl flex-col px-5 py-10">
-    <header className="mb-8"><p className="mb-2 text-sm font-semibold uppercase tracking-[0.28em] text-cyan-300">Agentic RAG AI</p><h1 className="text-4xl font-semibold tracking-tight">Answers with evidence, not guesses.</h1><p className="mt-3 max-w-2xl text-slate-300">Ask a tenant’s sales assistant. Only approved, audience-authorized source material can support a business claim.</p></header>
+    <header className="mb-8"><p className="mb-2 text-sm font-semibold uppercase tracking-[0.28em] text-cyan-300">Agentic RAG AI</p><h1 className="text-4xl font-semibold tracking-tight">Answers with evidence, not guesses.</h1><p className="mt-3 max-w-2xl text-slate-300">Ask a tenant’s sales assistant. Only approved, audience-authorized source material can support a business claim.</p>{config?.persona && <p className="mt-4 rounded-lg border border-cyan-900 bg-cyan-950/30 p-3 text-sm text-cyan-100">{config.persona.name}: {config.persona.greeting} · {config.persona.tone}</p>}</header>
     <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5 shadow-2xl">
       <label className="block text-sm text-slate-300">Tenant slug<input value={tenantSlug} onChange={(event) => setTenantSlug(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-cyan-400" disabled={Boolean(sessionId)} /></label>
       <div className="mt-6 space-y-4">{replies.map((reply, index) => <article key={index} className="rounded-xl border border-slate-700 bg-slate-950/60 p-4"><p className="leading-7">{reply.answer}</p><p className={`mt-3 text-xs ${reply.grounded ? 'text-emerald-300' : 'text-amber-300'}`}>{reply.grounded ? 'Grounded in approved evidence' : 'No approved evidence — no claim made'}</p>{reply.citations.length > 0 && <ul className="mt-2 text-xs text-slate-400">{reply.citations.map((citation) => <li key={`${citation.title}-${citation.locator}`}>Source: {citation.title} · {citation.locator}</li>)}</ul>}{reply.actionProposal && <button onClick={() => void confirm(reply.actionProposal!.id)} className="mt-4 rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950">{reply.actionProposal.confirmation}</button>}</article>)}</div>

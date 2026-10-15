@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, Chunk, Message, Persona, Session, Source, SourceStatus, Store, Tenant, TenantStatus, User } from './types.js';
+import type { ActionRequest, AuditEvent, Chunk, Message, Persona, Session, Source, SourceStatus, Store, Tenant, TenantStatus, TenantStats, User } from './types.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -29,7 +29,7 @@ export class MemoryStore implements Store {
   async setTenantStatus(id: string, status: TenantStatus): Promise<Tenant | null> {
     const tenant = this.tenants.get(id);
     if (!tenant) return null;
-    const updated = { ...tenant, status, publicChatEnabled: status === 'active' && tenant.publicChatEnabled };
+    const updated = { ...tenant, status };
     this.tenants.set(id, updated);
     return updated;
   }
@@ -79,7 +79,9 @@ export class MemoryStore implements Store {
     return session;
   }
   async getSession(id: string): Promise<Session | null> { return this.sessions.get(id) ?? null; }
+  async updateSession(session: Session): Promise<Session> { this.sessions.set(session.id, session); return session; }
   async addMessage(message: Message): Promise<Message> { this.messages.set(message.id, message); return message; }
+  async updateMessage(message: Message): Promise<Message> { this.messages.set(message.id, message); return message; }
   async getMessageByClientId(sessionId: string, clientMessageId: string): Promise<Message | null> {
     return [...this.messages.values()].find((message) => message.sessionId === sessionId && message.clientMessageId === clientMessageId) ?? null;
   }
@@ -93,6 +95,10 @@ export class MemoryStore implements Store {
   async listActions(tenantId: string): Promise<ActionRequest[]> { return [...this.actions.values()].filter((action) => action.tenantId === tenantId); }
   async addAudit(event: AuditEvent): Promise<void> { this.audits.push(event); }
   async listAudit(tenantId: string): Promise<AuditEvent[]> { return this.audits.filter((event) => event.tenantId === tenantId); }
+  async getTenantStats(tenantId: string): Promise<TenantStats> {
+    const sources = [...this.sources.values()].filter((source) => source.tenantId === tenantId);
+    return { sourceCounts: { awaiting_review: sources.filter((source) => source.status === 'awaiting_review').length, active: sources.filter((source) => source.status === 'active').length, revoked: sources.filter((source) => source.status === 'revoked').length }, sessions: [...this.sessions.values()].filter((session) => session.tenantId === tenantId).length, messages: [...this.messages.values()].filter((message) => message.tenantId === tenantId).length, actions: [...this.actions.values()].filter((action) => action.tenantId === tenantId).length, auditEvents: this.audits.filter((event) => event.tenantId === tenantId).length };
+  }
 }
 
 export const contentHash = (content: string): string => createHash('sha256').update(content).digest('hex');

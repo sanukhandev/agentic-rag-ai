@@ -84,3 +84,19 @@ const rankWithEmbedding = <T extends { chunk: { embedding: number[] } }>(query: 
 export const rankChunks = <T extends { chunk: { embedding: number[] } }>(query: string, rows: T[], limit = 4): T[] => rankWithEmbedding(query, rows, embedText(query), limit);
 
 export const rankChunksWithEmbedding = async <T extends { chunk: { embedding: number[] } }>(query: string, rows: T[], provider: EmbeddingProvider, limit = 4): Promise<T[]> => rankWithEmbedding(query, rows, await provider.embed(query), limit);
+
+export const hasConflictingEvidence = (contents: string[]): boolean => {
+  for (let leftIndex = 0; leftIndex < contents.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < contents.length; rightIndex += 1) {
+      const left = contents[leftIndex] ?? '';
+      const right = contents[rightIndex] ?? '';
+      const leftTerms = new Set(left.toLowerCase().match(/[a-z]{4,}/g) ?? []);
+      const rightTerms = new Set(right.toLowerCase().match(/[a-z]{4,}/g) ?? []);
+      const sharedTopic = [...leftTerms].some((term) => rightTerms.has(term));
+      const leftFacts = new Set(left.match(/\b\d+(?:\.\d+)?\b/g) ?? []);
+      const rightFacts = new Set(right.match(/\b\d+(?:\.\d+)?\b/g) ?? []);
+      if (sharedTopic && leftFacts.size > 0 && rightFacts.size > 0 && [...leftFacts].some((fact) => !rightFacts.has(fact))) return true;
+    }
+  }
+  return false;
+};
