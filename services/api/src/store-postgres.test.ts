@@ -33,6 +33,10 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       await store.updateAction({ ...action, state: 'completed', result: { externalReference: 'run-1' } });
       expect((await store.getAction(action.id))?.result).toEqual({ externalReference: 'run-1' });
       expect((await store.getTenantStats(tenant.id)).sourceCounts.active).toBe(1);
+      const currentChunks = await store.listSourceChunks(source.id, tenant.id);
+      const nextVersion = randomUUID();
+      const reindexed = await store.replaceSourceVersion({ sourceId: source.id, tenantId: tenant.id, versionId: nextVersion, contentHash: source.contentHash, chunks: [{ ...currentChunks[0]!, id: randomUUID(), versionId: nextVersion }] });
+      expect(reindexed).toMatchObject({ id: source.id, versionId: nextVersion, status: 'awaiting_review' });
     } finally {
       await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
       await pool.end();

@@ -120,5 +120,10 @@ describe('API vertical slice', () => {
     const result = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/result`).set('x-ingestion-worker-secret', 'worker-secret').send({ normalizedContent, contentHash: contentHash(normalizedContent), parserVersion: 'test-parser', chunks: [{ ordinal: 0, locator: 'page 2', content: chunkContent, contentHash: contentHash(chunkContent) }] }).expect(201);
     expect(result.body.source).toMatchObject({ tenantId: tenant.body.tenant.id, title: 'Worker FAQ', status: 'awaiting_review' });
     expect((await api.get(`/api/v1/admin/ingestion-jobs/${job.body.job.id}`).set('Authorization', `Bearer ${admin.body.token}`).expect(200)).body.job).toMatchObject({ status: 'completed', sourceId: result.body.source.id, attempts: 1 });
+    await api.post(`/api/v1/admin/sources/${result.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const reindexed = await api.post(`/api/v1/admin/sources/${result.body.source.id}/reindex`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    expect(reindexed.body.source).toMatchObject({ id: result.body.source.id, status: 'awaiting_review' });
+    expect(reindexed.body.source.versionId).not.toBe(result.body.source.versionId);
+    expect(reindexed.body.job).toMatchObject({ status: 'completed', sourceId: result.body.source.id });
   });
 });

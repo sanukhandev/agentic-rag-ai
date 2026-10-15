@@ -64,6 +64,15 @@ export class MemoryStore implements Store {
     this.sources.set(id, updated);
     return updated;
   }
+  async listSourceChunks(sourceId: string, tenantId: string): Promise<Chunk[]> { const source = this.sources.get(sourceId); return source && source.tenantId === tenantId ? [...this.chunks.values()].filter((chunk) => chunk.sourceId === sourceId && chunk.tenantId === tenantId && chunk.versionId === source.versionId).sort((left, right) => left.ordinal - right.ordinal) : []; }
+  async replaceSourceVersion(input: { sourceId: string; tenantId: string; versionId: string; contentHash: string; chunks: Chunk[] }): Promise<Source | null> {
+    const source = this.sources.get(input.sourceId);
+    if (!source || source.tenantId !== input.tenantId) return null;
+    for (const chunk of input.chunks) this.chunks.set(chunk.id, chunk);
+    const updated: Source = { ...source, versionId: input.versionId, contentHash: input.contentHash, status: 'awaiting_review', approvedAt: null };
+    this.sources.set(source.id, updated);
+    return updated;
+  }
   async createIngestionJob(input: { id: string; tenantId: string; title: string; mimeType: string; sourceUrl: string | null; audience: 'public' | 'internal' }): Promise<IngestionJob> {
     const timestamp = now();
     const job: IngestionJob = { id: input.id, tenantId: input.tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl, audience: input.audience, sourceId: null, status: 'queued', attempts: 0, errorCode: null, leaseExpiresAt: null, createdAt: timestamp, updatedAt: timestamp };
@@ -86,7 +95,7 @@ export class MemoryStore implements Store {
       .filter((chunk) => chunk.tenantId === tenantId)
       .flatMap((chunk) => {
         const source = this.sources.get(chunk.sourceId);
-        if (!source || source.status !== 'active' || (source.audience !== 'public' && audience !== 'internal')) return [];
+        if (!source || source.status !== 'active' || chunk.versionId !== source.versionId || (source.audience !== 'public' && audience !== 'internal')) return [];
         return [{ source, chunk }];
       });
   }

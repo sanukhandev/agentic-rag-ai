@@ -237,6 +237,32 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   };
   app.post('/api/v1/admin/sources/:id/publish', protectedApi, requireRoles('tenant_admin'), setSourceStatus('active'));
   app.post('/api/v1/admin/sources/:id/revoke', protectedApi, requireRoles('tenant_admin'), setSourceStatus('revoked'));
+  app.post('/api/v1/admin/sources/:id/reindex', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      await activeTenant(store, tenantId);
+      const source = await store.getSource(routeParam(req, 'id'));
+      if (!source || source.tenantId !== tenantId) throw new HttpError(404, 'SOURCE_NOT_FOUND', 'Source not found.');
+      const currentChunks = await store.listSourceChunks(source.id, tenantId);
+      if (currentChunks.length === 0) throw new HttpError(422, 'SOURCE_EMPTY', 'The source has no current chunks to reindex.');
+      const createdJob = await store.createIngestionJob({ id: randomUUID(), tenantId, title: source.title, mimeType: source.mimeType, sourceUrl: source.sourceUrl, audience: source.audience });
+      const job = await store.claimIngestionJob(createdJob.id, 60_000);
+      if (!job) throw new HttpError(409, 'INGESTION_BUSY', 'The reindex job could not be claimed.');
+      try {
+        const versionId = randomUUID();
+        const chunks = await buildIngestionChunksWithEmbeddings({ id: source.id, tenantId, versionId }, currentChunks.map((chunk) => ({ ordinal: chunk.ordinal, locator: chunk.locator, content: chunk.content, contentHash: chunk.contentHash })), embedding);
+        const updated = await store.replaceSourceVersion({ sourceId: source.id, tenantId, versionId, contentHash: source.contentHash, chunks });
+        if (!updated) throw new HttpError(404, 'SOURCE_NOT_FOUND', 'Source not found.');
+        const completed = await store.updateIngestionJob({ ...job, sourceId: updated.id, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'source.reindexed', metadata: { sourceId: source.id, jobId: job.id, versionId }, createdAt: new Date().toISOString() });
+        res.json({ job: completed, source: updated, ingestion: { status: 'awaiting_review', chunks: chunks.length } });
+      } catch (error) {
+        const errorCode = error instanceof HttpError ? error.code : 'INGESTION_FAILED';
+        await store.updateIngestionJob({ ...job, status: 'failed', errorCode, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        throw error;
+      }
+    } catch (error) { next(error); }
+  });
   app.get('/api/v1/admin/ingestion-jobs/:id', protectedApi, async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const job = await store.getIngestionJob(routeParam(req, 'id')); if (!job || job.tenantId !== tenantId) throw new HttpError(404, 'JOB_NOT_FOUND', 'Ingestion job not found.'); const source = job.sourceId ? await store.getSource(job.sourceId) : null; res.json({ job, source: source ? { id: source.id, versionId: source.versionId, status: source.status } : null }); } catch (error) { next(error); } });
   app.post('/api/v1/internal/ingestion-jobs/:id/claim', workerApi, async (req, res, next) => {
     try {
