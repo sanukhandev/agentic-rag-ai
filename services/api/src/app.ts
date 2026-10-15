@@ -15,7 +15,7 @@ const tenantSchema = z.object({ name: z.string().trim().min(2).max(120), slug: z
 const memberSchema = z.object({ email: z.string().email(), password: passwordSchema, role: z.enum(['tenant_editor', 'tenant_viewer', 'tenant_agent']) });
 const safePersonaText = (max: number) => z.string().trim().min(1).max(max).refine((value) => !/\b(ignore (?:all )?rules|system prompt|search the web|reveal secrets|bypass security)\b/i.test(value), 'Persona contains an unsafe instruction.');
 const personaSchema = z.object({ name: safePersonaText(80), greeting: safePersonaText(500), personality: safePersonaText(500), tone: safePersonaText(200), speakingStyle: safePersonaText(200), permittedLanguages: z.array(z.string().min(2).max(12)).min(1).max(10) });
-const sourceSchema = z.object({ title: z.string().trim().min(1).max(200), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']), sourceUrl: z.string().url().optional(), audience: z.enum(['public', 'internal']).default('public'), content: z.string().trim().min(1).max(200_000) });
+const sourceSchema = z.object({ title: z.string().trim().min(1).max(200), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'text/html', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']), sourceUrl: z.string().url().optional(), audience: z.enum(['public', 'internal']).default('public'), content: z.string().trim().min(1).max(200_000) });
 const ingestionRequestSchema = sourceSchema.omit({ content: true });
 const ingestionResultSchema = z.object({
   normalizedContent: z.string().min(1).max(200_000),
@@ -245,7 +245,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   };
   app.post('/api/v1/admin/sources/:id/publish', protectedApi, requireRoles('tenant_admin'), setSourceStatus('active'));
   app.post('/api/v1/admin/sources/:id/revoke', protectedApi, requireRoles('tenant_admin'), setSourceStatus('revoked'));
-  app.post('/api/v1/admin/sources/:id/reindex', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
+  app.post('/api/v1/admin/sources/:id/reindex', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
     try {
       const tenantId = await tenantForRequest(store, req);
       await activeTenant(store, tenantId);
@@ -271,6 +271,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
     } catch (error) { next(error); }
   });
+  app.get('/api/v1/admin/ingestion-jobs', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listIngestionJobs(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/ingestion-jobs/:id', protectedApi, async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const job = await store.getIngestionJob(routeParam(req, 'id')); if (!job || job.tenantId !== tenantId) throw new HttpError(404, 'JOB_NOT_FOUND', 'Ingestion job not found.'); const source = job.sourceId ? await store.getSource(job.sourceId) : null; res.json({ job, source: source ? { id: source.id, versionId: source.versionId, status: source.status } : null }); } catch (error) { next(error); } });
   app.post('/api/v1/internal/ingestion-jobs/:id/claim', workerApi, async (req, res, next) => {
     try {

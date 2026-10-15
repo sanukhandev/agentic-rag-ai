@@ -173,6 +173,7 @@ export interface Store {
   replaceSourceVersion(input: { sourceId: string; tenantId: string; versionId: string; contentHash: string; chunks: Chunk[] }): Promise<Source | null>;
   createIngestionJob(input: { id: string; tenantId: string; title: string; mimeType: string; sourceUrl: string | null; audience: Audience }): Promise<IngestionJob>;
   getIngestionJob(id: string): Promise<IngestionJob | null>;
+  listIngestionJobs(tenantId: string): Promise<IngestionJob[]>;
   claimIngestionJob(id: string, leaseMs: number): Promise<IngestionJob | null>;
   updateIngestionJob(job: IngestionJob): Promise<IngestionJob>;
   listSearchableChunks(tenantId: string, audience: Audience): Promise<Array<{ source: Source; chunk: Chunk }>>;

@@ -147,5 +147,8 @@ describe('API vertical slice', () => {
     const versions = await api.get(`/api/v1/admin/sources/${result.body.source.id}/versions`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     expect(versions.body.items).toHaveLength(2);
     expect(versions.body.items[0]).toMatchObject({ sourceId: result.body.source.id, versionId: reindexed.body.source.versionId });
+    const jobs = await api.get('/api/v1/admin/ingestion-jobs').set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    expect(jobs.body.items.length).toBeGreaterThanOrEqual(1);
+    expect(jobs.body.items[0]).toMatchObject({ tenantId: tenant.body.tenant.id, status: 'completed' });
   });
 });

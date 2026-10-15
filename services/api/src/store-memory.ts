@@ -89,6 +89,7 @@ export class MemoryStore implements Store {
     return job;
   }
   async getIngestionJob(id: string): Promise<IngestionJob | null> { return this.ingestionJobs.get(id) ?? null; }
+  async listIngestionJobs(tenantId: string): Promise<IngestionJob[]> { return [...this.ingestionJobs.values()].filter((job) => job.tenantId === tenantId).sort((left, right) => right.createdAt.localeCompare(left.createdAt)); }
   async claimIngestionJob(id: string, leaseMs: number): Promise<IngestionJob | null> {
     const job = this.ingestionJobs.get(id);
     if (!job) return null;
