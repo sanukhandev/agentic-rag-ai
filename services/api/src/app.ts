@@ -258,6 +258,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const tenantId = await tenantForRequest(store, req);
       await activeTenant(store, tenantId);
       const input = parse(sourceSchema, req.body);
+      if (['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(input.mimeType)) throw new HttpError(422, 'PYTHON_INGESTION_REQUIRED', 'Binary sources must use the file upload and Python ingestion worker.');
       await validateSourceUrl(store, tenantId, input.sourceUrl);
       const sourceId = randomUUID();
       const versionId = randomUUID();
