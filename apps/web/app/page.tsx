@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { isValidTenantSlug } from './chat-utils';
 
 type Citation = { title: string; locator: string };
 type Reply = { answer: string; grounded: boolean; citations: Citation[]; actionProposal?: { id: string; confirmation: string } | null };
@@ -17,7 +18,7 @@ export default function Home() {
   const [config, setConfig] = useState<Config | null>(null);
 
   useEffect(() => {
-    if (!/^[a-z0-9-]+$/.test(tenantSlug)) { setConfig(null); return; }
+    if (!isValidTenantSlug(tenantSlug)) { setConfig(null); return; }
     void fetch(`${api}/api/v1/chat/config?tenantSlug=${encodeURIComponent(tenantSlug)}`).then(async (response) => {
       if (!response.ok) throw new Error('Tenant chat is unavailable.');
       setConfig(await response.json() as Config);

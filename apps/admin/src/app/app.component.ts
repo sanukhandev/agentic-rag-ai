@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { fileMimeType } from './upload-utils';
 
 type Source = { id: string; title: string; status: string; audience: string; mimeType: string };
 type IngestionJob = { id: string; title: string; sourceUrl: string | null; status: string; attempts: number; errorCode: string | null; updatedAt: string };
@@ -50,8 +51,7 @@ export class AppComponent {
   uploadFile(): void {
     const file = this.selectedFile;
     if (!file) { this.error = 'Choose a TXT, PDF, DOCX or XLSX file first.'; return; }
-    const extension = file.name.toLowerCase().split('.').pop() ?? '';
-    const mimeType = ({ txt: 'text/plain', md: 'text/markdown', pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } as Record<string, string>)[extension];
+    const mimeType = fileMimeType(file.name);
     if (!mimeType) { this.error = 'Unsupported file type.'; return; }
     const reader = new FileReader();
     reader.onload = () => {
