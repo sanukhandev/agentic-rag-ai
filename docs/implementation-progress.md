@@ -43,7 +43,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Persona editor fields | Angular tenant editor now exposes personality and permitted languages; draft, preview and publish payloads use normalized language values with unit coverage | pass locally; manual browser verification pending |
 | Prompt injection in source is treated as data | model prompt contract plus API test where injected evidence proposes a lead without explicit user intent | pass for the local deterministic/mock boundary; broader adversarial corpus remains a production hardening task |
 | Conflicting active evidence is not chosen arbitrarily | `knowledge.test.ts`, API conflict guard | pass (numeric contradiction heuristic) |
-| Confirmed action is idempotent and audited | `actions.test.ts`, API integration test | pass (mock adapter) |
+| Confirmed action is idempotent and audited | `actions.test.ts`, including simultaneous confirmation serialization, plus API integration test | pass locally; multi-instance production requires a database claim/transaction |
 | Callback replay is rejected across store-backed instances | API callback replay assertion plus `claimCallbackNonce` memory/PostgreSQL tests and migration `011-callback-nonces.sql` | pass locally; live n8n blocked |
 | Next web chat flow builds | `npm run build` | pass |
 | Web chat session continuity | Next client restores masked assistant history from the tenant-scoped session API, persists the session key, and provides reset/retry controls; history mapper unit-tested | pass locally; manual browser verification pending |

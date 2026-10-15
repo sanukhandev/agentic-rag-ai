@@ -42,6 +42,9 @@ export class MockWorkflowAdapter implements WorkflowAdapter {
 }
 
 export class ActionGateway {
+  // shortcut: the local API runs one process; replace with a database claim/transaction before multi-instance deployment.
+  private readonly confirmations = new Map<string, Promise<ActionRequest>>();
+
   constructor(private readonly store: Store, private readonly adapter: WorkflowAdapter) {}
 
   async propose(tenantId: string, sessionId: string, idempotencyKey: string): Promise<ActionRequest> {
@@ -52,6 +55,15 @@ export class ActionGateway {
   }
 
   async confirm(actionId: string, tenantId: string): Promise<ActionRequest> {
+    const key = `${tenantId}:${actionId}`;
+    const pending = this.confirmations.get(key);
+    if (pending) return pending;
+    const confirmation = this.confirmInternal(actionId, tenantId);
+    this.confirmations.set(key, confirmation);
+    try { return await confirmation; } finally { this.confirmations.delete(key); }
+  }
+
+  private async confirmInternal(actionId: string, tenantId: string): Promise<ActionRequest> {
     const action = await this.store.getAction(actionId);
     if (!action || action.tenantId !== tenantId) throw new Error('Action not found.');
     if (action.state === 'completed') return action;

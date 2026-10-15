@@ -43,6 +43,24 @@ describe('action gateway', () => {
     expect(workflow.calls).toHaveLength(0);
   });
 
+  it('serializes simultaneous confirmations for one action', async () => {
+    const store = new MemoryStore();
+    let release!: () => void;
+    let started!: () => void;
+    const adapterStarted = new Promise<void>((resolve) => { started = resolve; });
+    const adapterRelease = new Promise<void>((resolve) => { release = resolve; });
+    const workflow = { execute: async () => { started(); await adapterRelease; return { externalReference: 'run-once' }; } };
+    const gateway = new ActionGateway(store, workflow);
+    const action = await gateway.propose('tenant-a', 'session-a', 'concurrent');
+    const first = gateway.confirm(action.id, 'tenant-a');
+    await adapterStarted;
+    const second = gateway.confirm(action.id, 'tenant-a');
+    release();
+    const [completed, retried] = await Promise.all([first, second]);
+    expect(completed).toMatchObject({ state: 'completed', result: { externalReference: 'run-once' } });
+    expect(retried).toEqual(completed);
+  });
+
   it('sends the private n8n request with a signature and no raw customer fields', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ externalReference: 'n8n-1' }), { status: 200 }));
     const adapter = new HttpN8nWorkflowAdapter('https://n8n.internal', 'shared-secret');
