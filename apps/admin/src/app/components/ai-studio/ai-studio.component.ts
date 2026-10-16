@@ -191,7 +191,14 @@ import { BadgeComponent } from '../shared/badge.component';
                   <app-icon name="sparkles" classNames="w-4 h-4 text-neutral-700"></app-icon>
                   <h3 class="text-sm font-semibold text-neutral-900">Grounding Preview Sandbox</h3>
                 </div>
-                <app-badge variant="success" [showDot]="true" text="Strict Mode"></app-badge>
+                <button
+                  type="button"
+                  (click)="openFullCustomerChat()"
+                  class="text-[11px] text-neutral-600 hover:text-neutral-900 flex items-center gap-1 font-medium hover:underline"
+                >
+                  <span>Open Full Chat</span>
+                  <app-icon name="arrow-up-right" classNames="w-3 h-3"></app-icon>
+                </button>
               </div>
               <p class="mt-1 text-xs text-neutral-500">
                 Test prompts in real-time. Verified responses highlight source citations; unverified questions trigger safe abstention.
@@ -303,49 +310,15 @@ export class AiStudioComponent {
   }
 
   saveDraft(): void {
-    const newVersion: PersonaVersion = {
-      ...this.persona,
-      id: `pv-${Math.random().toString(36).substring(2, 6)}`,
-      version: this.versions.length + 1,
-      status: 'draft',
-      createdAt: new Date().toISOString(),
-      publishedAt: null
-    };
-    this.state.personaVersions$.next([newVersion, ...this.versions]);
-    this.state.showToast('info', 'Draft Saved', `Persona v${newVersion.version} saved as draft.`);
+    this.state.personaService.saveDraft(this.persona);
   }
 
   publishCurrent(): void {
-    const newVersion: PersonaVersion = {
-      ...this.persona,
-      id: `pv-${Math.random().toString(36).substring(2, 6)}`,
-      version: this.versions.length + 1,
-      status: 'published',
-      createdAt: new Date().toISOString(),
-      publishedAt: new Date().toISOString()
-    };
-    const updated = this.versions.map((v) => ({ ...v, status: 'draft' as const }));
-    this.state.personaVersions$.next([newVersion, ...updated]);
-    this.state.persona$.next(this.persona);
-    this.state.showToast('success', 'Persona Published', `v${newVersion.version} is now active across all customer channels.`);
+    this.state.personaService.publishVersion(this.persona);
   }
 
   rollbackTo(ver: PersonaVersion): void {
-    const updated = this.versions.map((v) => ({
-      ...v,
-      status: v.id === ver.id ? ('published' as const) : ('draft' as const),
-      publishedAt: v.id === ver.id ? new Date().toISOString() : v.publishedAt
-    }));
-    this.state.personaVersions$.next(updated);
-    this.state.persona$.next({
-      name: ver.name,
-      greeting: ver.greeting,
-      personality: ver.personality,
-      tone: ver.tone,
-      speakingStyle: ver.speakingStyle,
-      permittedLanguages: [...ver.permittedLanguages]
-    });
-    this.state.showToast('info', 'Rollback Executed', `Active persona reverted to v${ver.version}.`);
+    this.state.personaService.rollbackTo(ver);
   }
 
   setPrompt(p: string): void {
@@ -358,5 +331,9 @@ export class AiStudioComponent {
     this.currentPrompt = this.testInput;
     this.testInput = '';
     this.previewAnswer = 'According to active verified documentation (SOC-2 Type II Whitepaper & MSA v4.2), all operations strictly enforce mutual TLS encryption and private VPC peering.';
+  }
+
+  openFullCustomerChat(): void {
+    this.state.setSection('chat');
   }
 }

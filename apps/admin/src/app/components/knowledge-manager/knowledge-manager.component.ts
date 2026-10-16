@@ -1,9 +1,8 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { HttpClient } from '@angular/common/http';
 import { AdminStateService } from '../../services/admin-state.service';
-import { Source, SourceStatus, SourceAudience } from '../../types/admin.types';
+import { Source } from '../../types/admin.types';
 import { fileMimeType } from '../../upload-utils';
 import { IconComponent } from '../shared/icon.component';
 import { BadgeComponent } from '../shared/badge.component';
@@ -462,88 +461,17 @@ export class KnowledgeManagerComponent {
     }
 
     const title = this.uploadTitle || this.selectedFile.name;
-    const fakeJobId = `job-${Math.random().toString(36).substring(2, 6)}`;
-    
-    // Add optimistic job
-    this.state.ingestionJobs$.next([
-      {
-        id: fakeJobId,
-        title,
-        sourceUrl: null,
-        status: 'processing',
-        attempts: 1,
-        errorCode: null,
-        updatedAt: new Date().toISOString(),
-        mimeType: mime
-      },
-      ...this.state.ingestionJobs$.value
-    ]);
-
-    this.state.showToast('success', 'File Ingestion Queued', `${title} submitted to Python worker.`);
+    this.state.knowledge.queueOptimisticUpload(title, mime, this.uploadAudience);
     this.selectedFile = null;
     this.uploadTitle = '';
     this.activeTab = 'catalog';
-
-    // Simulate completion
-    setTimeout(() => {
-      this.state.ingestionJobs$.next(
-        this.state.ingestionJobs$.value.map((j) => j.id === fakeJobId ? { ...j, status: 'completed' as const, chunksIndexed: 84 } : j)
-      );
-      this.state.sources$.next([
-        {
-          id: `src-${Math.random().toString(36).substring(2, 6)}`,
-          title,
-          status: 'awaiting_review',
-          audience: this.uploadAudience,
-          mimeType: mime,
-          chunkCount: 84,
-          createdAt: new Date().toISOString()
-        },
-        ...this.state.sources$.value
-      ]);
-      this.state.showToast('info', 'Document Ready for Review', `${title} chunked into 84 vectors.`);
-    }, 2500);
   }
 
   submitCrawl(): void {
     if (!this.crawlTitle || !this.crawlUrl) return;
-    const fakeJobId = `job-${Math.random().toString(36).substring(2, 6)}`;
-    
-    this.state.ingestionJobs$.next([
-      {
-        id: fakeJobId,
-        title: this.crawlTitle,
-        sourceUrl: this.crawlUrl,
-        status: 'processing',
-        attempts: 1,
-        errorCode: null,
-        updatedAt: new Date().toISOString(),
-        mimeType: 'text/html'
-      },
-      ...this.state.ingestionJobs$.value
-    ]);
-
-    this.state.showToast('success', 'URL Crawl Queued', `Crawling snapshot for ${this.crawlUrl}`);
+    this.state.knowledge.queueOptimisticCrawl(this.crawlTitle, this.crawlUrl);
     this.crawlTitle = '';
     this.crawlUrl = '';
     this.activeTab = 'catalog';
-
-    setTimeout(() => {
-      this.state.ingestionJobs$.next(
-        this.state.ingestionJobs$.value.map((j) => j.id === fakeJobId ? { ...j, status: 'completed' as const, chunksIndexed: 32 } : j)
-      );
-      this.state.sources$.next([
-        {
-          id: `src-${Math.random().toString(36).substring(2, 6)}`,
-          title: `Snapshot: ${this.crawlUrl}`,
-          status: 'awaiting_review',
-          audience: 'public',
-          mimeType: 'text/html',
-          chunkCount: 32,
-          createdAt: new Date().toISOString()
-        },
-        ...this.state.sources$.value
-      ]);
-    }, 2000);
   }
 }

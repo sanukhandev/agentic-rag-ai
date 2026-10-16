@@ -1,6 +1,5 @@
 import { Component, ElementRef, HostListener, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
 import { NavSection, Tenant } from '../../types/admin.types';
 import { IconComponent } from '../shared/icon.component';
@@ -22,7 +21,7 @@ interface MegaMenuColumn {
 @Component({
   selector: 'app-top-nav',
   standalone: true,
-  imports: [CommonModule, FormsModule, IconComponent, BadgeComponent],
+  imports: [CommonModule, IconComponent, BadgeComponent],
   template: `
     <header class="sticky top-0 z-40 w-full border-b border-neutral-200/80 bg-white/95 backdrop-blur-md">
       <!-- Main Top Bar -->
@@ -110,6 +109,17 @@ interface MegaMenuColumn {
                 classNames="w-3 h-3 transition-transform duration-200"
                 [ngClass]="activeMegaMenu === 'studio' ? 'rotate-180 text-neutral-900' : 'text-neutral-400 group-hover:text-neutral-700'"
               ></app-icon>
+            </button>
+
+            <!-- Customer Chat (Direct Link) -->
+            <button
+              type="button"
+              (click)="navigateTo('chat')"
+              class="relative flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded-md transition-all"
+              [ngClass]="activeSection === 'chat' && !activeMegaMenu ? 'text-neutral-900 bg-neutral-100' : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50'"
+            >
+              <app-icon name="chat" classNames="w-3.5 h-3.5"></app-icon>
+              <span>Customer Chat</span>
             </button>
 
             <!-- Observability (Mega Menu) -->

@@ -246,46 +246,29 @@ export class SettingsViewComponent {
   }
 
   saveChannel(): void {
-    this.state.channel$.next(this.channel);
-    this.state.showToast('success', 'Policy Saved', 'Public chat channel origin verified.');
+    this.state.settings.saveChannel(this.channel);
   }
 
   addDomain(): void {
     if (!this.newHostname.trim()) return;
-    const newDomain: TenantDomain = {
-      id: `dom-${Math.random().toString(36).substring(2, 6)}`,
-      hostname: this.newHostname.trim().toLowerCase(),
-      createdAt: new Date().toISOString(),
-      verified: true
-    };
-    this.state.domains$.next([...this.domains, newDomain]);
+    this.state.settings.addDomain(this.newHostname);
     this.newHostname = '';
-    this.state.showToast('success', 'Domain Added', `${newDomain.hostname} added to allowed origins.`);
   }
 
   removeDomain(d: TenantDomain): void {
-    this.state.domains$.next(this.domains.filter((item) => item.id !== d.id));
-    this.state.showToast('info', 'Domain Removed', `${d.hostname} removed.`);
+    this.state.settings.removeDomain(d);
   }
 
   addMember(): void {
     if (!this.newEmail || !this.newPassword) return;
-    const newMember: Member = {
-      id: `mem-${Math.random().toString(36).substring(2, 6)}`,
-      email: this.newEmail.trim().toLowerCase(),
-      role: this.newRole,
-      createdAt: new Date().toISOString(),
-      lastLoginAt: 'Invited'
-    };
-    this.state.members$.next([...this.members, newMember]);
+    this.state.settings.addMember(this.newEmail, this.newPassword, this.newRole);
     this.newEmail = '';
     this.newPassword = '';
-    this.state.showToast('success', 'Member Added', `${newMember.email} granted ${newMember.role}.`);
   }
 
   purgeExpiredSessions(): void {
     if (window.confirm('Execute cryptographic purge of chat sessions older than 24 hours? This action is permanent.')) {
-      this.state.showToast('success', 'Hard Purge Complete', 'Reclaimed 4.2 MB storage. Expired sessions wiped.');
+      this.state.settings.purgeExpiredSessions();
     }
   }
 }

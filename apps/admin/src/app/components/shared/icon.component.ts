@@ -188,6 +188,36 @@ import { CommonModule } from '@angular/common';
       <ng-container *ngIf="name === 'bell'">
         <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0" />
       </ng-container>
+
+      <ng-container *ngIf="name === 'send' || name === 'arrow-up'">
+        <path d="m5 12 7-7 7 7M12 19V5" />
+      </ng-container>
+
+      <ng-container *ngIf="name === 'chevron-up'">
+        <path d="m18 15-6-6-6 6" />
+      </ng-container>
+
+      <ng-container *ngIf="name === 'copy'">
+        <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+      </ng-container>
+
+      <ng-container *ngIf="name === 'thumbs-up'">
+        <path d="M7 10v12M15 10.5a3 3 0 0 0-3-3l.5-4a1.5 1.5 0 0 0-3 0L7 10v12h10.3a2 2 0 0 0 1.95-1.57l1.65-7.43A2 2 0 0 0 18.95 10.5H15Z" />
+      </ng-container>
+
+      <ng-container *ngIf="name === 'thumbs-down'">
+        <path d="M17 14V2M9 13.5a3 3 0 0 0 3 3l-.5 4a1.5 1.5 0 0 0 3 0L17 14V2H6.7a2 2 0 0 0-1.95 1.57l-1.65 7.43A2 2 0 0 0 5.05 13.5H9Z" />
+      </ng-container>
+
+      <ng-container *ngIf="name === 'message-square' || name === 'chat'">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      </ng-container>
+
+      <ng-container *ngIf="name === 'info'">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 16v-4M12 8h.01" />
+      </ng-container>
     </svg>
   `
 })

@@ -1,7 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { AdminStateService } from '../../services/admin-state.service';
+import { AuthService } from '../../services/auth.service';
 import { IconComponent } from '../shared/icon.component';
 
 @Component({
@@ -178,7 +178,7 @@ import { IconComponent } from '../shared/icon.component';
   `
 })
 export class LoginPageComponent {
-  private readonly state = inject(AdminStateService);
+  private readonly auth = inject(AuthService);
 
   email = 'admin@example.test';
   password = '';
@@ -191,7 +191,7 @@ export class LoginPageComponent {
     this.isLoading = true;
     this.errorMessage = '';
 
-    this.state.loginWithCredentials(
+    this.auth.loginWithCredentials(
       this.email,
       this.password,
       () => {
@@ -205,6 +205,6 @@ export class LoginPageComponent {
   }
 
   demoLogin(role: 'platform_admin' | 'tenant_admin'): void {
-    this.state.loginAsDemo(role);
+    this.auth.loginAsDemo(role);
   }
 }

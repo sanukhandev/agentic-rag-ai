@@ -1,8 +1,15 @@
-<!-- Sign-In Screen (Shown when not authenticated) -->
-<app-login-page *ngIf="!isAuthenticated"></app-login-page>
+<!-- Standalone Customer Chat View (When accessed via ?view=chat or ?mode=chat) -->
+<div *ngIf="isStandaloneChat" class="min-h-screen bg-[#fafafa] p-3 sm:p-8 flex items-center justify-center">
+  <div class="w-full max-w-4xl h-[90vh]">
+    <app-customer-chat [standalone]="true"></app-customer-chat>
+  </div>
+</div>
+
+<!-- Sign-In Screen (Shown when not authenticated and not in standalone chat) -->
+<app-login-page *ngIf="!isAuthenticated && !isStandaloneChat"></app-login-page>
 
 <!-- Authenticated Full-Width Editorial Workspace Layout -->
-<div *ngIf="isAuthenticated" class="min-h-screen bg-[#fafafa] text-[#121214] flex flex-col justify-between selection:bg-neutral-900 selection:text-white">
+<div *ngIf="isAuthenticated && !isStandaloneChat" class="min-h-screen bg-[#fafafa] text-[#121214] flex flex-col justify-between selection:bg-neutral-900 selection:text-white">
   
   <div>
     <!-- Sticky Top Navigation with Click-to-Open Mega Menus (No left sidebar) -->
@@ -123,6 +130,13 @@
       <!-- Section: AI Studio -->
       <ng-container *ngIf="currentSection === 'studio'">
         <app-ai-studio></app-ai-studio>
+      </ng-container>
+
+      <!-- Section: Customer Chat -->
+      <ng-container *ngIf="currentSection === 'chat'">
+        <div class="max-w-4xl mx-auto py-2">
+          <app-customer-chat></app-customer-chat>
+        </div>
       </ng-container>
 
       <!-- Section: Observability -->

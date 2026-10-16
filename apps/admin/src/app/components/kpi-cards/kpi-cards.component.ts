@@ -1,18 +1,8 @@
-import { Component, Input, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
 import { PlatformOverview, Metrics } from '../../types/admin.types';
 import { IconComponent } from '../shared/icon.component';
-
-export interface KpiCardItem {
-  title: string;
-  value: string | number;
-  label: string;
-  trend?: string;
-  trendType?: 'positive' | 'negative' | 'neutral';
-  icon: string;
-  badge?: string;
-}
 
 @Component({
   selector: 'app-kpi-cards',

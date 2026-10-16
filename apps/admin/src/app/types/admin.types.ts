@@ -158,4 +158,4 @@ export interface PlatformOverview {
   };
 }
 
-export type NavSection = 'overview' | 'organizations' | 'knowledge' | 'studio' | 'observability' | 'settings';
+export type NavSection = 'overview' | 'organizations' | 'knowledge' | 'studio' | 'chat' | 'observability' | 'settings';

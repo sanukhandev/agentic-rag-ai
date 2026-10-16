@@ -1,7 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
-import { IngestionJob, AuditEvent, Source } from '../../types/admin.types';
+import { IngestionJob, AuditEvent } from '../../types/admin.types';
 import { IconComponent } from '../shared/icon.component';
 import { BadgeComponent } from '../shared/badge.component';
 

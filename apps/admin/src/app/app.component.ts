@@ -1,8 +1,7 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { AdminStateService } from './services/admin-state.service';
-import { NavSection, Tenant, Source, IngestionJob, Health, Metrics, Persona, PersonaVersion } from './types/admin.types';
+import { NavSection, Tenant } from './types/admin.types';
 import { TopNavComponent } from './components/top-nav/top-nav.component';
 import { KpiCardsComponent } from './components/kpi-cards/kpi-cards.component';
 import { OrgTableComponent } from './components/org-table/org-table.component';
@@ -15,6 +14,7 @@ import { OnboardDrawerComponent } from './components/onboard-drawer/onboard-draw
 import { CommandPaletteComponent } from './components/shared/command-palette.component';
 import { ToastComponent } from './components/shared/toast.component';
 import { LoginPageComponent } from './components/login-page/login-page.component';
+import { CustomerChatComponent } from './components/customer-chat/customer-chat.component';
 import { IconComponent } from './components/shared/icon.component';
 import { BadgeComponent } from './components/shared/badge.component';
 
@@ -23,7 +23,6 @@ import { BadgeComponent } from './components/shared/badge.component';
   standalone: true,
   imports: [
     CommonModule,
-    FormsModule,
     TopNavComponent,
     KpiCardsComponent,
     OrgTableComponent,
@@ -36,6 +35,7 @@ import { BadgeComponent } from './components/shared/badge.component';
     CommandPaletteComponent,
     ToastComponent,
     LoginPageComponent,
+    CustomerChatComponent,
     IconComponent,
     BadgeComponent
   ],
@@ -45,6 +45,7 @@ export class AppComponent implements OnInit {
   readonly state = inject(AdminStateService);
 
   isAuthenticated = false;
+  isStandaloneChat = false;
   currentSection: NavSection = 'overview';
   role = '';
   selectedTenant: Tenant | null = null;
@@ -54,11 +55,18 @@ export class AppComponent implements OnInit {
     { id: 'organizations', label: 'Organizations', icon: 'organizations' },
     { id: 'knowledge', label: 'Knowledge', icon: 'knowledge' },
     { id: 'studio', label: 'AI Studio', icon: 'studio' },
+    { id: 'chat', label: 'Customer Chat', icon: 'chat' },
     { id: 'observability', label: 'Observability', icon: 'observability' },
     { id: 'settings', label: 'Settings', icon: 'settings' }
   ];
 
   ngOnInit(): void {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('view') === 'chat' || params.get('mode') === 'chat') {
+        this.isStandaloneChat = true;
+      }
+    }
     this.state.isAuthenticated$.subscribe((auth) => (this.isAuthenticated = auth));
     this.state.currentSection$.subscribe((sec) => (this.currentSection = sec));
     this.state.role$.subscribe((r) => (this.role = r));

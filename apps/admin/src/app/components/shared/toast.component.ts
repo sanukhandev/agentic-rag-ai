@@ -1,6 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { AdminStateService, ToastMessage } from '../../services/admin-state.service';
+import { ToastService, ToastMessage } from '../../services/toast.service';
 import { IconComponent } from './icon.component';
 
 @Component({
@@ -41,16 +41,16 @@ import { IconComponent } from './icon.component';
   `
 })
 export class ToastComponent {
-  private readonly state = inject(AdminStateService);
+  private readonly toastService = inject(ToastService);
 
   toasts: ToastMessage[] = [];
 
   constructor() {
-    this.state.toasts$.subscribe((t) => (this.toasts = t));
+    this.toastService.toasts$.subscribe((t) => (this.toasts = t));
   }
 
   dismiss(id: string): void {
-    this.state.dismissToast(id);
+    this.toastService.dismiss(id);
   }
 
   getToastIcon(type: string): string {
