@@ -1,105 +1,89 @@
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { HttpClient } from '@angular/common/http';
-import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { fileMimeType } from './upload-utils';
-import { parsePermittedLanguages } from './persona-utils';
+import { AdminStateService } from './services/admin-state.service';
+import { NavSection, Tenant, Source, IngestionJob, Health, Metrics, Persona, PersonaVersion } from './types/admin.types';
+import { TopNavComponent } from './components/top-nav/top-nav.component';
+import { KpiCardsComponent } from './components/kpi-cards/kpi-cards.component';
+import { OrgTableComponent } from './components/org-table/org-table.component';
+import { ServiceHealthComponent } from './components/service-health/service-health.component';
+import { ActivityPipelineComponent } from './components/activity-pipeline/activity-pipeline.component';
+import { KnowledgeManagerComponent } from './components/knowledge-manager/knowledge-manager.component';
+import { AiStudioComponent } from './components/ai-studio/ai-studio.component';
+import { SettingsViewComponent } from './components/settings-view/settings-view.component';
+import { OnboardDrawerComponent } from './components/onboard-drawer/onboard-drawer.component';
+import { CommandPaletteComponent } from './components/shared/command-palette.component';
+import { ToastComponent } from './components/shared/toast.component';
+import { LoginPageComponent } from './components/login-page/login-page.component';
+import { IconComponent } from './components/shared/icon.component';
+import { BadgeComponent } from './components/shared/badge.component';
 
-type Source = { id: string; title: string; status: string; audience: string; mimeType: string };
-type IngestionJob = { id: string; title: string; sourceUrl: string | null; status: string; attempts: number; errorCode: string | null; updatedAt: string };
-type Metrics = { sourceCounts: Record<string, number>; ingestionJobs: Record<string, number>; sessions: number; messages: number; actions: number; auditEvents: number };
-type Persona = { name: string; greeting: string; personality: string; tone: string; speakingStyle: string; permittedLanguages: string[] };
-type PersonaVersion = Persona & { id: string; version: number; status: 'draft' | 'published'; createdAt: string; publishedAt: string | null };
-type Tenant = { id: string; name: string; slug: string; status: string };
-type TenantDomain = { id: string; hostname: string; createdAt: string };
-type Channel = { publicOrigin: string | null; publicChatEnabled: boolean };
-type Member = { id: string; email: string; role: string };
-type Health = { checkedAt: string; telemetry: { requests: number; serverErrors: number; averageLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; groundingRate: number; abstentionRate: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null }; checks: Record<string, { status: string }> };
-type WorkflowRun = { id: string; workflowKey: string; state: string; createdAt: string; result: { externalReference: string } | null };
-type AuditEvent = { id: string; eventName: string; metadata: Record<string, string | number | boolean | null>; createdAt: string };
-type PlatformOverview = { tenants: { total: number; active: number; suspended: number; archived: number }; metrics: Array<{ tenantId: string; metrics: Metrics }> };
-const api = 'http://127.0.0.1:4000';
-const adminSessionKey = 'agentic-rag-admin-token';
-const adminRoleKey = 'agentic-rag-admin-role';
-
-@Component({ selector: 'app-root', standalone: true, imports: [CommonModule, FormsModule], templateUrl: './app.component.html' })
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    TopNavComponent,
+    KpiCardsComponent,
+    OrgTableComponent,
+    ServiceHealthComponent,
+    ActivityPipelineComponent,
+    KnowledgeManagerComponent,
+    AiStudioComponent,
+    SettingsViewComponent,
+    OnboardDrawerComponent,
+    CommandPaletteComponent,
+    ToastComponent,
+    LoginPageComponent,
+    IconComponent,
+    BadgeComponent
+  ],
+  templateUrl: './app.component.html'
+})
 export class AppComponent implements OnInit {
-  private readonly http = inject(HttpClient);
-  email = 'admin@example.test'; password = ''; token = ''; role = ''; error = ''; sources: Source[] = []; ingestionJobs: IngestionJob[] = []; tenants: Tenant[] = []; domains: TenantDomain[] = []; members: Member[] = []; workflowRuns: WorkflowRun[] = []; auditEvents: AuditEvent[] = []; platformOverview: PlatformOverview | null = null; health: Health | null = null; metrics: Metrics | null = null; persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: ['en'] }; selectedTenantId = ''; selectedTenant: Tenant | null = null;
-  title = ''; content = ''; sourceUrl = ''; audience = 'public'; selectedFile: File | null = null;
-  tenantName = ''; tenantSlug = ''; tenantAdminEmail = ''; tenantAdminPassword = ''; publicOrigin = ''; publicChatEnabled = true;
-  personaVersions: PersonaVersion[] = [];
-  domainHostname = '';
-  memberEmail = ''; memberPassword = ''; memberRole = 'tenant_editor';
-  previewMessage = 'What can you help me with?'; previewAnswer = ''; previewGrounded = false;
-  permittedLanguageText = 'en';
+  readonly state = inject(AdminStateService);
+
+  isAuthenticated = false;
+  currentSection: NavSection = 'overview';
+  role = '';
+  selectedTenant: Tenant | null = null;
+
+  readonly navTabs: Array<{ id: NavSection; label: string; icon: string }> = [
+    { id: 'overview', label: 'Overview', icon: 'overview' },
+    { id: 'organizations', label: 'Organizations', icon: 'organizations' },
+    { id: 'knowledge', label: 'Knowledge', icon: 'knowledge' },
+    { id: 'studio', label: 'AI Studio', icon: 'studio' },
+    { id: 'observability', label: 'Observability', icon: 'observability' },
+    { id: 'settings', label: 'Settings', icon: 'settings' }
+  ];
 
   ngOnInit(): void {
-    const storedToken = sessionStorage.getItem(adminSessionKey);
-    if (!storedToken) return;
-    this.token = storedToken;
-    this.role = sessionStorage.getItem(adminRoleKey) ?? '';
-    this.http.get<{ user: { role: string } }>(`${api}/api/v1/auth/me`, { headers: { Authorization: `Bearer ${storedToken}` } }).subscribe({
-      next: (body) => this.activateSession(body.user.role),
-      error: () => this.clearSession(),
-    });
+    this.state.isAuthenticated$.subscribe((auth) => (this.isAuthenticated = auth));
+    this.state.currentSection$.subscribe((sec) => (this.currentSection = sec));
+    this.state.role$.subscribe((r) => (this.role = r));
+    this.state.selectedTenant$.subscribe((st) => (this.selectedTenant = st));
   }
 
-  get canEditSources(): boolean { return this.role === 'tenant_admin' || this.role === 'tenant_editor'; }
-  get canManagePersona(): boolean { return this.role === 'tenant_admin'; }
-
-  login(): void { this.http.post<{ token: string; user: { role: string } }>(`${api}/api/v1/auth/login`, { email: this.email, password: this.password }).subscribe({ next: (body) => { this.token = body.token; sessionStorage.setItem(adminSessionKey, body.token); this.activateSession(body.user.role); }, error: () => { this.error = 'Login failed.'; } }); }
-  private activateSession(role: string): void { this.error = ''; this.role = role; sessionStorage.setItem(adminRoleKey, role); if (this.role === 'platform_admin' || this.role === 'tenant_admin') this.loadHealth(); if (this.role === 'platform_admin') { this.loadTenants(); this.loadPlatformOverview(); } else { this.loadSources(); this.loadJobs(); this.loadDashboard(); this.loadWorkflowRuns(); this.loadAudit(); this.loadPersona(); this.loadPersonaVersions(); if (this.role === 'tenant_admin') { this.loadDomains(); this.loadMembers(); this.loadChannel(); } } }
-  private clearSession(): void { sessionStorage.removeItem(adminSessionKey); sessionStorage.removeItem(adminRoleKey); this.token = ''; this.role = ''; this.metrics = null; this.platformOverview = null; this.health = null; this.ingestionJobs = []; this.domains = []; this.members = []; this.workflowRuns = []; this.selectedTenantId = ''; this.selectedTenant = null; }
-  loadTenants(): void { this.http.get<{ items: Tenant[] }>(`${api}/api/v1/admin/tenants`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.tenants = body.items; }, error: () => { this.error = 'Could not load tenants.'; } }); }
-  loadPlatformOverview(): void { this.http.get<PlatformOverview>(`${api}/api/v1/admin/platform/overview`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.platformOverview = body; }, error: () => { this.error = 'Could not load platform overview.'; } }); }
-  manageAgent(): void { const tenant = this.tenants.find((item) => item.id === this.selectedTenantId); if (!tenant) { this.error = 'Choose an organization first.'; return; } this.error = ''; this.selectedTenant = tenant; this.http.get<{ persona: Persona | null }>(`${api}/api/v1/admin/tenants/${tenant.id}/persona`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.persona = body.persona ?? { name: 'Sales assistant', greeting: 'How can I help?', personality: 'Helpful and precise.', tone: 'Clear', speakingStyle: 'Concise', permittedLanguages: ['en'] }; this.permittedLanguageText = this.persona.permittedLanguages.join(', '); }, error: (response) => { this.selectedTenant = null; this.error = response.error?.error?.message ?? 'Agent could not be loaded.'; } }); }
-  savePlatformPersona(): void { if (!this.selectedTenant) return; this.http.put<{ persona: Persona }>(`${api}/api/v1/admin/tenants/${this.selectedTenant.id}/persona`, this.personaPayload(), { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.persona = body.persona; this.permittedLanguageText = body.persona.permittedLanguages.join(', '); this.error = ''; }, error: (response) => { this.error = response.error?.error?.message ?? 'Agent could not be saved.'; } }); }
-  createTenant(): void { this.error = ''; if (this.tenantAdminPassword.length < 8 || !/[A-Z]/.test(this.tenantAdminPassword) || !/\d/.test(this.tenantAdminPassword)) { this.error = 'Tenant admin password must be at least 8 characters and include an uppercase letter and a number.'; return; } this.http.post(`${api}/api/v1/admin/tenants`, { name: this.tenantName, slug: this.tenantSlug, adminEmail: this.tenantAdminEmail, adminPassword: this.tenantAdminPassword }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.tenantName = ''; this.tenantSlug = ''; this.tenantAdminEmail = ''; this.tenantAdminPassword = ''; this.loadTenants(); }, error: (response) => { this.error = response.error?.error?.message ?? 'Tenant could not be created.'; } }); }
-  updateTenantStatus(tenant: Tenant, status: 'active' | 'suspended' | 'archived'): void { if (status === 'archived' && !window.confirm(`Archive ${tenant.name}?`)) return; this.http.patch<{ tenant: Tenant }>(`${api}/api/v1/admin/tenants/${tenant.id}/status`, { status }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadTenants(), error: () => { this.error = 'Tenant status could not be updated.'; } }); }
-  loadSources(): void { this.http.get<{ items: Source[] }>(`${api}/api/v1/admin/sources`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.sources = body.items; }, error: () => { this.error = 'Could not load sources.'; } }); }
-  loadJobs(): void { this.http.get<{ items: IngestionJob[] }>(`${api}/api/v1/admin/ingestion-jobs`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.ingestionJobs = body.items; }, error: () => { this.error = 'Could not load ingestion jobs.'; } }); }
-  loadDashboard(): void { this.http.get<{ metrics: Metrics }>(`${api}/api/v1/admin/dashboard/overview`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.metrics = body.metrics; }, error: () => { this.error = 'Could not load dashboard metrics.'; } }); }
-  loadHealth(): void { this.http.get<Health>(`${api}/api/v1/admin/services/health`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.health = body; }, error: () => { this.error = 'Could not load service health.'; } }); }
-  loadWorkflowRuns(): void { this.http.get<{ items: WorkflowRun[] }>(`${api}/api/v1/admin/workflow-runs`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.workflowRuns = body.items; }, error: () => { this.error = 'Could not load workflow runs.'; } }); }
-  loadAudit(): void { this.http.get<{ items: AuditEvent[] }>(`${api}/api/v1/admin/audit`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.auditEvents = body.items; }, error: () => { this.error = 'Could not load audit events.'; } }); }
-  loadDomains(): void { this.http.get<{ items: TenantDomain[] }>(`${api}/api/v1/admin/domains`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.domains = body.items; }, error: () => { this.error = 'Could not load domains.'; } }); }
-  addDomain(): void { this.http.post(`${api}/api/v1/admin/domains`, { hostname: this.domainHostname }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.domainHostname = ''; this.loadDomains(); }, error: () => { this.error = 'Domain could not be added.'; } }); }
-  removeDomain(domain: TenantDomain): void { this.http.delete(`${api}/api/v1/admin/domains/${domain.id}`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadDomains(), error: () => { this.error = 'Domain could not be removed.'; } }); }
-  loadChannel(): void { this.http.get<Channel>(`${api}/api/v1/admin/channel`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.publicOrigin = body.publicOrigin ?? ''; this.publicChatEnabled = body.publicChatEnabled; }, error: () => { this.error = 'Could not load chat channel.'; } }); }
-  saveChannel(): void { this.http.patch<Channel>(`${api}/api/v1/admin/channel`, { publicOrigin: this.publicOrigin, publicChatEnabled: this.publicChatEnabled }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.publicOrigin = body.publicOrigin ?? ''; this.publicChatEnabled = body.publicChatEnabled; }, error: () => { this.error = 'Chat channel could not be saved.'; } }); }
-  loadMembers(): void { this.http.get<{ items: Member[] }>(`${api}/api/v1/admin/members`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.members = body.items; }, error: () => { this.error = 'Could not load members.'; } }); }
-  addMember(): void { this.http.post(`${api}/api/v1/admin/members`, { email: this.memberEmail, password: this.memberPassword, role: this.memberRole }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.memberEmail = ''; this.memberPassword = ''; this.loadMembers(); }, error: () => { this.error = 'Member could not be added.'; } }); }
-  updateMemberRole(member: Member): void { this.http.patch(`${api}/api/v1/admin/members/${member.id}`, { role: member.role }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadMembers(), error: () => { this.error = 'Member role could not be updated.'; } }); }
-  loadPersona(): void { this.http.get<{ persona: Persona | null }>(`${api}/api/v1/admin/persona`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { if (body.persona) { this.persona = body.persona; this.permittedLanguageText = body.persona.permittedLanguages.join(', '); } }, error: () => { this.error = 'Could not load persona.'; } }); }
-  loadPersonaVersions(): void { this.http.get<{ items: PersonaVersion[] }>(`${api}/api/v1/admin/persona/versions`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.personaVersions = body.items; }, error: () => { this.error = 'Could not load persona versions.'; } }); }
-  personaPayload(): Persona { return { ...this.persona, permittedLanguages: parsePermittedLanguages(this.permittedLanguageText) }; }
-  savePersonaDraft(): void { this.http.post(`${api}/api/v1/admin/persona/drafts`, this.personaPayload(), { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadPersonaVersions(), error: () => { this.error = 'Persona draft could not be saved.'; } }); }
-  previewPersona(): void { this.http.post<{ preview: { answer: string; grounded: boolean } }>(`${api}/api/v1/admin/persona/preview`, { ...this.personaPayload(), message: this.previewMessage }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.previewAnswer = body.preview.answer; this.previewGrounded = body.preview.grounded; }, error: () => { this.error = 'Persona preview could not be generated.'; } }); }
-  publishPersonaVersion(version: PersonaVersion): void { this.http.post(`${api}/api/v1/admin/persona/versions/${version.id}/publish`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.loadPersona(); this.loadPersonaVersions(); }, error: () => { this.error = 'Persona version could not be published.'; } }); }
-  savePersona(): void { this.http.put(`${api}/api/v1/admin/persona`, this.personaPayload(), { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.error = ''; }, error: () => { this.error = 'Persona could not be saved.'; } }); }
-  onFileSelected(event: Event): void { this.selectedFile = (event.target as HTMLInputElement).files?.[0] ?? null; }
-  uploadFile(): void {
-    const file = this.selectedFile;
-    if (!file) { this.error = 'Choose a TXT, PDF, DOCX or XLSX file first.'; return; }
-    const mimeType = fileMimeType(file.name);
-    if (!mimeType) { this.error = 'Unsupported file type.'; return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const encoded = typeof reader.result === 'string' ? reader.result.split(',')[1] : undefined;
-      if (!encoded) { this.error = 'The file could not be read.'; return; }
-      this.http.post(`${api}/api/v1/admin/sources/upload`, { title: this.title || file.name, fileName: file.name, mimeType, audience: this.audience, contentBase64: encoded }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.title = ''; this.selectedFile = null; this.loadJobs(); }, error: () => { this.error = 'File could not be queued for ingestion.'; } });
-    };
-    reader.onerror = () => { this.error = 'The file could not be read.'; };
-    reader.readAsDataURL(file);
+  setSection(sec: NavSection): void {
+    this.state.setSection(sec);
   }
-  stage(): void { this.http.post(`${api}/api/v1/admin/sources`, { title: this.title, mimeType: 'text/plain', audience: this.audience, content: this.content }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.title = ''; this.content = ''; this.loadSources(); this.loadJobs(); }, error: () => { this.error = 'Source could not be staged.'; } }); }
-  queueUrl(): void { this.http.post(`${api}/api/v1/admin/ingestion-jobs`, { title: this.title, mimeType: 'text/html', sourceUrl: this.sourceUrl, audience: this.audience }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.title = ''; this.sourceUrl = ''; this.loadJobs(); }, error: () => { this.error = 'URL ingestion could not be queued.'; } }); }
-  retryJob(job: IngestionJob): void { this.http.post(`${api}/api/v1/admin/ingestion-jobs/${job.id}/retry`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadJobs(), error: () => { this.error = 'Only failed ingestion jobs can be retried.'; } }); }
-  reindex(source: Source): void { this.http.post(`${api}/api/v1/admin/sources/${source.id}/reindex`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.loadSources(); this.loadJobs(); }, error: () => { this.error = 'Source could not be reindexed.'; } }); }
-  purge(source: Source): void { if (!window.confirm(`Permanently purge ${source.title}?`)) return; this.http.delete(`${api}/api/v1/admin/sources/${source.id}`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.loadSources(); }, error: () => { this.error = 'Only revoked sources can be purged.'; } }); }
-  purgeExpiredSessions(): void { if (!window.confirm('Purge chat sessions older than 24 hours?')) return; const before = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); this.http.post(`${api}/api/v1/admin/retention/purge-sessions`, { before }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.loadDashboard(); this.loadAudit(); }, error: () => { this.error = 'Expired sessions could not be purged.'; } }); }
-  publish(source: Source): void { this.http.post(`${api}/api/v1/admin/sources/${source.id}/publish`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadSources(), error: () => { this.error = 'Source could not be published.'; } }); }
-  revoke(source: Source): void { this.http.post(`${api}/api/v1/admin/sources/${source.id}/revoke`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadSources(), error: () => { this.error = 'Source could not be revoked.'; } }); }
-  logout(): void { this.http.post(`${api}/api/v1/auth/logout`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.clearSession(), error: () => this.clearSession() }); }
+
+  refreshWorkspace(): void {
+    this.state.refreshAllData();
+    this.state.showToast('info', 'Workspace Synchronized', 'All operational records reloaded.');
+  }
+
+  openPrimaryAction(): void {
+    if (this.role === 'platform_admin') {
+      this.state.openCreateOrgDrawer();
+    } else {
+      this.state.setSection('knowledge');
+      this.state.openUploadModal();
+    }
+  }
+
+  openCommandPalette(): void {
+    this.state.openCommandPalette();
+  }
 }

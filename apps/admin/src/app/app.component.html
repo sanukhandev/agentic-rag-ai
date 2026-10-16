@@ -1,17 +1,172 @@
-<main class="mx-auto min-h-screen max-w-6xl px-6 py-10">
-  <header class="mb-8"><p class="text-sm font-semibold uppercase tracking-[0.24em] text-indigo-600">Agentic RAG AI</p><h1 class="mt-2 text-4xl font-bold">Knowledge operations</h1><p class="mt-2 text-slate-600">Tenant administrators stage, review and publish source material. Authorization stays in the Node API.</p></header>
-  <p *ngIf="error" role="alert" class="mb-6 rounded-lg bg-rose-50 p-3 text-rose-700">{{ error }}</p>
-  <section *ngIf="!token" class="max-w-md rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 class="text-xl font-semibold">Tenant admin sign-in</h2><input [(ngModel)]="email" placeholder="Email" class="mt-4 w-full rounded-lg border px-3 py-2"><input [(ngModel)]="password" type="password" placeholder="Password" class="mt-3 w-full rounded-lg border px-3 py-2"><button (click)="login()" class="mt-4 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Sign in</button></section>
-  <section *ngIf="token && role === 'platform_admin'" class="space-y-6"><div class="flex items-center justify-between"><h2 class="text-2xl font-semibold">Platform dashboard</h2><button (click)="logout()" class="rounded-lg border px-3 py-2 text-sm">Sign out</button></div><section *ngIf="platformOverview" class="grid gap-3 sm:grid-cols-4"><div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p class="text-sm text-slate-500">Organizations</p><p class="mt-1 text-2xl font-semibold">{{ platformOverview.tenants.total }}</p></div><div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p class="text-sm text-slate-500">Active</p><p class="mt-1 text-2xl font-semibold text-emerald-700">{{ platformOverview.tenants.active }}</p></div><div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p class="text-sm text-slate-500">Suspended</p><p class="mt-1 text-2xl font-semibold text-amber-700">{{ platformOverview.tenants.suspended }}</p></div><div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p class="text-sm text-slate-500">Archived</p><p class="mt-1 text-2xl font-semibold text-slate-600">{{ platformOverview.tenants.archived }}</p></div></section><form (ngSubmit)="createTenant()" class="grid gap-3 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 md:grid-cols-2"><h2 class="text-xl font-semibold md:col-span-2">Onboard organization</h2><input [(ngModel)]="tenantName" name="tenantName" required placeholder="Organization name" class="rounded-lg border px-3 py-2"><input [(ngModel)]="tenantSlug" name="tenantSlug" required placeholder="Unique slug" class="rounded-lg border px-3 py-2"><input [(ngModel)]="tenantAdminEmail" name="tenantAdminEmail" required type="email" placeholder="Admin email" class="rounded-lg border px-3 py-2"><input [(ngModel)]="tenantAdminPassword" name="tenantAdminPassword" required type="password" placeholder="Admin password" class="rounded-lg border px-3 py-2"><button class="rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white md:col-span-2">Create tenant</button></form><section class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div class="flex items-center justify-between"><h2 class="text-xl font-semibold">Organizations</h2><button (click)="loadTenants()" class="text-sm text-indigo-600">Refresh</button></div><div *ngFor="let tenant of tenants" class="mt-4 flex items-center justify-between rounded-xl border p-4"><div><p class="font-medium">{{ tenant.name }}</p><p class="mt-1 text-sm text-slate-500">{{ tenant.slug }} · {{ tenant.status }}</p></div><div class="flex gap-2"><button *ngIf="tenant.status === 'active'" (click)="updateTenantStatus(tenant, 'suspended')" class="rounded-lg border border-amber-300 px-3 py-2 text-sm text-amber-700">Suspend</button><button *ngIf="tenant.status === 'suspended'" (click)="updateTenantStatus(tenant, 'active')" class="rounded-lg border border-emerald-300 px-3 py-2 text-sm text-emerald-700">Reactivate</button><button *ngIf="tenant.status !== 'archived'" (click)="updateTenantStatus(tenant, 'archived')" class="rounded-lg border border-rose-300 px-3 py-2 text-sm text-rose-700">Archive</button></div></div></section></section>
-  <section *ngIf="token && role !== 'platform_admin'" class="space-y-6"><div class="flex items-center justify-between"><h2 class="text-2xl font-semibold">Tenant workspace</h2><button (click)="logout()" class="rounded-lg border px-3 py-2 text-sm">Sign out</button></div><section *ngIf="metrics" class="grid gap-3 sm:grid-cols-6"><div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p class="text-sm text-slate-500">Active sources</p><p class="mt-1 text-2xl font-semibold">{{ metrics.sourceCounts['active'] || 0 }}</p></div><div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p class="text-sm text-slate-500">Review queue</p><p class="mt-1 text-2xl font-semibold">{{ metrics.sourceCounts['awaiting_review'] || 0 }}</p></div><div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p class="text-sm text-slate-500">Sessions</p><p class="mt-1 text-2xl font-semibold">{{ metrics.sessions }}</p></div><div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p class="text-sm text-slate-500">Messages</p><p class="mt-1 text-2xl font-semibold">{{ metrics.messages }}</p></div><div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p class="text-sm text-slate-500">Actions</p><p class="mt-1 text-2xl font-semibold">{{ metrics.actions }}</p></div><div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p class="text-sm text-slate-500">Queued jobs</p><p class="mt-1 text-2xl font-semibold">{{ metrics.ingestionJobs['queued'] || 0 }}</p><p class="text-xs text-rose-700">{{ metrics.ingestionJobs['failed'] || 0 }} failed</p></div></section><section class="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]"><div class="space-y-6"><form *ngIf="canManagePersona" (ngSubmit)="savePersona()" class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 class="text-xl font-semibold">AI persona</h2><input [(ngModel)]="persona.name" name="personaName" required placeholder="Assistant name" class="mt-4 w-full rounded-lg border px-3 py-2"><input [(ngModel)]="persona.greeting" name="greeting" required placeholder="Greeting" class="mt-3 w-full rounded-lg border px-3 py-2"><textarea [(ngModel)]="persona.personality" name="personality" required rows="3" placeholder="Personality" class="mt-3 w-full rounded-lg border px-3 py-2"></textarea><input [(ngModel)]="persona.tone" name="tone" required placeholder="Tone" class="mt-3 w-full rounded-lg border px-3 py-2"><input [(ngModel)]="persona.speakingStyle" name="speakingStyle" required placeholder="Speaking style" class="mt-3 w-full rounded-lg border px-3 py-2"><input [(ngModel)]="permittedLanguageText" name="permittedLanguages" required placeholder="Permitted languages, e.g. en, ar" class="mt-3 w-full rounded-lg border px-3 py-2"><button class="mt-4 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Save persona</button></form><form *ngIf="canEditSources" (ngSubmit)="stage()" class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 class="text-xl font-semibold">Stage a source</h2><input [(ngModel)]="title" name="title" required placeholder="Source title" class="mt-4 w-full rounded-lg border px-3 py-2"><select [(ngModel)]="audience" name="audience" class="mt-3 w-full rounded-lg border px-3 py-2"><option value="public">Public customer knowledge</option><option value="internal">Internal operator knowledge</option></select><textarea [(ngModel)]="content" name="content" required rows="12" placeholder="Python ingestion output or approved text" class="mt-3 w-full rounded-lg border px-3 py-2"></textarea><button class="mt-4 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Stage for review</button></form><form *ngIf="canEditSources" (ngSubmit)="uploadFile()" class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 class="text-xl font-semibold">Upload a file for Python ingestion</h2><input [(ngModel)]="title" name="fileTitle" placeholder="Optional source title" class="mt-4 w-full rounded-lg border px-3 py-2"><input type="file" accept=".txt,.md,.pdf,.docx,.xlsx" (change)="onFileSelected($event)" class="mt-3 w-full rounded-lg border px-3 py-2"><select [(ngModel)]="audience" name="fileAudience" class="mt-3 w-full rounded-lg border px-3 py-2"><option value="public">Public customer knowledge</option><option value="internal">Internal operator knowledge</option></select><button class="mt-4 rounded-lg bg-violet-600 px-4 py-2 font-semibold text-white">Queue file ingestion</button></form><form *ngIf="canEditSources" (ngSubmit)="queueUrl()" class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 class="text-xl font-semibold">Queue approved HTTPS URL</h2><input [(ngModel)]="title" name="urlTitle" required placeholder="Snapshot title" class="mt-4 w-full rounded-lg border px-3 py-2"><input [(ngModel)]="sourceUrl" name="sourceUrl" required type="url" placeholder="https://approved.example/page" class="mt-3 w-full rounded-lg border px-3 py-2"><button class="mt-4 rounded-lg bg-cyan-600 px-4 py-2 font-semibold text-white">Queue URL ingestion</button></form></div><section class="space-y-6"><section class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div class="flex items-center justify-between"><h2 class="text-xl font-semibold">Source catalog</h2><button (click)="loadSources(); loadJobs()" class="text-sm text-indigo-600">Refresh</button></div><div *ngFor="let source of sources" class="mt-4 flex items-center justify-between rounded-xl border p-4"><div><p class="font-medium">{{ source.title }}</p><p class="mt-1 text-sm text-slate-500">{{ source.audience }} · {{ source.status }}</p></div><div class="flex gap-2"><button *ngIf="source.status === 'awaiting_review' && canManagePersona" (click)="publish(source)" class="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">Publish</button><button *ngIf="source.status === 'active' && canManagePersona" (click)="revoke(source)" class="rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700">Revoke</button><button *ngIf="source.status === 'revoked' && canManagePersona" (click)="purge(source)" class="rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700">Purge</button><button *ngIf="canEditSources" (click)="reindex(source)" class="rounded-lg border px-3 py-2 text-sm">Reindex</button></div></div></section><section class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div class="flex items-center justify-between"><h2 class="text-xl font-semibold">Ingestion jobs</h2><button (click)="loadJobs()" class="text-sm text-indigo-600">Refresh</button></div><div *ngFor="let job of ingestionJobs" class="mt-4 rounded-xl border p-4"><div class="flex items-center justify-between"><p class="font-medium">{{ job.title }}</p><span class="text-sm font-semibold" [class.text-emerald-700]="job.status === 'completed'" [class.text-rose-700]="job.status === 'failed'">{{ job.status }}</span></div><p class="mt-1 text-sm text-slate-500">Attempts: {{ job.attempts }} · Updated: {{ job.updatedAt }}</p><p *ngIf="job.errorCode" class="mt-1 text-sm text-rose-700">{{ job.errorCode }}</p><button *ngIf="job.status === 'failed' && canEditSources" (click)="retryJob(job)" class="mt-3 rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-700">Retry ingestion</button></div></section></section></section></section>
-  <section *ngIf="token && role !== 'platform_admin'" class="mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div class="flex items-center justify-between"><h2 class="text-xl font-semibold">Persona versions</h2><button (click)="loadPersonaVersions()" class="text-sm text-indigo-600">Refresh</button></div><p class="mt-2 text-sm text-slate-500">Drafts are not active until published. Publishing an older version is the rollback path.</p><div *ngFor="let version of personaVersions" class="mt-4 flex items-center justify-between rounded-xl border p-4"><div><p class="font-medium">v{{ version.version }} · {{ version.name }}</p><p class="mt-1 text-sm text-slate-500">{{ version.status }} · {{ version.createdAt }}</p></div><button *ngIf="version.status !== 'published' && canManagePersona" (click)="publishPersonaVersion(version)" class="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white">Publish</button></div></section>
-  <section *ngIf="token && canManagePersona" class="mt-6"><button (click)="savePersonaDraft()" class="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700">Save current persona as draft</button></section>
-  <section *ngIf="token && role === 'tenant_admin'" class="mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 class="text-xl font-semibold">Persona preview</h2><form (ngSubmit)="previewPersona()" class="mt-4 flex gap-3"><input [(ngModel)]="previewMessage" name="previewMessage" required class="min-w-0 flex-1 rounded-lg border px-3 py-2"><button class="rounded-lg bg-cyan-600 px-4 py-2 font-semibold text-white">Preview</button></form><p *ngIf="previewAnswer" class="mt-4 rounded-xl bg-slate-50 p-4">{{ previewAnswer }} <span class="text-sm text-slate-500">({{ previewGrounded ? 'grounded' : 'not grounded' }})</span></p></section>
-  <section *ngIf="token && role === 'tenant_admin'" class="mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div class="flex items-center justify-between"><h2 class="text-xl font-semibold">Allowed chat domains</h2><button (click)="loadDomains()" class="text-sm text-indigo-600">Refresh</button></div><form (ngSubmit)="addDomain()" class="mt-4 flex gap-3"><input [(ngModel)]="domainHostname" name="domainHostname" required placeholder="chat.example.com" class="min-w-0 flex-1 rounded-lg border px-3 py-2"><button class="rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Add domain</button></form><div *ngFor="let domain of domains" class="mt-3 flex items-center justify-between rounded-xl border p-3"><span>{{ domain.hostname }}</span><button (click)="removeDomain(domain)" class="rounded-lg border border-rose-300 px-3 py-2 text-sm text-rose-700">Remove</button></div></section>
-  <section *ngIf="token && role === 'tenant_admin'" class="mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><h2 class="text-xl font-semibold">Public chat channel</h2><p class="mt-2 text-sm text-slate-500">Public browser sessions are accepted only from this exact HTTP(S) origin when enabled.</p><form (ngSubmit)="saveChannel()" class="mt-4 space-y-3"><input [(ngModel)]="publicOrigin" name="publicOrigin" required type="url" placeholder="https://chat.example.com" class="w-full rounded-lg border px-3 py-2"><label class="flex items-center gap-2 text-sm"><input [(ngModel)]="publicChatEnabled" name="publicChatEnabled" type="checkbox"> Enable public chat</label><button class="rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Save channel</button></form></section>
-  <section *ngIf="token && role === 'tenant_admin'" class="mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div class="flex items-center justify-between"><h2 class="text-xl font-semibold">Tenant members</h2><button (click)="loadMembers()" class="text-sm text-indigo-600">Refresh</button></div><form (ngSubmit)="addMember()" class="mt-4 grid gap-3 md:grid-cols-3"><input [(ngModel)]="memberEmail" name="memberEmail" required type="email" placeholder="member@example.com" class="rounded-lg border px-3 py-2"><input [(ngModel)]="memberPassword" name="memberPassword" required type="password" placeholder="Temporary password" class="rounded-lg border px-3 py-2"><select [(ngModel)]="memberRole" name="memberRole" class="rounded-lg border px-3 py-2"><option value="tenant_editor">Editor</option><option value="tenant_viewer">Viewer</option><option value="tenant_agent">Agent</option></select><button class="rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white md:col-span-3">Add member</button></form><div *ngFor="let member of members" class="mt-3 flex items-center justify-between rounded-xl border p-3"><span>{{ member.email }}</span><div class="flex items-center gap-2"><span *ngIf="member.role === 'tenant_admin'" class="text-sm text-slate-500">Tenant admin</span><select *ngIf="member.role !== 'tenant_admin'" [(ngModel)]="member.role" [ngModelOptions]="{standalone: true}" class="rounded-lg border px-2 py-1 text-sm"><option value="tenant_editor">Editor</option><option value="tenant_viewer">Viewer</option><option value="tenant_agent">Agent</option></select><button *ngIf="member.role !== 'tenant_admin'" (click)="updateMemberRole(member)" class="rounded-lg border px-3 py-1 text-sm text-indigo-700">Save role</button></div></div></section>
-  <section *ngIf="token && health" class="mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div class="flex items-center justify-between"><h2 class="text-xl font-semibold">Service health</h2><button (click)="loadHealth()" class="text-sm text-indigo-600">Refresh</button></div><p class="mt-2 text-sm text-slate-500">Observed {{ health.checkedAt }} · {{ health.telemetry.requests }} requests · {{ health.telemetry.serverErrors }} server errors · {{ health.telemetry.averageLatencyMs }} ms average</p><p class="mt-2 text-sm text-slate-500">Chat: {{ health.telemetry.chatResponses }} responses · {{ health.telemetry.groundedResponses }} grounded · {{ health.telemetry.abstentions }} abstentions · {{ health.telemetry.actionProposals }} action proposals</p><p class="mt-2 text-sm text-slate-500">Estimated tokens: {{ health.telemetry.estimatedInputTokens }} in / {{ health.telemetry.estimatedOutputTokens }} out · <span *ngIf="health.telemetry.estimatedCostUsd !== null">USD {{ health.telemetry.estimatedCostUsd }}</span><span *ngIf="health.telemetry.estimatedCostUsd === null">cost rates not configured</span></p><div class="mt-4 flex flex-wrap gap-2"><span *ngFor="let check of (health.checks | keyvalue)" class="rounded-full bg-slate-100 px-3 py-1 text-sm">{{ check.key }}: {{ check.value.status }}</span></div></section>
-  <section *ngIf="token && role === 'tenant_admin'" class="mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div class="flex items-center justify-between"><div><h2 class="text-xl font-semibold">Retention</h2><p class="mt-1 text-sm text-slate-500">Remove chat sessions older than 24 hours.</p></div><button (click)="purgeExpiredSessions()" class="rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700">Purge expired sessions</button></div></section>
-  <section *ngIf="token && role !== 'platform_admin'" class="mt-6 grid gap-6 lg:grid-cols-2"><section class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div class="flex items-center justify-between"><h2 class="text-xl font-semibold">Workflow runs</h2><button (click)="loadWorkflowRuns()" class="text-sm text-indigo-600">Refresh</button></div><div *ngFor="let run of workflowRuns" class="mt-3 rounded-xl border p-3"><div class="flex items-center justify-between"><span class="font-medium">{{ run.workflowKey }}</span><span class="text-sm text-slate-500">{{ run.state }}</span></div><p class="mt-1 text-xs text-slate-500">{{ run.createdAt }}<span *ngIf="run.result"> · {{ run.result.externalReference }}</span></p></div><p *ngIf="!workflowRuns.length" class="mt-3 text-sm text-slate-500">No workflow runs recorded.</p></section><section class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div class="flex items-center justify-between"><h2 class="text-xl font-semibold">Audit trail</h2><button (click)="loadAudit()" class="text-sm text-indigo-600">Refresh</button></div><div *ngFor="let event of auditEvents | slice:0:10" class="mt-3 rounded-xl border p-3"><div class="flex items-center justify-between"><span class="font-medium">{{ event.eventName }}</span><span class="text-xs text-slate-500">{{ event.createdAt }}</span></div><p class="mt-1 break-all text-xs text-slate-500">{{ event.metadata | json }}</p></div><p *ngIf="!auditEvents.length" class="mt-3 text-sm text-slate-500">No audit events recorded.</p></section></section>
-  <section *ngIf="token && role === 'platform_admin'" class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div class="flex items-center justify-between"><div><h2 class="text-xl font-semibold">Manage tenant AI agent</h2><p class="mt-1 text-sm text-slate-500">Platform admins can configure an active or suspended tenant. Archived tenants are locked.</p></div><span *ngIf="selectedTenant" class="text-sm text-slate-500">{{ selectedTenant.name }}</span></div><div class="mt-4 flex flex-col gap-3 sm:flex-row"><select [(ngModel)]="selectedTenantId" name="platformTenant" class="min-w-0 flex-1 rounded-lg border px-3 py-2"><option value="">Choose organization</option><option *ngFor="let tenant of tenants" [value]="tenant.id" [disabled]="tenant.status === 'archived'">{{ tenant.name }} · {{ tenant.status }}</option></select><button type="button" (click)="manageAgent()" class="rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Load agent</button></div><form *ngIf="selectedTenant" (ngSubmit)="savePlatformPersona()" class="mt-6 grid gap-3 md:grid-cols-2"><input [(ngModel)]="persona.name" name="platformPersonaName" required placeholder="Assistant name" class="rounded-lg border px-3 py-2"><input [(ngModel)]="persona.greeting" name="platformGreeting" required placeholder="Greeting" class="rounded-lg border px-3 py-2"><textarea [(ngModel)]="persona.personality" name="platformPersonality" required rows="3" placeholder="Personality" class="rounded-lg border px-3 py-2 md:col-span-2"></textarea><input [(ngModel)]="persona.tone" name="platformTone" required placeholder="Tone" class="rounded-lg border px-3 py-2"><input [(ngModel)]="persona.speakingStyle" name="platformSpeakingStyle" required placeholder="Speaking style" class="rounded-lg border px-3 py-2"><input [(ngModel)]="permittedLanguageText" name="platformPermittedLanguages" required placeholder="Permitted languages, e.g. en, ar" class="rounded-lg border px-3 py-2 md:col-span-2"><button class="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white md:col-span-2">Save and publish agent</button></form></section>
-</main>
+<!-- Sign-In Screen (Shown when not authenticated) -->
+<app-login-page *ngIf="!isAuthenticated"></app-login-page>
+
+<!-- Authenticated Full-Width Editorial Workspace Layout -->
+<div *ngIf="isAuthenticated" class="min-h-screen bg-[#fafafa] text-[#121214] flex flex-col justify-between selection:bg-neutral-900 selection:text-white">
+  
+  <div>
+    <!-- Sticky Top Navigation with Click-to-Open Mega Menus (No left sidebar) -->
+    <app-top-nav></app-top-nav>
+
+    <!-- Controlled Max Width Content Canvas -->
+    <main class="mx-auto max-w-[1536px] px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
+      
+      <!-- 1. Header Area -->
+      <section class="border-b border-neutral-200/80 pb-6" aria-labelledby="page-title">
+        <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
+          
+          <!-- Title & Editorial Description -->
+          <div class="space-y-1.5">
+            <div class="flex items-center gap-2.5">
+              <span class="text-[11px] font-bold uppercase tracking-[0.22em] text-neutral-400">
+                Agentic RAG AI
+              </span>
+              <span class="text-neutral-300">/</span>
+              <span class="text-xs font-mono font-medium text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded">
+                {{ selectedTenant?.name || 'All Organizations' }}
+              </span>
+              <app-badge variant="neutral" [showDot]="false" text="">
+                {{ role === 'platform_admin' ? 'Platform Owner' : 'Tenant Admin' }}
+              </app-badge>
+            </div>
+
+            <h1 id="page-title" class="text-3xl sm:text-4xl font-bold tracking-tight text-neutral-900 font-sans">
+              Knowledge Operations
+            </h1>
+
+            <p class="text-xs sm:text-sm text-neutral-500 max-w-3xl leading-relaxed">
+              Tenant administrators and platform engineers stage, review, ground, and publish source material with zero customer data leakage. Node API owns authorization, PII masking, retrieval orchestration, and approved n8n tool execution.
+            </p>
+          </div>
+
+          <!-- Right-Aligned Action Bar -->
+          <div class="flex flex-wrap items-center gap-2.5 shrink-0">
+            <!-- Search Shortcut -->
+            <button
+              type="button"
+              (click)="openCommandPalette()"
+              class="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-600 hover:border-neutral-300 hover:text-neutral-900 transition-colors button-press shadow-subtle"
+            >
+              <app-icon name="command" classNames="w-3.5 h-3.5 text-neutral-400"></app-icon>
+              <span>Command Palette</span>
+              <kbd class="font-mono text-[10px] text-neutral-400">⌘K</kbd>
+            </button>
+
+            <!-- Refresh Workspace -->
+            <button
+              type="button"
+              (click)="refreshWorkspace()"
+              class="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors button-press shadow-subtle"
+              title="Refresh workspace telemetry and state"
+            >
+              <app-icon name="refresh" classNames="w-3.5 h-3.5 text-neutral-400"></app-icon>
+              <span>Sync</span>
+            </button>
+
+            <!-- Primary Workspace CTA -->
+            <button
+              type="button"
+              (click)="openPrimaryAction()"
+              class="flex items-center gap-2 rounded-lg bg-neutral-900 px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-neutral-800 transition-all button-press"
+            >
+              <app-icon name="plus" classNames="w-3.5 h-3.5"></app-icon>
+              <span>{{ role === 'platform_admin' ? 'Onboard Organization' : 'Stage New Material' }}</span>
+            </button>
+          </div>
+
+        </div>
+
+        <!-- Contextual Sub-Navigation Pill Bar -->
+        <div class="mt-6 flex items-center gap-1.5 overflow-x-auto pb-1" role="tablist">
+          <button
+            *ngFor="let tab of navTabs"
+            type="button"
+            role="tab"
+            [attr.aria-selected]="currentSection === tab.id"
+            (click)="setSection(tab.id)"
+            class="flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-all"
+            [ngClass]="currentSection === tab.id ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'"
+          >
+            <app-icon [name]="tab.icon" classNames="w-3.5 h-3.5"></app-icon>
+            <span>{{ tab.label }}</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Section: Overview -->
+      <ng-container *ngIf="currentSection === 'overview'">
+        <!-- 2. KPI Section -->
+        <app-kpi-cards></app-kpi-cards>
+
+        <!-- 3. Organization Management Section -->
+        <app-org-table></app-org-table>
+
+        <!-- 5. Service Health & Observability Matrix -->
+        <app-service-health></app-service-health>
+
+        <!-- 6. Activity & Ingestion Summary Stream -->
+        <app-activity-pipeline></app-activity-pipeline>
+      </ng-container>
+
+      <!-- Section: Organizations -->
+      <ng-container *ngIf="currentSection === 'organizations'">
+        <app-kpi-cards></app-kpi-cards>
+        <app-org-table></app-org-table>
+      </ng-container>
+
+      <!-- Section: Knowledge -->
+      <ng-container *ngIf="currentSection === 'knowledge'">
+        <app-knowledge-manager></app-knowledge-manager>
+        <app-activity-pipeline></app-activity-pipeline>
+      </ng-container>
+
+      <!-- Section: AI Studio -->
+      <ng-container *ngIf="currentSection === 'studio'">
+        <app-ai-studio></app-ai-studio>
+      </ng-container>
+
+      <!-- Section: Observability -->
+      <ng-container *ngIf="currentSection === 'observability'">
+        <app-service-health></app-service-health>
+        <app-activity-pipeline></app-activity-pipeline>
+      </ng-container>
+
+      <!-- Section: Settings -->
+      <ng-container *ngIf="currentSection === 'settings'">
+        <app-settings-view></app-settings-view>
+      </ng-container>
+
+    </main>
+  </div>
+
+  <!-- Editorial Footer -->
+  <footer class="border-t border-neutral-200/80 bg-white py-6 mt-16 text-xs text-neutral-500">
+    <div class="mx-auto max-w-[1536px] px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="flex h-6 w-6 items-center justify-center rounded bg-neutral-900 text-white">
+          <app-icon name="logo" classNames="w-3.5 h-3.5 text-white"></app-icon>
+        </div>
+        <span class="font-semibold text-neutral-800">Agentic RAG AI</span>
+        <span class="text-neutral-300">·</span>
+        <span>Source-Grounded Autonomous Operations Platform</span>
+      </div>
+
+      <div class="flex items-center gap-6 text-[11px] text-neutral-400 font-mono">
+        <span>PostgreSQL pgvector</span>
+        <span>Azure AI Foundry GPT-4.1-mini</span>
+        <span>n8n Verified Actions</span>
+        <span>Zero PII Cloud Transfer</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- 4. Tenant Onboarding Slide-over Panel -->
+  <app-onboard-drawer></app-onboard-drawer>
+
+  <!-- Global Command Palette Modal (Ctrl+K) -->
+  <app-command-palette></app-command-palette>
+
+  <!-- Non-intrusive Toast Notifications -->
+  <app-toast></app-toast>
+
+</div>

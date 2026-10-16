@@ -1,4 +1,75 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-html, body { margin: 0; min-height: 100%; background: #f8fafc; color: #0f172a; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+
+@layer base {
+  :root {
+    --theme-bg: #FAFAFA;
+    --theme-panel: #FFFFFF;
+    --theme-text-primary: #0A0A0A;
+    --theme-text-secondary: #525252;
+    --theme-text-muted: #737373;
+    --theme-border: #E5E5E5;
+    --theme-hover: #F5F5F5;
+    --theme-accent: #111111;
+    --theme-success: #166534;
+    --theme-warning: #B45309;
+    --theme-error: #B91C1C;
+    --theme-ring: #A3A3A3;
+  }
+
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background-color: #FAFAFA;
+    color: #0A0A0A;
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    letter-spacing: -0.011em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Custom subtle scrollbars */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #E5E5E5;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #A3A3A3;
+  }
+
+  /* Focus ring styling per user theme */
+  *:focus-visible {
+    outline: 2px solid #A3A3A3;
+    outline-offset: 1px;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Micro-interaction utility classes */
+.interactive-card {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+}
+.interactive-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(10, 10, 10, 0.05), 0 8px 10px -6px rgba(10, 10, 10, 0.02);
+}
+
+.button-press {
+  transition: transform 0.1s ease, background-color 0.15s ease, opacity 0.15s ease;
+}
+.button-press:active {
+  transform: scale(0.98);
+}
