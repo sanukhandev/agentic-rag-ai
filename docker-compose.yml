@@ -1,4 +1,18 @@
 services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: agentic-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      - "${REDIS_BIND_ADDRESS:-127.0.0.1}:6379:6379"
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   n8n:
     image: n8nio/n8n:latest@sha256:dd580fe1ab6e99e85bc66f2acf8bc8c5e9409fbe61b2e2803c5024403ef52833
     container_name: n8n

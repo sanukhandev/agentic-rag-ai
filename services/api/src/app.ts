@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { ActionGateway, MockWorkflowAdapter, isSafeExternalReference, verifyN8nPayload, type WorkflowAdapter } from './actions.js';
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
+import { cacheKey, createCache, type CacheStore } from './cache.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, rankChunksWithVector } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { DeterministicGroundedModel, hasSufficientEvidence, isGreeting, isPermittedLanguage, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence } from './model.js';
@@ -112,10 +113,14 @@ export interface AppDependencies {
   rateLimitWindowMs?: number;
   inputCostUsdPerMillion?: number;
   outputCostUsdPerMillion?: number;
+  cache?: CacheStore;
+  authCacheTtlSeconds?: number;
+  chatResponseCacheTtlSeconds?: number;
 }
 
 export const createApp = (dependencies: AppDependencies = {}) => {
   const store = dependencies.store ?? new MemoryStore();
+  const cache = dependencies.cache ?? createCache(process.env.REDIS_URL);
   const model = dependencies.model ?? new DeterministicGroundedModel();
   const workflow = dependencies.workflow ?? new MockWorkflowAdapter();
   const nodeEnv = dependencies.nodeEnv ?? process.env.NODE_ENV ?? 'development';
@@ -131,7 +136,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const readRate = (value: number | undefined, name: string): number | null => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return null; const parsed = Number(raw); if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative number.`); return parsed; };
   const inputCostUsdPerMillion = readRate(dependencies.inputCostUsdPerMillion, 'MODEL_INPUT_COST_USD_PER_MILLION');
   const outputCostUsdPerMillion = readRate(dependencies.outputCostUsdPerMillion, 'MODEL_OUTPUT_COST_USD_PER_MILLION');
+  const readCacheTtl = (value: number | undefined, name: string, fallback: number, max: number): number => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return fallback; const parsed = Number(raw); if (!Number.isInteger(parsed) || parsed < 0 || parsed > max) throw new Error(`${name} must be an integer between 0 and ${max}.`); return parsed; };
+  const authCacheTtlSeconds = readCacheTtl(dependencies.authCacheTtlSeconds, 'AUTH_SESSION_CACHE_TTL_SECONDS', 10, 60);
+  const chatResponseCacheTtlSeconds = readCacheTtl(dependencies.chatResponseCacheTtlSeconds, 'CHAT_RESPONSE_CACHE_TTL_SECONDS', 60, 300);
   if (nodeEnv === 'production' && (!dependencies.model || !dependencies.embedding || !dependencies.workflow || !n8nCallbackSecret || !ingestionWorkerSecret)) throw new Error('Production Azure, embedding, workflow, callback and ingestion adapters are required.');
+  if (nodeEnv === 'production' && !dependencies.cache && !process.env.REDIS_URL) throw new Error('Production requires REDIS_URL.');
   if (!Number.isFinite(chatSessionTtlMs) || chatSessionTtlMs <= 0) throw new Error('CHAT_SESSION_TTL_MS must be a positive number.');
   const ensureLiveSession = (createdAt: string): void => { if (sessionExpired(createdAt, chatSessionTtlMs)) throw new HttpError(410, 'SESSION_EXPIRED', 'This chat session has expired.'); };
   const rehydrateStoredResponse = (session: Session, stored: Record<string, unknown>): Record<string, unknown> => {
@@ -146,7 +155,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (expectedBuffer.length !== providedBuffer.length || !timingSafeEqual(expectedBuffer, providedBuffer)) { next(new HttpError(401, 'WORKER_UNAUTHORIZED', 'Ingestion worker authentication failed.')); return; }
     next();
   };
-  const auth = new AuthService(store, jwtSecret);
+  const auth = new AuthService(store, jwtSecret, cache, authCacheTtlSeconds);
   const gateway = new ActionGateway(store, workflow);
   const app = express();
   const rateLimits = new Map<string, RateLimitEntry>();
@@ -200,7 +209,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
 
   app.get('/api/v1/health/live', (_req, res) => res.json({ status: 'ok' }));
   app.get('/api/v1/health/ready', async (_req, res) => {
-    try { await store.countUsers(); res.json({ status: 'ready', store: 'available' }); } catch { res.status(503).json({ status: 'not_ready' }); }
+    try { await store.countUsers(); res.json({ status: 'ready', store: 'available', cache: (await cache.ping()) ? 'available' : 'degraded' }); } catch { res.status(503).json({ status: 'not_ready' }); }
   });
 
   app.post('/api/v1/auth/register-platform', async (req, res, next) => {
@@ -266,7 +275,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.json({ purged, before });
     } catch (error) { next(error); }
   });
-  app.get('/api/v1/admin/services/health', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, _next) => { const checkedAt = new Date().toISOString(); const auth = getAuth(req); const observed = observedTelemetry(auth?.role === 'platform_admin' ? telemetry : tenantTelemetry.get(auth?.tenantId ?? '') ?? newTelemetry()); try { await store.countUsers(); res.json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'ok' }, model: { status: 'adapter' }, embedding: { status: 'adapter' }, workflow: { status: 'adapter' }, ingestion: { status: 'not_observed' } } }); } catch { res.status(503).json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'down' } } }); } });
+  app.get('/api/v1/admin/services/health', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, _next) => { const checkedAt = new Date().toISOString(); const auth = getAuth(req); const observed = observedTelemetry(auth?.role === 'platform_admin' ? telemetry : tenantTelemetry.get(auth?.tenantId ?? '') ?? newTelemetry()); try { await store.countUsers(); res.json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'ok' }, cache: { status: (await cache.ping()) ? 'ok' : 'degraded' }, model: { status: 'adapter' }, embedding: { status: 'adapter' }, workflow: { status: 'adapter' }, ingestion: { status: 'not_observed' } } }); } catch { res.status(503).json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'down' } } }); } });
 
   app.put('/api/v1/admin/persona', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
     try { const tenantId = await tenantForRequest(store, req); const input = parse(personaSchema, req.body); const version = await store.createPersonaVersion({ tenantId, ...input, status: 'draft' }); await store.publishPersonaVersion(tenantId, version.id); const persona = await store.getPersona(tenantId); res.json({ persona }); } catch (error) { next(error); }
@@ -525,6 +534,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       enforcePublicChatEnabled(req, tenant);
       if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.');
       const masked = maskPii(input.message);
+      const responseCacheKey = cacheKey('chat-response', session.tenantId, session.id, input.clientMessageId);
+      const cachedResponse = await cache.get<Record<string, unknown>>(responseCacheKey);
+      if (cachedResponse && typeof cachedResponse.answer === 'string') { res.json(rehydrateStoredResponse(session, cachedResponse)); return; }
       const durableDuplicate = await store.getMessageByClientId(session.id, input.clientMessageId);
       const retryableDuplicate = durableDuplicate?.response?.retryable === true;
       if (durableDuplicate?.response && !retryableDuplicate) { res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
@@ -570,6 +582,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const estimatedOutputTokens = estimateTokens(maskedAnswer);
       await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: maskedAnswer, citations: safeCitations, clientMessageId: null, response: { conversational }, createdAt: new Date().toISOString() });
       await store.updateMessage({ ...userMessage, response: persistedResponse });
+      await cache.set(responseCacheKey, persistedResponse, chatResponseCacheTtlSeconds);
       recordChatOutcome(session.tenantId, grounded, Boolean(action), estimatedInputTokens, estimatedOutputTokens);
       res.json(response);
     } catch (error) {

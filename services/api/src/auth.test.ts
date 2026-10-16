@@ -2,7 +2,17 @@ import { createHash } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { describe, expect, it } from 'vitest';
 import { AuthService } from './auth.js';
+import { MemoryCache } from './cache.js';
 import { MemoryStore } from './store-memory.js';
+
+class CountingStore extends MemoryStore {
+  authSessionReads = 0;
+
+  override async getAuthSession(tokenHash: string) {
+    this.authSessionReads += 1;
+    return super.getAuthSession(tokenHash);
+  }
+}
 
 describe('development auth boundary', () => {
   it('issues, verifies and revokes a user-backed token', async () => {
@@ -25,5 +35,20 @@ describe('development auth boundary', () => {
     const token = jwt.sign({ userId: user.id, email: user.email, role: user.role, tenantId: user.tenantId }, secret, { expiresIn: '2h', issuer: 'agentic-rag-api' });
     await store.createAuthSession({ tokenHash: createHash('sha256').update(token).digest('hex'), userId: user.id, expiresAt: new Date(Date.now() - 1).toISOString(), revokedAt: null });
     await expect(auth.verify(token)).resolves.toBeNull();
+  });
+
+  it('caches only the short-lived auth session reference and invalidates it on logout', async () => {
+    const store = new CountingStore();
+    const auth = new AuthService(store, 'test-jwt-secret', new MemoryCache(), 10);
+    const user = await store.createUser({ email: 'cached@example.test', passwordHash: 'hash', role: 'tenant_admin', tenantId: 'tenant-a' });
+    const token = await auth.issue(user);
+
+    await expect(auth.verify(token)).resolves.toMatchObject({ userId: user.id });
+    await expect(auth.verify(token)).resolves.toMatchObject({ userId: user.id });
+    expect(store.authSessionReads).toBe(0);
+
+    await auth.revoke(token);
+    await expect(auth.verify(token)).resolves.toBeNull();
+    expect(store.authSessionReads).toBe(1);
   });
 });

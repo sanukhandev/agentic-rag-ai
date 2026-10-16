@@ -1,7 +1,7 @@
 # Developer environment and deployment (local implementation)
 
 ## Repository baseline
-The root `docker-compose.yml` declares **only an n8n service** with a digest-pinned image and persistent `n8n_data` volume. Its default binding is localhost-only (`127.0.0.1:5678`) over development HTTP. Local application services are run from npm workspaces, while `infra/docker-compose.dev.yml` runs a private pgvector/PostgreSQL container. This is development infrastructure only; no VM deployment is performed by the repository.
+The root `docker-compose.yml` declares local n8n and Redis services with persistent volumes. Both default bindings are localhost-only (`127.0.0.1:5678` and `127.0.0.1:6379`). Local application services are run from npm workspaces, while `infra/docker-compose.dev.yml` runs a private pgvector/PostgreSQL container. This is development infrastructure only; no VM deployment is performed by the repository.
 
 ## Intended workstation prerequisites
 Git, Docker Engine/Compose, Node.js 22+, npm, Python 3.x with venv, a PostgreSQL client and optional Azure credentials with an approved model deployment.
@@ -46,6 +46,10 @@ The Angular tenant-admin panel can also queue a TXT, PDF, DOCX or XLSX upload. I
 ```
 
 The API deletes the Node-side staged bytes after a successful or idempotent result. Failed jobs remain available for retry; configure a scheduled private-staging retention/purge policy before production.
+
+## Redis cache
+
+Start the local cache with `docker compose up -d redis`. Set `REDIS_URL=redis://127.0.0.1:6379` in the ignored local `.env` before starting the API. The API keeps a bounded in-process LRU fallback and fails open when Redis is unavailable. Redis stores only short-lived auth-session references and masked, tenant/session/client-message-scoped response entries; passwords, raw bearer tokens and reversible PII mappings are never cached. Production requires authenticated TLS Redis, restricted network access, encryption/backup policy and an explicit eviction/retention policy.
 
 ## Repeatable local verification
 

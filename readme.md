@@ -46,7 +46,7 @@ Unanswered/unsupported business questions are answered with a transparent knowle
 - [Delivery sequence](docs/12-delivery-roadmap.md)
 
 ## Existing Docker Compose
-The root `docker-compose.yml` runs **n8n only**, uses a digest-pinned image, and binds TCP 5678 to localhost by default over development HTTP. It is an **existing development bootstrap, not a production-ready platform**. See [security hardening](docs/06-security-and-privacy.md) before any controlled staging exposure.
+The root `docker-compose.yml` runs local **n8n and Redis**, persists both data directories, and binds TCP 5678/6379 to localhost by default. It is an **existing development bootstrap, not a production-ready platform**. See [security hardening](docs/06-security-and-privacy.md) before any controlled staging exposure.
 
 ## Local development
 
@@ -74,7 +74,7 @@ npm run dev:admin
 
 For the PostgreSQL/pgvector adapter, run `npm run db:migrate`, set `STORE=postgres` and `DATABASE_URL` from `.env.example`, then start the API. The API loads an ignored local `.env` when present; keep real credentials there, never in Git. The Python worker is under `tools/ingestion`; it supports TXT, Markdown, CSV, DOCX, XLSX, text PDF and bounded allowlisted HTTPS snapshots, and must run in a project venv. No real customer data or credentials belong in the repository.
 
-The root `docker-compose.yml` is the n8n-only local development deployment with localhost-only defaults. `infra/docker-compose.dev.yml` is the private local PostgreSQL/pgvector service; neither compose file is a production deployment.
+The root `docker-compose.yml` is the n8n/Redis local development deployment with localhost-only defaults. `infra/docker-compose.dev.yml` is the private local PostgreSQL/pgvector service; neither compose file is a production deployment.
 
 ## Current verification and limitations
 
