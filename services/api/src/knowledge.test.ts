@@ -46,5 +46,13 @@ describe('knowledge pipeline primitives', () => {
       'File: training/02_architecture_capabilities.docx · section 1\nDocument SK-002\nThe portfolio describes 100 systems across 9 markets.',
       'File: training/04_portfolio_faq.docx · section 1\nDocument SK-004\nThe portfolio includes a 25-hour prototype.',
     ])).toBe(false);
+    expect(hasConflictingEvidence([
+      'Case study | https://www.sanukhan.dev/projects/zaakiy-v3rse\nSource | https://github.com/sanukhandev/sanukhandev.github.io/blob/main/src/data/caseStudies.ts\n07 ZaakiyV3RSE',
+      'Case study | https://www.sanukhan.dev/projects/garage-management-and-diagnostics\nSource | https://github.com/sanukhandev/sanukhandev.github.io/blob/main/src/data/caseStudies.ts\n06 Garage Management',
+    ])).toBe(false);
+    expect(hasConflictingEvidence([
+      'The plan costs 100 credits per month.',
+      'The plan costs 200 credits per month.',
+    ])).toBe(true);
   });
 });

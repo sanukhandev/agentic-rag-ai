@@ -106,7 +106,7 @@ const factualSegments = (content: string): string[] => content
 
 const termsNearFacts = (content: string): Set<string> => {
   const tokens = content.toLowerCase().match(/[a-z]+|\d+(?:\.\d+)?/g) ?? [];
-  const metadataTerms = new Set(['document', 'file', 'page', 'portfolio', 'sample', 'section', 'source', 'training']);
+  const metadataTerms = new Set(['document', 'file', 'page', 'portfolio', 'sample', 'section', 'source', 'training', 'data', 'casestudies', 'case', 'study', 'project', 'projects', 'domain', 'github', 'url']);
   const terms = new Set<string>();
   tokens.forEach((token, index) => {
     if (!/^\d/.test(token)) return;
@@ -115,6 +115,8 @@ const termsNearFacts = (content: string): Set<string> => {
   return terms;
 };
 
+const measurementTerms = new Set(['price', 'prices', 'cost', 'costs', 'credit', 'credits', 'hour', 'hours', 'market', 'markets', 'system', 'systems', 'user', 'users', 'year', 'years', 'month', 'months', 'percent', 'percentage']);
+
 export const hasConflictingEvidence = (contents: string[]): boolean => {
   for (let leftIndex = 0; leftIndex < contents.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < contents.length; rightIndex += 1) {
@@ -122,7 +124,8 @@ export const hasConflictingEvidence = (contents: string[]): boolean => {
         for (const right of factualSegments(contents[rightIndex] ?? '')) {
           const leftTerms = termsNearFacts(left);
           const rightTerms = termsNearFacts(right);
-          const sharedTopic = [...leftTerms].filter((term) => rightTerms.has(term)).length >= 2;
+          const sharedTerms = [...leftTerms].filter((term) => rightTerms.has(term));
+          const sharedTopic = sharedTerms.length >= 2 && sharedTerms.some((term) => measurementTerms.has(term));
           const leftFacts = new Set(left.match(/\b\d+(?:\.\d+)?\b/g) ?? []);
           const rightFacts = new Set(right.match(/\b\d+(?:\.\d+)?\b/g) ?? []);
           if (sharedTopic && leftFacts.size > 0 && rightFacts.size > 0 && [...leftFacts].some((fact) => !rightFacts.has(fact))) return true;

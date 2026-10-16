@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, hasSufficientEvidence, isGreeting, isPermittedLanguage, validateCitations } from './model.js';
+import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, hasSufficientEvidence, isGreeting, isPermittedLanguage, needsConversationContext, validateCitations } from './model.js';
 
 describe('Azure Foundry model adapter', () => {
   it('detects and enforces configured language families', () => {
@@ -11,11 +11,14 @@ describe('Azure Foundry model adapter', () => {
     expect(isGreeting("Hey ! How'z it Going ?")).toBe(true);
     expect(isGreeting('Good morning there')).toBe(true);
     expect(isGreeting('What is the price?')).toBe(false);
+    expect(conversationalIntent('How are you?')).toBe('wellbeing');
   });
   it('handles common small-talk and identity questions without RAG abstention', () => {
     expect(conversationalIntent('I m good')).toBe('wellbeing');
     expect(conversationalIntent('who are you')).toBe('identity');
     expect(conversationalIntent('What is the price?')).toBeNull();
+    expect(needsConversationContext('Do you have it?')).toBe(true);
+    expect(needsConversationContext('Tell me about Sanu Khan')).toBe(false);
     expect(conversationalReply('wellbeing', 'Nova')).toContain('Glad to hear it');
     expect(conversationalReply('identity', 'Nova')).toContain('tenant’s AI assistant');
   });
