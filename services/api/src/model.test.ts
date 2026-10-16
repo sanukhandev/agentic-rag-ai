@@ -59,6 +59,11 @@ describe('Azure Foundry model adapter', () => {
     expect(validateCitations({ answer: 'answer', citationIds: ['unknown', 'known'], proposedIntent: null }, [{ citation, content: 'answer' }])).toEqual([citation]);
   });
 
+  it('accepts a citation alias derived from the authorized source locator', () => {
+    const citation = { sourceId: 'source', versionId: 'version', chunkId: 'known', title: 'FAQ', locator: 'training/faq.docx · section 2' };
+    expect(validateCitations({ answer: 'answer', citationIds: ['source:faq.docx:section 2'], proposedIntent: null }, [{ citation, content: 'answer' }])).toEqual([citation]);
+  });
+
   it('rejects unsupported numeric claims even when the citation ID is valid', () => {
     const citation = { sourceId: 'source', versionId: 'version', chunkId: 'known', title: 'FAQ', locator: 'section 1' };
     const evidence = [{ citation, content: 'The approved price is 42 credits.' }];
