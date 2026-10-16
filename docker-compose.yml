@@ -16,7 +16,4 @@ services:
       GENERIC_TIMEZONE: Asia/Dubai
       TZ: Asia/Dubai
     volumes:
-      - n8n_data:/home/node/.n8n
-
-volumes:
-  n8n_data:
+      - ./data/n8n:/home/node/.n8n
