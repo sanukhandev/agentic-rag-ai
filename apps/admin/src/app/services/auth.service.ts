@@ -11,7 +11,6 @@ export interface AuthSession {
   role: UserRole;
   email: string;
   isAuthenticated: boolean;
-  isMockMode: boolean;
 }
 
 @Injectable({
@@ -24,16 +23,14 @@ export class AuthService {
 
   private readonly tokenSubject = new BehaviorSubject<string>('');
   private readonly roleSubject = new BehaviorSubject<UserRole>('');
-  private readonly userEmailSubject = new BehaviorSubject<string>('admin@acme.com');
+  private readonly userEmailSubject = new BehaviorSubject<string>('');
   private readonly isAuthenticatedSubject = new BehaviorSubject<boolean>(false);
-  private readonly isMockModeSubject = new BehaviorSubject<boolean>(false);
   private readonly isAuthenticatingSubject = new BehaviorSubject<boolean>(false);
 
   readonly token$: Observable<string> = this.tokenSubject.asObservable();
   readonly role$: Observable<UserRole> = this.roleSubject.asObservable();
   readonly userEmail$: Observable<string> = this.userEmailSubject.asObservable();
   readonly isAuthenticated$: Observable<boolean> = this.isAuthenticatedSubject.asObservable();
-  readonly isMockMode$: Observable<boolean> = this.isMockModeSubject.asObservable();
   readonly isAuthenticating$: Observable<boolean> = this.isAuthenticatingSubject.asObservable();
 
   constructor() {
@@ -54,10 +51,6 @@ export class AuthService {
 
   get isAuthenticated(): boolean {
     return this.isAuthenticatedSubject.value;
-  }
-
-  get isMockMode(): boolean {
-    return this.isMockModeSubject.value;
   }
 
   get isPlatformAdmin(): boolean {
@@ -105,7 +98,6 @@ export class AuthService {
         this.roleSubject.next(role);
         this.userEmailSubject.next(resolvedEmail);
         this.isAuthenticatedSubject.next(true);
-        this.isMockModeSubject.next(false);
         this.isAuthenticatingSubject.next(false);
 
         sessionStorage.setItem(ADMIN_STORAGE_KEYS.TOKEN, res.token);
@@ -123,29 +115,8 @@ export class AuthService {
     });
   }
 
-  loginAsDemo(role: 'platform_admin' | 'tenant_admin'): void {
-    const fakeToken = `demo_jwt_${role}_${Date.now()}`;
-    const email = role === 'platform_admin' ? 'admin@agentic-rag.ai' : 'admin@acme.com';
-
-    this.tokenSubject.next(fakeToken);
-    this.roleSubject.next(role);
-    this.userEmailSubject.next(email);
-    this.isAuthenticatedSubject.next(true);
-    this.isMockModeSubject.next(true);
-
-    sessionStorage.setItem(ADMIN_STORAGE_KEYS.TOKEN, fakeToken);
-    sessionStorage.setItem(ADMIN_STORAGE_KEYS.ROLE, role);
-    sessionStorage.setItem(ADMIN_STORAGE_KEYS.EMAIL, email);
-
-    this.toastService.show(
-      'success',
-      'Demo Session Activated',
-      `Signed in as ${role === 'platform_admin' ? 'Platform Owner' : 'Tenant Administrator'}`
-    );
-  }
-
   logout(): void {
-    if (this.token && !this.isMockMode) {
+    if (this.token) {
       this.http.post(`${this.apiBase}/api/v1/auth/logout`, {}, {
         headers: this.authHeaders
       }).pipe(catchError(() => of(null))).subscribe();
@@ -157,8 +128,8 @@ export class AuthService {
 
     this.tokenSubject.next('');
     this.roleSubject.next('');
+    this.userEmailSubject.next('');
     this.isAuthenticatedSubject.next(false);
-    this.isMockModeSubject.next(false);
 
     this.toastService.show('info', 'Signed Out', 'You have been securely logged out.');
   }

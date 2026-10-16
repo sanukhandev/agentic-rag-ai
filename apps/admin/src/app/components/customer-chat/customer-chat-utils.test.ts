@@ -11,12 +11,12 @@ import {
 describe('customer-chat-utils', () => {
   it('validates and resolves tenant slugs without customer-facing input', () => {
     expect(isValidTenantSlug('acme-corp')).toBe(true);
-    expect(isValidTenantSlug('demo')).toBe(true);
+    expect(isValidTenantSlug('tenant-a')).toBe(true);
     expect(isValidTenantSlug('invalid slug!')).toBe(false);
 
     expect(resolveTenantSlug('?tenant=acme-global')).toBe('acme-global');
     expect(resolveTenantSlug('?tenantSlug=beta-test')).toBe('beta-test');
-    expect(resolveTenantSlug('', 'demo')).toBe('demo');
+    expect(resolveTenantSlug('', 'tenant-a')).toBe('tenant-a');
     expect(resolveTenantSlug('?other=123', 'fallback-org')).toBe('fallback-org');
   });
 

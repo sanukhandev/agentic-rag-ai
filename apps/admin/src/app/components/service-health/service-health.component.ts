@@ -9,8 +9,6 @@ interface ServiceNode {
   key: string;
   name: string;
   role: string;
-  status: 'healthy' | 'degraded' | 'down';
-  latencyMs: number;
   details: string;
   icon: string;
 }
@@ -29,7 +27,7 @@ interface ServiceNode {
             <h2 id="observability-title" class="text-lg font-semibold text-neutral-900 tracking-tight">
               Service Health & Observability
             </h2>
-            <app-badge variant="success" [showDot]="true" text="All Systems Operational"></app-badge>
+            <app-badge [variant]="hasHealthObservation ? 'success' : 'neutral'" [showDot]="true" [text]="hasHealthObservation ? 'Observed' : 'No observations'"></app-badge>
           </div>
           <p class="mt-1 text-xs text-neutral-500">
             Real-time telemetry across Node API boundary, Azure AI Foundry, pgvector, and n8n runner.
@@ -54,28 +52,18 @@ interface ServiceNode {
         <div>
           <p class="text-[11px] font-medium text-neutral-500">Average Gateway Latency</p>
           <div class="mt-1 flex items-baseline gap-1.5">
-            <span class="text-xl font-bold font-mono text-neutral-900">{{ health?.telemetry?.averageLatencyMs || 38 }}</span>
+            <span class="text-xl font-bold font-mono text-neutral-900">{{ health?.telemetry?.averageLatencyMs ?? 0 }}</span>
             <span class="text-xs text-neutral-400 font-mono">ms</span>
-          </div>
-          <!-- Sparkline representation -->
-          <div class="mt-2 flex items-end gap-1 h-4">
-            <span class="w-1.5 bg-neutral-200 rounded-sm h-2"></span>
-            <span class="w-1.5 bg-neutral-200 rounded-sm h-3"></span>
-            <span class="w-1.5 bg-neutral-300 rounded-sm h-2.5"></span>
-            <span class="w-1.5 bg-neutral-900 rounded-sm h-4"></span>
-            <span class="w-1.5 bg-neutral-300 rounded-sm h-3"></span>
-            <span class="w-1.5 bg-neutral-200 rounded-sm h-2.5"></span>
-            <span class="w-1.5 bg-emerald-500 rounded-sm h-3"></span>
           </div>
         </div>
 
         <div>
           <p class="text-[11px] font-medium text-neutral-500">Total Request Volume</p>
           <div class="mt-1 flex items-baseline gap-1.5">
-            <span class="text-xl font-bold font-mono text-neutral-900">{{ (health?.telemetry?.requests || 184520) | number }}</span>
+            <span class="text-xl font-bold font-mono text-neutral-900">{{ (health?.telemetry?.requests ?? 0) | number }}</span>
           </div>
           <p class="mt-2 text-[11px] text-neutral-400 font-mono">
-            {{ health?.telemetry?.lastRequestAt || '14s ago' }}
+            {{ health?.telemetry?.lastRequestAt || '—' }}
           </p>
         </div>
 
@@ -83,13 +71,9 @@ interface ServiceNode {
           <p class="text-[11px] font-medium text-neutral-500">Server Error Rate</p>
           <div class="mt-1 flex items-baseline gap-1.5">
             <span class="text-xl font-bold font-mono text-neutral-900">
-              {{ ((health?.telemetry?.serverErrors || 14) / (health?.telemetry?.requests || 184520) * 100) | number:'1.2-2' }}%
+              {{ errorRate | number:'1.2-2' }}%
             </span>
-            <span class="text-[11px] text-neutral-400 font-mono">({{ health?.telemetry?.serverErrors || 14 }} errs)</span>
-          </div>
-          <div class="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-600 font-medium">
-            <app-icon name="check" classNames="w-3 h-3"></app-icon>
-            <span>Within SLA (<0.1%)</span>
+            <span class="text-[11px] text-neutral-400 font-mono">({{ health?.telemetry?.serverErrors ?? 0 }} errs)</span>
           </div>
         </div>
 
@@ -97,14 +81,14 @@ interface ServiceNode {
           <p class="text-[11px] font-medium text-neutral-500">Grounding Confidence</p>
           <div class="mt-1 flex items-baseline gap-1.5">
             <span class="text-xl font-bold font-mono text-emerald-700">
-              {{ ((health?.telemetry?.groundingRate || 0.986) * 100) | number:'1.1-1' }}%
+              {{ ((health?.telemetry?.groundingRate ?? 0) * 100) | number:'1.1-1' }}%
             </span>
             <span class="text-[11px] text-neutral-400 font-mono">
-              ({{ health?.telemetry?.abstentions || 1574 }} abstentions)
+              ({{ health?.telemetry?.abstentions ?? 0 }} abstentions)
             </span>
           </div>
           <p class="mt-2 text-[11px] text-neutral-400 font-mono">
-            Est. Cost: <span class="text-neutral-900 font-medium">\${{ health?.telemetry?.estimatedCostUsd || '64.85' }}</span>
+            Est. Cost: <span class="text-neutral-900 font-medium">{{ health?.telemetry?.estimatedCostUsd ?? '—' }}</span>
           </p>
         </div>
       </div>
@@ -125,7 +109,7 @@ interface ServiceNode {
                 <p class="text-[10px] text-neutral-400 font-mono">{{ s.role }}</p>
               </div>
             </div>
-            <app-badge variant="success" [showDot]="true" text="Nominal"></app-badge>
+            <app-badge [variant]="getBadgeVariant(s.key)" [showDot]="true" [text]="getStatusLabel(s.key)"></app-badge>
           </div>
 
           <p class="mt-3 text-[11px] text-neutral-500 leading-snug line-clamp-2">
@@ -133,8 +117,8 @@ interface ServiceNode {
           </p>
 
           <div class="mt-3 flex items-center justify-between border-t border-neutral-200/40 pt-2.5 text-[10px] text-neutral-400 font-mono">
-            <span>Latency: {{ s.latencyMs }} ms</span>
-            <span class="text-neutral-600">Active</span>
+            <span>Latency: {{ getLatency(s.key) }}</span>
+            <span class="text-neutral-600">{{ getStatusLabel(s.key) }}</span>
           </div>
         </div>
       </div>
@@ -152,8 +136,6 @@ export class ServiceHealthComponent {
       key: 'api',
       name: 'API Trust Gateway',
       role: 'Node Express / TS',
-      status: 'healthy',
-      latencyMs: 16,
       details: 'Customer PII tokenization vault and strict boundary authorization.',
       icon: 'shield'
     },
@@ -161,8 +143,6 @@ export class ServiceHealthComponent {
       key: 'model',
       name: 'Generation Model',
       role: 'Azure AI Foundry',
-      status: 'healthy',
-      latencyMs: 245,
       details: 'GPT-4.1-mini deployment strictly bound to retrieved source context.',
       icon: 'cpu'
     },
@@ -170,17 +150,13 @@ export class ServiceHealthComponent {
       key: 'store',
       name: 'Knowledge Store',
       role: 'PostgreSQL + pgvector',
-      status: 'healthy',
-      latencyMs: 12,
-      details: '1536-dim embeddings with HNSW cosine similarity indices.',
+      details: 'Tenant-isolated PostgreSQL and pgvector persistence.',
       icon: 'database'
     },
     {
       key: 'ingestion',
       name: 'Ingestion Service',
       role: 'Python venv isolated',
-      status: 'healthy',
-      latencyMs: 42,
       details: 'Safe multi-format document parser (PDF, DOCX, XLSX, TXT) and chunker.',
       icon: 'upload'
     },
@@ -188,8 +164,6 @@ export class ServiceHealthComponent {
       key: 'embedding',
       name: 'Embedding Engine',
       role: 'Azure text-embedding-3',
-      status: 'healthy',
-      latencyMs: 82,
       details: 'Deterministic normalization with zero external customer secret transfer.',
       icon: 'sparkles'
     },
@@ -197,8 +171,6 @@ export class ServiceHealthComponent {
       key: 'workflow',
       name: 'Workflow Orchestration',
       role: 'n8n Private Runner',
-      status: 'healthy',
-      latencyMs: 28,
       details: 'Server-side validated tool proposals with strict idempotency keys.',
       icon: 'activity'
     }
@@ -211,5 +183,40 @@ export class ServiceHealthComponent {
   refresh(): void {
     this.state.loadHealth();
     this.state.showToast('info', 'Telemetry Synchronized', 'Service health matrix updated.');
+  }
+
+  get hasHealthObservation(): boolean {
+    return Boolean(this.health?.checkedAt && Object.keys(this.health.checks).length);
+  }
+
+  get errorRate(): number {
+    const requests = this.health?.telemetry?.requests ?? 0;
+    return requests ? ((this.health?.telemetry?.serverErrors ?? 0) / requests) * 100 : 0;
+  }
+
+  private getCheck(key: string): { status?: string; latencyMs?: number } | undefined {
+    return this.health?.checks?.[key];
+  }
+
+  private getServiceStatus(key: string): 'healthy' | 'degraded' | 'down' {
+    const status = this.getCheck(key)?.status;
+    if (status === 'ok' || status === 'healthy') return 'healthy';
+    if (status === 'degraded' || status === 'not_observed') return 'degraded';
+    return 'down';
+  }
+
+  getBadgeVariant(key: string): 'success' | 'warning' | 'error' {
+    const status = this.getServiceStatus(key);
+    return status === 'healthy' ? 'success' : status === 'degraded' ? 'warning' : 'error';
+  }
+
+  getStatusLabel(key: string): string {
+    const status = this.getServiceStatus(key);
+    return status === 'healthy' ? 'Healthy' : status === 'degraded' ? 'Degraded' : 'Unavailable';
+  }
+
+  getLatency(key: string): string {
+    const latency = this.getCheck(key)?.latencyMs;
+    return latency === undefined ? '—' : `${latency} ms`;
   }
 }

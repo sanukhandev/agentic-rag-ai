@@ -218,23 +218,20 @@ import { BadgeComponent } from '../shared/badge.component';
                   <div class="max-w-[90%] rounded-2xl rounded-bl-none bg-white border border-neutral-200 p-3.5 text-xs space-y-2 shadow-subtle">
                     <div class="flex items-center justify-between border-b border-neutral-100 pb-2">
                       <span class="font-semibold text-neutral-900">{{ persona.name }}</span>
-                      <span class="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                        ✓ 100% Grounded
+                      <span class="text-[10px] font-mono px-1.5 py-0.5 rounded border" [ngClass]="previewGrounded ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-neutral-500 bg-neutral-50 border-neutral-200'">
+                        {{ previewGrounded ? '✓ Grounded' : 'No approved evidence' }}
                       </span>
                     </div>
 
-                    <p class="text-neutral-700 leading-relaxed">
+                    <p *ngIf="previewAnswer" class="text-neutral-700 leading-relaxed">
                       {{ previewAnswer }}
                     </p>
 
-                    <div class="pt-2 border-t border-neutral-100 text-[11px] text-neutral-500">
+                    <div *ngIf="previewCitations.length" class="pt-2 border-t border-neutral-100 text-[11px] text-neutral-500">
                       <span class="font-medium text-neutral-700">Verified Citations:</span>
                       <div class="mt-1 flex flex-wrap gap-1">
-                        <span class="rounded bg-neutral-100 px-2 py-0.5 text-[10px] font-mono text-neutral-600">
-                          [SOC-2 Whitepaper §4.2]
-                        </span>
-                        <span class="rounded bg-neutral-100 px-2 py-0.5 text-[10px] font-mono text-neutral-600">
-                          [Pricing Matrix 2026]
+                        <span *ngFor="let citation of previewCitations" class="rounded bg-neutral-100 px-2 py-0.5 text-[10px] font-mono text-neutral-600">
+                          [{{ citation.title }}<span *ngIf="citation.locator"> · {{ citation.locator }}</span>]
                         </span>
                       </div>
                     </div>
@@ -281,20 +278,15 @@ import { BadgeComponent } from '../shared/badge.component';
 export class AiStudioComponent {
   private readonly state = inject(AdminStateService);
 
-  persona: Persona = {
-    name: 'Aura Enterprise Guide',
-    greeting: 'Welcome to Acme Global. How may I assist your enterprise inquiry today?',
-    personality: 'Calm, authoritative, strictly grounded in authorized customer documentation, respectful, and privacy-first.',
-    tone: 'Clear, concise, professional, and helpful.',
-    speakingStyle: 'Declarative sentences, itemized bulleted clarifications, zero ungrounded speculation.',
-    permittedLanguages: ['en', 'es', 'de', 'fr', 'ja', 'ar']
-  };
+  persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: [] };
 
-  languagesInput = 'en, es, de, fr, ja, ar';
+  languagesInput = '';
   versions: PersonaVersion[] = [];
 
-  currentPrompt = 'What is the standard SLA response time for Sev-1 production incidents?';
-  previewAnswer = 'According to the Enterprise Master Services Agreement (MSA v4.2 §4.2), Sev-1 production incidents require initial response within 15 minutes, with 24/7 dedicated engineering dispatch until full service restoration.';
+  currentPrompt = '';
+  previewAnswer = '';
+  previewGrounded = false;
+  previewCitations: Array<{ title: string; locator: string }> = [];
   testInput = '';
 
   constructor() {
@@ -323,14 +315,26 @@ export class AiStudioComponent {
 
   setPrompt(p: string): void {
     this.currentPrompt = p;
-    this.previewAnswer = 'I acknowledge your request, but this information is not documented in approved enterprise sources. In accordance with zero-speculation policy, I cannot provide this detail.';
+    this.runPreview(p);
   }
 
   runTest(): void {
     if (!this.testInput.trim()) return;
-    this.currentPrompt = this.testInput;
+    const prompt = this.testInput;
     this.testInput = '';
-    this.previewAnswer = 'According to active verified documentation (SOC-2 Type II Whitepaper & MSA v4.2), all operations strictly enforce mutual TLS encryption and private VPC peering.';
+    this.runPreview(prompt);
+  }
+
+  private runPreview(message: string): void {
+    this.currentPrompt = message;
+    this.previewAnswer = '';
+    this.previewGrounded = false;
+    this.previewCitations = [];
+    this.state.personaService.preview(this.persona, message, (preview) => {
+      this.previewAnswer = preview.answer;
+      this.previewGrounded = preview.grounded;
+      this.previewCitations = preview.citations.map(({ citation }) => citation);
+    });
   }
 
   openFullCustomerChat(): void {

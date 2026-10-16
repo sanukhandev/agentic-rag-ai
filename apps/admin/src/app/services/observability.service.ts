@@ -2,10 +2,38 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
 import { Health, Metrics, WorkflowRun, AuditEvent } from '../types/admin.types';
-import { MOCK_HEALTH, MOCK_METRICS, MOCK_WORKFLOW_RUNS, MOCK_AUDIT_EVENTS } from './mock-data';
 import { API_BASE_URL } from './tokens';
 import { AuthService } from './auth.service';
 import { ToastService } from './toast.service';
+
+const EMPTY_METRICS: Metrics = {
+  sourceCounts: {},
+  ingestionJobs: {},
+  sessions: 0,
+  messages: 0,
+  actions: 0,
+  auditEvents: 0
+};
+
+const EMPTY_HEALTH: Health = {
+  checkedAt: '',
+  telemetry: {
+    requests: 0,
+    serverErrors: 0,
+    averageLatencyMs: 0,
+    lastRequestAt: null,
+    chatResponses: 0,
+    groundedResponses: 0,
+    abstentions: 0,
+    actionProposals: 0,
+    groundingRate: 0,
+    abstentionRate: 0,
+    estimatedInputTokens: 0,
+    estimatedOutputTokens: 0,
+    estimatedCostUsd: null
+  },
+  checks: {}
+};
 
 @Injectable({
   providedIn: 'root'
@@ -16,10 +44,10 @@ export class ObservabilityService {
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
 
-  private readonly healthSubject = new BehaviorSubject<Health>(MOCK_HEALTH);
-  private readonly metricsSubject = new BehaviorSubject<Metrics>(MOCK_METRICS);
-  private readonly workflowRunsSubject = new BehaviorSubject<WorkflowRun[]>(MOCK_WORKFLOW_RUNS);
-  private readonly auditEventsSubject = new BehaviorSubject<AuditEvent[]>(MOCK_AUDIT_EVENTS);
+  private readonly healthSubject = new BehaviorSubject<Health>(EMPTY_HEALTH);
+  private readonly metricsSubject = new BehaviorSubject<Metrics>(EMPTY_METRICS);
+  private readonly workflowRunsSubject = new BehaviorSubject<WorkflowRun[]>([]);
+  private readonly auditEventsSubject = new BehaviorSubject<AuditEvent[]>([]);
   private readonly isLoadingSubject = new BehaviorSubject<boolean>(false);
 
   readonly health$: Observable<Health> = this.healthSubject.asObservable();
@@ -45,38 +73,50 @@ export class ObservabilityService {
   }
 
   loadHealth(): void {
-    if (!this.auth.token || this.auth.isMockMode) return;
+    if (!this.auth.token) return;
     this.http.get<Health>(`${this.apiBase}/api/v1/admin/services/health`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => of(MOCK_HEALTH))
+      catchError(() => {
+        this.toast.show('error', 'Load Failed', 'Could not load service health.');
+        return of(EMPTY_HEALTH);
+      })
     ).subscribe((data) => this.healthSubject.next(data));
   }
 
   loadMetrics(): void {
-    if (!this.auth.token || this.auth.isMockMode) return;
+    if (!this.auth.token) return;
     this.http.get<{ metrics: Metrics }>(`${this.apiBase}/api/v1/admin/dashboard/overview`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => of({ metrics: MOCK_METRICS }))
+      catchError(() => {
+        this.toast.show('error', 'Load Failed', 'Could not load dashboard metrics.');
+        return of({ metrics: EMPTY_METRICS });
+      })
     ).subscribe((res) => this.metricsSubject.next(res.metrics));
   }
 
   loadWorkflowRuns(): void {
-    if (!this.auth.token || this.auth.isMockMode) return;
+    if (!this.auth.token) return;
     this.http.get<{ items: WorkflowRun[] }>(`${this.apiBase}/api/v1/admin/workflow-runs`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => of({ items: MOCK_WORKFLOW_RUNS }))
+      catchError(() => {
+        this.toast.show('error', 'Load Failed', 'Could not load workflow runs.');
+        return of({ items: [] });
+      })
     ).subscribe((res) => this.workflowRunsSubject.next(res.items));
   }
 
   loadAudit(): void {
-    if (!this.auth.token || this.auth.isMockMode) return;
+    if (!this.auth.token) return;
     this.http.get<{ items: AuditEvent[] }>(`${this.apiBase}/api/v1/admin/audit`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => of({ items: MOCK_AUDIT_EVENTS }))
+      catchError(() => {
+        this.toast.show('error', 'Load Failed', 'Could not load audit events.');
+        return of({ items: [] });
+      })
     ).subscribe((res) => this.auditEventsSubject.next(res.items));
   }
 

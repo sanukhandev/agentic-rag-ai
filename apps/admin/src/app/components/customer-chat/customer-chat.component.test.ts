@@ -12,8 +12,8 @@ describe('CustomerChatComponent logic and contracts', () => {
     const slugFromQuery = resolveTenantSlug('?tenant=enterprise-alpha');
     expect(slugFromQuery).toBe('enterprise-alpha');
 
-    const defaultSlug = resolveTenantSlug('', 'demo');
-    expect(defaultSlug).toBe('demo');
+    const defaultSlug = resolveTenantSlug('', 'tenant-a');
+    expect(defaultSlug).toBe('tenant-a');
   });
 
   it('renders markdown with safe HTML structure for assistant answers', () => {

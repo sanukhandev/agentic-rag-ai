@@ -296,7 +296,7 @@ import { BadgeComponent } from '../shared/badge.component';
                 </label>
                 <p class="pl-1">or drag and drop here</p>
               </div>
-              <p class="text-[11px] text-neutral-400 mt-1">PDF, DOCX, XLSX, TXT up to 25MB</p>
+              <p class="text-[11px] text-neutral-400 mt-1">PDF, DOCX, XLSX, TXT up to 5 MiB</p>
               <p *ngIf="selectedFile" class="mt-2 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded inline-block">
                 Selected: {{ selectedFile.name }} ({{ (selectedFile.size / 1024) | number:'1.0-0' }} KB)
               </p>
@@ -452,26 +452,36 @@ export class KnowledgeManagerComponent {
     });
   }
 
-  submitUpload(): void {
+  async submitUpload(): Promise<void> {
     if (!this.selectedFile) return;
     const mime = fileMimeType(this.selectedFile.name);
     if (!mime) {
       this.state.showToast('error', 'Unsupported Format', 'Please upload a PDF, DOCX, XLSX, or TXT file.');
       return;
     }
+    if (this.selectedFile.size > 5 * 1024 * 1024) {
+      this.state.showToast('error', 'File Too Large', 'Uploads are limited to 5 MiB.');
+      return;
+    }
 
-    const title = this.uploadTitle || this.selectedFile.name;
-    this.state.knowledge.queueOptimisticUpload(title, mime, this.uploadAudience);
-    this.selectedFile = null;
-    this.uploadTitle = '';
-    this.activeTab = 'catalog';
+    const file = this.selectedFile;
+    const title = this.uploadTitle || file.name;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    this.state.knowledge.queueFileUpload(title, file.name, mime, this.uploadAudience, btoa(binary), () => {
+      this.selectedFile = null;
+      this.uploadTitle = '';
+      this.activeTab = 'catalog';
+    });
   }
 
   submitCrawl(): void {
     if (!this.crawlTitle || !this.crawlUrl) return;
-    this.state.knowledge.queueOptimisticCrawl(this.crawlTitle, this.crawlUrl);
-    this.crawlTitle = '';
-    this.crawlUrl = '';
-    this.activeTab = 'catalog';
+    this.state.knowledge.queueCrawl(this.crawlTitle, this.crawlUrl, () => {
+      this.crawlTitle = '';
+      this.crawlUrl = '';
+      this.activeTab = 'catalog';
+    });
   }
 }

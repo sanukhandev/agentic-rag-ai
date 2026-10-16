@@ -39,7 +39,7 @@ export interface CustomerChatMessage {
 
 export const isValidTenantSlug = (slug: string): boolean => /^[a-z0-9-]+$/i.test(slug.trim());
 
-export const resolveTenantSlug = (search?: string, fallback = 'demo'): string => {
+export const resolveTenantSlug = (search?: string, fallback = ''): string => {
   if (typeof window === 'undefined' && !search) return fallback;
   const query = search ?? (typeof window !== 'undefined' ? window.location.search : '');
   const params = new URLSearchParams(query);

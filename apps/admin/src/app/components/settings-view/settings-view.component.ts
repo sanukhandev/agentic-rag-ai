@@ -230,7 +230,7 @@ import { BadgeComponent } from '../shared/badge.component';
 export class SettingsViewComponent {
   private readonly state = inject(AdminStateService);
 
-  channel: Channel = { publicOrigin: 'https://chat.acme.com', publicChatEnabled: true };
+  channel: Channel = { publicOrigin: null, publicChatEnabled: false };
   domains: TenantDomain[] = [];
   members: Member[] = [];
 

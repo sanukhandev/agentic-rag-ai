@@ -13,6 +13,7 @@ import {
   ChatActionState,
   CustomerChatMessage,
   formatNaturalAbstention,
+  isValidTenantSlug,
   renderMarkdown,
   resolveTenantSlug
 } from './customer-chat-utils';
@@ -415,12 +416,12 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
   private readonly sanitizer = inject(DomSanitizer);
 
   // Configuration & Tenant state
-  tenantSlug = 'demo';
-  tenantName = 'Acme Global';
-  agentName = 'Aura Enterprise Guide';
-  agentGreeting = 'Welcome to Acme Global. How may I assist your enterprise inquiry today?';
-  agentTone = 'Professional & Grounded';
-  agentInitials = 'AG';
+  tenantSlug = '';
+  tenantName = '';
+  agentName = '';
+  agentGreeting = '';
+  agentTone = '';
+  agentInitials = '';
   isLoadingConfig = false;
 
   // Session state
@@ -468,6 +469,11 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
   }
 
   loadTenantConfig(): void {
+    if (!isValidTenantSlug(this.tenantSlug)) {
+      this.isLoadingConfig = false;
+      this.errorMessage = 'Open chat with a tenant-specific URL after an organization is created.';
+      return;
+    }
     this.isLoadingConfig = true;
     this.http.get<TenantChatConfig>(`${this.apiBase}/api/v1/chat/config?tenantSlug=${encodeURIComponent(this.tenantSlug)}`)
       .subscribe({
@@ -485,15 +491,13 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
         },
         error: () => {
           this.isLoadingConfig = false;
-          // Fallback to graceful defaults
-          this.agentName = 'Aura Enterprise Guide';
-          this.agentInitials = 'AG';
+          this.errorMessage = 'Tenant chat configuration is unavailable.';
         }
       });
   }
 
   restoreOrInitSession(): void {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !isValidTenantSlug(this.tenantSlug)) return;
     const storageKey = `agentic-rag-session:${this.tenantSlug}`;
     const saved = window.localStorage.getItem(storageKey);
 

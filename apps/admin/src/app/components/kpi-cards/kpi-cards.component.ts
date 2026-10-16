@@ -21,11 +21,7 @@ import { IconComponent } from '../shared/icon.component';
         </div>
         <div class="mt-3 flex items-baseline gap-2">
           <span class="text-3xl font-bold tracking-tight text-neutral-900 font-sans">
-            {{ overview?.tenants?.total || 24 }}
-          </span>
-          <span class="text-xs font-medium text-emerald-600 flex items-center gap-0.5">
-            <app-icon name="arrow-up-right" classNames="w-3 h-3"></app-icon>
-            +3 this mo
+            {{ overview?.tenants?.total ?? 0 }}
           </span>
         </div>
         <div class="mt-3 flex items-center justify-between border-t border-neutral-100 pt-3 text-[11px] text-neutral-500">
@@ -44,10 +40,10 @@ import { IconComponent } from '../shared/icon.component';
         </div>
         <div class="mt-3 flex items-baseline gap-2">
           <span class="text-3xl font-bold tracking-tight text-neutral-900 font-sans">
-            {{ overview?.tenants?.active || 21 }}
+            {{ overview?.tenants?.active ?? 0 }}
           </span>
           <span class="text-xs font-medium text-neutral-500">
-            {{ ((overview?.tenants?.active || 21) / (overview?.tenants?.total || 24) * 100) | number:'1.0-0' }}% ratio
+            {{ activeRatio | number:'1.0-0' }}% ratio
           </span>
         </div>
         <div class="mt-3 flex items-center justify-between border-t border-neutral-100 pt-3 text-[11px] text-neutral-500">
@@ -55,7 +51,7 @@ import { IconComponent } from '../shared/icon.component';
             <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
             Live chat enabled
           </span>
-          <span class="font-mono text-emerald-600 font-medium">Healthy</span>
+          <span class="font-mono text-neutral-500 font-medium">Live data</span>
         </div>
       </div>
 
@@ -69,7 +65,7 @@ import { IconComponent } from '../shared/icon.component';
         </div>
         <div class="mt-3 flex items-baseline gap-2">
           <span class="text-3xl font-bold tracking-tight text-neutral-900 font-sans">
-            {{ overview?.tenants?.suspended || 2 }}
+            {{ overview?.tenants?.suspended ?? 0 }}
           </span>
           <span class="text-xs text-amber-600 font-medium">Needs review</span>
         </div>
@@ -89,7 +85,7 @@ import { IconComponent } from '../shared/icon.component';
         </div>
         <div class="mt-3 flex items-baseline gap-2">
           <span class="text-3xl font-bold tracking-tight text-neutral-900 font-sans">
-            {{ overview?.tenants?.archived || 1 }}
+            {{ overview?.tenants?.archived ?? 0 }}
           </span>
           <span class="text-xs text-neutral-400">Read-only</span>
         </div>
@@ -106,7 +102,7 @@ import { IconComponent } from '../shared/icon.component';
       <div class="rounded-lg border border-neutral-200/60 bg-white/70 px-4 py-3 shadow-subtle flex items-center justify-between">
         <div>
           <p class="text-[11px] font-medium text-neutral-500">Active Sources</p>
-          <p class="mt-0.5 text-lg font-bold text-neutral-900 font-mono">{{ metrics?.sourceCounts?.['active'] || 42 }}</p>
+        <p class="mt-0.5 text-lg font-bold text-neutral-900 font-mono">{{ metrics?.sourceCounts?.['active'] ?? 0 }}</p>
         </div>
         <div class="text-[10px] text-neutral-400 font-mono">pgvector</div>
       </div>
@@ -114,7 +110,7 @@ import { IconComponent } from '../shared/icon.component';
       <div class="rounded-lg border border-neutral-200/60 bg-white/70 px-4 py-3 shadow-subtle flex items-center justify-between">
         <div>
           <p class="text-[11px] font-medium text-neutral-500">Review Queue</p>
-          <p class="mt-0.5 text-lg font-bold text-neutral-900 font-mono">{{ metrics?.sourceCounts?.['awaiting_review'] || 4 }}</p>
+        <p class="mt-0.5 text-lg font-bold text-neutral-900 font-mono">{{ metrics?.sourceCounts?.['awaiting_review'] ?? 0 }}</p>
         </div>
         <span class="h-2 w-2 rounded-full bg-amber-400"></span>
       </div>
@@ -122,17 +118,17 @@ import { IconComponent } from '../shared/icon.component';
       <div class="rounded-lg border border-neutral-200/60 bg-white/70 px-4 py-3 shadow-subtle flex items-center justify-between">
         <div>
           <p class="text-[11px] font-medium text-neutral-500">Grounding Rate</p>
-          <p class="mt-0.5 text-lg font-bold text-emerald-600 font-mono">98.6%</p>
+          <p class="mt-0.5 text-lg font-bold text-emerald-600 font-mono">—</p>
         </div>
-        <span class="text-[10px] text-emerald-600 font-semibold font-mono">Verified</span>
+        <span class="text-[10px] text-neutral-400 font-semibold font-mono">No observations</span>
       </div>
 
       <div class="rounded-lg border border-neutral-200/60 bg-white/70 px-4 py-3 shadow-subtle flex items-center justify-between">
         <div>
           <p class="text-[11px] font-medium text-neutral-500">Avg Gateway Latency</p>
-          <p class="mt-0.5 text-lg font-bold text-neutral-900 font-mono">38 ms</p>
+          <p class="mt-0.5 text-lg font-bold text-neutral-900 font-mono">—</p>
         </div>
-        <span class="text-[10px] text-neutral-400 font-mono">P50</span>
+        <span class="text-[10px] text-neutral-400 font-mono">No observations</span>
       </div>
     </section>
   `
@@ -146,5 +142,10 @@ export class KpiCardsComponent {
   constructor() {
     this.state.platformOverview$.subscribe((o) => (this.overview = o));
     this.state.metrics$.subscribe((m) => (this.metrics = m));
+  }
+
+  get activeRatio(): number {
+    const total = this.overview?.tenants?.total ?? 0;
+    return total ? ((this.overview?.tenants?.active ?? 0) / total) * 100 : 0;
   }
 }

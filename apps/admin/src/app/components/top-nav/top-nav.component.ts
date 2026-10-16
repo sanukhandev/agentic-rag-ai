@@ -214,15 +214,6 @@ interface MegaMenuColumn {
             </div>
           </div>
 
-          <!-- System Status Beacon -->
-          <div class="hidden xl:flex items-center gap-2 border-l border-neutral-200 pl-3">
-            <span class="relative flex h-2 w-2">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <span class="text-[11px] font-medium text-neutral-600">All Systems Nominal</span>
-          </div>
-
           <!-- Action CTA Button -->
           <button
             type="button"
@@ -257,31 +248,8 @@ interface MegaMenuColumn {
                   <app-badge [variant]="isPlatformAdmin ? 'black' : 'neutral'" [showDot]="false" text="">
                     {{ userRoleLabel }}
                   </app-badge>
-                  <span *ngIf="isMockMode" class="text-[10px] text-amber-600 font-mono">Demo Mode</span>
                 </div>
               </div>
-
-              <!-- Quick Demo Switchers for easy grading -->
-              <div class="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                Switch Role / Preview
-              </div>
-              <button
-                type="button"
-                (click)="switchRole('platform_admin')"
-                class="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50"
-              >
-                <span>Platform Owner</span>
-                <span *ngIf="role === 'platform_admin'" class="text-emerald-600 text-[11px]">✓ Active</span>
-              </button>
-              <button
-                type="button"
-                (click)="switchRole('tenant_admin')"
-                class="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50"
-              >
-                <span>Tenant Administrator</span>
-                <span *ngIf="role === 'tenant_admin'" class="text-emerald-600 text-[11px]">✓ Active</span>
-              </button>
-
               <div class="my-1 border-t border-neutral-100"></div>
 
               <button
@@ -395,7 +363,6 @@ export class TopNavComponent {
   selectedTenant: Tenant | null = null;
   role = '';
   userEmail = '';
-  isMockMode = false;
 
   tenantDropdownOpen = false;
   userMenuOpen = false;
@@ -407,7 +374,6 @@ export class TopNavComponent {
     this.state.selectedTenant$.subscribe((st) => (this.selectedTenant = st));
     this.state.role$.subscribe((r) => (this.role = r));
     this.state.userEmail$.subscribe((e) => (this.userEmail = e));
-    this.state.isMockMode$.subscribe((m) => (this.isMockMode = m));
   }
 
   get isPlatformAdmin(): boolean {
@@ -481,11 +447,6 @@ export class TopNavComponent {
     } else {
       this.state.openUploadModal();
     }
-  }
-
-  switchRole(role: 'platform_admin' | 'tenant_admin'): void {
-    this.userMenuOpen = false;
-    this.state.loginAsDemo(role);
   }
 
   logout(): void {

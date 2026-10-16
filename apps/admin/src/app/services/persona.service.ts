@@ -2,10 +2,18 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
 import { Persona, PersonaVersion } from '../types/admin.types';
-import { MOCK_PERSONA, MOCK_PERSONA_VERSIONS } from './mock-data';
 import { API_BASE_URL } from './tokens';
 import { AuthService } from './auth.service';
 import { ToastService } from './toast.service';
+
+const EMPTY_PERSONA: Persona = {
+  name: '',
+  greeting: '',
+  personality: '',
+  tone: '',
+  speakingStyle: '',
+  permittedLanguages: []
+};
 
 @Injectable({
   providedIn: 'root'
@@ -16,8 +24,8 @@ export class PersonaService {
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
 
-  private readonly personaSubject = new BehaviorSubject<Persona>(MOCK_PERSONA);
-  private readonly personaVersionsSubject = new BehaviorSubject<PersonaVersion[]>(MOCK_PERSONA_VERSIONS);
+  private readonly personaSubject = new BehaviorSubject<Persona>(EMPTY_PERSONA);
+  private readonly personaVersionsSubject = new BehaviorSubject<PersonaVersion[]>([]);
   private readonly isLoadingSubject = new BehaviorSubject<boolean>(false);
 
   readonly persona$: Observable<Persona> = this.personaSubject.asObservable();
@@ -33,68 +41,77 @@ export class PersonaService {
   }
 
   loadPersona(): void {
-    if (!this.auth.token || this.auth.isMockMode) return;
+    if (!this.auth.token) return;
     this.http.get<{ persona: Persona | null }>(`${this.apiBase}/api/v1/admin/persona`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => of({ persona: MOCK_PERSONA }))
-    ).subscribe((res) => {
-      if (res.persona) this.personaSubject.next(res.persona);
-    });
+      catchError(() => {
+        this.toast.show('error', 'Load Failed', 'Could not load the AI persona.');
+        return of({ persona: null });
+      })
+    ).subscribe((res) => this.personaSubject.next(res.persona ?? EMPTY_PERSONA));
   }
 
   loadPersonaVersions(): void {
-    if (!this.auth.token || this.auth.isMockMode) return;
+    if (!this.auth.token) return;
     this.http.get<{ items: PersonaVersion[] }>(`${this.apiBase}/api/v1/admin/persona/versions`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => of({ items: MOCK_PERSONA_VERSIONS }))
+      catchError(() => {
+        this.toast.show('error', 'Load Failed', 'Could not load persona versions.');
+        return of({ items: [] });
+      })
     ).subscribe((res) => this.personaVersionsSubject.next(res.items));
   }
 
   saveDraft(persona: Persona): void {
-    const newVersion: PersonaVersion = {
-      ...persona,
-      id: `pv-${Math.random().toString(36).substring(2, 6)}`,
-      version: this.personaVersionsSubject.value.length + 1,
-      status: 'draft',
-      createdAt: new Date().toISOString(),
-      publishedAt: null
-    };
-    this.personaVersionsSubject.next([newVersion, ...this.personaVersionsSubject.value]);
-    this.toast.show('info', 'Draft Saved', `Persona v${newVersion.version} saved as draft.`);
+    if (!this.auth.token) return;
+    this.http.post<{ version: PersonaVersion }>(`${this.apiBase}/api/v1/admin/persona/drafts`, persona, {
+      headers: this.auth.authHeaders
+    }).subscribe({
+      next: ({ version }) => {
+        this.personaVersionsSubject.next([version, ...this.personaVersionsSubject.value.filter((item) => item.id !== version.id)]);
+        this.toast.show('info', 'Draft Saved', `Persona v${version.version} saved as draft.`);
+      },
+      error: (err) => this.toast.show('error', 'Save Failed', err.error?.error?.message || 'Could not save the persona draft.')
+    });
   }
 
   publishVersion(persona: Persona): void {
-    const newVersion: PersonaVersion = {
-      ...persona,
-      id: `pv-${Math.random().toString(36).substring(2, 6)}`,
-      version: this.personaVersionsSubject.value.length + 1,
-      status: 'published',
-      createdAt: new Date().toISOString(),
-      publishedAt: new Date().toISOString()
-    };
-    const updated = this.personaVersionsSubject.value.map((v) => ({ ...v, status: 'draft' as const }));
-    this.personaVersionsSubject.next([newVersion, ...updated]);
-    this.personaSubject.next(persona);
-    this.toast.show('success', 'Persona Published', `v${newVersion.version} is now active across all channels.`);
+    if (!this.auth.token) return;
+    this.http.put<{ persona: Persona }>(`${this.apiBase}/api/v1/admin/persona`, persona, {
+      headers: this.auth.authHeaders
+    }).subscribe({
+      next: ({ persona: savedPersona }) => {
+        this.personaSubject.next(savedPersona);
+        this.loadPersonaVersions();
+        this.toast.show('success', 'Persona Published', 'The AI persona is now active across all channels.');
+      },
+      error: (err) => this.toast.show('error', 'Publish Failed', err.error?.error?.message || 'Could not publish the persona.')
+    });
   }
 
   rollbackTo(version: PersonaVersion): void {
-    const updated = this.personaVersionsSubject.value.map((v) => ({
-      ...v,
-      status: v.id === version.id ? ('published' as const) : ('draft' as const),
-      publishedAt: v.id === version.id ? new Date().toISOString() : v.publishedAt
-    }));
-    this.personaVersionsSubject.next(updated);
-    this.personaSubject.next({
-      name: version.name,
-      greeting: version.greeting,
-      personality: version.personality,
-      tone: version.tone,
-      speakingStyle: version.speakingStyle,
-      permittedLanguages: [...version.permittedLanguages]
+    if (!this.auth.token) return;
+    this.http.post<{ version: PersonaVersion }>(`${this.apiBase}/api/v1/admin/persona/versions/${version.id}/publish`, {}, {
+      headers: this.auth.authHeaders
+    }).subscribe({
+      next: () => {
+        this.loadPersona();
+        this.loadPersonaVersions();
+        this.toast.show('info', 'Rollback Executed', `Active persona reverted to v${version.version}.`);
+      },
+      error: (err) => this.toast.show('error', 'Rollback Failed', err.error?.error?.message || 'Could not roll back the persona.')
     });
-    this.toast.show('info', 'Rollback Executed', `Active persona reverted to v${version.version}.`);
+  }
+
+  preview(persona: Persona, message: string, onComplete: (preview: { answer: string; grounded: boolean; citations: Array<{ citation: { title: string; locator: string } }> }) => void): void {
+    if (!this.auth.token) return;
+    this.http.post<{ preview: { answer: string; grounded: boolean; citations: Array<{ citation: { title: string; locator: string } }> } }>(`${this.apiBase}/api/v1/admin/persona/preview`, { ...persona, message }, {
+      headers: this.auth.authHeaders
+    }).subscribe({
+      next: ({ preview }) => onComplete(preview),
+      error: (err) => this.toast.show('error', 'Preview Failed', err.error?.error?.message || 'Could not run the persona preview.')
+    });
   }
 }

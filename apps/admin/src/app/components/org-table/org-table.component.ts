@@ -114,7 +114,7 @@ import { BadgeComponent } from '../shared/badge.component';
                       {{ tenant.name }}
                     </span>
                     <p class="text-[11px] text-neutral-400 font-mono truncate max-w-[200px]">
-                      {{ tenant.primaryContact || tenant.slug + '@internal' }}
+                      {{ tenant.primaryContact || '—' }}
                     </p>
                   </div>
                 </div>
@@ -151,7 +151,7 @@ import { BadgeComponent } from '../shared/badge.component';
               <td class="px-3 py-3.5 text-neutral-500 whitespace-nowrap">
                 <div class="flex items-center gap-1.5">
                   <span class="h-1.5 w-1.5 rounded-full" [ngClass]="tenant.status === 'active' ? 'bg-emerald-500' : 'bg-neutral-300'"></span>
-                  <span>{{ tenant.lastActivity || 'Active recently' }}</span>
+                  <span>{{ tenant.lastActivity || '—' }}</span>
                 </div>
               </td>
 

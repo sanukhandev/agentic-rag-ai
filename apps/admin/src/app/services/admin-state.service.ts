@@ -59,7 +59,6 @@ export class AdminStateService {
   readonly role$: Observable<UserRole> = this.auth.role$;
   readonly userEmail$: Observable<string> = this.auth.userEmail$;
   readonly isAuthenticated$: Observable<boolean> = this.auth.isAuthenticated$;
-  readonly isMockMode$: Observable<boolean> = this.auth.isMockMode$;
 
   // Navigation Streams
   readonly currentSection$: Observable<NavSection> = this.nav.currentSection$;
@@ -158,11 +157,6 @@ export class AdminStateService {
       this.refreshAllData();
       if (onSuccess) onSuccess();
     }, onError);
-  }
-
-  loginAsDemo(role: 'platform_admin' | 'tenant_admin'): void {
-    this.auth.loginAsDemo(role);
-    this.refreshAllData();
   }
 
   logout(): void {

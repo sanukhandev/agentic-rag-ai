@@ -2,7 +2,6 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
 import { Source, IngestionJob, SourceAudience } from '../types/admin.types';
-import { MOCK_SOURCES, MOCK_JOBS } from './mock-data';
 import { API_BASE_URL } from './tokens';
 import { AuthService } from './auth.service';
 import { ToastService } from './toast.service';
@@ -16,8 +15,8 @@ export class KnowledgeService {
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
 
-  private readonly sourcesSubject = new BehaviorSubject<Source[]>(MOCK_SOURCES);
-  private readonly jobsSubject = new BehaviorSubject<IngestionJob[]>(MOCK_JOBS);
+  private readonly sourcesSubject = new BehaviorSubject<Source[]>([]);
+  private readonly jobsSubject = new BehaviorSubject<IngestionJob[]>([]);
   private readonly isLoadingSubject = new BehaviorSubject<boolean>(false);
 
   readonly sources$: Observable<Source[]> = this.sourcesSubject.asObservable();
@@ -33,41 +32,31 @@ export class KnowledgeService {
   }
 
   loadSources(): void {
-    if (!this.auth.token || this.auth.isMockMode) return;
+    if (!this.auth.token) return;
     this.http.get<{ items: Source[] }>(`${this.apiBase}/api/v1/admin/sources`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => of({ items: MOCK_SOURCES }))
+      catchError(() => {
+        this.toast.show('error', 'Load Failed', 'Could not load knowledge sources.');
+        return of({ items: [] });
+      })
     ).subscribe((res) => this.sourcesSubject.next(res.items));
   }
 
   loadJobs(): void {
-    if (!this.auth.token || this.auth.isMockMode) return;
+    if (!this.auth.token) return;
     this.http.get<{ items: IngestionJob[] }>(`${this.apiBase}/api/v1/admin/ingestion-jobs`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => of({ items: MOCK_JOBS }))
+      catchError(() => {
+        this.toast.show('error', 'Load Failed', 'Could not load ingestion jobs.');
+        return of({ items: [] });
+      })
     ).subscribe((res) => this.jobsSubject.next(res.items));
   }
 
   stageSource(title: string, audience: SourceAudience, content: string, onComplete?: () => void): void {
-    if (this.auth.isMockMode) {
-      const newSource: Source = {
-        id: `src-${Math.random().toString(36).substring(2, 6)}`,
-        title,
-        audience,
-        status: 'awaiting_review',
-        mimeType: 'text/plain',
-        chunkCount: Math.ceil(content.length / 500),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        sizeBytes: content.length
-      };
-      this.sourcesSubject.next([newSource, ...this.sourcesSubject.value]);
-      this.toast.show('success', 'Source Staged', `${title} staged for review.`);
-      if (onComplete) onComplete();
-      return;
-    }
+    if (!this.auth.token) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/sources`, { title, mimeType: 'text/plain', audience, content }, {
       headers: this.auth.authHeaders
@@ -83,12 +72,7 @@ export class KnowledgeService {
   }
 
   publishSource(source: Source): void {
-    if (this.auth.isMockMode) {
-      const updated = this.sourcesSubject.value.map((s) => (s.id === source.id ? { ...s, status: 'active' as const } : s));
-      this.sourcesSubject.next(updated);
-      this.toast.show('success', 'Source Published', `${source.title} is now active and retrievable.`);
-      return;
-    }
+    if (!this.auth.token) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/sources/${source.id}/publish`, {}, {
       headers: this.auth.authHeaders
@@ -102,12 +86,7 @@ export class KnowledgeService {
   }
 
   revokeSource(source: Source): void {
-    if (this.auth.isMockMode) {
-      const updated = this.sourcesSubject.value.map((s) => (s.id === source.id ? { ...s, status: 'revoked' as const } : s));
-      this.sourcesSubject.next(updated);
-      this.toast.show('warning', 'Source Revoked', `${source.title} has been revoked.`);
-      return;
-    }
+    if (!this.auth.token) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/sources/${source.id}/revoke`, {}, {
       headers: this.auth.authHeaders
@@ -121,12 +100,7 @@ export class KnowledgeService {
   }
 
   purgeSource(source: Source): void {
-    if (this.auth.isMockMode) {
-      const updated = this.sourcesSubject.value.filter((s) => s.id !== source.id);
-      this.sourcesSubject.next(updated);
-      this.toast.show('info', 'Source Purged', `${source.title} deleted permanently.`);
-      return;
-    }
+    if (!this.auth.token) return;
 
     this.http.delete(`${this.apiBase}/api/v1/admin/sources/${source.id}`, {
       headers: this.auth.authHeaders
@@ -140,10 +114,7 @@ export class KnowledgeService {
   }
 
   reindexSource(source: Source): void {
-    if (this.auth.isMockMode) {
-      this.toast.show('info', 'Reindexing Queued', `${source.title} scheduled for vector recalculation.`);
-      return;
-    }
+    if (!this.auth.token) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/sources/${source.id}/reindex`, {}, {
       headers: this.auth.authHeaders
@@ -158,18 +129,7 @@ export class KnowledgeService {
   }
 
   retryJob(job: IngestionJob): void {
-    if (this.auth.isMockMode) {
-      const updated = this.jobsSubject.value.map((j) => (j.id === job.id ? { ...j, status: 'processing' as const, attempts: j.attempts + 1, errorCode: null } : j));
-      this.jobsSubject.next(updated);
-      this.toast.show('info', 'Job Retried', `Retrying ingestion for ${job.title}...`);
-
-      setTimeout(() => {
-        this.jobsSubject.next(
-          this.jobsSubject.value.map((j) => (j.id === job.id ? { ...j, status: 'completed' as const, chunksIndexed: 62 } : j))
-        );
-      }, 1500);
-      return;
-    }
+    if (!this.auth.token) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/ingestion-jobs/${job.id}/retry`, {}, {
       headers: this.auth.authHeaders
@@ -182,72 +142,32 @@ export class KnowledgeService {
     });
   }
 
-  queueOptimisticUpload(title: string, mime: string, audience: SourceAudience, chunks = 84): void {
-    const fakeJobId = `job-${Math.random().toString(36).substring(2, 6)}`;
-    const newJob: IngestionJob = {
-      id: fakeJobId,
-      title,
-      sourceUrl: null,
-      status: 'processing',
-      attempts: 1,
-      errorCode: null,
-      updatedAt: new Date().toISOString(),
-      mimeType: mime
-    };
-    this.jobsSubject.next([newJob, ...this.jobsSubject.value]);
-    this.toast.show('success', 'File Ingestion Queued', `${title} submitted to Python worker.`);
-
-    setTimeout(() => {
-      this.jobsSubject.next(
-        this.jobsSubject.value.map((j) => (j.id === fakeJobId ? { ...j, status: 'completed' as const, chunksIndexed: chunks } : j))
-      );
-      this.sourcesSubject.next([
-        {
-          id: `src-${Math.random().toString(36).substring(2, 6)}`,
-          title,
-          status: 'awaiting_review',
-          audience,
-          mimeType: mime,
-          chunkCount: chunks,
-          createdAt: new Date().toISOString()
-        },
-        ...this.sourcesSubject.value
-      ]);
-      this.toast.show('info', 'Document Ready for Review', `${title} chunked into ${chunks} vectors.`);
-    }, 2000);
+  queueFileUpload(title: string, fileName: string, mimeType: string, audience: SourceAudience, contentBase64: string, onComplete?: () => void): void {
+    if (!this.auth.token) return;
+    this.http.post<{ job: IngestionJob }>(`${this.apiBase}/api/v1/admin/sources/upload`, { title, fileName, mimeType, audience, contentBase64 }, {
+      headers: this.auth.authHeaders
+    }).subscribe({
+      next: () => {
+        this.loadSources();
+        this.loadJobs();
+        this.toast.show('success', 'File Ingestion Queued', `${title} submitted to the Python worker.`);
+        onComplete?.();
+      },
+      error: (err) => this.toast.show('error', 'Upload Failed', err.error?.error?.message || 'Could not queue file ingestion.')
+    });
   }
 
-  queueOptimisticCrawl(title: string, url: string): void {
-    const fakeJobId = `job-${Math.random().toString(36).substring(2, 6)}`;
-    const newJob: IngestionJob = {
-      id: fakeJobId,
-      title,
-      sourceUrl: url,
-      status: 'processing',
-      attempts: 1,
-      errorCode: null,
-      updatedAt: new Date().toISOString(),
-      mimeType: 'text/html'
-    };
-    this.jobsSubject.next([newJob, ...this.jobsSubject.value]);
-    this.toast.show('success', 'URL Crawl Queued', `Crawling snapshot for ${url}`);
-
-    setTimeout(() => {
-      this.jobsSubject.next(
-        this.jobsSubject.value.map((j) => (j.id === fakeJobId ? { ...j, status: 'completed' as const, chunksIndexed: 35 } : j))
-      );
-      this.sourcesSubject.next([
-        {
-          id: `src-${Math.random().toString(36).substring(2, 6)}`,
-          title: `Snapshot: ${url}`,
-          status: 'awaiting_review',
-          audience: 'public',
-          mimeType: 'text/html',
-          chunkCount: 35,
-          createdAt: new Date().toISOString()
-        },
-        ...this.sourcesSubject.value
-      ]);
-    }, 2000);
+  queueCrawl(title: string, url: string, onComplete?: () => void): void {
+    if (!this.auth.token) return;
+    this.http.post<{ job: IngestionJob }>(`${this.apiBase}/api/v1/admin/ingestion-jobs`, { title, sourceUrl: url, mimeType: 'text/html', audience: 'public' }, {
+      headers: this.auth.authHeaders
+    }).subscribe({
+      next: () => {
+        this.loadJobs();
+        this.toast.show('success', 'URL Crawl Queued', `Crawling approved URL ${url}.`);
+        onComplete?.();
+      },
+      error: (err) => this.toast.show('error', 'Crawl Failed', err.error?.error?.message || 'Could not queue URL crawl.')
+    });
   }
 }
