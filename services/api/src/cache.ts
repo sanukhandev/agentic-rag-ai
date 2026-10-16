@@ -57,51 +57,71 @@ export class RedisCache implements CacheStore {
   }
 
   async get<T>(key: string): Promise<T | null> {
-    const local = await this.fallback.get<T>(key);
-    if (local !== null) return local;
-    if (!(await this.ensureConnected())) return null;
+    if (!(await this.ensureConnected())) return this.fallback.get<T>(key);
     try {
       const value = await this.client.get(key);
-      if (value === null) return null;
-      const parsed = JSON.parse(value) as T;
-      await this.fallback.set(key, parsed, 5);
-      return parsed;
+      if (value === null) {
+        await this.fallback.delete(key);
+        return null;
+      }
+      try {
+        const parsed = JSON.parse(value) as T;
+        await this.fallback.set(key, parsed, 5);
+        return parsed;
+      } catch {
+        await this.client.del(key);
+        await this.fallback.delete(key);
+        return null;
+      }
     } catch {
-      return null;
+      this.markUnavailable();
+      return this.fallback.get<T>(key);
     }
   }
 
   async set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
     if (ttlMs(ttlSeconds) === 0) { await this.delete(key); return; }
-    await this.fallback.set(key, value, Math.min(ttlSeconds, 5));
-    if (!(await this.ensureConnected())) return;
-    try { await this.client.set(key, JSON.stringify(value), { EX: Math.max(1, Math.floor(ttlSeconds)) }); } catch { /* cache failures must not fail API requests */ }
+    if (!(await this.ensureConnected())) {
+      await this.fallback.set(key, value, Math.min(ttlSeconds, 5));
+      return;
+    }
+    try {
+      await this.client.set(key, JSON.stringify(value), { EX: Math.max(1, Math.floor(ttlSeconds)) });
+      await this.fallback.set(key, value, Math.min(ttlSeconds, 5));
+    } catch {
+      this.markUnavailable();
+      await this.fallback.set(key, value, Math.min(ttlSeconds, 5));
+    }
   }
 
   async delete(key: string): Promise<void> {
     await this.fallback.delete(key);
     if (!(await this.ensureConnected())) return;
-    try { await this.client.del(key); } catch { /* cache failures must not fail API requests */ }
+    try { await this.client.del(key); } catch { this.markUnavailable(); }
   }
 
   async ping(): Promise<boolean> {
     if (!(await this.ensureConnected())) return false;
-    try { return (await this.client.ping()) === 'PONG'; } catch { return false; }
+    try { return (await this.client.ping()) === 'PONG'; } catch { this.markUnavailable(); return false; }
   }
 
   async close(): Promise<void> {
     await this.fallback.close();
-    if (this.client.isOpen) await this.client.quit();
+    if (this.client.isOpen) {
+      try { await this.client.quit(); } catch { this.client.disconnect(); }
+    }
   }
 
   private async ensureConnected(): Promise<boolean> {
     if (this.client.isReady) return true;
     if (Date.now() < this.retryAfter) return false;
     if (!this.connection) {
-      this.connection = this.client.connect().then(() => true).catch(() => { this.retryAfter = Date.now() + 5_000; return false; }).finally(() => { this.connection = null; });
+      this.connection = this.client.connect().then(() => true).catch(() => { this.markUnavailable(); return false; }).finally(() => { this.connection = null; });
     }
     return this.connection;
   }
+
+  private markUnavailable(): void { this.retryAfter = Date.now() + 5_000; }
 }
 
 export const createCache = (redisUrl?: string): CacheStore => redisUrl ? new RedisCache(redisUrl) : new MemoryCache();

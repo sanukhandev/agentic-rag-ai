@@ -236,6 +236,14 @@ describe('API vertical slice', () => {
     expect(oversized.body.error.code).toBe('PAYLOAD_TOO_LARGE');
   });
 
+  it('returns a typed JSON error and disables browser caching for API responses', async () => {
+    const api = request(createApp({ nodeEnv: 'test' }).app);
+    const response = await api.post('/api/v1/auth/login').set('Content-Type', 'application/json').send('{"email":').expect(400);
+    expect(response.body.error.code).toBe('INVALID_JSON');
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+  });
+
   it('reports store failure as an observed health outage', async () => {
     const store = new MemoryStore();
     const api = request(createApp({ nodeEnv: 'test', store }).app);

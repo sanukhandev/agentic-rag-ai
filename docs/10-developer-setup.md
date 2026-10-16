@@ -49,7 +49,7 @@ The API deletes the Node-side staged bytes after a successful or idempotent resu
 
 ## Redis cache
 
-Start the local cache with `docker compose up -d redis`. Set `REDIS_URL=redis://127.0.0.1:6379` in the ignored local `.env` before starting the API. The API keeps a bounded in-process LRU fallback and fails open when Redis is unavailable. Redis stores only short-lived auth-session references and masked, tenant/session/client-message-scoped response entries; passwords, raw bearer tokens and reversible PII mappings are never cached. Production requires authenticated TLS Redis, restricted network access, encryption/backup policy and an explicit eviction/retention policy.
+Start the local cache with `docker compose up -d redis`. Set `REDIS_URL=redis://127.0.0.1:6379` in the ignored local `.env` before starting the API. The API keeps a bounded in-process LRU fallback and fails open when Redis is unavailable. Redis stores only masked, tenant/session/client-message-scoped response entries; passwords, bearer tokens, authorization sessions and reversible PII mappings are never cached. Production requires authenticated TLS Redis, restricted network access, encryption/backup policy and an explicit eviction/retention policy.
 
 ## Repeatable local verification
 

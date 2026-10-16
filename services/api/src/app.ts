@@ -45,8 +45,12 @@ const historyQuerySchema = z.object({ limit: z.coerce.number().int().min(1).max(
 const publicUser = (user: { id: string; email: string; role: string; tenantId: string | null }) => ({ id: user.id, email: user.email, role: user.role, tenantId: user.tenantId });
 
 class HttpError extends Error {
-  constructor(public readonly status: number, public readonly code: string, message: string) { super(message); }
+  constructor(public readonly status: number, public readonly code: string, message: string) { super(message); this.name = 'HttpError'; }
 }
+
+const errorProperty = (error: unknown, property: string): unknown => typeof error === 'object' && error !== null && property in error ? error[property as keyof typeof error] : undefined;
+const errorType = (error: unknown): string | undefined => { const value = errorProperty(error, 'type'); return typeof value === 'string' ? value : undefined; };
+const errorCode = (error: unknown): string | undefined => { const value = errorProperty(error, 'code'); return typeof value === 'string' ? value : undefined; };
 
 const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
   const result = schema.safeParse(value);
@@ -114,7 +118,6 @@ export interface AppDependencies {
   inputCostUsdPerMillion?: number;
   outputCostUsdPerMillion?: number;
   cache?: CacheStore;
-  authCacheTtlSeconds?: number;
   chatResponseCacheTtlSeconds?: number;
 }
 
@@ -137,7 +140,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const inputCostUsdPerMillion = readRate(dependencies.inputCostUsdPerMillion, 'MODEL_INPUT_COST_USD_PER_MILLION');
   const outputCostUsdPerMillion = readRate(dependencies.outputCostUsdPerMillion, 'MODEL_OUTPUT_COST_USD_PER_MILLION');
   const readCacheTtl = (value: number | undefined, name: string, fallback: number, max: number): number => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return fallback; const parsed = Number(raw); if (!Number.isInteger(parsed) || parsed < 0 || parsed > max) throw new Error(`${name} must be an integer between 0 and ${max}.`); return parsed; };
-  const authCacheTtlSeconds = readCacheTtl(dependencies.authCacheTtlSeconds, 'AUTH_SESSION_CACHE_TTL_SECONDS', 10, 60);
   const chatResponseCacheTtlSeconds = readCacheTtl(dependencies.chatResponseCacheTtlSeconds, 'CHAT_RESPONSE_CACHE_TTL_SECONDS', 60, 300);
   if (nodeEnv === 'production' && (!dependencies.model || !dependencies.embedding || !dependencies.workflow || !n8nCallbackSecret || !ingestionWorkerSecret)) throw new Error('Production Azure, embedding, workflow, callback and ingestion adapters are required.');
   if (nodeEnv === 'production' && !dependencies.cache && !process.env.REDIS_URL) throw new Error('Production requires REDIS_URL.');
@@ -155,7 +157,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (expectedBuffer.length !== providedBuffer.length || !timingSafeEqual(expectedBuffer, providedBuffer)) { next(new HttpError(401, 'WORKER_UNAUTHORIZED', 'Ingestion worker authentication failed.')); return; }
     next();
   };
-  const auth = new AuthService(store, jwtSecret, cache, authCacheTtlSeconds);
+  const auth = new AuthService(store, jwtSecret);
   const gateway = new ActionGateway(store, workflow);
   const app = express();
   const rateLimits = new Map<string, RateLimitEntry>();
@@ -178,8 +180,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const observedTelemetry = (value: Telemetry) => ({ requests: value.requests, serverErrors: value.serverErrors, averageLatencyMs: value.requests ? Math.round(value.totalLatencyMs / value.requests) : 0, lastRequestAt: value.lastRequestAt, chatResponses: value.chatResponses, groundedResponses: value.groundedResponses, abstentions: value.abstentions, actionProposals: value.actionProposals, groundingRate: value.chatResponses ? value.groundedResponses / value.chatResponses : 0, abstentionRate: value.chatResponses ? value.abstentions / value.chatResponses : 0, estimatedInputTokens: value.estimatedInputTokens, estimatedOutputTokens: value.estimatedOutputTokens, estimatedCostUsd: value.estimatedCostUsd });
 
   app.disable('x-powered-by');
-  // shortcut: one bounded JSON parser supports local 5 MiB base64 uploads; replace with streaming/object storage before production.
-  app.use(express.json({ limit: '8mb' }));
+  app.use((req: AuthedRequest, res: Response, next: NextFunction) => { req.requestId = req.header('x-request-id') ?? randomUUID(); res.setHeader('x-request-id', req.requestId); next(); });
+  app.use('/api', (_req, res, next) => { res.setHeader('cache-control', 'no-store'); res.setHeader('x-content-type-options', 'nosniff'); res.setHeader('referrer-policy', 'no-referrer'); next(); });
   app.use(async (req, res, next) => {
     const origin = req.header('origin');
     const allowed = new Set([process.env.WEB_ORIGIN ?? 'http://localhost:3000', process.env.ADMIN_ORIGIN ?? 'http://localhost:4200']);
@@ -191,7 +193,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (req.method === 'OPTIONS') { res.status(origin && allowed.has(origin) ? 204 : 403).end(); return; }
     next();
   });
-  app.use((req: AuthedRequest, res: Response, next: NextFunction) => { req.requestId = req.header('x-request-id') ?? randomUUID(); res.setHeader('x-request-id', req.requestId); next(); });
+  // shortcut: one bounded JSON parser supports local 5 MiB base64 uploads; replace with streaming/object storage before production.
+  app.use(express.json({ limit: '8mb' }));
   app.use((req, res, next) => { const started = Date.now(); res.once('finish', () => { const elapsed = Date.now() - started; const failed = res.statusCode >= 500 ? 1 : 0; const timestamp = new Date().toISOString(); telemetry.requests += 1; telemetry.serverErrors += failed; telemetry.totalLatencyMs += elapsed; telemetry.lastRequestAt = timestamp; const tenantId = (req as AuthedRequest).auth?.tenantId; if (tenantId) { const scoped = tenantTelemetry.get(tenantId) ?? newTelemetry(); scoped.requests += 1; scoped.serverErrors += failed; scoped.totalLatencyMs += elapsed; scoped.lastRequestAt = timestamp; tenantTelemetry.set(tenantId, scoped); } }); next(); });
   app.use((req, res, next) => {
     if (!req.path.startsWith('/api/')) { next(); return; }
@@ -263,7 +266,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.post('/api/v1/admin/domains', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const input = parse(domainSchema, req.body); if ((await store.listDomains(tenantId)).some((domain) => domain.hostname === input.hostname)) throw new HttpError(409, 'DOMAIN_EXISTS', 'Domain already exists.'); const domain = await store.addDomain({ tenantId, hostname: input.hostname }); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'domain.created', metadata: { hostname: domain.hostname }, createdAt: new Date().toISOString() }); res.status(201).json({ domain }); } catch (error) { next(error); } });
   app.delete('/api/v1/admin/domains/:id', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const id = routeParam(req, 'id'); if (!(await store.removeDomain(id, tenantId))) throw new HttpError(404, 'DOMAIN_NOT_FOUND', 'Domain not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'domain.deleted', metadata: { domainId: id }, createdAt: new Date().toISOString() }); res.status(204).send(); } catch (error) { next(error); } });
   app.get('/api/v1/admin/channel', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenant = await activeTenant(store, await tenantForRequest(store, req)); res.json({ publicOrigin: tenant.publicOrigin, publicChatEnabled: tenant.publicChatEnabled }); } catch (error) { next(error); } });
-  app.patch('/api/v1/admin/channel', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const input = parse(channelSchema, req.body); let tenant = await store.getTenant(tenantId); tenant = await store.setTenantPublicOrigin(tenantId, input.publicOrigin ? new URL(input.publicOrigin).origin : null); if (tenant && input.publicChatEnabled !== undefined) tenant = await store.setTenantPublicChatEnabled(tenantId, input.publicChatEnabled); if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'tenant.channel_updated', metadata: { publicOrigin: tenant.publicOrigin, publicChatEnabled: tenant.publicChatEnabled }, createdAt: new Date().toISOString() }); res.json({ publicOrigin: tenant.publicOrigin, publicChatEnabled: tenant.publicChatEnabled }); } catch (error) { next(error); } });
+  app.patch('/api/v1/admin/channel', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const input = parse(channelSchema, req.body); let tenant = await store.setTenantPublicOrigin(tenantId, input.publicOrigin ? new URL(input.publicOrigin).origin : null); if (tenant && input.publicChatEnabled !== undefined) tenant = await store.setTenantPublicChatEnabled(tenantId, input.publicChatEnabled); if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'tenant.channel_updated', metadata: { publicOrigin: tenant.publicOrigin, publicChatEnabled: tenant.publicChatEnabled }, createdAt: new Date().toISOString() }); res.json({ publicOrigin: tenant.publicOrigin, publicChatEnabled: tenant.publicChatEnabled }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/dashboard/overview', protectedApi, async (req, res, next) => { try { res.json({ tenantId: await tenantForRequest(store, req), metrics: await store.getTenantStats(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.post('/api/v1/admin/retention/purge-sessions', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
     try {
@@ -633,10 +636,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.get('/api/v1/admin/audit', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listAudit(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.get('/api/v1/chat/config', optionalApi, async (req, res, next) => { try { const tenantSlug = typeof req.query.tenantSlug === 'string' ? req.query.tenantSlug : ''; const tenant = await store.getTenantBySlug(tenantSlug); if (!tenant || tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); if (getAuth(req) && !ensureTenant(req, tenant.id)) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.'); if (!getAuth(req)) enforcePublicOrigin(req, tenant, nodeEnv); const persona = await store.getPersona(tenant.id); res.json({ tenant: { slug: tenant.slug, name: tenant.name }, persona: persona ? { name: persona.name, greeting: persona.greeting, tone: persona.tone, speakingStyle: persona.speakingStyle, permittedLanguages: persona.permittedLanguages } : null }); } catch (error) { next(error); } });
 
-  app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
+  app.use((error: unknown, req: Request, res: Response, next: NextFunction) => {
     const requestId = (req as AuthedRequest).requestId ?? randomUUID();
-    if (typeof error === 'object' && error !== null && 'type' in error && error.type === 'entity.too.large') { res.status(413).json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request payload is too large.', requestId } }); return; }
+    if (res.headersSent) { next(error); return; }
+    if (errorType(error) === 'entity.too.large') { res.status(413).json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request payload is too large.', requestId } }); return; }
+    if (errorType(error) === 'entity.parse.failed') { res.status(400).json({ error: { code: 'INVALID_JSON', message: 'Request body must be valid JSON.', requestId } }); return; }
     if (error instanceof HttpError) { res.status(error.status).json({ error: { code: error.code, message: error.message, requestId } }); return; }
+    if (errorCode(error) === '23505') { res.status(409).json({ error: { code: 'RESOURCE_CONFLICT', message: 'The requested resource already exists.', requestId } }); return; }
+    if (errorCode(error) === '22P02') { res.status(400).json({ error: { code: 'INVALID_DATA', message: 'The request contains invalid data.', requestId } }); return; }
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.', requestId } });
   });
   return { app, store, auth, gateway, workflow };

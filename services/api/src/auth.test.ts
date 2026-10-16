@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { describe, expect, it } from 'vitest';
 import { AuthService } from './auth.js';
-import { MemoryCache } from './cache.js';
 import { MemoryStore } from './store-memory.js';
 
 class CountingStore extends MemoryStore {
@@ -37,19 +36,19 @@ describe('development auth boundary', () => {
     await expect(auth.verify(token)).resolves.toBeNull();
   });
 
-  it('caches only the short-lived auth session reference and invalidates it on logout', async () => {
+  it('checks the durable session on every request and invalidates it on logout', async () => {
     const store = new CountingStore();
-    const auth = new AuthService(store, 'test-jwt-secret', new MemoryCache(), 10);
+    const auth = new AuthService(store, 'test-jwt-secret');
     const user = await store.createUser({ email: 'cached@example.test', passwordHash: 'hash', role: 'tenant_admin', tenantId: 'tenant-a' });
     const token = await auth.issue(user);
 
     await expect(auth.verify(token)).resolves.toMatchObject({ userId: user.id });
     await expect(auth.verify(token)).resolves.toMatchObject({ userId: user.id });
-    expect(store.authSessionReads).toBe(0);
+    expect(store.authSessionReads).toBe(2);
 
     await auth.revoke(token);
     await expect(auth.verify(token)).resolves.toBeNull();
-    expect(store.authSessionReads).toBe(1);
+    expect(store.authSessionReads).toBe(3);
   });
 
   it('issues unique sessions for rapid repeated logins', async () => {
