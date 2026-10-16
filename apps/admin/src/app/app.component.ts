@@ -18,7 +18,7 @@ type Health = { checkedAt: string; telemetry: { requests: number; serverErrors: 
 type WorkflowRun = { id: string; workflowKey: string; state: string; createdAt: string; result: { externalReference: string } | null };
 type AuditEvent = { id: string; eventName: string; metadata: Record<string, string | number | boolean | null>; createdAt: string };
 type PlatformOverview = { tenants: { total: number; active: number; suspended: number; archived: number }; metrics: Array<{ tenantId: string; metrics: Metrics }> };
-const api = 'http://localhost:4000';
+const api = 'http://127.0.0.1:4000';
 
 @Component({ selector: 'app-root', standalone: true, imports: [CommonModule, FormsModule], templateUrl: './app.component.html' })
 export class AppComponent {
