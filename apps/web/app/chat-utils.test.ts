@@ -19,10 +19,10 @@ describe('web chat utilities', () => {
     expect(isValidTenantSlug('evil/slug')).toBe(false);
   });
 
-  it('resolves tenant slug from search query or defaults to demo', () => {
+  it('resolves tenant slug from search query or uses the supplied fallback', () => {
     expect(resolveTenantSlug('?tenant=acme-corp')).toBe('acme-corp');
     expect(resolveTenantSlug('?tenantSlug=beta')).toBe('beta');
-    expect(resolveTenantSlug('', 'demo')).toBe('demo');
+    expect(resolveTenantSlug('', 'tenant-a')).toBe('tenant-a');
   });
 
   it('restores only assistant replies from masked history', () => {

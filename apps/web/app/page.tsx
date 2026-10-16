@@ -28,7 +28,7 @@ type Config = {
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 export default function Home() {
-  const [tenantSlug, setTenantSlug] = useState('demo');
+  const [tenantSlug, setTenantSlug] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -44,7 +44,7 @@ export default function Home() {
   // Requirement 3: Resolve tenant context without customer manual slug input
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const resolved = resolveTenantSlug(window.location.search, 'demo');
+      const resolved = resolveTenantSlug(window.location.search);
       setTenantSlug(resolved);
       const params = new URLSearchParams(window.location.search);
       if (params.get('admin') === 'true' || params.get('debug') === '1') {
@@ -56,6 +56,8 @@ export default function Home() {
   useEffect(() => {
     if (!isValidTenantSlug(tenantSlug)) {
       setConfig(null);
+      setSessionId(null);
+      setMessages([]);
       return;
     }
 
@@ -105,12 +107,12 @@ export default function Home() {
     }
   }, [messages, busy]);
 
-  const tenantName = config?.tenant?.name ?? 'Acme Global';
-  const agentName = config?.persona?.name ?? 'Aura Enterprise Guide';
-  const agentGreeting = config?.persona?.greeting ?? 'Welcome to Acme Global. How may I assist your enterprise inquiry today?';
-  const agentTone = config?.persona?.tone ?? 'Calm, authoritative, strictly grounded';
-  const agentStyle = config?.persona?.speakingStyle ?? 'Concise declarative statements';
-  const permittedLanguages = config?.persona?.permittedLanguages ?? ['en', 'es', 'de', 'fr', 'ja', 'ar'];
+  const tenantName = config?.tenant?.name ?? 'Tenant workspace';
+  const agentName = config?.persona?.name ?? 'AI assistant';
+  const agentGreeting = config?.persona?.greeting ?? 'Create a tenant and configure its assistant to begin.';
+  const agentTone = config?.persona?.tone ?? 'Not configured';
+  const agentStyle = config?.persona?.speakingStyle ?? 'Not configured';
+  const permittedLanguages = config?.persona?.permittedLanguages ?? [];
   const agentInitials = agentName
     .split(/\s+/)
     .slice(0, 2)
@@ -121,6 +123,10 @@ export default function Home() {
   const send = async () => {
     const trimmed = message.trim();
     if (!trimmed || busy) return;
+    if (!isValidTenantSlug(tenantSlug) || !config) {
+      setError('Open a tenant-specific chat URL after an organization is created.');
+      return;
+    }
 
     setBusy(true);
     setError('');
@@ -266,7 +272,7 @@ export default function Home() {
     <div className="min-h-screen bg-[#fafafa] text-[#121214] flex flex-col justify-between selection:bg-neutral-900 selection:text-white font-sans">
       
       <div>
-        {/* Acme Sticky Top Navigation Bar */}
+        {/* Sticky Top Navigation Bar */}
         <header className="sticky top-0 z-40 w-full border-b border-neutral-200/80 bg-white/95 backdrop-blur-md">
           <div className="mx-auto flex h-16 max-w-[1536px] items-center justify-between px-4 sm:px-6 lg:px-8">
             
@@ -284,11 +290,11 @@ export default function Home() {
                     <span className="text-xs font-bold tracking-[0.18em] text-neutral-900 uppercase">Agentic RAG AI</span>
                     <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-mono font-medium text-neutral-600">v2.4</span>
                   </div>
-                  <span className="text-[11px] font-normal text-neutral-500">Acme Conversational Assistant</span>
+                  <span className="text-[11px] font-normal text-neutral-500">Tenant conversational assistant</span>
                 </div>
               </div>
 
-              {/* Navigation Pill (Matches Acme top-nav tabs) */}
+              {/* Navigation Pill */}
               <div className="hidden md:flex items-center gap-1.5 border-l border-neutral-200/80 pl-6">
                 <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-900 bg-neutral-100 rounded-md">
                   <svg className="w-3.5 h-3.5 text-neutral-700" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -323,10 +329,10 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Controlled Max Width Content Canvas (Matches Acme admin dashboard layout) */}
+        {/* Controlled Max Width Content Canvas */}
         <main className="mx-auto max-w-[1536px] px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
           
-          {/* 1. Acme Editorial Header Section */}
+          {/* 1. Editorial Header Section */}
           <section className="border-b border-neutral-200/80 pb-6" aria-labelledby="page-title">
             <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
               
@@ -341,7 +347,7 @@ export default function Home() {
                   </span>
                   <span className="inline-flex items-center gap-1 rounded-full border border-neutral-200/90 bg-white px-2 py-0.5 text-[10px] font-medium text-neutral-700">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                    Verified Knowledge
+                    {config ? 'Tenant configured' : 'No tenant selected'}
                   </span>
                 </div>
 
@@ -373,7 +379,7 @@ export default function Home() {
             </div>
           </section>
 
-          {/* 2. Acme 12-Column Responsive Workspace Grid */}
+          {/* 2. Responsive Workspace Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             
             {/* Left: Premium White Conversation Canvas (8 columns) */}
@@ -649,7 +655,7 @@ export default function Home() {
 
             </div>
 
-            {/* Right: Acme Context, Knowledge Scope & Policies (4 columns) */}
+            {/* Right: Context, Knowledge Scope & Policies (4 columns) */}
             <div className="lg:col-span-4 space-y-6">
               
               {/* Card 1: Verified Knowledge Boundary */}
@@ -673,9 +679,9 @@ export default function Home() {
                       <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
                       </svg>
-                      <span>SOC-2 Type II Whitepaper</span>
+                      <span>Published sources</span>
                     </span>
-                    <span className="font-mono text-[10px] text-neutral-400">v4.2</span>
+                    <span className="font-mono text-[10px] text-neutral-400">—</span>
                   </div>
 
                   <div className="flex items-center justify-between text-neutral-700">
@@ -683,9 +689,9 @@ export default function Home() {
                       <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
                       </svg>
-                      <span>Enterprise Pricing Matrix</span>
+                      <span>Source citations appear in responses</span>
                     </span>
-                    <span className="font-mono text-[10px] text-neutral-400">2026</span>
+                    <span className="font-mono text-[10px] text-neutral-400">—</span>
                   </div>
 
                   <div className="flex items-center justify-between text-neutral-700">
@@ -693,9 +699,9 @@ export default function Home() {
                       <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
                       </svg>
-                      <span>Master Services Agreement</span>
+                      <span>Tenant-managed knowledge</span>
                     </span>
-                    <span className="font-mono text-[10px] text-neutral-400">§ 4.2</span>
+                    <span className="font-mono text-[10px] text-neutral-400">—</span>
                   </div>
                 </div>
               </section>
@@ -758,7 +764,7 @@ export default function Home() {
         </main>
       </div>
 
-      {/* Acme Editorial Footer */}
+      {/* Editorial Footer */}
       <footer className="border-t border-neutral-200/80 bg-white py-6 mt-16 text-xs text-neutral-500">
         <div className="mx-auto max-w-[1536px] px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
