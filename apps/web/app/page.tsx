@@ -589,7 +589,7 @@ export default function Home() {
                         <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:0.2s]" />
                         <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:0.4s]" />
                       </span>
-                      <span>Searching verified sources...</span>
+                      <span>Thinking…</span>
                     </div>
                   </div>
                 )}
