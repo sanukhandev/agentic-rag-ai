@@ -184,7 +184,8 @@ export class MemoryStore implements Store {
   async getSession(id: string): Promise<Session | null> { return this.sessions.get(id) ?? null; }
   async purgeExpiredSessions(tenantId: string, before: string): Promise<number> {
     const cutoff = Date.parse(before);
-    const expired = [...this.sessions.values()].filter((session) => session.tenantId === tenantId && Date.parse(session.lastActivityAt) < cutoff);
+    const leadSessionIds = new Set([...this.crmLeads.values()].map((l) => l.sessionId));
+    const expired = [...this.sessions.values()].filter((session) => session.tenantId === tenantId && Date.parse(session.lastActivityAt) < cutoff && !leadSessionIds.has(session.id));
     for (const session of expired) {
       this.sessions.delete(session.id);
       for (const [messageId, message] of this.messages) if (message.sessionId === session.id) this.messages.delete(messageId);

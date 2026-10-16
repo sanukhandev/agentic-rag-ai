@@ -1,5 +1,6 @@
 import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
 import { CrmLead } from '../../types/admin.types';
 import { BadgeComponent } from '../shared/badge.component';
@@ -8,7 +9,7 @@ import { IconComponent } from '../shared/icon.component';
 @Component({
   selector: 'app-crm',
   standalone: true,
-  imports: [CommonModule, BadgeComponent, IconComponent],
+  imports: [CommonModule, FormsModule, BadgeComponent, IconComponent],
   template: `
     <section class="space-y-6 animate-fade-in">
       <!-- Section Header -->
@@ -19,12 +20,13 @@ import { IconComponent } from '../shared/icon.component';
             <app-badge variant="neutral" [showDot]="false" text="">
               {{ leads.length }} {{ leads.length === 1 ? 'Lead' : 'Leads' }}
             </app-badge>
+            <app-badge variant="success" [showDot]="true" text="Vault Rehydration Active"></app-badge>
           </div>
           <h2 class="mt-1.5 text-2xl font-bold tracking-tight text-neutral-900 font-sans">
-            CRM Leads & Inquiries
+            CRM Leads & Contact Inquiries
           </h2>
           <p class="mt-1 text-xs sm:text-sm text-neutral-500 max-w-2xl leading-relaxed">
-            Validated contact requests captured and gated from grounded customer conversations. Node API isolates customer PII inside the trusted memory boundary before triggering authorized downstream workflows.
+            Validated customer leads captured through conversation. PII is encrypted in Node/PostgreSQL and rehydrated securely at the authorized administrative boundary for sales follow-up.
           </p>
         </div>
 
@@ -45,6 +47,74 @@ import { IconComponent } from '../shared/icon.component';
         </div>
       </div>
 
+      <!-- Quick Metrics Summary Strip -->
+      <div *ngIf="leads.length > 0" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-subtle">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Total Leads</span>
+          <p class="mt-1 text-xl font-bold text-neutral-900">{{ leads.length }}</p>
+        </div>
+        <div class="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-subtle">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Hot Leads</span>
+          <p class="mt-1 text-xl font-bold text-rose-700">{{ hotCount }}</p>
+        </div>
+        <div class="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-subtle">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Warm Leads</span>
+          <p class="mt-1 text-xl font-bold text-amber-700">{{ warmCount }}</p>
+        </div>
+        <div class="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-subtle">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Validated</span>
+          <p class="mt-1 text-xl font-bold text-emerald-700">{{ validatedCount }}</p>
+        </div>
+      </div>
+
+      <!-- Search & Filter Controls -->
+      <div *ngIf="leads.length > 0" class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="relative flex-1 max-w-md">
+          <app-icon name="search" classNames="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400"></app-icon>
+          <input
+            type="text"
+            [(ngModel)]="searchQuery"
+            placeholder="Search leads by name, email, phone, or intent..."
+            class="w-full rounded-lg border border-neutral-200 bg-white pl-9 pr-3 py-1.5 text-xs text-neutral-800 placeholder-neutral-400 focus:border-neutral-400 focus:outline-none transition-colors"
+          />
+        </div>
+
+        <div class="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+          <button
+            type="button"
+            (click)="qualityFilter = 'all'"
+            class="rounded-lg px-2.5 py-1 text-xs font-medium transition-colors"
+            [ngClass]="qualityFilter === 'all' ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'"
+          >
+            All ({{ leads.length }})
+          </button>
+          <button
+            type="button"
+            (click)="qualityFilter = 'hot'"
+            class="rounded-lg px-2.5 py-1 text-xs font-medium transition-colors"
+            [ngClass]="qualityFilter === 'hot' ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'"
+          >
+            Hot ({{ hotCount }})
+          </button>
+          <button
+            type="button"
+            (click)="qualityFilter = 'warm'"
+            class="rounded-lg px-2.5 py-1 text-xs font-medium transition-colors"
+            [ngClass]="qualityFilter === 'warm' ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'"
+          >
+            Warm ({{ warmCount }})
+          </button>
+          <button
+            type="button"
+            (click)="qualityFilter = 'new'"
+            class="rounded-lg px-2.5 py-1 text-xs font-medium transition-colors"
+            [ngClass]="qualityFilter === 'new' ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'"
+          >
+            New/Nurture
+          </button>
+        </div>
+      </div>
+
       <!-- Loading Placeholder -->
       <div
         *ngIf="isLoading && leads.length === 0"
@@ -54,7 +124,7 @@ import { IconComponent } from '../shared/icon.component';
           <app-icon name="refresh" classNames="w-6 h-6 text-neutral-400 animate-spin"></app-icon>
         </div>
         <p class="text-sm font-medium text-neutral-700">Loading validated CRM leads...</p>
-        <p class="text-xs text-neutral-400">Fetching records for active workspace scope.</p>
+        <p class="text-xs text-neutral-400">Rehydrating customer contact details from secure vault.</p>
       </div>
 
       <!-- Empty State -->
@@ -67,7 +137,7 @@ import { IconComponent } from '../shared/icon.component';
         </div>
         <h3 class="text-base font-semibold text-neutral-900">No Validated Leads Captured Yet</h3>
         <p class="text-xs sm:text-sm text-neutral-500 max-w-md mx-auto leading-relaxed">
-          When customers request a demo, sales consultation, or follow-up in chat and confirm their contact details, validated lead records and conversation transcripts will appear here.
+          When customers request a demo, sales consultation, or follow-up in chat and confirm their contact details, validated lead records and conversation transcripts will appear here with contact details unmasked for sales outreach.
         </p>
         <div class="pt-2">
           <button
@@ -81,40 +151,94 @@ import { IconComponent } from '../shared/icon.component';
         </div>
       </div>
 
+      <!-- Filtered Empty State -->
+      <div
+        *ngIf="leads.length > 0 && filteredLeads.length === 0"
+        class="rounded-xl border border-neutral-200 bg-white p-8 text-center text-xs text-neutral-500"
+      >
+        No leads match your current search or quality filter.
+      </div>
+
       <!-- Leads Grid / List -->
-      <div *ngIf="leads.length > 0" class="space-y-5">
+      <div *ngIf="filteredLeads.length > 0" class="space-y-5">
         <div
-          *ngFor="let lead of leads"
+          *ngFor="let lead of filteredLeads"
           class="rounded-2xl border border-neutral-200/90 bg-white p-6 shadow-subtle transition-all hover:border-neutral-300 hover:shadow-card space-y-5"
         >
-          <!-- Lead Card Header -->
-          <div class="flex flex-wrap items-start justify-between gap-4 border-b border-neutral-100 pb-4">
-            <div class="space-y-1">
-              <div class="flex items-center gap-2.5">
-                <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-900 text-white font-bold text-xs">
-                  {{ getLeadInitial(lead) }}
-                </div>
-                <div>
+          <!-- Lead Card Header with Unmasked PII & Outreach Actions -->
+          <div class="flex flex-col lg:flex-row lg:items-start justify-between gap-4 border-b border-neutral-100 pb-4">
+            <div class="flex items-start gap-3.5">
+              <!-- Avatar -->
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white font-bold text-sm shadow-xs">
+                {{ getLeadInitial(lead) }}
+              </div>
+
+              <!-- Contact & Details -->
+              <div class="space-y-1">
+                <div class="flex flex-wrap items-center gap-2">
                   <h3 class="text-base font-bold text-neutral-900 leading-tight">
                     {{ lead.leadData.name || 'Unnamed Contact Request' }}
                   </h3>
-                  <div class="flex items-center gap-3 text-xs text-neutral-500 mt-0.5">
-                    <span *ngIf="lead.leadData.email" class="font-mono text-neutral-600">
-                      {{ lead.leadData.email }}
-                    </span>
-                    <span *ngIf="lead.leadData.email && lead.leadData.phone" class="text-neutral-300">·</span>
-                    <span *ngIf="lead.leadData.phone" class="font-mono text-neutral-600">
-                      {{ lead.leadData.phone }}
-                    </span>
-                    <span *ngIf="!lead.leadData.email && !lead.leadData.phone" class="italic text-neutral-400">
-                      No direct contact token
-                    </span>
+                  <span
+                    *ngIf="isRehydrated(lead)"
+                    class="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 border border-emerald-200/60"
+                    title="Customer contact information securely rehydrated from Node PII Vault"
+                  >
+                    <app-icon name="check" classNames="w-2.5 h-2.5 text-emerald-600"></app-icon>
+                    <span>Verified Contact</span>
+                  </span>
+                </div>
+
+                <!-- Direct Outreach Contact Badges -->
+                <div class="flex flex-wrap items-center gap-2 pt-0.5">
+                  <!-- Email Outreach -->
+                  <div *ngIf="lead.leadData.email" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200/80 bg-neutral-50 px-2.5 py-1 text-xs text-neutral-800">
+                    <span class="font-mono">{{ lead.leadData.email }}</span>
+                    <a
+                      [href]="'mailto:' + lead.leadData.email"
+                      class="text-neutral-500 hover:text-neutral-900 transition-colors ml-1"
+                      title="Send email to lead"
+                    >
+                      <app-icon name="arrow-up-right" classNames="w-3 h-3"></app-icon>
+                    </a>
+                    <button
+                      type="button"
+                      (click)="copyToClipboard(lead.leadData.email, 'Email')"
+                      class="text-neutral-400 hover:text-neutral-700 transition-colors"
+                      title="Copy email to clipboard"
+                    >
+                      <app-icon name="copy" classNames="w-3 h-3"></app-icon>
+                    </button>
                   </div>
+
+                  <!-- Phone Outreach -->
+                  <div *ngIf="lead.leadData.phone" class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200/80 bg-neutral-50 px-2.5 py-1 text-xs text-neutral-800">
+                    <span class="font-mono">{{ lead.leadData.phone }}</span>
+                    <a
+                      [href]="'tel:' + lead.leadData.phone"
+                      class="text-neutral-500 hover:text-neutral-900 transition-colors ml-1"
+                      title="Call lead"
+                    >
+                      <app-icon name="arrow-up-right" classNames="w-3 h-3"></app-icon>
+                    </a>
+                    <button
+                      type="button"
+                      (click)="copyToClipboard(lead.leadData.phone, 'Phone')"
+                      class="text-neutral-400 hover:text-neutral-700 transition-colors"
+                      title="Copy phone to clipboard"
+                    >
+                      <app-icon name="copy" classNames="w-3 h-3"></app-icon>
+                    </button>
+                  </div>
+
+                  <span *ngIf="!lead.leadData.email && !lead.leadData.phone" class="text-xs italic text-neutral-400">
+                    No direct contact details provided in chat
+                  </span>
                 </div>
               </div>
             </div>
 
-            <!-- Badges Row -->
+            <!-- Qualification Badges Row -->
             <div class="flex flex-wrap items-center gap-2">
               <app-badge variant="outline" [showDot]="false" [text]="lead.intent"></app-badge>
               <app-badge
@@ -232,6 +356,8 @@ export class CrmComponent implements OnInit {
 
   leads: CrmLead[] = [];
   isLoading = false;
+  searchQuery = '';
+  qualityFilter: 'all' | 'hot' | 'warm' | 'new' = 'all';
 
   ngOnInit(): void {
     this.state.crmLeads$.subscribe((leads) => {
@@ -258,9 +384,63 @@ export class CrmComponent implements OnInit {
     this.state.setSection('chat');
   }
 
+  get hotCount(): number {
+    return this.leads.filter((l) => l.quality === 'hot').length;
+  }
+
+  get warmCount(): number {
+    return this.leads.filter((l) => l.quality === 'warm').length;
+  }
+
+  get validatedCount(): number {
+    return this.leads.filter((l) => l.validationPass).length;
+  }
+
+  get filteredLeads(): CrmLead[] {
+    return this.leads.filter((lead) => {
+      // Quality filter
+      if (this.qualityFilter !== 'all') {
+        if (this.qualityFilter === 'new') {
+          if (lead.quality !== 'new' && lead.quality !== 'nurture') return false;
+        } else if (lead.quality !== this.qualityFilter) {
+          return false;
+        }
+      }
+
+      // Search query
+      if (this.searchQuery.trim()) {
+        const query = this.searchQuery.toLowerCase();
+        const name = (lead.leadData.name || '').toLowerCase();
+        const email = (lead.leadData.email || '').toLowerCase();
+        const phone = (lead.leadData.phone || '').toLowerCase();
+        const intent = (lead.intent || '').toLowerCase();
+        const summary = (lead.summary || '').toLowerCase();
+        return name.includes(query) || email.includes(query) || phone.includes(query) || intent.includes(query) || summary.includes(query);
+      }
+
+      return true;
+    });
+  }
+
   getLeadInitial(lead: CrmLead): string {
-    const name = lead.leadData?.name;
+    const name = lead.leadData.name;
     return (name && name.length > 0 ? name.charAt(0) : 'L').toUpperCase();
+  }
+
+  isRehydrated(lead: CrmLead): boolean {
+    const name = lead.leadData.name || '';
+    const email = lead.leadData.email || '';
+    return (!name.includes('[NAME_') && name.length > 0) || (!email.includes('[EMAIL_') && email.length > 0);
+  }
+
+  copyToClipboard(text: string, label: string): void {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        this.state.showToast('success', 'Copied to Clipboard', `${label}: ${text}`);
+      }).catch(() => {
+        this.state.showToast('info', 'Contact Info', text);
+      });
+    }
   }
 
   getQualityVariant(quality: string): 'error' | 'warning' | 'neutral' | 'black' {

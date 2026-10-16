@@ -8,7 +8,7 @@ export interface MaskResult {
 
 const token = (kind: string, index: number): string => `[${kind}_${index}]`;
 
-export type RehydrationPurpose = 'assistant_response' | 'workflow_payload';
+export type RehydrationPurpose = 'assistant_response' | 'workflow_payload' | 'admin_crm';
 
 export class TokenVault {
   private readonly masterKey: Buffer;
@@ -41,29 +41,33 @@ export class TokenVault {
     for (const item of values) session.tokenMap.set(item.token, this.encrypt(session.id, JSON.stringify({ value: item.value, expiresAt: Date.now() + this.ttlMs })));
   }
 
-  private resolveValue(session: Session, placeholder: string): string | null {
+  private resolveValue(session: Session, placeholder: string, allowExpired = false): string | null {
     const ciphertext = session.tokenMap.get(placeholder);
     const encoded = ciphertext ? this.decrypt(session.id, ciphertext) : null;
     if (!encoded) return null;
     try {
       const entry = JSON.parse(encoded) as { value?: unknown; expiresAt?: unknown };
       if (typeof entry.value !== 'string' || typeof entry.expiresAt !== 'number') return null;
-      if (entry.expiresAt <= Date.now()) session.tokenMap.delete(placeholder);
-      return entry.expiresAt > Date.now() ? entry.value : null;
+      if (!allowExpired && entry.expiresAt <= Date.now()) {
+        session.tokenMap.delete(placeholder);
+        return null;
+      }
+      return entry.value;
     } catch { return null; }
   }
 
   purgeExpired(session: Session): number {
     const before = session.tokenMap.size;
-    for (const placeholder of [...session.tokenMap.keys()]) this.resolveValue(session, placeholder);
+    for (const placeholder of [...session.tokenMap.keys()]) this.resolveValue(session, placeholder, false);
     return before - session.tokenMap.size;
   }
 
-  has(session: Session, placeholder: string): boolean { return this.resolveValue(session, placeholder) !== null; }
+  has(session: Session, placeholder: string): boolean { return this.resolveValue(session, placeholder, false) !== null; }
 
   resolve(session: Session, placeholder: string, purpose: RehydrationPurpose): string | null {
+    if (purpose === 'admin_crm') return this.resolveValue(session, placeholder, true);
     if (purpose !== 'assistant_response') return null;
-    return this.resolveValue(session, placeholder);
+    return this.resolveValue(session, placeholder, false);
   }
 
   rotate(session: Session, nextVault: TokenVault): void {

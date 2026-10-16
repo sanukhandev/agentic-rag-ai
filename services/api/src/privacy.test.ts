@@ -53,6 +53,7 @@ describe('privacy boundary', () => {
     expect(rehydrateForSession(session, masked.masked, rotated)).toContain('alice@example.com');
     const expiredSession = { id: 'session-expired', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
     saveTokens(expiredSession, masked.tokens, new TokenVault('expired-vault-secret-2026', -1));
+    expect(rehydrateForSession(expiredSession, masked.masked, new TokenVault('expired-vault-secret-2026'), 'admin_crm')).toContain('alice@example.com');
     expect(rehydrateForSession(expiredSession, masked.masked, new TokenVault('expired-vault-secret-2026'))).not.toContain('alice@example.com');
     expect(expiredSession.tokenMap.size).toBe(0);
   });

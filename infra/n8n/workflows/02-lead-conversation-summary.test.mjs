@@ -1,0 +1,33 @@
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+test('formats a CRM summary for people while keeping raw conversation data separate', async () => {
+  const workflow = JSON.parse(await readFile(new URL('./02-lead-conversation-summary.json', import.meta.url), 'utf8'));
+  const code = workflow.nodes.find((node) => node.name === 'Generate Conversation Summary').parameters.jsCode;
+  const run = new Function('$json', code);
+  const [{ json }] = run({
+    leadId: 'lead-1',
+    tenantId: 'tenant-1',
+    intent: 'lead.capture',
+    score: 70,
+    quality: 'warm',
+    validationPass: true,
+    leadData: { name: '[NAME_1]', email: '[EMAIL_1]' },
+    conversation: [
+      { role: 'user', content: 'I want to discuss a website for my startup.', createdAt: '2026-01-01T00:00:00.000Z' },
+      { role: 'assistant', content: 'What name should I use?', createdAt: '2026-01-01T00:00:01.000Z' },
+      { role: 'user', content: '[NAME_1].', createdAt: '2026-01-01T00:00:02.000Z' },
+      { role: 'assistant', content: 'What is the best email?', createdAt: '2026-01-01T00:00:03.000Z' },
+      { role: 'user', content: '[EMAIL_1]', createdAt: '2026-01-01T00:00:04.000Z' },
+    ],
+  });
+
+  assert.match(json.summary, /^Customer request: I want to discuss a website for my startup\./m);
+  assert.match(json.summary, /Contact: \[NAME_1\] · \[EMAIL_1\]/);
+  assert.match(json.summary, /Intent: lead capture\./);
+  assert.match(json.summary, /Lead quality: Warm \(70\/100\)\./);
+  assert.match(json.summary, /Validation: Passed\./);
+  assert.match(json.summary, /Conversation: 3 visitor message\(s\), 2 assistant response\(s\)\./);
+  assert.doesNotMatch(json.summary, /Full conversation JSON|createdAt/);
+});

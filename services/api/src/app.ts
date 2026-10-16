@@ -242,7 +242,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const crmLeadForAdmin = async (lead: CrmLead): Promise<CrmLead & { quality: ReturnType<typeof leadQuality> }> => {
     const session = await store.getSession(lead.sessionId);
     if (!session) return { ...lead, quality: leadQuality(lead.score) };
-    const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault);
+    const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm');
     return { ...lead, quality: leadQuality(lead.score), leadData: { ...(lead.leadData.name ? { name: rehydrate(lead.leadData.name) } : {}), ...(lead.leadData.email ? { email: rehydrate(lead.leadData.email) } : {}), ...(lead.leadData.phone ? { phone: rehydrate(lead.leadData.phone) } : {}) }, conversation: lead.conversation.map((message) => ({ ...message, content: rehydrate(message.content) })), summary: lead.summary ? rehydrate(lead.summary) : null };
   };
 

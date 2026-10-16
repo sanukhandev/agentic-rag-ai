@@ -41,7 +41,7 @@ Timeout does not mean failure or success; mark outcome unknown until reconciled.
 1. Node collects name plus email/phone through conversation and requires explicit confirmation.
 2. Node sends masked lead fields, score, quality band, validation result and the complete masked conversation to the private `lead-capture` webhook.
 3. `01-lead-capture-and-crm.json` validates `lead.capture`, `score >= 70`, contact data and conversation shape, then inserts the tenant-scoped record through the internal Node API.
-4. The workflow triggers `02-lead-conversation-summary.json`, which stores a deterministic summary with intent, score, quality, transcript and conversation JSON while the CRM record retains the full masked conversation JSON.
+4. The workflow triggers `02-lead-conversation-summary.json`, which stores a deterministic, human-readable summary with the request, contact, intent, score, quality and turn counts while the CRM record retains the full masked conversation JSON for inspection.
 5. Tenant admins can view the lead, intent, quality, score, validation result, summary and expandable conversation JSON in the CRM section.
 
 The Node API remains the authorization, tenant-isolation and token-rehydration boundary. n8n receives only tokenized values and uses the shared local Compose secret for the internal API calls.
