@@ -17,17 +17,18 @@ test('formats a CRM summary for people while keeping raw conversation data separ
     conversation: [
       { role: 'user', content: 'I want to discuss a website for my startup.', createdAt: '2026-01-01T00:00:00.000Z' },
       { role: 'assistant', content: 'What name should I use?', createdAt: '2026-01-01T00:00:01.000Z' },
-      { role: 'user', content: '[NAME_1].', createdAt: '2026-01-01T00:00:02.000Z' },
+      { role: 'user', content: '[NAME_1] Three', createdAt: '2026-01-01T00:00:02.000Z' },
       { role: 'assistant', content: 'What is the best email?', createdAt: '2026-01-01T00:00:03.000Z' },
       { role: 'user', content: '[EMAIL_1]', createdAt: '2026-01-01T00:00:04.000Z' },
     ],
   });
 
   assert.match(json.summary, /^Customer request: I want to discuss a website for my startup\./m);
-  assert.match(json.summary, /Contact: \[NAME_1\] · \[EMAIL_1\]/);
+  assert.match(json.summary, /Contact details: Provided\./);
   assert.match(json.summary, /Intent: lead capture\./);
   assert.match(json.summary, /Lead quality: Warm \(70\/100\)\./);
   assert.match(json.summary, /Validation: Passed\./);
   assert.match(json.summary, /Conversation: 3 visitor message\(s\), 2 assistant response\(s\)\./);
+  assert.doesNotMatch(json.summary, /\[NAME_1\]|\[EMAIL_1\]/);
   assert.doesNotMatch(json.summary, /Full conversation JSON|createdAt/);
 });
