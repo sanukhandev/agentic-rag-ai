@@ -17,7 +17,7 @@ export interface ChatModel {
 
 export const naturalAbstention = (): string => 'I don’t have that detail in the information available here. I can help with the products, services, projects, or public links covered by this assistant.';
 
-export const hasLeadIntent = (text: string): boolean => !/\b(?:what(?:'s| is)|where is|who is|do you have|give me|find)\b.{0,40}\b(?:email|phone|contact|linkedin|github)\b/i.test(text) && /\b(?:contact\s+me|call\s+me|email\s+me|reach\s+(?:out\s+to\s+)?me|(?:i(?:'m| am)|we(?:'re| are))\s+interested\s+in|(?:i|we)\s+(?:would\s+like|want|need)\s+(?:a\s+)?(?:demo|quote|consultation)|(?:book|schedule|request)\s+(?:a\s+)?(?:demo|quote|call|consultation)|speak\s+(?:to|with)\s+(?:someone|an?\s+expert))\b/i.test(text);
+export const hasLeadIntent = (text: string): boolean => !/\b(?:what(?:'s| is)|where is|who is|do you have|give me|find)\b.{0,40}\b(?:email|phone|contact|linkedin|github)\b/i.test(text) && /\b(?:contact\s+me|call\s+me|email\s+me|reach\s+(?:out\s+to\s+)?me|(?:i(?:'m| am)|we(?:'re| are))\s+interested\s+in|(?:i|we)\s+(?:would\s+like|want|need)\s+(?:to\s+)?(?:get\s+)?(?:a\s+)?(?:demo|quote|consultation|meeting|call|service(?:s)?)|(?:book|schedule|request|arrange|set\s+up)\s+(?:a\s+)?(?:demo|quote|call|consultation|meeting|appointment|service(?:s)?)|(?:i(?:'d| would)\s+like\s+to\s+|i\s+want\s+to\s+|we\s+want\s+to\s+)(?:hire|engage|work\s+with)|speak\s+(?:to|with)\s+(?:someone|an?\s+expert))\b/i.test(text);
 export const extractLeadData = (text: string): LeadData => {
   const data: LeadData = {};
   const name = text.match(/\[NAME_\d+\]/u)?.[0];

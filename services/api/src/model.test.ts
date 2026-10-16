@@ -22,6 +22,9 @@ describe('Azure Foundry model adapter', () => {
     expect(needsConversationContext('what')).toBe(true);
     expect(needsConversationContext('Tell me about Sanu Khan')).toBe(false);
     expect(hasLeadIntent('Please contact me about a demo')).toBe(true);
+    expect(hasLeadIntent('I would like get service from Sanu')).toBe(true);
+    expect(hasLeadIntent('Can we arrange a meeting with Sanu?')).toBe(true);
+    expect(hasLeadIntent('What services does Sanu offer?')).toBe(false);
     expect(hasLeadIntent('Do you have his email?')).toBe(false);
     expect(extractLeadData('My name is [NAME_1], email [EMAIL_1]')).toEqual({ name: '[NAME_1]', email: '[EMAIL_1]' });
     expect(conversationalReply('wellbeing', 'Nova')).toContain('Glad to hear it');
