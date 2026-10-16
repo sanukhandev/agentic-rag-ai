@@ -507,6 +507,8 @@ describe('API vertical slice', () => {
     const stored = await runtime.store.getMessageByClientId(session.body.sessionId, 'pii-response-1');
     expect(JSON.stringify(stored?.response)).not.toContain('alice@example.com');
     expect(stored?.response?.answer).toMatch(/\[EMAIL_\d+\]/);
+    const history = await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).expect(200);
+    expect(history.body.messages.at(-1).content).toContain('alice@example.com');
     const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'ignored duplicate', clientMessageId: 'pii-response-1' }).expect(200);
     expect(duplicate.body.answer).toContain('alice@example.com');
   });

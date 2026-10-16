@@ -167,7 +167,7 @@ export const formatNaturalAbstention = (rawAnswer: string, agentName = 'our assi
 
   const isTechnicalAbstention = technicalPatterns.some((pattern) => pattern.test(rawAnswer));
   if (isTechnicalAbstention) {
-    return `I don’t have verified documentation on that topic in our current records. I'm happy to help with questions covered in our published products, pricing, or service specifications.`;
+    return 'I don’t have that detail in the information available here. I can help with the products, services, projects, or public links covered by this assistant.';
   }
   return rawAnswer;
 };
