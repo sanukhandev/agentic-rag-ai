@@ -122,7 +122,7 @@ export const hasConflictingEvidence = (contents: string[]): boolean => {
         for (const right of factualSegments(contents[rightIndex] ?? '')) {
           const leftTerms = termsNearFacts(left);
           const rightTerms = termsNearFacts(right);
-          const sharedTopic = [...leftTerms].some((term) => rightTerms.has(term));
+          const sharedTopic = [...leftTerms].filter((term) => rightTerms.has(term)).length >= 2;
           const leftFacts = new Set(left.match(/\b\d+(?:\.\d+)?\b/g) ?? []);
           const rightFacts = new Set(right.match(/\b\d+(?:\.\d+)?\b/g) ?? []);
           if (sharedTopic && leftFacts.size > 0 && rightFacts.size > 0 && [...leftFacts].some((fact) => !rightFacts.has(fact))) return true;

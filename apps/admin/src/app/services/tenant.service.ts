@@ -55,6 +55,23 @@ export class TenantService {
   loadTenants(): void {
     if (!this.auth.token) return;
     this.isLoadingSubject.next(true);
+
+    if (!this.auth.isPlatformAdmin) {
+      this.http.get<{ tenant: Tenant }>(`${this.apiBase}/api/v1/admin/tenant`, {
+        headers: this.auth.authHeaders
+      }).pipe(
+        catchError(() => of({ tenant: null as unknown as Tenant }))
+      ).subscribe((res) => {
+        this.isLoadingSubject.next(false);
+        if (res?.tenant) {
+          this.tenantsSubject.next([res.tenant]);
+          this.selectedTenantSubject.next(res.tenant);
+          this.auth.setSelectedTenantId(res.tenant.id);
+        }
+      });
+      return;
+    }
+
     this.http.get<{ items: Tenant[] }>(`${this.apiBase}/api/v1/admin/tenants`, {
       headers: this.auth.authHeaders
     }).pipe(
@@ -64,10 +81,13 @@ export class TenantService {
       const items = res.items ?? [];
       this.tenantsSubject.next(items);
       const current = this.selectedTenantSubject.value;
-      const matched = current ? items.find((t) => t.id === current.id) : null;
+      const targetId = current?.id || this.auth.selectedTenantId;
+      const matched = targetId ? items.find((t) => t.id === targetId) : null;
       const chosen = matched ?? items[0] ?? null;
       this.selectedTenantSubject.next(chosen);
-      this.auth.setSelectedTenantId(chosen?.id ?? null);
+      if (chosen) {
+        this.auth.setSelectedTenantId(chosen.id);
+      }
     });
   }
 

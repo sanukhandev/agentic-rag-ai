@@ -115,9 +115,13 @@ export class AdminStateService {
             this.observability.loadMetrics();
           } else if (sec === 'knowledge') {
             this.knowledge.loadJobs();
+            const hasActiveJob = this.knowledge.jobs.some((j) => j.status === 'queued' || j.status === 'processing');
+            if (hasActiveJob) {
+              this.knowledge.loadSources();
+            }
           }
         }
-      }, 20000);
+      }, 8000);
     }
   }
 
@@ -246,15 +250,15 @@ export class AdminStateService {
   }
 
   publishSource(source: Source): void {
-    this.knowledge.publishSource(source);
+    this.knowledge.publishSource(source, () => this.observability.loadMetrics());
   }
 
   revokeSource(source: Source): void {
-    this.knowledge.revokeSource(source);
+    this.knowledge.revokeSource(source, () => this.observability.loadMetrics());
   }
 
   purgeSource(source: Source): void {
-    this.knowledge.purgeSource(source);
+    this.knowledge.purgeSource(source, () => this.observability.loadMetrics());
   }
 
   reindexSource(source: Source): void {
@@ -305,7 +309,7 @@ export class AdminStateService {
   }
 
   loadTenantScopedData(): void {
-    if (this.isPlatformAdmin && !this.tenantService.selectedTenant) return;
+    if (this.isPlatformAdmin && !this.tenantService.selectedTenant && !this.auth.selectedTenantId) return;
     this.knowledge.loadSources();
     this.knowledge.loadJobs();
     this.observability.loadMetrics();
@@ -368,12 +372,10 @@ export class AdminStateService {
 
   refreshAllData(): void {
     this.observability.loadHealth();
+    this.tenantService.loadTenants();
     if (this.isPlatformAdmin) {
-      this.tenantService.loadTenants();
       this.tenantService.loadPlatformOverview();
-      this.loadTenantScopedData();
-    } else {
-      this.loadTenantScopedData();
     }
+    this.loadTenantScopedData();
   }
 }

@@ -65,7 +65,7 @@ export class KnowledgeService {
     });
   }
 
-  publishSource(source: Source): void {
+  publishSource(source: Source, onComplete?: () => void): void {
     if (!this.auth.token) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/sources/${source.id}/publish`, {}, {
@@ -74,12 +74,13 @@ export class KnowledgeService {
       next: () => {
         this.loadSources();
         this.toast.show('success', 'Source Published', `${source.title} is now active.`);
+        onComplete?.();
       },
       error: () => this.toast.show('error', 'Publish Failed', 'Failed to publish source.')
     });
   }
 
-  revokeSource(source: Source): void {
+  revokeSource(source: Source, onComplete?: () => void): void {
     if (!this.auth.token) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/sources/${source.id}/revoke`, {}, {
@@ -88,12 +89,13 @@ export class KnowledgeService {
       next: () => {
         this.loadSources();
         this.toast.show('warning', 'Source Revoked', `${source.title} has been revoked.`);
+        onComplete?.();
       },
       error: () => this.toast.show('error', 'Revoke Failed', 'Failed to revoke source.')
     });
   }
 
-  purgeSource(source: Source): void {
+  purgeSource(source: Source, onComplete?: () => void): void {
     if (!this.auth.token) return;
 
     this.http.delete(`${this.apiBase}/api/v1/admin/sources/${source.id}`, {
@@ -102,6 +104,7 @@ export class KnowledgeService {
       next: () => {
         this.loadSources();
         this.toast.show('info', 'Source Purged', `${source.title} deleted.`);
+        onComplete?.();
       },
       error: () => this.toast.show('error', 'Purge Failed', 'Only revoked sources can be purged.')
     });

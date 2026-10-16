@@ -199,7 +199,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (origin && !allowed.has(origin)) {
       try { if ((await store.listTenants()).some((tenant) => tenant.status === 'active' && tenant.publicChatEnabled && tenant.publicOrigin === origin)) allowed.add(origin); } catch { /* readiness endpoint reports store failures */ }
     }
-    if (origin && allowed.has(origin)) { res.setHeader('access-control-allow-origin', origin); res.setHeader('access-control-allow-headers', 'content-type,authorization,x-request-id'); res.setHeader('access-control-allow-methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS'); res.setHeader('vary', 'Origin'); }
+    if (origin && allowed.has(origin)) { res.setHeader('access-control-allow-origin', origin); res.setHeader('access-control-allow-headers', 'content-type,authorization,x-request-id,x-tenant-id'); res.setHeader('access-control-allow-methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS'); res.setHeader('vary', 'Origin'); }
     if (req.method === 'OPTIONS') { res.status(origin && allowed.has(origin) ? 204 : 403).end(); return; }
     next();
   });
@@ -269,6 +269,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     try { const status = parse(z.object({ status: z.enum(['active', 'suspended', 'archived']) }), req.body).status as TenantStatus; const tenant = await store.setTenantStatus(routeParam(req, 'id'), status); if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: getAuth(req)?.userId ?? null, eventName: `tenant.${status}`, metadata: {}, createdAt: new Date().toISOString() }); res.json({ tenant }); } catch (error) { next(error); }
   });
 
+  app.get('/api/v1/admin/tenant', protectedApi, async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const tenant = await store.getTenant(tenantId); if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); res.json({ tenant }); } catch (error) { next(error); } });
+
   app.get('/api/v1/admin/members', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { res.json({ items: (await store.listUsers(await tenantForRequest(store, req))).map(publicUser) }); } catch (error) { next(error); } });
   app.post('/api/v1/admin/members', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const input = parse(memberSchema, req.body); if (await store.getUserByEmail(input.email)) throw new HttpError(409, 'USER_EXISTS', 'Member email already exists.'); const user = await store.createUser({ email: input.email, passwordHash: await auth.hashPassword(input.password), role: input.role, tenantId }); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'member.created', metadata: { memberId: user.id, role: user.role }, createdAt: new Date().toISOString() }); res.status(201).json({ user: publicUser(user) }); } catch (error) { next(error); } });
   app.patch('/api/v1/admin/members/:id', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const role = parse(z.object({ role: z.enum(['tenant_editor', 'tenant_viewer', 'tenant_agent']) }), req.body).role; const user = await store.updateUserRole(routeParam(req, 'id'), tenantId, role); if (!user) throw new HttpError(404, 'MEMBER_NOT_FOUND', 'Member not found or not eligible for role changes.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'member.role_updated', metadata: { memberId: user.id, role }, createdAt: new Date().toISOString() }); res.json({ user: publicUser(user) }); } catch (error) { next(error); } });
@@ -288,7 +290,37 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.json({ purged, before });
     } catch (error) { next(error); }
   });
-  app.get('/api/v1/admin/services/health', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, _next) => { const checkedAt = new Date().toISOString(); const auth = getAuth(req); const observed = observedTelemetry(auth?.role === 'platform_admin' ? telemetry : tenantTelemetry.get(auth?.tenantId ?? '') ?? newTelemetry()); try { await store.countUsers(); res.json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'ok' }, cache: { status: (await cache.ping()) ? 'ok' : 'degraded' }, model: { status: 'adapter' }, embedding: { status: 'adapter' }, workflow: { status: 'adapter' }, ingestion: { status: 'not_observed' } } }); } catch { res.status(503).json({ checkedAt, telemetry: observed, checks: { api: { status: 'ok' }, store: { status: 'down' } } }); } });
+  app.get('/api/v1/admin/services/health', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, _next) => {
+    const checkedAt = new Date().toISOString();
+    const auth = getAuth(req);
+    const observed = observedTelemetry(auth?.role === 'platform_admin' ? telemetry : tenantTelemetry.get(auth?.tenantId ?? '') ?? newTelemetry());
+    try {
+      await store.countUsers();
+      const isCacheOk = (await cache.ping()) ? 'ok' : 'degraded';
+      res.json({
+        checkedAt,
+        telemetry: observed,
+        checks: {
+          api: { status: 'ok' },
+          store: { status: 'ok' },
+          cache: { status: isCacheOk },
+          model: { status: dependencies.model ? 'ok' : 'adapter' },
+          embedding: { status: dependencies.embedding ? 'ok' : 'adapter' },
+          workflow: { status: dependencies.workflow ? 'ok' : 'adapter' },
+          ingestion: { status: ingestionWorkerSecret ? 'ok' : 'ready' }
+        }
+      });
+    } catch {
+      res.status(503).json({
+        checkedAt,
+        telemetry: observed,
+        checks: {
+          api: { status: 'ok' },
+          store: { status: 'down' }
+        }
+      });
+    }
+  });
 
   app.put('/api/v1/admin/persona', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
     try { const tenantId = await tenantForRequest(store, req); const input = parse(personaSchema, req.body); const version = await store.createPersonaVersion({ tenantId, ...input, status: 'draft' }); await store.publishPersonaVersion(tenantId, version.id); const persona = await store.getPersona(tenantId); res.json({ persona }); } catch (error) { next(error); }

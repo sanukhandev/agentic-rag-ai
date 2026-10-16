@@ -37,7 +37,12 @@ import { BadgeComponent } from '../shared/badge.component';
         </p>
 
         <!-- Jobs List -->
-        <div class="mt-4 space-y-3">
+        <div *ngIf="jobs.length === 0" class="mt-4 rounded-xl border border-dashed border-neutral-200 p-8 text-center">
+          <p class="text-xs font-medium text-neutral-500">No active or historical ingestion jobs</p>
+          <p class="mt-1 text-[11px] text-neutral-400">Stage or upload source files to trigger the Python parser and embedding worker.</p>
+        </div>
+
+        <div *ngIf="jobs.length > 0" class="mt-4 space-y-3">
           <div
             *ngFor="let job of jobs"
             class="group rounded-xl border border-neutral-200/70 p-3.5 hover:border-neutral-300 hover:bg-neutral-50/50 transition-all"
@@ -109,7 +114,12 @@ import { BadgeComponent } from '../shared/badge.component';
         </p>
 
         <!-- Events List -->
-        <div class="mt-4 space-y-3">
+        <div *ngIf="auditEvents.length === 0" class="mt-4 rounded-xl border border-dashed border-neutral-200 p-8 text-center">
+          <p class="text-xs font-medium text-neutral-500">No audit events recorded yet</p>
+          <p class="mt-1 text-[11px] text-neutral-400">Tenant lifecycle, persona publishing, and source approvals are cryptographically tracked here.</p>
+        </div>
+
+        <div *ngIf="auditEvents.length > 0" class="mt-4 space-y-3">
           <div
             *ngFor="let event of auditEvents"
             class="rounded-xl border border-neutral-100 bg-[#fdfdfd] p-3 text-xs space-y-1.5"

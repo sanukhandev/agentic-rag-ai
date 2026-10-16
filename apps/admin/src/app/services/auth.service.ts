@@ -65,10 +65,19 @@ export class AuthService {
     return this.role === 'platform_admin' || this.role === 'tenant_admin';
   }
 
-  private selectedTenantId: string | null = null;
+  private _selectedTenantId: string | null = null;
+
+  get selectedTenantId(): string | null {
+    return this._selectedTenantId;
+  }
 
   setSelectedTenantId(id: string | null): void {
-    this.selectedTenantId = id;
+    this._selectedTenantId = id;
+    if (id) {
+      sessionStorage.setItem(ADMIN_STORAGE_KEYS.TENANT_ID, id);
+    } else {
+      sessionStorage.removeItem(ADMIN_STORAGE_KEYS.TENANT_ID);
+    }
   }
 
   get authHeaders(): Record<string, string> {
@@ -76,8 +85,8 @@ export class AuthService {
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
-    if (this.selectedTenantId) {
-      headers['X-Tenant-Id'] = this.selectedTenantId;
+    if (this._selectedTenantId) {
+      headers['X-Tenant-Id'] = this._selectedTenantId;
     }
     return headers;
   }
@@ -86,11 +95,13 @@ export class AuthService {
     const savedToken = sessionStorage.getItem(ADMIN_STORAGE_KEYS.TOKEN);
     const savedRole = sessionStorage.getItem(ADMIN_STORAGE_KEYS.ROLE) as UserRole;
     const savedEmail = sessionStorage.getItem(ADMIN_STORAGE_KEYS.EMAIL);
+    const savedTenantId = sessionStorage.getItem(ADMIN_STORAGE_KEYS.TENANT_ID);
 
     if (savedToken && savedRole) {
       this.tokenSubject.next(savedToken);
       this.roleSubject.next(savedRole);
       if (savedEmail) this.userEmailSubject.next(savedEmail);
+      if (savedTenantId) this._selectedTenantId = savedTenantId;
       this.isAuthenticatedSubject.next(true);
     } else {
       this.isAuthenticatedSubject.next(false);
@@ -99,17 +110,21 @@ export class AuthService {
 
   loginWithCredentials(email: string, password: string, onSuccess?: () => void, onError?: (err: string) => void): void {
     this.isAuthenticatingSubject.next(true);
-    this.http.post<{ token: string; user: { role: string; email?: string } }>(
+    this.http.post<{ token: string; user: { role: string; email?: string; tenantId?: string | null } }>(
       `${this.apiBase}/api/v1/auth/login`,
       { email, password }
     ).subscribe({
       next: (res) => {
         const role = res.user.role as UserRole;
         const resolvedEmail = res.user.email || email;
+        const tenantId = res.user.tenantId ?? null;
 
         this.tokenSubject.next(res.token);
         this.roleSubject.next(role);
         this.userEmailSubject.next(resolvedEmail);
+        if (tenantId) {
+          this.setSelectedTenantId(tenantId);
+        }
         this.isAuthenticatedSubject.next(true);
         this.isAuthenticatingSubject.next(false);
 
@@ -138,6 +153,8 @@ export class AuthService {
     sessionStorage.removeItem(ADMIN_STORAGE_KEYS.TOKEN);
     sessionStorage.removeItem(ADMIN_STORAGE_KEYS.ROLE);
     sessionStorage.removeItem(ADMIN_STORAGE_KEYS.EMAIL);
+    sessionStorage.removeItem(ADMIN_STORAGE_KEYS.TENANT_ID);
+    this._selectedTenantId = null;
 
     this.tokenSubject.next('');
     this.roleSubject.next('');

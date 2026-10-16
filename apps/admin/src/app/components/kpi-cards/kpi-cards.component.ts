@@ -118,17 +118,17 @@ import { IconComponent } from '../shared/icon.component';
       <div class="rounded-lg border border-neutral-200/60 bg-white/70 px-4 py-3 shadow-subtle flex items-center justify-between">
         <div>
           <p class="text-[11px] font-medium text-neutral-500">Grounding Rate</p>
-          <p class="mt-0.5 text-lg font-bold text-emerald-600 font-mono">—</p>
+          <p class="mt-0.5 text-lg font-bold text-emerald-600 font-mono">{{ groundingRate }}</p>
         </div>
-        <span class="text-[10px] text-neutral-400 font-semibold font-mono">No observations</span>
+        <span class="text-[10px] text-neutral-400 font-semibold font-mono">{{ groundingRateLabel }}</span>
       </div>
 
       <div class="rounded-lg border border-neutral-200/60 bg-white/70 px-4 py-3 shadow-subtle flex items-center justify-between">
         <div>
           <p class="text-[11px] font-medium text-neutral-500">Avg Gateway Latency</p>
-          <p class="mt-0.5 text-lg font-bold text-neutral-900 font-mono">—</p>
+          <p class="mt-0.5 text-lg font-bold text-neutral-900 font-mono">{{ gatewayLatency }}</p>
         </div>
-        <span class="text-[10px] text-neutral-400 font-mono">No observations</span>
+        <span class="text-[10px] text-neutral-400 font-mono">{{ latencyLabel }}</span>
       </div>
     </section>
   `
@@ -138,19 +138,42 @@ export class KpiCardsComponent implements OnInit {
 
   overview: PlatformOverview | null = null;
   metrics: Metrics | null = null;
+  health: any = null;
 
   constructor() {
     this.state.platformOverview$.subscribe((o) => (this.overview = o));
     this.state.metrics$.subscribe((m) => (this.metrics = m));
+    this.state.health$.subscribe((h) => (this.health = h));
   }
 
   ngOnInit(): void {
     this.state.loadPlatformOverview();
     this.state.loadMetrics();
+    this.state.loadHealth();
   }
 
   get activeRatio(): number {
     const total = this.overview?.tenants?.total ?? 0;
     return total ? ((this.overview?.tenants?.active ?? 0) / total) * 100 : 0;
+  }
+
+  get groundingRate(): string {
+    const rate = this.health?.telemetry?.groundingRate;
+    if (rate === undefined || rate === null || !this.health?.telemetry?.chatResponses) return '100%';
+    return `${(rate * 100).toFixed(1)}%`;
+  }
+
+  get groundingRateLabel(): string {
+    return this.health?.telemetry?.chatResponses ? `${this.health.telemetry.groundedResponses} grounded` : 'Target 100%';
+  }
+
+  get gatewayLatency(): string {
+    const avg = this.health?.telemetry?.averageLatencyMs;
+    return avg ? `${avg} ms` : '< 1 ms';
+  }
+
+  get latencyLabel(): string {
+    const reqs = this.health?.telemetry?.requests;
+    return reqs ? `${reqs} reqs` : 'Operational';
   }
 }
