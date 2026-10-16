@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, hasSufficientEvidence, isGreeting, isPermittedLanguage, naturalAbstention, needsConversationContext, validateCitations } from './model.js';
+import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isGreeting, isPermittedLanguage, naturalAbstention, needsConversationContext, validateCitations } from './model.js';
 
 describe('Azure Foundry model adapter', () => {
   it('detects and enforces configured language families', () => {
@@ -21,6 +21,9 @@ describe('Azure Foundry model adapter', () => {
     expect(needsConversationContext('where is he working?')).toBe(true);
     expect(needsConversationContext('what')).toBe(true);
     expect(needsConversationContext('Tell me about Sanu Khan')).toBe(false);
+    expect(hasLeadIntent('Please contact me about a demo')).toBe(true);
+    expect(hasLeadIntent('Do you have his email?')).toBe(false);
+    expect(extractLeadData('My name is [NAME_1], email [EMAIL_1]')).toEqual({ name: '[NAME_1]', email: '[EMAIL_1]' });
     expect(conversationalReply('wellbeing', 'Nova')).toContain('Glad to hear it');
     expect(conversationalReply('identity', 'Nova')).toContain('public information');
     expect(naturalAbstention()).toContain('information available here');

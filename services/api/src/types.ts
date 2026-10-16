@@ -32,6 +32,7 @@ export interface Persona {
   tone: string;
   speakingStyle: string;
   permittedLanguages: string[];
+  contextWindowMessages: number;
 }
 
 export interface PersonaVersion extends Persona {
@@ -134,6 +135,12 @@ export interface Citation {
   locator: string;
 }
 
+export interface LeadData {
+  name?: string;
+  email?: string;
+  phone?: string;
+}
+
 export interface ActionRequest {
   id: string;
   tenantId: string;
@@ -142,6 +149,7 @@ export interface ActionRequest {
   idempotencyKey: string;
   state: ActionState;
   opaqueReference: string;
+  payload: LeadData;
   createdAt: string;
   result: { externalReference: string } | null;
 }

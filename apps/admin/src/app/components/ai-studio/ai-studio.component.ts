@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -133,6 +133,26 @@ import { BadgeComponent } from '../shared/badge.component';
                     {{ lang | uppercase }}
                   </span>
                 </div>
+              </div>
+
+              <!-- Context Window -->
+              <div>
+                <label class="block text-xs font-semibold text-neutral-800">Conversation Context Window</label>
+                <div class="mt-1.5 flex items-center gap-3">
+                  <input
+                    [(ngModel)]="persona.contextWindowMessages"
+                    type="number"
+                    min="1"
+                    max="10"
+                    required
+                    aria-describedby="context-window-help"
+                    class="w-24 rounded-lg border border-neutral-200 px-3 py-2 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none"
+                  />
+                  <span class="text-xs text-neutral-500">previous messages</span>
+                </div>
+                <p id="context-window-help" class="mt-1.5 text-[11px] text-neutral-500">
+                  The assistant can use 1–10 recent messages for follow-ups. Default: 10. Only server-masked context is sent to the model.
+                </p>
               </div>
 
             </div>
@@ -277,8 +297,9 @@ import { BadgeComponent } from '../shared/badge.component';
 })
 export class AiStudioComponent implements OnInit {
   private readonly state = inject(AdminStateService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
-  persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: [] };
+  persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: [], contextWindowMessages: 10 };
 
   languagesInput = '';
   versions: PersonaVersion[] = [];
@@ -293,8 +314,12 @@ export class AiStudioComponent implements OnInit {
     this.state.persona$.subscribe((p) => {
       this.persona = { ...p };
       this.languagesInput = p.permittedLanguages.join(', ');
+      this.cdr.markForCheck();
     });
-    this.state.personaVersions$.subscribe((v) => (this.versions = v));
+    this.state.personaVersions$.subscribe((v) => {
+      this.versions = v;
+      this.cdr.markForCheck();
+    });
   }
 
   ngOnInit(): void {

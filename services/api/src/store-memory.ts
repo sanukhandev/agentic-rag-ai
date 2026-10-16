@@ -97,7 +97,7 @@ export class MemoryStore implements Store {
     const publishedAt = now();
     const updated = versions.map((version) => ({ ...version, status: version.id === versionId ? 'published' as const : 'draft' as const, publishedAt: version.id === versionId ? publishedAt : version.publishedAt }));
     this.personaVersions.set(tenantId, updated);
-    await this.setPersona({ tenantId, name: selected.name, greeting: selected.greeting, personality: selected.personality, tone: selected.tone, speakingStyle: selected.speakingStyle, permittedLanguages: selected.permittedLanguages });
+    await this.setPersona({ tenantId, name: selected.name, greeting: selected.greeting, personality: selected.personality, tone: selected.tone, speakingStyle: selected.speakingStyle, permittedLanguages: selected.permittedLanguages, contextWindowMessages: selected.contextWindowMessages });
     return updated.find((version) => version.id === versionId) ?? null;
   }
 

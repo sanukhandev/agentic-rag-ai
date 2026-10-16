@@ -1,4 +1,4 @@
-import type { Citation } from './types.js';
+import type { Citation, LeadData } from './types.js';
 import { z } from 'zod';
 import { assertExternalEndpoint } from './runtime-security.js';
 
@@ -16,6 +16,32 @@ export interface ChatModel {
 }
 
 export const naturalAbstention = (): string => 'I don’t have that detail in the information available here. I can help with the products, services, projects, or public links covered by this assistant.';
+
+export const hasLeadIntent = (text: string): boolean => !/\b(?:what(?:'s| is)|where is|who is|do you have|give me|find)\b.{0,40}\b(?:email|phone|contact|linkedin|github)\b/i.test(text) && /\b(?:contact\s+me|call\s+me|email\s+me|reach\s+(?:out\s+to\s+)?me|(?:i(?:'m| am)|we(?:'re| are))\s+interested\s+in|(?:i|we)\s+(?:would\s+like|want|need)\s+(?:a\s+)?(?:demo|quote|consultation)|(?:book|schedule|request)\s+(?:a\s+)?(?:demo|quote|call|consultation)|speak\s+(?:to|with)\s+(?:someone|an?\s+expert))\b/i.test(text);
+export const extractLeadData = (text: string): LeadData => {
+  const data: LeadData = {};
+  const name = text.match(/\[NAME_\d+\]/u)?.[0];
+  const email = text.match(/\[EMAIL_\d+\]/u)?.[0];
+  const phone = text.match(/\[PHONE_\d+\]/u)?.[0];
+  if (name) data.name = name;
+  if (email) data.email = email;
+  if (phone) data.phone = phone;
+  return data;
+};
+export const mergeLeadData = (...values: LeadData[]): LeadData => {
+  const merged: LeadData = {};
+  for (const value of values) {
+    if (value.name) merged.name = value.name;
+    if (value.email) merged.email = value.email;
+    if (value.phone) merged.phone = value.phone;
+  }
+  return merged;
+};
+export const leadCollectionReply = (data: LeadData): string => {
+  if (!data.name) return 'I’d be happy to help. What name should I use?';
+  if (!data.email && !data.phone) return 'Thanks. What’s the best email address or phone number to reach you on?';
+  return 'I have what I need to prepare a contact request. Shall I send it?';
+};
 
 export class DeterministicGroundedModel implements ChatModel {
   async draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; persona?: ModelPersona; conversation?: ConversationTurn[] }): Promise<ModelDraft> {

@@ -17,7 +17,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       const domain = await store.addDomain({ tenantId: tenant.id, hostname: 'chat.postgres.example' });
       expect(await store.listDomains(tenant.id)).toMatchObject([{ id: domain.id, hostname: 'chat.postgres.example' }]);
       expect(await store.removeDomain(domain.id, tenant.id)).toBe(true);
-      const personaVersion = await store.createPersonaVersion({ tenantId: tenant.id, name: 'Ava', greeting: 'Hello', personality: 'Precise', tone: 'Clear', speakingStyle: 'Short', permittedLanguages: ['en'], status: 'draft' });
+      const personaVersion = await store.createPersonaVersion({ tenantId: tenant.id, name: 'Ava', greeting: 'Hello', personality: 'Precise', tone: 'Clear', speakingStyle: 'Short', permittedLanguages: ['en'], contextWindowMessages: 10, status: 'draft' });
       expect(personaVersion.version).toBe(1);
       await expect(store.publishPersonaVersion(tenant.id, personaVersion.id)).resolves.toMatchObject({ status: 'published', version: 1 });
       expect(await store.getPersona(tenant.id)).toMatchObject({ name: 'Ava' });
@@ -48,7 +48,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       expect((await store.getMessageByClientId(session.id, 'client-1'))?.response).toMatchObject({ answer: 'Pricing is 100 credits.' });
       expect(await store.listMessages(session.id, tenant.id)).toHaveLength(1);
       expect(await store.listMessages(session.id, tenant.id, 1)).toHaveLength(1);
-      const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'lead.capture', idempotencyKey: 'action-1', state: 'awaiting_confirmation', opaqueReference: 'lead-1', createdAt: new Date().toISOString(), result: null });
+      const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'lead.capture', idempotencyKey: 'action-1', state: 'awaiting_confirmation', opaqueReference: 'lead-1', payload: {}, createdAt: new Date().toISOString(), result: null });
       await store.updateAction({ ...action, state: 'completed', result: { externalReference: 'run-1' } });
       expect((await store.getAction(action.id))?.result).toEqual({ externalReference: 'run-1' });
       expect((await store.getTenantStats(tenant.id)).sourceCounts.active).toBe(1);

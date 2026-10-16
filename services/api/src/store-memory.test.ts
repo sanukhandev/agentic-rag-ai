@@ -38,7 +38,7 @@ describe('MemoryStore tenant and lifecycle boundaries', () => {
     const sessionB = await store.createSession(tenantB.id);
     await store.addMessage({ id: randomUUID(), sessionId: sessionA.id, tenantId: tenantA.id, role: 'user', maskedContent: 'A', citations: [], clientMessageId: 'a', response: null, createdAt: new Date().toISOString() });
     await store.addMessage({ id: randomUUID(), sessionId: sessionB.id, tenantId: tenantB.id, role: 'user', maskedContent: 'B', citations: [], clientMessageId: 'b', response: null, createdAt: new Date().toISOString() });
-    await store.createAction({ id: randomUUID(), tenantId: tenantA.id, sessionId: sessionA.id, workflowKey: 'lead.capture', idempotencyKey: 'a-action', state: 'awaiting_confirmation', opaqueReference: 'lead-a', createdAt: new Date().toISOString(), result: null });
+    await store.createAction({ id: randomUUID(), tenantId: tenantA.id, sessionId: sessionA.id, workflowKey: 'lead.capture', idempotencyKey: 'a-action', state: 'awaiting_confirmation', opaqueReference: 'lead-a', payload: {}, createdAt: new Date().toISOString(), result: null });
 
     expect(await store.purgeExpiredSessions(tenantA.id, new Date(Date.now() + 1_000).toISOString())).toBe(1);
     expect(await store.getSession(sessionA.id)).toBeNull();

@@ -7,7 +7,7 @@ import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedReq
 import { cacheKey, createCache, type CacheStore } from './cache.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, rankChunksWithVector } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
-import { conversationalIntent, conversationalReply, DeterministicGroundedModel, hasSufficientEvidence, isPermittedLanguage, naturalAbstention, needsConversationContext, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence } from './model.js';
+import { conversationalIntent, conversationalReply, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
@@ -25,7 +25,8 @@ const memberSchema = z.object({ email: z.string().email(), password: passwordSch
 const domainSchema = z.object({ hostname: z.string().trim().toLowerCase().regex(/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/, 'A valid hostname is required.') });
 const channelSchema = z.object({ publicOrigin: z.union([z.literal(''), z.string().url().refine((value) => { const url = new URL(value); return (url.protocol === 'http:' || url.protocol === 'https:') && url.pathname === '/' && !url.search && !url.hash; }, 'A public origin must be an HTTP(S) origin without a path.')]), publicChatEnabled: z.boolean().optional() });
 const safePersonaText = (max: number) => z.string().trim().min(1).max(max).refine((value) => !/\b(ignore (?:all )?rules|system prompt|search the web|reveal secrets|bypass security)\b/i.test(value), 'Persona contains an unsafe instruction.');
-const personaSchema = z.object({ name: safePersonaText(80), greeting: safePersonaText(500), personality: safePersonaText(500), tone: safePersonaText(200), speakingStyle: safePersonaText(200), permittedLanguages: z.array(z.string().min(2).max(12)).min(1).max(10) });
+const DEFAULT_CONTEXT_WINDOW_MESSAGES = 10;
+const personaSchema = z.object({ name: safePersonaText(80), greeting: safePersonaText(500), personality: safePersonaText(500), tone: safePersonaText(200), speakingStyle: safePersonaText(200), permittedLanguages: z.array(z.string().min(2).max(12)).min(1).max(10), contextWindowMessages: z.coerce.number().int().min(1).max(DEFAULT_CONTEXT_WINDOW_MESSAGES).default(DEFAULT_CONTEXT_WINDOW_MESSAGES) });
 const personaPreviewSchema = personaSchema.extend({ message: z.string().trim().min(1).max(4000) });
 const sourceSchema = z.object({ title: z.string().trim().min(1).max(200), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'application/json', 'text/html', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']), sourceUrl: z.string().url().optional(), audience: z.enum(['public', 'internal']).default('public'), content: z.string().trim().min(1).max(200_000) });
 const uploadSchema = z.object({ title: z.string().trim().min(1).max(200), fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'application/json', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip']), audience: z.enum(['public', 'internal']).default('public'), contentBase64: z.string().min(1).max(7_000_000) });
@@ -257,7 +258,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (await store.getUserByEmail(input.adminEmail)) throw new HttpError(409, 'USER_EXISTS', 'Admin email already exists.');
       const tenant = await store.createTenant({ name: input.name, slug: input.slug });
       const user = await store.createUser({ email: input.adminEmail, passwordHash: await auth.hashPassword(input.adminPassword), role: 'tenant_admin', tenantId: tenant.id });
-      await store.setPersona({ tenantId: tenant.id, name: 'Sales assistant', greeting: 'How can I help?', personality: 'Helpful and precise.', tone: 'Clear', speakingStyle: 'Concise', permittedLanguages: ['en'] });
+      await store.setPersona({ tenantId: tenant.id, name: 'Sales assistant', greeting: 'How can I help?', personality: 'Helpful and precise.', tone: 'Clear', speakingStyle: 'Concise', permittedLanguages: ['en'], contextWindowMessages: DEFAULT_CONTEXT_WINDOW_MESSAGES });
       await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: getAuth(req)?.userId ?? null, eventName: 'tenant.created', metadata: { slug: tenant.slug }, createdAt: new Date().toISOString() });
       res.status(201).json({ tenant, admin: publicUser(user) });
     } catch (error) { next(error); }
@@ -316,23 +317,28 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         telemetry: observed,
         checks: {
           api: { status: 'ok' },
-          store: { status: 'down' }
+          store: { status: 'down' },
+          cache: { status: 'down' },
+          model: { status: dependencies.model ? 'ok' : 'adapter' },
+          embedding: { status: dependencies.embedding ? 'ok' : 'adapter' },
+          workflow: { status: dependencies.workflow ? 'ok' : 'adapter' },
+          ingestion: { status: ingestionWorkerSecret ? 'ok' : 'ready' }
         }
       });
     }
   });
 
   app.put('/api/v1/admin/persona', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
-    try { const tenantId = await tenantForRequest(store, req); const input = parse(personaSchema, req.body); const version = await store.createPersonaVersion({ tenantId, ...input, status: 'draft' }); await store.publishPersonaVersion(tenantId, version.id); const persona = await store.getPersona(tenantId); res.json({ persona }); } catch (error) { next(error); }
+    try { const tenantId = await tenantForRequest(store, req); const input = parse(personaSchema, req.body); const version = await store.createPersonaVersion({ tenantId, ...input, contextWindowMessages: input.contextWindowMessages ?? DEFAULT_CONTEXT_WINDOW_MESSAGES, status: 'draft' }); await store.publishPersonaVersion(tenantId, version.id); const persona = await store.getPersona(tenantId); res.json({ persona }); } catch (error) { next(error); }
   });
   app.get('/api/v1/admin/tenants/:tenantId/persona', protectedApi, requireRoles('platform_admin'), async (req, res, next) => {
     try { const tenant = await store.getTenant(routeParam(req, 'tenantId')); if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); if (tenant.status === 'archived') throw new HttpError(423, 'TENANT_ARCHIVED', 'Archived tenants cannot be managed.'); res.json({ persona: await store.getPersona(tenant.id) }); } catch (error) { next(error); }
   });
   app.put('/api/v1/admin/tenants/:tenantId/persona', protectedApi, requireRoles('platform_admin'), async (req, res, next) => {
-    try { const tenant = await store.getTenant(routeParam(req, 'tenantId')); if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); if (tenant.status === 'archived') throw new HttpError(423, 'TENANT_ARCHIVED', 'Archived tenants cannot be managed.'); const input = parse(personaSchema, req.body); const version = await store.createPersonaVersion({ tenantId: tenant.id, ...input, status: 'draft' }); await store.publishPersonaVersion(tenant.id, version.id); const persona = await store.getPersona(tenant.id); await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: getAuth(req)?.userId ?? null, eventName: 'persona.platform_updated', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() }); res.json({ persona }); } catch (error) { next(error); }
+    try { const tenant = await store.getTenant(routeParam(req, 'tenantId')); if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); if (tenant.status === 'archived') throw new HttpError(423, 'TENANT_ARCHIVED', 'Archived tenants cannot be managed.'); const input = parse(personaSchema, req.body); const version = await store.createPersonaVersion({ tenantId: tenant.id, ...input, contextWindowMessages: input.contextWindowMessages ?? DEFAULT_CONTEXT_WINDOW_MESSAGES, status: 'draft' }); await store.publishPersonaVersion(tenant.id, version.id); const persona = await store.getPersona(tenant.id); await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: getAuth(req)?.userId ?? null, eventName: 'persona.platform_updated', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() }); res.json({ persona }); } catch (error) { next(error); }
   });
   app.get('/api/v1/admin/persona', protectedApi, async (req, res, next) => { try { res.json({ persona: await store.getPersona(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
-  app.post('/api/v1/admin/persona/drafts', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const input = parse(personaSchema, req.body); res.status(201).json({ version: await store.createPersonaVersion({ tenantId, ...input, status: 'draft' }) }); } catch (error) { next(error); } });
+  app.post('/api/v1/admin/persona/drafts', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const input = parse(personaSchema, req.body); res.status(201).json({ version: await store.createPersonaVersion({ tenantId, ...input, contextWindowMessages: input.contextWindowMessages ?? DEFAULT_CONTEXT_WINDOW_MESSAGES, status: 'draft' }) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/persona/versions', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listPersonaVersions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.post('/api/v1/admin/persona/versions/:id/publish', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const version = await store.publishPersonaVersion(tenantId, routeParam(req, 'id')); if (!version) throw new HttpError(404, 'PERSONA_VERSION_NOT_FOUND', 'Persona version not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'persona.published', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() }); res.json({ version }); } catch (error) { next(error); } });
 
@@ -614,13 +620,22 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const languageAllowed = !persona || isPermittedLanguage(masked.masked, persona.permittedLanguages);
       const intent = conversationalIntent(masked.masked);
       const conversational = intent !== null && languageAllowed;
+      const leadRequestedNow = hasLeadIntent(masked.masked);
+      const leadDataRequested = leadRequestedNow || /\[(?:NAME|EMAIL|PHONE)_\d+\]/u.test(masked.masked);
+      const contextWindowMessages = persona?.contextWindowMessages ?? DEFAULT_CONTEXT_WINDOW_MESSAGES;
       let evidence: ModelEvidence[] = [];
       let draft: ModelDraft;
-      const recentMessages = intent === null && needsConversationContext(masked.masked) ? (await store.listMessages(session.id, session.tenantId, 8)).filter((message) => message.id !== userMessage.id).slice(-6) : [];
+      const recentMessages = intent === null && (needsConversationContext(masked.masked) || leadDataRequested) ? (await store.listMessages(session.id, session.tenantId, contextWindowMessages + 1)).filter((message) => message.id !== userMessage.id).slice(-contextWindowMessages) : [];
       const conversation = recentMessages.map((message) => ({ role: message.role, content: message.maskedContent }));
       const retrievalQuery = [masked.masked, ...recentMessages.filter((message) => message.role === 'user').map((message) => message.maskedContent)].join('\n');
+      const leadIntent = languageAllowed && (leadRequestedNow || recentMessages.some((message) => message.role === 'user' && hasLeadIntent(message.maskedContent)));
+      const leadData = mergeLeadData(...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), extractLeadData(masked.masked));
+      const leadReady = Boolean(leadData.name && (leadData.email || leadData.phone));
+      const leadCollection = leadIntent;
       if (conversational) draft = { answer: intent === 'greeting' ? persona?.greeting ?? conversationalReply(intent, persona?.name ?? 'Sales assistant') : conversationalReply(intent ?? 'identity', persona?.name ?? 'Sales assistant'), citationIds: [], proposedIntent: null };
       else if (!languageAllowed) draft = { answer: `I can only answer in the permitted languages: ${persona?.permittedLanguages.join(', ')}.`, citationIds: [], proposedIntent: null };
+      else if (leadIntent && !leadReady) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: null };
+      else if (leadReady) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: 'lead.capture' };
       else {
         let queryEmbedding: number[];
         try { queryEmbedding = await embedding.embed(retrievalQuery); } catch { throw new HttpError(503, 'EMBEDDING_UNAVAILABLE', 'The assistant is currently unable to search approved knowledge.'); }
@@ -632,16 +647,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       const citations = validateCitations(draft, evidence);
-      const grounded = !conversational && evidence.length > 0 && hasSufficientEvidence(draft.answer, evidence, citations);
+      const grounded = !conversational && !leadCollection && evidence.length > 0 && hasSufficientEvidence(draft.answer, evidence, citations);
       const safeCitations = grounded ? citations : [];
-      const answer = !languageAllowed ? draft.answer : grounded ? draft.answer : naturalAbstention();
-      const safeAnswer = conversational ? draft.answer : answer;
+      const answer = !languageAllowed ? draft.answer : conversational || leadCollection ? draft.answer : grounded ? draft.answer : naturalAbstention();
+      const safeAnswer = conversational || leadCollection ? draft.answer : answer;
       const maskedAnswer = maskPiiForSession(session, safeAnswer, tokenVault);
       try { assertKnownTokens(session, maskedAnswer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       await store.updateSession(session);
-      const explicitLeadRequest = /\b(contact|call|email|interested|demo|quote)\b/i.test(masked.masked);
-      const action = draft.proposedIntent === 'lead.capture' && explicitLeadRequest ? await gateway.propose(session.tenantId, session.id, input.clientMessageId) : null;
-      const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, maskedAnswer, tokenVault), grounded, conversational, citations: safeCitations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'Please confirm that you want to submit a contact request.', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
+      const action = draft.proposedIntent === 'lead.capture' && leadIntent && leadReady ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, leadData) : null;
+      const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, maskedAnswer, tokenVault), grounded, conversational: conversational || leadCollection, citations: safeCitations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'I have the details I need. Would you like me to submit this contact request?', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
       const persistedResponse = { ...response, answer: maskedAnswer };
       const estimatedInputTokens = estimateTokens([masked.masked, ...evidence.map((item) => item.content), persona?.name ?? '', persona?.personality ?? '', persona?.tone ?? '', persona?.speakingStyle ?? ''].join('\n'));
       const estimatedOutputTokens = estimateTokens(maskedAnswer);

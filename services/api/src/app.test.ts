@@ -14,9 +14,11 @@ import { TokenVault } from './privacy.js';
 class CapturingModel implements ChatModel {
   public readonly prompts: string[] = [];
   public readonly personaNames: string[] = [];
-  async draft(input: { maskedMessage: string; evidence: Array<{ citation: { sourceId: string; versionId: string; chunkId: string; title: string; locator: string }; content: string }>; personaName: string }): Promise<ModelDraft> {
+  public readonly conversations: Array<Array<{ role: 'user' | 'assistant'; content: string }>> = [];
+  async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
     this.prompts.push(input.maskedMessage);
     this.personaNames.push(input.personaName);
+    this.conversations.push(input.conversation ?? []);
     const evidence = input.evidence[0];
     return evidence ? { answer: evidence.content, citationIds: [evidence.citation.chunkId], proposedIntent: /contact/i.test(input.maskedMessage) ? 'lead.capture' : null } : { answer: 'No approved evidence supports that answer.', citationIds: [], proposedIntent: null };
   }
@@ -102,9 +104,10 @@ describe('API vertical slice', () => {
     await api.delete(`/api/v1/admin/domains/${domain.body.domain.id}`).set('Authorization', `Bearer ${adminToken}`).expect(204);
     expect((await api.get('/api/v1/admin/audit').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.items.some((event: { eventName: string }) => event.eventName === 'tenant.created')).toBe(true);
     expect((await api.get(`/api/v1/admin/tenants/${tenantA.body.tenant.id}/persona`).set('Authorization', `Bearer ${platformToken}`).expect(200)).body.persona.name).toBe('Sales assistant');
-    const platformPersona = { name: 'Platform Ava', greeting: 'Welcome', personality: 'Precise', tone: 'Clear', speakingStyle: 'Short', permittedLanguages: ['en'] };
+    const platformPersona = { name: 'Platform Ava', greeting: 'Welcome', personality: 'Precise', tone: 'Clear', speakingStyle: 'Short', permittedLanguages: ['en'], contextWindowMessages: 10 };
     await api.put(`/api/v1/admin/tenants/${tenantA.body.tenant.id}/persona`).set('Authorization', `Bearer ${platformToken}`).send(platformPersona).expect(200);
     expect((await api.get(`/api/v1/admin/tenants/${tenantA.body.tenant.id}/persona`).set('Authorization', `Bearer ${platformToken}`).expect(200)).body.persona.name).toBe('Platform Ava');
+    expect((await api.get(`/api/v1/admin/tenants/${tenantA.body.tenant.id}/persona`).set('Authorization', `Bearer ${platformToken}`).expect(200)).body.persona.contextWindowMessages).toBe(10);
     await api.get(`/api/v1/admin/tenants/${tenantA.body.tenant.id}/persona`).set('Authorization', `Bearer ${adminToken}`).expect(403);
     await api.patch(`/api/v1/admin/tenants/${tenantB.body.tenant.id}/status`).set('Authorization', `Bearer ${platformToken}`).send({ status: 'archived' }).expect(200);
     await api.get(`/api/v1/admin/tenants/${tenantB.body.tenant.id}/persona`).set('Authorization', `Bearer ${platformToken}`).expect(423);
@@ -145,6 +148,13 @@ describe('API vertical slice', () => {
     const newerSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
     await api.post('/api/v1/chat/messages').send({ sessionId: newerSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-new-persona' }).expect(200);
     expect(model.personaNames.at(-1)).toBe('Ava New');
+    const shortContext = await api.post('/api/v1/admin/persona/drafts').set('Authorization', `Bearer ${adminToken}`).send({ name: 'Ava Context', greeting: 'Welcome', personality: 'Warm', tone: 'Friendly', speakingStyle: 'Short', permittedLanguages: ['en'], contextWindowMessages: 2 }).expect(201);
+    await api.post(`/api/v1/admin/persona/versions/${shortContext.body.version.id}/publish`).set('Authorization', `Bearer ${adminToken}`).expect(200);
+    const contextSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: contextSession.body.sessionId, message: 'Tell me about pricing', clientMessageId: 'context-1' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: contextSession.body.sessionId, message: 'Tell me about services', clientMessageId: 'context-2' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: contextSession.body.sessionId, message: 'where is he working?', clientMessageId: 'context-3' }).expect(200);
+    expect(model.conversations.at(-1)).toHaveLength(2);
     const duplicateGrounded = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-1' }).expect(200);
     expect(duplicateGrounded.body).toEqual(grounded.body);
     const duplicateHistory = await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}`).expect(200);
@@ -161,13 +171,15 @@ describe('API vertical slice', () => {
     expect(JSON.stringify(history.body.messages)).not.toContain('alice@example.com');
     expect((await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}?limit=2`).expect(200)).body.messages).toHaveLength(2);
     await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}?limit=201`).expect(422);
-    const pii = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'Please contact alice@example.com about pricing', clientMessageId: 'lead-1' }).expect(200);
+    const pii = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'Please contact me at alice@example.com about pricing. My name is Alice', clientMessageId: 'lead-1' }).expect(200);
     expect(pii.body.actionProposal).not.toBeNull();
     expect(model.prompts.at(-1)).not.toContain('alice@example.com');
     const proposalId = pii.body.actionProposal.id as string;
+    expect((await runtime.store.getAction(proposalId))?.payload).toEqual({ name: '[NAME_1]', email: '[EMAIL_1]' });
     await api.post(`/api/v1/chat/actions/${proposalId}/confirm`).send({ sessionId: publicSession.body.sessionId, confirmed: true }).expect(200);
     await api.post(`/api/v1/chat/actions/${proposalId}/confirm`).send({ sessionId: publicSession.body.sessionId, confirmed: true }).expect(200);
     expect(workflow.calls).toHaveLength(1);
+    expect(workflow.calls[0]?.leadData).toEqual({ name: '[NAME_1]', email: '[EMAIL_1]' });
     const tenantARuns = await api.get('/api/v1/admin/workflow-runs').set('Authorization', `Bearer ${adminToken}`).expect(200);
     expect(tenantARuns.body.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: proposalId, state: 'completed' })]));
     const tenantAAudit = await api.get('/api/v1/admin/audit').set('Authorization', `Bearer ${adminToken}`).expect(200);
@@ -201,7 +213,7 @@ describe('API vertical slice', () => {
     expect(crossTenant.body.grounded).toBe(false);
     expect((await api.get('/api/v1/chat/config').query({ tenantSlug: 'tenant-a' }).set('Authorization', `Bearer ${adminToken}`).expect(200)).body.tenant.slug).toBe('tenant-a');
     await api.get('/api/v1/chat/config').query({ tenantSlug: 'tenant-b' }).set('Authorization', `Bearer ${adminToken}`).expect(403);
-    const malformedAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenantA.body.tenant.id, sessionId: tenantBSession.body.sessionId, workflowKey: 'lead.capture', idempotencyKey: 'malformed-cross-tenant', state: 'awaiting_confirmation', opaqueReference: 'lead-cross-tenant', createdAt: new Date().toISOString(), result: null });
+    const malformedAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenantA.body.tenant.id, sessionId: tenantBSession.body.sessionId, workflowKey: 'lead.capture', idempotencyKey: 'malformed-cross-tenant', state: 'awaiting_confirmation', opaqueReference: 'lead-cross-tenant', payload: {}, createdAt: new Date().toISOString(), result: null });
     await api.post(`/api/v1/chat/actions/${malformedAction.id}/confirm`).send({ sessionId: tenantBSession.body.sessionId, confirmed: true }).expect(403);
     await api.get(`/api/v1/chat/actions/${malformedAction.id}`).query({ sessionId: tenantBSession.body.sessionId }).expect(404);
     const dashboard = await api.get('/api/v1/admin/dashboard/overview').set('Authorization', `Bearer ${adminToken}`).expect(200);
@@ -458,7 +470,9 @@ describe('API vertical slice', () => {
     await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).set('Origin', 'https://other.example').expect(403);
     await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).set('Origin', 'https://chat.channel.example').expect(200);
     await api.post('/api/v1/chat/messages').set('Origin', 'https://other.example').send({ sessionId: session.body.sessionId, message: 'Blocked origin', clientMessageId: 'channel-action-denied' }).expect(403);
-    const proposal = await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'Please contact me for a demo.', clientMessageId: 'channel-action-1' }).expect(200);
+    await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'Please contact me for a demo.', clientMessageId: 'channel-action-request' }).expect(200);
+    await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'My name is Channel User.', clientMessageId: 'channel-action-name' }).expect(200);
+    const proposal = await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'channel.user@example.com', clientMessageId: 'channel-action-1' }).expect(200);
     const actionId = proposal.body.actionProposal.id as string;
     await api.patch('/api/v1/admin/channel').set('Authorization', `Bearer ${admin.body.token}`).send({ publicOrigin: 'https://chat.channel.example', publicChatEnabled: false }).expect(200);
     await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'Blocked after disable', clientMessageId: 'channel-disabled-message' }).expect(423);

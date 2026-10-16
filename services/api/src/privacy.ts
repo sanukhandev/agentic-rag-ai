@@ -89,7 +89,8 @@ export const maskPii = (input: string): MaskResult => {
   };
   replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, 'EMAIL');
   replace(/(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)/g, 'PHONE');
-  replace(/\b(?:my name is|i am|i'm)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?/gi, 'NAME');
+  replace(/\bmy name is\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?/gi, 'NAME');
+  replace(/\b(?:[Ii] am|[Ii]'m)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?/g, 'NAME');
   replace(/\b(?:passport|account|customer|member)[ #:-]*[A-Z0-9-]{4,}\b/gi, 'ID');
   return { masked, tokens };
 };

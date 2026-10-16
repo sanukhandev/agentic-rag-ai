@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS agent_personas (
   tone text NOT NULL,
   speaking_style text NOT NULL,
   permitted_languages text[] NOT NULL DEFAULT ARRAY['en'],
+  context_window_messages integer NOT NULL DEFAULT 10 CHECK (context_window_messages BETWEEN 1 AND 10),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -95,6 +96,7 @@ CREATE TABLE IF NOT EXISTS action_requests (
   idempotency_key text NOT NULL,
   state text NOT NULL,
   opaque_reference text NOT NULL,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   result jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(tenant_id, idempotency_key)

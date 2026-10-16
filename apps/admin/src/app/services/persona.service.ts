@@ -12,7 +12,8 @@ const EMPTY_PERSONA: Persona = {
   personality: '',
   tone: '',
   speakingStyle: '',
-  permittedLanguages: []
+  permittedLanguages: [],
+  contextWindowMessages: 10
 };
 
 @Injectable({

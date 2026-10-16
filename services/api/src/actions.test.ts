@@ -7,7 +7,7 @@ describe('action gateway', () => {
     const store = new MemoryStore();
     const workflow = new MockWorkflowAdapter();
     const gateway = new ActionGateway(store, workflow);
-    const first = await gateway.propose('tenant-a', 'session-a', 'client-1');
+    const first = await gateway.propose('tenant-a', 'session-a', 'client-1', { name: '[NAME_1]', email: '[EMAIL_1]' });
     const second = await gateway.propose('tenant-a', 'session-a', 'client-1');
     expect(second.id).toBe(first.id);
     expect(first.state).toBe('awaiting_confirmation');
@@ -15,6 +15,7 @@ describe('action gateway', () => {
     expect(completed.state).toBe('completed');
     expect(workflow.calls).toHaveLength(1);
     expect(workflow.calls[0]?.opaqueReference).toMatch(/^lead-/);
+    expect(workflow.calls[0]?.leadData).toEqual({ name: '[NAME_1]', email: '[EMAIL_1]' });
     expect(workflow.calls[0]).not.toHaveProperty('message');
     expect((await gateway.confirm(first.id, 'tenant-a')).result).toEqual(completed.result);
     expect(workflow.calls).toHaveLength(1);
@@ -95,10 +96,11 @@ describe('action gateway', () => {
   it('sends the private n8n request with a signature and no raw customer fields', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ externalReference: 'n8n-1' }), { status: 200 }));
     const adapter = new HttpN8nWorkflowAdapter('https://n8n.internal', 'shared-secret');
-    await expect(adapter.execute({ workflowKey: 'lead.capture', tenantId: 'tenant-a', opaqueReference: 'lead-1', idempotencyKey: 'client-1' })).resolves.toEqual({ externalReference: 'n8n-1' });
+    await expect(adapter.execute({ workflowKey: 'lead.capture', tenantId: 'tenant-a', opaqueReference: 'lead-1', idempotencyKey: 'client-1', leadData: { email: '[EMAIL_1]' } })).resolves.toEqual({ externalReference: 'n8n-1' });
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect(String(request.body)).not.toContain('email');
+    expect(String(request.body)).not.toContain('alice@example.com');
     expect(request.headers).toMatchObject({ 'x-agentic-idempotency-key': 'client-1' });
+    expect(String(request.body)).toContain('[EMAIL_1]');
     fetchMock.mockRestore();
   });
 

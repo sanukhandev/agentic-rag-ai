@@ -72,6 +72,7 @@ export interface Persona {
   tone: string;
   speakingStyle: string;
   permittedLanguages: string[];
+  contextWindowMessages: number;
 }
 
 export interface PersonaVersion extends Persona {
@@ -99,7 +100,7 @@ export interface Telemetry {
 }
 
 export interface ServiceCheck {
-  status: 'healthy' | 'degraded' | 'down';
+  status: 'healthy' | 'degraded' | 'down' | 'ok' | 'active' | 'adapter' | 'ready' | 'standby' | 'not_observed' | 'operational';
   latencyMs?: number;
   details?: string;
   lastChecked?: string;

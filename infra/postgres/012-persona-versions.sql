@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS persona_versions (
   tone text NOT NULL,
   speaking_style text NOT NULL,
   permitted_languages text[] NOT NULL,
+  context_window_messages integer NOT NULL DEFAULT 10 CHECK (context_window_messages BETWEEN 1 AND 10),
   created_at timestamptz NOT NULL DEFAULT now(),
   published_at timestamptz,
   UNIQUE (tenant_id, version)
