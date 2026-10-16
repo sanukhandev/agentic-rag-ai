@@ -1,0 +1,73 @@
+{
+  "name": "Agentic CRM - Summarize Lead Conversation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-summarize",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000011",
+      "name": "Lead Summary Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 0],
+      "webhookId": "agentic-lead-summary"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nif (!input.leadId || !input.tenantId || !Array.isArray(input.conversation)) throw new Error('Conversation summary input is invalid');\nconst userTurns = input.conversation.filter((message) => message.role === 'user').map((message) => message.content.trim()).filter(Boolean);\nconst summary = `Lead conversation captured ${userTurns.length} user turn(s). Customer intent: lead.capture. Conversation: ${userTurns.join(' | ')}`.slice(0, 10000);\nreturn [{ json: { leadId: input.leadId, tenantId: input.tenantId, summary } }];"
+      },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000012",
+      "name": "Generate Conversation Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 0]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'http://api:4000/api/v1/internal/crm/leads/' + $json.leadId + '/summary' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-agentic-internal-secret",
+              "value": "={{ $env.N8N_WEBHOOK_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, summary: $json.summary, status: 'completed' }) }}",
+        "options": {}
+      },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000013",
+      "name": "Store Conversation Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { accepted: true, leadId: $('Generate Conversation Summary').first().json.leadId } }];"
+      },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000014",
+      "name": "Return Summary Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 0]
+    }
+  ],
+  "connections": {
+    "Lead Summary Webhook": { "main": [[{ "node": "Generate Conversation Summary", "type": "main", "index": 0 }]] },
+    "Generate Conversation Summary": { "main": [[{ "node": "Store Conversation Summary", "type": "main", "index": 0 }]] },
+    "Store Conversation Summary": { "main": [[{ "node": "Return Summary Status", "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "f8e2e11d-0d3e-4e83-8d21-000000000015",
+  "meta": { "templateCredsSetupCompleted": true },
+  "tags": []
+}

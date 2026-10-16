@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, AuthSession, Chunk, IngestionJob, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionRequest, AuditEvent, AuthSession, Chunk, CrmLead, IngestionJob, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -19,6 +19,7 @@ export class MemoryStore implements Store {
   private readonly sessions = new Map<string, Session>();
   private readonly messages = new Map<string, Message>();
   private readonly actions = new Map<string, ActionRequest>();
+  private readonly crmLeads = new Map<string, CrmLead>();
   private readonly audits: AuditEvent[] = [];
 
   async countUsers(): Promise<number> { return this.users.size; }
@@ -208,6 +209,17 @@ export class MemoryStore implements Store {
   }
   async updateAction(action: ActionRequest): Promise<ActionRequest> { this.actions.set(action.id, action); return action; }
   async listActions(tenantId: string): Promise<ActionRequest[]> { return [...this.actions.values()].filter((action) => action.tenantId === tenantId); }
+  async createCrmLead(lead: CrmLead): Promise<CrmLead> { this.crmLeads.set(lead.id, lead); return lead; }
+  async getCrmLeadByActionId(actionId: string, tenantId: string): Promise<CrmLead | null> { return [...this.crmLeads.values()].find((lead) => lead.actionId === actionId && lead.tenantId === tenantId) ?? null; }
+  async getCrmLead(id: string, tenantId: string): Promise<CrmLead | null> { const lead = this.crmLeads.get(id); return lead?.tenantId === tenantId ? lead : null; }
+  async listCrmLeads(tenantId: string): Promise<CrmLead[]> { return [...this.crmLeads.values()].filter((lead) => lead.tenantId === tenantId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
+  async updateCrmLeadSummary(id: string, tenantId: string, summary: string, status: CrmLead['summaryStatus']): Promise<CrmLead | null> {
+    const lead = await this.getCrmLead(id, tenantId);
+    if (!lead) return null;
+    const updated = { ...lead, summary, summaryStatus: status, updatedAt: now() };
+    this.crmLeads.set(id, updated);
+    return updated;
+  }
   async addAudit(event: AuditEvent): Promise<void> { this.audits.push(event); }
   async listAudit(tenantId: string): Promise<AuditEvent[]> { return this.audits.filter((event) => event.tenantId === tenantId); }
   async getTenantStats(tenantId: string): Promise<TenantStats> {

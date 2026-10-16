@@ -26,6 +26,7 @@ import { KnowledgeService } from './knowledge.service';
 import { ObservabilityService } from './observability.service';
 import { PersonaService } from './persona.service';
 import { SettingsService } from './settings.service';
+import { CrmService } from './crm.service';
 
 export type { ToastMessage };
 
@@ -53,6 +54,7 @@ export class AdminStateService {
   readonly observability = inject(ObservabilityService);
   readonly personaService = inject(PersonaService);
   readonly settings = inject(SettingsService);
+  readonly crm = inject(CrmService);
 
   // Auth & Session Streams
   readonly token$: Observable<string> = this.auth.token$;
@@ -82,6 +84,7 @@ export class AdminStateService {
   readonly channel$: Observable<Channel> = this.settings.channel$;
   readonly workflowRuns$: Observable<WorkflowRun[]> = this.observability.workflowRuns$;
   readonly auditEvents$: Observable<AuditEvent[]> = this.observability.auditEvents$;
+  readonly crmLeads$ = this.crm.leads$;
   readonly toasts$: Observable<ToastMessage[]> = this.toastService.toasts$;
 
   constructor() {
@@ -286,6 +289,10 @@ export class AdminStateService {
     this.observability.loadAudit();
   }
 
+  loadCrmLeads(): void {
+    this.crm.loadLeads();
+  }
+
   // Persona Facade
   loadPersona(): void {
     this.personaService.loadPersona();
@@ -320,6 +327,7 @@ export class AdminStateService {
     this.settings.loadChannel();
     this.observability.loadWorkflowRuns();
     this.observability.loadAudit();
+    this.crm.loadLeads();
   }
 
   loadSectionData(section: NavSection): void {
@@ -362,6 +370,9 @@ export class AdminStateService {
         break;
       case 'chat':
         this.personaService.loadPersona();
+        break;
+      case 'crm':
+        this.crm.loadLeads();
         break;
     }
   }

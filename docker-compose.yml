@@ -50,11 +50,14 @@ services:
       N8N_EDITOR_BASE_URL: "${N8N_EDITOR_BASE_URL:-http://localhost:5678/}"
       N8N_WEBHOOK_URL: "${N8N_WEBHOOK_URL:-http://localhost:5678/}"
       N8N_SECURE_COOKIE: "${N8N_SECURE_COOKIE:-false}"
+      N8N_WEBHOOK_SECRET: "${N8N_WEBHOOK_SECRET:-local-n8n-workflow-secret}"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
       GENERIC_TIMEZONE: Asia/Dubai
       TZ: Asia/Dubai
     volumes:
       - ./data/n8n:/home/node/.n8n
+      - ./infra/n8n/workflows:/workflows:ro
 
   api:
     build:
@@ -87,7 +90,7 @@ services:
       AZURE_AI_API_KEY: ${AZURE_AI_API_KEY:-}
       AZURE_AI_API_VERSION: ${AZURE_AI_API_VERSION:-2024-10-21}
       N8N_INTERNAL_URL: ${N8N_INTERNAL_URL:-http://n8n:5678}
-      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-}
+      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-local-n8n-workflow-secret}
       INGESTION_WORKER_SECRET: ${INGESTION_WORKER_SECRET:-local-ingestion-worker-secret}
       INGESTION_STAGING_ROOT: /app/data/ingestion-staging
       CHAT_RESPONSE_CACHE_TTL_SECONDS: ${CHAT_RESPONSE_CACHE_TTL_SECONDS:-60}

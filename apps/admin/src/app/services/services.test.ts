@@ -32,4 +32,32 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(resolveTenantSlug('?tenant=stripe-emea')).toBe('stripe-emea');
     expect(resolveTenantSlug('', 'default-tenant')).toBe('default-tenant');
   });
+
+  it('excludes organizations tab from tenant admin navigation', () => {
+    const navTabs = [
+      { id: 'overview', label: 'Overview' },
+      { id: 'organizations', label: 'Organizations' },
+      { id: 'knowledge', label: 'Knowledge' },
+      { id: 'studio', label: 'AI Studio' },
+      { id: 'chat', label: 'Customer Chat' },
+      { id: 'crm', label: 'CRM' },
+      { id: 'observability', label: 'Observability' },
+      { id: 'settings', label: 'Settings' }
+    ];
+
+    const filterTabsForRole = (role: string) =>
+      navTabs.filter((tab) => {
+        if (tab.id === 'organizations') return role === 'platform_admin';
+        if (tab.id === 'crm') return role !== 'platform_admin';
+        return true;
+      });
+
+    const tenantAdminTabs = filterTabsForRole('tenant_admin');
+    expect(tenantAdminTabs.some((t) => t.id === 'organizations')).toBe(false);
+    expect(tenantAdminTabs.some((t) => t.id === 'crm')).toBe(true);
+
+    const platformAdminTabs = filterTabsForRole('platform_admin');
+    expect(platformAdminTabs.some((t) => t.id === 'organizations')).toBe(true);
+    expect(platformAdminTabs.some((t) => t.id === 'crm')).toBe(false);
+  });
 });

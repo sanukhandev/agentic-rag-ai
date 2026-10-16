@@ -21,6 +21,20 @@ describe('action gateway', () => {
     expect(workflow.calls).toHaveLength(1);
   });
 
+  it('builds a validated lead context from the masked session conversation', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'CRM Tenant', slug: `crm-${Date.now()}` });
+    const session = await store.createSession(tenant.id);
+    await store.addMessage({ id: 'message-1', sessionId: session.id, tenantId: tenant.id, role: 'user', maskedContent: 'Please contact me about a demo.', citations: [], clientMessageId: 'message-1', response: null, createdAt: new Date().toISOString() });
+    const workflow = new MockWorkflowAdapter();
+    const gateway = new ActionGateway(store, workflow);
+    const action = await gateway.propose(tenant.id, session.id, 'crm-context', { name: '[NAME_1]', email: '[EMAIL_1]' });
+    await gateway.confirm(action.id, tenant.id);
+    expect(workflow.calls[0]?.leadContext).toMatchObject({ actionId: action.id, intent: 'lead.capture', score: 70, validationPass: true });
+    expect(workflow.calls[0]?.leadContext?.conversation).toHaveLength(1);
+    expect(JSON.stringify(workflow.calls[0]?.leadContext)).not.toContain('alice@example.com');
+  });
+
   it('marks provider failures unknown and verifies replay-resistant signatures', async () => {
     const store = new MemoryStore();
     const gateway = new ActionGateway(store, { execute: async () => { throw new Error('alice@example.com timeout'); } });
@@ -96,18 +110,19 @@ describe('action gateway', () => {
   it('sends the private n8n request with a signature and no raw customer fields', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ externalReference: 'n8n-1' }), { status: 200 }));
     const adapter = new HttpN8nWorkflowAdapter('https://n8n.internal', 'shared-secret');
-    await expect(adapter.execute({ workflowKey: 'lead.capture', tenantId: 'tenant-a', opaqueReference: 'lead-1', idempotencyKey: 'client-1', leadData: { email: '[EMAIL_1]' } })).resolves.toEqual({ externalReference: 'n8n-1' });
+    await expect(adapter.execute({ workflowKey: 'lead.capture', tenantId: 'tenant-a', sessionId: 'session-1', opaqueReference: 'lead-1', idempotencyKey: 'client-1', leadData: { email: '[EMAIL_1]' } })).resolves.toEqual({ externalReference: 'n8n-1' });
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(String(request.body)).not.toContain('alice@example.com');
     expect(request.headers).toMatchObject({ 'x-agentic-idempotency-key': 'client-1' });
     expect(String(request.body)).toContain('[EMAIL_1]');
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://n8n.internal/webhook/lead-capture');
     fetchMock.mockRestore();
   });
 
   it('rejects external references that are not opaque identifiers', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ externalReference: 'alice@example.com' }), { status: 200 }));
     const adapter = new HttpN8nWorkflowAdapter('https://n8n.internal', 'shared-secret');
-    await expect(adapter.execute({ workflowKey: 'lead.capture', tenantId: 'tenant-a', opaqueReference: 'lead-1', idempotencyKey: 'client-1' })).rejects.toThrow('Private n8n response was invalid.');
+    await expect(adapter.execute({ workflowKey: 'lead.capture', tenantId: 'tenant-a', sessionId: 'session-1', opaqueReference: 'lead-1', idempotencyKey: 'client-1' })).rejects.toThrow('Private n8n response was invalid.');
     vi.restoreAllMocks();
   });
 });

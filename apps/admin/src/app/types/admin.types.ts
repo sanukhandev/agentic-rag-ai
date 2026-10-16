@@ -122,6 +122,19 @@ export interface WorkflowRun {
   triggerEvent?: string;
 }
 
+export interface CrmLead {
+  id: string;
+  intent: string;
+  score: number;
+  validationPass: boolean;
+  leadData: { name?: string; email?: string; phone?: string };
+  conversation: Array<{ role: 'user' | 'assistant'; content: string; createdAt: string }>;
+  summary: string | null;
+  summaryStatus: 'pending' | 'completed' | 'failed';
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AuditEvent {
   id: string;
   eventName: string;
@@ -159,4 +172,4 @@ export interface PlatformOverview {
   };
 }
 
-export type NavSection = 'overview' | 'organizations' | 'knowledge' | 'studio' | 'chat' | 'observability' | 'settings';
+export type NavSection = 'overview' | 'organizations' | 'knowledge' | 'studio' | 'chat' | 'crm' | 'observability' | 'settings';

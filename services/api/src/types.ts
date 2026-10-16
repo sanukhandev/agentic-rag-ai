@@ -141,6 +141,28 @@ export interface LeadData {
   phone?: string;
 }
 
+export interface LeadConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+}
+
+export interface CrmLead {
+  id: string;
+  tenantId: string;
+  actionId: string;
+  sessionId: string;
+  intent: string;
+  score: number;
+  validationPass: boolean;
+  leadData: LeadData;
+  conversation: LeadConversationMessage[];
+  summary: string | null;
+  summaryStatus: 'pending' | 'completed' | 'failed';
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ActionRequest {
   id: string;
   tenantId: string;
@@ -229,6 +251,11 @@ export interface Store {
   getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null>;
   updateAction(action: ActionRequest): Promise<ActionRequest>;
   listActions(tenantId: string): Promise<ActionRequest[]>;
+  createCrmLead(lead: CrmLead): Promise<CrmLead>;
+  getCrmLeadByActionId(actionId: string, tenantId: string): Promise<CrmLead | null>;
+  getCrmLead(id: string, tenantId: string): Promise<CrmLead | null>;
+  listCrmLeads(tenantId: string): Promise<CrmLead[]>;
+  updateCrmLeadSummary(id: string, tenantId: string, summary: string, status: CrmLead['summaryStatus']): Promise<CrmLead | null>;
   addAudit(event: AuditEvent): Promise<void>;
   listAudit(tenantId: string): Promise<AuditEvent[]>;
   getTenantStats(tenantId: string): Promise<TenantStats>;

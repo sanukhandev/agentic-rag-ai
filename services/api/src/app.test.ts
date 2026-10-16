@@ -543,4 +543,24 @@ describe('API vertical slice', () => {
     const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Different retry content', clientMessageId: 'retry-message-1' }).expect(200);
     expect(duplicate.body.messageId).toBe(retry.body.messageId);
   });
+
+  it('stores a validated CRM lead and rehydrates it only for the tenant admin view', async () => {
+    const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'crm-secret' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-crm@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'CRM Tenant', slug: 'crm-tenant', adminEmail: 'admin-crm@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-crm@example.test', password: 'TenantA1Password' }).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const proposal = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Please contact me at alice@example.com about a demo. My name is Alice', clientMessageId: 'crm-lead-message' }).expect(200);
+    const actionId = proposal.body.actionProposal.id as string;
+    const action = await runtime.store.getAction(actionId);
+    const messages = await runtime.store.listMessages(session.body.sessionId, tenant.body.tenant.id);
+    const stored = await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: action?.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) }).expect(201);
+    expect(stored.body.lead).toMatchObject({ intent: 'lead.capture', score: 70, validationPass: true, summaryStatus: 'pending' });
+    await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/summary`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, summary: 'Customer [NAME_1] requested a demo via [EMAIL_1].', status: 'completed' }).expect(200);
+    const crm = await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', email: 'alice@example.com' }, summary: 'Customer Alice requested a demo via alice@example.com.', summaryStatus: 'completed' });
+    expect(JSON.stringify(crm.body.items[0].conversation)).toContain('alice@example.com');
+    await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${platform.body.token}`).set('x-tenant-id', tenant.body.tenant.id).expect(200);
+  });
 });

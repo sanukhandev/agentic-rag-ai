@@ -15,6 +15,7 @@ import { CommandPaletteComponent } from './components/shared/command-palette.com
 import { ToastComponent } from './components/shared/toast.component';
 import { LoginPageComponent } from './components/login-page/login-page.component';
 import { CustomerChatComponent } from './components/customer-chat/customer-chat.component';
+import { CrmComponent } from './components/crm/crm.component';
 import { IconComponent } from './components/shared/icon.component';
 import { BadgeComponent } from './components/shared/badge.component';
 
@@ -36,6 +37,7 @@ import { BadgeComponent } from './components/shared/badge.component';
     ToastComponent,
     LoginPageComponent,
     CustomerChatComponent,
+    CrmComponent,
     IconComponent,
     BadgeComponent
   ],
@@ -57,6 +59,7 @@ export class AppComponent implements OnInit {
     { id: 'knowledge', label: 'Knowledge', icon: 'knowledge' },
     { id: 'studio', label: 'AI Studio', icon: 'studio' },
     { id: 'chat', label: 'Customer Chat', icon: 'chat' },
+    { id: 'crm', label: 'CRM', icon: 'organizations' },
     { id: 'observability', label: 'Observability', icon: 'observability' },
     { id: 'settings', label: 'Settings', icon: 'settings' }
   ];
@@ -87,7 +90,23 @@ export class AppComponent implements OnInit {
     });
   }
 
+  get visibleNavTabs(): Array<{ id: NavSection; label: string; icon: string }> {
+    return this.navTabs.filter((tab) => {
+      if (tab.id === 'organizations') {
+        return this.role === 'platform_admin';
+      }
+      if (tab.id === 'crm') {
+        return this.role !== 'platform_admin';
+      }
+      return true;
+    });
+  }
+
   setSection(sec: NavSection): void {
+    if (sec === 'organizations' && this.role !== 'platform_admin') {
+      this.state.setSection('overview');
+      return;
+    }
     this.state.setSection(sec);
   }
 

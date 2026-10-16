@@ -86,8 +86,7 @@
         <!-- Contextual Sub-Navigation Pill Bar -->
         <div class="mt-6 flex items-center gap-1.5 overflow-x-auto pb-1" role="tablist">
           <button
-            *ngFor="let tab of navTabs"
-            [hidden]="tab.id === 'organizations' && role !== 'platform_admin'"
+            *ngFor="let tab of visibleNavTabs"
             type="button"
             role="tab"
             [attr.aria-selected]="currentSection === tab.id"
@@ -138,6 +137,11 @@
         <div class="max-w-4xl mx-auto py-2">
           <app-customer-chat></app-customer-chat>
         </div>
+      </ng-container>
+
+      <!-- Section: CRM -->
+      <ng-container *ngIf="currentSection === 'crm' && role !== 'platform_admin'">
+        <app-crm></app-crm>
       </ng-container>
 
       <!-- Section: Observability -->

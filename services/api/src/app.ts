@@ -11,7 +11,7 @@ import { conversationalIntent, conversationalReply, DeterministicGroundedModel, 
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
-import type { Message, Session, SourceStatus, Store, TenantStatus } from './types.js';
+import type { CrmLead, Message, Session, SourceStatus, Store, TenantStatus } from './types.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -43,6 +43,18 @@ const messageSchema = z.object({ sessionId: z.string().uuid(), message: z.string
 const confirmSchema = z.object({ sessionId: z.string().uuid(), confirmed: z.literal(true) });
 const retentionSchema = z.object({ before: z.string().datetime() });
 const historyQuerySchema = z.object({ limit: z.coerce.number().int().min(1).max(200).default(100) });
+const leadTokenSchema = z.string().regex(/^\[(?:NAME|EMAIL|PHONE)_\d+\]$/);
+const crmLeadSchema = z.object({
+  actionId: z.string().uuid(),
+  tenantId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  leadData: z.object({ name: leadTokenSchema.optional(), email: leadTokenSchema.optional(), phone: leadTokenSchema.optional() }).strict(),
+  intent: z.string().trim().min(1).max(80),
+  score: z.number().int().min(0).max(100),
+  validationPass: z.boolean(),
+  conversation: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(20_000), createdAt: z.string().datetime() })).min(1).max(200)
+});
+const crmSummarySchema = z.object({ tenantId: z.string().uuid(), summary: z.string().trim().min(1).max(20_000), status: z.enum(['completed', 'failed']) });
 
 const publicUser = (user: { id: string; email: string; role: string; tenantId: string | null }) => ({ id: user.id, email: user.email, role: user.role, tenantId: user.tenantId });
 
@@ -168,6 +180,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (expectedBuffer.length !== providedBuffer.length || !timingSafeEqual(expectedBuffer, providedBuffer)) { next(new HttpError(401, 'WORKER_UNAUTHORIZED', 'Ingestion worker authentication failed.')); return; }
     next();
   };
+  const n8nInternalApi = (req: Request, _res: Response, next: NextFunction): void => {
+    const expected = Buffer.from(n8nCallbackSecret);
+    const provided = Buffer.from(req.header('x-agentic-internal-secret') ?? '');
+    if (expected.length === 0 || expected.length !== provided.length || !timingSafeEqual(expected, provided)) { next(new HttpError(401, 'N8N_UNAUTHORIZED', 'n8n internal authentication failed.')); return; }
+    next();
+  };
   const auth = new AuthService(store, jwtSecret);
   const gateway = new ActionGateway(store, workflow);
   const app = express();
@@ -220,6 +238,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (entry.count > limit) { res.setHeader('retry-after', Math.max(1, Math.ceil((entry.resetAt - now) / 1000))); res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many requests.' } }); return; }
     next();
   });
+
+  const crmLeadForAdmin = async (lead: CrmLead): Promise<CrmLead> => {
+    const session = await store.getSession(lead.sessionId);
+    if (!session) return lead;
+    const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault);
+    return { ...lead, leadData: { ...(lead.leadData.name ? { name: rehydrate(lead.leadData.name) } : {}), ...(lead.leadData.email ? { email: rehydrate(lead.leadData.email) } : {}), ...(lead.leadData.phone ? { phone: rehydrate(lead.leadData.phone) } : {}) }, conversation: lead.conversation.map((message) => ({ ...message, content: rehydrate(message.content) })), summary: lead.summary ? rehydrate(lead.summary) : null };
+  };
 
   app.get('/api/v1/health/live', (_req, res) => res.json({ status: 'ok' }));
   app.get('/api/v1/health/ready', async (_req, res) => {
@@ -621,7 +646,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const intent = conversationalIntent(masked.masked);
       const conversational = intent !== null && languageAllowed;
       const leadRequestedNow = hasLeadIntent(masked.masked);
-      const leadDataRequested = leadRequestedNow || /\[(?:NAME|EMAIL|PHONE)_\d+\]/u.test(masked.masked);
+      const leadDataRequested = leadRequestedNow || /\[(?:NAME|EMAIL|PHONE)_\d+\]/u.test(masked.masked) || /\b(?:my name is|i am|i'm)\b/i.test(input.message);
       const contextWindowMessages = persona?.contextWindowMessages ?? DEFAULT_CONTEXT_WINDOW_MESSAGES;
       let evidence: ModelEvidence[] = [];
       let draft: ModelDraft;
@@ -688,6 +713,35 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
   app.get('/api/v1/chat/actions/:id', optionalApi, async (req, res, next) => { try { const action = await store.getAction(routeParam(req, 'id')); if (!action) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); const sessionId = req.query.sessionId; if (typeof sessionId !== 'string' || sessionId !== action.sessionId) throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.'); const session = await store.getSession(action.sessionId); const tenant = await store.getTenant(action.tenantId); if (!session || session.tenantId !== action.tenantId || !tenant) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); if (!getAuth(req)) { if (!tenant.publicChatEnabled) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== action.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.'); res.json({ action }); } catch (error) { next(error); } });
 
+  app.post('/api/v1/internal/crm/leads', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(crmLeadSchema, req.body);
+      if (!input.validationPass || input.score < 70) throw new HttpError(422, 'LEAD_VALIDATION_FAILED', 'The lead did not pass the completeness threshold.');
+      const action = await store.getAction(input.actionId);
+      const session = await store.getSession(input.sessionId);
+      if (!action || action.tenantId !== input.tenantId || action.sessionId !== input.sessionId || action.workflowKey !== 'lead.capture' || !session || session.tenantId !== input.tenantId) throw new HttpError(403, 'LEAD_FORBIDDEN', 'Lead context does not match the authorized action.');
+      assertKnownTokens(session, JSON.stringify({ leadData: input.leadData, conversation: input.conversation }), tokenVault);
+      const leadData = { ...(input.leadData.name ? { name: input.leadData.name } : {}), ...(input.leadData.email ? { email: input.leadData.email } : {}), ...(input.leadData.phone ? { phone: input.leadData.phone } : {}) };
+      const existing = await store.getCrmLeadByActionId(input.actionId, input.tenantId);
+      if (existing) { res.json({ lead: existing, externalReference: `crm-lead-${existing.id}` }); return; }
+      const lead: CrmLead = { id: randomUUID(), tenantId: input.tenantId, actionId: input.actionId, sessionId: input.sessionId, intent: input.intent, score: input.score, validationPass: input.validationPass, leadData, conversation: input.conversation, summary: null, summaryStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const created = await store.createCrmLead(lead);
+      await store.addAudit({ id: randomUUID(), tenantId: created.tenantId, actorId: null, eventName: 'crm.lead_created', metadata: { leadId: created.id, intent: created.intent, score: created.score, validationPass: created.validationPass }, createdAt: new Date().toISOString() });
+      res.status(201).json({ lead: created, externalReference: `crm-lead-${created.id}` });
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/internal/crm/leads/:id/summary', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(crmSummarySchema, req.body);
+      const lead = await store.getCrmLead(routeParam(req, 'id'), input.tenantId);
+      if (!lead) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
+      const session = await store.getSession(lead.sessionId);
+      if (session) assertKnownTokens(session, input.summary, tokenVault);
+      const updated = await store.updateCrmLeadSummary(lead.id, input.tenantId, input.summary, input.status);
+      if (!updated) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
+      res.json({ lead: updated });
+    } catch (error) { next(error); }
+  });
   app.post('/api/v1/internal/n8n/callback', async (req, res, next) => {
     try {
       if (!n8nCallbackSecret) throw new HttpError(404, 'NOT_FOUND', 'Not found.');
@@ -709,6 +763,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.get('/api/v1/chat/sessions/:id', optionalApi, async (req, res, next) => { try { const session = await store.getSession(routeParam(req, 'id')); if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); ensureLiveSession(session.createdAt); const tenant = await store.getTenant(session.tenantId); if (!tenant) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (!getAuth(req)) { if (tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.'); const { limit } = parse(historyQuerySchema, req.query); res.json({ sessionId: session.id, tenantId: session.tenantId, createdAt: session.createdAt, messages: (await store.listMessages(session.id, session.tenantId, limit)).map((message) => ({ id: message.id, role: message.role, content: message.role === 'assistant' ? rehydrateForSession(session, message.maskedContent, tokenVault) : message.maskedContent, citations: message.citations, conversational: message.response?.conversational === true, clientMessageId: message.clientMessageId, createdAt: message.createdAt })) }); } catch (error) { next(error); } });
 
   app.get('/api/v1/admin/workflow-runs', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listActions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.get('/api/v1/admin/crm/leads', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); res.json({ items: await Promise.all((await store.listCrmLeads(tenantId)).map(crmLeadForAdmin)) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/audit', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listAudit(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.get('/api/v1/chat/config', optionalApi, async (req, res, next) => { try { const tenantSlug = typeof req.query.tenantSlug === 'string' ? req.query.tenantSlug : ''; const tenant = await store.getTenantBySlug(tenantSlug); if (!tenant || tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); if (getAuth(req) && !ensureTenant(req, tenant.id)) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.'); if (!getAuth(req)) enforcePublicOrigin(req, tenant, nodeEnv); const persona = await store.getPersona(tenant.id); res.json({ tenant: { slug: tenant.slug, name: tenant.name }, persona: persona ? { name: persona.name, greeting: persona.greeting, tone: persona.tone, speakingStyle: persona.speakingStyle, permittedLanguages: persona.permittedLanguages } : null }); } catch (error) { next(error); } });
 

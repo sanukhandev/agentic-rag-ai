@@ -87,10 +87,17 @@ export const maskPii = (input: string): MaskResult => {
       return tokenValue;
     });
   };
+  const replaceName = (pattern: RegExp): void => {
+    masked = masked.replace(pattern, (_value, name: string) => {
+      const tokenValue = token('NAME', tokens.filter((item) => item.token.startsWith('[NAME_')).length + 1);
+      tokens.push({ token: tokenValue, value: name });
+      return tokenValue;
+    });
+  };
   replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, 'EMAIL');
   replace(/(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)/g, 'PHONE');
-  replace(/\bmy name is\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?/gi, 'NAME');
-  replace(/\b(?:[Ii] am|[Ii]'m)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?/g, 'NAME');
+  replaceName(/\bmy name is\s+([A-Z][A-Za-z0-9'-]+(?:\s+[A-Z][A-Za-z0-9'-]+)?)/gi);
+  replaceName(/\b(?:[Ii] am|[Ii]'m)\s+([A-Z][A-Za-z0-9'-]+(?:\s+[A-Z][A-Za-z0-9'-]+)?)/g);
   replace(/\b(?:passport|account|customer|member)[ #:-]*[A-Z0-9-]{4,}\b/gi, 'ID');
   return { masked, tokens };
 };

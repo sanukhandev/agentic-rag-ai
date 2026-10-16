@@ -1,0 +1,90 @@
+{
+  "name": "Agentic CRM - Validate and Store Lead",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-capture",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000001",
+      "name": "Lead Capture Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 0],
+      "webhookId": "agentic-lead-capture"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nconst hasContact = Boolean(input.leadData?.email || input.leadData?.phone);\nif (input.workflowKey !== 'lead.capture' || !input.actionId || !input.tenantId || !input.sessionId || input.validationPass !== true || input.score < 70 || !input.leadData?.name || !hasContact || !Array.isArray(input.conversation)) throw new Error('Lead validation failed');\nreturn [{ json: input }];"
+      },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000002",
+      "name": "Validate Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/crm/leads",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-agentic-internal-secret",
+              "value": "={{ $env.N8N_WEBHOOK_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, sessionId: $json.sessionId, leadData: $json.leadData, intent: $json.intent, score: $json.score, validationPass: $json.validationPass, conversation: $json.conversation }) }}",
+        "options": {}
+      },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000003",
+      "name": "Insert CRM Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://n8n:5678/webhook/lead-summarize",
+        "sendHeaders": false,
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ leadId: $('Insert CRM Lead').first().json.lead.id, tenantId: $('Validate Lead').first().json.tenantId, conversation: $('Validate Lead').first().json.conversation }) }}",
+        "options": {}
+      },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000004",
+      "name": "Trigger Conversation Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [760, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $('Insert CRM Lead').first().json;\nreturn [{ json: { externalReference: result.externalReference } }];"
+      },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000005",
+      "name": "Return CRM Reference",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1020, 0]
+    }
+  ],
+  "connections": {
+    "Lead Capture Webhook": { "main": [[{ "node": "Validate Lead", "type": "main", "index": 0 }]] },
+    "Validate Lead": { "main": [[{ "node": "Insert CRM Lead", "type": "main", "index": 0 }]] },
+    "Insert CRM Lead": { "main": [[{ "node": "Trigger Conversation Summary", "type": "main", "index": 0 }]] },
+    "Trigger Conversation Summary": { "main": [[{ "node": "Return CRM Reference", "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "f8e2e11d-0d3e-4e83-8d21-000000000006",
+  "meta": { "templateCredsSetupCompleted": true },
+  "tags": []
+}
