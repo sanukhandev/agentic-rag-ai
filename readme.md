@@ -54,11 +54,11 @@ Install Node 22+ and Docker Desktop, then run:
 
 ```powershell
 npm install
-npm run db:up
-npm run typecheck
-npm test
-npm run build
+docker compose up -d --build
+docker compose ps
 ```
+
+The root Compose file is the canonical local launch path. It builds the API, Next web, Angular admin and ingestion images through named multi-stage targets, then starts them with PostgreSQL/pgvector, Redis and n8n. Use `npm run typecheck`, `npm test` and `npm run build` for source-level checks.
 
 The API defaults to a deterministic in-memory store for repeatable development/tests:
 
@@ -74,7 +74,7 @@ npm run dev:admin
 
 For the PostgreSQL/pgvector adapter, run `npm run db:migrate`, set `STORE=postgres` and `DATABASE_URL` from `.env.example`, then start the API. The API loads an ignored local `.env` when present; keep real credentials there, never in Git. The Python worker is under `tools/ingestion`; it supports TXT, Markdown, CSV, DOCX, XLSX, text PDF and bounded allowlisted HTTPS snapshots, and must run in a project venv. No real customer data or credentials belong in the repository.
 
-The root `docker-compose.yml` is the n8n/Redis local development deployment with localhost-only defaults. `infra/docker-compose.dev.yml` is the private local PostgreSQL/pgvector service; neither compose file is a production deployment.
+The root `docker-compose.yml` is the single local development deployment for PostgreSQL/pgvector, Redis, n8n, API, web, admin and opt-in ingestion, with localhost-only defaults. It is not a production deployment.
 
 ## Current verification and limitations
 

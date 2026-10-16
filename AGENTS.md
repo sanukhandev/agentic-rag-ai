@@ -34,7 +34,7 @@ Only docker-compose.yml (n8n) and a placeholder readme.md existed when this docu
 - tools/ingestion — Python + venv, file adapters/validators/chunking/embedding writes via controlled worker credentials.
 - packages/contracts — shared API schemas or generated clients, where compatible; no forced Angular/Next runtime coupling.
 - packages/config — optional shared lint/TS policy, when justified.
-- infra/ — future versioned infrastructure; existing root docker-compose.yml starts n8n only.
+- infra/ — versioned database migrations and static server config; root docker-compose.yml is the single local stack.
 - docs/ — architecture, security, policies, contracts, ADRs, roadmap and runbooks.
 
 ## Ownership and dependency direction

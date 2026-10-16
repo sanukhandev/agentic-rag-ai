@@ -30,8 +30,8 @@
 | SSRF via document URLs | No arbitrary file/resource fetching; outbound egress allowlist |
 | Supply chain compromise | Lockfiles, dependency audits, pinned images, automated scanning |
 
-## Existing n8n Compose — development defaults
-The root `docker-compose.yml` is intentionally development-only. It now uses a digest-pinned n8n image, binds **127.0.0.1:5678:5678** by default, and uses localhost HTTP URLs with `N8N_SECURE_COOKIE=false` only because the local default has no TLS. These defaults are not a production security baseline.
+## Master Compose — development defaults
+The root `docker-compose.yml` is intentionally development-only. It uses localhost-only bindings for PostgreSQL, Redis, n8n and the application clients, a digest-pinned n8n image, and localhost HTTP URLs with `N8N_SECURE_COOKIE=false` because the local default has no TLS. These defaults are not a production security baseline.
 
 Before a public or real-customer rollout:
 - Keep the default private bind; for controlled staging, put n8n behind an authenticated HTTPS reverse proxy before changing the bind address.

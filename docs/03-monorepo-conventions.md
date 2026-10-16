@@ -6,7 +6,7 @@
 /
   AGENTS.md
   readme.md
-  docker-compose.yml            # existing: n8n only
+  docker-compose.yml            # master local stack and staged application builds
   apps/
     web/                       # Next.js / React / TS / Tailwind
     admin/                     # Angular / TS / Tailwind
@@ -17,7 +17,7 @@
   packages/
     contracts/                 # pure schemas/generated API types where useful
     config/                    # optional repo-wide tooling presets
-  infra/                       # future Compose, reverse proxy, IaC
+  infra/                       # database migrations and static admin server config
   docs/
 ```
 

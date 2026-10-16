@@ -1,6 +1,29 @@
+x-node-build: &node-build
+  context: .
+  dockerfile: Dockerfile
+
 services:
+  postgres:
+    image: pgvector/pgvector:pg16@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
+    container_name: agentic-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agentic_rag
+      POSTGRES_USER: agentic
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentic_local_only}
+    ports:
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:54329:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./infra/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentic -d agentic_rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   redis:
-    image: redis:7.4-alpine
+    image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     container_name: agentic-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
@@ -13,6 +36,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
   n8n:
     image: n8nio/n8n:latest@sha256:dd580fe1ab6e99e85bc66f2acf8bc8c5e9409fbe61b2e2803c5024403ef52833
     container_name: n8n
@@ -31,3 +55,85 @@ services:
       TZ: Asia/Dubai
     volumes:
       - ./data/n8n:/home/node/.n8n
+
+  api:
+    build:
+      <<: *node-build
+      target: api-runtime
+    container_name: agentic-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${API_BIND_ADDRESS:-127.0.0.1}:4000:4000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4000
+      STORE: postgres
+      DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:-agentic_local_only}@postgres:5432/agentic_rag
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-replace-with-a-long-local-secret}
+      PII_VAULT_KEY: ${PII_VAULT_KEY:-replace-with-a-long-vault-secret}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:4200}
+      AZURE_AI_ENDPOINT: ${AZURE_AI_ENDPOINT:-}
+      AZURE_AI_PROJECT_ENDPOINT: ${AZURE_AI_PROJECT_ENDPOINT:-}
+      AZURE_AI_CHAT_DEPLOYMENT: ${AZURE_AI_CHAT_DEPLOYMENT:-gpt-4.1-mini}
+      AZURE_AI_EMBEDDING_DEPLOYMENT: ${AZURE_AI_EMBEDDING_DEPLOYMENT:-}
+      AZURE_AI_EMBEDDING_DIMENSION: ${AZURE_AI_EMBEDDING_DIMENSION:-1536}
+      AZURE_AI_API_KEY: ${AZURE_AI_API_KEY:-}
+      AZURE_AI_API_VERSION: ${AZURE_AI_API_VERSION:-2024-10-21}
+      N8N_INTERNAL_URL: ${N8N_INTERNAL_URL:-http://n8n:5678}
+      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-}
+      INGESTION_WORKER_SECRET: ${INGESTION_WORKER_SECRET:-}
+      INGESTION_STAGING_ROOT: /app/data/ingestion-staging
+      AUTH_SESSION_CACHE_TTL_SECONDS: ${AUTH_SESSION_CACHE_TTL_SECONDS:-10}
+      CHAT_RESPONSE_CACHE_TTL_SECONDS: ${CHAT_RESPONSE_CACHE_TTL_SECONDS:-60}
+    volumes:
+      - ./data/ingestion-staging:/app/data/ingestion-staging
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/v1/health/live').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build:
+      <<: *node-build
+      target: web-runtime
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+    container_name: agentic-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:3000:3000"
+
+  admin:
+    build:
+      <<: *node-build
+      target: admin-runtime
+    container_name: agentic-admin
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${ADMIN_BIND_ADDRESS:-127.0.0.1}:4200:80"
+
+  ingestion:
+    profiles: ["ingestion"]
+    build:
+      <<: *node-build
+      target: ingestion-runtime
+    depends_on:
+      api:
+        condition: service_started
+    volumes:
+      - ./data/ingestion-staging:/app/data/ingestion-staging
+    command: ["--help"]

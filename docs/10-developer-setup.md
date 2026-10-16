@@ -1,17 +1,17 @@
 # Developer environment and deployment (local implementation)
 
 ## Repository baseline
-The root `docker-compose.yml` declares local n8n and Redis services with persistent volumes. Both default bindings are localhost-only (`127.0.0.1:5678` and `127.0.0.1:6379`). Local application services are run from npm workspaces, while `infra/docker-compose.dev.yml` runs a private pgvector/PostgreSQL container. This is development infrastructure only; no VM deployment is performed by the repository.
+The root `docker-compose.yml` is the single local stack: PostgreSQL/pgvector, Redis, n8n, the API, Next web, Angular admin and the opt-in ingestion image. Persistent data stays under `data/`, and service bindings are localhost-only by default. This is development infrastructure only; no VM deployment is performed by the repository.
 
 ## Intended workstation prerequisites
 Git, Docker Engine/Compose, Node.js 22+, npm, Python 3.x with venv, a PostgreSQL client and optional Azure credentials with an approved model deployment.
 
-## Inspecting existing n8n
+## Starting the master Compose stack
 ```sh
 docker compose config
-docker compose up -d n8n
+docker compose up -d --build
 docker compose ps
-docker compose logs --tail=100 n8n
+docker compose logs --tail=100 api web admin redis postgres
 ```
 **Security:** the default Compose binding is localhost-only plaintext HTTP with insecure cookies because it is a disposable local development profile. If a controlled staging reverse proxy is intentionally configured, override `N8N_BIND_ADDRESS`, `N8N_HOST`, `N8N_PROTOCOL`, `N8N_EDITOR_BASE_URL`, `N8N_WEBHOOK_URL` and `N8N_SECURE_COOKIE` explicitly; direct public HTTP exposure is not a production configuration. Do not paste real credentials into screenshots, terminal logs or GitHub issues.
 
@@ -75,10 +75,10 @@ For public chat channel binding, a tenant administrator saves the exact web orig
 The local pgvector container supports a schema/data rehearsal without touching the development database: dump `agentic_rag` to a temporary `agentic_rag_restore_check` database, verify the restored tables, then drop only that explicitly named scratch database. Production must use managed encrypted backups, retention and a scheduled restore test.
 
 ```powershell
-docker compose -f infra/docker-compose.dev.yml exec -T postgres createdb -U agentic agentic_rag_restore_check
-docker compose -f infra/docker-compose.dev.yml exec -T postgres pg_dump -U agentic -d agentic_rag --format=plain --no-owner --no-privileges | docker compose -f infra/docker-compose.dev.yml exec -T postgres psql -U agentic -d agentic_rag_restore_check -v ON_ERROR_STOP=1
-docker compose -f infra/docker-compose.dev.yml exec -T postgres psql -U agentic -d agentic_rag_restore_check -Atc "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'"
-docker compose -f infra/docker-compose.dev.yml exec -T postgres dropdb -U agentic agentic_rag_restore_check
+docker compose exec -T postgres createdb -U agentic agentic_rag_restore_check
+docker compose exec -T postgres pg_dump -U agentic -d agentic_rag --format=plain --no-owner --no-privileges | docker compose exec -T postgres psql -U agentic -d agentic_rag_restore_check -v ON_ERROR_STOP=1
+docker compose exec -T postgres psql -U agentic -d agentic_rag_restore_check -Atc "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'"
+docker compose exec -T postgres dropdb -U agentic agentic_rag_restore_check
 ```
 
 ## Proposed environment contract (names TBD until implementation)

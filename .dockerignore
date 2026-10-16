@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+!.env.example
+**/node_modules
+**/.next
+**/dist
+**/.angular
+**/.venv
+**/__pycache__
+**/*.tsbuildinfo
+coverage
+data
