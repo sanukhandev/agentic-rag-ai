@@ -88,7 +88,8 @@ export class AzureFoundryModel implements ChatModel {
     const result = z.object({
       answer: z.string().min(1).max(8000),
       citationIds: z.array(z.string().min(1)).max(8),
-      proposedIntent: z.preprocess((value) => value === '' || value === 'none' || value === 'null' ? null : value, z.literal('lead.capture').nullable()),
+      // Azure may return a descriptive non-action intent such as "inform"; only an explicit lead action is actionable.
+      proposedIntent: z.preprocess((value) => value === 'lead.capture' ? value : null, z.literal('lead.capture').nullable()),
     }).strict().safeParse(JSON.parse(content));
     if (!result.success) throw new Error('Azure AI Foundry response did not match the grounded response contract.');
     return result.data;
