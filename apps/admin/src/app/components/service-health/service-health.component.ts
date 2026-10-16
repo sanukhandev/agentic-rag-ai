@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
 import { Health } from '../../types/admin.types';
@@ -126,7 +126,7 @@ interface ServiceNode {
     </section>
   `
 })
-export class ServiceHealthComponent {
+export class ServiceHealthComponent implements OnInit {
   private readonly state = inject(AdminStateService);
 
   health: Health | null = null;
@@ -178,6 +178,11 @@ export class ServiceHealthComponent {
 
   constructor() {
     this.state.health$.subscribe((h) => (this.health = h));
+  }
+
+  ngOnInit(): void {
+    this.state.loadHealth();
+    this.state.loadMetrics();
   }
 
   refresh(): void {

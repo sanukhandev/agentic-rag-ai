@@ -36,11 +36,8 @@ export class KnowledgeService {
     this.http.get<{ items: Source[] }>(`${this.apiBase}/api/v1/admin/sources`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => {
-        this.toast.show('error', 'Load Failed', 'Could not load knowledge sources.');
-        return of({ items: [] });
-      })
-    ).subscribe((res) => this.sourcesSubject.next(res.items));
+      catchError(() => of({ items: [] }))
+    ).subscribe((res) => this.sourcesSubject.next(res.items ?? []));
   }
 
   loadJobs(): void {
@@ -48,11 +45,8 @@ export class KnowledgeService {
     this.http.get<{ items: IngestionJob[] }>(`${this.apiBase}/api/v1/admin/ingestion-jobs`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => {
-        this.toast.show('error', 'Load Failed', 'Could not load ingestion jobs.');
-        return of({ items: [] });
-      })
-    ).subscribe((res) => this.jobsSubject.next(res.items));
+      catchError(() => of({ items: [] }))
+    ).subscribe((res) => this.jobsSubject.next(res.items ?? []));
   }
 
   stageSource(title: string, audience: SourceAudience, content: string, onComplete?: () => void): void {

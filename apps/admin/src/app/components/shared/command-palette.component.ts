@@ -223,6 +223,10 @@ export class CommandPaletteComponent {
       }
     ];
 
+    if (!this.state.isPlatformAdmin) {
+      return list.filter((item) => item.id !== 'nav-organizations' && item.id !== 'act-new-org');
+    }
+
     // Add tenants
     for (const t of this.tenants) {
       list.push({

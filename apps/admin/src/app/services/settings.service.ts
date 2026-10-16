@@ -45,10 +45,7 @@ export class SettingsService {
     this.http.get<Channel>(`${this.apiBase}/api/v1/admin/channel`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => {
-        this.toast.show('error', 'Load Failed', 'Could not load channel settings.');
-        return of({ publicOrigin: null, publicChatEnabled: false });
-      })
+      catchError(() => of({ publicOrigin: null, publicChatEnabled: false }))
     ).subscribe((res) => this.channelSubject.next(res));
   }
 
@@ -76,11 +73,8 @@ export class SettingsService {
     this.http.get<{ items: TenantDomain[] }>(`${this.apiBase}/api/v1/admin/domains`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => {
-        this.toast.show('error', 'Load Failed', 'Could not load allowed domains.');
-        return of({ items: [] });
-      })
-    ).subscribe((res) => this.domainsSubject.next(res.items));
+      catchError(() => of({ items: [] }))
+    ).subscribe((res) => this.domainsSubject.next(res.items ?? []));
   }
 
   addDomain(hostname: string): void {
@@ -119,11 +113,8 @@ export class SettingsService {
     this.http.get<{ items: Member[] }>(`${this.apiBase}/api/v1/admin/members`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => {
-        this.toast.show('error', 'Load Failed', 'Could not load tenant members.');
-        return of({ items: [] });
-      })
-    ).subscribe((res) => this.membersSubject.next(res.items));
+      catchError(() => of({ items: [] }))
+    ).subscribe((res) => this.membersSubject.next(res.items ?? []));
   }
 
   addMember(email: string, password: string, role: MemberRole): void {

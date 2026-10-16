@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -275,7 +275,7 @@ import { BadgeComponent } from '../shared/badge.component';
     </div>
   `
 })
-export class AiStudioComponent {
+export class AiStudioComponent implements OnInit {
   private readonly state = inject(AdminStateService);
 
   persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: [] };
@@ -295,6 +295,11 @@ export class AiStudioComponent {
       this.languagesInput = p.permittedLanguages.join(', ');
     });
     this.state.personaVersions$.subscribe((v) => (this.versions = v));
+  }
+
+  ngOnInit(): void {
+    this.state.loadPersona();
+    this.state.loadPersonaVersions();
   }
 
   onLanguagesChange(val: string): void {

@@ -65,8 +65,21 @@ export class AuthService {
     return this.role === 'platform_admin' || this.role === 'tenant_admin';
   }
 
+  private selectedTenantId: string | null = null;
+
+  setSelectedTenantId(id: string | null): void {
+    this.selectedTenantId = id;
+  }
+
   get authHeaders(): Record<string, string> {
-    return this.token ? { Authorization: `Bearer ${this.token}` } : {};
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    if (this.selectedTenantId) {
+      headers['X-Tenant-Id'] = this.selectedTenantId;
+    }
+    return headers;
   }
 
   private restoreSession(): void {

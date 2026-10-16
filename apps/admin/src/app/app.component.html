@@ -30,7 +30,7 @@
               </span>
               <span class="text-neutral-300">/</span>
               <span class="text-xs font-mono font-medium text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded">
-                {{ selectedTenant?.name || 'All Organizations' }}
+                {{ selectedTenant?.name || (role === 'platform_admin' ? 'All Organizations' : 'Tenant Workspace') }}
               </span>
               <app-badge variant="neutral" [showDot]="false" text="">
                 {{ role === 'platform_admin' ? 'Platform Owner' : 'Tenant Admin' }}
@@ -87,6 +87,7 @@
         <div class="mt-6 flex items-center gap-1.5 overflow-x-auto pb-1" role="tablist">
           <button
             *ngFor="let tab of navTabs"
+            [hidden]="tab.id === 'organizations' && role !== 'platform_admin'"
             type="button"
             role="tab"
             [attr.aria-selected]="currentSection === tab.id"
@@ -103,10 +104,10 @@
       <!-- Section: Overview -->
       <ng-container *ngIf="currentSection === 'overview'">
         <!-- 2. KPI Section -->
-        <app-kpi-cards></app-kpi-cards>
+        <app-kpi-cards *ngIf="role === 'platform_admin'"></app-kpi-cards>
 
         <!-- 3. Organization Management Section -->
-        <app-org-table></app-org-table>
+        <app-org-table *ngIf="role === 'platform_admin'"></app-org-table>
 
         <!-- 5. Service Health & Observability Matrix -->
         <app-service-health></app-service-health>
@@ -117,8 +118,8 @@
 
       <!-- Section: Organizations -->
       <ng-container *ngIf="currentSection === 'organizations'">
-        <app-kpi-cards></app-kpi-cards>
-        <app-org-table></app-org-table>
+        <app-kpi-cards *ngIf="role === 'platform_admin'"></app-kpi-cards>
+        <app-org-table *ngIf="role === 'platform_admin'"></app-org-table>
       </ng-container>
 
       <!-- Section: Knowledge -->

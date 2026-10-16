@@ -61,6 +61,7 @@ interface MegaMenuColumn {
 
             <!-- 2. Organizations (Mega Menu) -->
             <button
+              *ngIf="isPlatformAdmin"
               type="button"
               (click)="toggleMenu('organizations')"
               [attr.aria-expanded]="activeMegaMenu === 'organizations'"
@@ -165,7 +166,7 @@ interface MegaMenuColumn {
           </button>
 
           <!-- Tenant Switcher Dropdown (Refined Compact Pill) -->
-          <div class="relative" *ngIf="tenants.length > 0">
+          <div class="relative" *ngIf="isPlatformAdmin && tenants.length > 0">
             <button
               type="button"
               (click)="tenantDropdownOpen = !tenantDropdownOpen"
@@ -290,6 +291,7 @@ interface MegaMenuColumn {
           </button>
 
           <button
+            *ngIf="isPlatformAdmin"
             type="button"
             (click)="onMobileNavigate('organizations')"
             class="flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium text-left transition-colors"
@@ -498,6 +500,7 @@ export class TopNavComponent {
   }
 
   toggleMenu(section: NavSection): void {
+    if (section === 'organizations' && !this.isPlatformAdmin) return;
     this.tenantDropdownOpen = false;
     this.userMenuOpen = false;
     this.mobileNavOpen = false;
@@ -509,6 +512,7 @@ export class TopNavComponent {
   }
 
   navigateTo(section: NavSection): void {
+    if (section === 'organizations' && !this.isPlatformAdmin) return;
     this.state.setSection(section);
   }
 
@@ -540,6 +544,7 @@ export class TopNavComponent {
   }
 
   get currentColumns(): MegaMenuColumn[] {
+    if (this.activeMegaMenu === 'organizations' && !this.isPlatformAdmin) return [];
     switch (this.activeMegaMenu) {
       case 'organizations':
         return [

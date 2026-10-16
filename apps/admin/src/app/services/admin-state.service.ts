@@ -88,6 +88,37 @@ export class AdminStateService {
     this.auth.isAuthenticated$.subscribe((authenticated) => {
       if (authenticated) this.refreshAllData();
     });
+
+    this.nav.currentSection$.subscribe((section) => {
+      if (this.auth.isAuthenticated) {
+        this.loadSectionData(section);
+      }
+    });
+
+    this.tenantService.selectedTenant$.subscribe((tenant) => {
+      if (this.auth.isAuthenticated && tenant) {
+        this.loadTenantScopedData();
+      }
+    });
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', () => {
+        if (this.auth.isAuthenticated) {
+          this.refreshCurrentSection();
+        }
+      });
+      setInterval(() => {
+        if (this.auth.isAuthenticated) {
+          const sec = this.nav.currentSection;
+          if (sec === 'overview' || sec === 'observability') {
+            this.observability.loadHealth();
+            this.observability.loadMetrics();
+          } else if (sec === 'knowledge') {
+            this.knowledge.loadJobs();
+          }
+        }
+      }, 20000);
+    }
   }
 
   // Accessors
@@ -122,6 +153,10 @@ export class AdminStateService {
 
   // Navigation Facade
   setSection(section: NavSection): void {
+    if (section === 'organizations' && !this.isPlatformAdmin) {
+      this.nav.setSection('overview');
+      return;
+    }
     this.nav.setSection(section);
   }
 
@@ -166,27 +201,30 @@ export class AdminStateService {
 
   logout(): void {
     this.auth.logout();
+    this.nav.setSection('overview');
     this.closeMegaMenu();
   }
 
   // Tenant Facade
   selectTenant(tenant: Tenant): void {
+    if (!this.isPlatformAdmin) return;
     this.tenantService.selectTenant(tenant);
   }
 
   loadTenants(): void {
+    if (!this.isPlatformAdmin) return;
     this.tenantService.loadTenants();
-    if (this.isPlatformAdmin) this.tenantService.loadPlatformOverview();
-  }
-
-  loadPlatformOverview(): void {
     this.tenantService.loadPlatformOverview();
   }
 
-  createTenant(payload: CreateTenantPayload, callback?: (success: boolean) => void): void {
-    this.tenantService.createTenant(payload, (success) => {
+  loadPlatformOverview(): void {
+    if (this.isPlatformAdmin) this.tenantService.loadPlatformOverview();
+  }
+
+  createTenant(payload: CreateTenantPayload, callback?: (success: boolean, tenant?: Tenant) => void): void {
+    this.tenantService.createTenant(payload, (success, tenant) => {
       if (success) this.closeCreateOrgDrawer();
-      if (callback) callback(success);
+      if (callback) callback(success, tenant);
     });
   }
 
@@ -266,22 +304,76 @@ export class AdminStateService {
     this.settings.loadChannel();
   }
 
+  loadTenantScopedData(): void {
+    if (this.isPlatformAdmin && !this.tenantService.selectedTenant) return;
+    this.knowledge.loadSources();
+    this.knowledge.loadJobs();
+    this.observability.loadMetrics();
+    this.personaService.loadPersona();
+    this.personaService.loadPersonaVersions();
+    this.settings.loadDomains();
+    this.settings.loadMembers();
+    this.settings.loadChannel();
+    this.observability.loadWorkflowRuns();
+    this.observability.loadAudit();
+  }
+
+  loadSectionData(section: NavSection): void {
+    switch (section) {
+      case 'overview':
+        this.observability.loadHealth();
+        if (this.isPlatformAdmin) {
+          this.tenantService.loadTenants();
+          this.tenantService.loadPlatformOverview();
+        } else {
+          this.loadTenantScopedData();
+        }
+        break;
+      case 'organizations':
+        if (this.isPlatformAdmin) {
+          this.tenantService.loadTenants();
+          this.tenantService.loadPlatformOverview();
+        } else {
+          this.nav.setSection('overview');
+        }
+        break;
+      case 'knowledge':
+        this.knowledge.loadSources();
+        this.knowledge.loadJobs();
+        break;
+      case 'studio':
+        this.personaService.loadPersona();
+        this.personaService.loadPersonaVersions();
+        break;
+      case 'observability':
+        this.observability.loadHealth();
+        this.observability.loadMetrics();
+        this.observability.loadWorkflowRuns();
+        this.observability.loadAudit();
+        break;
+      case 'settings':
+        this.settings.loadDomains();
+        this.settings.loadMembers();
+        this.settings.loadChannel();
+        break;
+      case 'chat':
+        this.personaService.loadPersona();
+        break;
+    }
+  }
+
+  refreshCurrentSection(): void {
+    this.loadSectionData(this.nav.currentSection);
+  }
+
   refreshAllData(): void {
     this.observability.loadHealth();
     if (this.isPlatformAdmin) {
       this.tenantService.loadTenants();
       this.tenantService.loadPlatformOverview();
+      this.loadTenantScopedData();
     } else {
-      this.knowledge.loadSources();
-      this.knowledge.loadJobs();
-      this.observability.loadMetrics();
-      this.personaService.loadPersona();
-      this.personaService.loadPersonaVersions();
-      this.settings.loadDomains();
-      this.settings.loadMembers();
-      this.settings.loadChannel();
-      this.observability.loadWorkflowRuns();
-      this.observability.loadAudit();
+      this.loadTenantScopedData();
     }
   }
 }

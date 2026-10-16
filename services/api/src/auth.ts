@@ -58,7 +58,7 @@ export const authMiddleware = (authService: AuthService, required = true) => asy
 
 export const requireRoles = (...roles: Role[]) => (req: Request, res: Response, next: NextFunction): void => {
   const context = (req as AuthedRequest).auth;
-  if (!context || !roles.includes(context.role)) { res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Insufficient permissions.' } }); return; }
+  if (!context || (!roles.includes(context.role) && context.role !== 'platform_admin')) { res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Insufficient permissions.' } }); return; }
   next();
 };
 

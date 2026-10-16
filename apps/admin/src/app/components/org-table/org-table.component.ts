@@ -1,8 +1,9 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
 import { Tenant, TenantStatus } from '../../types/admin.types';
+import { openTenantChatWindow } from '../../services/tenant-chat-url';
 import { IconComponent } from '../shared/icon.component';
 import { BadgeComponent } from '../shared/badge.component';
 
@@ -168,6 +169,17 @@ import { BadgeComponent } from '../shared/badge.component';
                     View
                   </button>
 
+                  <!-- Open Tenant Chat -->
+                  <button
+                    type="button"
+                    (click)="openChat(tenant)"
+                    class="rounded-md border border-neutral-200 px-2.5 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 transition-colors inline-flex items-center gap-1"
+                    title="Open tenant customer chat in a new window"
+                  >
+                    <app-icon name="chat" classNames="w-3 h-3 text-neutral-500"></app-icon>
+                    <span>Chat</span>
+                  </button>
+
                   <!-- Manage Agent -->
                   <button
                     type="button"
@@ -225,7 +237,7 @@ import { BadgeComponent } from '../shared/badge.component';
     </section>
   `
 })
-export class OrgTableComponent {
+export class OrgTableComponent implements OnInit {
   private readonly state = inject(AdminStateService);
 
   searchQuery = '';
@@ -242,6 +254,10 @@ export class OrgTableComponent {
 
   constructor() {
     this.state.tenants$.subscribe((t) => (this.tenants = t));
+  }
+
+  ngOnInit(): void {
+    this.state.loadTenants();
   }
 
   get filteredTenants(): Tenant[] {
@@ -285,6 +301,11 @@ export class OrgTableComponent {
   manageAgent(tenant: Tenant): void {
     this.state.selectTenant(tenant);
     this.state.setSection('studio');
+  }
+
+  openChat(tenant: Tenant): void {
+    const publicOrigin = tenant.domains?.[0] ? `https://${tenant.domains[0]}` : null;
+    openTenantChatWindow(tenant.slug, publicOrigin);
   }
 
   updateStatus(tenant: Tenant, status: TenantStatus): void {

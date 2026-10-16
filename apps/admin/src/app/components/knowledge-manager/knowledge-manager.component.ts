@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -375,7 +375,7 @@ import { BadgeComponent } from '../shared/badge.component';
     </div>
   `
 })
-export class KnowledgeManagerComponent {
+export class KnowledgeManagerComponent implements OnInit {
   private readonly state = inject(AdminStateService);
 
   activeTab: 'catalog' | 'stage' | 'upload' | 'crawl' = 'catalog';
@@ -398,6 +398,11 @@ export class KnowledgeManagerComponent {
 
   constructor() {
     this.state.sources$.subscribe((s) => (this.sources = s));
+  }
+
+  ngOnInit(): void {
+    this.state.loadSources();
+    this.state.loadJobs();
   }
 
   get filteredSources(): Source[] {

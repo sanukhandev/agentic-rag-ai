@@ -2,6 +2,7 @@ import { Component, HostListener, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
+import { openTenantChatWindow } from '../../services/tenant-chat-url';
 import { IconComponent } from '../shared/icon.component';
 
 @Component({
@@ -257,6 +258,7 @@ export class OnboardDrawerComponent {
   submit(): void {
     if (!this.isFormValid) return;
     this.isSubmitting = true;
+    const targetSlug = this.slug;
     this.state.createTenant(
       {
         name: this.name,
@@ -264,9 +266,13 @@ export class OnboardDrawerComponent {
         adminEmail: this.adminEmail,
         adminPassword: this.adminPassword
       },
-      () => {
+      (success, tenant) => {
         this.isSubmitting = false;
-        this.resetForm();
+        if (success) {
+          const publicOrigin = tenant?.domains?.[0] ? `https://${tenant.domains[0]}` : null;
+          openTenantChatWindow(targetSlug, publicOrigin);
+          this.resetForm();
+        }
       }
     );
   }

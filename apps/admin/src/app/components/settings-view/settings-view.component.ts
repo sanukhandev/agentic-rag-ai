@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -227,7 +227,7 @@ import { BadgeComponent } from '../shared/badge.component';
     </div>
   `
 })
-export class SettingsViewComponent {
+export class SettingsViewComponent implements OnInit {
   private readonly state = inject(AdminStateService);
 
   channel: Channel = { publicOrigin: null, publicChatEnabled: false };
@@ -243,6 +243,12 @@ export class SettingsViewComponent {
     this.state.channel$.subscribe((c) => (this.channel = { ...c }));
     this.state.domains$.subscribe((d) => (this.domains = d));
     this.state.members$.subscribe((m) => (this.members = m));
+  }
+
+  ngOnInit(): void {
+    this.state.loadChannel();
+    this.state.loadDomains();
+    this.state.loadMembers();
   }
 
   saveChannel(): void {

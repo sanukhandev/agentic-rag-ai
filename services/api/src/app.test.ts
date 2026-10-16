@@ -79,6 +79,8 @@ describe('API vertical slice', () => {
     const adminA = await api.post('/api/v1/auth/login').send({ email: 'admin-a@example.test', password: 'TenantA1Password' }).expect(200);
     const adminToken = adminA.body.token as string;
     expect((await api.get('/api/v1/auth/me').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.user).toMatchObject({ email: 'admin-a@example.test', role: 'tenant_admin', tenantId: tenantA.body.tenant.id });
+    await api.get('/api/v1/admin/tenants').set('Authorization', `Bearer ${adminToken}`).expect(403);
+    await api.get('/api/v1/admin/platform/overview').set('Authorization', `Bearer ${adminToken}`).expect(403);
     const adminB = await api.post('/api/v1/auth/login').send({ email: 'admin-b@example.test', password: 'TenantB1Password' }).expect(200);
     const adminBToken = adminB.body.token as string;
     const member = await api.post('/api/v1/admin/members').set('Authorization', `Bearer ${adminToken}`).send({ email: 'editor-a@example.test', password: 'EditorA1Password', role: 'tenant_editor' }).expect(201);

@@ -68,6 +68,12 @@ const routeParam = (req: Request, name: string): string => {
 
 const tenantForRequest = async (store: Store, req: Request): Promise<string> => {
   const auth = getAuth(req);
+  if (auth?.role === 'platform_admin') {
+    const requested = req.header('x-tenant-id') || (typeof req.query.tenantId === 'string' ? req.query.tenantId : null);
+    if (requested) return requested;
+    const firstTenant = (await store.listTenants())[0];
+    if (firstTenant) return firstTenant.id;
+  }
   if (!auth?.tenantId) throw new HttpError(403, 'TENANT_REQUIRED', 'A tenant-scoped identity is required.');
   return auth.tenantId;
 };

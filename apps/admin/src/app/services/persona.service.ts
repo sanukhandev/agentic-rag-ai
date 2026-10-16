@@ -45,10 +45,7 @@ export class PersonaService {
     this.http.get<{ persona: Persona | null }>(`${this.apiBase}/api/v1/admin/persona`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => {
-        this.toast.show('error', 'Load Failed', 'Could not load the AI persona.');
-        return of({ persona: null });
-      })
+      catchError(() => of({ persona: null }))
     ).subscribe((res) => this.personaSubject.next(res.persona ?? EMPTY_PERSONA));
   }
 
@@ -57,11 +54,8 @@ export class PersonaService {
     this.http.get<{ items: PersonaVersion[] }>(`${this.apiBase}/api/v1/admin/persona/versions`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => {
-        this.toast.show('error', 'Load Failed', 'Could not load persona versions.');
-        return of({ items: [] });
-      })
-    ).subscribe((res) => this.personaVersionsSubject.next(res.items));
+      catchError(() => of({ items: [] }))
+    ).subscribe((res) => this.personaVersionsSubject.next(res.items ?? []));
   }
 
   saveDraft(persona: Persona): void {

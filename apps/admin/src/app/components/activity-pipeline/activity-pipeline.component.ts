@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
 import { IngestionJob, AuditEvent } from '../../types/admin.types';
@@ -138,7 +138,7 @@ import { BadgeComponent } from '../shared/badge.component';
     </div>
   `
 })
-export class ActivityPipelineComponent {
+export class ActivityPipelineComponent implements OnInit {
   private readonly state = inject(AdminStateService);
 
   jobs: IngestionJob[] = [];
@@ -147,6 +147,11 @@ export class ActivityPipelineComponent {
   constructor() {
     this.state.ingestionJobs$.subscribe((j) => (this.jobs = j));
     this.state.auditEvents$.subscribe((a) => (this.auditEvents = a));
+  }
+
+  ngOnInit(): void {
+    this.state.loadJobs();
+    this.state.loadAudit();
   }
 
   getFormatIcon(mime: string): string {

@@ -5,6 +5,7 @@ import { Tenant, PlatformOverview, TenantStatus } from '../types/admin.types';
 import { API_BASE_URL } from './tokens';
 import { AuthService } from './auth.service';
 import { ToastService } from './toast.service';
+import { getTenantChatUrl } from './tenant-chat-url';
 
 export interface CreateTenantPayload {
   name: string;
@@ -47,6 +48,7 @@ export class TenantService {
 
   selectTenant(tenant: Tenant): void {
     this.selectedTenantSubject.next(tenant);
+    this.auth.setSelectedTenantId(tenant?.id ?? null);
     this.toast.show('info', 'Switched Workspace', `Active context: ${tenant.name}`);
   }
 
@@ -56,14 +58,16 @@ export class TenantService {
     this.http.get<{ items: Tenant[] }>(`${this.apiBase}/api/v1/admin/tenants`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => {
-        this.toast.show('error', 'Load Failed', 'Could not load organizations.');
-        return of({ items: [] });
-      })
+      catchError(() => of({ items: [] }))
     ).subscribe((res) => {
       this.isLoadingSubject.next(false);
-      this.tenantsSubject.next(res.items ?? []);
-      this.selectedTenantSubject.next(res.items?.[0] ?? null);
+      const items = res.items ?? [];
+      this.tenantsSubject.next(items);
+      const current = this.selectedTenantSubject.value;
+      const matched = current ? items.find((t) => t.id === current.id) : null;
+      const chosen = matched ?? items[0] ?? null;
+      this.selectedTenantSubject.next(chosen);
+      this.auth.setSelectedTenantId(chosen?.id ?? null);
     });
   }
 
@@ -79,19 +83,23 @@ export class TenantService {
     ).subscribe((data) => this.platformOverviewSubject.next(data));
   }
 
-  createTenant(payload: CreateTenantPayload, onComplete?: (success: boolean) => void): void {
+  createTenant(payload: CreateTenantPayload, onComplete?: (success: boolean, tenant?: Tenant) => void): void {
     if (!this.auth.token) return onComplete?.(false);
     this.isLoadingSubject.next(true);
 
-    this.http.post(`${this.apiBase}/api/v1/admin/tenants`, payload, {
+    this.http.post<{ tenant: Tenant }>(`${this.apiBase}/api/v1/admin/tenants`, payload, {
       headers: this.auth.authHeaders
     }).subscribe({
-      next: () => {
+      next: (res) => {
         this.isLoadingSubject.next(false);
         this.loadTenants();
         this.loadPlatformOverview();
-        this.toast.show('success', 'Tenant Provisioned', `${payload.name} created.`);
-        if (onComplete) onComplete(true);
+        if (res?.tenant) {
+          this.selectTenant(res.tenant);
+        }
+        const chatUrl = getTenantChatUrl(payload.slug, res?.tenant?.domains?.[0] ? `https://${res.tenant.domains[0]}` : null);
+        this.toast.show('success', 'Tenant Provisioned', `${payload.name} created. Chat URL: ${chatUrl}`);
+        if (onComplete) onComplete(true, res?.tenant);
       },
       error: (err) => {
         this.isLoadingSubject.next(false);

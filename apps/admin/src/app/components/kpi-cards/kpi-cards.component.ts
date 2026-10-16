@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
 import { PlatformOverview, Metrics } from '../../types/admin.types';
@@ -133,7 +133,7 @@ import { IconComponent } from '../shared/icon.component';
     </section>
   `
 })
-export class KpiCardsComponent {
+export class KpiCardsComponent implements OnInit {
   private readonly state = inject(AdminStateService);
 
   overview: PlatformOverview | null = null;
@@ -142,6 +142,11 @@ export class KpiCardsComponent {
   constructor() {
     this.state.platformOverview$.subscribe((o) => (this.overview = o));
     this.state.metrics$.subscribe((m) => (this.metrics = m));
+  }
+
+  ngOnInit(): void {
+    this.state.loadPlatformOverview();
+    this.state.loadMetrics();
   }
 
   get activeRatio(): number {
