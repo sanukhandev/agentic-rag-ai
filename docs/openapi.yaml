@@ -139,6 +139,18 @@ paths:
       security: [{ bearerAuth: [] }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Persona' } } } }
       responses: { '200': { description: Persona published } }
+  /api/v1/admin/tenants/{tenantId}/persona:
+    get:
+      tags: [Platform admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Tenant persona }, '403': { $ref: '#/components/responses/Forbidden' }, '423': { description: Archived tenant is locked } }
+    put:
+      tags: [Platform admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Persona' } } } }
+      responses: { '200': { description: Persona published }, '403': { $ref: '#/components/responses/Forbidden' }, '423': { description: Archived tenant is locked } }
   /api/v1/admin/persona/drafts:
     post:
       tags: [Tenant admin]

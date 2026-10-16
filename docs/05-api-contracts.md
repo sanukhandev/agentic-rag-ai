@@ -24,6 +24,7 @@ The local vertical slice implements these routes with runtime Zod validation and
 | POST /api/v1/admin/tenants | Provision a tenant and owner | Platform-admin RBAC, unique slug/email, audit |
 | GET /api/v1/admin/platform/overview | Aggregate tenant metrics | Platform-admin RBAC; no customer content |
 | PATCH /api/v1/admin/tenants/:id/status | Suspend/reactivate/archive a tenant | Platform-admin RBAC, audited lifecycle transition |
+| GET/PUT /api/v1/admin/tenants/:tenantId/persona | Platform admin reads/updates a tenant AI agent | Platform-admin RBAC, explicit tenant target, archived-tenant guard, audited update |
 
 ## Admin API (authenticated role-based access)
 | Route | Purpose | Required controls |
