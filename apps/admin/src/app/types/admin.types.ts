@@ -124,8 +124,12 @@ export interface WorkflowRun {
 
 export interface CrmLead {
   id: string;
+  tenantId?: string;
+  actionId?: string;
+  sessionId?: string;
   intent: string;
   score: number;
+  quality: 'new' | 'nurture' | 'warm' | 'hot';
   validationPass: boolean;
   leadData: { name?: string; email?: string; phone?: string };
   conversation: Array<{ role: 'user' | 'assistant'; content: string; createdAt: string }>;

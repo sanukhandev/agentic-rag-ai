@@ -186,6 +186,20 @@ export class CommandPaletteComponent {
         action: () => this.state.setSection('studio')
       },
       {
+        id: 'nav-chat',
+        title: 'Go to Customer Chat Testing',
+        category: 'Navigation',
+        icon: 'chat',
+        action: () => this.state.setSection('chat')
+      },
+      {
+        id: 'nav-crm',
+        title: 'Go to CRM Leads & Transcripts',
+        category: 'Navigation',
+        icon: 'users',
+        action: () => this.state.setSection('crm')
+      },
+      {
         id: 'nav-observability',
         title: 'Go to Observability & Telemetry Matrix',
         category: 'Navigation',

@@ -139,6 +139,11 @@ describe('API vertical slice', () => {
     const greeting = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: "Hey ! How'z it Going ?", clientMessageId: 'greeting-1' }).expect(200);
     expect(greeting.body).toMatchObject({ answer: 'Welcome', grounded: false, conversational: true, citations: [] });
     expect(model.prompts).toHaveLength(promptCountBeforeGreeting);
+    const farewellSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
+    const farewell = await api.post('/api/v1/chat/messages').send({ sessionId: farewellSession.body.sessionId, message: 'That’s all, bye', clientMessageId: 'farewell-1' }).expect(200);
+    expect(farewell.body).toMatchObject({ grounded: false, conversational: true, citations: [] });
+    expect(farewell.body.answer).toContain('lovely chatting');
+    await api.post('/api/v1/chat/messages').send({ sessionId: farewellSession.body.sessionId, message: 'Can we continue?', clientMessageId: 'farewell-2' }).expect(410).expect((response) => expect(response.body.error.code).toBe('SESSION_CLOSED'));
     const newerPersona = await api.post('/api/v1/admin/persona/drafts').set('Authorization', `Bearer ${adminToken}`).send({ name: 'Ava New', greeting: 'Welcome', personality: 'Warm', tone: 'Friendly', speakingStyle: 'Short', permittedLanguages: ['en'] }).expect(201);
     await api.post(`/api/v1/admin/persona/versions/${newerPersona.body.version.id}/publish`).set('Authorization', `Bearer ${adminToken}`).expect(200);
     const grounded = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-1' }).expect(200);
@@ -166,6 +171,8 @@ describe('API vertical slice', () => {
     const unsupported = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the office location?', clientMessageId: 'unknown-1' }).expect(200);
     expect(unsupported.body.grounded).toBe(false);
     expect(unsupported.body.citations).toHaveLength(0);
+    expect(unsupported.body.answer).toContain('verified information');
+    expect(unsupported.body.answer).not.toContain('I don’t have that detail');
     const history = await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}`).expect(200);
     expect(history.body.messages.length).toBeGreaterThanOrEqual(4);
     expect(JSON.stringify(history.body.messages)).not.toContain('alice@example.com');
@@ -372,7 +379,9 @@ describe('API vertical slice', () => {
     const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-retention@example.test', password: 'TenantA1Password' }).expect(200);
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
     const stored = await store.getSession(session.body.sessionId);
-    await store.updateSession({ ...stored!, createdAt: new Date(Date.now() - 86_400_000).toISOString() });
+    await store.updateSession({ ...stored!, createdAt: new Date(Date.now() - 86_400_000).toISOString(), lastActivityAt: new Date().toISOString() });
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Still here', clientMessageId: 'retention-active-1' }).expect(200);
+    await store.updateSession({ ...(await store.getSession(session.body.sessionId))!, lastActivityAt: new Date(Date.now() - 11 * 60_000).toISOString() });
     await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Expired?', clientMessageId: 'expired-1' }).expect(410);
     const purge = await api.post('/api/v1/admin/retention/purge-sessions').set('Authorization', `Bearer ${admin.body.token}`).send({ before: new Date().toISOString() }).expect(200);
     expect(purge.body.purged).toBe(1);
@@ -562,5 +571,46 @@ describe('API vertical slice', () => {
     expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', email: 'alice@example.com' }, summary: 'Customer Alice requested a demo via alice@example.com.', summaryStatus: 'completed' });
     expect(JSON.stringify(crm.body.items[0].conversation)).toContain('alice@example.com');
     await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${platform.body.token}`).set('x-tenant-id', tenant.body.tenant.id).expect(200);
+  });
+
+  it('simulates a natural browser lead journey and exposes workflow summary and quality in tenant CRM', async () => {
+    const workflow = new MockWorkflowAdapter();
+    const runtime = createApp({ nodeEnv: 'test', workflow, n8nCallbackSecret: 'crm-secret' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-browser-lead@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Browser Lead Tenant', slug: 'browser-lead-tenant', adminEmail: 'admin-browser-lead@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-browser-lead@example.test', password: 'TenantA1Password' }).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+
+    const greeting = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Hello Nova', clientMessageId: 'browser-lead-1' }).expect(200);
+    expect(greeting.body.conversational).toBe(true);
+    const wellbeing = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'How are you?', clientMessageId: 'browser-lead-2' }).expect(200);
+    expect(wellbeing.body.conversational).toBe(true);
+    const enquiry = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What services do you offer?', clientMessageId: 'browser-lead-3' }).expect(200);
+    expect(enquiry.body.actionProposal).toBeNull();
+    const interest = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to get a service', clientMessageId: 'browser-lead-4' }).expect(200);
+    expect(interest.body.answer).toContain('What name');
+    const name = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'My name is Alice', clientMessageId: 'browser-lead-5' }).expect(200);
+    expect(name.body.answer).toContain('email address or phone');
+    const contact = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'alice@example.com', clientMessageId: 'browser-lead-6' }).expect(200);
+    expect(contact.body.actionProposal).toMatchObject({ intent: 'lead.capture' });
+
+    const confirmed = await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
+    expect(confirmed.body.action.state).toBe('completed');
+    expect(workflow.calls).toHaveLength(1);
+    expect(workflow.calls[0]?.leadContext).toMatchObject({ intent: 'lead.capture', score: 70, quality: 'warm', validationPass: true });
+
+    const actionId = contact.body.actionProposal.id as string;
+    const action = await runtime.store.getAction(actionId);
+    const messages = await runtime.store.listMessages(session.body.sessionId, tenant.body.tenant.id);
+    const created = await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: action?.payload, intent: 'lead.capture', score: workflow.calls[0]?.leadContext?.score, validationPass: workflow.calls[0]?.leadContext?.validationPass, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) }).expect(201);
+    const summary = `Intent: lead.capture. Score: 70. Quality: warm. Full conversation JSON: ${JSON.stringify(created.body.lead.conversation)}`;
+    await api.put(`/api/v1/internal/crm/leads/${created.body.lead.id}/summary`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, summary, status: 'completed' }).expect(200);
+
+    const crm = await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    expect(crm.body.items).toHaveLength(1);
+    expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', email: 'alice@example.com' }, intent: 'lead.capture', score: 70, quality: 'warm', validationPass: true, summaryStatus: 'completed' });
+    expect(crm.body.items[0].summary).toContain('Quality: warm');
+    expect(crm.body.items[0].conversation).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'user' }), expect.objectContaining({ role: 'assistant' })]));
   });
 });

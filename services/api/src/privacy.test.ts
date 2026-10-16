@@ -3,7 +3,7 @@ import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sav
 
 describe('privacy boundary', () => {
   it('masks email and phone values before an external boundary and rehydrates only in the same session', () => {
-    const session = { id: 'session', tenantId: 'tenant', createdAt: new Date().toISOString(), personaVersionId: null, tokenMap: new Map<string, string>() };
+    const session = { id: 'session', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
     const vault = new TokenVault('test-vault-secret-2026');
     const result = maskPii('Please email alice@example.com or call +971 50 123 4567.');
     saveTokens(session, result.tokens, vault);
@@ -18,7 +18,7 @@ describe('privacy boundary', () => {
   });
 
   it('masks structured names before external boundaries', () => {
-    const session = { id: 'session-name', tenantId: 'tenant', createdAt: new Date().toISOString(), personaVersionId: null, tokenMap: new Map<string, string>() };
+    const session = { id: 'session-name', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
     const vault = new TokenVault('test-vault-secret-2026');
     const result = maskPii('My name is Alice Karim and I need a quote.');
     saveTokens(session, result.tokens, vault);
@@ -32,7 +32,7 @@ describe('privacy boundary', () => {
   });
 
   it('allocates response tokens without overwriting earlier session values', () => {
-    const session = { id: 'session-output', tenantId: 'tenant', createdAt: new Date().toISOString(), personaVersionId: null, tokenMap: new Map<string, string>() };
+    const session = { id: 'session-output', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
     const vault = new TokenVault('test-vault-secret-2026');
     const input = maskPii('Please email alice@example.com.');
     saveTokens(session, input.tokens, vault);
@@ -43,7 +43,7 @@ describe('privacy boundary', () => {
   });
 
   it('supports key rotation and expiry without exposing the old value', () => {
-    const session = { id: 'session-rotate', tenantId: 'tenant', createdAt: new Date().toISOString(), personaVersionId: null, tokenMap: new Map<string, string>() };
+    const session = { id: 'session-rotate', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
     const vault = new TokenVault('test-vault-secret-2026');
     const rotated = new TokenVault('rotated-vault-secret-2026');
     const masked = maskPii('alice@example.com');
@@ -51,7 +51,7 @@ describe('privacy boundary', () => {
     vault.rotate(session, rotated);
     expect(rehydrateForSession(session, masked.masked, vault)).not.toContain('alice@example.com');
     expect(rehydrateForSession(session, masked.masked, rotated)).toContain('alice@example.com');
-    const expiredSession = { id: 'session-expired', tenantId: 'tenant', createdAt: new Date().toISOString(), personaVersionId: null, tokenMap: new Map<string, string>() };
+    const expiredSession = { id: 'session-expired', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
     saveTokens(expiredSession, masked.tokens, new TokenVault('expired-vault-secret-2026', -1));
     expect(rehydrateForSession(expiredSession, masked.masked, new TokenVault('expired-vault-secret-2026'))).not.toContain('alice@example.com');
     expect(expiredSession.tokenMap.size).toBe(0);

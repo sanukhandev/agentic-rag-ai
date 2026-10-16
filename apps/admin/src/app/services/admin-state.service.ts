@@ -85,6 +85,7 @@ export class AdminStateService {
   readonly workflowRuns$: Observable<WorkflowRun[]> = this.observability.workflowRuns$;
   readonly auditEvents$: Observable<AuditEvent[]> = this.observability.auditEvents$;
   readonly crmLeads$ = this.crm.leads$;
+  readonly crmIsLoading$ = this.crm.isLoading$;
   readonly toasts$: Observable<ToastMessage[]> = this.toastService.toasts$;
 
   constructor() {

@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ActionGateway, HttpN8nWorkflowAdapter, MockWorkflowAdapter, signN8nPayload, verifyN8nPayload } from './actions.js';
+import { ActionGateway, HttpN8nWorkflowAdapter, MockWorkflowAdapter, leadQuality, signN8nPayload, verifyN8nPayload } from './actions.js';
 import { MemoryStore } from './store-memory.js';
 
 describe('action gateway', () => {
+  it('maps lead scores to readable quality bands', () => {
+    expect(leadQuality(0)).toBe('new');
+    expect(leadQuality(40)).toBe('nurture');
+    expect(leadQuality(70)).toBe('warm');
+    expect(leadQuality(90)).toBe('hot');
+  });
+
   it('requires confirmation, sends only opaque data, and is idempotent', async () => {
     const store = new MemoryStore();
     const workflow = new MockWorkflowAdapter();

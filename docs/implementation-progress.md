@@ -100,7 +100,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Latest workspace test run | `DATABASE_URL=... npm test` | Admin 2 + Web 3 + API 50 (including PostgreSQL) + Contracts 3 passed |
 | Chat resume/history | `GET /api/v1/chat/sessions/:id` API assertion | pass (masked, tenant-scoped messages) |
 | Durable admin session revocation and expiry | `auth.test.ts` covers logout revocation and expired durable sessions; API logout assertion backed by store session records; PostgreSQL migration `010-auth-sessions.sql` | pass (memory + migration applied locally) |
-| Chat session expiry and purge | API expiry/purge test plus PostgreSQL cascade purge assertion | pass locally |
+| Chat session lifecycle | Sessions refresh on each accepted message, close after a farewell, expire after 10 minutes of inactivity, and purge by `last_activity_at`; migration `017-chat-activity.sql` | pass locally; browser close relies on inactivity because close events are not reliable |
 | Dependency audit | `npm audit --omit=dev --audit-level=high` | pass: 0 vulnerabilities after Angular 21.2.25, Next 16.4.1, React 19.3.1 and TypeScript 5.9.3 upgrade |
 | Reproducible install dry run | `npm ci --dry-run` | pass locally |
 | Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, compose security defaults, high-confidence repository secret scan, Admin 2 + Web 3 + API 53 + Contracts 3, clean-room tenant A/B and five-source acceptance, builds, 0 audit vulnerabilities and Python 16 |

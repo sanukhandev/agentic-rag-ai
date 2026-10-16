@@ -111,6 +111,8 @@ export interface Session {
   id: string;
   tenantId: string;
   createdAt: string;
+  lastActivityAt: string;
+  closedAt: string | null;
   personaVersionId: string | null;
   tokenMap: Map<string, string>;
 }

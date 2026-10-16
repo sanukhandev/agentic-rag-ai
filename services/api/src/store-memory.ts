@@ -176,14 +176,15 @@ export class MemoryStore implements Store {
   async searchSearchableChunks(tenantId: string, audience: 'public' | 'internal', _queryEmbedding: number[], limit: number): Promise<Array<{ source: Source; chunk: Chunk }>> { return (await this.listSearchableChunks(tenantId, audience)).slice(0, limit); }
 
   async createSession(tenantId: string, personaVersionId: string | null = null): Promise<Session> {
-    const session: Session = { id: randomUUID(), tenantId, createdAt: now(), personaVersionId, tokenMap: new Map() };
+    const timestamp = now();
+    const session: Session = { id: randomUUID(), tenantId, createdAt: timestamp, lastActivityAt: timestamp, closedAt: null, personaVersionId, tokenMap: new Map() };
     this.sessions.set(session.id, session);
     return session;
   }
   async getSession(id: string): Promise<Session | null> { return this.sessions.get(id) ?? null; }
   async purgeExpiredSessions(tenantId: string, before: string): Promise<number> {
     const cutoff = Date.parse(before);
-    const expired = [...this.sessions.values()].filter((session) => session.tenantId === tenantId && Date.parse(session.createdAt) < cutoff);
+    const expired = [...this.sessions.values()].filter((session) => session.tenantId === tenantId && Date.parse(session.lastActivityAt) < cutoff);
     for (const session of expired) {
       this.sessions.delete(session.id);
       for (const [messageId, message] of this.messages) if (message.sessionId === session.id) this.messages.delete(messageId);

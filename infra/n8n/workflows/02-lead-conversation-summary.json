@@ -1,4 +1,5 @@
 {
+  "id": "KW2teJmT6SdLV4ow",
   "name": "Agentic CRM - Summarize Lead Conversation",
   "nodes": [
     {
@@ -17,7 +18,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $json.body ?? $json;\nif (!input.leadId || !input.tenantId || !Array.isArray(input.conversation)) throw new Error('Conversation summary input is invalid');\nconst userTurns = input.conversation.filter((message) => message.role === 'user').map((message) => message.content.trim()).filter(Boolean);\nconst summary = `Lead conversation captured ${userTurns.length} user turn(s). Customer intent: lead.capture. Conversation: ${userTurns.join(' | ')}`.slice(0, 10000);\nreturn [{ json: { leadId: input.leadId, tenantId: input.tenantId, summary } }];"
+        "jsCode": "const input = $json.body ?? $json;\nif (!input.leadId || !input.tenantId || !Array.isArray(input.conversation)) throw new Error('Conversation summary input is invalid');\nconst userTurns = input.conversation.filter((message) => message.role === 'user').map((message) => message.content.trim()).filter(Boolean);\nconst conversationJson = JSON.stringify(input.conversation);\nconst summary = `Lead conversation captured ${userTurns.length} user turn(s). Intent: ${input.intent ?? 'lead.capture'}. Score: ${input.score ?? 'unknown'}. Quality: ${input.quality ?? 'unknown'}. Transcript: ${input.conversation.map((message) => `${message.role}: ${message.content}`).join(' | ')}. Full conversation JSON: ${conversationJson}`.slice(0, 20000);\nreturn [{ json: { leadId: input.leadId, tenantId: input.tenantId, summary } }];"
       },
       "id": "f8e2e11d-0d3e-4e83-8d21-000000000012",
       "name": "Generate Conversation Summary",

@@ -59,7 +59,7 @@ export class AppComponent implements OnInit {
     { id: 'knowledge', label: 'Knowledge', icon: 'knowledge' },
     { id: 'studio', label: 'AI Studio', icon: 'studio' },
     { id: 'chat', label: 'Customer Chat', icon: 'chat' },
-    { id: 'crm', label: 'CRM', icon: 'organizations' },
+    { id: 'crm', label: 'CRM', icon: 'users' },
     { id: 'observability', label: 'Observability', icon: 'observability' },
     { id: 'settings', label: 'Settings', icon: 'settings' }
   ];
@@ -94,9 +94,6 @@ export class AppComponent implements OnInit {
     return this.navTabs.filter((tab) => {
       if (tab.id === 'organizations') {
         return this.role === 'platform_admin';
-      }
-      if (tab.id === 'crm') {
-        return this.role !== 'platform_admin';
       }
       return true;
     });

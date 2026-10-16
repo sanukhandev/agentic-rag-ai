@@ -5,11 +5,13 @@ import { opaqueReference } from './privacy.js';
 import { assertExternalEndpoint } from './runtime-security.js';
 
 export interface WorkflowResult { externalReference: string; }
-export interface LeadWorkflowContext { actionId: string; intent: string; score: number; validationPass: boolean; conversation: LeadConversationMessage[]; }
+export type LeadQuality = 'new' | 'nurture' | 'warm' | 'hot';
+export interface LeadWorkflowContext { actionId: string; intent: string; score: number; quality: LeadQuality; validationPass: boolean; conversation: LeadConversationMessage[]; }
 export interface WorkflowAdapter { execute(input: { workflowKey: string; tenantId: string; sessionId: string; opaqueReference: string; idempotencyKey: string; leadData?: LeadData; leadContext?: LeadWorkflowContext }): Promise<WorkflowResult>; }
 
 export const leadValidationPass = (leadData: LeadData): boolean => Boolean(leadData.name && (leadData.email || leadData.phone));
 export const leadScore = (leadData: LeadData): number => (leadData.name ? 30 : 0) + (leadData.email ? 40 : 0) + (leadData.phone ? 30 : 0);
+export const leadQuality = (score: number): LeadQuality => score >= 90 ? 'hot' : score >= 70 ? 'warm' : score >= 40 ? 'nurture' : 'new';
 
 export const isSafeExternalReference = (value: string): boolean => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
 
@@ -100,7 +102,8 @@ export class ActionGateway {
     }
     try {
       const messages = await this.store.listMessages(action.sessionId, tenantId);
-      const leadContext: LeadWorkflowContext = { actionId: action.id, intent: action.workflowKey, score: leadScore(action.payload), validationPass: leadValidationPass(action.payload), conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) };
+      const score = leadScore(action.payload);
+      const leadContext: LeadWorkflowContext = { actionId: action.id, intent: action.workflowKey, score, quality: leadQuality(score), validationPass: leadValidationPass(action.payload), conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) };
       const result = await this.adapter.execute({ workflowKey: action.workflowKey, tenantId, sessionId: action.sessionId, opaqueReference: action.opaqueReference, idempotencyKey: action.idempotencyKey, leadData: action.payload, leadContext });
       const updated = { ...action, state: 'completed' as const, result };
       await this.store.updateAction(updated);

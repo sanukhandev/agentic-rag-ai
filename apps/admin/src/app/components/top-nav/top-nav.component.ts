@@ -314,6 +314,16 @@ interface MegaMenuColumn {
 
           <button
             type="button"
+            (click)="onMobileNavigate('crm')"
+            class="flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium text-left transition-colors"
+            [ngClass]="activeSection === 'crm' ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100'"
+          >
+            <app-icon name="users" classNames="w-3.5 h-3.5"></app-icon>
+            <span>CRM Leads</span>
+          </button>
+
+          <button
+            type="button"
             (click)="onMobileNavigate('observability')"
             class="flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium text-left transition-colors"
             [ngClass]="activeSection === 'observability' ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100'"
@@ -698,6 +708,13 @@ export class TopNavComponent {
                 icon: 'chat',
                 badge: 'Live',
                 action: () => this.navigateTo('chat')
+              },
+              {
+                title: 'Captured CRM Leads',
+                desc: 'Review validated lead records and conversation transcripts',
+                icon: 'users',
+                badge: 'CRM',
+                action: () => this.navigateTo('crm')
               },
               {
                 title: 'Version History',

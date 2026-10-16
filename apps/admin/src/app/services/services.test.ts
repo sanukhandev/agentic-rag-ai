@@ -33,7 +33,7 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(resolveTenantSlug('', 'default-tenant')).toBe('default-tenant');
   });
 
-  it('excludes organizations tab from tenant admin navigation', () => {
+  it('excludes organizations tab from tenant admin navigation while keeping crm accessible', () => {
     const navTabs = [
       { id: 'overview', label: 'Overview' },
       { id: 'organizations', label: 'Organizations' },
@@ -48,7 +48,6 @@ describe('SOLID Services and Architecture Contracts', () => {
     const filterTabsForRole = (role: string) =>
       navTabs.filter((tab) => {
         if (tab.id === 'organizations') return role === 'platform_admin';
-        if (tab.id === 'crm') return role !== 'platform_admin';
         return true;
       });
 
@@ -58,6 +57,6 @@ describe('SOLID Services and Architecture Contracts', () => {
 
     const platformAdminTabs = filterTabsForRole('platform_admin');
     expect(platformAdminTabs.some((t) => t.id === 'organizations')).toBe(true);
-    expect(platformAdminTabs.some((t) => t.id === 'crm')).toBe(false);
+    expect(platformAdminTabs.some((t) => t.id === 'crm')).toBe(true);
   });
 });

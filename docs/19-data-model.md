@@ -29,7 +29,7 @@ erDiagram
   CHUNKS { uuid id PK; uuid source_id FK; uuid tenant_id FK; uuid version_id FK; int ordinal; vector embedding }
   INGESTION_JOBS { uuid id PK; uuid tenant_id FK; uuid source_id FK; text status; text lease_expires_at }
   AUTH_SESSIONS { text token_hash PK; uuid user_id FK; timestamptz expires_at; timestamptz revoked_at }
-  CHAT_SESSIONS { uuid id PK; uuid tenant_id FK; uuid persona_version_id FK; timestamptz created_at }
+  CHAT_SESSIONS { uuid id PK; uuid tenant_id FK; uuid persona_version_id FK; timestamptz created_at; timestamptz last_activity_at; timestamptz closed_at }
   MESSAGES { uuid id PK; uuid session_id FK; uuid tenant_id FK; text role; text masked_content }
   ACTIONS { uuid id PK; uuid tenant_id FK; uuid session_id FK; text state; text opaque_reference }
   AUDIT_EVENTS { uuid id PK; uuid tenant_id FK; uuid actor_id FK; text event_name; jsonb metadata }

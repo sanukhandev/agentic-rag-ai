@@ -1,4 +1,5 @@
 {
+  "id": "jMhE7ENPNNtLUFJm",
   "name": "Agentic CRM - Validate and Store Lead",
   "nodes": [
     {
@@ -56,7 +57,7 @@
         "sendHeaders": false,
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ leadId: $('Insert CRM Lead').first().json.lead.id, tenantId: $('Validate Lead').first().json.tenantId, conversation: $('Validate Lead').first().json.conversation }) }}",
+        "jsonBody": "={{ JSON.stringify({ leadId: $('Insert CRM Lead').first().json.lead.id, tenantId: $('Validate Lead').first().json.tenantId, intent: $('Validate Lead').first().json.intent, score: $('Validate Lead').first().json.score, quality: $('Validate Lead').first().json.quality, conversation: $('Validate Lead').first().json.conversation }) }}",
         "options": {}
       },
       "id": "f8e2e11d-0d3e-4e83-8d21-000000000004",
