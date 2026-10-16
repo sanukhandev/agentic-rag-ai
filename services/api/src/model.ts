@@ -62,6 +62,7 @@ export class AzureFoundryModel implements ChatModel {
   constructor(private readonly endpoint: string, private readonly deployment: string, private readonly apiKey: string, private readonly apiVersion = '2024-10-21') { assertExternalEndpoint(endpoint, 'Azure AI'); }
 
   async draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; persona?: ModelPersona; conversation?: ConversationTurn[] }): Promise<ModelDraft> {
+    const safeFallback = (): ModelDraft => ({ answer: naturalAbstention(), citationIds: [], proposedIntent: null });
     if (!this.endpoint || !this.deployment || !this.apiKey) throw new Error('Azure AI Foundry is not configured.');
     const endpoint = this.endpoint.replace(/\/$/, '');
     const v1 = /\/openai\/v1$/i.test(endpoint);
@@ -82,17 +83,20 @@ export class AzureFoundryModel implements ChatModel {
       }),
     });
     if (!response.ok) throw new Error(`Azure AI Foundry request failed with status ${response.status}.`);
-    const body = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> };
+    let body: { choices?: Array<{ message?: { content?: unknown } }> };
+    try { body = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> }; } catch { return safeFallback(); }
     const content = body.choices?.[0]?.message?.content;
-    if (typeof content !== 'string') throw new Error('Azure AI Foundry response did not contain a text message.');
-    const result = z.object({
+    if (typeof content !== 'string') return safeFallback();
+    const schema = z.object({
       answer: z.string().min(1).max(8000),
       citationIds: z.array(z.string().min(1)).max(8),
       // Azure may return a descriptive non-action intent such as "inform"; only an explicit lead action is actionable.
       proposedIntent: z.preprocess((value) => value === 'lead.capture' ? value : null, z.literal('lead.capture').nullable()),
-    }).strict().safeParse(JSON.parse(content));
-    if (!result.success) throw new Error('Azure AI Foundry response did not match the grounded response contract.');
-    return result.data;
+    }).strict();
+    let parsed: unknown;
+    try { parsed = JSON.parse(content); } catch { return safeFallback(); }
+    const result = schema.safeParse(parsed);
+    return result.success ? result.data : safeFallback();
   }
 }
 

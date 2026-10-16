@@ -53,10 +53,17 @@ describe('Azure Foundry model adapter', () => {
     fetchMock.mockRestore();
   });
 
-  it('fails closed on malformed model output', async () => {
+  it('returns a safe abstention for malformed model output', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: '{"answer":"unsafe"}' } }] }), { status: 200 }));
     const model = new AzureFoundryModel('https://foundry.example', 'gpt-4.1-mini', 'server-key');
-    await expect(model.draft({ maskedMessage: 'question', personaName: 'Ava', evidence: [] })).rejects.toThrow('grounded response contract');
+    await expect(model.draft({ maskedMessage: 'question', personaName: 'Ava', evidence: [] })).resolves.toEqual({ answer: naturalAbstention(), citationIds: [], proposedIntent: null });
+    vi.restoreAllMocks();
+  });
+
+  it('returns a safe abstention when Azure returns invalid JSON', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: 'not-json' } }] }), { status: 200 }));
+    const model = new AzureFoundryModel('https://foundry.example', 'gpt-4.1-mini', 'server-key');
+    await expect(model.draft({ maskedMessage: 'question', personaName: 'Ava', evidence: [] })).resolves.toMatchObject({ answer: naturalAbstention(), citationIds: [], proposedIntent: null });
     vi.restoreAllMocks();
   });
 
