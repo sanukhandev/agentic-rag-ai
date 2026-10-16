@@ -439,6 +439,15 @@ describe('API vertical slice', () => {
     await api.post('/api/v1/chat/sessions').set('Origin', 'https://other.example').send({ tenantSlug: tenant.body.tenant.slug }).expect(403);
   });
 
+  it('allows both local loopback origins outside production', async () => {
+    const api = request(createApp({ nodeEnv: 'development' }).app);
+    for (const origin of ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:4200', 'http://127.0.0.1:4200']) {
+      const preflight = await api.options('/api/v1/chat/sessions').set('Origin', origin).set('Access-Control-Request-Method', 'POST').expect(204);
+      expect(preflight.headers['access-control-allow-origin']).toBe(origin);
+    }
+    await api.options('/api/v1/chat/sessions').set('Origin', 'https://unknown.example').set('Access-Control-Request-Method', 'POST').expect(403);
+  });
+
   it('allows only failed tenant ingestion jobs to be retried', async () => {
     const runtime = createApp({ nodeEnv: 'test' });
     const api = request(runtime.app);
