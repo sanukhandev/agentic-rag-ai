@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { Component, inject } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { fileMimeType } from './upload-utils';
 import { parsePermittedLanguages } from './persona-utils';
@@ -19,9 +19,11 @@ type WorkflowRun = { id: string; workflowKey: string; state: string; createdAt: 
 type AuditEvent = { id: string; eventName: string; metadata: Record<string, string | number | boolean | null>; createdAt: string };
 type PlatformOverview = { tenants: { total: number; active: number; suspended: number; archived: number }; metrics: Array<{ tenantId: string; metrics: Metrics }> };
 const api = 'http://127.0.0.1:4000';
+const adminSessionKey = 'agentic-rag-admin-token';
+const adminRoleKey = 'agentic-rag-admin-role';
 
 @Component({ selector: 'app-root', standalone: true, imports: [CommonModule, FormsModule], templateUrl: './app.component.html' })
-export class AppComponent {
+export class AppComponent implements OnInit {
   private readonly http = inject(HttpClient);
   email = 'admin@example.test'; password = ''; token = ''; role = ''; error = ''; sources: Source[] = []; ingestionJobs: IngestionJob[] = []; tenants: Tenant[] = []; domains: TenantDomain[] = []; members: Member[] = []; workflowRuns: WorkflowRun[] = []; auditEvents: AuditEvent[] = []; platformOverview: PlatformOverview | null = null; health: Health | null = null; metrics: Metrics | null = null; persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: ['en'] };
   title = ''; content = ''; sourceUrl = ''; audience = 'public'; selectedFile: File | null = null;
@@ -32,10 +34,23 @@ export class AppComponent {
   previewMessage = 'What can you help me with?'; previewAnswer = ''; previewGrounded = false;
   permittedLanguageText = 'en';
 
+  ngOnInit(): void {
+    const storedToken = sessionStorage.getItem(adminSessionKey);
+    if (!storedToken) return;
+    this.token = storedToken;
+    this.role = sessionStorage.getItem(adminRoleKey) ?? '';
+    this.http.get<{ user: { role: string } }>(`${api}/api/v1/auth/me`, { headers: { Authorization: `Bearer ${storedToken}` } }).subscribe({
+      next: (body) => this.activateSession(body.user.role),
+      error: () => this.clearSession(),
+    });
+  }
+
   get canEditSources(): boolean { return this.role === 'tenant_admin' || this.role === 'tenant_editor'; }
   get canManagePersona(): boolean { return this.role === 'tenant_admin'; }
 
-  login(): void { this.http.post<{ token: string; user: { role: string } }>(`${api}/api/v1/auth/login`, { email: this.email, password: this.password }).subscribe({ next: (body) => { this.token = body.token; this.role = body.user.role; if (this.role === 'platform_admin' || this.role === 'tenant_admin') this.loadHealth(); if (this.role === 'platform_admin') { this.loadTenants(); this.loadPlatformOverview(); } else { this.loadSources(); this.loadJobs(); this.loadDashboard(); this.loadWorkflowRuns(); this.loadAudit(); this.loadPersona(); this.loadPersonaVersions(); if (this.role === 'tenant_admin') { this.loadDomains(); this.loadMembers(); this.loadChannel(); } } }, error: () => { this.error = 'Login failed.'; } }); }
+  login(): void { this.http.post<{ token: string; user: { role: string } }>(`${api}/api/v1/auth/login`, { email: this.email, password: this.password }).subscribe({ next: (body) => { this.token = body.token; sessionStorage.setItem(adminSessionKey, body.token); this.activateSession(body.user.role); }, error: () => { this.error = 'Login failed.'; } }); }
+  private activateSession(role: string): void { this.error = ''; this.role = role; sessionStorage.setItem(adminRoleKey, role); if (this.role === 'platform_admin' || this.role === 'tenant_admin') this.loadHealth(); if (this.role === 'platform_admin') { this.loadTenants(); this.loadPlatformOverview(); } else { this.loadSources(); this.loadJobs(); this.loadDashboard(); this.loadWorkflowRuns(); this.loadAudit(); this.loadPersona(); this.loadPersonaVersions(); if (this.role === 'tenant_admin') { this.loadDomains(); this.loadMembers(); this.loadChannel(); } } }
+  private clearSession(): void { sessionStorage.removeItem(adminSessionKey); sessionStorage.removeItem(adminRoleKey); this.token = ''; this.role = ''; this.metrics = null; this.platformOverview = null; this.health = null; this.ingestionJobs = []; this.domains = []; this.members = []; this.workflowRuns = []; }
   loadTenants(): void { this.http.get<{ items: Tenant[] }>(`${api}/api/v1/admin/tenants`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.tenants = body.items; }, error: () => { this.error = 'Could not load tenants.'; } }); }
   loadPlatformOverview(): void { this.http.get<PlatformOverview>(`${api}/api/v1/admin/platform/overview`, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: (body) => { this.platformOverview = body; }, error: () => { this.error = 'Could not load platform overview.'; } }); }
   createTenant(): void { this.http.post(`${api}/api/v1/admin/tenants`, { name: this.tenantName, slug: this.tenantSlug, adminEmail: this.tenantAdminEmail, adminPassword: this.tenantAdminPassword }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.tenantName = ''; this.tenantSlug = ''; this.tenantAdminEmail = ''; this.tenantAdminPassword = ''; this.loadTenants(); }, error: () => { this.error = 'Tenant could not be created.'; } }); }
@@ -84,5 +99,5 @@ export class AppComponent {
   purgeExpiredSessions(): void { if (!window.confirm('Purge chat sessions older than 24 hours?')) return; const before = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); this.http.post(`${api}/api/v1/admin/retention/purge-sessions`, { before }, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.loadDashboard(); this.loadAudit(); }, error: () => { this.error = 'Expired sessions could not be purged.'; } }); }
   publish(source: Source): void { this.http.post(`${api}/api/v1/admin/sources/${source.id}/publish`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadSources(), error: () => { this.error = 'Source could not be published.'; } }); }
   revoke(source: Source): void { this.http.post(`${api}/api/v1/admin/sources/${source.id}/revoke`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.loadSources(), error: () => { this.error = 'Source could not be revoked.'; } }); }
-  logout(): void { this.http.post(`${api}/api/v1/auth/logout`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => { this.token = ''; this.role = ''; this.metrics = null; this.platformOverview = null; this.health = null; this.ingestionJobs = []; this.domains = []; this.members = []; this.workflowRuns = []; this.auditEvents = []; }, error: () => { this.token = ''; this.role = ''; } }); }
+  logout(): void { this.http.post(`${api}/api/v1/auth/logout`, {}, { headers: { Authorization: `Bearer ${this.token}` } }).subscribe({ next: () => this.clearSession(), error: () => this.clearSession() }); }
 }
