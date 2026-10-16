@@ -75,6 +75,12 @@ import { CommonModule } from '@angular/common';
         <path d="M18 6 6 18M6 6l12 12" />
       </ng-container>
 
+      <ng-container *ngIf="name === 'menu'">
+        <line x1="4" x2="20" y1="12" y2="12" />
+        <line x1="4" x2="20" y1="6" y2="6" />
+        <line x1="4" x2="20" y1="18" y2="18" />
+      </ng-container>
+
       <ng-container *ngIf="name === 'chevron-down'">
         <path d="m6 9 6 6 6-6" />
       </ng-container>

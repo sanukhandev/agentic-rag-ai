@@ -24,188 +24,180 @@ interface MegaMenuColumn {
   imports: [CommonModule, IconComponent, BadgeComponent],
   template: `
     <header class="sticky top-0 z-40 w-full border-b border-neutral-200/80 bg-white/95 backdrop-blur-md">
-      <!-- Main Top Bar -->
-      <div class="mx-auto flex h-16 max-w-[1536px] items-center justify-between px-4 sm:px-6 lg:px-8">
+      <!-- Main Top Bar: Compact 56px height, high visual hierarchy, spacious editorial feel -->
+      <div class="mx-auto flex h-14 max-w-[1536px] items-center justify-between px-4 sm:px-6 lg:px-8">
         
         <!-- Left Brand & Navigation Group -->
-        <div class="flex items-center gap-8">
-          <!-- Logo & Platform Label -->
+        <div class="flex items-center gap-4 lg:gap-6 min-w-0">
+          <!-- Logo & Platform Label (Streamlined, no stacked bulk) -->
           <a
             href="javascript:void(0)"
             (click)="navigateTo('overview')"
-            class="group flex items-center gap-3 transition-opacity hover:opacity-90"
+            class="group flex items-center gap-2.5 shrink-0 transition-opacity hover:opacity-90"
+            title="Agentic RAG AI Dashboard"
           >
-            <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-neutral-900 text-white shadow-sm transition-transform group-hover:scale-105">
-              <app-icon name="logo" classNames="w-5 h-5 text-white"></app-icon>
+            <div class="flex h-7 w-7 items-center justify-center rounded-md bg-neutral-900 text-white shadow-xs transition-transform group-hover:scale-105">
+              <app-icon name="logo" classNames="w-4 h-4 text-white"></app-icon>
             </div>
-            <div class="flex flex-col">
-              <div class="flex items-center gap-2">
-                <span class="text-xs font-bold tracking-[0.18em] text-neutral-900 uppercase">Agentic RAG AI</span>
-                <span class="rounded bg-neutral-100 px-1.5 py-0.2 text-[10px] font-mono font-medium text-neutral-600">v2.4</span>
-              </div>
-              <span class="text-[11px] font-normal text-neutral-500">Knowledge Operations</span>
-            </div>
+            <span class="text-xs font-bold tracking-[0.14em] text-neutral-900 uppercase">
+              Agentic RAG AI
+            </span>
           </a>
 
-          <!-- Top Nav Tabs with Mega Menu triggers -->
-          <nav class="hidden md:flex items-center gap-1" aria-label="Main Navigation">
-            <!-- Overview (direct link) -->
+          <!-- Subtle Hairline Separator -->
+          <div class="hidden lg:block h-4 w-px bg-neutral-200/90 shrink-0"></div>
+
+          <!-- Top Nav Tabs with Mega Menu triggers (Text-first, Poppins, uncluttered) -->
+          <nav class="hidden lg:flex items-center gap-0.5" aria-label="Main Navigation">
+            <!-- 1. Overview (direct link) -->
             <button
               type="button"
               (click)="navigateTo('overview')"
-              class="relative flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded-md transition-all"
-              [ngClass]="activeSection === 'overview' && !activeMegaMenu ? 'text-neutral-900 bg-neutral-100' : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50'"
+              class="relative px-2.5 py-1.5 text-[13px] font-medium rounded-md transition-all"
+              [ngClass]="activeSection === 'overview' && !activeMegaMenu ? 'text-neutral-950 bg-neutral-100 font-semibold' : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-50'"
             >
-              <app-icon name="overview" classNames="w-3.5 h-3.5"></app-icon>
-              <span>Overview</span>
+              Overview
             </button>
 
-            <!-- Organizations (Mega Menu) -->
+            <!-- 2. Organizations (Mega Menu) -->
             <button
               type="button"
               (click)="toggleMenu('organizations')"
               [attr.aria-expanded]="activeMegaMenu === 'organizations'"
-              class="group relative flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded-md transition-all"
-              [ngClass]="activeSection === 'organizations' || activeMegaMenu === 'organizations' ? 'text-neutral-900 bg-neutral-100' : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50'"
+              class="group relative flex items-center gap-1 px-2.5 py-1.5 text-[13px] font-medium rounded-md transition-all"
+              [ngClass]="activeSection === 'organizations' || activeMegaMenu === 'organizations' ? 'text-neutral-950 bg-neutral-100 font-semibold' : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-50'"
             >
-              <app-icon name="organizations" classNames="w-3.5 h-3.5"></app-icon>
               <span>Organizations</span>
               <app-icon
                 name="chevron-down"
-                classNames="w-3 h-3 transition-transform duration-200"
-                [ngClass]="activeMegaMenu === 'organizations' ? 'rotate-180 text-neutral-900' : 'text-neutral-400 group-hover:text-neutral-700'"
+                classNames="w-2.5 h-2.5 transition-transform duration-200"
+                [ngClass]="activeMegaMenu === 'organizations' ? 'rotate-180 text-neutral-950' : 'text-neutral-400 group-hover:text-neutral-700'"
               ></app-icon>
             </button>
 
-            <!-- Knowledge (Mega Menu) -->
+            <!-- 3. Knowledge (Mega Menu) -->
             <button
               type="button"
               (click)="toggleMenu('knowledge')"
               [attr.aria-expanded]="activeMegaMenu === 'knowledge'"
-              class="group relative flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded-md transition-all"
-              [ngClass]="activeSection === 'knowledge' || activeMegaMenu === 'knowledge' ? 'text-neutral-900 bg-neutral-100' : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50'"
+              class="group relative flex items-center gap-1 px-2.5 py-1.5 text-[13px] font-medium rounded-md transition-all"
+              [ngClass]="activeSection === 'knowledge' || activeMegaMenu === 'knowledge' ? 'text-neutral-950 bg-neutral-100 font-semibold' : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-50'"
             >
-              <app-icon name="knowledge" classNames="w-3.5 h-3.5"></app-icon>
               <span>Knowledge</span>
               <app-icon
                 name="chevron-down"
-                classNames="w-3 h-3 transition-transform duration-200"
-                [ngClass]="activeMegaMenu === 'knowledge' ? 'rotate-180 text-neutral-900' : 'text-neutral-400 group-hover:text-neutral-700'"
+                classNames="w-2.5 h-2.5 transition-transform duration-200"
+                [ngClass]="activeMegaMenu === 'knowledge' ? 'rotate-180 text-neutral-950' : 'text-neutral-400 group-hover:text-neutral-700'"
               ></app-icon>
             </button>
 
-            <!-- AI Studio (Mega Menu) -->
+            <!-- 4. AI Studio (Mega Menu) -->
             <button
               type="button"
               (click)="toggleMenu('studio')"
               [attr.aria-expanded]="activeMegaMenu === 'studio'"
-              class="group relative flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded-md transition-all"
-              [ngClass]="activeSection === 'studio' || activeMegaMenu === 'studio' ? 'text-neutral-900 bg-neutral-100' : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50'"
+              class="group relative flex items-center gap-1 px-2.5 py-1.5 text-[13px] font-medium rounded-md transition-all"
+              [ngClass]="activeSection === 'studio' || activeMegaMenu === 'studio' ? 'text-neutral-950 bg-neutral-100 font-semibold' : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-50'"
             >
-              <app-icon name="studio" classNames="w-3.5 h-3.5"></app-icon>
               <span>AI Studio</span>
               <app-icon
                 name="chevron-down"
-                classNames="w-3 h-3 transition-transform duration-200"
-                [ngClass]="activeMegaMenu === 'studio' ? 'rotate-180 text-neutral-900' : 'text-neutral-400 group-hover:text-neutral-700'"
+                classNames="w-2.5 h-2.5 transition-transform duration-200"
+                [ngClass]="activeMegaMenu === 'studio' ? 'rotate-180 text-neutral-950' : 'text-neutral-400 group-hover:text-neutral-700'"
               ></app-icon>
             </button>
 
-            <!-- Customer Chat (Direct Link) -->
-            <button
-              type="button"
-              (click)="navigateTo('chat')"
-              class="relative flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded-md transition-all"
-              [ngClass]="activeSection === 'chat' && !activeMegaMenu ? 'text-neutral-900 bg-neutral-100' : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50'"
-            >
-              <app-icon name="chat" classNames="w-3.5 h-3.5"></app-icon>
-              <span>Customer Chat</span>
-            </button>
-
-            <!-- Observability (Mega Menu) -->
+            <!-- 5. Observability (Mega Menu) -->
             <button
               type="button"
               (click)="toggleMenu('observability')"
               [attr.aria-expanded]="activeMegaMenu === 'observability'"
-              class="group relative flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded-md transition-all"
-              [ngClass]="activeSection === 'observability' || activeMegaMenu === 'observability' ? 'text-neutral-900 bg-neutral-100' : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50'"
+              class="group relative flex items-center gap-1 px-2.5 py-1.5 text-[13px] font-medium rounded-md transition-all"
+              [ngClass]="activeSection === 'observability' || activeMegaMenu === 'observability' ? 'text-neutral-950 bg-neutral-100 font-semibold' : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-50'"
             >
-              <app-icon name="observability" classNames="w-3.5 h-3.5"></app-icon>
               <span>Observability</span>
               <app-icon
                 name="chevron-down"
-                classNames="w-3 h-3 transition-transform duration-200"
-                [ngClass]="activeMegaMenu === 'observability' ? 'rotate-180 text-neutral-900' : 'text-neutral-400 group-hover:text-neutral-700'"
+                classNames="w-2.5 h-2.5 transition-transform duration-200"
+                [ngClass]="activeMegaMenu === 'observability' ? 'rotate-180 text-neutral-950' : 'text-neutral-400 group-hover:text-neutral-700'"
               ></app-icon>
             </button>
 
-            <!-- Settings (Mega Menu) -->
+            <!-- 6. Settings (Mega Menu) -->
             <button
               type="button"
               (click)="toggleMenu('settings')"
               [attr.aria-expanded]="activeMegaMenu === 'settings'"
-              class="group relative flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded-md transition-all"
-              [ngClass]="activeSection === 'settings' || activeMegaMenu === 'settings' ? 'text-neutral-900 bg-neutral-100' : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50'"
+              class="group relative flex items-center gap-1 px-2.5 py-1.5 text-[13px] font-medium rounded-md transition-all"
+              [ngClass]="activeSection === 'settings' || activeMegaMenu === 'settings' ? 'text-neutral-950 bg-neutral-100 font-semibold' : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-50'"
             >
-              <app-icon name="settings" classNames="w-3.5 h-3.5"></app-icon>
               <span>Settings</span>
               <app-icon
                 name="chevron-down"
-                classNames="w-3 h-3 transition-transform duration-200"
-                [ngClass]="activeMegaMenu === 'settings' ? 'rotate-180 text-neutral-900' : 'text-neutral-400 group-hover:text-neutral-700'"
+                classNames="w-2.5 h-2.5 transition-transform duration-200"
+                [ngClass]="activeMegaMenu === 'settings' ? 'rotate-180 text-neutral-950' : 'text-neutral-400 group-hover:text-neutral-700'"
               ></app-icon>
             </button>
           </nav>
         </div>
 
-        <!-- Right Side: Fast Search, Workspace Selector, Status, User Menu -->
-        <div class="flex items-center gap-3">
-          <!-- Command Palette Trigger Button -->
+        <!-- Right Side: Fast Search, Tenant Switcher, Action, User Menu -->
+        <div class="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          <!-- Command Palette Trigger Button (Desktop: compact pill; Mobile: icon) -->
           <button
             type="button"
             (click)="openSearch()"
-            class="hidden sm:flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50/70 px-3 py-1.5 text-xs text-neutral-500 hover:border-neutral-300 hover:bg-white hover:text-neutral-900 transition-all button-press"
+            class="hidden sm:flex h-8 items-center gap-2 rounded-lg border border-neutral-200/90 bg-neutral-50/70 px-2.5 text-xs text-neutral-500 hover:border-neutral-300 hover:bg-white hover:text-neutral-900 transition-all button-press"
             title="Search organizations, sources, or commands (Ctrl+K)"
           >
             <app-icon name="search" classNames="w-3.5 h-3.5 text-neutral-400"></app-icon>
-            <span class="font-normal">Search or jump...</span>
-            <kbd class="ml-2 flex items-center gap-0.5 rounded border border-neutral-200 bg-white px-1.5 py-0.5 text-[10px] font-mono text-neutral-400">
-              <span class="text-[9px]">⌘</span>K
-            </kbd>
+            <span class="font-normal">Search...</span>
+            <kbd class="ml-1 rounded border border-neutral-200/90 bg-white px-1.5 py-0.5 text-[10px] font-mono text-neutral-400">⌘K</kbd>
           </button>
 
-          <!-- Tenant Switcher Dropdown (for platform admins or multi-tenant preview) -->
+          <button
+            type="button"
+            (click)="openSearch()"
+            class="sm:hidden flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200/90 bg-white text-neutral-500 hover:text-neutral-900 transition-all"
+            title="Search (Ctrl+K)"
+          >
+            <app-icon name="search" classNames="w-3.5 h-3.5"></app-icon>
+          </button>
+
+          <!-- Tenant Switcher Dropdown (Refined Compact Pill) -->
           <div class="relative" *ngIf="tenants.length > 0">
             <button
               type="button"
               (click)="tenantDropdownOpen = !tenantDropdownOpen"
-              class="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-800 hover:bg-neutral-50 transition-colors"
+              class="flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200/90 bg-white px-2 text-xs font-medium text-neutral-800 hover:bg-neutral-50 transition-colors"
+              title="Active Organization Scope"
             >
-              <div class="flex h-5 w-5 items-center justify-center rounded bg-neutral-100 text-[10px] font-semibold text-neutral-700">
-                {{ selectedTenant?.name?.charAt(0) || 'O' }}
-              </div>
-              <span class="max-w-[120px] truncate hidden md:inline">{{ selectedTenant?.name || 'All Tenants' }}</span>
-              <app-icon name="chevron-down" classNames="w-3 h-3 text-neutral-400"></app-icon>
+              <span
+                class="w-1.5 h-1.5 rounded-full"
+                [ngClass]="selectedTenant?.status === 'active' ? 'bg-emerald-500' : 'bg-neutral-400'"
+              ></span>
+              <span class="max-w-[75px] sm:max-w-[105px] truncate text-xs">{{ selectedTenant?.name || 'All Tenants' }}</span>
+              <app-icon name="chevron-down" classNames="w-2.5 h-2.5 text-neutral-400"></app-icon>
             </button>
 
             <!-- Tenant Dropdown Menu -->
             <div
               *ngIf="tenantDropdownOpen"
-              class="absolute right-0 mt-1 w-64 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-dropdown animate-slide-down z-50"
+              class="absolute right-0 mt-1.5 w-60 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-dropdown animate-slide-down z-50"
             >
-              <div class="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                Select Active Tenant
+              <div class="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                Active Tenant Scope
               </div>
               <div class="max-h-60 overflow-y-auto space-y-0.5">
                 <button
                   *ngFor="let t of tenants"
                   type="button"
                   (click)="onSelectTenant(t)"
-                  class="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition-colors"
+                  class="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors"
                   [ngClass]="selectedTenant?.id === t.id ? 'bg-neutral-100 text-neutral-900 font-medium' : 'text-neutral-700 hover:bg-neutral-50'"
                 >
                   <div class="flex items-center gap-2 truncate">
-                    <span class="w-2 h-2 rounded-full" [ngClass]="t.status === 'active' ? 'bg-emerald-500' : t.status === 'suspended' ? 'bg-amber-500' : 'bg-neutral-300'"></span>
+                    <span class="w-1.5 h-1.5 rounded-full" [ngClass]="t.status === 'active' ? 'bg-emerald-500' : t.status === 'suspended' ? 'bg-amber-500' : 'bg-neutral-300'"></span>
                     <span class="truncate">{{ t.name }}</span>
                   </div>
                   <span class="font-mono text-[10px] text-neutral-400">{{ t.sourceCount || 0 }} src</span>
@@ -214,25 +206,28 @@ interface MegaMenuColumn {
             </div>
           </div>
 
-          <!-- Action CTA Button -->
+          <!-- Primary Action CTA (Crisp, Compact) -->
           <button
             type="button"
             (click)="onPrimaryAction()"
-            class="flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-neutral-800 transition-all button-press"
+            class="flex h-8 items-center gap-1.5 rounded-lg bg-neutral-900 px-2.5 sm:px-3 text-xs font-medium text-white shadow-xs hover:bg-neutral-800 transition-all button-press"
           >
-            <app-icon name="plus" classNames="w-3.5 h-3.5"></app-icon>
-            <span class="hidden sm:inline">{{ isPlatformAdmin ? 'New Organization' : 'Stage Source' }}</span>
+            <app-icon name="plus" classNames="w-3 h-3"></app-icon>
+            <span class="hidden sm:inline">{{ isPlatformAdmin ? 'New Org' : 'Stage Source' }}</span>
           </button>
+
+          <!-- Subtle Divider -->
+          <div class="h-4 w-px bg-neutral-200/90"></div>
 
           <!-- User Profile & Session Dropdown -->
           <div class="relative">
             <button
               type="button"
               (click)="userMenuOpen = !userMenuOpen"
-              class="flex items-center gap-2 rounded-full p-0.5 hover:ring-2 hover:ring-neutral-200 transition-all"
+              class="flex items-center justify-center rounded-full p-0.5 hover:ring-2 hover:ring-neutral-200 transition-all"
               title="User Settings & Role"
             >
-              <div class="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-900 text-xs font-semibold text-white">
+              <div class="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-900 text-[11px] font-semibold text-white">
                 {{ userInitials }}
               </div>
             </button>
@@ -262,6 +257,87 @@ interface MegaMenuColumn {
               </button>
             </div>
           </div>
+
+          <!-- Mobile Hamburger Toggle Button (lg:hidden) -->
+          <button
+            type="button"
+            (click)="mobileNavOpen = !mobileNavOpen"
+            class="lg:hidden flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200/90 bg-white text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 transition-colors"
+            aria-label="Toggle navigation menu"
+          >
+            <app-icon [name]="mobileNavOpen ? 'x' : 'menu'" classNames="w-4 h-4"></app-icon>
+          </button>
+        </div>
+      </div>
+
+      <!-- Mobile Navigation Sheet (lg:hidden) -->
+      <div
+        *ngIf="mobileNavOpen"
+        class="lg:hidden border-t border-neutral-200/90 bg-white px-4 py-4 space-y-3 shadow-dropdown animate-slide-down"
+      >
+        <div class="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+          Navigation
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            (click)="onMobileNavigate('overview')"
+            class="flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium text-left transition-colors"
+            [ngClass]="activeSection === 'overview' ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100'"
+          >
+            <app-icon name="overview" classNames="w-3.5 h-3.5"></app-icon>
+            <span>Overview</span>
+          </button>
+
+          <button
+            type="button"
+            (click)="onMobileNavigate('organizations')"
+            class="flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium text-left transition-colors"
+            [ngClass]="activeSection === 'organizations' ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100'"
+          >
+            <app-icon name="organizations" classNames="w-3.5 h-3.5"></app-icon>
+            <span>Organizations</span>
+          </button>
+
+          <button
+            type="button"
+            (click)="onMobileNavigate('knowledge')"
+            class="flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium text-left transition-colors"
+            [ngClass]="activeSection === 'knowledge' ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100'"
+          >
+            <app-icon name="knowledge" classNames="w-3.5 h-3.5"></app-icon>
+            <span>Knowledge</span>
+          </button>
+
+          <button
+            type="button"
+            (click)="onMobileNavigate('studio')"
+            class="flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium text-left transition-colors"
+            [ngClass]="activeSection === 'studio' ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100'"
+          >
+            <app-icon name="studio" classNames="w-3.5 h-3.5"></app-icon>
+            <span>AI Studio</span>
+          </button>
+
+          <button
+            type="button"
+            (click)="onMobileNavigate('observability')"
+            class="flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium text-left transition-colors"
+            [ngClass]="activeSection === 'observability' ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100'"
+          >
+            <app-icon name="observability" classNames="w-3.5 h-3.5"></app-icon>
+            <span>Observability</span>
+          </button>
+
+          <button
+            type="button"
+            (click)="onMobileNavigate('settings')"
+            class="flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium text-left transition-colors"
+            [ngClass]="activeSection === 'settings' ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100'"
+          >
+            <app-icon name="settings" classNames="w-3.5 h-3.5"></app-icon>
+            <span>Settings</span>
+          </button>
         </div>
       </div>
 
@@ -366,6 +442,7 @@ export class TopNavComponent {
 
   tenantDropdownOpen = false;
   userMenuOpen = false;
+  mobileNavOpen = false;
 
   constructor() {
     this.state.currentSection$.subscribe((s) => (this.activeSection = s));
@@ -407,6 +484,7 @@ export class TopNavComponent {
     this.closeMenu();
     this.tenantDropdownOpen = false;
     this.userMenuOpen = false;
+    this.mobileNavOpen = false;
   }
 
   @HostListener('document:click', ['$event'])
@@ -415,12 +493,14 @@ export class TopNavComponent {
       this.closeMenu();
       this.tenantDropdownOpen = false;
       this.userMenuOpen = false;
+      this.mobileNavOpen = false;
     }
   }
 
   toggleMenu(section: NavSection): void {
     this.tenantDropdownOpen = false;
     this.userMenuOpen = false;
+    this.mobileNavOpen = false;
     this.state.toggleMegaMenu(section);
   }
 
@@ -430,6 +510,11 @@ export class TopNavComponent {
 
   navigateTo(section: NavSection): void {
     this.state.setSection(section);
+  }
+
+  onMobileNavigate(section: NavSection): void {
+    this.navigateTo(section);
+    this.mobileNavOpen = false;
   }
 
   openSearch(): void {
@@ -547,6 +632,12 @@ export class TopNavComponent {
                 desc: 'Approve staged sources before enabling for chat retrieval',
                 icon: 'check-circle',
                 action: () => this.navigateTo('knowledge')
+              },
+              {
+                title: 'Verify Grounded Chat',
+                desc: 'Test chat responses against published knowledge',
+                icon: 'chat',
+                action: () => this.navigateTo('chat')
               }
             ]
           }
@@ -585,6 +676,13 @@ export class TopNavComponent {
                 desc: 'Interactive chat test with real-time citation checks',
                 icon: 'play',
                 action: () => this.navigateTo('studio')
+              },
+              {
+                title: 'Customer Chat Interface',
+                desc: 'Launch tenant conversational assistant client',
+                icon: 'chat',
+                badge: 'Live',
+                action: () => this.navigateTo('chat')
               },
               {
                 title: 'Version History',
