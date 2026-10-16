@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AzureFoundryModel, detectedLanguage, hasSufficientEvidence, isPermittedLanguage, validateCitations } from './model.js';
+import { AzureFoundryModel, detectedLanguage, hasSufficientEvidence, isGreeting, isPermittedLanguage, validateCitations } from './model.js';
 
 describe('Azure Foundry model adapter', () => {
   it('detects and enforces configured language families', () => {
     expect(detectedLanguage('مرحبا')).toBe('ar');
     expect(isPermittedLanguage('مرحبا', ['en', 'ar-AE'])).toBe(true);
     expect(isPermittedLanguage('مرحبا', ['en'])).toBe(false);
+  });
+  it('recognizes short greetings without classifying business questions as greetings', () => {
+    expect(isGreeting("Hey ! How'z it Going ?")).toBe(true);
+    expect(isGreeting('Good morning there')).toBe(true);
+    expect(isGreeting('What is the price?')).toBe(false);
   });
   it('sends a masked grounded prompt and validates strict JSON output', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: 'Approved answer', citationIds: ['chunk-1'], proposedIntent: null }) } }] }), { status: 200 }));

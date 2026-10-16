@@ -130,6 +130,10 @@ describe('API vertical slice', () => {
     expect(preview.body.preview).toMatchObject({ grounded: true, persona: { name: 'Preview Ava' } });
     expect(preview.body.preview.citations).toHaveLength(1);
     const publicSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
+    const promptCountBeforeGreeting = model.prompts.length;
+    const greeting = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: "Hey ! How'z it Going ?", clientMessageId: 'greeting-1' }).expect(200);
+    expect(greeting.body).toMatchObject({ answer: 'Welcome', grounded: false, conversational: true, citations: [] });
+    expect(model.prompts).toHaveLength(promptCountBeforeGreeting);
     const newerPersona = await api.post('/api/v1/admin/persona/drafts').set('Authorization', `Bearer ${adminToken}`).send({ name: 'Ava New', greeting: 'Welcome', personality: 'Warm', tone: 'Friendly', speakingStyle: 'Short', permittedLanguages: ['en'] }).expect(201);
     await api.post(`/api/v1/admin/persona/versions/${newerPersona.body.version.id}/publish`).set('Authorization', `Bearer ${adminToken}`).expect(200);
     const grounded = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-1' }).expect(200);

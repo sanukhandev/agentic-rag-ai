@@ -68,6 +68,10 @@ export class AzureFoundryModel implements ChatModel {
 
 export const detectedLanguage = (text: string): string => /[\u0600-\u06ff]/u.test(text) ? 'ar' : 'en';
 export const isPermittedLanguage = (text: string, permittedLanguages: string[]): boolean => permittedLanguages.some((language) => language.toLowerCase().split('-')[0] === detectedLanguage(text));
+export const isGreeting = (text: string): boolean => {
+  const normalized = text.toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/gu, ' ').trim();
+  return /^(?:(?:hi|hello|hey|hiya)(?: there)?|(?:hi|hello|hey|hiya) how (?:are you(?: doing)?|(?:is|s|z) (?:it )?going)|good (?:morning|afternoon|evening)(?: there)?|how are you(?: doing)?|how (?:is|s|z) (?:it )?going)$/u.test(normalized);
+};
 export const hasSufficientEvidence = (answer: string, evidence: ModelEvidence[], citations: Citation[]): boolean => {
   if (citations.length === 0) return false;
   const citedContent = evidence.filter((item) => citations.some((citation) => citation.chunkId === item.citation.chunkId)).map((item) => item.content.toLowerCase()).join(' ');
