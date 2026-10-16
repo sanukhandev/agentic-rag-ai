@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
-  applyActionState,
   formatNaturalAbstention,
   isChatActionState,
   isValidTenantSlug,
@@ -106,9 +105,12 @@ export default function Home() {
     }
   }, [messages, busy]);
 
+  const tenantName = config?.tenant?.name ?? 'Acme Global';
   const agentName = config?.persona?.name ?? 'Aura Enterprise Guide';
-  const agentGreeting = config?.persona?.greeting ?? 'Welcome. How may I assist your enterprise inquiry today?';
-  const agentTone = config?.persona?.tone ?? 'Professional & Grounded';
+  const agentGreeting = config?.persona?.greeting ?? 'Welcome to Acme Global. How may I assist your enterprise inquiry today?';
+  const agentTone = config?.persona?.tone ?? 'Calm, authoritative, strictly grounded';
+  const agentStyle = config?.persona?.speakingStyle ?? 'Concise declarative statements';
+  const permittedLanguages = config?.persona?.permittedLanguages ?? ['en', 'es', 'de', 'fr', 'ja', 'ar'];
   const agentInitials = agentName
     .split(/\s+/)
     .slice(0, 2)
@@ -261,323 +263,525 @@ export default function Home() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#FAFAFA] text-neutral-900 selection:bg-neutral-900 selection:text-white">
-      {/* 1. Header: Compact, refined, showing agent name, brand, status, and reset action */}
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-neutral-200/80 bg-white/95 px-4 backdrop-blur-md sm:px-8">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white shadow-subtle">
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" />
-            </svg>
-            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" title="Active & Grounded" />
-          </div>
-
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="truncate text-sm font-semibold tracking-tight text-neutral-900 font-sans">
-                {{ ...config?.tenant }.name || 'Acme Global'}
-              </h1>
-              <span className="hidden sm:inline-flex rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-mono text-neutral-600">
-                {agentName}
-              </span>
-            </div>
-            <p className="truncate text-[11px] text-neutral-500">
-              {agentTone} · Verified Documentation
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* Admin testing diagnostics toggle (Requirement 10) */}
-          {isAdminTestingMode && (
-            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 py-1 text-[11px] font-mono text-neutral-700 border border-neutral-200">
-              <span className="h-1.5 w-1.5 rounded-full bg-cyan-600"></span>
-              Admin Mode: {tenantSlug}
-            </span>
-          )}
-
-          {/* Reset session action */}
-          <button
-            type="button"
-            onClick={reset}
-            disabled={messages.length === 0 && !sessionId}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-subtle hover:bg-neutral-50 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40 button-press transition-colors"
-            title="Start new conversation"
-            aria-label="Start new conversation"
-          >
-            <svg className="h-3.5 w-3.5 text-neutral-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M3 21v-5h5" />
-            </svg>
-            <span className="hidden sm:inline">New Chat</span>
-          </button>
-        </div>
-      </header>
-
-      {/* 2. White Conversation Canvas */}
-      <main
-        ref={scrollRef}
-        role="log"
-        aria-live="polite"
-        className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-8 sm:px-6"
-      >
-        {/* Welcome State (Requirement 5) */}
-        {messages.length === 0 && (
-          <div className="flex flex-1 flex-col items-center justify-center text-center py-16 animate-fade-in">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-900 text-white shadow-subtle mb-4">
-              <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" />
-              </svg>
-            </div>
-            <h2 className="text-2xl font-bold tracking-tight text-neutral-900 font-sans">
-              Hello, I’m {agentName}.
-            </h2>
-            <p className="mt-3 max-w-md text-xs sm:text-sm leading-relaxed text-neutral-600">
-              {agentGreeting}
-            </p>
-            <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-neutral-200/80 bg-white px-3.5 py-1 text-xs text-neutral-600 shadow-subtle">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Grounded exclusively in authorized enterprise documentation.</span>
-            </div>
-          </div>
-        )}
-
-        {/* Message Stream */}
-        <div className="space-y-6">
-          {messages.map((msg) => (
-            <div key={msg.id} className="message-entry space-y-2">
-              {msg.role === 'user' ? (
-                /* User Message: subtle right-aligned bubble (Requirement 4) */
-                <div className="flex justify-end">
-                  <div className="max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-br-sm bg-neutral-900 px-4 py-3 text-xs sm:text-sm text-white shadow-subtle leading-relaxed whitespace-pre-wrap break-words">
-                    {msg.content}
-                  </div>
+    <div className="min-h-screen bg-[#fafafa] text-[#121214] flex flex-col justify-between selection:bg-neutral-900 selection:text-white font-sans">
+      
+      <div>
+        {/* Acme Sticky Top Navigation Bar */}
+        <header className="sticky top-0 z-40 w-full border-b border-neutral-200/80 bg-white/95 backdrop-blur-md">
+          <div className="mx-auto flex h-16 max-w-[1536px] items-center justify-between px-4 sm:px-6 lg:px-8">
+            
+            {/* Left Brand Group */}
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-neutral-900 text-white shadow-sm">
+                  <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                    <rect x="3" y="3" width="18" height="18" rx="4" fill="currentColor" fillOpacity="0.1" />
+                    <path d="M12 7v10M7 12l5-5 5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                 </div>
-              ) : (
-                /* Assistant Message: clean left-aligned text without surrounding cards (Requirement 4) */
-                <div className="flex justify-start">
-                  <div className="max-w-[92%] sm:max-w-[85%] space-y-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-5 w-5 items-center justify-center rounded-md bg-neutral-900 text-white text-[10px] font-bold">
-                        {agentInitials}
-                      </div>
-                      <span className="text-xs font-semibold text-neutral-900">{agentName}</span>
-                    </div>
-
-                    {/* Rendered Markdown Answer (Requirement 7) */}
-                    <div
-                      className="text-xs sm:text-sm text-neutral-800 leading-relaxed font-normal"
-                      dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
-                    />
-
-                    {/* Accessible Source References Drawer (Requirement 7) */}
-                    {msg.citations && msg.citations.length > 0 && (
-                      <div className="pt-1">
-                        <button
-                          type="button"
-                          onClick={() => toggleCitations(msg.id)}
-                          aria-expanded={msg.expandedCitations}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-[11px] font-medium text-neutral-600 hover:border-neutral-300 hover:bg-neutral-100 hover:text-neutral-900 transition-colors"
-                        >
-                          <svg className="h-3 w-3 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M14 2v4a2 2 0 0 0 2 2h4M10 9H8M16 13H8M16 17H8" />
-                          </svg>
-                          <span>{msg.citations.length} Verified {msg.citations.length === 1 ? 'Source' : 'Sources'}</span>
-                          <svg
-                            className={`h-2.5 w-2.5 text-neutral-400 transition-transform ${msg.expandedCitations ? 'rotate-180' : ''}`}
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            viewBox="0 0 24 24"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" d="m19 9-7 7-7-7" />
-                          </svg>
-                        </button>
-
-                        {msg.expandedCitations && (
-                          <div className="mt-2 space-y-1.5 rounded-xl border border-neutral-200/80 bg-neutral-50/70 p-3 text-xs animate-fade-in">
-                            {msg.citations.map((c, i) => (
-                              <div key={i} className="flex items-start gap-2 text-neutral-700">
-                                <svg className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4 12 14.01 9 11.01" />
-                                </svg>
-                                <div>
-                                  <span className="font-medium text-neutral-900">{c.title}</span>
-                                  <span className="text-neutral-400 mx-1.5">·</span>
-                                  <span className="font-mono text-[11px] text-neutral-500">{c.locator}</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Action proposal confirmation card */}
-                    {msg.actionProposal && (
-                      <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3.5 space-y-2 shadow-subtle">
-                        <div className="text-xs font-semibold text-neutral-900">
-                          {msg.actionProposal.confirmation}
-                        </div>
-                        <div className="flex items-center gap-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => void confirm(msg.actionProposal!.id)}
-                            className="rounded-lg bg-neutral-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 transition-all button-press"
-                          >
-                            {msg.actionState === 'unknown' ? 'Retry Request' : 'Confirm Request'}
-                          </button>
-                          {msg.actionState && (
-                            <span className="text-[11px] font-mono text-neutral-500">
-                              Status: {msg.actionState}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Copy actions and helpfulness feedback controls (Requirement 7) */}
-                    <div className="flex items-center gap-3 pt-1 text-neutral-400 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(msg.id, msg.content)}
-                        className="flex items-center gap-1 rounded py-0.5 px-1 hover:bg-neutral-100 hover:text-neutral-900 transition-colors"
-                        title="Copy answer"
-                        aria-label={copiedId === msg.id ? 'Copied to clipboard' : 'Copy answer to clipboard'}
-                      >
-                        <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-                        </svg>
-                        {copiedId === msg.id && <span className="text-[10px] text-neutral-600">Copied</span>}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => toggleFeedback(msg.id, 'up')}
-                        className={`flex items-center gap-1 rounded py-0.5 px-1 transition-colors ${msg.feedback === 'up' ? 'text-neutral-900 font-medium' : 'hover:bg-neutral-100 hover:text-neutral-800'}`}
-                        title="Helpful response"
-                        aria-label="Mark response as helpful"
-                      >
-                        <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path d="M7 10v12M15 10.5a3 3 0 0 0-3-3l.5-4a1.5 1.5 0 0 0-3 0L7 10v12h10.3a2 2 0 0 0 1.95-1.57l1.65-7.43A2 2 0 0 0 18.95 10.5H15Z" />
-                        </svg>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => toggleFeedback(msg.id, 'down')}
-                        className={`flex items-center gap-1 rounded py-0.5 px-1 transition-colors ${msg.feedback === 'down' ? 'text-neutral-900 font-medium' : 'hover:bg-neutral-100 hover:text-neutral-800'}`}
-                        title="Unhelpful response"
-                        aria-label="Mark response as unhelpful"
-                      >
-                        <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path d="M17 14V2M9 13.5a3 3 0 0 0 3 3l-.5 4a1.5 1.5 0 0 0 3 0L17 14V2H6.7a2 2 0 0 0-1.95 1.57l-1.65 7.43A2 2 0 0 0 5.05 13.5H9Z" />
-                        </svg>
-                      </button>
-
-                      {msg.feedback && (
-                        <span className="text-[10px] text-neutral-400 animate-fade-in">
-                          Thanks for your feedback
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Administrative diagnostics ONLY in authenticated admin testing mode (Requirement 10) */}
-                    {isAdminTestingMode && (
-                      <div className="mt-2 rounded-lg border border-neutral-200 bg-neutral-50/90 p-2.5 text-[10px] font-mono text-neutral-600 space-y-1">
-                        <div className="flex items-center justify-between border-b border-neutral-200 pb-1">
-                          <span className="font-semibold text-neutral-800">Admin Diagnostics</span>
-                          <span className={msg.grounded ? 'text-emerald-700' : msg.conversational ? 'text-cyan-700' : 'text-amber-700'}>
-                            {msg.grounded ? '✓ Grounded' : msg.conversational ? 'ℹ Greeting' : '⚠ Abstained'}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-1 text-[9px]">
-                          <div>Citations: {msg.citations.length}</div>
-                          <div>ID: {msg.id.substring(0, 8)}...</div>
-                        </div>
-                      </div>
-                    )}
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold tracking-[0.18em] text-neutral-900 uppercase">Agentic RAG AI</span>
+                    <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-mono font-medium text-neutral-600">v2.4</span>
                   </div>
+                  <span className="text-[11px] font-normal text-neutral-500">Acme Conversational Assistant</span>
                 </div>
-              )}
-            </div>
-          ))}
+              </div>
 
-          {/* Loading indicator */}
-          {busy && (
-            <div className="flex justify-start animate-fade-in">
-              <div className="flex items-center gap-2 rounded-xl bg-neutral-100 px-3.5 py-2 text-xs text-neutral-500">
-                <span className="flex gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-bounce" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:0.2s]" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:0.4s]" />
+              {/* Navigation Pill (Matches Acme top-nav tabs) */}
+              <div className="hidden md:flex items-center gap-1.5 border-l border-neutral-200/80 pl-6">
+                <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-900 bg-neutral-100 rounded-md">
+                  <svg className="w-3.5 h-3.5 text-neutral-700" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  <span>Customer Conversation</span>
                 </span>
-                <span>Verifying knowledge...</span>
               </div>
             </div>
-          )}
 
-          {/* Error Banner */}
-          {error && (
-            <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50/70 p-3.5 text-xs text-rose-800 animate-fade-in">
-              <span>{error}</span>
+            {/* Right Action Bar */}
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-2 rounded-full border border-neutral-200/80 bg-neutral-50 px-3 py-1 text-xs text-neutral-600 font-mono">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Active Model: Azure GPT-4.1-mini</span>
+              </div>
+
+              {/* Reset Session CTA */}
               <button
                 type="button"
-                onClick={() => void send()}
-                className="rounded-md border border-rose-300 bg-white px-2.5 py-1 text-[11px] font-medium text-rose-700 hover:bg-rose-50 transition-colors"
+                onClick={reset}
+                disabled={messages.length === 0 && !sessionId}
+                className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 hover:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors button-press shadow-subtle"
+                title="Reset conversation"
               >
-                Retry
+                <svg className="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M3 21v-5h5" />
+                </svg>
+                <span>New Session</span>
               </button>
             </div>
-          )}
-        </div>
-      </main>
+          </div>
+        </header>
 
-      {/* 3. Bottom Composer: Multiline textarea, Enter-to-send, Shift+Enter for newline, minimal send button (Requirement 6) */}
-      <footer className="sticky bottom-0 border-t border-neutral-200/80 bg-white/95 px-4 py-3 backdrop-blur-md sm:px-6">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void send();
-          }}
-          className="mx-auto max-w-3xl"
-        >
-          <div className="relative flex items-end gap-2 rounded-2xl border border-neutral-200 bg-neutral-50/80 p-2 sm:p-2.5 transition-all duration-200 focus-within:border-neutral-900 focus-within:bg-white focus-within:ring-2 focus-within:ring-neutral-900/10">
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              value={message}
-              onChange={handleInput}
-              onKeyDown={handleKeyDown}
-              disabled={busy}
-              placeholder="Ask about our verified products, pricing, or service specifications..."
-              className="min-h-[38px] max-h-32 w-full resize-none bg-transparent px-2 py-1.5 text-xs sm:text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none leading-relaxed"
-              aria-label="Your message"
-            />
+        {/* Controlled Max Width Content Canvas (Matches Acme admin dashboard layout) */}
+        <main className="mx-auto max-w-[1536px] px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
+          
+          {/* 1. Acme Editorial Header Section */}
+          <section className="border-b border-neutral-200/80 pb-6" aria-labelledby="page-title">
+            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
+              
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-neutral-400">
+                    Agentic RAG AI
+                  </span>
+                  <span className="text-neutral-300">/</span>
+                  <span className="text-xs font-mono font-medium text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded">
+                    {tenantName}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-neutral-200/90 bg-white px-2 py-0.5 text-[10px] font-medium text-neutral-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                    Verified Knowledge
+                  </span>
+                </div>
 
-            <button
-              type="submit"
-              disabled={busy || !message.trim()}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white shadow-subtle transition-all hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed button-press"
-              aria-label="Send message"
-              title="Send message"
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="m5 12 7-7 7 7M12 19V5" />
+                <h1 id="page-title" className="text-3xl sm:text-4xl font-bold tracking-tight text-neutral-900 font-sans">
+                  Enterprise Customer Concierge
+                </h1>
+
+                <p className="text-xs sm:text-sm text-neutral-500 max-w-3xl leading-relaxed">
+                  Ask {tenantName}’s sales assistant. Every business claim is grounded strictly in authorized, active source documentation. Governed by zero-speculation model policy and PII masking.
+                </p>
+              </div>
+
+              {/* Status Indicators */}
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-600 shadow-subtle">
+                  <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
+                  </svg>
+                  <span>Zero PII Cloud Transfer</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-600 shadow-subtle">
+                  <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <ellipse cx="12" cy="5" rx="9" ry="3" />
+                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
+                  </svg>
+                  <span>PostgreSQL pgvector</span>
+                </span>
+              </div>
+            </div>
+          </section>
+
+          {/* 2. Acme 12-Column Responsive Workspace Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            {/* Left: Premium White Conversation Canvas (8 columns) */}
+            <div className="lg:col-span-8 flex flex-col rounded-2xl border border-neutral-200/90 bg-white shadow-card overflow-hidden min-h-[660px]">
+              
+              {/* Inner Card Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 bg-neutral-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-900 text-white font-bold text-xs">
+                    {agentInitials}
+                    <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white"></span>
+                  </div>
+                  <div>
+                    <h2 className="text-xs font-semibold text-neutral-900">{agentName}</h2>
+                    <p className="text-[11px] text-neutral-500">{agentTone}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-mono font-medium text-emerald-700 border border-emerald-200/60">
+                    ✓ 100% Grounded Mode
+                  </span>
+                </div>
+              </div>
+
+              {/* Scrollable Conversation Canvas */}
+              <div
+                ref={scrollRef}
+                role="log"
+                aria-live="polite"
+                className="flex-1 overflow-y-auto p-6 space-y-6 min-h-[380px] max-h-[520px]"
+              >
+                {/* Elegant Welcome State */}
+                {messages.length === 0 && (
+                  <div className="flex flex-col items-center justify-center text-center py-12 px-4 animate-fade-in max-w-md mx-auto">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-900 text-white shadow-subtle mb-4">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" />
+                      </svg>
+                    </div>
+
+                    <h3 className="text-xl font-bold tracking-tight text-neutral-900">
+                      Hello, I’m {agentName}.
+                    </h3>
+
+                    <p className="mt-2 text-xs text-neutral-600 leading-relaxed">
+                      {agentGreeting}
+                    </p>
+
+                    <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-neutral-200/80 bg-neutral-50 px-3 py-1 text-[11px] font-medium text-neutral-600">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span>Responses strictly verified against published enterprise documents.</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Messages Feed */}
+                {messages.map((msg) => (
+                  <div key={msg.id} className="message-entry space-y-2">
+                    {msg.role === 'user' ? (
+                      /* User message: subtle right-aligned bubble */
+                      <div className="flex justify-end">
+                        <div className="max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-br-sm bg-neutral-900 text-white px-4 py-2.5 text-xs sm:text-sm leading-relaxed shadow-subtle whitespace-pre-wrap break-words">
+                          {msg.content}
+                        </div>
+                      </div>
+                    ) : (
+                      /* Assistant message: clean left-aligned text */
+                      <div className="flex justify-start">
+                        <div className="max-w-[92%] sm:max-w-[85%] space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-neutral-900">{agentName}</span>
+                            <span className="text-[10px] text-neutral-400 font-mono">
+                              {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+
+                          {/* Rendered Markdown */}
+                          <div
+                            className="text-xs sm:text-sm text-neutral-800 leading-relaxed font-normal"
+                            dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+                          />
+
+                          {/* Accessible Citations Toggle */}
+                          {msg.citations && msg.citations.length > 0 && (
+                            <div className="pt-1">
+                              <button
+                                type="button"
+                                onClick={() => toggleCitations(msg.id)}
+                                aria-expanded={msg.expandedCitations}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-[11px] font-medium text-neutral-600 hover:border-neutral-300 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
+                              >
+                                <svg className="w-3 h-3 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M14 2v4a2 2 0 0 0 2 2h4M10 9H8M16 13H8M16 17H8" />
+                                </svg>
+                                <span>{msg.citations.length} Verified {msg.citations.length === 1 ? 'Source' : 'Sources'}</span>
+                                <svg
+                                  className={`w-2.5 h-2.5 text-neutral-400 transition-transform ${msg.expandedCitations ? 'rotate-180' : ''}`}
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="m19 9-7 7-7-7" />
+                                </svg>
+                              </button>
+
+                              {msg.expandedCitations && (
+                                <div className="mt-2 space-y-1.5 rounded-xl border border-neutral-200/80 bg-neutral-50/70 p-3 text-xs animate-fade-in">
+                                  {msg.citations.map((c, i) => (
+                                    <div key={i} className="flex items-start gap-2 text-neutral-700">
+                                      <svg className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4 12 14.01 9 11.01" />
+                                      </svg>
+                                      <div>
+                                        <span className="font-medium text-neutral-900">{c.title}</span>
+                                        <span className="text-neutral-400 mx-1.5">·</span>
+                                        <span className="font-mono text-[11px] text-neutral-500">{c.locator}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Action Proposal Card */}
+                          {msg.actionProposal && (
+                            <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3.5 space-y-2 shadow-subtle">
+                              <div className="text-xs font-semibold text-neutral-900">
+                                {msg.actionProposal.confirmation}
+                              </div>
+                              <div className="flex items-center gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => void confirm(msg.actionProposal!.id)}
+                                  className="rounded-lg bg-neutral-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 transition-all button-press"
+                                >
+                                  {msg.actionState === 'unknown' ? 'Retry Request' : 'Confirm & Submit'}
+                                </button>
+                                {msg.actionState && (
+                                  <span className="text-[11px] font-mono text-neutral-500">
+                                    Status: {msg.actionState}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Utilities: Copy & Feedback */}
+                          <div className="flex items-center gap-3 pt-1 text-neutral-400 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(msg.id, msg.content)}
+                              className="flex items-center gap-1 rounded py-0.5 px-1 hover:bg-neutral-100 hover:text-neutral-900 transition-colors"
+                              title="Copy answer"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                              </svg>
+                              {copiedId === msg.id && <span className="text-[10px] text-neutral-600">Copied</span>}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => toggleFeedback(msg.id, 'up')}
+                              className={`flex items-center gap-1 rounded py-0.5 px-1 transition-colors ${msg.feedback === 'up' ? 'text-neutral-900 font-medium' : 'hover:bg-neutral-100 hover:text-neutral-800'}`}
+                              title="Helpful"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path d="M7 10v12M15 10.5a3 3 0 0 0-3-3l.5-4a1.5 1.5 0 0 0-3 0L7 10v12h10.3a2 2 0 0 0 1.95-1.57l1.65-7.43A2 2 0 0 0 18.95 10.5H15Z" />
+                              </svg>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => toggleFeedback(msg.id, 'down')}
+                              className={`flex items-center gap-1 rounded py-0.5 px-1 transition-colors ${msg.feedback === 'down' ? 'text-neutral-900 font-medium' : 'hover:bg-neutral-100 hover:text-neutral-800'}`}
+                              title="Unhelpful"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path d="M17 14V2M9 13.5a3 3 0 0 0 3 3l-.5 4a1.5 1.5 0 0 0 3 0L17 14V2H6.7a2 2 0 0 0-1.95 1.57l-1.65 7.43A2 2 0 0 0 5.05 13.5H9Z" />
+                              </svg>
+                            </button>
+
+                            {msg.feedback && (
+                              <span className="text-[10px] text-neutral-400 animate-fade-in">
+                                Thank you for your feedback
+                              </span>
+                            )}
+                          </div>
+
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* Busy Indicator */}
+                {busy && (
+                  <div className="flex justify-start animate-fade-in">
+                    <div className="flex items-center gap-2 rounded-xl bg-neutral-100 px-3.5 py-2 text-xs text-neutral-500">
+                      <span className="flex gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-bounce" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:0.2s]" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:0.4s]" />
+                      </span>
+                      <span>Searching verified sources...</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Error Banner */}
+                {error && (
+                  <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50/70 p-3.5 text-xs text-rose-800 animate-fade-in">
+                    <span>{error}</span>
+                    <button
+                      type="button"
+                      onClick={() => void send()}
+                      className="rounded-md border border-rose-300 bg-white px-2.5 py-1 text-[11px] font-medium text-rose-700 hover:bg-rose-50 transition-colors"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom Multiline Composer */}
+              <div className="border-t border-neutral-100 p-4 sm:p-5 bg-white">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void send();
+                  }}
+                >
+                  <div className="relative flex items-end gap-2 rounded-2xl border border-neutral-200 bg-neutral-50/80 p-2 sm:p-2.5 transition-all duration-200 focus-within:border-neutral-900 focus-within:bg-white focus-within:ring-2 focus-within:ring-neutral-900/10">
+                    <textarea
+                      ref={textareaRef}
+                      rows={1}
+                      value={message}
+                      onChange={handleInput}
+                      onKeyDown={handleKeyDown}
+                      disabled={busy}
+                      placeholder="Ask about our verified products, pricing, or service specifications..."
+                      className="min-h-[38px] max-h-32 w-full resize-none bg-transparent px-2 py-1.5 text-xs sm:text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none leading-relaxed"
+                      aria-label="Your inquiry"
+                    />
+
+                    <button
+                      type="submit"
+                      disabled={busy || !message.trim()}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white shadow-subtle transition-all hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed button-press"
+                      aria-label="Send message"
+                      title="Send message"
+                    >
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m5 12 7-7 7 7M12 19V5" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div className="mt-1.5 flex items-center justify-between px-1 text-[11px] text-neutral-400">
+                    <span>
+                      Press <kbd className="font-mono text-[10px] text-neutral-500">Enter</kbd> to send ·{' '}
+                      <kbd className="font-mono text-[10px] text-neutral-500">Shift + Enter</kbd> for new line
+                    </span>
+                    {message.length > 0 && <span className="font-mono text-[10px]">{message.length} chars</span>}
+                  </div>
+                </form>
+              </div>
+
+            </div>
+
+            {/* Right: Acme Context, Knowledge Scope & Policies (4 columns) */}
+            <div className="lg:col-span-4 space-y-6">
+              
+              {/* Card 1: Verified Knowledge Boundary */}
+              <section className="rounded-2xl border border-neutral-200/90 bg-white p-6 shadow-card space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold text-neutral-900 uppercase tracking-wider">
+                    Knowledge Boundary
+                  </h3>
+                  <span className="rounded bg-neutral-100 px-2 py-0.5 text-[10px] font-mono font-medium text-neutral-600">
+                    Strict Mode
+                  </span>
+                </div>
+
+                <p className="text-xs text-neutral-500 leading-relaxed">
+                  Only documents explicitly published for public chat are accessible to this concierge.
+                </p>
+
+                <div className="space-y-2 pt-1 border-t border-neutral-100 text-xs">
+                  <div className="flex items-center justify-between text-neutral-700">
+                    <span className="flex items-center gap-2">
+                      <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+                      </svg>
+                      <span>SOC-2 Type II Whitepaper</span>
+                    </span>
+                    <span className="font-mono text-[10px] text-neutral-400">v4.2</span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-neutral-700">
+                    <span className="flex items-center gap-2">
+                      <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+                      </svg>
+                      <span>Enterprise Pricing Matrix</span>
+                    </span>
+                    <span className="font-mono text-[10px] text-neutral-400">2026</span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-neutral-700">
+                    <span className="flex items-center gap-2">
+                      <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+                      </svg>
+                      <span>Master Services Agreement</span>
+                    </span>
+                    <span className="font-mono text-[10px] text-neutral-400">§ 4.2</span>
+                  </div>
+                </div>
+              </section>
+
+              {/* Card 2: Persona Directives */}
+              <section className="rounded-2xl border border-neutral-200/90 bg-white p-6 shadow-card space-y-4">
+                <h3 className="text-xs font-semibold text-neutral-900 uppercase tracking-wider">
+                  Agent Persona Rules
+                </h3>
+
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <span className="block text-[11px] font-semibold text-neutral-700">Display Name</span>
+                    <span className="text-neutral-900 font-medium">{agentName}</span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[11px] font-semibold text-neutral-700">Tone & Style</span>
+                    <span className="text-neutral-500 leading-relaxed">{agentTone} · {agentStyle}</span>
+                  </div>
+
+                  <div>
+                    <span className="block text-[11px] font-semibold text-neutral-700 mb-1.5">Permitted Languages</span>
+                    <div className="flex flex-wrap gap-1">
+                      {permittedLanguages.map((lang) => (
+                        <span key={lang} className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-mono font-medium text-neutral-700">
+                          {lang.toUpperCase()}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Card 3: Privacy & Security Architecture */}
+              <section className="rounded-2xl border border-neutral-200/90 bg-white p-6 shadow-card space-y-3">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-neutral-900" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
+                  </svg>
+                  <h3 className="text-xs font-semibold text-neutral-900 uppercase tracking-wider">
+                    Trust & Privacy Baseline
+                  </h3>
+                </div>
+
+                <p className="text-xs text-neutral-500 leading-relaxed">
+                  All customer PII and reversible token mappings remain inside the secured Node backend and PostgreSQL boundary.
+                </p>
+
+                <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-[11px] text-neutral-400 font-mono">
+                  <span>Reversible Token Vault</span>
+                  <span>TLS 1.3 Strict</span>
+                </div>
+              </section>
+
+            </div>
+
+          </div>
+
+        </main>
+      </div>
+
+      {/* Acme Editorial Footer */}
+      <footer className="border-t border-neutral-200/80 bg-white py-6 mt-16 text-xs text-neutral-500">
+        <div className="mx-auto max-w-[1536px] px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-6 w-6 items-center justify-center rounded bg-neutral-900 text-white">
+              <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="4" fill="currentColor" fillOpacity="0.1" />
+                <path d="M12 7v10M7 12l5-5 5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-            </button>
+            </div>
+            <span className="font-semibold text-neutral-800">Agentic RAG AI</span>
+            <span className="text-neutral-300">·</span>
+            <span>Source-Grounded Autonomous Operations Platform</span>
           </div>
 
-          <div className="mt-1.5 flex items-center justify-between px-1 text-[11px] text-neutral-400">
-            <span>
-              Press <kbd className="font-mono text-[10px] text-neutral-500">Enter</kbd> to send ·{' '}
-              <kbd className="font-mono text-[10px] text-neutral-500">Shift + Enter</kbd> for new line
-            </span>
-            {message.length > 0 && <span className="font-mono text-[10px]">{message.length} chars</span>}
+          <div className="flex items-center gap-6 text-[11px] text-neutral-400 font-mono">
+            <span>PostgreSQL pgvector</span>
+            <span>Azure AI Foundry GPT-4.1-mini</span>
+            <span>n8n Verified Actions</span>
+            <span>Zero PII Cloud Transfer</span>
           </div>
-        </form>
+        </div>
       </footer>
+
     </div>
   );
 }
