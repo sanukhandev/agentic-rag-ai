@@ -7,7 +7,7 @@ import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedReq
 import { cacheKey, createCache, type CacheStore } from './cache.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, rankChunksWithVector } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
-import { DeterministicGroundedModel, hasSufficientEvidence, isGreeting, isPermittedLanguage, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence } from './model.js';
+import { conversationalIntent, conversationalReply, DeterministicGroundedModel, hasSufficientEvidence, isPermittedLanguage, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
@@ -612,10 +612,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         ? await store.getPersonaVersion(session.tenantId, session.personaVersionId)
         : await store.getPersona(session.tenantId);
       const languageAllowed = !persona || isPermittedLanguage(masked.masked, persona.permittedLanguages);
-      const conversational = isGreeting(masked.masked) && languageAllowed;
+      const intent = conversationalIntent(masked.masked);
+      const conversational = intent !== null && languageAllowed;
       let evidence: ModelEvidence[] = [];
       let draft: ModelDraft;
-      if (conversational) draft = { answer: persona?.greeting ?? 'Hi! How can I help?', citationIds: [], proposedIntent: null };
+      if (conversational) draft = { answer: intent === 'greeting' ? persona?.greeting ?? conversationalReply(intent, persona?.name ?? 'Sales assistant') : conversationalReply(intent, persona?.name ?? 'Sales assistant'), citationIds: [], proposedIntent: null };
       else if (!languageAllowed) draft = { answer: `I can only answer in the permitted languages: ${persona?.permittedLanguages.join(', ')}.`, citationIds: [], proposedIntent: null };
       else {
         let queryEmbedding: number[];
