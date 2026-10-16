@@ -6,6 +6,8 @@ export const MAX_INGESTION_FILE_BYTES = 5 * 1024 * 1024;
 const extensions: Record<string, string> = {
   'text/plain': '.txt',
   'text/markdown': '.md',
+  'text/csv': '.csv',
+  'application/json': '.json',
   'application/pdf': '.pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
@@ -17,7 +19,15 @@ const emptyZipSignature = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
 const spannedZipSignature = Buffer.from([0x50, 0x4b, 0x07, 0x08]);
 
 export const hasValidFileSignature = (mimeType: string, content: Buffer): boolean => {
-  if (mimeType === 'text/plain' || mimeType === 'text/markdown') return !content.includes(0);
+  if (mimeType === 'text/plain' || mimeType === 'text/markdown' || mimeType === 'text/csv') return !content.includes(0);
+  if (mimeType === 'application/json') {
+    try {
+      JSON.parse(content.toString('utf8').replace(/^\uFEFF/, ''));
+      return true;
+    } catch {
+      return false;
+    }
+  }
   if (mimeType === 'application/pdf') return content.subarray(0, 5).toString('ascii') === '%PDF-';
   if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return content.subarray(0, 4).equals(zipSignature);
   if (mimeType === 'application/zip') return content.subarray(0, 4).equals(zipSignature) || content.subarray(0, 4).equals(emptyZipSignature) || content.subarray(0, 4).equals(spannedZipSignature);

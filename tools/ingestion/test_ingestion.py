@@ -87,20 +87,42 @@ class IngestionTests(unittest.TestCase):
             self.assertIn("Sheet: Plans", xlsx_text)
             self.assertIn("Starter | 100", xlsx_text)
 
+    def test_json_and_csv_preserve_structured_values(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            json_path = Path(directory) / "metadata.json"
+            json_path.write_text('{"name":"Starter","credits":100}', encoding="utf-8")
+            json_text, json_mime = extract_file(json_path)
+            self.assertEqual(json_mime, "application/json")
+            self.assertIn('"credits": 100', json_text)
+
+            csv_path = Path(directory) / "catalog.csv"
+            csv_path.write_text("name,credits\nStarter,100\n", encoding="utf-8")
+            csv_text, csv_mime = extract_file(csv_path)
+            self.assertEqual(csv_mime, "text/csv")
+            self.assertIn("Starter | 100", csv_text)
+
     def test_zip_extracts_supported_files_with_file_locators(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "portfolio.zip"
             with zipfile.ZipFile(path, "w") as archive:
-                archive.writestr("professional-profile.md", "# Professional profile\n\nSecure AI delivery.")
-                archive.writestr("career-timeline.txt", "2026: Platform launch.")
+                archive.writestr("bundle/training/professional-profile.md", "# Professional profile\n\nSecure AI delivery.")
+                archive.writestr("bundle/training/career-timeline.txt", "2026: Platform launch.")
+                archive.writestr("bundle/training/catalog.csv", "name,credits\nStarter,100\n")
+                archive.writestr("bundle/training/metadata.json", '{"name":"Starter"}')
+                archive.writestr("bundle/evaluation_do_not_ingest/questions.json", '{"question":"ignore"}')
+                archive.writestr("bundle/README.md", "Do not ingest this README.")
 
             source = ingest_file(path)
 
             self.assertEqual(source.mime_type, "application/zip")
             self.assertIn("professional-profile.md", source.normalized_content)
             self.assertIn("career-timeline.txt", source.normalized_content)
-            self.assertTrue(any(chunk.locator.startswith("professional-profile.md") for chunk in source.chunks))
-            self.assertTrue(any(chunk.locator.startswith("career-timeline.txt") for chunk in source.chunks))
+            self.assertIn("catalog.csv", source.normalized_content)
+            self.assertIn("metadata.json", source.normalized_content)
+            self.assertNotIn("questions.json", source.normalized_content)
+            self.assertNotIn("README.md", source.normalized_content)
+            self.assertTrue(any(chunk.locator.startswith("bundle/training/professional-profile.md") for chunk in source.chunks))
+            self.assertTrue(any(chunk.locator.startswith("bundle/training/career-timeline.txt") for chunk in source.chunks))
 
     def test_zip_rejects_unsupported_nested_and_unsafe_members(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

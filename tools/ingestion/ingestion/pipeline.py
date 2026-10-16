@@ -16,8 +16,8 @@ from urllib.parse import urlparse
 MAX_BYTES = 5 * 1024 * 1024
 MAX_CONTAINER_ENTRIES = 2_000
 MAX_CONTAINER_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
-PARSER_VERSION = "python-ingestion-0.2.0"
-ARCHIVE_SUPPORTED_SUFFIXES = {".txt", ".md", ".pdf", ".docx", ".xlsx"}
+PARSER_VERSION = "python-ingestion-0.3.0"
+ARCHIVE_SUPPORTED_SUFFIXES = {".txt", ".md", ".pdf", ".docx", ".xlsx", ".csv", ".json"}
 
 
 @dataclass(frozen=True)
@@ -137,6 +137,12 @@ def extract_file(path: Path) -> tuple[str, str]:
     if suffix == ".csv":
         with path.open(newline="", encoding="utf-8") as handle:
             return "\n".join(" | ".join(row) for row in csv.reader(handle)), "text/csv"
+    if suffix == ".json":
+        try:
+            value = json.loads(path.read_text(encoding="utf-8-sig"))
+        except json.JSONDecodeError as error:
+            raise ValueError("Invalid JSON source.") from error
+        return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True), "application/json"
     if suffix == ".docx":
         from docx import Document
 
@@ -183,6 +189,28 @@ def _extract_archive(path: Path) -> list[tuple[str, str, str]]:
         if len(entries) > MAX_CONTAINER_ENTRIES or sum(entry.file_size for entry in entries) > MAX_CONTAINER_UNCOMPRESSED_BYTES:
             raise ValueError("ZIP archive exceeds safe extraction limits.")
         seen_names: set[str] = set()
+        for entry in entries:
+            name = entry.filename
+            relative = PurePosixPath(name)
+            if (
+                not name
+                or "\\" in name
+                or "\x00" in name
+                or relative.is_absolute()
+                or ".." in relative.parts
+                or _is_symlink(entry)
+            ):
+                raise ValueError("ZIP archive contains an unsafe path.")
+            if name.casefold() in seen_names:
+                raise ValueError("ZIP archive contains duplicate file names.")
+            seen_names.add(name.casefold())
+            if entry.flag_bits & 0x1 or entry.file_size > MAX_BYTES:
+                raise ValueError("ZIP archive contains an encrypted or oversized file.")
+        has_training_directory = any("training" in {part.casefold() for part in PurePosixPath(entry.filename).parts[:-1]} for entry in entries)
+        if has_training_directory:
+            entries = [entry for entry in entries if "training" in {part.casefold() for part in PurePosixPath(entry.filename).parts[:-1]}]
+        if not entries:
+            raise ValueError("ZIP archive contains no ingestible files.")
         extracted: list[tuple[str, str, str]] = []
         with tempfile.TemporaryDirectory(prefix="agentic-zip-") as directory:
             root = Path(directory)
@@ -190,18 +218,6 @@ def _extract_archive(path: Path) -> list[tuple[str, str, str]]:
                 name = entry.filename
                 relative = PurePosixPath(name)
                 suffix = Path(name).suffix.lower()
-                if (
-                    not name
-                    or "\\" in name
-                    or "\x00" in name
-                    or relative.is_absolute()
-                    or ".." in relative.parts
-                    or _is_symlink(entry)
-                ):
-                    raise ValueError("ZIP archive contains an unsafe path.")
-                if name.casefold() in seen_names:
-                    raise ValueError("ZIP archive contains duplicate file names.")
-                seen_names.add(name.casefold())
                 if suffix == ".zip":
                     raise ValueError("Nested ZIP archives are unsupported.")
                 if suffix not in ARCHIVE_SUPPORTED_SUFFIXES:

@@ -36,10 +36,11 @@ Use Node-enforced RBAC/ABAC, session auth, credential rotation, admin MFA/SSO de
 | Microsoft Word DOCX | Extract paragraphs, headings and tables with page/section locator where available | Legacy .doc requires a separate safe-conversion adapter/approval; reject macros |
 | Microsoft Excel XLSX | Extract sheet names, tabular headers, rows, labels and units | Formula cached result fidelity warning; never execute macros, formulas or external links |
 | Plain text TXT | UTF-8 text with encoding detection/rejection rules | Size limit, sanitize control characters |
+| Markdown, CSV and JSON | Parse UTF-8 text, preserve structured values and source filename locators | Validate JSON syntax; reject binary/control-byte content; size and sanitization limits |
 | PDF | Text-based extraction with pages/tables where feasible | Scanned/image PDFs are reported unsupported/pending OCR unless OCR is implemented and validated |
 | Website URL(s) | Admin explicitly submits HTTPS URLs; fetch content through bounded ingestion worker | No arbitrary live web search in chat; strict URL allowlist, redirects/SSRF protection and crawl scopes |
 
-Additional formats (CSV/Markdown may be easy extensions; PPTX, images, OCR and legacy Office) are optional until approved; do not claim "any file" works before adapter tests. Parse safely with file validation, malware scanning, quota, size/time limits and sandboxed libraries. Never execute uploaded content, spreadsheets, macros, HTML scripts or embedded references.
+Additional formats (PPTX, images, OCR and legacy Office) are optional until approved; do not claim "any file" works before adapter tests. Parse safely with file validation, malware scanning, quota, size/time limits and sandboxed libraries. Never execute uploaded content, spreadsheets, macros, HTML scripts or embedded references.
 
 ### URL-ingestion policy
 Require admin authorization, HTTPS scheme, tenant-approved domains, DNS/IP checks on every redirect and request to block localhost/private/link-local/metadata targets, content-type/size/time/depth caps, robots/terms review, no credential crawling, no default recursive link following, dedupe/canonicalization, capture retrieval timestamp/URL/title/provenance and private staging. Allow explicitly scoped optional same-domain crawling only with a separate bounded feature and source review. A web link becomes an approved **snapshot**; live chat never follows arbitrary user URLs for facts.

@@ -16,6 +16,7 @@ The system is considered **locally complete** only with automated synthetic fixt
 | SRC-02 | XLSX with headers/sheets/units/formulas | Correct extracted values or explicit unsafe/unavailable warning; no execution | Worker integration |
 | SRC-03 | UTF-8 TXT | Deterministic chunks | Worker integration |
 | SRC-04 | Text PDF | Page locators and chunks | Worker integration |
+| SRC-11 | Markdown, CSV and JSON | Supported parsing, structured values and JSON syntax validation | Worker/API unit |
 | SRC-05 | Admin-approved HTTPS URL | Fetch snapshot only approved host, provenance tracked | Worker integration |
 | SRC-06 | URL to localhost/private IP/metadata or redirect there | Deny; no outbound private request | SSRF security |
 | SRC-07 | Unsupported encrypted .doc/.xls/OCR-only PDF | Clear error; not published | Worker integration |
@@ -66,6 +67,7 @@ The system is considered **locally complete** only with automated synthetic fixt
 | SRC-02 | Pass: XLSX extraction preserves sheet/header/value structure without formula execution in `test_ingestion.py`. |
 | SRC-03 | Pass: deterministic UTF-8 text normalization/chunking in `test_ingestion.py` and API source flow. |
 | SRC-04 | Pass: text PDF page locators and OCR-only rejection in `test_ingestion.py`. |
+| SRC-11 | Pass: direct Markdown/CSV/JSON extraction, API MIME/signature validation and ZIP training-boundary coverage in `test_ingestion.py`, `ingestion-staging.test.ts` and `app.test.ts`. |
 | SRC-05 | Pass: allowlisted HTTPS snapshot and source URL provenance in `test_ingestion.py`; API domain allowlist covered in `app.test.ts`. |
 | SRC-06 | Pass locally: private DNS, redirects, non-text responses and DNS-rebinding address changes are rejected by Python tests. |
 | SRC-07 | Pass locally: mismatched signatures, macro/path-traversal Office containers, legacy `.doc`/`.xls` and OCR-only PDF inputs fail visibly; bounded decompression limits are enforced and encrypted-parser behavior remains a production parser-policy decision. |

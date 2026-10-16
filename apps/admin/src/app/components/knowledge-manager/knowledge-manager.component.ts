@@ -289,14 +289,14 @@ import { BadgeComponent } from '../shared/badge.component';
                     id="file-upload"
                     name="file-upload"
                     type="file"
-                    accept=".pdf,.docx,.xlsx,.txt,.md,.zip"
+                    accept=".pdf,.docx,.xlsx,.txt,.md,.csv,.json,.zip"
                     (change)="onFileChange($event)"
                     class="sr-only"
                   />
                 </label>
                 <p class="pl-1">or drag and drop here</p>
               </div>
-              <p class="text-[11px] text-neutral-400 mt-1">PDF, DOCX, XLSX, TXT, MD, ZIP up to 5 MiB</p>
+              <p class="text-[11px] text-neutral-400 mt-1">PDF, DOCX, XLSX, TXT, MD, CSV, JSON, ZIP up to 5 MiB</p>
               <p *ngIf="selectedFile" class="mt-2 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded inline-block">
                 Selected: {{ selectedFile.name }} ({{ (selectedFile.size / 1024) | number:'1.0-0' }} KB)
               </p>
@@ -462,7 +462,7 @@ export class KnowledgeManagerComponent implements OnInit {
     if (!this.selectedFile) return;
     const mime = fileMimeType(this.selectedFile.name);
     if (!mime) {
-      this.state.showToast('error', 'Unsupported Format', 'Please upload a PDF, DOCX, XLSX, TXT, MD, or ZIP file.');
+      this.state.showToast('error', 'Unsupported Format', 'Please upload a PDF, DOCX, XLSX, TXT, MD, CSV, JSON, or ZIP file.');
       return;
     }
     if (this.selectedFile.size > 5 * 1024 * 1024) {

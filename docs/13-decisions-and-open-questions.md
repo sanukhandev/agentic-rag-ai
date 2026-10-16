@@ -9,7 +9,7 @@ This log explicitly separates accepted requirements from pending architecture ch
 - Start with web; preserve a common Node API for later sales channels.
 - Multi-tenant organizations are in initial scope; platform admin provisions tenants, tenant admins manage their workspace, and source/chat/persona/analytics are strictly isolated.
 - Angular admin requires authenticated login and Node API-based service/usage dashboards.
-- Initial source formats are Word DOCX, Excel XLSX, TXT, text-based PDF and HTTPS link snapshots after safe validation.
+- Initial source formats are Word DOCX, Excel XLSX, TXT, Markdown, CSV, JSON, text-based PDF and HTTPS link snapshots after safe validation.
 - Each tenant configures the agent's name, greeting, tone/style and default/allowed languages; persona never changes permissions or facts.
 - Public visitor chat sees only tenant-approved publicly publishable content, never internal tenant material.
 - RAG is authoritative for factual company claims; no unsupported assumptions.

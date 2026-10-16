@@ -80,7 +80,7 @@ Gate: admin A onboards tenant C in a test environment and grants its admin; tena
 ### P04 — Python safe ingestion (initial supported formats)
 Tasks:
 1. Define typed ingestion job request/result schema; implement private staging path/object adapter, job leasing/locking, retries, checksum/idempotency, progress/error states and quarantine.
-2. Implement adapters with tests for DOCX, XLSX, TXT, text PDF and approved HTTPS URLs. Reject unsupported .doc/.xls, protected/invalid binary, macro files and OCR-only PDF with actionable error until explicitly supported.
+2. Implement adapters with tests for DOCX, XLSX, TXT, Markdown, CSV, JSON, text PDF and approved HTTPS URLs. Reject unsupported .doc/.xls, protected/invalid binary, macro files and OCR-only PDF with actionable error until explicitly supported.
 3. For Excel preserve sheet and column headers, rows and units; prohibit formula/macro execution; for URLs enforce admin-scoped HTTPS host allowlist, DNS/IP/redirect SSRF checks, canonicalization, bounded fetch, no automatic recursive crawl.
 4. Extract source locators, sanitize secrets/PII, chunk deterministically, call injectable embedding interface, upsert versioned vectors, stage/review/publish atomically; retain previous active version on failure.
 5. Implement lifecycle revoke/reindex and purge according to policy; enforce tenant and public/internal audience classification on chunks; admin job progress API.

@@ -424,6 +424,10 @@ describe('API vertical slice', () => {
       const failedZip = await api.post(`/api/v1/internal/ingestion-jobs/${zipQueued.body.job.id}/failure`).set('x-ingestion-worker-secret', 'worker-secret').send({ errorCode: 'INGESTION_FAILED' }).expect(200);
       expect(failedZip.body.job).toMatchObject({ status: 'failed', errorCode: 'INGESTION_FAILED' });
       expect(await readdir(stagingRoot)).toHaveLength(0);
+      const csvQueued = await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Project Catalog', fileName: 'catalog.csv', mimeType: 'text/csv', audience: 'public', contentBase64: Buffer.from('name,value\nStarter,100').toString('base64') }).expect(202);
+      expect(csvQueued.body.job).toMatchObject({ mimeType: 'text/csv', status: 'queued' });
+      const jsonQueued = await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Portfolio Metadata', fileName: 'metadata.json', mimeType: 'application/json', audience: 'public', contentBase64: Buffer.from('{"name":"Starter"}').toString('base64') }).expect(202);
+      expect(jsonQueued.body.job).toMatchObject({ mimeType: 'application/json', status: 'queued' });
       await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Bad extension', fileName: 'faq.pdf', mimeType: 'text/plain', audience: 'public', contentBase64: Buffer.from(content).toString('base64') }).expect(422);
       await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Bad signature', fileName: 'faq.pdf', mimeType: 'application/pdf', audience: 'public', contentBase64: Buffer.from(content).toString('base64') }).expect(422);
       await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Binary bypass', mimeType: 'application/pdf', audience: 'public', content: content }).expect(422);

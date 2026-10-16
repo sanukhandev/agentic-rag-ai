@@ -26,6 +26,9 @@ describe('private ingestion staging', () => {
       await expect(staging.write('22222222-2222-4222-8222-222222222222', 'application/pdf', Buffer.from('not a pdf'))).rejects.toThrow('signature');
       expect(hasValidFileSignature('application/pdf', Buffer.from('%PDF-1.7'))).toBe(true);
       expect(hasValidFileSignature('application/pdf', Buffer.from('plain text'))).toBe(false);
+      expect(hasValidFileSignature('text/csv', Buffer.from('name,value\nStarter,100'))).toBe(true);
+      expect(hasValidFileSignature('application/json', Buffer.from('{"name":"Starter"}'))).toBe(true);
+      expect(hasValidFileSignature('application/json', Buffer.from('{invalid'))).toBe(false);
       expect(hasValidFileSignature('application/zip', Buffer.from('PK\u0005\u0006'))).toBe(true);
       await staging.write('22222222-2222-4222-8222-222222222222', 'application/zip', Buffer.from('PK\u0005\u0006'));
       expect(await staging.read('22222222-2222-4222-8222-222222222222', 'application/zip')).toEqual(Buffer.from('PK\u0005\u0006'));
