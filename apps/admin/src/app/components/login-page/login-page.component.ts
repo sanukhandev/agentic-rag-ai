@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../services/auth.service';
@@ -153,6 +153,7 @@ import { IconComponent } from '../shared/icon.component';
 })
 export class LoginPageComponent {
   private readonly auth = inject(AuthService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   email = 'admin@techcarrot.ae';
   password = '';
@@ -164,16 +165,19 @@ export class LoginPageComponent {
     if (!this.email || !this.password) return;
     this.isLoading = true;
     this.errorMessage = '';
+    this.cdr.markForCheck();
 
     this.auth.loginWithCredentials(
       this.email,
       this.password,
       () => {
         this.isLoading = false;
+        this.cdr.markForCheck();
       },
       (err) => {
         this.isLoading = false;
         this.errorMessage = err;
+        this.cdr.markForCheck();
       }
     );
   }

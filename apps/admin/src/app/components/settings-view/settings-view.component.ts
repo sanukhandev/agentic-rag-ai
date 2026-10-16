@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -229,6 +229,7 @@ import { BadgeComponent } from '../shared/badge.component';
 })
 export class SettingsViewComponent implements OnInit {
   private readonly state = inject(AdminStateService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   channel: Channel = { publicOrigin: null, publicChatEnabled: false };
   domains: TenantDomain[] = [];
@@ -240,9 +241,18 @@ export class SettingsViewComponent implements OnInit {
   newRole: MemberRole = 'tenant_editor';
 
   constructor() {
-    this.state.channel$.subscribe((c) => (this.channel = { ...c }));
-    this.state.domains$.subscribe((d) => (this.domains = d));
-    this.state.members$.subscribe((m) => (this.members = m));
+    this.state.channel$.subscribe((c) => {
+      this.channel = { ...c };
+      this.cdr.markForCheck();
+    });
+    this.state.domains$.subscribe((d) => {
+      this.domains = d;
+      this.cdr.markForCheck();
+    });
+    this.state.members$.subscribe((m) => {
+      this.members = m;
+      this.cdr.markForCheck();
+    });
   }
 
   ngOnInit(): void {

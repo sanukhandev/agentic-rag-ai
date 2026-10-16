@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -377,6 +377,7 @@ import { BadgeComponent } from '../shared/badge.component';
 })
 export class KnowledgeManagerComponent implements OnInit {
   private readonly state = inject(AdminStateService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   activeTab: 'catalog' | 'stage' | 'upload' | 'crawl' = 'catalog';
   selectedStatus: string = 'all';
@@ -397,7 +398,10 @@ export class KnowledgeManagerComponent implements OnInit {
   crawlUrl = '';
 
   constructor() {
-    this.state.sources$.subscribe((s) => (this.sources = s));
+    this.state.sources$.subscribe((s) => {
+      this.sources = s;
+      this.cdr.markForCheck();
+    });
   }
 
   ngOnInit(): void {

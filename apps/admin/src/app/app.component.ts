@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from './services/admin-state.service';
 import { NavSection, Tenant } from './types/admin.types';
@@ -43,6 +43,7 @@ import { BadgeComponent } from './components/shared/badge.component';
 })
 export class AppComponent implements OnInit {
   readonly state = inject(AdminStateService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   isAuthenticated = false;
   isStandaloneChat = false;
@@ -67,10 +68,23 @@ export class AppComponent implements OnInit {
         this.isStandaloneChat = true;
       }
     }
-    this.state.isAuthenticated$.subscribe((auth) => (this.isAuthenticated = auth));
-    this.state.currentSection$.subscribe((sec) => (this.currentSection = sec));
-    this.state.role$.subscribe((r) => (this.role = r));
-    this.state.selectedTenant$.subscribe((st) => (this.selectedTenant = st));
+    this.state.isAuthenticated$.subscribe((auth) => {
+      this.isAuthenticated = auth;
+      this.cdr.markForCheck();
+      this.cdr.detectChanges();
+    });
+    this.state.currentSection$.subscribe((sec) => {
+      this.currentSection = sec;
+      this.cdr.markForCheck();
+    });
+    this.state.role$.subscribe((r) => {
+      this.role = r;
+      this.cdr.markForCheck();
+    });
+    this.state.selectedTenant$.subscribe((st) => {
+      this.selectedTenant = st;
+      this.cdr.markForCheck();
+    });
   }
 
   setSection(sec: NavSection): void {

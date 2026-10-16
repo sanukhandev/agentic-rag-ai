@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, OnDestroy, inject, ElementRef, ViewChild } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy, ChangeDetectorRef, inject, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -414,6 +414,7 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
   private readonly http = inject(HttpClient);
   private readonly state = inject(AdminStateService);
   private readonly sanitizer = inject(DomSanitizer);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   // Configuration & Tenant state
   tenantSlug = '';

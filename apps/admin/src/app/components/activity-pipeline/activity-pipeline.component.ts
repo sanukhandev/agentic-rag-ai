@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
 import { IngestionJob, AuditEvent } from '../../types/admin.types';
@@ -150,13 +150,20 @@ import { BadgeComponent } from '../shared/badge.component';
 })
 export class ActivityPipelineComponent implements OnInit {
   private readonly state = inject(AdminStateService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   jobs: IngestionJob[] = [];
   auditEvents: AuditEvent[] = [];
 
   constructor() {
-    this.state.ingestionJobs$.subscribe((j) => (this.jobs = j));
-    this.state.auditEvents$.subscribe((a) => (this.auditEvents = a));
+    this.state.ingestionJobs$.subscribe((j) => {
+      this.jobs = j;
+      this.cdr.markForCheck();
+    });
+    this.state.auditEvents$.subscribe((a) => {
+      this.auditEvents = a;
+      this.cdr.markForCheck();
+    });
   }
 
   ngOnInit(): void {

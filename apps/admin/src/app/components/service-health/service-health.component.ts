@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
 import { Health } from '../../types/admin.types';
@@ -128,6 +128,7 @@ interface ServiceNode {
 })
 export class ServiceHealthComponent implements OnInit {
   private readonly state = inject(AdminStateService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   health: Health | null = null;
 
@@ -177,7 +178,10 @@ export class ServiceHealthComponent implements OnInit {
   ];
 
   constructor() {
-    this.state.health$.subscribe((h) => (this.health = h));
+    this.state.health$.subscribe((h) => {
+      this.health = h;
+      this.cdr.markForCheck();
+    });
   }
 
   ngOnInit(): void {
@@ -205,7 +209,9 @@ export class ServiceHealthComponent implements OnInit {
 
   private getServiceStatus(key: string): 'healthy' | 'degraded' | 'down' {
     if (!this.health?.checkedAt) return 'healthy';
-    const status = this.getCheck(key)?.status;
+    const check = this.getCheck(key);
+    if (!check) return 'healthy';
+    const status = check.status;
     if (status === 'ok' || status === 'healthy' || status === 'active' || status === 'adapter' || status === 'ready' || status === 'operational') return 'healthy';
     if (status === 'degraded' || status === 'standby' || status === 'not_observed') return 'degraded';
     return 'down';
@@ -219,7 +225,8 @@ export class ServiceHealthComponent implements OnInit {
   getStatusLabel(key: string): string {
     if (!this.health?.checkedAt) return 'Checking...';
     const check = this.getCheck(key);
-    const status = check?.status;
+    if (!check) return 'Operational';
+    const status = check.status;
     if (status === 'ok' || status === 'healthy' || status === 'active') return 'Healthy';
     if (status === 'operational') return 'Operational';
     if (status === 'adapter') return 'Operational (Adapter)';

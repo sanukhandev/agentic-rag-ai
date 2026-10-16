@@ -47,8 +47,8 @@ export class TenantService {
   }
 
   selectTenant(tenant: Tenant): void {
-    this.selectedTenantSubject.next(tenant);
     this.auth.setSelectedTenantId(tenant?.id ?? null);
+    this.selectedTenantSubject.next(tenant);
     this.toast.show('info', 'Switched Workspace', `Active context: ${tenant.name}`);
   }
 
@@ -64,9 +64,9 @@ export class TenantService {
       ).subscribe((res) => {
         this.isLoadingSubject.next(false);
         if (res?.tenant) {
+          this.auth.setSelectedTenantId(res.tenant.id);
           this.tenantsSubject.next([res.tenant]);
           this.selectedTenantSubject.next(res.tenant);
-          this.auth.setSelectedTenantId(res.tenant.id);
         }
       });
       return;
@@ -84,10 +84,8 @@ export class TenantService {
       const targetId = current?.id || this.auth.selectedTenantId;
       const matched = targetId ? items.find((t) => t.id === targetId) : null;
       const chosen = matched ?? items[0] ?? null;
+      this.auth.setSelectedTenantId(chosen?.id ?? null);
       this.selectedTenantSubject.next(chosen);
-      if (chosen) {
-        this.auth.setSelectedTenantId(chosen.id);
-      }
     });
   }
 

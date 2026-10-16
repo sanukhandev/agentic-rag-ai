@@ -1,4 +1,4 @@
-import { Component, HostListener, inject } from '@angular/core';
+import { Component, HostListener, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -87,6 +87,7 @@ interface CommandItem {
 })
 export class CommandPaletteComponent {
   private readonly state = inject(AdminStateService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   isOpen = false;
   query = '';
@@ -102,9 +103,16 @@ export class CommandPaletteComponent {
         this.query = '';
         this.selectedIndex = 0;
       }
+      this.cdr.markForCheck();
     });
-    this.state.tenants$.subscribe((t) => (this.tenants = t));
-    this.state.sources$.subscribe((s) => (this.sources = s));
+    this.state.tenants$.subscribe((t) => {
+      this.tenants = t;
+      this.cdr.markForCheck();
+    });
+    this.state.sources$.subscribe((s) => {
+      this.sources = s;
+      this.cdr.markForCheck();
+    });
   }
 
   @HostListener('document:keydown', ['$event'])

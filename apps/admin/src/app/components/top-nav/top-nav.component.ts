@@ -1,4 +1,4 @@
-import { Component, ElementRef, HostListener, inject } from '@angular/core';
+import { Component, ElementRef, HostListener, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
 import { NavSection, Tenant } from '../../types/admin.types';
@@ -148,21 +148,12 @@ interface MegaMenuColumn {
           <button
             type="button"
             (click)="openSearch()"
-            class="hidden sm:flex h-8 items-center gap-2 rounded-lg border border-neutral-200/90 bg-neutral-50/70 px-2.5 text-xs text-neutral-500 hover:border-neutral-300 hover:bg-white hover:text-neutral-900 transition-all button-press"
-            title="Search organizations, sources, or commands (Ctrl+K)"
+            class="flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200/90 bg-neutral-50/70 px-2 sm:px-2.5 text-xs text-neutral-500 hover:border-neutral-300 hover:bg-white hover:text-neutral-900 transition-all button-press"
+            title="Search organizations, sources, or commands (⌘K)"
           >
             <app-icon name="search" classNames="w-3.5 h-3.5 text-neutral-400"></app-icon>
-            <span class="font-normal">Search...</span>
-            <kbd class="ml-1 rounded border border-neutral-200/90 bg-white px-1.5 py-0.5 text-[10px] font-mono text-neutral-400">⌘K</kbd>
-          </button>
-
-          <button
-            type="button"
-            (click)="openSearch()"
-            class="sm:hidden flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200/90 bg-white text-neutral-500 hover:text-neutral-900 transition-all"
-            title="Search (Ctrl+K)"
-          >
-            <app-icon name="search" classNames="w-3.5 h-3.5"></app-icon>
+            <span class="hidden 2xl:inline font-normal">Search...</span>
+            <kbd class="hidden sm:inline-block rounded border border-neutral-200/90 bg-white px-1.5 py-0.5 text-[10px] font-mono text-neutral-400">⌘K</kbd>
           </button>
 
           <!-- Tenant Switcher Dropdown (Refined Compact Pill) -->
@@ -434,6 +425,7 @@ interface MegaMenuColumn {
 export class TopNavComponent {
   private readonly state = inject(AdminStateService);
   private readonly elementRef = inject(ElementRef);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   activeSection: NavSection = 'overview';
   activeMegaMenu: NavSection | null = null;
@@ -447,12 +439,30 @@ export class TopNavComponent {
   mobileNavOpen = false;
 
   constructor() {
-    this.state.currentSection$.subscribe((s) => (this.activeSection = s));
-    this.state.activeMegaMenu$.subscribe((m) => (this.activeMegaMenu = m));
-    this.state.tenants$.subscribe((t) => (this.tenants = t));
-    this.state.selectedTenant$.subscribe((st) => (this.selectedTenant = st));
-    this.state.role$.subscribe((r) => (this.role = r));
-    this.state.userEmail$.subscribe((e) => (this.userEmail = e));
+    this.state.currentSection$.subscribe((s) => {
+      this.activeSection = s;
+      this.cdr.markForCheck();
+    });
+    this.state.activeMegaMenu$.subscribe((m) => {
+      this.activeMegaMenu = m;
+      this.cdr.markForCheck();
+    });
+    this.state.tenants$.subscribe((t) => {
+      this.tenants = t;
+      this.cdr.markForCheck();
+    });
+    this.state.selectedTenant$.subscribe((st) => {
+      this.selectedTenant = st;
+      this.cdr.markForCheck();
+    });
+    this.state.role$.subscribe((r) => {
+      this.role = r;
+      this.cdr.markForCheck();
+    });
+    this.state.userEmail$.subscribe((e) => {
+      this.userEmail = e;
+      this.cdr.markForCheck();
+    });
   }
 
   get isPlatformAdmin(): boolean {

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
 import { PlatformOverview, Metrics } from '../../types/admin.types';
@@ -135,15 +135,25 @@ import { IconComponent } from '../shared/icon.component';
 })
 export class KpiCardsComponent implements OnInit {
   private readonly state = inject(AdminStateService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   overview: PlatformOverview | null = null;
   metrics: Metrics | null = null;
   health: any = null;
 
   constructor() {
-    this.state.platformOverview$.subscribe((o) => (this.overview = o));
-    this.state.metrics$.subscribe((m) => (this.metrics = m));
-    this.state.health$.subscribe((h) => (this.health = h));
+    this.state.platformOverview$.subscribe((o) => {
+      this.overview = o;
+      this.cdr.markForCheck();
+    });
+    this.state.metrics$.subscribe((m) => {
+      this.metrics = m;
+      this.cdr.markForCheck();
+    });
+    this.state.health$.subscribe((h) => {
+      this.health = h;
+      this.cdr.markForCheck();
+    });
   }
 
   ngOnInit(): void {

@@ -163,4 +163,20 @@ export class AuthService {
 
     this.toastService.show('info', 'Signed Out', 'You have been securely logged out.');
   }
+
+  handleUnauthorized(): void {
+    if (!this.isAuthenticatedSubject.value) return;
+    sessionStorage.removeItem(ADMIN_STORAGE_KEYS.TOKEN);
+    sessionStorage.removeItem(ADMIN_STORAGE_KEYS.ROLE);
+    sessionStorage.removeItem(ADMIN_STORAGE_KEYS.EMAIL);
+    sessionStorage.removeItem(ADMIN_STORAGE_KEYS.TENANT_ID);
+    this._selectedTenantId = null;
+
+    this.tokenSubject.next('');
+    this.roleSubject.next('');
+    this.userEmailSubject.next('');
+    this.isAuthenticatedSubject.next(false);
+
+    this.toastService.show('warning', 'Session Expired', 'Your session has expired. Please sign in again.');
+  }
 }
