@@ -75,6 +75,21 @@ def submit_result(api_base: str, job_id: str, worker_secret: str, source: Ingest
     return body
 
 
+def submit_failure(api_base: str, job_id: str, worker_secret: str, error_code: str = "INGESTION_FAILED", session: requests.Session | None = None) -> dict[str, Any]:
+    client = session or requests.Session()
+    response = client.post(
+        f"{api_base.rstrip('/')}/api/v1/internal/ingestion-jobs/{job_id}/failure",
+        headers={"x-ingestion-worker-secret": worker_secret},
+        json={"errorCode": error_code},
+        timeout=15,
+    )
+    raise_for_api_status(response)
+    body = response.json()
+    if not isinstance(body, dict):
+        raise ValueError("The ingestion API returned an invalid failure result.")
+    return body
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run safe source extraction and submit one ingestion job result.")
     source = parser.add_mutually_exclusive_group(required=False)
@@ -91,34 +106,42 @@ def main() -> None:
         parser.error("--staging-root is required when processing an uploaded API file")
     if args.url and (not args.title or not args.allowed_host):
         parser.error("--url requires --title and at least one --allowed-host")
-    claim = True
-    if args.path or args.url:
-        claim_job(args.api_base, args.job_id, args.worker_secret)
-        claim = False
-    if args.url:
-        ingested = ingest_url(args.title, args.url, set(args.allowed_host))
-    elif args.path:
-        staging_root = args.staging_root
-        if staging_root:
-            staging = LocalStaging(staging_root)
-            staged = staging.stage(args.path)
+    claimed = False
+    try:
+        if args.path or args.url:
+            claim_job(args.api_base, args.job_id, args.worker_secret)
+            claimed = True
+        if args.url:
+            ingested = ingest_url(args.title, args.url, set(args.allowed_host))
+        elif args.path:
+            staging_root = args.staging_root
+            if staging_root:
+                staging = LocalStaging(staging_root)
+                staged = staging.stage(args.path)
+                try:
+                    ingested = ingest_file(staged)
+                finally:
+                    staging.purge(staged)
+            else:
+                ingested = ingest_file(args.path)
+        else:
+            claim_job(args.api_base, args.job_id, args.worker_secret)
+            claimed = True
+            file_name, _mime_type, content = fetch_job_input(args.api_base, args.job_id, args.worker_secret)
+            staging = LocalStaging(args.staging_root)
+            staged = staging.stage_bytes(Path(file_name).suffix, content)
             try:
                 ingested = ingest_file(staged)
             finally:
                 staging.purge(staged)
-        else:
-            ingested = ingest_file(args.path)
-    else:
-        claim_job(args.api_base, args.job_id, args.worker_secret)
-        file_name, _mime_type, content = fetch_job_input(args.api_base, args.job_id, args.worker_secret)
-        staging = LocalStaging(args.staging_root)
-        staged = staging.stage_bytes(Path(file_name).suffix, content)
-        try:
-            ingested = ingest_file(staged)
-        finally:
-            staging.purge(staged)
-        claim = False
-    submit_result(args.api_base, args.job_id, args.worker_secret, ingested, claim=claim)
+        submit_result(args.api_base, args.job_id, args.worker_secret, ingested, claim=False)
+    except Exception:
+        if claimed:
+            try:
+                submit_failure(args.api_base, args.job_id, args.worker_secret)
+            except Exception:
+                pass
+        raise
 
 
 if __name__ == "__main__":

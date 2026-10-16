@@ -72,7 +72,7 @@ npm run dev:admin
 
 `npm run acceptance:local` starts a disposable local API and runs the clean-room ingestion journey: real TXT, DOCX, XLSX and text-PDF uploads through Node staging and the Python worker, a deterministic approved HTTPS snapshot, publication of all five sources and a grounded public-chat query. It uses no browser automation or external network calls.
 
-For the PostgreSQL/pgvector adapter, run `npm run db:migrate`, set `STORE=postgres` and `DATABASE_URL` from `.env.example`, then start the API. The API loads an ignored local `.env` when present; keep real credentials there, never in Git. The Python worker is under `tools/ingestion`; it supports TXT, Markdown, CSV, DOCX, XLSX, text PDF and bounded allowlisted HTTPS snapshots, and must run in a project venv. No real customer data or credentials belong in the repository.
+For the PostgreSQL/pgvector adapter, run `npm run db:migrate`, set `STORE=postgres` and `DATABASE_URL` from `.env.example`, then start the API. The API loads an ignored local `.env` when present; keep real credentials there, never in Git. The Python worker is under `tools/ingestion`; it supports TXT, Markdown, DOCX, XLSX, text PDF, bounded ZIP bundles containing those formats, and allowlisted HTTPS snapshots, and must run in a project venv. ZIP bundles are extracted with path, size, duplicate-name, nested-archive, macro and unsupported-file checks before sanitization, chunking and embedding. No real customer data or credentials belong in the repository.
 
 The root `docker-compose.yml` is the single local development deployment for PostgreSQL/pgvector, Redis, n8n, API, web, admin and opt-in ingestion, with localhost-only defaults. It is not a production deployment.
 

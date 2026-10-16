@@ -188,7 +188,7 @@ paths:
     post:
       tags: [Tenant admin]
       security: [{ bearerAuth: [] }]
-      description: Queues a bounded base64 file for the authenticated Python ingestion worker.
+      description: Queues a bounded base64 file or ZIP bundle for the authenticated Python ingestion worker. ZIP bundles may contain Markdown, DOCX, PDF, TXT and XLSX files.
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UploadSource' } } } }
       responses: { '202': { description: Private file staged } }
   /api/v1/admin/sources/{id}/versions:
@@ -316,6 +316,13 @@ paths:
       parameters: [{ $ref: '#/components/parameters/Id' }]
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [chunks], properties: { chunks: { type: array, items: { $ref: '#/components/schemas/ChunkResult' } } } } } } }
       responses: { '200': { description: Worker result accepted } }
+  /api/v1/internal/ingestion-jobs/{id}/failure:
+    post:
+      tags: [Internal]
+      security: [{ ingestionWorker: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      description: Records a sanitized worker extraction failure and removes private staged bytes.
+      responses: { '200': { description: Ingestion job marked failed } }
   /api/v1/internal/n8n/callback:
     post:
       tags: [Internal]
@@ -352,7 +359,7 @@ components:
     ChannelConfig: { type: object, required: [publicOrigin], properties: { publicOrigin: { oneOf: [{ type: string, const: '' }, { type: string, format: uri, description: HTTP(S) origin with no path, query or fragment }] }, publicChatEnabled: { type: boolean } } }
     Persona: { type: object, required: [name, greeting, personality, tone, speakingStyle, permittedLanguages], properties: { name: { type: string }, greeting: { type: string }, personality: { type: string }, tone: { type: string }, speakingStyle: { type: string }, permittedLanguages: { type: array, minItems: 1, maxItems: 10, items: { type: string } } } }
     TextSource: { type: object, required: [title, mimeType, content], properties: { title: { type: string }, mimeType: { type: string }, sourceUrl: { type: string, format: uri }, audience: { type: string, enum: [public, internal] }, content: { type: string, maxLength: 200000 } } }
-    UploadSource: { type: object, required: [title, fileName, mimeType, contentBase64], properties: { title: { type: string }, fileName: { type: string }, mimeType: { type: string }, audience: { type: string, enum: [public, internal] }, contentBase64: { type: string } } }
+    UploadSource: { type: object, required: [title, fileName, mimeType, contentBase64], properties: { title: { type: string }, fileName: { type: string }, mimeType: { type: string, enum: [text/plain, text/markdown, application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/zip] }, audience: { type: string, enum: [public, internal] }, contentBase64: { type: string } } }
     IngestionRequest: { type: object, required: [title, mimeType], properties: { title: { type: string }, mimeType: { type: string }, sourceUrl: { type: string, format: uri }, audience: { type: string, enum: [public, internal] } } }
     SessionRequest: { type: object, anyOf: [{ required: [tenantSlug] }, { required: [tenantId] }], properties: { tenantSlug: { type: string, pattern: '^[a-z0-9-]+$' }, tenantId: { type: string, format: uuid } } }
     MessageRequest: { type: object, required: [sessionId, message, clientMessageId], properties: { sessionId: { type: string, format: uuid }, message: { type: string, minLength: 1, maxLength: 4000 }, clientMessageId: { type: string, minLength: 1, maxLength: 128 } } }

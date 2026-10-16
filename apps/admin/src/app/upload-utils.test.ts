@@ -5,6 +5,7 @@ describe('admin upload utilities', () => {
   it('maps only supported ingestion extensions', () => {
     expect(fileMimeType('FAQ.DOCX')).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     expect(fileMimeType('notes.txt')).toBe('text/plain');
+    expect(fileMimeType('portfolio.zip')).toBe('application/zip');
     expect(fileMimeType('macro.doc')).toBeNull();
   });
 });

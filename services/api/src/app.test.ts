@@ -409,6 +409,14 @@ describe('API vertical slice', () => {
       const result = await api.post(`/api/v1/internal/ingestion-jobs/${queued.body.job.id}/result`).set('x-ingestion-worker-secret', 'worker-secret').send({ normalizedContent: content, contentHash: contentHash(content), parserVersion: 'test-parser', chunks: [{ ordinal: 0, locator: 'section 1', content, contentHash: contentHash(content) }] }).expect(201);
       expect(result.body.source).toMatchObject({ tenantId: tenant.body.tenant.id, title: 'Uploaded FAQ', status: 'awaiting_review' });
       expect(await readdir(stagingRoot)).toHaveLength(0);
+      const emptyZip = Buffer.from('504b0506000000000000000000000000000000000000', 'hex');
+      const zipQueued = await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Portfolio Bundle', fileName: 'portfolio.zip', mimeType: 'application/zip', audience: 'public', contentBase64: emptyZip.toString('base64') }).expect(202);
+      expect(zipQueued.body.job).toMatchObject({ tenantId: tenant.body.tenant.id, status: 'queued', mimeType: 'application/zip' });
+      expect(await readdir(stagingRoot)).toHaveLength(1);
+      await api.post(`/api/v1/internal/ingestion-jobs/${zipQueued.body.job.id}/claim`).set('x-ingestion-worker-secret', 'worker-secret').expect(200);
+      const failedZip = await api.post(`/api/v1/internal/ingestion-jobs/${zipQueued.body.job.id}/failure`).set('x-ingestion-worker-secret', 'worker-secret').send({ errorCode: 'INGESTION_FAILED' }).expect(200);
+      expect(failedZip.body.job).toMatchObject({ status: 'failed', errorCode: 'INGESTION_FAILED' });
+      expect(await readdir(stagingRoot)).toHaveLength(0);
       await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Bad extension', fileName: 'faq.pdf', mimeType: 'text/plain', audience: 'public', contentBase64: Buffer.from(content).toString('base64') }).expect(422);
       await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Bad signature', fileName: 'faq.pdf', mimeType: 'application/pdf', audience: 'public', contentBase64: Buffer.from(content).toString('base64') }).expect(422);
       await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Binary bypass', mimeType: 'application/pdf', audience: 'public', content: content }).expect(422);

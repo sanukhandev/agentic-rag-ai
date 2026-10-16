@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ingestion.pipeline import chunk_text, extract_file, fetch_authorized_https, ingest_file, ingest_text, ingest_url, sanitize
 from ingestion.staging import LocalStaging
-from ingestion.worker import fetch_job_input, main as worker_main, result_payload, submit_result
+from ingestion.worker import fetch_job_input, main as worker_main, result_payload, submit_failure, submit_result
 
 
 class IngestionTests(unittest.TestCase):
@@ -86,6 +86,41 @@ class IngestionTests(unittest.TestCase):
             xlsx_text, _ = extract_file(xlsx_path)
             self.assertIn("Sheet: Plans", xlsx_text)
             self.assertIn("Starter | 100", xlsx_text)
+
+    def test_zip_extracts_supported_files_with_file_locators(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "portfolio.zip"
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("professional-profile.md", "# Professional profile\n\nSecure AI delivery.")
+                archive.writestr("career-timeline.txt", "2026: Platform launch.")
+
+            source = ingest_file(path)
+
+            self.assertEqual(source.mime_type, "application/zip")
+            self.assertIn("professional-profile.md", source.normalized_content)
+            self.assertIn("career-timeline.txt", source.normalized_content)
+            self.assertTrue(any(chunk.locator.startswith("professional-profile.md") for chunk in source.chunks))
+            self.assertTrue(any(chunk.locator.startswith("career-timeline.txt") for chunk in source.chunks))
+
+    def test_zip_rejects_unsupported_nested_and_unsafe_members(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            unsupported = Path(directory) / "unsupported.zip"
+            with zipfile.ZipFile(unsupported, "w") as archive:
+                archive.writestr("payload.exe", "not supported")
+            with self.assertRaisesRegex(ValueError, "unsupported file type"):
+                ingest_file(unsupported)
+
+            nested = Path(directory) / "nested.zip"
+            with zipfile.ZipFile(nested, "w") as archive:
+                archive.writestr("nested.zip", "PK\\x05\\x06")
+            with self.assertRaisesRegex(ValueError, "Nested ZIP"):
+                ingest_file(nested)
+
+            unsafe = Path(directory) / "unsafe.zip"
+            with zipfile.ZipFile(unsafe, "w") as archive:
+                archive.writestr("../outside.txt", "unsafe")
+            with self.assertRaisesRegex(ValueError, "unsafe path"):
+                ingest_file(unsafe)
 
     def test_pdf_locators_and_ocr_only_rejection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -210,6 +245,15 @@ class IngestionTests(unittest.TestCase):
         submit_result("http://localhost:4000", "job-1", "worker-secret", source, session, claim=False)
         self.assertEqual(session.post.call_count, 1)
         self.assertIn("/api/v1/internal/ingestion-jobs/job-1/result", session.post.call_args.args[0])
+
+    def test_worker_reports_extraction_failure(self) -> None:
+        session = Mock()
+        response = Mock()
+        response.json.return_value = {"job": {"status": "failed"}}
+        session.post.return_value = response
+        output = submit_failure("http://localhost:4000", "job-1", "worker-secret", session=session)
+        self.assertEqual(output["job"]["status"], "failed")
+        self.assertEqual(session.post.call_args.kwargs["json"], {"errorCode": "INGESTION_FAILED"})
 
     def test_worker_preserves_safe_api_error_code(self) -> None:
         source = ingest_text("FAQ", "Approved content", "text/plain")

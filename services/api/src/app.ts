@@ -28,7 +28,7 @@ const safePersonaText = (max: number) => z.string().trim().min(1).max(max).refin
 const personaSchema = z.object({ name: safePersonaText(80), greeting: safePersonaText(500), personality: safePersonaText(500), tone: safePersonaText(200), speakingStyle: safePersonaText(200), permittedLanguages: z.array(z.string().min(2).max(12)).min(1).max(10) });
 const personaPreviewSchema = personaSchema.extend({ message: z.string().trim().min(1).max(4000) });
 const sourceSchema = z.object({ title: z.string().trim().min(1).max(200), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'text/html', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']), sourceUrl: z.string().url().optional(), audience: z.enum(['public', 'internal']).default('public'), content: z.string().trim().min(1).max(200_000) });
-const uploadSchema = z.object({ title: z.string().trim().min(1).max(200), fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.enum(['text/plain', 'text/markdown', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']), audience: z.enum(['public', 'internal']).default('public'), contentBase64: z.string().min(1).max(7_000_000) });
+const uploadSchema = z.object({ title: z.string().trim().min(1).max(200), fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.enum(['text/plain', 'text/markdown', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip']), audience: z.enum(['public', 'internal']).default('public'), contentBase64: z.string().min(1).max(7_000_000) });
 const ingestionRequestSchema = sourceSchema.omit({ content: true });
 const ingestionResultSchema = z.object({
   normalizedContent: z.string().min(1).max(200_000),
@@ -36,6 +36,7 @@ const ingestionResultSchema = z.object({
   parserVersion: z.string().trim().min(1).max(120),
   chunks: z.array(z.object({ ordinal: z.number().int().nonnegative(), locator: z.string().trim().min(1).max(200), content: z.string().trim().min(1).max(20_000), contentHash: z.string().regex(/^[a-f0-9]{64}$/) })).min(1).max(2_000),
 });
+const ingestionFailureSchema = z.object({ errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('INGESTION_FAILED') });
 const sessionSchema = z.object({ tenantId: z.string().uuid().optional(), tenantSlug: z.string().regex(/^[a-z0-9-]+$/).optional() }).refine((value) => Boolean(value.tenantId || value.tenantSlug), 'tenantId or tenantSlug is required.');
 const messageSchema = z.object({ sessionId: z.string().uuid(), message: z.string().trim().min(1).max(4000), clientMessageId: z.string().trim().min(1).max(128) });
 const confirmSchema = z.object({ sessionId: z.string().uuid(), confirmed: z.literal(true) });
@@ -471,6 +472,19 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!content) throw new HttpError(404, 'INGESTION_INPUT_NOT_FOUND', 'No private file input is attached to this job.');
       const extension = ingestionStaging.extensionFor(job.mimeType);
       res.json({ fileName: `${job.id}${extension ?? ''}`, mimeType: job.mimeType, contentBase64: content.toString('base64') });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/ingestion-jobs/:id/failure', workerApi, async (req, res, next) => {
+    try {
+      const job = await store.getIngestionJob(routeParam(req, 'id'));
+      if (!job) throw new HttpError(404, 'JOB_NOT_FOUND', 'Ingestion job not found.');
+      if (job.status !== 'processing' || !job.leaseExpiresAt || Date.parse(job.leaseExpiresAt) <= Date.now()) throw new HttpError(409, 'INGESTION_NOT_CLAIMED', 'The ingestion job is not actively leased.');
+      const input = parse(ingestionFailureSchema, req.body);
+      const errorCode = input.errorCode ?? 'INGESTION_FAILED';
+      const failed = await store.updateIngestionJob({ ...job, status: 'failed', errorCode, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+      await ingestionStaging.purge(job.id, job.mimeType);
+      await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'ingestion.failed', metadata: { jobId: job.id, errorCode }, createdAt: new Date().toISOString() });
+      res.json({ job: failed });
     } catch (error) { next(error); }
   });
   app.post('/api/v1/internal/ingestion-jobs/:id/result', workerApi, async (req, res, next) => {
