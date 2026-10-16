@@ -110,6 +110,7 @@ export class TenantService {
     }).subscribe({
       next: () => {
         this.loadTenants();
+        this.loadPlatformOverview();
         this.toast.show('success', 'Status Updated', `${tenant.name} is now ${status}.`);
       },
       error: () => this.toast.show('error', 'Update Failed', 'Could not update tenant status.')

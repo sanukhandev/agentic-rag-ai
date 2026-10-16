@@ -84,6 +84,12 @@ export class AdminStateService {
   readonly auditEvents$: Observable<AuditEvent[]> = this.observability.auditEvents$;
   readonly toasts$: Observable<ToastMessage[]> = this.toastService.toasts$;
 
+  constructor() {
+    this.auth.isAuthenticated$.subscribe((authenticated) => {
+      if (authenticated) this.refreshAllData();
+    });
+  }
+
   // Accessors
   get token(): string {
     return this.auth.token;
@@ -154,7 +160,6 @@ export class AdminStateService {
   // Auth Facade
   loginWithCredentials(email: string, password: string, onSuccess?: () => void, onError?: (err: string) => void): void {
     this.auth.loginWithCredentials(email, password, () => {
-      this.refreshAllData();
       if (onSuccess) onSuccess();
     }, onError);
   }
@@ -171,6 +176,7 @@ export class AdminStateService {
 
   loadTenants(): void {
     this.tenantService.loadTenants();
+    if (this.isPlatformAdmin) this.tenantService.loadPlatformOverview();
   }
 
   loadPlatformOverview(): void {
