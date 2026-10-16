@@ -59,7 +59,7 @@ export class AzureFoundryModel implements ChatModel {
     const result = z.object({
       answer: z.string().min(1).max(8000),
       citationIds: z.array(z.string().min(1)).max(8),
-      proposedIntent: z.preprocess((value) => value === '' ? null : value, z.literal('lead.capture').nullable()),
+      proposedIntent: z.preprocess((value) => value === '' || value === 'none' || value === 'null' ? null : value, z.literal('lead.capture').nullable()),
     }).strict().safeParse(JSON.parse(content));
     if (!result.success) throw new Error('Azure AI Foundry response did not match the grounded response contract.');
     return result.data;

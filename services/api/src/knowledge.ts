@@ -97,17 +97,37 @@ export const rankChunksWithEmbedding = async <T extends { chunk: { embedding: nu
 
 export const rankChunksWithVector = <T extends { chunk: { embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit = 4): T[] => rankWithEmbedding(query, rows, queryEmbedding, limit);
 
+const factualSegments = (content: string): string[] => content
+  .replace(/^File:.*$/gim, '')
+  .replace(/\b(?:document_id|document|section|page)\s*[:#-]?\s*(?:[A-Z]+-)?\d+\b/gi, '')
+  .split(/\n{2,}|(?<=[.!?])\s+/u)
+  .map((segment) => segment.trim())
+  .filter(Boolean);
+
+const termsNearFacts = (content: string): Set<string> => {
+  const tokens = content.toLowerCase().match(/[a-z]+|\d+(?:\.\d+)?/g) ?? [];
+  const metadataTerms = new Set(['document', 'file', 'page', 'portfolio', 'sample', 'section', 'source', 'training']);
+  const terms = new Set<string>();
+  tokens.forEach((token, index) => {
+    if (!/^\d/.test(token)) return;
+    for (const nearby of tokens.slice(Math.max(0, index - 4), index + 5)) if (/^[a-z]{4,}$/.test(nearby) && !metadataTerms.has(nearby)) terms.add(nearby);
+  });
+  return terms;
+};
+
 export const hasConflictingEvidence = (contents: string[]): boolean => {
   for (let leftIndex = 0; leftIndex < contents.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < contents.length; rightIndex += 1) {
-      const left = contents[leftIndex] ?? '';
-      const right = contents[rightIndex] ?? '';
-      const leftTerms = new Set(left.toLowerCase().match(/[a-z]{4,}/g) ?? []);
-      const rightTerms = new Set(right.toLowerCase().match(/[a-z]{4,}/g) ?? []);
-      const sharedTopic = [...leftTerms].some((term) => rightTerms.has(term));
-      const leftFacts = new Set(left.match(/\b\d+(?:\.\d+)?\b/g) ?? []);
-      const rightFacts = new Set(right.match(/\b\d+(?:\.\d+)?\b/g) ?? []);
-      if (sharedTopic && leftFacts.size > 0 && rightFacts.size > 0 && [...leftFacts].some((fact) => !rightFacts.has(fact))) return true;
+      for (const left of factualSegments(contents[leftIndex] ?? '')) {
+        for (const right of factualSegments(contents[rightIndex] ?? '')) {
+          const leftTerms = termsNearFacts(left);
+          const rightTerms = termsNearFacts(right);
+          const sharedTopic = [...leftTerms].some((term) => rightTerms.has(term));
+          const leftFacts = new Set(left.match(/\b\d+(?:\.\d+)?\b/g) ?? []);
+          const rightFacts = new Set(right.match(/\b\d+(?:\.\d+)?\b/g) ?? []);
+          if (sharedTopic && leftFacts.size > 0 && rightFacts.size > 0 && [...leftFacts].some((fact) => !rightFacts.has(fact))) return true;
+        }
+      }
     }
   }
   return false;

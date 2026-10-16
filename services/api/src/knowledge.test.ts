@@ -42,5 +42,9 @@ describe('knowledge pipeline primitives', () => {
   it('flags active evidence that shares a topic but disagrees on numeric facts', () => {
     expect(hasConflictingEvidence(['The plan costs 100 credits per month.', 'The plan costs 200 credits per month.'])).toBe(true);
     expect(hasConflictingEvidence(['The plan costs 100 credits.', 'Support is available by email.'])).toBe(false);
+    expect(hasConflictingEvidence([
+      'File: training/02_architecture_capabilities.docx · section 1\nDocument SK-002\nThe portfolio describes 100 systems across 9 markets.',
+      'File: training/04_portfolio_faq.docx · section 1\nDocument SK-004\nThe portfolio includes a 25-hour prototype.',
+    ])).toBe(false);
   });
 });

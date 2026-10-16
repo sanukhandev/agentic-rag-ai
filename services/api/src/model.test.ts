@@ -47,6 +47,13 @@ describe('Azure Foundry model adapter', () => {
     vi.restoreAllMocks();
   });
 
+  it('normalizes Azure none intent output to no proposed action', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: 'grounded', citationIds: [], proposedIntent: 'none' }) } }] }), { status: 200 }));
+    const model = new AzureFoundryModel('https://foundry.example/openai/v1', 'gpt-4.1-mini', 'server-key');
+    await expect(model.draft({ maskedMessage: 'question', personaName: 'Ava', evidence: [] })).resolves.toMatchObject({ proposedIntent: null });
+    vi.restoreAllMocks();
+  });
+
   it('drops citation IDs outside the authorized evidence set', () => {
     const citation = { sourceId: 'source', versionId: 'version', chunkId: 'known', title: 'FAQ', locator: 'section 1' };
     expect(validateCitations({ answer: 'answer', citationIds: ['unknown', 'known'], proposedIntent: null }, [{ citation, content: 'answer' }])).toEqual([citation]);
