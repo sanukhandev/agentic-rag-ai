@@ -28,6 +28,11 @@ const safeJobId = (jobId: string): void => {
   if (!/^[0-9a-f-]{36}$/i.test(jobId)) throw new Error('Invalid ingestion job ID.');
 };
 
+export const isUnsupportedMountPermissionError = (error: unknown): boolean => {
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === 'EPERM' || code === 'ENOTSUP';
+};
+
 export class IngestionStaging {
   constructor(private readonly root: string) {}
 
@@ -40,7 +45,12 @@ export class IngestionStaging {
     if (content.length > MAX_INGESTION_FILE_BYTES) throw new Error('Input exceeds the 5 MiB ingestion limit.');
     if (!hasValidFileSignature(mimeType, content)) throw new Error('Input file signature does not match its declared type.');
     await mkdir(this.root, { recursive: true, mode: 0o700 });
-    await chmod(this.root, 0o700);
+    try {
+      await chmod(this.root, 0o700);
+    } catch (error) {
+      // Docker Desktop bind mounts use host ACLs and may reject POSIX mode changes.
+      if (!isUnsupportedMountPermissionError(error)) throw error;
+    }
     const target = join(this.root, `${jobId}${extension}`);
     await writeFile(target, content, { flag: 'wx', mode: 0o600 });
   }

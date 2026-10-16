@@ -2,9 +2,15 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
+import { hasValidFileSignature, IngestionStaging, isUnsupportedMountPermissionError, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 
 describe('private ingestion staging', () => {
+  it('recognizes bind mounts that do not support POSIX permission changes', () => {
+    expect(isUnsupportedMountPermissionError({ code: 'EPERM' })).toBe(true);
+    expect(isUnsupportedMountPermissionError({ code: 'ENOTSUP' })).toBe(true);
+    expect(isUnsupportedMountPermissionError({ code: 'EACCES' })).toBe(false);
+  });
+
   it('writes, reads and purges only bounded supported job files', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agentic-staging-'));
     const staging = new IngestionStaging(root);
