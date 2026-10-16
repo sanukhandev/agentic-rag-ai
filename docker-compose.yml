@@ -91,6 +91,8 @@ services:
       INGESTION_WORKER_SECRET: ${INGESTION_WORKER_SECRET:-}
       INGESTION_STAGING_ROOT: /app/data/ingestion-staging
       CHAT_RESPONSE_CACHE_TTL_SECONDS: ${CHAT_RESPONSE_CACHE_TTL_SECONDS:-60}
+      API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-600}
+      API_RATE_LIMIT_WINDOW_MS: ${API_RATE_LIMIT_WINDOW_MS:-60000}
     volumes:
       - ./data/ingestion-staging:/app/data/ingestion-staging
     healthcheck:

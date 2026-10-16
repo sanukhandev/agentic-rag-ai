@@ -228,6 +228,7 @@ describe('API vertical slice', () => {
     await api.post('/api/v1/auth/login').send({ email: 'bad@example.test', password: 'wrong' }).expect(401);
     const limited = await api.post('/api/v1/auth/login').send({ email: 'bad@example.test', password: 'wrong' }).expect(429);
     expect(limited.body.error.code).toBe('RATE_LIMITED');
+    expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
   });
 
   it('rejects oversized JSON with a typed bounded-input error', async () => {
