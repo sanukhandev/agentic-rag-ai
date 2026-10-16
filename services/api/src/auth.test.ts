@@ -51,4 +51,17 @@ describe('development auth boundary', () => {
     await expect(auth.verify(token)).resolves.toBeNull();
     expect(store.authSessionReads).toBe(1);
   });
+
+  it('issues unique sessions for rapid repeated logins', async () => {
+    const store = new MemoryStore();
+    const auth = new AuthService(store, 'test-jwt-secret');
+    const user = await store.createUser({ email: 'rapid@example.test', passwordHash: 'hash', role: 'platform_admin', tenantId: null });
+
+    const first = await auth.issue(user);
+    const second = await auth.issue(user);
+
+    expect(second).not.toBe(first);
+    await expect(auth.verify(first)).resolves.toMatchObject({ userId: user.id });
+    await expect(auth.verify(second)).resolves.toMatchObject({ userId: user.id });
+  });
 });

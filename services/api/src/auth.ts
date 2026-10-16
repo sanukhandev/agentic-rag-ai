@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import type { NextFunction, Request, Response } from 'express';
 import { cacheKey, MemoryCache, type CacheStore } from './cache.js';
@@ -24,7 +24,7 @@ export class AuthService {
   async verifyPassword(password: string, passwordHash: string): Promise<boolean> { return bcrypt.compare(password, passwordHash); }
 
   async issue(user: User): Promise<string> {
-    const token = jwt.sign(userToContext(user), this.secret, { expiresIn: '2h', issuer: 'agentic-rag-api' });
+    const token = jwt.sign(userToContext(user), this.secret, { expiresIn: '2h', issuer: 'agentic-rag-api', jwtid: randomUUID() });
     const session = { tokenHash: this.hashToken(token), userId: user.id, expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), revokedAt: null };
     await this.store.createAuthSession(session);
     await this.cache.set(this.sessionCacheKey(token), { userId: session.userId, expiresAt: session.expiresAt }, this.cacheTtl(session.expiresAt));
