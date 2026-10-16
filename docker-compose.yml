@@ -88,7 +88,7 @@ services:
       AZURE_AI_API_VERSION: ${AZURE_AI_API_VERSION:-2024-10-21}
       N8N_INTERNAL_URL: ${N8N_INTERNAL_URL:-http://n8n:5678}
       N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-}
-      INGESTION_WORKER_SECRET: ${INGESTION_WORKER_SECRET:-}
+      INGESTION_WORKER_SECRET: ${INGESTION_WORKER_SECRET:-local-ingestion-worker-secret}
       INGESTION_STAGING_ROOT: /app/data/ingestion-staging
       CHAT_RESPONSE_CACHE_TTL_SECONDS: ${CHAT_RESPONSE_CACHE_TTL_SECONDS:-60}
       API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-600}
@@ -128,13 +128,18 @@ services:
       - "${ADMIN_BIND_ADDRESS:-127.0.0.1}:4200:80"
 
   ingestion:
-    profiles: ["ingestion"]
     build:
       <<: *node-build
       target: ingestion-runtime
+    container_name: agentic-ingestion
+    restart: unless-stopped
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
+    environment:
+      INGESTION_API_BASE: http://api:4000
+      INGESTION_WORKER_SECRET: ${INGESTION_WORKER_SECRET:-local-ingestion-worker-secret}
+      INGESTION_POLL_INTERVAL_SECONDS: ${INGESTION_POLL_INTERVAL_SECONDS:-5}
     volumes:
       - ./data/ingestion-staging:/app/data/ingestion-staging
-    command: ["--help"]
+    command: ["--staging-root", "/app/data/ingestion-staging"]

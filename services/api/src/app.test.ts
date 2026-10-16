@@ -392,6 +392,10 @@ describe('API vertical slice', () => {
     const jobs = await api.get('/api/v1/admin/ingestion-jobs').set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     expect(jobs.body.items.length).toBeGreaterThanOrEqual(1);
     expect(jobs.body.items[0]).toMatchObject({ tenantId: tenant.body.tenant.id, status: 'completed' });
+    const nextJob = await api.post('/api/v1/admin/ingestion-jobs').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Worker Queue FAQ', mimeType: 'text/plain', audience: 'public' }).expect(202);
+    const nextClaim = await api.post('/api/v1/internal/ingestion-jobs/claim-next').set('x-ingestion-worker-secret', 'worker-secret').expect(200);
+    expect(nextClaim.body.job).toMatchObject({ id: nextJob.body.job.id, status: 'processing', attempts: 1 });
+    await api.post(`/api/v1/internal/ingestion-jobs/${nextJob.body.job.id}/failure`).set('x-ingestion-worker-secret', 'worker-secret').send({ errorCode: 'INGESTION_FAILED' }).expect(200);
   });
 
   it('queues a bounded private file upload for the Python worker and purges it after success', async () => {

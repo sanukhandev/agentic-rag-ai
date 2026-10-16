@@ -204,6 +204,7 @@ export interface Store {
   getIngestionJob(id: string): Promise<IngestionJob | null>;
   listIngestionJobs(tenantId: string): Promise<IngestionJob[]>;
   claimIngestionJob(id: string, leaseMs: number): Promise<IngestionJob | null>;
+  claimNextIngestionJob(leaseMs: number): Promise<IngestionJob | null>;
   updateIngestionJob(job: IngestionJob): Promise<IngestionJob>;
   listSearchableChunks(tenantId: string, audience: Audience): Promise<Array<{ source: Source; chunk: Chunk }>>;
   searchSearchableChunks(tenantId: string, audience: Audience, queryEmbedding: number[], limit: number): Promise<Array<{ source: Source; chunk: Chunk }>>;

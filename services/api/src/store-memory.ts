@@ -155,6 +155,13 @@ export class MemoryStore implements Store {
     this.ingestionJobs.set(id, updated);
     return updated;
   }
+  async claimNextIngestionJob(leaseMs: number): Promise<IngestionJob | null> {
+    const nowMs = Date.now();
+    const next = [...this.ingestionJobs.values()]
+      .filter((job) => job.status === 'queued' || (job.status === 'processing' && job.leaseExpiresAt && Date.parse(job.leaseExpiresAt) <= nowMs))
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0];
+    return next ? this.claimIngestionJob(next.id, leaseMs) : null;
+  }
   async updateIngestionJob(job: IngestionJob): Promise<IngestionJob> { this.ingestionJobs.set(job.id, job); return job; }
   async listSearchableChunks(tenantId: string, audience: 'public' | 'internal'): Promise<Array<{ source: Source; chunk: Chunk }>> {
     return [...this.chunks.values()]

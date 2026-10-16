@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ingestion.pipeline import chunk_text, extract_file, fetch_authorized_https, ingest_file, ingest_text, ingest_url, sanitize
 from ingestion.staging import LocalStaging
-from ingestion.worker import fetch_job_input, main as worker_main, result_payload, submit_failure, submit_result
+from ingestion.worker import claim_next_job, fetch_job_input, main as worker_main, result_payload, submit_failure, submit_result
 
 
 class IngestionTests(unittest.TestCase):
@@ -235,6 +235,17 @@ class IngestionTests(unittest.TestCase):
         file_name, mime_type, content = fetch_job_input("http://localhost:4000/", "job-1", "worker-secret", session)
         self.assertEqual((file_name, mime_type, content), ("job-1.txt", "text/plain", b"FAQ data"))
         self.assertEqual(session.get.call_args.args[0], "http://localhost:4000/api/v1/internal/ingestion-jobs/job-1/input")
+
+    def test_worker_claims_next_job_or_waits_when_queue_is_empty(self) -> None:
+        session = Mock()
+        response = Mock()
+        response.json.return_value = {"job": {"id": "job-1"}}
+        session.post.return_value = response
+        self.assertEqual(claim_next_job("http://localhost:4000", "worker-secret", session), "job-1")
+        self.assertEqual(session.post.call_args.args[0], "http://localhost:4000/api/v1/internal/ingestion-jobs/claim-next")
+
+        response.json.return_value = {"job": None}
+        self.assertIsNone(claim_next_job("http://localhost:4000", "worker-secret", session))
 
     def test_worker_submits_without_reclaiming_an_already_claimed_upload(self) -> None:
         source = ingest_text("FAQ", "Approved content", "text/plain")

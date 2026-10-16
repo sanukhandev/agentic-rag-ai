@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +45,19 @@ def claim_job(api_base: str, job_id: str, worker_secret: str, session: requests.
     base = api_base.rstrip("/")
     claim = client.post(f"{base}/api/v1/internal/ingestion-jobs/{job_id}/claim", headers=headers, timeout=15)
     raise_for_api_status(claim)
+
+
+def claim_next_job(api_base: str, worker_secret: str, session: requests.Session | None = None) -> str | None:
+    client = session or requests.Session()
+    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/ingestion-jobs/claim-next", headers={"x-ingestion-worker-secret": worker_secret}, timeout=15)
+    raise_for_api_status(response)
+    body = response.json()
+    job = body.get("job") if isinstance(body, dict) else None
+    if job is None:
+        return None
+    if not isinstance(job, dict) or not isinstance(job.get("id"), str) or not job["id"]:
+        raise ValueError("The ingestion API returned an invalid claimed job.")
+    return job["id"]
 
 
 def fetch_job_input(api_base: str, job_id: str, worker_secret: str, session: requests.Session | None = None) -> tuple[str, str, bytes]:
@@ -90,6 +105,55 @@ def submit_failure(api_base: str, job_id: str, worker_secret: str, error_code: s
     return body
 
 
+def process_job(
+    api_base: str,
+    job_id: str,
+    worker_secret: str,
+    *,
+    path: Path | None = None,
+    url: str | None = None,
+    title: str | None = None,
+    allowed_hosts: set[str] | None = None,
+    staging_root: Path | None = None,
+    session: requests.Session | None = None,
+    already_claimed: bool = False,
+) -> dict[str, Any]:
+    client = session or requests.Session()
+    claimed = already_claimed
+    try:
+        if not claimed:
+            claim_job(api_base, job_id, worker_secret, client)
+            claimed = True
+        if url:
+            ingested = ingest_url(title or "", url, allowed_hosts or set())
+        elif path:
+            staging = LocalStaging(staging_root) if staging_root else None
+            staged = staging.stage(path) if staging else None
+            try:
+                ingested = ingest_file(staged or path)
+            finally:
+                if staging and staged:
+                    staging.purge(staged)
+        else:
+            if not staging_root:
+                raise ValueError("A staging root is required for uploaded jobs.")
+            file_name, _mime_type, content = fetch_job_input(api_base, job_id, worker_secret, client)
+            staging = LocalStaging(staging_root)
+            staged = staging.stage_bytes(Path(file_name).suffix, content)
+            try:
+                ingested = ingest_file(staged)
+            finally:
+                staging.purge(staged)
+        return submit_result(api_base, job_id, worker_secret, ingested, client, claim=False)
+    except Exception:
+        if claimed:
+            try:
+                submit_failure(api_base, job_id, worker_secret, session=client)
+            except Exception:
+                pass
+        raise
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run safe source extraction and submit one ingestion job result.")
     source = parser.add_mutually_exclusive_group(required=False)
@@ -98,50 +162,39 @@ def main() -> None:
     parser.add_argument("--title")
     parser.add_argument("--allowed-host", action="append", default=[])
     parser.add_argument("--staging-root", type=Path, help="Private local staging directory for file inputs.")
-    parser.add_argument("--api-base", required=True)
-    parser.add_argument("--job-id", required=True)
-    parser.add_argument("--worker-secret", required=True)
+    parser.add_argument("--api-base", default=os.environ.get("INGESTION_API_BASE", "http://api:4000"))
+    parser.add_argument("--job-id")
+    parser.add_argument("--worker-secret", default=os.environ.get("INGESTION_WORKER_SECRET"))
+    parser.add_argument("--poll-interval-seconds", type=float, default=float(os.environ.get("INGESTION_POLL_INTERVAL_SECONDS", "5")))
     args = parser.parse_args()
-    if not args.path and not args.url and not args.staging_root:
-        parser.error("--staging-root is required when processing an uploaded API file")
+    if not args.worker_secret:
+        parser.error("--worker-secret or INGESTION_WORKER_SECRET is required")
+    if args.poll_interval_seconds <= 0:
+        parser.error("--poll-interval-seconds must be greater than zero")
     if args.url and (not args.title or not args.allowed_host):
         parser.error("--url requires --title and at least one --allowed-host")
-    claimed = False
-    try:
-        if args.path or args.url:
-            claim_job(args.api_base, args.job_id, args.worker_secret)
-            claimed = True
-        if args.url:
-            ingested = ingest_url(args.title, args.url, set(args.allowed_host))
-        elif args.path:
-            staging_root = args.staging_root
-            if staging_root:
-                staging = LocalStaging(staging_root)
-                staged = staging.stage(args.path)
-                try:
-                    ingested = ingest_file(staged)
-                finally:
-                    staging.purge(staged)
-            else:
-                ingested = ingest_file(args.path)
-        else:
-            claim_job(args.api_base, args.job_id, args.worker_secret)
-            claimed = True
-            file_name, _mime_type, content = fetch_job_input(args.api_base, args.job_id, args.worker_secret)
-            staging = LocalStaging(args.staging_root)
-            staged = staging.stage_bytes(Path(file_name).suffix, content)
+    if args.job_id:
+        if not args.path and not args.url and not args.staging_root:
+            parser.error("--staging-root is required when processing an uploaded API file")
+        process_job(args.api_base, args.job_id, args.worker_secret, path=args.path, url=args.url, title=args.title, allowed_hosts=set(args.allowed_host), staging_root=args.staging_root)
+        return
+    if args.path or args.url:
+        parser.error("--path and --url require --job-id")
+    if not args.staging_root:
+        parser.error("--staging-root is required in polling mode")
+    with requests.Session() as session:
+        while True:
             try:
-                ingested = ingest_file(staged)
-            finally:
-                staging.purge(staged)
-        submit_result(args.api_base, args.job_id, args.worker_secret, ingested, claim=False)
-    except Exception:
-        if claimed:
-            try:
-                submit_failure(args.api_base, args.job_id, args.worker_secret)
-            except Exception:
-                pass
-        raise
+                job_id = claim_next_job(args.api_base, args.worker_secret, session)
+                if job_id:
+                    process_job(args.api_base, job_id, args.worker_secret, staging_root=args.staging_root, session=session, already_claimed=True)
+                else:
+                    time.sleep(args.poll_interval_seconds)
+            except KeyboardInterrupt:
+                return
+            except Exception as error:
+                print(f"ingestion worker: {type(error).__name__}: {error}", flush=True)
+                time.sleep(args.poll_interval_seconds)
 
 
 if __name__ == "__main__":

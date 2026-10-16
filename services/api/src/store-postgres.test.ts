@@ -32,6 +32,8 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       const job = await store.createIngestionJob({ id: randomUUID(), tenantId: tenant.id, title: 'FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public' });
       const claimedJob = await store.claimIngestionJob(job.id, 60_000);
       expect(claimedJob).toMatchObject({ status: 'processing', attempts: 1 });
+      const nextJob = await store.createIngestionJob({ id: randomUUID(), tenantId: tenant.id, title: 'Next FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public' });
+      expect(await store.claimNextIngestionJob(60_000)).toMatchObject({ id: nextJob.id, status: 'processing', attempts: 1 });
       const completedJob = await store.updateIngestionJob({ ...claimedJob!, sourceId: source.id, status: 'completed', errorCode: null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
       expect(await store.getIngestionJob(job.id)).toMatchObject({ id: job.id, sourceId: source.id, status: 'completed', attempts: 1 });
       expect(completedJob.errorCode).toBeNull();

@@ -472,6 +472,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.json({ job: claimed });
     } catch (error) { next(error); }
   });
+  app.post('/api/v1/internal/ingestion-jobs/claim-next', workerApi, async (_req, res, next) => {
+    try { res.json({ job: await store.claimNextIngestionJob(60_000) }); } catch (error) { next(error); }
+  });
   app.get('/api/v1/internal/ingestion-jobs/:id/input', workerApi, async (req, res, next) => {
     try {
       const job = await store.getIngestionJob(routeParam(req, 'id'));
