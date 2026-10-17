@@ -6,15 +6,13 @@ import {
   isChatActionState,
   isValidTenantSlug,
   normalizeVoiceTranscript,
-  parseVoicePreferences,
   renderMarkdown,
   resolveTenantSlug,
   type ChatActionState,
   type ChatCitation,
   type ChatHistoryMessage,
   type ChatReply,
-  type DisplayMessage,
-  type VoicePreferences
+  type DisplayMessage
 } from './chat-utils';
 
 type Config = {
@@ -25,6 +23,11 @@ type Config = {
     tone: string;
     speakingStyle: string;
     permittedLanguages: string[];
+    voiceName: string;
+    voiceLanguage: string;
+    voiceRate: number;
+    voicePitch: number;
+    voiceVolume: number;
   } | null;
 };
 
@@ -70,8 +73,6 @@ export default function Home() {
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceSpeaking, setVoiceSpeaking] = useState(false);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [voicePreferences, setVoicePreferences] = useState<VoicePreferences>(() => parseVoicePreferences(null));
-  const [voiceSettingsOpen, setVoiceSettingsOpen] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -89,14 +90,6 @@ export default function Home() {
       if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
     };
   }, []);
-
-  useEffect(() => {
-    if (!isValidTenantSlug(tenantSlug)) {
-      setVoicePreferences(parseVoicePreferences(null));
-      return;
-    }
-    setVoicePreferences(parseVoicePreferences(window.localStorage.getItem(`agentic-rag-voice:${tenantSlug}`)));
-  }, [tenantSlug]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
@@ -179,12 +172,6 @@ export default function Home() {
   const agentStyle = config?.persona?.speakingStyle ?? 'Not configured';
   const permittedLanguages = config?.persona?.permittedLanguages ?? [];
   const preferredLanguage = permittedLanguages[0] || 'en-US';
-  const orderedVoices = [...availableVoices].sort((left, right) => {
-    const language = preferredLanguage.toLowerCase();
-    const leftMatch = left.lang.toLowerCase() === language ? 0 : left.lang.toLowerCase().startsWith(language.split('-')[0]) ? 1 : 2;
-    const rightMatch = right.lang.toLowerCase() === language ? 0 : right.lang.toLowerCase().startsWith(language.split('-')[0]) ? 1 : 2;
-    return leftMatch - rightMatch || left.name.localeCompare(right.name);
-  });
   const agentInitials = agentName
     .split(/\s+/)
     .slice(0, 2)
@@ -196,28 +183,23 @@ export default function Home() {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    const selectedVoice = availableVoices.find((voice) => voice.voiceURI === voicePreferences.voiceURI);
+    const configuredVoiceName = config?.persona?.voiceName ?? '';
+    const configuredVoiceLanguage = config?.persona?.voiceLanguage ?? preferredLanguage;
+    const selectedVoice = availableVoices.find((voice) => voice.name === configuredVoiceName && voice.lang === configuredVoiceLanguage)
+      ?? availableVoices.find((voice) => voice.name === configuredVoiceName);
     if (selectedVoice) {
       utterance.voice = selectedVoice;
       utterance.lang = selectedVoice.lang;
     } else {
-      utterance.lang = preferredLanguage;
+      utterance.lang = configuredVoiceLanguage;
     }
-    utterance.rate = voicePreferences.rate;
-    utterance.pitch = voicePreferences.pitch;
-    utterance.volume = voicePreferences.volume;
+    utterance.rate = config?.persona?.voiceRate ?? 1;
+    utterance.pitch = config?.persona?.voicePitch ?? 1;
+    utterance.volume = config?.persona?.voiceVolume ?? 1;
     utterance.onend = () => setVoiceSpeaking(false);
     utterance.onerror = () => setVoiceSpeaking(false);
     setVoiceSpeaking(true);
     window.speechSynthesis.speak(utterance);
-  };
-
-  const updateVoicePreferences = (patch: Partial<VoicePreferences>) => {
-    const next = { ...voicePreferences, ...patch };
-    setVoicePreferences(next);
-    if (isValidTenantSlug(tenantSlug)) {
-      window.localStorage.setItem(`agentic-rag-voice:${tenantSlug}`, JSON.stringify(next));
-    }
   };
 
   const send = async (voiceText?: string) => {
@@ -783,90 +765,6 @@ export default function Home() {
                     void send();
                   }}
                 >
-                  <div className="mb-2 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setVoiceSettingsOpen((open) => !open)}
-                      disabled={!voiceSupported}
-                      aria-expanded={voiceSettingsOpen}
-                      className="rounded-lg px-2.5 py-1 text-[11px] font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Voice settings
-                    </button>
-                  </div>
-
-                  {voiceSettingsOpen && (
-                    <div className="mb-3 space-y-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs">
-                      <div>
-                        <label htmlFor="voice-choice" className="mb-1 block font-medium text-neutral-700">
-                          Browser voice
-                        </label>
-                        <select
-                          id="voice-choice"
-                          value={voicePreferences.voiceURI}
-                          onChange={(event) => updateVoicePreferences({ voiceURI: event.target.value })}
-                          disabled={availableVoices.length === 0}
-                          className="w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-2 text-xs text-neutral-800 focus:border-neutral-900 focus:outline-none"
-                        >
-                          <option value="">Browser default ({preferredLanguage})</option>
-                          {orderedVoices.map((voice) => (
-                            <option key={`${voice.voiceURI}-${voice.lang}`} value={voice.voiceURI}>
-                              {voice.name} ({voice.lang})
-                            </option>
-                          ))}
-                        </select>
-                        {availableVoices.length === 0 && (
-                          <p className="mt-1 text-[10px] text-neutral-400">Voices are still loading or unavailable on this device.</p>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-3">
-                        <label className="space-y-1 text-neutral-600">
-                          <span className="flex justify-between"><span>Speed</span><span>{voicePreferences.rate.toFixed(1)}×</span></span>
-                          <input
-                            type="range"
-                            min="0.5"
-                            max="2"
-                            step="0.1"
-                            value={voicePreferences.rate}
-                            onChange={(event) => updateVoicePreferences({ rate: Number(event.target.value) })}
-                            className="w-full accent-neutral-900"
-                            aria-label="Voice speed"
-                          />
-                        </label>
-                        <label className="space-y-1 text-neutral-600">
-                          <span className="flex justify-between"><span>Pitch</span><span>{voicePreferences.pitch.toFixed(1)}</span></span>
-                          <input
-                            type="range"
-                            min="0"
-                            max="2"
-                            step="0.1"
-                            value={voicePreferences.pitch}
-                            onChange={(event) => updateVoicePreferences({ pitch: Number(event.target.value) })}
-                            className="w-full accent-neutral-900"
-                            aria-label="Voice pitch"
-                          />
-                        </label>
-                        <label className="space-y-1 text-neutral-600">
-                          <span className="flex justify-between"><span>Volume</span><span>{Math.round(voicePreferences.volume * 100)}%</span></span>
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.1"
-                            value={voicePreferences.volume}
-                            onChange={(event) => updateVoicePreferences({ volume: Number(event.target.value) })}
-                            className="w-full accent-neutral-900"
-                            aria-label="Voice volume"
-                          />
-                        </label>
-                      </div>
-                      <p className="text-[10px] text-neutral-400">
-                        Voice names and male/female options depend on voices installed by your browser and device.
-                      </p>
-                    </div>
-                  )}
-
                   <div className="relative flex items-end gap-2 rounded-2xl border border-neutral-200 bg-neutral-50/80 p-2 sm:p-2.5 transition-all duration-200 focus-within:border-neutral-900 focus-within:bg-white focus-within:ring-2 focus-within:ring-neutral-900/10">
                     <textarea
                       ref={textareaRef}

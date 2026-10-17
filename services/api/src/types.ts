@@ -33,6 +33,11 @@ export interface Persona {
   speakingStyle: string;
   permittedLanguages: string[];
   contextWindowMessages: number;
+  voiceName: string;
+  voiceLanguage: string;
+  voiceRate: number;
+  voicePitch: number;
+  voiceVolume: number;
 }
 
 export interface PersonaVersion extends Persona {

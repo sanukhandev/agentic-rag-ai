@@ -104,10 +104,12 @@ describe('API vertical slice', () => {
     await api.delete(`/api/v1/admin/domains/${domain.body.domain.id}`).set('Authorization', `Bearer ${adminToken}`).expect(204);
     expect((await api.get('/api/v1/admin/audit').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.items.some((event: { eventName: string }) => event.eventName === 'tenant.created')).toBe(true);
     expect((await api.get(`/api/v1/admin/tenants/${tenantA.body.tenant.id}/persona`).set('Authorization', `Bearer ${platformToken}`).expect(200)).body.persona.name).toBe('Sales assistant');
-    const platformPersona = { name: 'Platform Ava', greeting: 'Welcome', personality: 'Precise', tone: 'Clear', speakingStyle: 'Short', permittedLanguages: ['en'], contextWindowMessages: 10 };
+    const platformPersona = { name: 'Platform Ava', greeting: 'Welcome', personality: 'Precise', tone: 'Clear', speakingStyle: 'Short', permittedLanguages: ['en'], contextWindowMessages: 10, voiceName: 'Google UK English Male', voiceLanguage: 'en-GB', voiceRate: 1.1, voicePitch: 0.9, voiceVolume: 0.8 };
     await api.put(`/api/v1/admin/tenants/${tenantA.body.tenant.id}/persona`).set('Authorization', `Bearer ${platformToken}`).send(platformPersona).expect(200);
     expect((await api.get(`/api/v1/admin/tenants/${tenantA.body.tenant.id}/persona`).set('Authorization', `Bearer ${platformToken}`).expect(200)).body.persona.name).toBe('Platform Ava');
     expect((await api.get(`/api/v1/admin/tenants/${tenantA.body.tenant.id}/persona`).set('Authorization', `Bearer ${platformToken}`).expect(200)).body.persona.contextWindowMessages).toBe(10);
+    expect((await api.get(`/api/v1/admin/tenants/${tenantA.body.tenant.id}/persona`).set('Authorization', `Bearer ${platformToken}`).expect(200)).body.persona).toMatchObject({ voiceName: 'Google UK English Male', voiceLanguage: 'en-GB', voiceRate: 1.1, voicePitch: 0.9, voiceVolume: 0.8 });
+    expect((await api.get('/api/v1/chat/config?tenantSlug=tenant-a').expect(200)).body.persona).toMatchObject({ voiceName: 'Google UK English Male', voiceLanguage: 'en-GB', voiceRate: 1.1, voicePitch: 0.9, voiceVolume: 0.8 });
     await api.get(`/api/v1/admin/tenants/${tenantA.body.tenant.id}/persona`).set('Authorization', `Bearer ${adminToken}`).expect(403);
     await api.patch(`/api/v1/admin/tenants/${tenantB.body.tenant.id}/status`).set('Authorization', `Bearer ${platformToken}`).send({ status: 'archived' }).expect(200);
     await api.get(`/api/v1/admin/tenants/${tenantB.body.tenant.id}/persona`).set('Authorization', `Bearer ${platformToken}`).expect(423);

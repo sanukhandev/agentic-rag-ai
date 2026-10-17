@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -132,6 +132,45 @@ import { BadgeComponent } from '../shared/badge.component';
                   >
                     {{ lang | uppercase }}
                   </span>
+                </div>
+              </div>
+
+              <!-- Browser Voice -->
+              <div class="rounded-xl border border-neutral-200/80 bg-neutral-50/60 p-4 space-y-3">
+                <div>
+                  <label class="block text-xs font-semibold text-neutral-800">Browser Voice</label>
+                  <p class="mt-1 text-[11px] text-neutral-500">
+                    Choose the voice used when the customer chat reads answers aloud. The customer browser must provide the same voice; otherwise it uses its closest default.
+                  </p>
+                </div>
+                <select
+                  [ngModel]="voiceSelection"
+                  (ngModelChange)="onVoiceChange($event)"
+                  [disabled]="availableVoices.length === 0"
+                  class="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-900 focus:border-neutral-900 focus:outline-none"
+                  aria-label="Browser voice"
+                >
+                  <option value="">Browser default ({{ persona.voiceLanguage || 'en-US' }})</option>
+                  <option *ngFor="let voice of orderedVoices" [value]="voiceKey(voice)">
+                    {{ voice.name }} ({{ voice.lang }})
+                  </option>
+                </select>
+                <p *ngIf="availableVoices.length === 0" class="text-[10px] text-neutral-400">
+                  Voices are still loading or unavailable on this device.
+                </p>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <label class="space-y-1 text-[11px] text-neutral-600">
+                    <span class="flex justify-between"><span>Speed</span><span>{{ persona.voiceRate | number:'1.1-1' }}×</span></span>
+                    <input [(ngModel)]="persona.voiceRate" type="range" min="0.5" max="2" step="0.1" class="w-full accent-neutral-900" aria-label="Voice speed" />
+                  </label>
+                  <label class="space-y-1 text-[11px] text-neutral-600">
+                    <span class="flex justify-between"><span>Pitch</span><span>{{ persona.voicePitch | number:'1.1-1' }}</span></span>
+                    <input [(ngModel)]="persona.voicePitch" type="range" min="0" max="2" step="0.1" class="w-full accent-neutral-900" aria-label="Voice pitch" />
+                  </label>
+                  <label class="space-y-1 text-[11px] text-neutral-600">
+                    <span class="flex justify-between"><span>Volume</span><span>{{ persona.voiceVolume * 100 | number:'1.0-0' }}%</span></span>
+                    <input [(ngModel)]="persona.voiceVolume" type="range" min="0" max="1" step="0.1" class="w-full accent-neutral-900" aria-label="Voice volume" />
+                  </label>
                 </div>
               </div>
 
@@ -295,14 +334,20 @@ import { BadgeComponent } from '../shared/badge.component';
     </div>
   `
 })
-export class AiStudioComponent implements OnInit {
+export class AiStudioComponent implements OnInit, OnDestroy {
   private readonly state = inject(AdminStateService);
   private readonly cdr = inject(ChangeDetectorRef);
 
-  persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: [], contextWindowMessages: 10 };
+  persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: [], contextWindowMessages: 10, voiceName: '', voiceLanguage: 'en-US', voiceRate: 1, voicePitch: 1, voiceVolume: 1 };
 
   languagesInput = '';
   versions: PersonaVersion[] = [];
+  availableVoices: SpeechSynthesisVoice[] = [];
+  voiceSelection = '';
+  private readonly updateVoices = (): void => {
+    this.availableVoices = window.speechSynthesis.getVoices();
+    this.cdr.markForCheck();
+  };
 
   currentPrompt = '';
   previewAnswer = '';
@@ -314,6 +359,7 @@ export class AiStudioComponent implements OnInit {
     this.state.persona$.subscribe((p) => {
       this.persona = { ...p };
       this.languagesInput = p.permittedLanguages.join(', ');
+      this.voiceSelection = p.voiceName ? this.voiceKey({ name: p.voiceName, lang: p.voiceLanguage }) : '';
       this.cdr.markForCheck();
     });
     this.state.personaVersions$.subscribe((v) => {
@@ -325,10 +371,43 @@ export class AiStudioComponent implements OnInit {
   ngOnInit(): void {
     this.state.loadPersona();
     this.state.loadPersonaVersions();
+    if ('speechSynthesis' in window) {
+      this.updateVoices();
+      window.speechSynthesis.addEventListener('voiceschanged', this.updateVoices);
+    }
+  }
+
+  ngOnDestroy(): void {
+    if ('speechSynthesis' in window) window.speechSynthesis.removeEventListener('voiceschanged', this.updateVoices);
   }
 
   onLanguagesChange(val: string): void {
     this.persona.permittedLanguages = parsePermittedLanguages(val);
+  }
+
+  voiceKey(voice: Pick<SpeechSynthesisVoice, 'name' | 'lang'>): string {
+    return `${voice.name}|${voice.lang}`;
+  }
+
+  get orderedVoices(): SpeechSynthesisVoice[] {
+    const language = (this.persona.voiceLanguage || this.persona.permittedLanguages[0] || 'en-US').toLowerCase();
+    const baseLanguage = language.split('-')[0];
+    return [...this.availableVoices].sort((left, right) => {
+      const leftRank = left.lang.toLowerCase() === language ? 0 : left.lang.toLowerCase().startsWith(baseLanguage) ? 1 : 2;
+      const rightRank = right.lang.toLowerCase() === language ? 0 : right.lang.toLowerCase().startsWith(baseLanguage) ? 1 : 2;
+      return leftRank - rightRank || left.name.localeCompare(right.name);
+    });
+  }
+
+  onVoiceChange(selection: string): void {
+    this.voiceSelection = selection;
+    if (!selection) {
+      this.persona.voiceName = '';
+      return;
+    }
+    const separator = selection.lastIndexOf('|');
+    this.persona.voiceName = separator === -1 ? selection : selection.slice(0, separator);
+    this.persona.voiceLanguage = separator === -1 ? this.persona.voiceLanguage : selection.slice(separator + 1);
   }
 
   saveDraft(): void {

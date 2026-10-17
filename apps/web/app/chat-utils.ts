@@ -14,43 +14,6 @@ export const resolveTenantSlug = (search?: string, fallback = ''): string => {
 export const normalizeVoiceTranscript = (parts: readonly string[]): string =>
   parts.map((part) => part.trim()).filter(Boolean).join(' ');
 
-export type VoicePreferences = {
-  voiceURI: string;
-  rate: number;
-  pitch: number;
-  volume: number;
-};
-
-export const defaultVoicePreferences = (): VoicePreferences => ({
-  voiceURI: '',
-  rate: 1,
-  pitch: 1,
-  volume: 1
-});
-
-export const parseVoicePreferences = (raw: string | null): VoicePreferences => {
-  const fallback = defaultVoicePreferences();
-  if (!raw) return fallback;
-
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return fallback;
-    const value = parsed as Partial<VoicePreferences>;
-    const numberOrFallback = (candidate: unknown, min: number, max: number, defaultValue: number) => {
-      if (typeof candidate !== 'number' || !Number.isFinite(candidate)) return defaultValue;
-      return Math.min(max, Math.max(min, candidate));
-    };
-    return {
-      voiceURI: typeof value.voiceURI === 'string' ? value.voiceURI : fallback.voiceURI,
-      rate: numberOrFallback(value.rate, 0.5, 2, fallback.rate),
-      pitch: numberOrFallback(value.pitch, 0, 2, fallback.pitch),
-      volume: numberOrFallback(value.volume, 0, 1, fallback.volume)
-    };
-  } catch {
-    return fallback;
-  }
-};
-
 export type ChatCitation = { title: string; locator: string };
 export type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean };
 export type ChatActionState = 'awaiting_confirmation' | 'completed' | 'failed' | 'unknown';

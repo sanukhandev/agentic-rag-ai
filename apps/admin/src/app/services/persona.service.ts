@@ -13,7 +13,12 @@ const EMPTY_PERSONA: Persona = {
   tone: '',
   speakingStyle: '',
   permittedLanguages: [],
-  contextWindowMessages: 10
+  contextWindowMessages: 10,
+  voiceName: '',
+  voiceLanguage: 'en-US',
+  voiceRate: 1,
+  voicePitch: 1,
+  voiceVolume: 1
 };
 
 @Injectable({

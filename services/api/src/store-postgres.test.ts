@@ -17,7 +17,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       const domain = await store.addDomain({ tenantId: tenant.id, hostname: 'chat.postgres.example' });
       expect(await store.listDomains(tenant.id)).toMatchObject([{ id: domain.id, hostname: 'chat.postgres.example' }]);
       expect(await store.removeDomain(domain.id, tenant.id)).toBe(true);
-      const personaVersion = await store.createPersonaVersion({ tenantId: tenant.id, name: 'Ava', greeting: 'Hello', personality: 'Precise', tone: 'Clear', speakingStyle: 'Short', permittedLanguages: ['en'], contextWindowMessages: 10, status: 'draft' });
+      const personaVersion = await store.createPersonaVersion({ tenantId: tenant.id, name: 'Ava', greeting: 'Hello', personality: 'Precise', tone: 'Clear', speakingStyle: 'Short', permittedLanguages: ['en'], contextWindowMessages: 10, voiceName: '', voiceLanguage: 'en-US', voiceRate: 1, voicePitch: 1, voiceVolume: 1, status: 'draft' });
       expect(personaVersion.version).toBe(1);
       await expect(store.publishPersonaVersion(tenant.id, personaVersion.id)).resolves.toMatchObject({ status: 'published', version: 1 });
       expect(await store.getPersona(tenant.id)).toMatchObject({ name: 'Ava' });
