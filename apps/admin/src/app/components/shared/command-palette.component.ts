@@ -2,7 +2,7 @@ import { Component, HostListener, ChangeDetectorRef, inject } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
-import { Tenant, Source } from '../../types/admin.types';
+import { Tenant, Source, NavSection } from '../../types/admin.types';
 import { IconComponent } from './icon.component';
 
 interface CommandItem {
@@ -173,28 +173,28 @@ export class CommandPaletteComponent {
       },
       {
         id: 'nav-knowledge',
-        title: 'Go to Knowledge Catalog & Ingestion',
+        title: 'Open Content',
         category: 'Navigation',
         icon: 'knowledge',
         action: () => this.state.setSection('knowledge')
       },
       {
         id: 'nav-studio',
-        title: 'Go to AI Agent Studio & Persona Rules',
+        title: 'Open Assistant Settings',
         category: 'Navigation',
         icon: 'studio',
         action: () => this.state.setSection('studio')
       },
       {
         id: 'nav-chat',
-        title: 'Go to Customer Chat Testing',
+        title: 'Preview Customer Chat',
         category: 'Navigation',
         icon: 'chat',
         action: () => this.state.setSection('chat')
       },
       {
         id: 'nav-crm',
-        title: 'Go to CRM Leads & Transcripts',
+        title: 'Review Leads',
         category: 'Navigation',
         icon: 'users',
         action: () => this.state.setSection('crm')
@@ -208,7 +208,7 @@ export class CommandPaletteComponent {
       },
       {
         id: 'nav-settings',
-        title: 'Go to Settings & Domain Governance',
+        title: 'Open Workspace Settings',
         category: 'Navigation',
         icon: 'settings',
         action: () => this.state.setSection('settings')
@@ -225,7 +225,7 @@ export class CommandPaletteComponent {
       },
       {
         id: 'act-stage-source',
-        title: 'Stage Source Document for Review',
+        title: 'Add Content',
         category: 'Actions',
         icon: 'upload',
         action: () => {
@@ -245,13 +245,30 @@ export class CommandPaletteComponent {
       }
     ];
 
-    if (!this.state.isPlatformAdmin) {
-      return list.filter((item) => item.id !== 'nav-organizations' && item.id !== 'act-new-org');
-    }
+    const sectionByCommand: Record<string, NavSection> = {
+      'nav-overview': 'overview',
+      'nav-organizations': 'organizations',
+      'nav-knowledge': 'knowledge',
+      'nav-studio': 'studio',
+      'nav-chat': 'chat',
+      'nav-crm': 'crm',
+      'nav-observability': 'observability',
+      'nav-settings': 'settings',
+      'act-new-org': 'organizations',
+      'act-stage-source': 'knowledge',
+      'act-purge-sessions': 'settings'
+    };
+
+    const permittedList = list.filter((item) => {
+      const section = sectionByCommand[item.id];
+      return !section || this.state.canAccessSection(section);
+    });
+
+    if (!this.state.isPlatformAdmin) return permittedList;
 
     // Add tenants
     for (const t of this.tenants) {
-      list.push({
+      permittedList.push({
         id: `tenant-${t.id}`,
         title: `Tenant: ${t.name} (${t.slug})`,
         category: 'Tenants',
@@ -265,7 +282,7 @@ export class CommandPaletteComponent {
 
     // Add sources
     for (const s of this.sources.slice(0, 5)) {
-      list.push({
+      permittedList.push({
         id: `source-${s.id}`,
         title: `Source: ${s.title}`,
         category: 'Sources',
@@ -274,7 +291,7 @@ export class CommandPaletteComponent {
       });
     }
 
-    return list;
+    return permittedList;
   }
 
   get filteredItems(): CommandItem[] {

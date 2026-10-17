@@ -84,7 +84,7 @@ interface MegaMenuColumn {
               class="group relative flex items-center gap-1 px-2.5 py-1.5 text-[13px] font-medium rounded-md transition-all"
               [ngClass]="activeSection === 'knowledge' || activeMegaMenu === 'knowledge' ? 'text-neutral-950 bg-neutral-100 font-semibold' : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-50'"
             >
-              <span>Knowledge</span>
+              <span>Content</span>
               <app-icon
                 name="chevron-down"
                 classNames="w-2.5 h-2.5 transition-transform duration-200"
@@ -100,7 +100,7 @@ interface MegaMenuColumn {
               class="group relative flex items-center gap-1 px-2.5 py-1.5 text-[13px] font-medium rounded-md transition-all"
               [ngClass]="activeSection === 'studio' || activeMegaMenu === 'studio' ? 'text-neutral-950 bg-neutral-100 font-semibold' : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-50'"
             >
-              <span>AI Studio</span>
+              <span>Assistant</span>
               <app-icon
                 name="chevron-down"
                 classNames="w-2.5 h-2.5 transition-transform duration-200"
@@ -110,6 +110,7 @@ interface MegaMenuColumn {
 
             <!-- 5. Observability (Mega Menu) -->
             <button
+              *ngIf="canAccess('observability')"
               type="button"
               (click)="toggleMenu('observability')"
               [attr.aria-expanded]="activeMegaMenu === 'observability'"
@@ -126,13 +127,14 @@ interface MegaMenuColumn {
 
             <!-- 6. Settings (Mega Menu) -->
             <button
+              *ngIf="canAccess('settings')"
               type="button"
               (click)="toggleMenu('settings')"
               [attr.aria-expanded]="activeMegaMenu === 'settings'"
               class="group relative flex items-center gap-1 px-2.5 py-1.5 text-[13px] font-medium rounded-md transition-all"
               [ngClass]="activeSection === 'settings' || activeMegaMenu === 'settings' ? 'text-neutral-950 bg-neutral-100 font-semibold' : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-50'"
             >
-              <span>Settings</span>
+              <span>Workspace Settings</span>
               <app-icon
                 name="chevron-down"
                 classNames="w-2.5 h-2.5 transition-transform duration-200"
@@ -149,7 +151,7 @@ interface MegaMenuColumn {
             type="button"
             (click)="openSearch()"
             class="flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200/90 bg-neutral-50/70 px-2 sm:px-2.5 text-xs text-neutral-500 hover:border-neutral-300 hover:bg-white hover:text-neutral-900 transition-all button-press"
-            title="Search organizations, sources, or commands (⌘K)"
+            title="Search your workspace (⌘K)"
           >
             <app-icon name="search" classNames="w-3.5 h-3.5 text-neutral-400"></app-icon>
             <span class="hidden 2xl:inline font-normal">Search...</span>
@@ -205,7 +207,7 @@ interface MegaMenuColumn {
             class="flex h-8 items-center gap-1.5 rounded-lg bg-neutral-900 px-2.5 sm:px-3 text-xs font-medium text-white shadow-xs hover:bg-neutral-800 transition-all button-press"
           >
             <app-icon name="plus" classNames="w-3 h-3"></app-icon>
-            <span class="hidden sm:inline">{{ isPlatformAdmin ? 'New Org' : 'Stage Source' }}</span>
+            <span class="hidden sm:inline">{{ isPlatformAdmin ? 'New Org' : 'Add Content' }}</span>
           </button>
 
           <!-- Subtle Divider -->
@@ -299,7 +301,7 @@ interface MegaMenuColumn {
             [ngClass]="activeSection === 'knowledge' ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100'"
           >
             <app-icon name="knowledge" classNames="w-3.5 h-3.5"></app-icon>
-            <span>Knowledge</span>
+            <span>Content</span>
           </button>
 
           <button
@@ -309,7 +311,7 @@ interface MegaMenuColumn {
             [ngClass]="activeSection === 'studio' ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100'"
           >
             <app-icon name="studio" classNames="w-3.5 h-3.5"></app-icon>
-            <span>AI Studio</span>
+            <span>Assistant</span>
           </button>
 
           <button
@@ -323,6 +325,7 @@ interface MegaMenuColumn {
           </button>
 
           <button
+            *ngIf="canAccess('observability')"
             type="button"
             (click)="onMobileNavigate('observability')"
             class="flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium text-left transition-colors"
@@ -333,13 +336,14 @@ interface MegaMenuColumn {
           </button>
 
           <button
+            *ngIf="canAccess('settings')"
             type="button"
             (click)="onMobileNavigate('settings')"
             class="flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium text-left transition-colors"
             [ngClass]="activeSection === 'settings' ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100'"
           >
             <app-icon name="settings" classNames="w-3.5 h-3.5"></app-icon>
-            <span>Settings</span>
+            <span>Workspace Settings</span>
           </button>
         </div>
       </div>
@@ -479,6 +483,10 @@ export class TopNavComponent {
     return this.role === 'platform_admin';
   }
 
+  canAccess(section: NavSection): boolean {
+    return this.state.canAccessSection(section);
+  }
+
   get userInitials(): string {
     if (!this.userEmail) return 'AD';
     const parts = this.userEmail.split('@')[0].split('.');
@@ -520,7 +528,7 @@ export class TopNavComponent {
   }
 
   toggleMenu(section: NavSection): void {
-    if (section === 'organizations' && !this.isPlatformAdmin) return;
+    if (!this.canAccess(section)) return;
     this.tenantDropdownOpen = false;
     this.userMenuOpen = false;
     this.mobileNavOpen = false;
@@ -532,7 +540,7 @@ export class TopNavComponent {
   }
 
   navigateTo(section: NavSection): void {
-    if (section === 'organizations' && !this.isPlatformAdmin) return;
+    if (!this.canAccess(section)) return;
     this.state.setSection(section);
   }
 

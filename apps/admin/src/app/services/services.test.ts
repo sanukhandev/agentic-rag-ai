@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ToastService } from './toast.service';
+import { canAccessAdminSection } from './admin-navigation';
 import { isValidTenantSlug, resolveTenantSlug } from '../components/customer-chat/customer-chat-utils';
 
 describe('SOLID Services and Architecture Contracts', () => {
@@ -33,30 +34,19 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(resolveTenantSlug('', 'default-tenant')).toBe('default-tenant');
   });
 
-  it('excludes organizations tab from tenant admin navigation while keeping crm accessible', () => {
-    const navTabs = [
-      { id: 'overview', label: 'Overview' },
-      { id: 'organizations', label: 'Organizations' },
-      { id: 'knowledge', label: 'Knowledge' },
-      { id: 'studio', label: 'AI Studio' },
-      { id: 'chat', label: 'Customer Chat' },
-      { id: 'crm', label: 'CRM' },
-      { id: 'observability', label: 'Observability' },
-      { id: 'settings', label: 'Settings' }
-    ];
+  it('keeps platform operations away from tenant navigation', () => {
+    expect(canAccessAdminSection('tenant_admin', 'organizations')).toBe(false);
+    expect(canAccessAdminSection('tenant_admin', 'observability')).toBe(false);
+    expect(canAccessAdminSection('tenant_admin', 'studio')).toBe(true);
+    expect(canAccessAdminSection('tenant_admin', 'crm')).toBe(true);
+    expect(canAccessAdminSection('platform_admin', 'organizations')).toBe(true);
+    expect(canAccessAdminSection('platform_admin', 'observability')).toBe(true);
+  });
 
-    const filterTabsForRole = (role: string) =>
-      navTabs.filter((tab) => {
-        if (tab.id === 'organizations') return role === 'platform_admin';
-        return true;
-      });
-
-    const tenantAdminTabs = filterTabsForRole('tenant_admin');
-    expect(tenantAdminTabs.some((t) => t.id === 'organizations')).toBe(false);
-    expect(tenantAdminTabs.some((t) => t.id === 'crm')).toBe(true);
-
-    const platformAdminTabs = filterTabsForRole('platform_admin');
-    expect(platformAdminTabs.some((t) => t.id === 'organizations')).toBe(true);
-    expect(platformAdminTabs.some((t) => t.id === 'crm')).toBe(true);
+  it('applies least privilege to editor and viewer roles', () => {
+    expect(canAccessAdminSection('tenant_editor', 'knowledge')).toBe(true);
+    expect(canAccessAdminSection('tenant_editor', 'studio')).toBe(false);
+    expect(canAccessAdminSection('tenant_viewer', 'knowledge')).toBe(false);
+    expect(canAccessAdminSection('tenant_viewer', 'chat')).toBe(true);
   });
 });

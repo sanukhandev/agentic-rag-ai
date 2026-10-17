@@ -33,17 +33,22 @@
                 {{ selectedTenant?.name || (role === 'platform_admin' ? 'All Organizations' : 'Tenant Workspace') }}
               </span>
               <app-badge variant="neutral" [showDot]="false" text="">
-                {{ role === 'platform_admin' ? 'Platform Owner' : 'Tenant Admin' }}
+                {{ roleLabel }}
               </app-badge>
             </div>
 
             <h1 id="page-title" class="text-3xl sm:text-4xl font-bold tracking-tight text-neutral-900 font-sans">
-              Knowledge Operations
+              {{ role === 'platform_admin' ? 'Knowledge Operations' : 'Workspace Overview' }}
             </h1>
 
-            <p class="text-xs sm:text-sm text-neutral-500 max-w-3xl leading-relaxed">
-              Tenant administrators and platform engineers stage, review, ground, and publish source material with zero customer data leakage. Node API owns authorization, PII masking, retrieval orchestration, and approved n8n tool execution.
+            <p *ngIf="role === 'platform_admin'; else tenantWorkspaceIntro" class="text-xs sm:text-sm text-neutral-500 max-w-3xl leading-relaxed">
+              Manage organizations, review platform health, and protect the source-grounded customer experience.
             </p>
+            <ng-template #tenantWorkspaceIntro>
+              <p class="text-xs sm:text-sm text-neutral-500 max-w-3xl leading-relaxed">
+                Keep your customer assistant helpful and up to date. Add content, tune its voice, preview the chat, and follow up with leads.
+              </p>
+            </ng-template>
           </div>
 
           <!-- Right-Aligned Action Bar -->
@@ -64,7 +69,7 @@
               type="button"
               (click)="refreshWorkspace()"
               class="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors button-press shadow-subtle"
-              title="Refresh workspace telemetry and state"
+              title="Refresh workspace data"
             >
               <app-icon name="refresh" classNames="w-3.5 h-3.5 text-neutral-400"></app-icon>
               <span>Sync</span>
@@ -77,7 +82,7 @@
               class="flex items-center gap-2 rounded-lg bg-neutral-900 px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-neutral-800 transition-all button-press"
             >
               <app-icon name="plus" classNames="w-3.5 h-3.5"></app-icon>
-              <span>{{ role === 'platform_admin' ? 'Onboard Organization' : 'Stage New Material' }}</span>
+              <span>{{ role === 'platform_admin' ? 'Onboard Organization' : 'Add Content' }}</span>
             </button>
           </div>
 
@@ -108,11 +113,58 @@
         <!-- 3. Organization Management Section -->
         <app-org-table *ngIf="role === 'platform_admin'"></app-org-table>
 
-        <!-- 5. Service Health & Observability Matrix -->
-        <app-service-health></app-service-health>
+        <ng-container *ngIf="role === 'platform_admin'; else tenantOverview">
+          <app-service-health></app-service-health>
+          <app-activity-pipeline></app-activity-pipeline>
+        </ng-container>
 
-        <!-- 6. Activity & Ingestion Summary Stream -->
-        <app-activity-pipeline></app-activity-pipeline>
+        <ng-template #tenantOverview>
+          <section class="space-y-5" aria-labelledby="workspace-summary-title">
+            <div>
+              <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-400">At a glance</p>
+              <h2 id="workspace-summary-title" class="mt-1 text-xl font-bold tracking-tight text-neutral-900">Your customer workspace</h2>
+              <p class="mt-1 text-sm text-neutral-500">The essentials for running your assistant day to day.</p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <button type="button" (click)="setSection('knowledge')" class="rounded-2xl border border-neutral-200 bg-white p-5 text-left shadow-card transition hover:-translate-y-0.5 hover:border-neutral-300">
+                <span class="text-xs font-semibold text-neutral-500">Content items</span>
+                <p class="mt-2 text-3xl font-bold text-neutral-900">{{ (state.sources$ | async)?.length || 0 }}</p>
+                <p class="mt-1 text-xs text-neutral-500">Documents your assistant can use</p>
+              </button>
+              <button type="button" (click)="setSection('studio')" class="rounded-2xl border border-neutral-200 bg-white p-5 text-left shadow-card transition hover:-translate-y-0.5 hover:border-neutral-300">
+                <span class="text-xs font-semibold text-neutral-500">Assistant</span>
+                <p class="mt-2 truncate text-xl font-bold text-neutral-900">{{ (state.persona$ | async)?.name || 'Not configured' }}</p>
+                <p class="mt-1 text-xs text-neutral-500">Greeting and style</p>
+              </button>
+              <button type="button" (click)="setSection('crm')" class="rounded-2xl border border-neutral-200 bg-white p-5 text-left shadow-card transition hover:-translate-y-0.5 hover:border-neutral-300">
+                <span class="text-xs font-semibold text-neutral-500">Leads</span>
+                <p class="mt-2 text-3xl font-bold text-neutral-900">{{ (state.crmLeads$ | async)?.length || 0 }}</p>
+                <p class="mt-1 text-xs text-neutral-500">Customer conversations to follow up</p>
+              </button>
+              <button type="button" (click)="setSection('chat')" class="rounded-2xl border border-neutral-200 bg-white p-5 text-left shadow-card transition hover:-translate-y-0.5 hover:border-neutral-300">
+                <span class="text-xs font-semibold text-neutral-500">Customer chat</span>
+                <p class="mt-2 text-xl font-bold text-emerald-700">Ready to preview</p>
+                <p class="mt-1 text-xs text-neutral-500">Try the experience as a visitor</p>
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <button type="button" (click)="setSection('knowledge')" class="flex items-center gap-4 rounded-2xl border border-neutral-200 bg-white p-5 text-left shadow-card hover:border-neutral-300">
+                <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-900 text-white"><app-icon name="upload" classNames="h-4 w-4"></app-icon></span>
+                <span><strong class="block text-sm text-neutral-900">Add content</strong><span class="text-xs text-neutral-500">Upload files or add approved text.</span></span>
+              </button>
+              <button type="button" (click)="setSection('studio')" class="flex items-center gap-4 rounded-2xl border border-neutral-200 bg-white p-5 text-left shadow-card hover:border-neutral-300">
+                <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-100 text-neutral-700"><app-icon name="studio" classNames="h-4 w-4"></app-icon></span>
+                <span><strong class="block text-sm text-neutral-900">Shape your assistant</strong><span class="text-xs text-neutral-500">Set its name, greeting, and tone.</span></span>
+              </button>
+              <button type="button" (click)="setSection('crm')" class="flex items-center gap-4 rounded-2xl border border-neutral-200 bg-white p-5 text-left shadow-card hover:border-neutral-300">
+                <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-100 text-neutral-700"><app-icon name="users" classNames="h-4 w-4"></app-icon></span>
+                <span><strong class="block text-sm text-neutral-900">Follow up customers</strong><span class="text-xs text-neutral-500">Review conversations and lead quality.</span></span>
+              </button>
+            </div>
+          </section>
+        </ng-template>
       </ng-container>
 
       <!-- Section: Organizations -->
@@ -124,7 +176,7 @@
       <!-- Section: Knowledge -->
       <ng-container *ngIf="currentSection === 'knowledge'">
         <app-knowledge-manager></app-knowledge-manager>
-        <app-activity-pipeline></app-activity-pipeline>
+        <app-activity-pipeline *ngIf="role === 'platform_admin'"></app-activity-pipeline>
       </ng-container>
 
       <!-- Section: AI Studio -->
@@ -167,14 +219,19 @@
         </div>
         <span class="font-semibold text-neutral-800">Agentic RAG AI</span>
         <span class="text-neutral-300">·</span>
-        <span>Source-Grounded Autonomous Operations Platform</span>
+        <span>{{ role === 'platform_admin' ? 'Source-Grounded Autonomous Operations Platform' : 'Customer Assistant Workspace' }}</span>
       </div>
 
       <div class="flex items-center gap-6 text-[11px] text-neutral-400 font-mono">
-        <span>PostgreSQL pgvector</span>
-        <span>Azure AI Foundry GPT-4.1-mini</span>
-        <span>n8n Verified Actions</span>
-        <span>Zero PII Cloud Transfer</span>
+        <ng-container *ngIf="role === 'platform_admin'; else tenantFooter">
+          <span>PostgreSQL pgvector</span>
+          <span>Azure AI Foundry GPT-4.1-mini</span>
+          <span>n8n Verified Actions</span>
+          <span>Zero PII Cloud Transfer</span>
+        </ng-container>
+        <ng-template #tenantFooter>
+          <span>Content</span><span>Assistant</span><span>Chat</span><span>Leads</span>
+        </ng-template>
       </div>
     </div>
   </footer>

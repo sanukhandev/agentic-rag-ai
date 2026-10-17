@@ -3,6 +3,8 @@ import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
 import { API_BASE_URL, ADMIN_STORAGE_KEYS } from './tokens';
 import { ToastService } from './toast.service';
+import { NavSection } from '../types/admin.types';
+import { canAccessAdminSection } from './admin-navigation';
 
 export type UserRole = 'platform_admin' | 'tenant_admin' | 'tenant_editor' | 'tenant_viewer' | '';
 
@@ -63,6 +65,10 @@ export class AuthService {
 
   get canManagePersona(): boolean {
     return this.role === 'platform_admin' || this.role === 'tenant_admin';
+  }
+
+  canAccessSection(section: NavSection): boolean {
+    return canAccessAdminSection(this.role, section);
   }
 
   private _selectedTenantId: string | null = null;

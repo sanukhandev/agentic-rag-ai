@@ -114,7 +114,7 @@ export class AdminStateService {
       setInterval(() => {
         if (this.auth.isAuthenticated) {
           const sec = this.nav.currentSection;
-          if (sec === 'overview' || sec === 'observability') {
+          if (this.isPlatformAdmin && (sec === 'overview' || sec === 'observability')) {
             this.observability.loadHealth();
             this.observability.loadMetrics();
           } else if (sec === 'knowledge') {
@@ -150,6 +150,10 @@ export class AdminStateService {
     return this.auth.canManagePersona;
   }
 
+  canAccessSection(section: NavSection): boolean {
+    return this.auth.canAccessSection(section);
+  }
+
   // Toast Facade
   showToast(type: 'info' | 'success' | 'warning' | 'error', title: string, message?: string): void {
     this.toastService.show(type, title, message);
@@ -161,7 +165,7 @@ export class AdminStateService {
 
   // Navigation Facade
   setSection(section: NavSection): void {
-    if (section === 'organizations' && !this.isPlatformAdmin) {
+    if (!this.canAccessSection(section)) {
       this.nav.setSection('overview');
       return;
     }
@@ -334,8 +338,8 @@ export class AdminStateService {
   loadSectionData(section: NavSection): void {
     switch (section) {
       case 'overview':
-        this.observability.loadHealth();
         if (this.isPlatformAdmin) {
+          this.observability.loadHealth();
           this.tenantService.loadTenants();
           this.tenantService.loadPlatformOverview();
         } else {
@@ -343,7 +347,7 @@ export class AdminStateService {
         }
         break;
       case 'organizations':
-        if (this.isPlatformAdmin) {
+        if (this.canAccessSection(section)) {
           this.tenantService.loadTenants();
           this.tenantService.loadPlatformOverview();
         } else {
@@ -359,10 +363,14 @@ export class AdminStateService {
         this.personaService.loadPersonaVersions();
         break;
       case 'observability':
-        this.observability.loadHealth();
-        this.observability.loadMetrics();
-        this.observability.loadWorkflowRuns();
-        this.observability.loadAudit();
+        if (this.isPlatformAdmin) {
+          this.observability.loadHealth();
+          this.observability.loadMetrics();
+          this.observability.loadWorkflowRuns();
+          this.observability.loadAudit();
+        } else {
+          this.nav.setSection('overview');
+        }
         break;
       case 'settings':
         this.settings.loadDomains();
@@ -383,9 +391,9 @@ export class AdminStateService {
   }
 
   refreshAllData(): void {
-    this.observability.loadHealth();
-    this.tenantService.loadTenants();
     if (this.isPlatformAdmin) {
+      this.observability.loadHealth();
+      this.tenantService.loadTenants();
       this.tenantService.loadPlatformOverview();
     }
     this.loadTenantScopedData();

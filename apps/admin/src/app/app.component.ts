@@ -18,6 +18,8 @@ import { CustomerChatComponent } from './components/customer-chat/customer-chat.
 import { CrmComponent } from './components/crm/crm.component';
 import { IconComponent } from './components/shared/icon.component';
 import { BadgeComponent } from './components/shared/badge.component';
+import { UserRole } from './services/auth.service';
+import { canAccessAdminSection } from './services/admin-navigation';
 
 @Component({
   selector: 'app-root',
@@ -56,12 +58,12 @@ export class AppComponent implements OnInit {
   readonly navTabs: Array<{ id: NavSection; label: string; icon: string }> = [
     { id: 'overview', label: 'Overview', icon: 'overview' },
     { id: 'organizations', label: 'Organizations', icon: 'organizations' },
-    { id: 'knowledge', label: 'Knowledge', icon: 'knowledge' },
-    { id: 'studio', label: 'AI Studio', icon: 'studio' },
-    { id: 'chat', label: 'Customer Chat', icon: 'chat' },
-    { id: 'crm', label: 'CRM', icon: 'users' },
+    { id: 'knowledge', label: 'Content', icon: 'knowledge' },
+    { id: 'studio', label: 'Assistant', icon: 'studio' },
+    { id: 'chat', label: 'Chat Preview', icon: 'chat' },
+    { id: 'crm', label: 'Leads', icon: 'users' },
     { id: 'observability', label: 'Observability', icon: 'observability' },
-    { id: 'settings', label: 'Settings', icon: 'settings' }
+    { id: 'settings', label: 'Workspace Settings', icon: 'settings' }
   ];
 
   ngOnInit(): void {
@@ -91,16 +93,21 @@ export class AppComponent implements OnInit {
   }
 
   get visibleNavTabs(): Array<{ id: NavSection; label: string; icon: string }> {
-    return this.navTabs.filter((tab) => {
-      if (tab.id === 'organizations') {
-        return this.role === 'platform_admin';
-      }
-      return true;
-    });
+    return this.navTabs.filter((tab) => canAccessAdminSection(this.role as UserRole, tab.id));
+  }
+
+  get roleLabel(): string {
+    switch (this.role) {
+      case 'platform_admin': return 'Platform Owner';
+      case 'tenant_admin': return 'Tenant Admin';
+      case 'tenant_editor': return 'Content Editor';
+      case 'tenant_viewer': return 'Viewer';
+      default: return 'Workspace User';
+    }
   }
 
   setSection(sec: NavSection): void {
-    if (sec === 'organizations' && this.role !== 'platform_admin') {
+    if (!canAccessAdminSection(this.role as UserRole, sec)) {
       this.state.setSection('overview');
       return;
     }
