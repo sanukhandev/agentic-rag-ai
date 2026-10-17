@@ -11,6 +11,9 @@ describe('Azure Foundry model adapter', () => {
     expect(conversationalIntent('Hello Nova')).toBe('greeting');
     expect(isGreeting("Hey ! How'z it Going ?")).toBe(true);
     expect(isGreeting('Good morning there')).toBe(true);
+    expect(conversationalIntent('مرحبًا')).toBe('greeting');
+    expect(conversationalIntent('كيف حالك؟')).toBe('wellbeing');
+    expect(conversationalIntent('شكراً')).toBe('thanks');
     expect(isGreeting('What is the price?')).toBe(false);
     expect(conversationalIntent('How are you?')).toBe('wellbeing');
   });
@@ -33,10 +36,13 @@ describe('Azure Foundry model adapter', () => {
     expect(hasLeadIntent('Do you have his email?')).toBe(false);
     expect(extractLeadData('My name is [NAME_1], email [EMAIL_1]')).toEqual({ name: '[NAME_1]', email: '[EMAIL_1]' });
     expect(conversationalReply('wellbeing', 'Nova')).toContain('doing great');
+    expect(conversationalReply('greeting', 'Nova', 'ar')).toContain('مرحبًا');
+    expect(conversationalReply('greeting', 'Nova', 'ar')).not.toContain('What would you');
     expect(conversationalReply('identity', 'Nova')).toContain('public information');
     expect(conversationalReply('farewell', 'Nova')).toContain('lovely chatting');
     expect(naturalAbstention()).toContain('verified information');
     expect(naturalAbstention()).not.toContain('I don’t have that detail');
+    expect(naturalAbstention('ar')).toContain('لا أملك معلومات موثقة');
   });
   it('sends a masked grounded prompt and validates strict JSON output', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: 'Approved answer', citationIds: ['chunk-1'], proposedIntent: null }) } }] }), { status: 200 }));

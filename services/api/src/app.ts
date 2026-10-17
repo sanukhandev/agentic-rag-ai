@@ -7,7 +7,7 @@ import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedReq
 import { cacheKey, createCache, type CacheStore } from './cache.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, rankChunksWithVector } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
-import { conversationalIntent, conversationalReply, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence } from './model.js';
+import { conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, permittedLanguageReply, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
@@ -391,16 +391,20 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const queryEmbedding = await embedding.embed(masked.masked);
       const ranked = rankChunksWithVector(masked.masked, await store.searchSearchableChunks(tenantId, 'internal', queryEmbedding, 4), queryEmbedding, 4);
       const evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: chunk.content }));
+      const language = detectedLanguage(masked.masked);
       const languageAllowed = isPermittedLanguage(masked.masked, input.permittedLanguages);
+      const intent = conversationalIntent(masked.masked);
+      const conversational = intent !== null && (languageAllowed || language === 'ar');
       let draft: ModelDraft;
-      if (!languageAllowed) draft = { answer: `I can only answer in the permitted languages: ${input.permittedLanguages.join(', ')}.`, citationIds: [], proposedIntent: null };
+      if (conversational) draft = { answer: intent === 'greeting' && language !== 'ar' ? input.greeting : conversationalReply(intent ?? 'identity', input.name, language), citationIds: [], proposedIntent: null };
+      else if (!languageAllowed) draft = { answer: permittedLanguageReply(language, input.permittedLanguages), citationIds: [], proposedIntent: null };
       else if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null };
       else draft = await model.draft({ maskedMessage: masked.masked, evidence, personaName: input.name, persona: input });
       assertKnownTokens(previewSession, draft.answer, tokenVault);
       const citations = validateCitations(draft, evidence);
       const grounded = languageAllowed && hasSufficientEvidence(draft.answer, evidence, citations);
       const safeCitations = grounded ? citations : [];
-      const answer = !languageAllowed ? draft.answer : grounded ? draft.answer : naturalAbstention();
+      const answer = !languageAllowed ? draft.answer : conversational ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
       res.json({ preview: { answer: rehydrateForSession(previewSession, answer, tokenVault), grounded, citations: safeCitations, persona: { name: input.name, permittedLanguages: input.permittedLanguages } } });
     } catch (error) { next(error); }
   });
@@ -656,9 +660,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const persona = session.personaVersionId
         ? await store.getPersonaVersion(session.tenantId, session.personaVersionId)
         : await store.getPersona(session.tenantId);
+      const language = detectedLanguage(masked.masked);
       const languageAllowed = !persona || isPermittedLanguage(masked.masked, persona.permittedLanguages);
       const intent = conversationalIntent(masked.masked);
-      const conversational = intent !== null && languageAllowed;
+      const conversational = intent !== null && (languageAllowed || language === 'ar');
       const leadRequestedNow = hasLeadIntent(masked.masked);
       const leadDataRequested = leadRequestedNow || /\[(?:NAME|EMAIL|PHONE)_\d+\]/u.test(masked.masked) || /\b(?:my name is|i am|i'm)\b/i.test(input.message);
       const contextWindowMessages = persona?.contextWindowMessages ?? DEFAULT_CONTEXT_WINDOW_MESSAGES;
@@ -671,8 +676,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const leadData = mergeLeadData(...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), extractLeadData(masked.masked));
       const leadReady = Boolean(leadData.name && (leadData.email || leadData.phone));
       const leadCollection = leadIntent;
-      if (conversational) draft = { answer: intent === 'greeting' ? persona?.greeting ?? conversationalReply(intent, persona?.name ?? 'Sales assistant') : conversationalReply(intent ?? 'identity', persona?.name ?? 'Sales assistant'), citationIds: [], proposedIntent: null };
-      else if (!languageAllowed) draft = { answer: `I can only answer in the permitted languages: ${persona?.permittedLanguages.join(', ')}.`, citationIds: [], proposedIntent: null };
+      if (conversational) draft = { answer: intent === 'greeting' && language !== 'ar' ? persona?.greeting ?? conversationalReply(intent, persona?.name ?? 'Sales assistant') : conversationalReply(intent ?? 'identity', persona?.name ?? 'Sales assistant', language), citationIds: [], proposedIntent: null };
+      else if (!languageAllowed) draft = { answer: permittedLanguageReply(language, persona?.permittedLanguages ?? []), citationIds: [], proposedIntent: null };
       else if (leadIntent && !leadReady) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: null };
       else if (leadReady) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: 'lead.capture' };
       else {
@@ -688,7 +693,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const citations = validateCitations(draft, evidence);
       const grounded = !conversational && !leadCollection && evidence.length > 0 && hasSufficientEvidence(draft.answer, evidence, citations);
       const safeCitations = grounded ? citations : [];
-      const answer = !languageAllowed ? draft.answer : conversational || leadCollection ? draft.answer : grounded ? draft.answer : naturalAbstention();
+      const answer = !languageAllowed ? draft.answer : conversational || leadCollection ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
       const safeAnswer = conversational || leadCollection ? draft.answer : answer;
       const maskedAnswer = maskPiiForSession(session, safeAnswer, tokenVault);
       try { assertKnownTokens(session, maskedAnswer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
