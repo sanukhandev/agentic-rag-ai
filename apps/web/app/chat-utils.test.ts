@@ -8,6 +8,7 @@ import {
   isChatActionState,
   isValidTenantSlug,
   normalizeVoiceTranscript,
+  parseVoicePreferences,
   renderMarkdown,
   resolveTenantSlug
 } from './chat-utils';
@@ -28,6 +29,16 @@ describe('web chat utilities', () => {
 
   it('normalizes browser voice transcript fragments into one chat message', () => {
     expect(normalizeVoiceTranscript(['  hello', 'there  ', '', 'Nova'])).toBe('hello there Nova');
+  });
+
+  it('loads safe browser voice preferences and clamps invalid ranges', () => {
+    expect(parseVoicePreferences('{"voiceURI":"Alex","rate":4,"pitch":-1,"volume":0.7}')).toEqual({
+      voiceURI: 'Alex',
+      rate: 2,
+      pitch: 0,
+      volume: 0.7
+    });
+    expect(parseVoicePreferences('{bad json')).toEqual({ voiceURI: '', rate: 1, pitch: 1, volume: 1 });
   });
 
   it('restores only assistant replies from masked history', () => {
