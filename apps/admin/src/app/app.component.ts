@@ -122,9 +122,11 @@ export class AppComponent implements OnInit {
   openPrimaryAction(): void {
     if (this.role === 'platform_admin') {
       this.state.openCreateOrgDrawer();
-    } else {
+    } else if (this.state.canAccessSection('knowledge')) {
       this.state.setSection('knowledge');
       this.state.openUploadModal();
+    } else {
+      this.state.setSection('chat');
     }
   }
 

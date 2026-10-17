@@ -207,7 +207,7 @@ interface MegaMenuColumn {
             class="flex h-8 items-center gap-1.5 rounded-lg bg-neutral-900 px-2.5 sm:px-3 text-xs font-medium text-white shadow-xs hover:bg-neutral-800 transition-all button-press"
           >
             <app-icon name="plus" classNames="w-3 h-3"></app-icon>
-            <span class="hidden sm:inline">{{ isPlatformAdmin ? 'New Org' : 'Add Content' }}</span>
+            <span class="hidden sm:inline">{{ isPlatformAdmin ? 'New Org' : (canAccess('knowledge') ? 'Add Content' : 'Preview Chat') }}</span>
           </button>
 
           <!-- Subtle Divider -->
@@ -561,8 +561,10 @@ export class TopNavComponent {
   onPrimaryAction(): void {
     if (this.isPlatformAdmin) {
       this.state.openCreateOrgDrawer();
-    } else {
+    } else if (this.canAccess('knowledge')) {
       this.state.openUploadModal();
+    } else {
+      this.state.setSection('chat');
     }
   }
 

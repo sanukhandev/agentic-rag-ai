@@ -82,7 +82,7 @@
               class="flex items-center gap-2 rounded-lg bg-neutral-900 px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-neutral-800 transition-all button-press"
             >
               <app-icon name="plus" classNames="w-3.5 h-3.5"></app-icon>
-              <span>{{ role === 'platform_admin' ? 'Onboard Organization' : 'Add Content' }}</span>
+              <span>{{ role === 'platform_admin' ? 'Onboard Organization' : (state.canAccessSection('knowledge') ? 'Add Content' : 'Preview Chat') }}</span>
             </button>
           </div>
 
@@ -132,7 +132,7 @@
                 <p class="mt-2 text-3xl font-bold text-neutral-900">{{ (state.sources$ | async)?.length || 0 }}</p>
                 <p class="mt-1 text-xs text-neutral-500">Documents your assistant can use</p>
               </button>
-              <button type="button" (click)="setSection('studio')" class="rounded-2xl border border-neutral-200 bg-white p-5 text-left shadow-card transition hover:-translate-y-0.5 hover:border-neutral-300">
+              <button *ngIf="state.canAccessSection('studio')" type="button" (click)="setSection('studio')" class="rounded-2xl border border-neutral-200 bg-white p-5 text-left shadow-card transition hover:-translate-y-0.5 hover:border-neutral-300">
                 <span class="text-xs font-semibold text-neutral-500">Assistant</span>
                 <p class="mt-2 truncate text-xl font-bold text-neutral-900">{{ (state.persona$ | async)?.name || 'Not configured' }}</p>
                 <p class="mt-1 text-xs text-neutral-500">Greeting and style</p>
@@ -154,7 +154,7 @@
                 <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-900 text-white"><app-icon name="upload" classNames="h-4 w-4"></app-icon></span>
                 <span><strong class="block text-sm text-neutral-900">Add content</strong><span class="text-xs text-neutral-500">Upload files or add approved text.</span></span>
               </button>
-              <button type="button" (click)="setSection('studio')" class="flex items-center gap-4 rounded-2xl border border-neutral-200 bg-white p-5 text-left shadow-card hover:border-neutral-300">
+              <button *ngIf="state.canAccessSection('studio')" type="button" (click)="setSection('studio')" class="flex items-center gap-4 rounded-2xl border border-neutral-200 bg-white p-5 text-left shadow-card hover:border-neutral-300">
                 <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-100 text-neutral-700"><app-icon name="studio" classNames="h-4 w-4"></app-icon></span>
                 <span><strong class="block text-sm text-neutral-900">Shape your assistant</strong><span class="text-xs text-neutral-500">Set its name, greeting, and tone.</span></span>
               </button>
