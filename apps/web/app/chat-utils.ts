@@ -11,6 +11,9 @@ export const resolveTenantSlug = (search?: string, fallback = ''): string => {
   return fallback;
 };
 
+export const normalizeVoiceTranscript = (parts: readonly string[]): string =>
+  parts.map((part) => part.trim()).filter(Boolean).join(' ');
+
 export type ChatCitation = { title: string; locator: string };
 export type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean };
 export type ChatActionState = 'awaiting_confirmation' | 'completed' | 'failed' | 'unknown';

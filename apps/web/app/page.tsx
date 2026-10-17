@@ -5,6 +5,7 @@ import {
   formatNaturalAbstention,
   isChatActionState,
   isValidTenantSlug,
+  normalizeVoiceTranscript,
   renderMarkdown,
   resolveTenantSlug,
   type ChatActionState,
@@ -27,6 +28,32 @@ type Config = {
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
+type SpeechRecognitionResultLike = { [index: number]: { transcript: string } };
+type SpeechRecognitionEventLike = Event & {
+  results: { length: number; [index: number]: SpeechRecognitionResultLike };
+};
+type SpeechRecognitionErrorLike = Event & { error?: string };
+type SpeechRecognitionLike = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
+const getSpeechRecognitionConstructor = (): SpeechRecognitionConstructor | null => {
+  if (typeof window === 'undefined') return null;
+  const browserWindow = window as Window & {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  };
+  return browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition ?? null;
+};
+
 export default function Home() {
   const [tenantSlug, setTenantSlug] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -37,9 +64,26 @@ export default function Home() {
   const [config, setConfig] = useState<Config | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isAdminTestingMode, setIsAdminTestingMode] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceSpeaking, setVoiceSpeaking] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const voiceTranscriptRef = useRef('');
+  const voiceTurnRef = useRef(false);
+
+  useEffect(() => {
+    const supported = Boolean(getSpeechRecognitionConstructor()) &&
+      typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
+    setVoiceSupported(supported);
+
+    return () => {
+      recognitionRef.current?.stop();
+      if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+    };
+  }, []);
 
   // Requirement 3: Resolve tenant context without customer manual slug input
   useEffect(() => {
@@ -120,8 +164,18 @@ export default function Home() {
     .join('')
     .toUpperCase() || 'AG';
 
-  const send = async () => {
-    const trimmed = message.trim();
+  const speak = (text: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.onend = () => setVoiceSpeaking(false);
+    utterance.onerror = () => setVoiceSpeaking(false);
+    setVoiceSpeaking(true);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const send = async (voiceText?: string) => {
+    const trimmed = (voiceText ?? message).trim();
     if (!trimmed || busy) return;
     if (!isValidTenantSlug(tenantSlug) || !config) {
       setError('Open a tenant-specific chat URL after an organization is created.');
@@ -183,10 +237,76 @@ export default function Home() {
         createdAt: new Date().toISOString()
       };
       setMessages((prev) => [...prev, assistantMsg]);
+      if (voiceTurnRef.current) {
+        speak(naturalText);
+        voiceTurnRef.current = false;
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unexpected error.');
+      voiceTurnRef.current = false;
     } finally {
       setBusy(false);
+    }
+  };
+
+  const toggleVoice = () => {
+    if (!voiceSupported) {
+      setError('Voice mode is not supported by this browser. You can continue by typing.');
+      return;
+    }
+    if (voiceSpeaking) {
+      window.speechSynthesis.cancel();
+      setVoiceSpeaking(false);
+      return;
+    }
+    if (voiceListening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const Recognition = getSpeechRecognitionConstructor();
+    if (!Recognition) return;
+
+    const recognition = new Recognition();
+    recognition.lang = config?.persona?.permittedLanguages?.[0] || 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    voiceTranscriptRef.current = '';
+    voiceTurnRef.current = true;
+    recognition.onresult = (event) => {
+      const parts: string[] = [];
+      for (let index = 0; index < event.results.length; index += 1) {
+        parts.push(event.results[index][0].transcript);
+      }
+      const transcript = normalizeVoiceTranscript(parts);
+      voiceTranscriptRef.current = transcript;
+      setMessage(transcript);
+    };
+    recognition.onerror = (event) => {
+      voiceTurnRef.current = false;
+      setVoiceListening(false);
+      if (event.error !== 'aborted' && event.error !== 'no-speech') {
+        setError('Voice input could not start. You can continue by typing.');
+      }
+    };
+    recognition.onend = () => {
+      setVoiceListening(false);
+      const transcript = voiceTranscriptRef.current.trim();
+      if (transcript) {
+        void send(transcript);
+      } else {
+        voiceTurnRef.current = false;
+      }
+    };
+    recognitionRef.current = recognition;
+    setError('');
+    setVoiceListening(true);
+    try {
+      recognition.start();
+    } catch {
+      voiceTurnRef.current = false;
+      setVoiceListening(false);
+      setError('Voice input could not start. You can continue by typing.');
     }
   };
 
@@ -631,6 +751,21 @@ export default function Home() {
                     />
 
                     <button
+                      type="button"
+                      onClick={toggleVoice}
+                      disabled={busy}
+                      className={`flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-medium transition-all button-press disabled:cursor-not-allowed disabled:opacity-40 ${voiceListening ? 'border-rose-300 bg-rose-50 text-rose-700' : voiceSpeaking ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100'}`}
+                      aria-label={voiceListening ? 'Stop listening' : voiceSpeaking ? 'Stop speaking' : 'Start voice mode'}
+                      title={voiceSupported ? 'Speak a message; audio is not stored by this chat' : 'Voice mode is not supported by this browser'}
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8" />
+                      </svg>
+                      <span className="hidden sm:inline">{voiceListening ? 'Listening…' : voiceSpeaking ? 'Speaking…' : voiceSupported ? 'Voice' : 'Voice unavailable'}</span>
+                    </button>
+
+                    <button
                       type="submit"
                       disabled={busy || !message.trim()}
                       className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white shadow-subtle transition-all hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed button-press"
@@ -650,6 +785,9 @@ export default function Home() {
                     </span>
                     {message.length > 0 && <span className="font-mono text-[10px]">{message.length} chars</span>}
                   </div>
+                  <p className="mt-1 px-1 text-[10px] text-neutral-400">
+                    Voice mode sends only the browser transcript to the current assistant; this chat does not record or store audio.
+                  </p>
                 </form>
               </div>
 

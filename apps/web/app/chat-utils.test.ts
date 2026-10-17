@@ -7,6 +7,7 @@ import {
   historyToReplies,
   isChatActionState,
   isValidTenantSlug,
+  normalizeVoiceTranscript,
   renderMarkdown,
   resolveTenantSlug
 } from './chat-utils';
@@ -23,6 +24,10 @@ describe('web chat utilities', () => {
     expect(resolveTenantSlug('?tenant=acme-corp')).toBe('acme-corp');
     expect(resolveTenantSlug('?tenantSlug=beta')).toBe('beta');
     expect(resolveTenantSlug('', 'tenant-a')).toBe('tenant-a');
+  });
+
+  it('normalizes browser voice transcript fragments into one chat message', () => {
+    expect(normalizeVoiceTranscript(['  hello', 'there  ', '', 'Nova'])).toBe('hello there Nova');
   });
 
   it('restores only assistant replies from masked history', () => {
