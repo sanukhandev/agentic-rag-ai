@@ -95,6 +95,18 @@ class IngestionTests(unittest.TestCase):
             self.assertEqual(json_mime, "application/json")
             self.assertIn('"credits": 100', json_text)
 
+            jsonl_path = Path(directory) / "events.jsonl"
+            jsonl_path.write_text('{"name":"Starter"}\n\n{"name":"Pro","credits":200}\n', encoding="utf-8")
+            jsonl_text, jsonl_mime = extract_file(jsonl_path)
+            self.assertEqual(jsonl_mime, "application/x-ndjson")
+            self.assertIn('"name": "Starter"', jsonl_text)
+            self.assertIn('"credits": 200', jsonl_text)
+
+            invalid_jsonl = Path(directory) / "invalid.jsonl"
+            invalid_jsonl.write_text('{"valid":true}\nnot-json\n', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Invalid JSONL source at line 2"):
+                extract_file(invalid_jsonl)
+
             csv_path = Path(directory) / "catalog.csv"
             csv_path.write_text("name,credits\nStarter,100\n", encoding="utf-8")
             csv_text, csv_mime = extract_file(csv_path)
@@ -109,6 +121,7 @@ class IngestionTests(unittest.TestCase):
                 archive.writestr("bundle/training/career-timeline.txt", "2026: Platform launch.")
                 archive.writestr("bundle/training/catalog.csv", "name,credits\nStarter,100\n")
                 archive.writestr("bundle/training/metadata.json", '{"name":"Starter"}')
+                archive.writestr("bundle/training/events.jsonl", '{"name":"Starter"}\n{"credits":100}\n')
                 archive.writestr("bundle/evaluation_do_not_ingest/questions.json", '{"question":"ignore"}')
                 archive.writestr("bundle/README.md", "Do not ingest this README.")
 
@@ -119,6 +132,7 @@ class IngestionTests(unittest.TestCase):
             self.assertIn("career-timeline.txt", source.normalized_content)
             self.assertIn("catalog.csv", source.normalized_content)
             self.assertIn("metadata.json", source.normalized_content)
+            self.assertIn("events.jsonl", source.normalized_content)
             self.assertNotIn("questions.json", source.normalized_content)
             self.assertNotIn("README.md", source.normalized_content)
             self.assertTrue(any(chunk.locator.startswith("bundle/training/professional-profile.md") for chunk in source.chunks))

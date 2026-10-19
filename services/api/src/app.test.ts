@@ -461,6 +461,8 @@ describe('API vertical slice', () => {
       expect(csvQueued.body.job).toMatchObject({ mimeType: 'text/csv', status: 'queued' });
       const jsonQueued = await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Portfolio Metadata', fileName: 'metadata.json', mimeType: 'application/json', audience: 'public', contentBase64: Buffer.from('{"name":"Starter"}').toString('base64') }).expect(202);
       expect(jsonQueued.body.job).toMatchObject({ mimeType: 'application/json', status: 'queued' });
+      const jsonlQueued = await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Portfolio Events', fileName: 'events.jsonl', mimeType: 'application/x-ndjson', audience: 'public', contentBase64: Buffer.from('{"name":"Starter"}\n').toString('base64') }).expect(202);
+      expect(jsonlQueued.body.job).toMatchObject({ mimeType: 'application/x-ndjson', status: 'queued' });
       await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Bad extension', fileName: 'faq.pdf', mimeType: 'text/plain', audience: 'public', contentBase64: Buffer.from(content).toString('base64') }).expect(422);
       await api.post('/api/v1/admin/sources/upload').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Bad signature', fileName: 'faq.pdf', mimeType: 'application/pdf', audience: 'public', contentBase64: Buffer.from(content).toString('base64') }).expect(422);
       await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Binary bypass', mimeType: 'application/pdf', audience: 'public', content: content }).expect(422);

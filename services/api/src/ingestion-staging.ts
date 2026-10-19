@@ -8,6 +8,7 @@ const extensions: Record<string, string> = {
   'text/markdown': '.md',
   'text/csv': '.csv',
   'application/json': '.json',
+  'application/x-ndjson': '.jsonl',
   'application/pdf': '.pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
@@ -17,6 +18,19 @@ const extensions: Record<string, string> = {
 const zipSignature = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 const emptyZipSignature = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
 const spannedZipSignature = Buffer.from([0x50, 0x4b, 0x07, 0x08]);
+
+const isValidJsonLines = (content: Buffer): boolean => {
+  const text = content.toString('utf8').replace(/^\uFEFF/, '');
+  if (text.includes('\uFFFD')) return false;
+  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  if (lines.length === 0) return false;
+  try {
+    lines.forEach((line) => JSON.parse(line));
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 export const hasValidFileSignature = (mimeType: string, content: Buffer): boolean => {
   if (mimeType === 'text/plain' || mimeType === 'text/markdown' || mimeType === 'text/csv') return !content.includes(0);
@@ -28,6 +42,7 @@ export const hasValidFileSignature = (mimeType: string, content: Buffer): boolea
       return false;
     }
   }
+  if (mimeType === 'application/x-ndjson') return isValidJsonLines(content);
   if (mimeType === 'application/pdf') return content.subarray(0, 5).toString('ascii') === '%PDF-';
   if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return content.subarray(0, 4).equals(zipSignature);
   if (mimeType === 'application/zip') return content.subarray(0, 4).equals(zipSignature) || content.subarray(0, 4).equals(emptyZipSignature) || content.subarray(0, 4).equals(spannedZipSignature);

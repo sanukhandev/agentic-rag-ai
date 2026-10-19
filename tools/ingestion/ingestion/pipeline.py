@@ -17,7 +17,7 @@ MAX_BYTES = 5 * 1024 * 1024
 MAX_CONTAINER_ENTRIES = 2_000
 MAX_CONTAINER_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 PARSER_VERSION = "python-ingestion-0.3.0"
-ARCHIVE_SUPPORTED_SUFFIXES = {".txt", ".md", ".pdf", ".docx", ".xlsx", ".csv", ".json"}
+ARCHIVE_SUPPORTED_SUFFIXES = {".txt", ".md", ".pdf", ".docx", ".xlsx", ".csv", ".json", ".jsonl"}
 
 
 @dataclass(frozen=True)
@@ -143,6 +143,19 @@ def extract_file(path: Path) -> tuple[str, str]:
         except json.JSONDecodeError as error:
             raise ValueError("Invalid JSON source.") from error
         return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True), "application/json"
+    if suffix == ".jsonl":
+        records: list[str] = []
+        for line_number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise ValueError(f"Invalid JSONL source at line {line_number}.") from error
+            records.append(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True))
+        if not records:
+            raise ValueError("JSONL source contains no records.")
+        return "\n\n".join(records), "application/x-ndjson"
     if suffix == ".docx":
         from docx import Document
 

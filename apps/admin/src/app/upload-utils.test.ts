@@ -7,6 +7,7 @@ describe('admin upload utilities', () => {
     expect(fileMimeType('notes.txt')).toBe('text/plain');
     expect(fileMimeType('catalog.csv')).toBe('text/csv');
     expect(fileMimeType('metadata.json')).toBe('application/json');
+    expect(fileMimeType('events.jsonl')).toBe('application/x-ndjson');
     expect(fileMimeType('portfolio.zip')).toBe('application/zip');
     expect(fileMimeType('macro.doc')).toBeNull();
   });

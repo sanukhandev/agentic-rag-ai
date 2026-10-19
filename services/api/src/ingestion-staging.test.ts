@@ -29,6 +29,11 @@ describe('private ingestion staging', () => {
       expect(hasValidFileSignature('text/csv', Buffer.from('name,value\nStarter,100'))).toBe(true);
       expect(hasValidFileSignature('application/json', Buffer.from('{"name":"Starter"}'))).toBe(true);
       expect(hasValidFileSignature('application/json', Buffer.from('{invalid'))).toBe(false);
+      expect(hasValidFileSignature('application/x-ndjson', Buffer.from('{"name":"Starter"}\n{"name":"Pro"}\n'))).toBe(true);
+      expect(hasValidFileSignature('application/x-ndjson', Buffer.from('{"name":"Starter"}\ninvalid\n'))).toBe(false);
+      await staging.write('22222222-2222-4222-8222-222222222222', 'application/x-ndjson', Buffer.from('{"name":"Starter"}\n'));
+      expect(await staging.read('22222222-2222-4222-8222-222222222222', 'application/x-ndjson')).toEqual(Buffer.from('{"name":"Starter"}\n'));
+      await staging.purge('22222222-2222-4222-8222-222222222222', 'application/x-ndjson');
       expect(hasValidFileSignature('application/zip', Buffer.from('PK\u0005\u0006'))).toBe(true);
       await staging.write('22222222-2222-4222-8222-222222222222', 'application/zip', Buffer.from('PK\u0005\u0006'));
       expect(await staging.read('22222222-2222-4222-8222-222222222222', 'application/zip')).toEqual(Buffer.from('PK\u0005\u0006'));
