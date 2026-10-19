@@ -31,15 +31,29 @@ export class PersonaService {
   private readonly toast = inject(ToastService);
 
   private readonly personaSubject = new BehaviorSubject<Persona>(EMPTY_PERSONA);
+  private readonly personaDraftSubject = new BehaviorSubject<Persona | null>(null);
   private readonly personaVersionsSubject = new BehaviorSubject<PersonaVersion[]>([]);
   private readonly isLoadingSubject = new BehaviorSubject<boolean>(false);
 
   readonly persona$: Observable<Persona> = this.personaSubject.asObservable();
+  readonly personaDraft$: Observable<Persona | null> = this.personaDraftSubject.asObservable();
   readonly personaVersions$: Observable<PersonaVersion[]> = this.personaVersionsSubject.asObservable();
   readonly isLoading$: Observable<boolean> = this.isLoadingSubject.asObservable();
 
   get persona(): Persona {
     return this.personaSubject.value;
+  }
+
+  get personaDraft(): Persona | null {
+    return this.personaDraftSubject.value;
+  }
+
+  setDraft(persona: Persona): void {
+    this.personaDraftSubject.next({ ...persona, permittedLanguages: [...persona.permittedLanguages] });
+  }
+
+  clearDraft(): void {
+    this.personaDraftSubject.next(null);
   }
 
   get personaVersions(): PersonaVersion[] {
@@ -83,6 +97,7 @@ export class PersonaService {
       headers: this.auth.authHeaders
     }).subscribe({
       next: ({ persona: savedPersona }) => {
+        this.clearDraft();
         this.personaSubject.next(savedPersona);
         this.loadPersonaVersions();
         this.toast.show('success', 'Persona Published', 'The AI persona is now active across all channels.');
@@ -97,6 +112,7 @@ export class PersonaService {
       headers: this.auth.authHeaders
     }).subscribe({
       next: () => {
+        this.clearDraft();
         this.loadPersona();
         this.loadPersonaVersions();
         this.toast.show('info', 'Rollback Executed', `Active persona reverted to v${version.version}.`);

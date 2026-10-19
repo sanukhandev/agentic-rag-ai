@@ -52,7 +52,11 @@ import { BadgeComponent } from '../shared/badge.component';
         
         <!-- Left: Configuration Form (7 cols) -->
         <div class="lg:col-span-7 space-y-6">
-          <section class="rounded-2xl border border-neutral-200/90 bg-white p-6 shadow-card">
+          <section
+            class="rounded-2xl border border-neutral-200/90 bg-white p-6 shadow-card"
+            (input)="saveLocalDraft()"
+            (change)="saveLocalDraft()"
+          >
             <h3 class="text-sm font-semibold text-neutral-900 uppercase tracking-wider text-xs">
               Agent Identity & Tone Parameters
             </h3>
@@ -357,15 +361,21 @@ export class AiStudioComponent implements OnInit, OnDestroy {
 
   constructor() {
     this.state.persona$.subscribe((p) => {
-      this.persona = { ...p };
-      this.languagesInput = p.permittedLanguages.join(', ');
-      this.voiceSelection = p.voiceName ? this.voiceKey({ name: p.voiceName, lang: p.voiceLanguage }) : '';
-      this.cdr.markForCheck();
+      if (!this.state.personaService.personaDraft) this.applyPersona(p);
     });
+    const draft = this.state.personaService.personaDraft;
+    if (draft) this.applyPersona(draft);
     this.state.personaVersions$.subscribe((v) => {
       this.versions = v;
       this.cdr.markForCheck();
     });
+  }
+
+  private applyPersona(persona: Persona): void {
+    this.persona = { ...persona, permittedLanguages: [...persona.permittedLanguages] };
+    this.languagesInput = persona.permittedLanguages.join(', ');
+    this.voiceSelection = persona.voiceName ? this.voiceKey({ name: persona.voiceName, lang: persona.voiceLanguage }) : '';
+    this.cdr.markForCheck();
   }
 
   ngOnInit(): void {
@@ -383,6 +393,10 @@ export class AiStudioComponent implements OnInit, OnDestroy {
 
   onLanguagesChange(val: string): void {
     this.persona.permittedLanguages = parsePermittedLanguages(val);
+  }
+
+  saveLocalDraft(): void {
+    this.state.personaService.setDraft(this.persona);
   }
 
   voiceKey(voice: Pick<SpeechSynthesisVoice, 'name' | 'lang'>): string {

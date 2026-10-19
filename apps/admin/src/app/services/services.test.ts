@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ToastService } from './toast.service';
 import { canAccessAdminSection } from './admin-navigation';
+import { isNavSection } from './ui-navigation.service';
 import { isValidTenantSlug, resolveTenantSlug } from '../components/customer-chat/customer-chat-utils';
 
 describe('SOLID Services and Architecture Contracts', () => {
@@ -48,5 +49,11 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(canAccessAdminSection('tenant_editor', 'studio')).toBe(false);
     expect(canAccessAdminSection('tenant_viewer', 'knowledge')).toBe(false);
     expect(canAccessAdminSection('tenant_viewer', 'chat')).toBe(true);
+  });
+
+  it('accepts only known persisted admin sections', () => {
+    expect(isNavSection('studio')).toBe(true);
+    expect(isNavSection('not-a-section')).toBe(false);
+    expect(isNavSection(null)).toBe(false);
   });
 });

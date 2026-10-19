@@ -95,6 +95,10 @@ export class AdminStateService {
 
     this.nav.currentSection$.subscribe((section) => {
       if (this.auth.isAuthenticated) {
+        if (!this.canAccessSection(section)) {
+          this.nav.setSection('overview');
+          return;
+        }
         this.loadSectionData(section);
       }
     });
@@ -213,6 +217,7 @@ export class AdminStateService {
 
   logout(): void {
     this.auth.logout();
+    this.personaService.clearDraft();
     this.nav.setSection('overview');
     this.closeMegaMenu();
   }
