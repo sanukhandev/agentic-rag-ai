@@ -9,6 +9,7 @@ from typing import Any
 
 import requests
 
+from .intent_catalog import parse_intent_catalog
 from .pipeline import IngestedSource, ingest_file, ingest_url
 from .staging import LocalStaging
 
@@ -90,6 +91,16 @@ def submit_result(api_base: str, job_id: str, worker_secret: str, source: Ingest
     return body
 
 
+def submit_catalog_result(api_base: str, job_id: str, worker_secret: str, result: dict[str, Any], session: requests.Session | None = None) -> dict[str, Any]:
+    client = session or requests.Session()
+    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/ingestion-jobs/{job_id}/result", headers={"x-ingestion-worker-secret": worker_secret}, json=result, timeout=30)
+    raise_for_api_status(response)
+    body = response.json()
+    if not isinstance(body, dict):
+        raise ValueError("The ingestion API returned an invalid catalog result.")
+    return body
+
+
 def submit_failure(api_base: str, job_id: str, worker_secret: str, error_code: str = "INGESTION_FAILED", session: requests.Session | None = None) -> dict[str, Any]:
     client = session or requests.Session()
     response = client.post(
@@ -137,10 +148,12 @@ def process_job(
         else:
             if not staging_root:
                 raise ValueError("A staging root is required for uploaded jobs.")
-            file_name, _mime_type, content = fetch_job_input(api_base, job_id, worker_secret, client)
+            file_name, mime_type, content = fetch_job_input(api_base, job_id, worker_secret, client)
             staging = LocalStaging(staging_root)
             staged = staging.stage_bytes(Path(file_name).suffix, content)
             try:
+                if mime_type == "application/vnd.agentic.intent-catalog+excel":
+                    return submit_catalog_result(api_base, job_id, worker_secret, parse_intent_catalog(staged), client)
                 ingested = ingest_file(staged)
             finally:
                 staging.purge(staged)

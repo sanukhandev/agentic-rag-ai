@@ -1,0 +1,136 @@
+import type { IntentCatalog, IntentCatalogIntent, IntentCatalogSlot, IntentCatalogVersion } from './types.js';
+
+export interface IntentResolution {
+  intentKey: string | null;
+  workflowKey: string | null;
+  score: number;
+  confidence: number;
+  catalogVersionId: string;
+  confirmationRequired: boolean;
+  missingSlots: string[];
+  actionAllowed: boolean;
+  ambiguous: boolean;
+  runnerUpIntentKey: string | null;
+  reason: string;
+}
+
+export interface CatalogValidationResult {
+  errors: string[];
+  catalog: IntentCatalog | null;
+}
+
+const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
+const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+const bool = (value: unknown): boolean => value === true;
+const finite = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) ? value : NaN;
+const clamp = (value: number): number => Math.max(0, Math.min(100, Math.round(value)));
+const normalize = (value: string): string => value.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim();
+const keyPattern = /^[a-z][a-z0-9._-]{1,79}$/;
+const safePath = (value: string): boolean => /^\/[A-Za-z0-9._/-]{1,120}$/.test(value) && !value.includes('..');
+
+const duplicateErrors = (values: string[], label: string): string[] => {
+  const seen = new Set<string>();
+  return values.flatMap((value) => {
+    if (seen.has(value)) return [`${label} contains duplicate key ${value}.`];
+    seen.add(value);
+    return [];
+  });
+};
+
+export const validateIntentCatalog = (input: unknown): CatalogValidationResult => {
+  if (!input || typeof input !== 'object') return { errors: ['Catalog must be an object.'], catalog: null };
+  const value = input as Record<string, unknown>;
+  const arrays = ['intents', 'signals', 'slots', 'relations', 'workflowBindings'] as const;
+  const errors: string[] = [];
+  for (const name of arrays) if (!Array.isArray(value[name])) errors.push(`${name} must be an array.`);
+  if (errors.length) return { errors, catalog: null };
+  const intents = value.intents as unknown[];
+  const signals = value.signals as unknown[];
+  const slots = value.slots as unknown[];
+  const relations = value.relations as unknown[];
+  const workflowBindings = value.workflowBindings as unknown[];
+  const intentKeys = intents.map((item) => text(record(item).intentKey));
+  const workflowKeys = workflowBindings.map((item) => text(record(item).workflowKey));
+  errors.push(...duplicateErrors(intentKeys.filter(Boolean), 'Intents'));
+  errors.push(...duplicateErrors(workflowKeys.filter(Boolean), 'Workflow bindings'));
+  const intentSet = new Set(intentKeys);
+  const workflowSet = new Set(workflowKeys);
+  const parsedIntents: IntentCatalogIntent[] = [];
+  for (const [index, item] of intents.entries()) {
+    const row = record(item);
+    const intentKey = text(row.intentKey);
+    const minimumScore = finite(row.minimumScore);
+    const confidenceThreshold = finite(row.confidenceThreshold);
+    if (!keyPattern.test(intentKey)) errors.push(`Intents row ${index + 2} has an invalid intentKey.`);
+    if (!text(row.displayName) || !text(row.workflowKey)) errors.push(`Intents row ${index + 2} requires displayName and workflowKey.`);
+    if (!Number.isFinite(minimumScore) || minimumScore < 0 || minimumScore > 100) errors.push(`Intents row ${index + 2} has an invalid minimumScore.`);
+    if (!Number.isFinite(confidenceThreshold) || confidenceThreshold < 0 || confidenceThreshold > 1) errors.push(`Intents row ${index + 2} has an invalid confidenceThreshold.`);
+    if (intentKey && !workflowSet.has(text(row.workflowKey))) errors.push(`Intents row ${index + 2} references an unknown workflow binding.`);
+    parsedIntents.push({ intentKey, displayName: text(row.displayName), description: text(row.description), category: text(row.category), workflowKey: text(row.workflowKey), minimumScore: clamp(minimumScore), confidenceThreshold, confirmationRequired: bool(row.confirmationRequired), active: bool(row.active), priority: Number.isFinite(finite(row.priority)) ? finite(row.priority) : 0, versionNote: text(row.versionNote) });
+  }
+  const parsedSignals = signals.map((item, index) => {
+    const row = record(item);
+    const intentKey = text(row.intentKey); const weight = finite(row.weight);
+    if (!intentSet.has(intentKey)) errors.push(`Signals row ${index + 2} references an unknown intent.`);
+    if (!text(row.signalId) || !text(row.value) || !['phrase', 'keyword', 'exclusion'].includes(text(row.signalType))) errors.push(`Signals row ${index + 2} has invalid required fields.`);
+    if (!Number.isFinite(weight) || weight < -100 || weight > 100) errors.push(`Signals row ${index + 2} has an invalid weight.`);
+    return { intentKey, signalId: text(row.signalId), signalType: text(row.signalType) as 'phrase' | 'keyword' | 'exclusion', value: text(row.value), language: text(row.language) || 'en', matchMode: text(row.matchMode) || 'contains', weight, relationGroup: text(row.relationGroup) || null, notes: text(row.notes) };
+  });
+  const parsedSlots = slots.map((item, index) => {
+    const row = record(item);
+    const intentKey = text(row.intentKey);
+    if (!intentSet.has(intentKey)) errors.push(`Slots row ${index + 2} references an unknown intent.`);
+    if (!text(row.slotKey) || !text(row.dataType) || !text(row.promptKey) || !text(row.validationRule)) errors.push(`Slots row ${index + 2} has invalid required fields.`);
+    return { intentKey, slotKey: text(row.slotKey), dataType: text(row.dataType), required: bool(row.required), alternativeGroup: text(row.alternativeGroup) || null, collectionOrder: Number.isFinite(finite(row.collectionOrder)) ? finite(row.collectionOrder) : 0, promptKey: text(row.promptKey), validationRule: text(row.validationRule), retentionClass: text(row.retentionClass) };
+  });
+  const parsedRelations = relations.map((item, index) => {
+    const row = record(item); const sourceIntent = text(row.sourceIntent); const relatedIntent = text(row.relatedIntent);
+    if (!intentSet.has(sourceIntent) || !intentSet.has(relatedIntent)) errors.push(`Relations row ${index + 2} references an unknown intent.`);
+    return { sourceIntent, relatedIntent, relationType: text(row.relationType), triggerGroup: text(row.triggerGroup), scoreAdjustment: finite(row.scoreAdjustment) || 0, minimumCooccurrence: finite(row.minimumCooccurrence) || 1, clarificationPromptKey: text(row.clarificationPromptKey) };
+  });
+  const parsedBindings = workflowBindings.map((item, index) => {
+    const row = record(item); const workflowKey = text(row.workflowKey); const webhookPath = text(row.webhookPath);
+    if (!keyPattern.test(workflowKey) || !text(row.n8nWorkflowId) || !safePath(`/${webhookPath.replace(/^\//, '')}`)) errors.push(`WorkflowBindings row ${index + 2} has an invalid binding or webhook path.`);
+    return { workflowKey, n8nWorkflowId: text(row.n8nWorkflowId), webhookPath: webhookPath.replace(/^\//, ''), payloadContract: text(row.payloadContract), sideEffectClass: text(row.sideEffectClass), active: bool(row.active) };
+  });
+  const catalog: IntentCatalog = { tenantScope: text(value.tenantScope) || null, intents: parsedIntents, signals: parsedSignals, slots: parsedSlots, relations: parsedRelations, workflowBindings: parsedBindings };
+  if (catalog.intents.length === 0) errors.push('Catalog must contain at least one intent.');
+  if (catalog.workflowBindings.length === 0) errors.push('Catalog must contain at least one workflow binding.');
+  return { errors: [...new Set(errors)], catalog: errors.length ? null : catalog };
+};
+
+const slotValues = (intentKey: string, slots: IntentCatalogSlot[], values: Record<string, string>): Set<string> => {
+  const rows = slots.filter((slot) => slot.intentKey === intentKey);
+  const present = new Set(rows.filter((slot) => Boolean(values[slot.slotKey])).map((slot) => slot.slotKey));
+  for (const group of new Set(rows.map((slot) => slot.alternativeGroup).filter((group): group is string => Boolean(group)))) {
+    if (rows.some((slot) => slot.alternativeGroup === group && present.has(slot.slotKey))) for (const slot of rows.filter((item) => item.alternativeGroup === group)) present.add(slot.slotKey);
+  }
+  return present;
+};
+
+const missingSlotKeys = (intentKey: string, slots: IntentCatalogSlot[], values: Record<string, string>): string[] => {
+  const rows = slots.filter((slot) => slot.intentKey === intentKey).sort((left, right) => left.collectionOrder - right.collectionOrder);
+  const present = slotValues(intentKey, slots, values);
+  return rows.filter((slot) => slot.required && !present.has(slot.slotKey) && !(slot.alternativeGroup && rows.some((other) => other.alternativeGroup === slot.alternativeGroup && present.has(other.slotKey)))).map((slot) => slot.slotKey);
+};
+
+export const resolveIntent = (version: IntentCatalogVersion, inputText: string, slotValuesByKey: Record<string, string> = {}): IntentResolution => {
+  const input = normalize(inputText);
+  const candidates = version.catalog.intents.map((intent) => {
+    const signals = version.catalog.signals.filter((signal) => signal.intentKey === intent.intentKey);
+    const matched = signals.filter((signal) => signal.value && (signal.signalType === 'keyword' ? new RegExp(`\\b${normalize(signal.value).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\b`, 'i').test(input) : input.includes(normalize(signal.value))));
+    const signalScore = matched.reduce((sum, signal) => sum + signal.weight, 0);
+    const filled = slotValues(intent.intentKey, version.catalog.slots, slotValuesByKey);
+    const slotScore = Math.min(50, filled.size * 20);
+    const score = clamp(signalScore + slotScore);
+    return { intent, score, confidence: Math.min(1, score / 100), matchedCount: matched.filter((signal) => signal.signalType !== 'exclusion').length, missing: missingSlotKeys(intent.intentKey, version.catalog.slots, slotValuesByKey) };
+  }).filter((candidate) => candidate.matchedCount > 0).sort((left, right) => right.score - left.score || right.intent.priority - left.intent.priority);
+  const best = candidates[0];
+  if (!best) return { intentKey: null, workflowKey: null, score: 0, confidence: 0, catalogVersionId: version.id, confirmationRequired: false, missingSlots: [], actionAllowed: false, ambiguous: false, runnerUpIntentKey: null, reason: 'no_signal' };
+  const runnerUp = candidates[1];
+  const ambiguous = Boolean(runnerUp && Math.abs(best.score - runnerUp.score) <= 10 && best.intent.priority === runnerUp.intent.priority);
+  const binding = version.catalog.workflowBindings.find((item) => item.workflowKey === best.intent.workflowKey);
+  const thresholdMet = best.score >= best.intent.minimumScore && best.confidence >= best.intent.confidenceThreshold;
+  const actionAllowed = best.intent.active && Boolean(binding?.active) && thresholdMet && !ambiguous && best.missing.length === 0;
+  return { intentKey: best.intent.intentKey, workflowKey: binding?.active ? best.intent.workflowKey : null, score: best.score, confidence: best.confidence, catalogVersionId: version.id, confirmationRequired: best.intent.confirmationRequired, missingSlots: best.missing, actionAllowed, ambiguous, runnerUpIntentKey: runnerUp?.intent.intentKey ?? null, reason: !best.intent.active ? 'intent_inactive' : !binding?.active ? 'workflow_inactive' : ambiguous ? 'ambiguous' : best.missing.length ? 'missing_slots' : !thresholdMet ? 'below_threshold' : 'matched' };
+};

@@ -8,7 +8,7 @@ export interface ConversationTurn { role: 'user' | 'assistant'; content: string;
 export interface ModelDraft {
   answer: string;
   citationIds: string[];
-  proposedIntent: 'lead.capture' | null;
+  proposedIntent: string | null;
 }
 
 export interface ChatModel {

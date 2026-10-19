@@ -13,6 +13,7 @@ const extensions: Record<string, string> = {
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
   'application/zip': '.zip',
+  'application/vnd.agentic.intent-catalog+excel': '.xlsx',
 };
 
 const zipSignature = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
@@ -44,7 +45,7 @@ export const hasValidFileSignature = (mimeType: string, content: Buffer): boolea
   }
   if (mimeType === 'application/x-ndjson') return isValidJsonLines(content);
   if (mimeType === 'application/pdf') return content.subarray(0, 5).toString('ascii') === '%PDF-';
-  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return content.subarray(0, 4).equals(zipSignature);
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || mimeType === 'application/vnd.agentic.intent-catalog+excel') return content.subarray(0, 4).equals(zipSignature);
   if (mimeType === 'application/zip') return content.subarray(0, 4).equals(zipSignature) || content.subarray(0, 4).equals(emptyZipSignature) || content.subarray(0, 4).equals(spannedZipSignature);
   return false;
 };

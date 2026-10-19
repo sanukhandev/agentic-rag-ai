@@ -5,6 +5,87 @@ export type ActionState = 'awaiting_confirmation' | 'completed' | 'failed' | 'un
 export type TenantStatus = 'provisioning' | 'active' | 'suspended' | 'archived';
 export type IngestionJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 
+export type IntentCatalogStatus = 'draft' | 'published';
+
+export interface IntentCatalogIntent {
+  intentKey: string;
+  displayName: string;
+  description: string;
+  category: string;
+  workflowKey: string;
+  minimumScore: number;
+  confidenceThreshold: number;
+  confirmationRequired: boolean;
+  active: boolean;
+  priority: number;
+  versionNote: string;
+}
+
+export interface IntentCatalogSignal {
+  intentKey: string;
+  signalId: string;
+  signalType: 'phrase' | 'keyword' | 'exclusion';
+  value: string;
+  language: string;
+  matchMode: string;
+  weight: number;
+  relationGroup: string | null;
+  notes: string;
+}
+
+export interface IntentCatalogSlot {
+  intentKey: string;
+  slotKey: string;
+  dataType: string;
+  required: boolean;
+  alternativeGroup: string | null;
+  collectionOrder: number;
+  promptKey: string;
+  validationRule: string;
+  retentionClass: string;
+}
+
+export interface IntentCatalogRelation {
+  sourceIntent: string;
+  relatedIntent: string;
+  relationType: string;
+  triggerGroup: string;
+  scoreAdjustment: number;
+  minimumCooccurrence: number;
+  clarificationPromptKey: string;
+}
+
+export interface IntentCatalogWorkflowBinding {
+  workflowKey: string;
+  n8nWorkflowId: string;
+  webhookPath: string;
+  payloadContract: string;
+  sideEffectClass: string;
+  active: boolean;
+}
+
+export interface IntentCatalog {
+  tenantScope: string | null;
+  intents: IntentCatalogIntent[];
+  signals: IntentCatalogSignal[];
+  slots: IntentCatalogSlot[];
+  relations: IntentCatalogRelation[];
+  workflowBindings: IntentCatalogWorkflowBinding[];
+}
+
+export interface IntentCatalogVersion {
+  id: string;
+  tenantId: string;
+  version: number;
+  status: IntentCatalogStatus;
+  sourceFileName: string;
+  sourceHash: string;
+  parserVersion: string;
+  catalog: IntentCatalog;
+  createdAt: string;
+  publishedAt: string | null;
+}
+
 export interface Tenant {
   id: string;
   name: string;
@@ -160,6 +241,9 @@ export interface CrmLead {
   actionId: string;
   sessionId: string;
   intent: string;
+  intentScore: number;
+  intentConfidence: number;
+  catalogVersionId: string | null;
   score: number;
   validationPass: boolean;
   leadData: LeadData;
@@ -174,7 +258,12 @@ export interface ActionRequest {
   id: string;
   tenantId: string;
   sessionId: string;
-  workflowKey: 'lead.capture';
+  workflowKey: string;
+  webhookPath?: string;
+  intentKey?: string;
+  intentScore?: number;
+  intentConfidence?: number;
+  catalogVersionId?: string | null;
   idempotencyKey: string;
   state: ActionState;
   opaqueReference: string;
@@ -224,6 +313,11 @@ export interface Store {
   claimCallbackNonce(nonce: string, expiresAt: string): Promise<boolean>;
   setPersona(persona: Persona): Promise<Persona>;
   getPersona(tenantId: string): Promise<Persona | null>;
+  createIntentCatalogVersion(input: Omit<IntentCatalogVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<IntentCatalogVersion>;
+  listIntentCatalogVersions(tenantId: string): Promise<IntentCatalogVersion[]>;
+  getIntentCatalogVersion(tenantId: string, versionId: string): Promise<IntentCatalogVersion | null>;
+  getPublishedIntentCatalog(tenantId: string): Promise<IntentCatalogVersion | null>;
+  publishIntentCatalogVersion(tenantId: string, versionId: string): Promise<IntentCatalogVersion | null>;
   createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion>;
   listPersonaVersions(tenantId: string): Promise<PersonaVersion[]>;
   getPersonaVersion(tenantId: string, versionId: string): Promise<PersonaVersion | null>;

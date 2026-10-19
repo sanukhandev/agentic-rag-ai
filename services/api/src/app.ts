@@ -9,6 +9,7 @@ import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConfl
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, permittedLanguageReply, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
+import { resolveIntent, validateIntentCatalog } from './intent-catalog.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import type { CrmLead, Message, Session, SourceStatus, Store, TenantStatus } from './types.js';
@@ -44,6 +45,8 @@ const personaSchema = z.object({
 const personaPreviewSchema = personaSchema.extend({ message: z.string().trim().min(1).max(4000) });
 const sourceSchema = z.object({ title: z.string().trim().min(1).max(200), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'application/json', 'application/x-ndjson', 'text/html', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']), sourceUrl: z.string().url().optional(), audience: z.enum(['public', 'internal']).default('public'), content: z.string().trim().min(1).max(MAX_KNOWLEDGE_CONTENT_CHARS) });
 const uploadSchema = z.object({ title: z.string().trim().min(1).max(200), fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'application/json', 'application/x-ndjson', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip']), audience: z.enum(['public', 'internal']).default('public'), contentBase64: z.string().min(1).max(7_000_000) });
+const intentCatalogUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/i).refine((value) => value.toLowerCase().endsWith('.xlsx'), 'An .xlsx workbook is required.'), contentBase64: z.string().min(1).max(7_000_000) });
+const intentCatalogResultSchema = z.object({ sourceHash: z.string().regex(/^[a-f0-9]{64}$/), parserVersion: z.string().trim().min(1).max(120), catalog: z.unknown() });
 const ingestionRequestSchema = sourceSchema.omit({ content: true });
 const ingestionResultSchema = z.object({
   normalizedContent: z.string().min(1).max(MAX_KNOWLEDGE_CONTENT_CHARS),
@@ -64,6 +67,9 @@ const crmLeadSchema = z.object({
   sessionId: z.string().uuid(),
   leadData: z.object({ name: leadTokenSchema.optional(), email: leadTokenSchema.optional(), phone: leadTokenSchema.optional() }).strict(),
   intent: z.string().trim().min(1).max(80),
+  intentScore: z.number().int().min(0).max(100).optional(),
+  intentConfidence: z.number().min(0).max(1).optional(),
+  catalogVersionId: z.string().uuid().nullable().optional(),
   score: z.number().int().min(0).max(100),
   validationPass: z.boolean(),
   conversation: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(20_000), createdAt: z.string().datetime() })).min(1).max(200)
@@ -481,6 +487,37 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
     } catch (error) { next(error); }
   });
+  app.post('/api/v1/admin/intent-catalog/upload', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      await activeTenant(store, tenantId);
+      const input = parse(intentCatalogUploadSchema, req.body);
+      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(input.contentBase64)) throw new HttpError(422, 'INVALID_FILE_ENCODING', 'The workbook content must be valid base64.');
+      const content = Buffer.from(input.contentBase64, 'base64');
+      if (content.length === 0 || content.length > MAX_INGESTION_FILE_BYTES || content.toString('base64').replace(/=+$/, '') !== input.contentBase64.replace(/=+$/, '')) throw new HttpError(422, 'INVALID_FILE_CONTENT', 'The workbook is empty, malformed or exceeds the 5 MiB limit.');
+      if (!hasValidFileSignature('application/vnd.agentic.intent-catalog+excel', content)) throw new HttpError(422, 'INVALID_FILE_SIGNATURE', 'The workbook signature is invalid.');
+      const jobId = randomUUID();
+      try {
+        await ingestionStaging.write(jobId, 'application/vnd.agentic.intent-catalog+excel', content);
+        const job = await store.createIngestionJob({ id: jobId, tenantId, title: input.fileName, mimeType: 'application/vnd.agentic.intent-catalog+excel', sourceUrl: null, audience: 'internal' });
+        await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog.queued', metadata: { jobId, bytes: content.length }, createdAt: new Date().toISOString() });
+        res.status(202).json({ job });
+      } catch (error) {
+        await ingestionStaging.purge(jobId, 'application/vnd.agentic.intent-catalog+excel');
+        throw error;
+      }
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v1/admin/intent-catalog/versions', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listIntentCatalogVersions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.post('/api/v1/admin/intent-catalog/versions/:id/publish', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const version = await store.publishIntentCatalogVersion(tenantId, routeParam(req, 'id'));
+      if (!version) throw new HttpError(404, 'INTENT_CATALOG_VERSION_NOT_FOUND', 'Intent catalog version not found.');
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog.published', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() });
+      res.json({ version });
+    } catch (error) { next(error); }
+  });
   app.get('/api/v1/admin/sources', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listSources(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/sources/:id/versions', protectedApi, async (req, res, next) => {
     try {
@@ -586,6 +623,33 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const job = await store.getIngestionJob(routeParam(req, 'id'));
       if (!job) throw new HttpError(404, 'JOB_NOT_FOUND', 'Ingestion job not found.');
       if (job.status !== 'processing' || !job.leaseExpiresAt || Date.parse(job.leaseExpiresAt) <= Date.now()) throw new HttpError(409, 'INGESTION_NOT_CLAIMED', 'The ingestion job is not actively leased.');
+      if (job.mimeType === 'application/vnd.agentic.intent-catalog+excel') {
+        try {
+          const input = parse(intentCatalogResultSchema, req.body);
+          const validation = validateIntentCatalog(input.catalog);
+          if (!validation.catalog) throw new HttpError(422, 'CATALOG_VALIDATION_FAILED', validation.errors.join(' '));
+          const tenant = await store.getTenant(job.tenantId);
+          if (validation.catalog.tenantScope && tenant && validation.catalog.tenantScope !== tenant.slug) throw new HttpError(422, 'CATALOG_TENANT_MISMATCH', 'The workbook tenant scope does not match the target tenant.');
+          const existing = (await store.listIntentCatalogVersions(job.tenantId)).find((version) => version.sourceHash === input.sourceHash);
+          if (existing) {
+            const completed = await store.updateIngestionJob({ ...job, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+            await ingestionStaging.purge(job.id, job.mimeType);
+            res.status(200).json({ job: completed, version: existing, idempotent: true });
+            return;
+          }
+          const version = await store.createIntentCatalogVersion({ tenantId: job.tenantId, status: 'draft', sourceFileName: job.title, sourceHash: input.sourceHash, parserVersion: input.parserVersion, catalog: validation.catalog });
+          const completed = await store.updateIngestionJob({ ...job, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+          await ingestionStaging.purge(job.id, job.mimeType);
+          await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'intent_catalog.imported', metadata: { versionId: version.id, version: version.version, jobId: job.id }, createdAt: new Date().toISOString() });
+          res.status(201).json({ job: completed, version });
+          return;
+        } catch (error) {
+          const current = await store.getIngestionJob(job.id);
+          if (current?.status === 'processing') await store.updateIngestionJob({ ...current, status: 'failed', errorCode: error instanceof HttpError ? error.code : 'CATALOG_IMPORT_FAILED', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+          await ingestionStaging.purge(job.id, job.mimeType);
+          throw error;
+        }
+      }
       const input = parse(ingestionResultSchema, req.body);
       const normalizedContent = canonicalKnowledgeText(input.normalizedContent);
       if (contentHash(normalizedContent) !== input.contentHash) throw new HttpError(422, 'CONTENT_HASH_MISMATCH', 'The normalized content hash does not match the worker result.');
@@ -674,13 +738,20 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const recentMessages = intent === null && (needsConversationContext(masked.masked) || leadDataRequested) ? (await store.listMessages(session.id, session.tenantId, contextWindowMessages + 1)).filter((message) => message.id !== userMessage.id).slice(-contextWindowMessages) : [];
       const conversation = recentMessages.map((message) => ({ role: message.role, content: message.maskedContent }));
       const retrievalQuery = [masked.masked, ...recentMessages.filter((message) => message.role === 'user').map((message) => message.maskedContent)].join('\n');
-      const leadIntent = languageAllowed && (leadRequestedNow || recentMessages.some((message) => message.role === 'user' && hasLeadIntent(message.maskedContent)));
       const leadData = mergeLeadData(...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), extractLeadData(masked.masked));
       const leadReady = Boolean(leadData.name && (leadData.email || leadData.phone));
-      const leadCollection = leadIntent;
+      const publishedCatalog = await store.getPublishedIntentCatalog(session.tenantId);
+      const catalogResolution = publishedCatalog ? resolveIntent(publishedCatalog, retrievalQuery, leadData as Record<string, string>) : null;
+      const legacyLeadIntent = leadRequestedNow || recentMessages.some((message) => message.role === 'user' && hasLeadIntent(message.maskedContent));
+      const leadIntent = languageAllowed && (publishedCatalog ? Boolean(catalogResolution?.intentKey) : legacyLeadIntent);
+      const catalogSlotsReady = catalogResolution ? catalogResolution.missingSlots.length === 0 : leadReady;
+      const leadCollection = leadIntent && !catalogSlotsReady;
       if (!languageAllowed && !conversational) draft = { answer: permittedLanguageReply(language, persona?.permittedLanguages ?? []), citationIds: [], proposedIntent: null };
-      else if (leadIntent && !leadReady) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: null };
-      else if (leadReady) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: 'lead.capture' };
+      else if (catalogResolution?.ambiguous) draft = { answer: 'I can help with that. Are you looking to request a service or arrange a meeting?', citationIds: [], proposedIntent: null };
+      else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'intent_inactive') draft = { answer: 'I can note that request, but the matching workflow is not currently enabled.', citationIds: [], proposedIntent: null };
+      else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length > 0 && catalogResolution.intentKey !== 'lead.capture') draft = { answer: `To continue, please provide: ${catalogResolution.missingSlots.join(', ')}.`, citationIds: [], proposedIntent: null };
+      else if (leadIntent && !catalogSlotsReady) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: null };
+      else if (leadReady || catalogResolution?.actionAllowed) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: catalogResolution?.intentKey ?? 'lead.capture' };
       else {
         let queryEmbedding: number[];
         try { queryEmbedding = await embedding.embed(retrievalQuery); } catch { throw new HttpError(503, 'EMBEDDING_UNAVAILABLE', 'The assistant is currently unable to search approved knowledge.'); }
@@ -702,7 +773,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       try { assertKnownTokens(session, maskedAnswer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       if (intent === 'farewell') session.closedAt = new Date().toISOString();
       await store.updateSession(session);
-      const action = draft.proposedIntent === 'lead.capture' && leadIntent && leadReady ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, leadData) : null;
+      const action = (catalogResolution ? catalogResolution.actionAllowed : draft.proposedIntent === 'lead.capture' && leadIntent && leadReady) ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, leadData, catalogResolution ? { workflowKey: catalogResolution.workflowKey ?? 'lead.capture', intentKey: catalogResolution.intentKey ?? 'lead.capture', intentScore: catalogResolution.score, intentConfidence: catalogResolution.confidence, catalogVersionId: catalogResolution.catalogVersionId, webhookPath: publishedCatalog?.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution.workflowKey)?.webhookPath ?? 'lead-capture' } : undefined) : null;
       const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, maskedAnswer, tokenVault), grounded, conversational: casualFallback || leadCollection, citations: safeCitations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'I have the details I need. Would you like me to submit this contact request?', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
       const persistedResponse = { ...response, answer: maskedAnswer };
       const estimatedInputTokens = estimateTokens([masked.masked, ...evidence.map((item) => item.content), persona?.name ?? '', persona?.personality ?? '', persona?.tone ?? '', persona?.speakingStyle ?? ''].join('\n'));
@@ -742,12 +813,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!input.validationPass || input.score < 70) throw new HttpError(422, 'LEAD_VALIDATION_FAILED', 'The lead did not pass the completeness threshold.');
       const action = await store.getAction(input.actionId);
       const session = await store.getSession(input.sessionId);
-      if (!action || action.tenantId !== input.tenantId || action.sessionId !== input.sessionId || action.workflowKey !== 'lead.capture' || !session || session.tenantId !== input.tenantId) throw new HttpError(403, 'LEAD_FORBIDDEN', 'Lead context does not match the authorized action.');
+      if (!action || action.tenantId !== input.tenantId || action.sessionId !== input.sessionId || !['lead.capture', 'crm.lead.create'].includes(action.workflowKey) || !session || session.tenantId !== input.tenantId) throw new HttpError(403, 'LEAD_FORBIDDEN', 'Lead context does not match the authorized action.');
       assertKnownTokens(session, JSON.stringify({ leadData: input.leadData, conversation: input.conversation }), tokenVault);
       const leadData = { ...(input.leadData.name ? { name: input.leadData.name } : {}), ...(input.leadData.email ? { email: input.leadData.email } : {}), ...(input.leadData.phone ? { phone: input.leadData.phone } : {}) };
       const existing = await store.getCrmLeadByActionId(input.actionId, input.tenantId);
       if (existing) { res.json({ lead: existing, externalReference: `crm-lead-${existing.id}` }); return; }
-      const lead: CrmLead = { id: randomUUID(), tenantId: input.tenantId, actionId: input.actionId, sessionId: input.sessionId, intent: input.intent, score: input.score, validationPass: input.validationPass, leadData, conversation: input.conversation, summary: null, summaryStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const lead: CrmLead = { id: randomUUID(), tenantId: input.tenantId, actionId: input.actionId, sessionId: input.sessionId, intent: input.intent, intentScore: input.intentScore ?? action.intentScore ?? 0, intentConfidence: input.intentConfidence ?? action.intentConfidence ?? 0, catalogVersionId: input.catalogVersionId ?? action.catalogVersionId ?? null, score: input.score, validationPass: input.validationPass, leadData, conversation: input.conversation, summary: null, summaryStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       const created = await store.createCrmLead(lead);
       await store.addAudit({ id: randomUUID(), tenantId: created.tenantId, actorId: null, eventName: 'crm.lead_created', metadata: { leadId: created.id, intent: created.intent, score: created.score, validationPass: created.validationPass }, createdAt: new Date().toISOString() });
       res.status(201).json({ lead: created, externalReference: `crm-lead-${created.id}` });

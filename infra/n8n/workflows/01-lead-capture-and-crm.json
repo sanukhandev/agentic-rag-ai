@@ -18,7 +18,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $json.body ?? $json;\nconst hasContact = Boolean(input.leadData?.email || input.leadData?.phone);\nif (input.workflowKey !== 'lead.capture' || !input.actionId || !input.tenantId || !input.sessionId || input.validationPass !== true || input.score < 70 || !input.leadData?.name || !hasContact || !Array.isArray(input.conversation)) throw new Error('Lead validation failed');\nreturn [{ json: input }];"
+        "jsCode": "const input = $json.body ?? $json;\nconst hasContact = Boolean(input.leadData?.email || input.leadData?.phone);\nconst catalogAction = input.workflowKey === 'crm.lead.create';\nif (!['lead.capture', 'crm.lead.create'].includes(input.workflowKey) || !input.actionId || !input.tenantId || !input.sessionId || input.validationPass !== true || input.score < 70 || !input.leadData?.name || !hasContact || !Array.isArray(input.conversation) || (catalogAction && (typeof input.intentScore !== 'number' || typeof input.intentConfidence !== 'number'))) throw new Error('Lead validation failed');\nreturn [{ json: input }];"
       },
       "id": "f8e2e11d-0d3e-4e83-8d21-000000000002",
       "name": "Validate Lead",
@@ -41,7 +41,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, sessionId: $json.sessionId, leadData: $json.leadData, intent: $json.intent, score: $json.score, validationPass: $json.validationPass, conversation: $json.conversation }) }}",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, sessionId: $json.sessionId, leadData: $json.leadData, intent: $json.intent, intentScore: $json.intentScore, intentConfidence: $json.intentConfidence, catalogVersionId: $json.catalogVersionId ?? null, score: $json.score, validationPass: $json.validationPass, conversation: $json.conversation }) }}",
         "options": {}
       },
       "id": "f8e2e11d-0d3e-4e83-8d21-000000000003",
@@ -57,7 +57,7 @@
         "sendHeaders": false,
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ leadId: $('Insert CRM Lead').first().json.lead.id, tenantId: $('Validate Lead').first().json.tenantId, intent: $('Validate Lead').first().json.intent, score: $('Validate Lead').first().json.score, quality: $('Validate Lead').first().json.quality, conversation: $('Validate Lead').first().json.conversation }) }}",
+        "jsonBody": "={{ JSON.stringify({ leadId: $('Insert CRM Lead').first().json.lead.id, tenantId: $('Validate Lead').first().json.tenantId, intent: $('Validate Lead').first().json.intent, intentScore: $('Validate Lead').first().json.intentScore, intentConfidence: $('Validate Lead').first().json.intentConfidence, score: $('Validate Lead').first().json.score, quality: $('Validate Lead').first().json.quality, conversation: $('Validate Lead').first().json.conversation }) }}",
         "options": {}
       },
       "id": "f8e2e11d-0d3e-4e83-8d21-000000000004",

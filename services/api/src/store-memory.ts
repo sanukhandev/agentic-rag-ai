@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, AuthSession, Chunk, CrmLead, IngestionJob, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionRequest, AuditEvent, AuthSession, Chunk, CrmLead, IngestionJob, IntentCatalogVersion, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -11,6 +11,7 @@ export class MemoryStore implements Store {
   private readonly authSessions = new Map<string, AuthSession>();
   private readonly callbackNonces = new Map<string, string>();
   private readonly personas = new Map<string, Persona>();
+  private readonly intentCatalogVersions = new Map<string, IntentCatalogVersion[]>();
   private readonly personaVersions = new Map<string, PersonaVersion[]>();
   private readonly sources = new Map<string, Source>();
   private readonly sourceVersions = new Map<string, SourceVersion[]>();
@@ -83,6 +84,23 @@ export class MemoryStore implements Store {
 
   async setPersona(persona: Persona): Promise<Persona> { this.personas.set(persona.tenantId, persona); return persona; }
   async getPersona(tenantId: string): Promise<Persona | null> { return this.personas.get(tenantId) ?? null; }
+  async createIntentCatalogVersion(input: Omit<IntentCatalogVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<IntentCatalogVersion> {
+    const versions = this.intentCatalogVersions.get(input.tenantId) ?? [];
+    const version: IntentCatalogVersion = { ...input, id: randomUUID(), version: versions.length + 1, createdAt: now(), publishedAt: null };
+    this.intentCatalogVersions.set(input.tenantId, [...versions, version]);
+    return version;
+  }
+  async listIntentCatalogVersions(tenantId: string): Promise<IntentCatalogVersion[]> { return [...(this.intentCatalogVersions.get(tenantId) ?? [])].sort((left, right) => right.version - left.version); }
+  async getIntentCatalogVersion(tenantId: string, versionId: string): Promise<IntentCatalogVersion | null> { return (this.intentCatalogVersions.get(tenantId) ?? []).find((version) => version.id === versionId) ?? null; }
+  async getPublishedIntentCatalog(tenantId: string): Promise<IntentCatalogVersion | null> { return (await this.listIntentCatalogVersions(tenantId)).find((version) => version.status === 'published') ?? null; }
+  async publishIntentCatalogVersion(tenantId: string, versionId: string): Promise<IntentCatalogVersion | null> {
+    const versions = this.intentCatalogVersions.get(tenantId) ?? [];
+    if (!versions.some((version) => version.id === versionId)) return null;
+    const publishedAt = now();
+    const updated = versions.map((version) => ({ ...version, status: version.id === versionId ? 'published' as const : 'draft' as const, publishedAt: version.id === versionId ? publishedAt : version.publishedAt }));
+    this.intentCatalogVersions.set(tenantId, updated);
+    return updated.find((version) => version.id === versionId) ?? null;
+  }
   async createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion> {
     const versions = this.personaVersions.get(input.tenantId) ?? [];
     const version: PersonaVersion = { ...input, id: randomUUID(), version: versions.length + 1, createdAt: now(), publishedAt: input.status === 'published' ? now() : null };

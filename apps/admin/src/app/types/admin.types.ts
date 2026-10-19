@@ -181,4 +181,19 @@ export interface PlatformOverview {
   };
 }
 
-export type NavSection = 'overview' | 'organizations' | 'knowledge' | 'studio' | 'chat' | 'crm' | 'observability' | 'settings';
+export type NavSection = 'overview' | 'organizations' | 'knowledge' | 'catalog' | 'studio' | 'chat' | 'crm' | 'observability' | 'settings';
+
+export interface IntentCatalogVersion {
+  id: string;
+  version: number;
+  status: 'draft' | 'published';
+  sourceFileName: string;
+  sourceHash: string;
+  parserVersion: string;
+  catalog: {
+    intents: Array<{ intentKey: string; displayName: string; workflowKey: string; active: boolean }>;
+    workflowBindings: Array<{ workflowKey: string; active: boolean }>;
+  };
+  createdAt: string;
+  publishedAt: string | null;
+}

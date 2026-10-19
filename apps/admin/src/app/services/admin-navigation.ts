@@ -7,7 +7,7 @@ export function canAccessAdminSection(role: AdminRole | string, section: NavSect
   if (role === 'platform_admin') return true;
   if (!role) return false;
   if (section === 'organizations' || section === 'observability') return false;
-  if (section === 'settings' || section === 'studio') return role === 'tenant_admin';
+  if (section === 'settings' || section === 'studio' || section === 'catalog') return role === 'tenant_admin';
   if (section === 'knowledge') return role === 'tenant_admin' || role === 'tenant_editor';
   return true;
 }
