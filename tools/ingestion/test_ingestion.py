@@ -158,6 +158,17 @@ class IngestionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unsafe path"):
                 ingest_file(unsafe)
 
+    def test_zip_accepts_content_over_the_previous_200k_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "large.zip"
+            records = ''.join('{"value":"' + ('x' * 80) + '"}\n' for _ in range(3_000))
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("bundle/data/events.jsonl", records)
+
+            source = ingest_file(path)
+
+            self.assertGreater(len(source.normalized_content), 200_000)
+
     def test_pdf_locators_and_ocr_only_rejection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "faq.pdf"

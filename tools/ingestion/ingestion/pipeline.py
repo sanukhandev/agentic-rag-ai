@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 MAX_BYTES = 5 * 1024 * 1024
 MAX_CONTAINER_ENTRIES = 2_000
 MAX_CONTAINER_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
+MAX_NORMALIZED_CONTENT_CHARS = 1_000_000
 PARSER_VERSION = "python-ingestion-0.3.0"
 ARCHIVE_SUPPORTED_SUFFIXES = {".txt", ".md", ".pdf", ".docx", ".xlsx", ".csv", ".json", ".jsonl"}
 
@@ -262,8 +263,8 @@ def _ingest_archive(path: Path) -> IngestedSource:
             content = f"File: {display_name}\n{chunk.content}"
             chunks.append(_chunk(content, len(chunks), f"{display_name} · {chunk.locator}"))
     normalized_content = normalize("\n\n".join(sections))
-    if len(normalized_content) > 200_000:
-        raise ValueError("ZIP archive produces more than the 200,000 character ingestion limit.")
+    if len(normalized_content) > MAX_NORMALIZED_CONTENT_CHARS:
+        raise ValueError("ZIP archive produces more than the 1,000,000 character ingestion limit.")
     return IngestedSource(
         title=path.stem,
         mime_type="application/zip",
