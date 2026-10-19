@@ -16,8 +16,8 @@ export interface ChatModel {
 }
 
 export const naturalAbstention = (language = 'en'): string => language === 'ar'
-  ? 'لا أملك معلومات موثقة عن هذا الموضوع حتى الآن، لكن يسعدني مساعدتك في المنتجات أو الخدمات أو المشاريع أو الروابط العامة المتاحة هنا. ماذا تود أن تستكشف؟'
-  : 'I may not have verified information about that yet, but I’d love to help with something I can confirm—our products, services, projects, or public links. What would you like to explore?';
+  ? 'لا أملك معلومات موثقة عن هذا الموضوع في قاعدة معرفتي الحالية حتى الآن. يمكنني مساعدتك في الموضوعات التي أضيفت إلى معلوماتي المعتمدة، مثل المنتجات أو الخدمات أو المشاريع. ماذا تود أن تستكشف؟'
+  : 'I don’t have verified information about that in my current knowledge base yet. I can help with topics covered by the approved information here, such as our products, services, and projects. What would you like to explore?';
 export const permittedLanguageReply = (language: string, permittedLanguages: string[]): string => language === 'ar'
   ? `يمكنني الإجابة فقط باللغات المسموح بها: ${permittedLanguages.join('، ')}.`
   : `I can only answer in the permitted languages: ${permittedLanguages.join(', ')}.`;

@@ -83,7 +83,7 @@ Action confirmation requests must include the originating `sessionId` alongside 
 Examples illustrate schema only; they are not live data and do not imply a shipped API.
 
 ## Response and action semantics
-- **answer** is user-safe text; may include a disclosure when evidence is missing; **grounded=false** must not imply factual business assertions. **conversational=true** identifies a short greeting answered from the tenant persona without factual retrieval or citations.
+- **answer** is user-safe text; may include a disclosure when evidence is missing; **grounded=false** must not imply factual business assertions. **conversational=true** identifies a short greeting answered from the tenant persona when no matching approved evidence exists. If matching evidence exists, the response is grounded and reported with `conversational=false` and validated citations.
 - **citations** are validated and tenant-authorized; never include storage credentials, private paths, original customer PII or internal embedding data.
 - **actionProposal** contains opaque ID, canonical action type, user-readable confirmation requirement and expiry; never arbitrary executable instructions.
 - **errors**: consistent code, generic message and correlation ID; no traces, raw model output, SQL or PII. Use appropriate 400/401/403/404/409/413/422/429/5xx statuses.

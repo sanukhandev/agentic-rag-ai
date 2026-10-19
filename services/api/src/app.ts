@@ -396,15 +396,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const intent = conversationalIntent(masked.masked);
       const conversational = intent !== null && (languageAllowed || language === 'ar');
       let draft: ModelDraft;
-      if (conversational) draft = { answer: intent === 'greeting' && language !== 'ar' ? input.greeting : conversationalReply(intent ?? 'identity', input.name, language), citationIds: [], proposedIntent: null };
-      else if (!languageAllowed) draft = { answer: permittedLanguageReply(language, input.permittedLanguages), citationIds: [], proposedIntent: null };
+      if (!languageAllowed && !conversational) draft = { answer: permittedLanguageReply(language, input.permittedLanguages), citationIds: [], proposedIntent: null };
       else if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null };
+      else if (conversational && evidence.length === 0) draft = { answer: intent === 'greeting' && language !== 'ar' ? input.greeting : conversationalReply(intent ?? 'identity', input.name, language), citationIds: [], proposedIntent: null };
       else draft = await model.draft({ maskedMessage: masked.masked, evidence, personaName: input.name, persona: input });
       assertKnownTokens(previewSession, draft.answer, tokenVault);
       const citations = validateCitations(draft, evidence);
       const grounded = languageAllowed && hasSufficientEvidence(draft.answer, evidence, citations);
       const safeCitations = grounded ? citations : [];
-      const answer = !languageAllowed ? draft.answer : conversational ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
+      const casualFallback = conversational && evidence.length === 0;
+      const answer = !languageAllowed ? draft.answer : casualFallback ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
       res.json({ preview: { answer: rehydrateForSession(previewSession, answer, tokenVault), grounded, citations: safeCitations, persona: { name: input.name, permittedLanguages: input.permittedLanguages } } });
     } catch (error) { next(error); }
   });
@@ -676,8 +677,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const leadData = mergeLeadData(...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), extractLeadData(masked.masked));
       const leadReady = Boolean(leadData.name && (leadData.email || leadData.phone));
       const leadCollection = leadIntent;
-      if (conversational) draft = { answer: intent === 'greeting' && language !== 'ar' ? persona?.greeting ?? conversationalReply(intent, persona?.name ?? 'Sales assistant') : conversationalReply(intent ?? 'identity', persona?.name ?? 'Sales assistant', language), citationIds: [], proposedIntent: null };
-      else if (!languageAllowed) draft = { answer: permittedLanguageReply(language, persona?.permittedLanguages ?? []), citationIds: [], proposedIntent: null };
+      if (!languageAllowed && !conversational) draft = { answer: permittedLanguageReply(language, persona?.permittedLanguages ?? []), citationIds: [], proposedIntent: null };
       else if (leadIntent && !leadReady) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: null };
       else if (leadReady) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: 'lead.capture' };
       else {
@@ -687,20 +687,22 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const ranked = rankChunksWithVector(retrievalQuery, rows, queryEmbedding, 4);
         evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: chunk.content }));
         if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null };
+        else if (conversational && evidence.length === 0) draft = { answer: intent === 'greeting' && language !== 'ar' ? persona?.greeting ?? conversationalReply(intent, persona?.name ?? 'Sales assistant') : conversationalReply(intent ?? 'identity', persona?.name ?? 'Sales assistant', language), citationIds: [], proposedIntent: null };
         else try { const modelInput = { maskedMessage: masked.masked, evidence, personaName: persona?.name ?? 'Sales assistant', conversation }; draft = await model.draft(persona ? { ...modelInput, persona } : modelInput); } catch { throw new HttpError(503, 'MODEL_UNAVAILABLE', 'The assistant is currently unable to verify an answer.'); }
       }
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       const citations = validateCitations(draft, evidence);
-      const grounded = !conversational && !leadCollection && evidence.length > 0 && hasSufficientEvidence(draft.answer, evidence, citations);
+      const casualFallback = conversational && evidence.length === 0;
+      const grounded = !casualFallback && !leadCollection && evidence.length > 0 && hasSufficientEvidence(draft.answer, evidence, citations);
       const safeCitations = grounded ? citations : [];
-      const answer = !languageAllowed ? draft.answer : conversational || leadCollection ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
-      const safeAnswer = conversational || leadCollection ? draft.answer : answer;
+      const answer = !languageAllowed ? draft.answer : casualFallback || leadCollection ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
+      const safeAnswer = casualFallback || leadCollection ? draft.answer : answer;
       const maskedAnswer = maskPiiForSession(session, safeAnswer, tokenVault);
       try { assertKnownTokens(session, maskedAnswer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       if (intent === 'farewell') session.closedAt = new Date().toISOString();
       await store.updateSession(session);
       const action = draft.proposedIntent === 'lead.capture' && leadIntent && leadReady ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, leadData) : null;
-      const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, maskedAnswer, tokenVault), grounded, conversational: conversational || leadCollection, citations: safeCitations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'I have the details I need. Would you like me to submit this contact request?', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
+      const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, maskedAnswer, tokenVault), grounded, conversational: casualFallback || leadCollection, citations: safeCitations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'I have the details I need. Would you like me to submit this contact request?', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
       const persistedResponse = { ...response, answer: maskedAnswer };
       const estimatedInputTokens = estimateTokens([masked.masked, ...evidence.map((item) => item.content), persona?.name ?? '', persona?.personality ?? '', persona?.tone ?? '', persona?.speakingStyle ?? ''].join('\n'));
       const estimatedOutputTokens = estimateTokens(maskedAnswer);

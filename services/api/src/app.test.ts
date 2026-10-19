@@ -123,11 +123,11 @@ describe('API vertical slice', () => {
     const draft = await api.post('/api/v1/admin/persona/drafts').set('Authorization', `Bearer ${adminToken}`).send({ name: 'Ava 2', greeting: 'Welcome', personality: 'Warm', tone: 'Friendly', speakingStyle: 'Short', permittedLanguages: ['en', 'ar'] }).expect(201);
     await api.post(`/api/v1/admin/persona/versions/${draft.body.version.id}/publish`).set('Authorization', `Bearer ${adminToken}`).expect(200);
     expect((await api.get('/api/v1/admin/persona').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.persona.name).toBe('Ava 2');
-    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${adminToken}`).send({ title: 'Tenant A Catalog', mimeType: 'text/plain', audience: 'public', content: 'Tenant A pricing is 100 credits per month. Contact support for approved details.' }).expect(201);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${adminToken}`).send({ title: 'Tenant A Catalog', mimeType: 'text/plain', audience: 'public', content: 'Hello. Tenant A pricing is 100 credits per month. Contact support for approved details.' }).expect(201);
     expect(source.body.ingestion.status).toBe('completed');
     expect((await api.get(`/api/v1/admin/ingestion-jobs/${source.body.ingestion.jobId}`).set('Authorization', `Bearer ${adminToken}`).expect(200)).body.job).toMatchObject({ id: source.body.ingestion.jobId, tenantId: tenantA.body.tenant.id, sourceId: source.body.source.id, status: 'completed', attempts: 1 });
     await api.get(`/api/v1/admin/ingestion-jobs/${source.body.ingestion.jobId}`).set('Authorization', `Bearer ${adminBToken}`).expect(404);
-    const duplicateSource = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${adminToken}`).send({ title: 'Retry of catalog', mimeType: 'text/plain', audience: 'public', content: 'Tenant A pricing is 100 credits per month. Contact support for approved details.' }).expect(200);
+    const duplicateSource = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${adminToken}`).send({ title: 'Retry of catalog', mimeType: 'text/plain', audience: 'public', content: 'Hello. Tenant A pricing is 100 credits per month. Contact support for approved details.' }).expect(200);
     expect(duplicateSource.body.idempotent).toBe(true);
     expect(duplicateSource.body.source.id).toBe(source.body.source.id);
     const internal = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${adminToken}`).send({ title: 'Tenant A Internal', mimeType: 'text/plain', audience: 'internal', content: 'Tenant A internal escalation code is ALPHA-ONLY.' }).expect(201);
@@ -141,6 +141,12 @@ describe('API vertical slice', () => {
     const greeting = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: "Hey ! How'z it Going ?", clientMessageId: 'greeting-1' }).expect(200);
     expect(greeting.body).toMatchObject({ answer: 'Welcome', grounded: false, conversational: true, citations: [] });
     expect(model.prompts).toHaveLength(promptCountBeforeGreeting);
+    const greetingKnowledgeSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
+    const groundedGreeting = await api.post('/api/v1/chat/messages').send({ sessionId: greetingKnowledgeSession.body.sessionId, message: 'Hello', clientMessageId: 'greeting-with-knowledge-1' }).expect(200);
+    expect(groundedGreeting.body).toMatchObject({ grounded: true, conversational: false });
+    expect(groundedGreeting.body.answer).toContain('Hello');
+    expect(groundedGreeting.body.citations).toHaveLength(1);
+    expect(model.prompts).toHaveLength(promptCountBeforeGreeting + 1);
     const farewellSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
     const farewell = await api.post('/api/v1/chat/messages').send({ sessionId: farewellSession.body.sessionId, message: 'That’s all, bye', clientMessageId: 'farewell-1' }).expect(200);
     expect(farewell.body).toMatchObject({ grounded: false, conversational: true, citations: [] });
@@ -174,6 +180,7 @@ describe('API vertical slice', () => {
     expect(unsupported.body.grounded).toBe(false);
     expect(unsupported.body.citations).toHaveLength(0);
     expect(unsupported.body.answer).toContain('verified information');
+    expect(unsupported.body.answer).toContain('knowledge base');
     expect(unsupported.body.answer).not.toContain('I don’t have that detail');
     const history = await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}`).expect(200);
     expect(history.body.messages.length).toBeGreaterThanOrEqual(4);

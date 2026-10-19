@@ -41,6 +41,7 @@ describe('Azure Foundry model adapter', () => {
     expect(conversationalReply('identity', 'Nova')).toContain('public information');
     expect(conversationalReply('farewell', 'Nova')).toContain('lovely chatting');
     expect(naturalAbstention()).toContain('verified information');
+    expect(naturalAbstention()).toContain('knowledge base');
     expect(naturalAbstention()).not.toContain('I don’t have that detail');
     expect(naturalAbstention('ar')).toContain('لا أملك معلومات موثقة');
   });
