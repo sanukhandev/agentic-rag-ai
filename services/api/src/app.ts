@@ -926,14 +926,18 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       enforcePublicChatEnabled(req, tenant);
       if ((channel && channel.tenantId !== session.tenantId) || (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin')) throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.');
       const masked = maskPii(input.message);
+      const messageHash = contentHash(masked.masked);
       const responseCacheKey = cacheKey('chat-response', session.tenantId, session.id, input.clientMessageId);
-      const cachedResponse = await cache.get<Record<string, unknown>>(responseCacheKey);
-      if (cachedResponse && typeof cachedResponse.answer === 'string') { res.json(rehydrateStoredResponse(session, cachedResponse)); return; }
+      const cachedEntry = await cache.get<{ messageHash?: unknown; response?: Record<string, unknown> }>(responseCacheKey);
+      if (cachedEntry?.response && typeof cachedEntry.response.answer === 'string') {
+        if (cachedEntry.messageHash !== messageHash) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
+        res.json(rehydrateStoredResponse(session, cachedEntry.response)); return;
+      }
       const durableDuplicate = await store.getMessageByClientId(session.id, input.clientMessageId);
       const retryableDuplicate = durableDuplicate?.response?.retryable === true;
+      if (durableDuplicate && durableDuplicate.maskedContent !== masked.masked) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
       if (durableDuplicate?.response && !retryableDuplicate) { res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
       if (durableDuplicate && !retryableDuplicate) throw new HttpError(409, 'MESSAGE_IN_PROGRESS', 'A request with this client message ID is already being processed.');
-      if (durableDuplicate && durableDuplicate.maskedContent !== masked.masked) throw new HttpError(409, 'MESSAGE_RETRY_MISMATCH', 'Retry must use the original message content.');
       saveTokens(session, masked.tokens, tokenVault);
       session.lastActivityAt = new Date().toISOString();
       await store.updateSession(session);
@@ -1034,7 +1038,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const estimatedOutputTokens = estimateTokens(maskedAnswer);
       await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: maskedAnswer, citations: safeCitations, clientMessageId: null, response: { conversational, ...(pendingCatalogState ?? {}) }, createdAt: new Date().toISOString() });
       await store.updateMessage({ ...userMessage, response: persistedResponse });
-      await cache.set(responseCacheKey, persistedResponse, chatResponseCacheTtlSeconds);
+      await cache.set(responseCacheKey, { messageHash, response: persistedResponse }, chatResponseCacheTtlSeconds);
       recordChatOutcome(session.tenantId, grounded, Boolean(action), estimatedInputTokens, estimatedOutputTokens);
       res.json(response);
     } catch (error) {

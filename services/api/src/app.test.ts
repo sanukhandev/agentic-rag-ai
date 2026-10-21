@@ -560,8 +560,8 @@ describe('API vertical slice', () => {
     expect(stored?.response?.answer).toMatch(/\[EMAIL_\d+\]/);
     const history = await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).expect(200);
     expect(history.body.messages.at(-1).content).toContain('alice@example.com');
-    const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'ignored duplicate', clientMessageId: 'pii-response-1' }).expect(200);
-    expect(duplicate.body.answer).toContain('alice@example.com');
+    const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'ignored duplicate', clientMessageId: 'pii-response-1' }).expect(409);
+    expect(duplicate.body.error.code).toBe('MESSAGE_ID_REUSED');
   });
 
   it('allows a failed model turn to retry once with the same masked idempotency record', async () => {
@@ -577,8 +577,8 @@ describe('API vertical slice', () => {
     const retry = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is retry pricing?', clientMessageId: 'retry-message-1' }).expect(200);
     expect(retry.body.grounded).toBe(true);
     expect((await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).expect(200)).body.messages.filter((message: { clientMessageId: string | null }) => message.clientMessageId === 'retry-message-1')).toHaveLength(1);
-    const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Different retry content', clientMessageId: 'retry-message-1' }).expect(200);
-    expect(duplicate.body.messageId).toBe(retry.body.messageId);
+    const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Different retry content', clientMessageId: 'retry-message-1' }).expect(409);
+    expect(duplicate.body.error.code).toBe('MESSAGE_ID_REUSED');
   });
 
   it('stores a validated CRM lead and rehydrates it only for the tenant admin view', async () => {

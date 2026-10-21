@@ -168,7 +168,7 @@ The upload response is asynchronous (`202`). Poll `GET /api/v1/chat/sessions/:id
 ## Connector rules
 
 - Keep external conversation/thread ID → `sessionId` mapping in the connector.
-- Retry with the same `clientMessageId`; never create a new one for a network retry.
+- Retry with the same `clientMessageId` only when resending the identical message after a transport failure; never create a new one for that network retry. Every new visitor turn must use a fresh unique `clientMessageId`. Reusing an ID with different content returns `409 MESSAGE_ID_REUSED`.
 - Generate a new nonce/signature for every request.
 - Store channel secrets only in a server-side secret manager.
 - Redact message content, email, phone, file bytes, and signatures from logs.
