@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
-import { Channel, TenantDomain, Member, MemberRole } from '../types/admin.types';
+import { Channel, ChannelAuthMode, ChannelCredential, TenantDomain, Member, MemberRole } from '../types/admin.types';
 import { API_BASE_URL } from './tokens';
 import { AuthService } from './auth.service';
 import { ToastService } from './toast.service';
@@ -21,11 +21,13 @@ export class SettingsService {
   });
   private readonly domainsSubject = new BehaviorSubject<TenantDomain[]>([]);
   private readonly membersSubject = new BehaviorSubject<Member[]>([]);
+  private readonly channelCredentialsSubject = new BehaviorSubject<ChannelCredential[]>([]);
   private readonly isLoadingSubject = new BehaviorSubject<boolean>(false);
 
   readonly channel$: Observable<Channel> = this.channelSubject.asObservable();
   readonly domains$: Observable<TenantDomain[]> = this.domainsSubject.asObservable();
   readonly members$: Observable<Member[]> = this.membersSubject.asObservable();
+  readonly channelCredentials$: Observable<ChannelCredential[]> = this.channelCredentialsSubject.asObservable();
   readonly isLoading$: Observable<boolean> = this.isLoadingSubject.asObservable();
 
   get channel(): Channel {
@@ -38,6 +40,10 @@ export class SettingsService {
 
   get members(): Member[] {
     return this.membersSubject.value;
+  }
+
+  get channelCredentials(): ChannelCredential[] {
+    return this.channelCredentialsSubject.value;
   }
 
   loadChannel(): void {
@@ -105,6 +111,45 @@ export class SettingsService {
         this.toast.show('info', 'Domain Removed', `${domain.hostname} removed.`);
       },
       error: () => this.toast.show('error', 'Remove Failed', 'Could not remove domain.')
+    });
+  }
+
+  loadChannelCredentials(): void {
+    if (!this.auth.token) return;
+    this.http.get<{ items: ChannelCredential[] }>(`${this.apiBase}/api/v1/admin/channels`, {
+      headers: this.auth.authHeaders
+    }).pipe(
+      catchError(() => of({ items: [] }))
+    ).subscribe((res) => this.channelCredentialsSubject.next(res.items ?? []));
+  }
+
+  createChannelCredential(channel: string, authMode: ChannelAuthMode, onCreated?: (secret: string) => void): void {
+    const cleanChannel = channel.trim().toLowerCase();
+    if (!cleanChannel || !this.auth.token) return;
+
+    this.http.post<{ credential: ChannelCredential; secret: string }>(`${this.apiBase}/api/v1/admin/channels`, { channel: cleanChannel, authMode }, {
+      headers: this.auth.authHeaders
+    }).subscribe({
+      next: (res) => {
+        this.loadChannelCredentials();
+        onCreated?.(res.secret);
+        this.toast.show('success', 'Connector Key Created', 'Copy the one-time secret now; it will not be shown again.');
+      },
+      error: () => this.toast.show('error', 'Create Failed', 'Could not create the connector credential.')
+    });
+  }
+
+  revokeChannelCredential(credential: ChannelCredential): void {
+    if (!this.auth.token) return;
+
+    this.http.post(`${this.apiBase}/api/v1/admin/channels/${credential.id}/revoke`, {}, {
+      headers: this.auth.authHeaders
+    }).subscribe({
+      next: () => {
+        this.loadChannelCredentials();
+        this.toast.show('success', 'Connector Revoked', `${credential.channel} can no longer authenticate.`);
+      },
+      error: () => this.toast.show('error', 'Revoke Failed', 'Could not revoke the connector credential.')
     });
   }
 

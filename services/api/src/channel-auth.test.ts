@@ -23,6 +23,17 @@ describe('omnichannel HMAC gateway', () => {
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform@channel.test', password: 'Platform1Password' }).expect(201);
     const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Channel Tenant', slug: 'channel-tenant', adminEmail: 'admin@channel.test', adminPassword: 'Tenant1Password' }).expect(201);
     const admin = await api.post('/api/v1/auth/login').send({ email: 'admin@channel.test', password: 'Tenant1Password' }).expect(200);
+    const staticCredential = await api.post('/api/v1/admin/channels').set('Authorization', `Bearer ${admin.body.token}`).send({ channel: 'static-app', authMode: 'api_key' }).expect(201);
+    expect(staticCredential.body.credential.authMode).toBe('api_key');
+    expect(staticCredential.body.secret).toMatch(/^zv3_channel-tenant-[A-Za-z0-9_-]{36}$/);
+    expect((await api.get('/api/v1/chat/config').set('X-Agentic-Api-Key', staticCredential.body.secret).expect(200)).body.tenant.slug).toBe('channel-tenant');
+    await api.post('/api/v1/chat/sessions').set('X-Agentic-Api-Key', staticCredential.body.secret).send({}).expect(201);
+    await api.post(`/api/v1/admin/channels/${staticCredential.body.credential.id}/revoke`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    await api.post('/api/v1/chat/sessions').set('X-Agentic-Api-Key', staticCredential.body.secret).send({}).expect(401);
+    await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Channel Tenant B', slug: 'channel-tenant-b', adminEmail: 'admin-b@channel.test', adminPassword: 'Tenant1Password' }).expect(201);
+    const adminB = await api.post('/api/v1/auth/login').send({ email: 'admin-b@channel.test', password: 'Tenant1Password' }).expect(200);
+    const staticCredentialB = await api.post('/api/v1/admin/channels').set('Authorization', `Bearer ${adminB.body.token}`).send({ channel: 'static-app', authMode: 'api_key' }).expect(201);
+    expect((await api.get('/api/v1/chat/config').set('X-Agentic-Api-Key', staticCredentialB.body.secret).expect(200)).body.tenant.slug).toBe('channel-tenant-b');
     const created = await api.post('/api/v1/admin/channels').set('Authorization', `Bearer ${admin.body.token}`).send({ channel: 'mobile-app' }).expect(201);
     expect(created.body.secret).toEqual(expect.any(String));
     expect((await api.get('/api/v1/admin/channels').set('Authorization', `Bearer ${admin.body.token}`).expect(200)).body.items[0]).not.toHaveProperty('secret');

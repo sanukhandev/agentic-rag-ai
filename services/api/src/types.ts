@@ -220,12 +220,16 @@ export interface AuthSession {
   revokedAt: string | null;
 }
 
+export type ChannelAuthMode = 'hmac' | 'api_key';
+
 export interface ChannelCredential {
   id: string;
   tenantId: string;
   channel: string;
+  authMode: ChannelAuthMode;
   keyId: string;
   secretCiphertext: string;
+  apiKeyHash: string | null;
   active: boolean;
   createdAt: string;
   revokedAt: string | null;
@@ -422,6 +426,7 @@ export interface Store {
   claimCallbackNonce(nonce: string, expiresAt: string): Promise<boolean>;
   createChannelCredential(input: Omit<ChannelCredential, 'createdAt' | 'revokedAt'>): Promise<ChannelCredential>;
   getChannelCredential(keyId: string): Promise<ChannelCredential | null>;
+  getChannelCredentialByApiKeyHash(apiKeyHash: string): Promise<ChannelCredential | null>;
   listChannelCredentials(tenantId: string): Promise<ChannelCredential[]>;
   revokeChannelCredential(id: string, tenantId: string): Promise<ChannelCredential | null>;
   setPersona(persona: Persona): Promise<Persona>;

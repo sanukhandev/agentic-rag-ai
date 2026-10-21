@@ -35,6 +35,19 @@ export interface Channel {
   rateLimitPerMinute?: number;
 }
 
+export type ChannelAuthMode = 'hmac' | 'api_key';
+
+export interface ChannelCredential {
+  id: string;
+  tenantId: string;
+  channel: string;
+  authMode: ChannelAuthMode;
+  keyId: string;
+  active: boolean;
+  createdAt: string;
+  revokedAt: string | null;
+}
+
 export type SourceStatus = 'active' | 'awaiting_review' | 'revoked';
 export type SourceAudience = 'public' | 'internal';
 

@@ -87,6 +87,7 @@ export class MemoryStore implements Store {
   }
   async createChannelCredential(input: Omit<ChannelCredential, 'createdAt' | 'revokedAt'>): Promise<ChannelCredential> { const credential: ChannelCredential = { ...input, createdAt: now(), revokedAt: null }; this.channelCredentials.set(credential.id, credential); return credential; }
   async getChannelCredential(keyId: string): Promise<ChannelCredential | null> { return [...this.channelCredentials.values()].find((credential) => credential.keyId === keyId) ?? null; }
+  async getChannelCredentialByApiKeyHash(apiKeyHash: string): Promise<ChannelCredential | null> { return [...this.channelCredentials.values()].find((credential) => credential.apiKeyHash === apiKeyHash) ?? null; }
   async listChannelCredentials(tenantId: string): Promise<ChannelCredential[]> { return [...this.channelCredentials.values()].filter((credential) => credential.tenantId === tenantId).sort((left, right) => right.createdAt.localeCompare(left.createdAt)); }
   async revokeChannelCredential(id: string, tenantId: string): Promise<ChannelCredential | null> { const credential = this.channelCredentials.get(id); if (!credential || credential.tenantId !== tenantId) return null; const updated = { ...credential, active: false, revokedAt: now() }; this.channelCredentials.set(id, updated); return updated; }
 

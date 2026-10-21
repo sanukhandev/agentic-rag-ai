@@ -31,10 +31,20 @@ An authenticated tenant administrator creates one credential per connector/chann
 curl -X POST "$CHAT_API_BASE/api/v1/admin/channels" \
   -H "Authorization: Bearer $ADMIN_SESSION_TOKEN" \
   -H 'Content-Type: application/json' \
-  --data '{"channel":"whatsapp"}'
+  --data '{"channel":"whatsapp","authMode":"api_key"}'
 ```
 
-Store the returned `keyId` and `secret` in the connector secret store. The secret is returned once and is not returned by later list calls. Use a separate credential for each channel or integration.
+Store the returned `keyId` and one-time `secret` in the connector secret store. API-key secrets use `zv3_<tenant_slug>-<36-character-crypto-random>`. The secret is not returned by later list calls. Use a separate credential for each tenant/channel or integration. The signed HMAC contract below remains available for connectors that choose `authMode: "hmac"`.
+
+For an API-key connector, tenant scope is resolved from the database credential:
+
+```bash
+export CHANNEL_API_KEY='<one-time secret from the create response>'
+curl -sS -X POST "$CHAT_API_BASE/api/v1/chat/sessions" \
+  -H "X-Agentic-Api-Key: $CHANNEL_API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data '{}'
+```
 
 ## Request signing
 

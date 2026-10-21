@@ -28,16 +28,16 @@ curl -fsS "$CHAT_API_BASE/api/v1/health/live"
 
 ## 2. Connector credential lifecycle
 
-Each channel gets its own credential. A tenant administrator creates it through the authenticated admin API:
+Each tenant/channel gets its own credential. A tenant administrator creates a cryptographically random credential through the authenticated admin API. API-key secrets use `zv3_<tenant_slug>-<36-character-crypto-random>`; the database stores the encrypted secret and a lookup hash, while the plaintext secret is returned only once.
 
 ```bash
 curl -X POST "$CHAT_API_BASE/api/v1/admin/channels" \
   -H "Authorization: Bearer $ADMIN_SESSION_TOKEN" \
   -H 'Content-Type: application/json' \
-  --data '{"channel":"whatsapp"}'
+  --data '{"channel":"whatsapp","authMode":"api_key"}'
 ```
 
-Save the one-time `secret` in the connector's server-side secret manager. Keep `keyId` as configuration. The secret is not returned by later list calls.
+Save the one-time `secret` in the connector's server-side secret manager as `CHANNEL_API_KEY`. Keep `keyId` as configuration. The secret is not returned by later list calls. Create another credential for each independent tenant/channel; never share a key across tenants.
 
 Manage credentials:
 
@@ -51,9 +51,9 @@ curl -X POST "$CHAT_API_BASE/api/v1/admin/channels/$CHANNEL_CREDENTIAL_ID/revoke
 
 Use one credential per independent channel or integration. Revocation blocks new and subsequent signed requests for that credential.
 
-### Temporary static API key (development/controlled VM use)
+### Legacy static API key (development/controlled VM use)
 
-For a short-lived connector setup, the API also accepts one server-side static key scoped to one configured tenant. Configure `OMNI_CHANNEL_API_KEY` with at least 32 random characters and exactly one of `OMNI_CHANNEL_TENANT_ID` or `OMNI_CHANNEL_TENANT_SLUG`. Production requires explicit `OMNI_ALLOW_STATIC_API_KEY=true`; signed channel credentials remain the recommended multi-connector option.
+For migration compatibility, the API also accepts one server-side static key scoped to one configured tenant. Configure `OMNI_CHANNEL_API_KEY` with at least 32 random characters and exactly one of `OMNI_CHANNEL_TENANT_ID` or `OMNI_CHANNEL_TENANT_SLUG`. Production requires explicit `OMNI_ALLOW_STATIC_API_KEY=true`. This key is shared, cannot be independently revoked, and is not the per-tenant database credential created above.
 
 ```bash
 curl -sS -X POST "$CHAT_API_BASE/api/v1/chat/sessions" \
