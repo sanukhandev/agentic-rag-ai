@@ -65,7 +65,7 @@ export type AdminRouteDependencies = {
 export const registerAdminRoutes = (app: Application, dependencies: AdminRouteDependencies): void => {
   const { store, auth, model, embedding, protectedApi, documentStorage, channelVault, ingestionWorkerSecret, tokenVault, getAuth, routeParam, tenantForRequest, activeTenant, publicUser, publicChannelCredential, observedTelemetry, newTelemetry, telemetry, tenantTelemetry } = dependencies;
 
-  app.post('/api/v1/admin/tenants', protectedApi, (req, res, next) => {
+  app.post('/api/v1/admin/tenants', protectedApi, requireRoles('platform_admin'), (req, res, next) => {
     void (async () => {
       try {
         const input = parse(tenantSchema, req.body);
