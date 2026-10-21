@@ -77,7 +77,7 @@ export const normalizeVoiceTranscript = (parts: readonly string[]): string =>
 export type ChatCitation = { title: string; locator: string };
 export type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean };
 export type ChatActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'unknown';
-export type ChatActionProposal = { id: string; intent: string; confirmation: string; expiresAt?: string };
+export type ChatActionProposal = { id: string; intent: string; confirmation: string; consentRequired?: boolean; expiresAt?: string };
 export type ChatReply = {
   answer: string;
   grounded: boolean;

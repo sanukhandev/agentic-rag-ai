@@ -4,6 +4,8 @@ export type SourceStatus = 'awaiting_review' | 'active' | 'revoked';
 export type ActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'unknown';
 export type TenantStatus = 'provisioning' | 'active' | 'suspended' | 'archived';
 export type IngestionJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
+export type SupportingDocumentStatus = 'uploaded' | 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
+export type DocumentJobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
 
 export type IntentCatalogStatus = 'draft' | 'published';
 
@@ -76,6 +78,44 @@ export interface IntentCatalogWorkflowBinding {
   active: boolean;
 }
 
+export interface IntentCatalogDocumentPolicy {
+  intentKey: string;
+  enabled: boolean;
+  workflowKey: string;
+  requestMode: 'conditional_offer' | 'user_offer_only' | 'explicit_upload';
+  required: boolean;
+  requestPromptKey: string;
+  allowedDocumentTypes: string[];
+  allowUserInitiated: boolean;
+  consentRequired: boolean;
+  preservePrimaryIntent: boolean;
+  storeExtractedText: boolean;
+  summaryTarget: string;
+  autoCreateLead: boolean;
+  autoIndexInRag: boolean;
+  notes: string;
+}
+
+export interface IntentCatalogDocumentSettings {
+  schemaVersion: string;
+  enabled: boolean;
+  storageBackend: string;
+  processingProvider: string;
+  workflowKey: string;
+  requireUploadConsent: boolean;
+  maxFileBytes: number;
+  maxFilesPerRequest: number;
+  maxPdfPages: number;
+  ocrLanguages: string[];
+  allowedMimeTypes: string[];
+  retentionPolicy: string;
+  allowPublicDocumentUrls: boolean;
+  allowAutomaticKnowledgeIngestion: boolean;
+  allowPersonalIdentityDocumentsByDefault: boolean;
+  summaryRendering: string;
+  notes: string;
+}
+
 export interface IntentCatalog {
   tenantScope: string | null;
   intents: IntentCatalogIntent[];
@@ -84,6 +124,8 @@ export interface IntentCatalog {
   relations: IntentCatalogRelation[];
   workflowBindings: IntentCatalogWorkflowBinding[];
   qualityRules?: IntentCatalogQualityRule[];
+  documentPolicies?: IntentCatalogDocumentPolicy[];
+  documentSettings?: IntentCatalogDocumentSettings;
 }
 
 export interface IntentCatalogVersion {
@@ -178,12 +220,16 @@ export interface AuthSession {
   revokedAt: string | null;
 }
 
+export type ChannelAuthMode = 'hmac' | 'api_key';
+
 export interface ChannelCredential {
   id: string;
   tenantId: string;
   channel: string;
+  authMode: ChannelAuthMode;
   keyId: string;
   secretCiphertext: string;
+  apiKeyHash: string | null;
   active: boolean;
   createdAt: string;
   revokedAt: string | null;
@@ -255,6 +301,11 @@ export interface LeadData {
   interest?: string;
 }
 
+export interface ActionPayload extends LeadData {
+  /** Server-recorded explicit contact consent; never inferred from contact data. */
+  contactConsent?: boolean;
+}
+
 export interface LeadConversationMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -282,6 +333,41 @@ export interface CrmLead {
   updatedAt: string;
 }
 
+export interface SupportingDocument {
+  id: string;
+  tenantId: string;
+  sessionId: string;
+  leadId: string | null;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256: string;
+  storageKey: string;
+  status: SupportingDocumentStatus;
+  workflowKey: string;
+  storeExtractedText: boolean;
+  extractedText: string | null;
+  summary: string | null;
+  errorCode: string | null;
+  consentAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DocumentProcessingJob {
+  id: string;
+  documentId: string;
+  tenantId: string;
+  workflowKey: string;
+  webhookPath: string;
+  status: DocumentJobStatus;
+  attempts: number;
+  leaseExpiresAt: string | null;
+  executionReference: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ActionRequest {
   id: string;
   tenantId: string;
@@ -295,7 +381,7 @@ export interface ActionRequest {
   idempotencyKey: string;
   state: ActionState;
   opaqueReference: string;
-  payload: LeadData;
+  payload: ActionPayload;
   createdAt: string;
   result: { externalReference: string } | null;
 }
@@ -341,6 +427,7 @@ export interface Store {
   claimCallbackNonce(nonce: string, expiresAt: string): Promise<boolean>;
   createChannelCredential(input: Omit<ChannelCredential, 'createdAt' | 'revokedAt'>): Promise<ChannelCredential>;
   getChannelCredential(keyId: string): Promise<ChannelCredential | null>;
+  getChannelCredentialByApiKeyHash(apiKeyHash: string): Promise<ChannelCredential | null>;
   listChannelCredentials(tenantId: string): Promise<ChannelCredential[]>;
   revokeChannelCredential(id: string, tenantId: string): Promise<ChannelCredential | null>;
   setPersona(persona: Persona): Promise<Persona>;
@@ -373,6 +460,7 @@ export interface Store {
   searchSearchableChunks(tenantId: string, audience: Audience, queryEmbedding: number[], limit: number): Promise<Array<{ source: Source; chunk: Chunk }>>;
   createSession(tenantId: string, personaVersionId?: string | null): Promise<Session>;
   getSession(id: string): Promise<Session | null>;
+  listExpiredSupportingDocuments(tenantId: string, before: string): Promise<SupportingDocument[]>;
   purgeExpiredSessions(tenantId: string, before: string): Promise<number>;
   updateSession(session: Session): Promise<Session>;
   addMessage(message: Message): Promise<Message>;
@@ -388,11 +476,23 @@ export interface Store {
   createCrmLead(lead: CrmLead): Promise<CrmLead>;
   upsertCrmLead(lead: CrmLead, dedupeKey: string): Promise<CrmLead>;
   getCrmLeadByActionId(actionId: string, tenantId: string): Promise<CrmLead | null>;
+  getCrmLeadBySessionId(sessionId: string, tenantId: string): Promise<CrmLead | null>;
   getCrmLead(id: string, tenantId: string): Promise<CrmLead | null>;
   listCrmLeads(tenantId: string): Promise<CrmLead[]>;
   updateCrmLeadSummary(id: string, tenantId: string, summary: string, status: CrmLead['summaryStatus']): Promise<CrmLead | null>;
   updateCrmLeadScore(id: string, tenantId: string, score: number): Promise<CrmLead | null>;
   updateCrmLeadRemote(input: { id: string; tenantId: string; leadId: string; remoteCrm: string }): Promise<CrmLead | null>;
+  createSupportingDocument(document: SupportingDocument): Promise<SupportingDocument>;
+  createSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<void>;
+  getSupportingDocument(id: string, tenantId: string): Promise<SupportingDocument | null>;
+  listSupportingDocuments(tenantId: string, sessionId?: string, leadId?: string): Promise<SupportingDocument[]>;
+  updateSupportingDocument(document: SupportingDocument): Promise<SupportingDocument>;
+  createDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
+  getDocumentProcessingJob(id: string, tenantId: string): Promise<DocumentProcessingJob | null>;
+  claimNextDocumentProcessingJob(leaseMs: number): Promise<DocumentProcessingJob | null>;
+  renewDocumentProcessingJob(id: string, tenantId: string, leaseMs: number): Promise<DocumentProcessingJob | null>;
+  updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
+  linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void>;
   addAudit(event: AuditEvent): Promise<void>;
   listAudit(tenantId: string): Promise<AuditEvent[]>;
   getTenantStats(tenantId: string): Promise<TenantStats>;

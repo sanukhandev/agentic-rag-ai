@@ -47,3 +47,8 @@ Timeout does not mean failure or success; mark outcome unknown until reconciled.
 5. Tenant admins can view the lead, intent, quality, score, validation result, summary and expandable conversation JSON in the CRM section.
 
 The Node API remains the authorization, tenant-isolation and token-rehydration boundary. The ANC workflow is an explicit internal exception: after approval, scoring and contact validation, its n8n path receives only the minimum rehydrated contact payload needed by the configured CRM provider—not the full transcript or vault—and uses the shared local Compose secret for internal API calls. Keep n8n private, protect execution history, and never put provider credentials in exported workflow JSON.
+# Dynamic document intake
+
+The catalog may publish `anc.document.ocr.extract` as a secondary, explicit-upload action. The API is authoritative for tenant access, consent, file validation, document/job persistence, masking, and summary composition. n8n receives only opaque tenant/session/document/job IDs and the catalog-selected workflow contract.
+
+The importable local workflow is `infra/n8n/workflows/04-anc-document-ocr-wf-1.json` (`anc-test-document-ocr-wf-1`). It is intentionally inactive until the tenant catalog binding is activated and the workflow is reviewed. The worker claims the durable job and runs local Tesseract OCR; n8n does not receive document bytes.

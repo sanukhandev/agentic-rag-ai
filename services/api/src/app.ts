@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { ActionGateway, isSafeExternalReference, leadQuality, verifyN8nPayload, type WorkflowAdapter } from './actions.js';
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
 import { cacheKey, createCache, type CacheStore } from './cache.js';
-import { channelAuthMiddleware, ChannelSecretVault, generateChannelKeyId, generateChannelSecret, getChannel } from './channel-auth.js';
+import { channelAuthMiddleware, ChannelSecretVault, generateChannelApiKey, generateChannelKeyId, generateChannelSecret, getChannel, type StaticChannelAuth } from './channel-auth.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, rankChunksWithVector } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, permittedLanguageReply, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence } from './model.js';
@@ -13,7 +13,8 @@ import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, san
 import { catalogIntentClarification, catalogSlotQuestion, resolveIntent, validateIntentCatalog } from './intent-catalog.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
-import type { ChannelCredential, CrmLead, IntentCatalogQualityRule, Message, Session, SourceStatus, Store, TenantStatus } from './types.js';
+import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
+import type { ChannelCredential, CrmLead, DocumentProcessingJob, IntentCatalogQualityRule, LeadData, Message, Session, SourceStatus, Store, SupportingDocument, TenantStatus } from './types.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -27,11 +28,12 @@ const tenantSchema = z.object({ name: z.string().trim().min(2).max(120), slug: z
 const memberSchema = z.object({ email: z.string().email(), password: passwordSchema, role: z.enum(['tenant_editor', 'tenant_viewer', 'tenant_agent']) });
 const domainSchema = z.object({ hostname: z.string().trim().toLowerCase().regex(/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/, 'A valid hostname is required.') });
 const channelSchema = z.object({ publicOrigin: z.union([z.literal(''), z.string().url().refine((value) => { const url = new URL(value); return (url.protocol === 'http:' || url.protocol === 'https:') && url.pathname === '/' && !url.search && !url.hash; }, 'A public origin must be an HTTP(S) origin without a path.')]), publicChatEnabled: z.boolean().optional() });
-const channelCredentialSchema = z.object({ channel: z.string().trim().toLowerCase().regex(/^[a-z][a-z0-9_-]{1,31}$/, 'Channel must be 2-32 lowercase characters, digits, underscores or hyphens.') });
+const channelCredentialSchema = z.object({ channel: z.string().trim().toLowerCase().regex(/^[a-z][a-z0-9_-]{1,31}$/, 'Channel must be 2-32 lowercase characters, digits, underscores or hyphens.'), authMode: z.enum(['hmac', 'api_key']).default('hmac') });
 const safePersonaText = (max: number) => z.string().trim().min(1).max(max).refine((value) => !/\b(ignore (?:all )?rules|system prompt|search the web|reveal secrets|bypass security)\b/i.test(value), 'Persona contains an unsafe instruction.');
 const DEFAULT_CONTEXT_WINDOW_MESSAGES = 10;
 const MAX_KNOWLEDGE_CONTENT_CHARS = 1_000_000;
 const MAX_INGESTION_BASE64_CHARS = Math.ceil(MAX_INGESTION_FILE_BYTES / 3) * 4;
+const MAX_DOCUMENT_BASE64_CHARS = Math.ceil(MAX_DOCUMENT_BYTES / 3) * 4;
 const personaSchema = z.object({
   name: safePersonaText(80),
   greeting: safePersonaText(500),
@@ -70,7 +72,7 @@ const crmLeadSchema = z.object({
   actionId: z.string().uuid(),
   tenantId: z.string().uuid(),
   sessionId: z.string().uuid(),
-  leadData: z.object({ name: leadTokenSchema.optional(), email: leadTokenSchema.optional(), phone: leadTokenSchema.optional(), interest: z.string().trim().min(1).max(200).optional() }).strict(),
+  leadData: z.object({ name: leadTokenSchema.optional(), email: leadTokenSchema.optional(), phone: leadTokenSchema.optional(), interest: z.string().trim().min(1).max(200).optional(), contactConsent: z.boolean().optional() }).strict(),
   intent: z.string().trim().min(1).max(80),
   intentScore: z.number().int().min(0).max(100).optional(),
   intentConfidence: z.number().min(0).max(1).optional(),
@@ -87,9 +89,13 @@ const crmRemotePayloadSchema = z.object({ tenantId: z.string().uuid(), actionId:
 const workflowClaimSchema = z.object({ workflowKey: z.string().trim().regex(/^[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)+$/i), contract: z.string().trim().min(1).max(120).optional(), limit: z.number().int().min(1).max(50).default(10) });
 const workflowCompletionSchema = z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['completed', 'failed']), externalReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u).optional() });
 const crmQualitySchema = z.object({ tenantId: z.string().uuid(), score: z.number().int().min(0).max(100), qualityWorkflowKey: z.string().trim().min(1).max(80), catalogVersionId: z.string().uuid(), intentKey: z.string().trim().min(1).max(80) });
+const documentUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.string().trim().min(1).max(160), contentBase64: z.string().min(1).max(MAX_DOCUMENT_BASE64_CHARS), processingConsent: z.literal(true), primaryIntentKey: z.string().trim().min(1).max(80).optional() });
+const documentResultSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), extractedText: z.string().max(100_000).default(''), summary: z.string().max(20_000).default(''), executionReference: z.string().trim().max(200).regex(/^[A-Za-z0-9._:-]+$/u).optional() });
+const documentFailureSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('DOCUMENT_OCR_FAILED') });
+const documentRenewSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), leaseMs: z.number().int().min(60_000).max(900_000).default(120_000) });
 
 const publicUser = (user: { id: string; email: string; role: string; tenantId: string | null }) => ({ id: user.id, email: user.email, role: user.role, tenantId: user.tenantId });
-const publicChannelCredential = (credential: ChannelCredential) => ({ id: credential.id, tenantId: credential.tenantId, channel: credential.channel, keyId: credential.keyId, active: credential.active, createdAt: credential.createdAt, revokedAt: credential.revokedAt });
+const publicChannelCredential = (credential: ChannelCredential) => ({ id: credential.id, tenantId: credential.tenantId, channel: credential.channel, authMode: credential.authMode, keyId: credential.keyId, active: credential.active, createdAt: credential.createdAt, revokedAt: credential.revokedAt });
 
 class HttpError extends Error {
   constructor(public readonly status: number, public readonly code: string, message: string) { super(message); this.name = 'HttpError'; }
@@ -192,12 +198,18 @@ export interface AppDependencies {
   workflow?: WorkflowAdapter;
   jwtSecret?: string;
   channelCredentialKey?: string;
+  staticChannelApiKey?: string;
+  staticChannelTenantId?: string;
+  staticChannelTenantSlug?: string;
+  staticChannelName?: string;
+  allowStaticChannelApiKey?: boolean;
   nodeEnv?: string;
   tokenVault?: TokenVault;
   embedding?: EmbeddingProvider;
   n8nCallbackSecret?: string;
   ingestionWorkerSecret?: string;
   ingestionStagingRoot?: string;
+  documentStorageRoot?: string;
   chatSessionTtlMs?: number;
   rateLimitMax?: number;
   rateLimitWindowMs?: number;
@@ -216,6 +228,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const jwtSecret = dependencies.jwtSecret ?? process.env.JWT_SECRET ?? 'local-development-only-change-me';
   const configuredChannelCredentialKey = dependencies.channelCredentialKey ?? process.env.CHANNEL_CREDENTIAL_KEY;
   const channelCredentialKey = configuredChannelCredentialKey ?? 'local-development-channel-key';
+  const staticChannelApiKey = dependencies.staticChannelApiKey || process.env.OMNI_CHANNEL_API_KEY || undefined;
+  const staticChannelTenantId = dependencies.staticChannelTenantId || process.env.OMNI_CHANNEL_TENANT_ID || undefined;
+  const staticChannelTenantSlug = dependencies.staticChannelTenantSlug || process.env.OMNI_CHANNEL_TENANT_SLUG || undefined;
+  const staticChannelName = dependencies.staticChannelName ?? process.env.OMNI_CHANNEL_NAME ?? 'omnichannel';
+  const allowStaticChannelApiKey = dependencies.allowStaticChannelApiKey ?? process.env.OMNI_ALLOW_STATIC_API_KEY === 'true';
+  if (staticChannelApiKey && ((!staticChannelTenantId && !staticChannelTenantSlug) || (staticChannelTenantId && staticChannelTenantSlug) || staticChannelApiKey.length < 32)) throw new Error('Static omnichannel API key requires exactly one tenant scope and at least 32 characters.');
+  if (nodeEnv === 'production' && staticChannelApiKey && !allowStaticChannelApiKey) throw new Error('Production static omnichannel API keys require OMNI_ALLOW_STATIC_API_KEY=true; prefer signed channel credentials.');
   const vaultSecret = process.env.PII_VAULT_KEY ?? 'local-development-pii-vault-key';
   if (nodeEnv === 'production' && ((!dependencies.jwtSecret && !process.env.JWT_SECRET) || (!dependencies.tokenVault && !process.env.PII_VAULT_KEY))) throw new Error('Production JWT_SECRET and PII_VAULT_KEY are required.');
   const tokenVault = dependencies.tokenVault ?? new TokenVault(vaultSecret);
@@ -224,6 +243,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const n8nCallbackSecret = dependencies.n8nCallbackSecret ?? process.env.N8N_WEBHOOK_SECRET ?? '';
   const ingestionWorkerSecret = dependencies.ingestionWorkerSecret ?? process.env.INGESTION_WORKER_SECRET ?? '';
   const ingestionStaging = new IngestionStaging(dependencies.ingestionStagingRoot ?? process.env.INGESTION_STAGING_ROOT ?? join(process.cwd(), 'data', 'ingestion-staging'));
+  const documentStorage = new PrivateDocumentStorage(dependencies.documentStorageRoot ?? process.env.SUPPORTING_DOCUMENT_ROOT ?? join(process.cwd(), 'data', 'supporting-documents'));
   const chatSessionTtlMs = dependencies.chatSessionTtlMs ?? Number(process.env.CHAT_SESSION_TTL_MS ?? 10 * 60 * 1000);
   const readRate = (value: number | undefined, name: string): number | null => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return null; const parsed = Number(raw); if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative number.`); return parsed; };
   const inputCostUsdPerMillion = readRate(dependencies.inputCostUsdPerMillion, 'MODEL_INPUT_COST_USD_PER_MILLION');
@@ -309,14 +329,32 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     next();
   });
 
-  const crmLeadForAdmin = async (lead: CrmLead): Promise<CrmLead & { quality: ReturnType<typeof leadQuality> }> => {
+  const crmLeadForAdmin = async (lead: CrmLead): Promise<CrmLead & { quality: ReturnType<typeof leadQuality>; documents: Array<SupportingDocument & { extractedText: string | null; summary: string | null }> }> => {
     const version = lead.catalogVersionId ? await store.getIntentCatalogVersion(lead.tenantId, lead.catalogVersionId) : null;
     const qualityRule = version?.catalog.qualityRules?.find((rule) => rule.intentKey === lead.intent);
     const quality = catalogQuality(lead.score, qualityRule);
     const session = await store.getSession(lead.sessionId);
-    if (!session) return { ...lead, quality };
+    const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id);
+    if (!session) return { ...lead, quality, documents };
     const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm');
-    return { ...lead, quality, leadData: { ...(lead.leadData.name ? { name: rehydrate(lead.leadData.name) } : {}), ...(lead.leadData.email ? { email: rehydrate(lead.leadData.email) } : {}), ...(lead.leadData.phone ? { phone: rehydrate(lead.leadData.phone) } : {}), ...(lead.leadData.interest ? { interest: lead.leadData.interest } : {}) }, conversation: lead.conversation.map((message) => ({ ...message, content: rehydrate(message.content) })), summary: lead.summary ? rehydrate(lead.summary) : null };
+    return { ...lead, quality, leadData: { ...(lead.leadData.name ? { name: rehydrate(lead.leadData.name) } : {}), ...(lead.leadData.email ? { email: rehydrate(lead.leadData.email) } : {}), ...(lead.leadData.phone ? { phone: rehydrate(lead.leadData.phone) } : {}), ...(lead.leadData.interest ? { interest: lead.leadData.interest } : {}) }, conversation: lead.conversation.map((message) => ({ ...message, content: rehydrate(message.content) })), summary: lead.summary ? rehydrate(lead.summary) : null, documents: documents.map((document) => ({ ...document, extractedText: document.extractedText ? rehydrate(document.extractedText) : null, summary: document.summary ? rehydrate(document.summary) : null })) };
+  };
+
+  const publicDocument = (document: SupportingDocument) => ({ id: document.id, sessionId: document.sessionId, leadId: document.leadId, fileName: document.fileName, mimeType: document.mimeType, sizeBytes: document.sizeBytes, status: document.status, summary: null, errorCode: document.errorCode, createdAt: document.createdAt, updatedAt: document.updatedAt });
+  const documentConfig = async (tenantId: string) => {
+    const version = await store.getPublishedIntentCatalog(tenantId);
+    const settings = version?.catalog.documentSettings;
+    const policies = version?.catalog.documentPolicies ?? [];
+    const binding = settings ? version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === settings.workflowKey && candidate.active) : undefined;
+    return { enabled: Boolean(settings?.enabled && binding), requireUploadConsent: settings?.requireUploadConsent ?? true, maxFileBytes: Math.min(settings?.maxFileBytes ?? MAX_DOCUMENT_BYTES, MAX_DOCUMENT_BYTES), maxFilesPerRequest: settings?.maxFilesPerRequest ?? 1, maxPdfPages: settings?.maxPdfPages ?? 20, allowedMimeTypes: settings?.allowedMimeTypes ?? [], policies: policies.filter((policy) => policy.enabled && policy.allowUserInitiated).map((policy) => ({ intentKey: policy.intentKey, requestMode: policy.requestMode, allowedDocumentTypes: policy.allowedDocumentTypes, consentRequired: policy.consentRequired })), workflowKey: settings?.workflowKey ?? null, binding: binding ? { webhookPath: binding.webhookPath, payloadContract: binding.payloadContract } : null };
+  };
+  const dispatchDocumentWorkflow = async (job: DocumentProcessingJob, contract: string): Promise<void> => {
+    const baseUrl = process.env.N8N_INTERNAL_URL?.trim();
+    if (!baseUrl) return;
+    try {
+      const response = await fetch(`${baseUrl.replace(/\/$/u, '')}/webhook/${job.webhookPath.replace(/^\/+/, '')}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-agentic-internal-secret': n8nCallbackSecret }, body: JSON.stringify({ documentId: job.documentId, jobId: job.id, tenantId: job.tenantId, workflowKey: job.workflowKey, contract }) , signal: AbortSignal.timeout(5000) });
+      if (!response.ok) await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'document.workflow_dispatch_failed', metadata: { jobId: job.id, status: response.status }, createdAt: new Date().toISOString() });
+    } catch { await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'document.workflow_dispatch_failed', metadata: { jobId: job.id, status: 'network_error' }, createdAt: new Date().toISOString() }); }
   };
 
   app.get('/api/v1/health/live', (_req, res) => res.json({ status: 'ok' }));
@@ -345,7 +383,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
 
   const protectedApi = authMiddleware(auth);
   const optionalApi = authMiddleware(auth, false);
-  const channelApi = channelAuthMiddleware(store, channelVault);
+  const staticChannelAuth: StaticChannelAuth | undefined = staticChannelApiKey
+    ? { apiKey: staticChannelApiKey, channel: staticChannelName, ...(staticChannelTenantId ? { tenantId: staticChannelTenantId } : { tenantSlug: staticChannelTenantSlug! }) }
+    : undefined;
+  const channelApi = channelAuthMiddleware(store, channelVault, staticChannelAuth);
   const chatApi = (req: Request, res: Response, next: NextFunction): void => {
     optionalApi(req, res, () => {
       if (getAuth(req)) { next(); return; }
@@ -392,8 +433,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       await activeTenant(store, tenantId);
       const input = parse(channelCredentialSchema, req.body);
       if ((await store.listChannelCredentials(tenantId)).some((credential) => credential.channel === input.channel && credential.active)) throw new HttpError(409, 'CHANNEL_EXISTS', 'An active credential already exists for this channel.');
-      const secret = generateChannelSecret();
-      const credential = await store.createChannelCredential({ id: randomUUID(), tenantId, channel: input.channel, keyId: generateChannelKeyId(), secretCiphertext: channelVault.encrypt(secret), active: true });
+      const authMode = input.authMode ?? 'hmac';
+      const tenant = await store.getTenant(tenantId);
+      if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.');
+      const secret = authMode === 'api_key' ? generateChannelApiKey(tenant.slug) : generateChannelSecret();
+      const credential = await store.createChannelCredential({ id: randomUUID(), tenantId, channel: input.channel, authMode, keyId: generateChannelKeyId(), secretCiphertext: channelVault.encrypt(secret), apiKeyHash: authMode === 'api_key' ? channelVault.hashApiKey(secret) : null, active: true });
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'channel.credential_created', metadata: { channel: credential.channel, credentialId: credential.id }, createdAt: new Date().toISOString() });
       res.status(201).json({ credential: publicChannelCredential(credential), secret, warning: 'Store this secret now. It is shown only once.' });
     } catch (error) { next(error); }
@@ -405,6 +449,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const tenantId = await tenantForRequest(store, req);
       const before = parse(retentionSchema, req.body).before;
       if (Date.parse(before) > Date.now()) throw new HttpError(422, 'INVALID_RETENTION_CUTOFF', 'Retention cutoff must be in the past.');
+      const expiredDocuments = await store.listExpiredSupportingDocuments(tenantId, before);
+      for (const document of expiredDocuments) await documentStorage.purge(document.storageKey);
       const purged = await store.purgeExpiredSessions(tenantId, before);
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'retention.sessions_purged', metadata: { purged, before }, createdAt: new Date().toISOString() });
       res.json({ purged, before });
@@ -771,6 +817,81 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
     } catch (error) { next(error); }
   });
+  app.post('/api/v1/internal/documents/:id/process', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid() }), req.body);
+      const document = await store.getSupportingDocument(routeParam(req, 'id'), input.tenantId);
+      const job = await store.getDocumentProcessingJob(input.jobId, input.tenantId);
+      const config = await documentConfig(input.tenantId);
+      if (!document || !job || job.documentId !== document.id || !config.enabled || job.workflowKey !== config.workflowKey) throw new HttpError(409, 'DOCUMENT_WORKFLOW_NOT_AUTHORIZED', 'The document workflow is not enabled for this tenant.');
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'document.workflow_accepted', metadata: { documentId: document.id, jobId: job.id, workflowKey: job.workflowKey }, createdAt: new Date().toISOString() });
+      res.status(202).json({ accepted: true, documentId: document.id, jobId: job.id });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/document-jobs/claim-next', workerApi, async (_req, res, next) => {
+    try {
+      const job = await store.claimNextDocumentProcessingJob(60_000);
+      if (!job) { res.json({ job: null }); return; }
+      const document = await store.getSupportingDocument(job.documentId, job.tenantId);
+      if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'The document for this job no longer exists.');
+      await store.updateSupportingDocument({ ...document, status: 'processing', updatedAt: new Date().toISOString() });
+      res.json({ job, document: { id: document.id, tenantId: document.tenantId, sessionId: document.sessionId, fileName: document.fileName, mimeType: document.mimeType } });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/document-jobs/:id/renew', workerApi, async (req, res, next) => {
+    try {
+      const input = parse(documentRenewSchema, req.body);
+      if (input.jobId !== routeParam(req, 'id')) throw new HttpError(400, 'DOCUMENT_JOB_MISMATCH', 'The job ID does not match the route.');
+      const job = await store.renewDocumentProcessingJob(input.jobId, input.tenantId, input.leaseMs ?? 120_000);
+      if (!job) throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
+      res.json({ job });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v1/internal/document-jobs/:id/input', workerApi, async (req, res, next) => {
+    try {
+      const jobId = routeParam(req, 'id');
+      const tenantId = req.header('x-tenant-id') ?? '';
+      const actualJob = await store.getDocumentProcessingJob(jobId, tenantId);
+      if (!actualJob || actualJob.status !== 'processing' || !actualJob.leaseExpiresAt || Date.parse(actualJob.leaseExpiresAt) <= Date.now()) throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
+      const document = await store.getSupportingDocument(actualJob.documentId, actualJob.tenantId);
+      if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'Document not found.');
+      const content = await documentStorage.read(document.storageKey);
+      if (!content) throw new HttpError(404, 'DOCUMENT_INPUT_NOT_FOUND', 'Private document input not found.');
+      res.json({ jobId: actualJob.id, documentId: document.id, fileName: document.fileName, mimeType: document.mimeType, contentBase64: content.toString('base64') });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/document-jobs/:id/result', workerApi, async (req, res, next) => {
+    try {
+      const input = parse(documentResultSchema, req.body);
+      const job = await store.getDocumentProcessingJob(input.jobId, input.tenantId);
+      if (!job || job.id !== routeParam(req, 'id') || job.status !== 'processing' || !job.leaseExpiresAt || Date.parse(job.leaseExpiresAt) <= Date.now()) throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
+      const document = await store.getSupportingDocument(job.documentId, input.tenantId);
+      if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'Document not found.');
+      const session = await store.getSession(document.sessionId);
+      if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Document session not found.');
+      const extractedText = document.storeExtractedText && input.extractedText ? maskPiiForSession(session, input.extractedText, tokenVault) : null;
+      const summary = input.summary ? maskPiiForSession(session, input.summary, tokenVault) : null;
+      const completedDocument = await store.updateSupportingDocument({ ...document, status: 'completed', extractedText, summary, errorCode: null, updatedAt: new Date().toISOString() });
+      const completedJob = await store.updateDocumentProcessingJob({ ...job, status: 'completed', leaseExpiresAt: null, executionReference: input.executionReference ?? job.executionReference, updatedAt: new Date().toISOString() });
+      if (document.leadId) { const lead = await store.getCrmLead(document.leadId, input.tenantId); if (lead) { const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id); const composed = [lead.summary, composeDocumentSummary(lead, documents)].filter(Boolean).join('\n').slice(0, 20_000); await store.updateCrmLeadSummary(lead.id, lead.tenantId, composed, 'completed'); } }
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'document.completed', metadata: { documentId: document.id, jobId: job.id, status: 'completed' }, createdAt: new Date().toISOString() });
+      res.json({ document: publicDocument(completedDocument), job: completedJob });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/document-jobs/:id/failure', workerApi, async (req, res, next) => {
+    try {
+      const input = parse(documentFailureSchema, req.body);
+      const job = await store.getDocumentProcessingJob(input.jobId, input.tenantId);
+      if (!job || job.id !== routeParam(req, 'id') || job.status !== 'processing') throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
+      const document = await store.getSupportingDocument(job.documentId, input.tenantId);
+      if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'Document not found.');
+      const errorCodeValue = input.errorCode ?? 'DOCUMENT_OCR_FAILED';
+      const failedDocument = await store.updateSupportingDocument({ ...document, status: 'failed', errorCode: errorCodeValue, updatedAt: new Date().toISOString() });
+      const failedJob = await store.updateDocumentProcessingJob({ ...job, status: 'failed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'document.failed', metadata: { documentId: document.id, jobId: job.id, errorCode: errorCodeValue }, createdAt: new Date().toISOString() });
+      res.json({ document: publicDocument(failedDocument), job: failedJob });
+    } catch (error) { next(error); }
+  });
 
   app.post('/api/v1/chat/sessions', chatApi, async (req, res, next) => {
     try {
@@ -805,14 +926,18 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       enforcePublicChatEnabled(req, tenant);
       if ((channel && channel.tenantId !== session.tenantId) || (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin')) throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.');
       const masked = maskPii(input.message);
+      const messageHash = contentHash(masked.masked);
       const responseCacheKey = cacheKey('chat-response', session.tenantId, session.id, input.clientMessageId);
-      const cachedResponse = await cache.get<Record<string, unknown>>(responseCacheKey);
-      if (cachedResponse && typeof cachedResponse.answer === 'string') { res.json(rehydrateStoredResponse(session, cachedResponse)); return; }
+      const cachedEntry = await cache.get<{ messageHash?: unknown; response?: Record<string, unknown> }>(responseCacheKey);
+      if (cachedEntry?.response && typeof cachedEntry.response.answer === 'string') {
+        if (cachedEntry.messageHash !== messageHash) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
+        res.json(rehydrateStoredResponse(session, cachedEntry.response)); return;
+      }
       const durableDuplicate = await store.getMessageByClientId(session.id, input.clientMessageId);
       const retryableDuplicate = durableDuplicate?.response?.retryable === true;
+      if (durableDuplicate && durableDuplicate.maskedContent !== masked.masked) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
       if (durableDuplicate?.response && !retryableDuplicate) { res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
       if (durableDuplicate && !retryableDuplicate) throw new HttpError(409, 'MESSAGE_IN_PROGRESS', 'A request with this client message ID is already being processed.');
-      if (durableDuplicate && durableDuplicate.maskedContent !== masked.masked) throw new HttpError(409, 'MESSAGE_RETRY_MISMATCH', 'Retry must use the original message content.');
       saveTokens(session, masked.tokens, tokenVault);
       session.lastActivityAt = new Date().toISOString();
       await store.updateSession(session);
@@ -835,7 +960,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const catalogHistory = publishedCatalog ? await store.listMessages(session.id, session.tenantId, contextWindowMessages + 1) : [];
       const lastCatalogAssistant = [...catalogHistory].reverse().find((message) => message.role === 'assistant');
       const pendingCatalogIntent = typeof lastCatalogAssistant?.response?.catalogIntentKey === 'string' && typeof lastCatalogAssistant.response.catalogVersionId === 'string' && lastCatalogAssistant.response.catalogVersionId === publishedCatalog?.id ? lastCatalogAssistant.response.catalogIntentKey : null;
-      const pendingCatalogValues = lastCatalogAssistant?.response?.catalogSlotValues && typeof lastCatalogAssistant.response.catalogSlotValues === 'object' && !Array.isArray(lastCatalogAssistant.response.catalogSlotValues) ? Object.fromEntries(Object.entries(lastCatalogAssistant.response.catalogSlotValues).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {};
+      const pendingConsentAction = publishedCatalog && pendingCatalogIntent ? (await store.listActions(session.tenantId)).find((action) => action.sessionId === session.id && action.catalogVersionId === publishedCatalog.id && action.intentKey === pendingCatalogIntent && action.payload.contactConsent === true) : null;
+      const pendingCatalogValues: Record<string, string> = { ...(lastCatalogAssistant?.response?.catalogSlotValues && typeof lastCatalogAssistant.response.catalogSlotValues === 'object' && !Array.isArray(lastCatalogAssistant.response.catalogSlotValues) ? Object.fromEntries(Object.entries(lastCatalogAssistant.response.catalogSlotValues).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {}), ...(pendingConsentAction ? { contact_consent: 'true' } : {}) };
       const pendingSlot = publishedCatalog && pendingCatalogIntent ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === pendingCatalogIntent && slot.slotKey === (lastCatalogAssistant?.response?.catalogSlotKey ?? '')) : null;
       const pendingNameIsIntentPhrase = pendingSlot?.slotKey === 'name' && publishedCatalog
         ? publishedCatalog.catalog.signals.some((signal) => signal.intentKey === pendingCatalogIntent && signal.signalType === 'phrase' && signal.value && masked.masked.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').includes(signal.value.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim()))
@@ -847,14 +973,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       const pendingValueData = pendingSlot?.slotKey === 'name' && pendingValue ? { name: pendingValue } : pendingSlot?.slotKey === 'email' && pendingValue ? { email: pendingValue } : pendingSlot?.slotKey === 'phone' && pendingValue ? { phone: pendingValue } : {};
       const pendingCatalogValueData = pendingSlot && pendingValue ? { [pendingSlot.slotKey]: pendingValue } : {};
-      const currentLeadData = mergeLeadData(pendingCatalogValues, extractLeadData(maskedMessage), pendingValueData);
+      const currentLeadData = mergeLeadData(pendingCatalogValues as LeadData, extractLeadData(maskedMessage), pendingValueData);
       const currentCatalogSlotValues = { ...pendingCatalogValues, ...extractLeadData(maskedMessage), ...pendingCatalogValueData };
       const currentCatalogResolution = publishedCatalog ? resolveIntent(publishedCatalog, maskedMessage, currentCatalogSlotValues) : null;
       const useCatalogContext = Boolean(publishedCatalog && (pendingCatalogIntent || (!currentCatalogResolution?.intentKey && (needsConversationContext(maskedMessage) || leadDataRequested))));
       const recentMessages = intent === null && (needsConversationContext(maskedMessage) || leadDataRequested || useCatalogContext) ? (publishedCatalog ? catalogHistory : await store.listMessages(session.id, session.tenantId, contextWindowMessages + 1)).filter((message) => message.id !== userMessage.id).slice(-contextWindowMessages) : [];
       const conversation = recentMessages.map((message) => ({ role: message.role, content: message.maskedContent }));
       const retrievalQuery = [maskedMessage, ...recentMessages.filter((message) => message.role === 'user').map((message) => message.maskedContent)].join('\n');
-      const leadData = mergeLeadData(pendingCatalogValues, ...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), currentLeadData);
+      const leadData = mergeLeadData(pendingCatalogValues as LeadData, ...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), currentLeadData);
       const catalogSlotValues = { ...pendingCatalogValues, ...Object.fromEntries(recentMessages.filter((message) => message.role === 'user').flatMap((message) => Object.entries(extractLeadData(message.maskedContent)))), ...extractLeadData(maskedMessage), ...pendingCatalogValueData };
       const leadReady = Boolean(leadData.name && (leadData.email || leadData.phone));
       const catalogResolution = publishedCatalog
@@ -862,6 +988,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           ? resolveIntent(publishedCatalog, retrievalQuery, catalogSlotValues)
           : currentCatalogResolution
         : null;
+      const consentSlot = publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length === 1
+        ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === catalogResolution.intentKey && slot.slotKey === catalogResolution.missingSlots[0])
+        : null;
+      const consentActionReady = consentSlot?.validationRule === 'boolean:explicit_opt_in' && catalogResolution?.reason === 'missing_slots';
       const legacyLeadIntent = leadRequestedNow || recentMessages.some((message) => message.role === 'user' && hasLeadIntent(message.maskedContent));
       const leadIntent = languageAllowed && (publishedCatalog ? Boolean(catalogResolution?.intentKey) : legacyLeadIntent);
       const catalogSlotsReady = catalogResolution ? catalogResolution.missingSlots.length === 0 : leadReady;
@@ -870,6 +1000,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
        else if (catalogResolution?.ambiguous) draft = { answer: 'I can help with that. Are you looking to request a service or arrange a meeting?', citationIds: [], proposedIntent: null };
        else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'below_threshold') draft = { answer: catalogIntentClarification(publishedCatalog, catalogResolution.intentKey), citationIds: [], proposedIntent: null };
        else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'intent_inactive') draft = { answer: 'I can note that request, but the matching workflow is not currently enabled.', citationIds: [], proposedIntent: null };
+      else if (consentActionReady) draft = { answer: 'I have the details needed. Please approve the consent action below to register your request.', citationIds: [], proposedIntent: catalogResolution?.intentKey ?? null };
       else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length > 0) draft = { answer: catalogSlotQuestion(publishedCatalog, catalogResolution.intentKey, catalogResolution.missingSlots[0] ?? ''), citationIds: [], proposedIntent: null };
       else if (leadIntent && !catalogSlotsReady) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: null };
       else if (leadReady || catalogResolution?.actionAllowed) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: catalogResolution?.intentKey ?? 'lead.capture' };
@@ -889,23 +1020,25 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const casualFallback = conversational && (evidence.length === 0 || intent === 'identity');
       const grounded = !casualFallback && !leadCollection && evidence.length > 0 && hasSufficientEvidence(draft.answer, evidence, citations);
        const safeCitations = grounded ? citations : [];
-       const leadAnswer = leadCollection || leadReady || Boolean(catalogResolution?.actionAllowed);
+       const leadAnswer = leadCollection || leadReady || consentActionReady || Boolean(catalogResolution?.actionAllowed);
        const answer = !languageAllowed ? draft.answer : casualFallback || leadAnswer ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
        const safeAnswer = casualFallback || leadAnswer ? draft.answer : answer;
       const maskedAnswer = maskPiiForSession(session, safeAnswer, tokenVault);
       try { assertKnownTokens(session, maskedAnswer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       if (intent === 'farewell') session.closedAt = new Date().toISOString();
       await store.updateSession(session);
-      const actionLeadData = { ...leadData, ...(catalogResolution?.interest ? { interest: catalogResolution.interest } : {}) };
-      const action = (catalogResolution ? catalogResolution.actionAllowed : draft.proposedIntent === 'lead.capture' && leadIntent && leadReady) ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, actionLeadData, catalogResolution ? { workflowKey: catalogResolution.workflowKey ?? 'lead.capture', intentKey: catalogResolution.intentKey ?? 'lead.capture', intentScore: catalogResolution.score, intentConfidence: catalogResolution.confidence, catalogVersionId: catalogResolution.catalogVersionId, webhookPath: publishedCatalog?.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution.workflowKey)?.webhookPath ?? 'lead-capture' } : undefined) : null;
+      const actionLeadData = { ...leadData, ...(catalogResolution?.interest ? { interest: catalogResolution.interest } : {}), ...(consentActionReady ? { contactConsent: false } : (catalogSlotValues as Record<string, string>).contact_consent === 'true' ? { contactConsent: true } : {}) };
+      const actionAlreadySubmitted = Boolean(pendingConsentAction && ['approved', 'processing', 'completed'].includes(pendingConsentAction.state));
+      const shouldProposeAction = catalogResolution ? !actionAlreadySubmitted && (catalogResolution.actionAllowed || consentActionReady) : draft.proposedIntent === 'lead.capture' && leadIntent && leadReady;
+      const action = shouldProposeAction ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, actionLeadData, catalogResolution ? { workflowKey: catalogResolution.workflowKey ?? 'lead.capture', intentKey: catalogResolution.intentKey ?? 'lead.capture', intentScore: catalogResolution.score, intentConfidence: catalogResolution.confidence, catalogVersionId: catalogResolution.catalogVersionId, webhookPath: publishedCatalog?.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution.workflowKey)?.webhookPath ?? 'lead-capture' } : undefined) : null;
       const pendingCatalogState = publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length > 0 ? { catalogIntentKey: catalogResolution.intentKey, catalogVersionId: catalogResolution.catalogVersionId, catalogSlotKey: catalogResolution.missingSlots[0], catalogSlotValues } : null;
-      const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, maskedAnswer, tokenVault), grounded, conversational: casualFallback || leadCollection, citations: safeCitations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'I have the details I need. Would you like me to submit this contact request?', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
+      const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, maskedAnswer, tokenVault), grounded, conversational: casualFallback || leadCollection, citations: safeCitations, actionProposal: action ? { id: action.id, intent: action.workflowKey, consentRequired: consentActionReady, confirmation: consentActionReady ? 'Consent to contact you and register this request.' : 'Your contact request is ready to submit.', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
       const persistedResponse = { ...response, answer: maskedAnswer };
       const estimatedInputTokens = estimateTokens([maskedMessage, ...evidence.map((item) => item.content), persona?.name ?? '', persona?.personality ?? '', persona?.tone ?? '', persona?.speakingStyle ?? ''].join('\n'));
       const estimatedOutputTokens = estimateTokens(maskedAnswer);
       await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: maskedAnswer, citations: safeCitations, clientMessageId: null, response: { conversational, ...(pendingCatalogState ?? {}) }, createdAt: new Date().toISOString() });
       await store.updateMessage({ ...userMessage, response: persistedResponse });
-      await cache.set(responseCacheKey, persistedResponse, chatResponseCacheTtlSeconds);
+      await cache.set(responseCacheKey, { messageHash, response: persistedResponse }, chatResponseCacheTtlSeconds);
       recordChatOutcome(session.tenantId, grounded, Boolean(action), estimatedInputTokens, estimatedOutputTokens);
       res.json(response);
     } catch (error) {
@@ -980,6 +1113,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (input.intent !== authorizedIntent) throw new HttpError(403, 'LEAD_INTENT_MISMATCH', 'Lead intent does not match the authorized action.');
       const messages = await store.listMessages(input.sessionId, input.tenantId);
       const leadData = { ...(action.payload.name ? { name: action.payload.name } : {}), ...(action.payload.email ? { email: action.payload.email } : {}), ...(action.payload.phone ? { phone: action.payload.phone } : {}), ...(action.payload.interest ? { interest: action.payload.interest } : {}) };
+      const consentRequired = Boolean(catalog?.catalog.slots.some((slot) => slot.intentKey === authorizedIntent && slot.required && slot.validationRule === 'boolean:explicit_opt_in'));
+      if (consentRequired && action.payload.contactConsent !== true) throw new HttpError(422, 'LEAD_CONSENT_REQUIRED', 'Explicit contact consent is required before creating this lead.');
       const score = (action.payload.name ? 30 : 0) + (action.payload.email ? 40 : 0) + (action.payload.phone ? 40 : 0);
       const validationPass = Boolean(action.payload.name && (action.payload.email || action.payload.phone));
       if (!validationPass || score < 70) throw new HttpError(422, 'LEAD_VALIDATION_FAILED', 'The lead did not pass the completeness threshold.');
@@ -992,6 +1127,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       const lead: CrmLead = { id: randomUUID(), tenantId: input.tenantId, actionId: input.actionId, sessionId: input.sessionId, intent: authorizedIntent, intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: action.catalogVersionId ?? null, score, validationPass, leadData, conversation, summary: null, summaryStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       const created = await store.upsertCrmLead(lead, crmDedupeKey(input.tenantId, leadData, session, tokenVault, vaultSecret));
+      await store.linkSessionDocuments(created.sessionId, created.tenantId, created.id);
       if (input.completeAction) await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${created.id}` } });
       await store.addAudit({ id: randomUUID(), tenantId: created.tenantId, actorId: null, eventName: 'crm.lead_created', metadata: { leadId: created.id, intent: created.intent, score: created.score, validationPass: created.validationPass }, createdAt: new Date().toISOString() });
       res.status(201).json({ lead: created, externalReference: `crm-lead-${created.id}` });
@@ -1018,7 +1154,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const lead = await store.getCrmLead(routeParam(req, 'id'), input.tenantId);
       if (!lead) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
       const scored = await store.updateCrmLeadScore(lead.id, input.tenantId, input.score);
-      const updated = scored ? await store.updateCrmLeadSummary(scored.id, input.tenantId, input.summary, 'completed') : null;
+      const documents = scored ? await store.listSupportingDocuments(scored.tenantId, undefined, scored.id) : [];
+      const composed = documents.some((document) => document.status === 'completed') ? `${input.summary}\n${composeDocumentSummary(scored!, documents)}`.slice(0, 20_000) : input.summary;
+      const updated = scored ? await store.updateCrmLeadSummary(scored.id, input.tenantId, composed, 'completed') : null;
       if (!updated) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
       res.json({ lead: updated });
     } catch (error) { next(error); }
@@ -1030,7 +1168,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!lead) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
       const session = await store.getSession(lead.sessionId);
       if (session) assertKnownTokens(session, input.summary, tokenVault);
-      const updated = await store.updateCrmLeadSummary(lead.id, input.tenantId, input.summary, input.status);
+      const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id);
+      const composed = documents.some((document) => document.status === 'completed') ? `${input.summary}\n${composeDocumentSummary(lead, documents)}`.slice(0, 20_000) : input.summary;
+      if (session) assertKnownTokens(session, composed, tokenVault);
+      const updated = await store.updateCrmLeadSummary(lead.id, input.tenantId, composed, input.status);
       if (!updated) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
       res.json({ lead: updated });
     } catch (error) { next(error); }
@@ -1079,12 +1220,83 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     } catch (error) { next(error); }
   });
 
+  app.get('/api/v1/chat/sessions/:id/documents/config', chatApi, async (req, res, next) => {
+    try {
+      const session = await store.getSession(routeParam(req, 'id'));
+      if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      ensureLiveSession(session.lastActivityAt, session.closedAt);
+      const tenant = await activeTenant(store, session.tenantId);
+      const channel = getChannel(req);
+      if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
+      res.json(await documentConfig(session.tenantId));
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/chat/sessions/:id/documents', chatApi, async (req, res, next) => {
+    try {
+      const session = await store.getSession(routeParam(req, 'id'));
+      if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      ensureLiveSession(session.lastActivityAt, session.closedAt);
+      const tenant = await activeTenant(store, session.tenantId);
+      const channel = getChannel(req);
+      if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
+      const input = parse(documentUploadSchema, req.body);
+      const version = await store.getPublishedIntentCatalog(session.tenantId);
+      const settings = version?.catalog.documentSettings;
+      const binding = settings ? version.catalog.workflowBindings.find((candidate) => candidate.workflowKey === settings.workflowKey && candidate.active) : undefined;
+      const policy = version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === input.primaryIntentKey) ?? version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === 'anc.document.supporting_upload');
+      if (!settings?.enabled || !binding || !policy?.enabled || !policy.allowUserInitiated || !policy.consentRequired) throw new HttpError(409, 'DOCUMENT_WORKFLOW_NOT_AVAILABLE', 'Supporting document intake is not enabled for this tenant yet.');
+      if (!settings.allowedMimeTypes.includes(input.mimeType) || !DEFAULT_DOCUMENT_MIME_TYPES.includes(input.mimeType)) throw new HttpError(422, 'DOCUMENT_TYPE_NOT_ALLOWED', 'This document type is not allowed by the published catalog.');
+      if (!isValidBase64(input.contentBase64)) throw new HttpError(422, 'DOCUMENT_ENCODING_INVALID', 'The document encoding is invalid.');
+      const content = Buffer.from(input.contentBase64, 'base64');
+      const maxBytes = Math.min(settings.maxFileBytes, MAX_DOCUMENT_BYTES);
+      if (content.length === 0 || content.length > maxBytes) throw new HttpError(413, 'DOCUMENT_TOO_LARGE', 'The document exceeds the published size limit.');
+      if (!hasSupportingDocumentSignature(input.mimeType, content)) throw new HttpError(422, 'DOCUMENT_SIGNATURE_INVALID', 'The document content does not match its declared type.');
+      const sha256 = documentSha256(content);
+      const duplicate = (await store.listSupportingDocuments(session.tenantId, session.id)).find((candidate) => candidate.sha256 === sha256);
+      if (duplicate) { res.status(202).json({ accepted: true, idempotent: true, document: publicDocument(duplicate) }); return; }
+      const existingLead = await store.getCrmLeadBySessionId(session.id, session.tenantId);
+      const documentId = randomUUID();
+      const storageKey = documentStorage.key(session.tenantId, documentId, input.mimeType);
+      await documentStorage.write(storageKey, content);
+      const createdAt = new Date().toISOString();
+      const document: SupportingDocument = { id: documentId, tenantId: session.tenantId, sessionId: session.id, leadId: existingLead?.id ?? null, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, sha256, storageKey, status: 'queued', workflowKey: binding.workflowKey, storeExtractedText: policy.storeExtractedText, extractedText: null, summary: null, errorCode: null, consentAt: createdAt, createdAt, updatedAt: createdAt };
+      const job: DocumentProcessingJob = { id: randomUUID(), documentId, tenantId: session.tenantId, workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, status: 'queued', attempts: 0, leaseExpiresAt: null, executionReference: null, createdAt, updatedAt: createdAt };
+      try { await store.createSupportingDocumentWithJob(document, job); } catch (error) { await documentStorage.purge(storageKey); throw error; }
+      await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'document.uploaded', metadata: { documentId, jobId: job.id, workflowKey: job.workflowKey, bytes: content.length }, createdAt });
+      void dispatchDocumentWorkflow(job, binding.payloadContract);
+      res.status(202).json({ accepted: true, document: publicDocument(document), jobId: job.id });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v1/chat/sessions/:id/documents', chatApi, async (req, res, next) => {
+    try {
+      const session = await store.getSession(routeParam(req, 'id'));
+      if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      ensureLiveSession(session.lastActivityAt, session.closedAt);
+      const tenant = await activeTenant(store, session.tenantId);
+      const channel = getChannel(req);
+      if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
+      res.json({ items: (await store.listSupportingDocuments(session.tenantId, session.id)).map(publicDocument) });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v1/admin/crm/documents/:id/download', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const document = await store.getSupportingDocument(routeParam(req, 'id'), tenantId);
+      if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'Document not found.');
+      const content = await documentStorage.read(document.storageKey);
+      if (!content) throw new HttpError(404, 'DOCUMENT_INPUT_NOT_FOUND', 'Private document input not found.');
+      res.setHeader('content-type', document.mimeType); res.setHeader('content-disposition', `attachment; filename="${document.fileName.replace(/["\\\r\n]/gu, '_')}"`); res.send(content);
+    } catch (error) { next(error); }
+  });
   app.get('/api/v1/chat/sessions/:id', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const session = await store.getSession(routeParam(req, 'id')); if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); ensureLiveSession(session.lastActivityAt, session.closedAt); const tenant = await store.getTenant(session.tenantId); if (!tenant) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (!getAuth(req) && !channel) { if (tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.'); const { limit } = parse(historyQuerySchema, req.query); res.json({ sessionId: session.id, tenantId: session.tenantId, createdAt: session.createdAt, messages: (await store.listMessages(session.id, session.tenantId, limit)).map((message) => ({ id: message.id, role: message.role, content: message.role === 'assistant' ? rehydrateForSession(session, message.maskedContent, tokenVault) : message.maskedContent, citations: message.citations, conversational: message.response?.conversational === true, clientMessageId: message.clientMessageId, createdAt: message.createdAt })) }); } catch (error) { next(error); } });
 
   app.get('/api/v1/admin/workflow-runs', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listActions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/crm/leads', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); res.json({ items: await Promise.all((await store.listCrmLeads(tenantId)).map(crmLeadForAdmin)) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/audit', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listAudit(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
-  app.get('/api/v1/chat/config', optionalApi, async (req, res, next) => { try { const tenantSlug = typeof req.query.tenantSlug === 'string' ? req.query.tenantSlug : ''; const tenant = await store.getTenantBySlug(tenantSlug); if (!tenant || tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); if (getAuth(req) && !ensureTenant(req, tenant.id)) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.'); if (!getAuth(req)) enforcePublicOrigin(req, tenant, nodeEnv); const persona = await store.getPersona(tenant.id); res.json({ tenant: { slug: tenant.slug, name: tenant.name }, persona: persona ? { name: persona.name, greeting: persona.greeting, tone: persona.tone, speakingStyle: persona.speakingStyle, permittedLanguages: persona.permittedLanguages, voiceName: persona.voiceName, voiceLanguage: persona.voiceLanguage, voiceRate: persona.voiceRate, voicePitch: persona.voicePitch, voiceVolume: persona.voiceVolume } : null }); } catch (error) { next(error); } });
+  app.get('/api/v1/chat/config', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const tenantSlug = typeof req.query.tenantSlug === 'string' ? req.query.tenantSlug : ''; if (channel && tenantSlug) throw new HttpError(400, 'CHANNEL_TENANT_INPUT_FORBIDDEN', 'Channel credentials resolve the tenant from the channel key.'); const tenant = channel ? await store.getTenant(channel.tenantId) : await store.getTenantBySlug(tenantSlug); if (!tenant || tenant.status !== 'active' || (!channel && !tenant.publicChatEnabled)) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); if (channel && channel.tenantId !== tenant.id) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.'); if (getAuth(req) && !ensureTenant(req, tenant.id)) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.'); if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv); const persona = await store.getPersona(tenant.id); res.json({ tenant: { slug: tenant.slug, name: tenant.name }, persona: persona ? { name: persona.name, greeting: persona.greeting, tone: persona.tone, speakingStyle: persona.speakingStyle, permittedLanguages: persona.permittedLanguages, voiceName: persona.voiceName, voiceLanguage: persona.voiceLanguage, voiceRate: persona.voiceRate, voicePitch: persona.voicePitch, voiceVolume: persona.voiceVolume } : null, documents: await documentConfig(tenant.id) }); } catch (error) { next(error); } });
 
   app.use((error: unknown, req: Request, res: Response, next: NextFunction) => {
     const requestId = (req as AuthedRequest).requestId ?? randomUUID();

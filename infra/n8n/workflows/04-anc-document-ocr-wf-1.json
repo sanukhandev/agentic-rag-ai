@@ -1,0 +1,58 @@
+{
+  "id": "ANCDocumentOCRWF1",
+  "name": "ANC Document OCR WF-1",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "anc-test-document-ocr-wf-1", "responseMode": "responseNode", "options": {} },
+      "id": "anc-ocr-webhook",
+      "name": "ANC Document OCR Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "anc-test-document-ocr-wf-1"
+    },
+    {
+      "parameters": { "jsCode": "const input = $json.body ?? $json;\nconst uuid = /^[0-9a-f-]{36}$/i;\nfor (const key of ['documentId', 'jobId', 'tenantId']) if (typeof input[key] !== 'string' || !uuid.test(input[key])) throw new Error('Document OCR event is invalid.');\nif (typeof input.workflowKey !== 'string' || input.workflowKey !== 'anc.document.ocr.extract') throw new Error('Document OCR workflow key is invalid.');\nreturn [{ json: { documentId: input.documentId, jobId: input.jobId, tenantId: input.tenantId, workflowKey: input.workflowKey, contract: 'anc-document-ocr-v1' } }];" },
+      "id": "anc-ocr-validate",
+      "name": "Authenticate and Validate Document Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://api:4000/api/v1/internal/documents/' + $json.documentId + '/process' }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, jobId: $json.jobId }) }}",
+        "options": {}
+      },
+      "id": "anc-ocr-queue",
+      "name": "Authorize and Queue OCR Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 0]
+    },
+    {
+      "parameters": { "respondWith": "json", "responseBody": "={{ JSON.stringify({ accepted: true, status: 'queued', documentId: $('Authenticate and Validate Document Event').first().json.documentId, message: 'Document registered for asynchronous OCR.' }) }}", "options": {} },
+      "id": "anc-ocr-response",
+      "name": "Return Document Registered",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [820, 0]
+    }
+  ],
+  "connections": {
+    "ANC Document OCR Webhook": { "main": [[{ "node": "Authenticate and Validate Document Event", "type": "main", "index": 0 }]] },
+    "Authenticate and Validate Document Event": { "main": [[{ "node": "Authorize and Queue OCR Job", "type": "main", "index": 0 }]] },
+    "Authorize and Queue OCR Job": { "main": [[{ "node": "Return Document Registered", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "anc-document-ocr-wf-1-v1",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

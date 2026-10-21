@@ -7,6 +7,7 @@ export interface ChatActionProposal {
   id: string;
   intent: string;
   confirmation: string;
+  consentRequired?: boolean;
   expiresAt?: string;
 }
 

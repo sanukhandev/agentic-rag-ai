@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { ActionRequest, LeadConversationMessage, LeadData, Store } from './types.js';
+import type { ActionPayload, ActionRequest, LeadConversationMessage, LeadData, Store } from './types.js';
 import { opaqueReference } from './privacy.js';
 import { assertExternalEndpoint } from './runtime-security.js';
 
@@ -60,7 +60,7 @@ export class ActionGateway {
 
   constructor(private readonly store: Store, _adapter?: WorkflowAdapter) {}
 
-  async propose(tenantId: string, sessionId: string, idempotencyKey: string, leadData: LeadData = {}, options: { workflowKey?: string; intentKey?: string; intentScore?: number; intentConfidence?: number; catalogVersionId?: string | null; webhookPath?: string } = {}): Promise<ActionRequest> {
+  async propose(tenantId: string, sessionId: string, idempotencyKey: string, leadData: ActionPayload = {}, options: { workflowKey?: string; intentKey?: string; intentScore?: number; intentConfidence?: number; catalogVersionId?: string | null; webhookPath?: string } = {}): Promise<ActionRequest> {
     const key = `${tenantId}:${idempotencyKey}`;
     const pending = this.proposals.get(key);
     if (pending) return pending;
@@ -69,7 +69,7 @@ export class ActionGateway {
     try { return await proposal; } finally { this.proposals.delete(key); }
   }
 
-  private async proposeInternal(tenantId: string, sessionId: string, idempotencyKey: string, leadData: LeadData, options: { workflowKey?: string; intentKey?: string; intentScore?: number; intentConfidence?: number; catalogVersionId?: string | null; webhookPath?: string }): Promise<ActionRequest> {
+  private async proposeInternal(tenantId: string, sessionId: string, idempotencyKey: string, leadData: ActionPayload, options: { workflowKey?: string; intentKey?: string; intentScore?: number; intentConfidence?: number; catalogVersionId?: string | null; webhookPath?: string }): Promise<ActionRequest> {
     const existing = await this.store.getActionByIdempotency(tenantId, idempotencyKey);
     if (existing) return existing;
     const action: ActionRequest = { id: randomUUID(), tenantId, sessionId, workflowKey: options.workflowKey ?? 'lead.capture', webhookPath: options.webhookPath ?? 'lead-capture', intentKey: options.intentKey ?? 'lead.capture', intentScore: options.intentScore ?? 0, intentConfidence: options.intentConfidence ?? 0, catalogVersionId: options.catalogVersionId ?? null, idempotencyKey, state: 'awaiting_confirmation', opaqueReference: opaqueReference(), payload: leadData, createdAt: new Date().toISOString(), result: null };
@@ -101,8 +101,10 @@ export class ActionGateway {
       await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.expired', metadata: { actionId }, createdAt: new Date().toISOString() });
       return expired;
     }
-    const approved = { ...action, state: 'approved' as const, result: null };
+    const consentGranted = action.payload.contactConsent === false;
+    const approved = { ...action, state: 'approved' as const, result: null, payload: consentGranted ? { ...action.payload, contactConsent: true } : action.payload };
     await this.store.updateAction(approved);
+    if (consentGranted) await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.consent_granted', metadata: { actionId }, createdAt: new Date().toISOString() });
     await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.approved', metadata: { actionId, workflowKey: action.workflowKey }, createdAt: new Date().toISOString() });
     return approved;
   }

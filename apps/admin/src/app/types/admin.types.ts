@@ -35,6 +35,19 @@ export interface Channel {
   rateLimitPerMinute?: number;
 }
 
+export type ChannelAuthMode = 'hmac' | 'api_key';
+
+export interface ChannelCredential {
+  id: string;
+  tenantId: string;
+  channel: string;
+  authMode: ChannelAuthMode;
+  keyId: string;
+  active: boolean;
+  createdAt: string;
+  revokedAt: string | null;
+}
+
 export type SourceStatus = 'active' | 'awaiting_review' | 'revoked';
 export type SourceAudience = 'public' | 'internal';
 
@@ -140,6 +153,22 @@ export interface CrmLead {
   conversation: Array<{ role: 'user' | 'assistant'; content: string; createdAt: string }>;
   summary: string | null;
   summaryStatus: 'pending' | 'completed' | 'failed';
+  leadId?: string | null;
+  remoteCrm?: string | null;
+  documents?: SupportingDocument[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SupportingDocument {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: 'uploaded' | 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
+  extractedText: string | null;
+  summary: string | null;
+  errorCode: string | null;
   createdAt: string;
   updatedAt: string;
 }

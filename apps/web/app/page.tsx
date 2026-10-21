@@ -32,7 +32,10 @@ type Config = {
     voicePitch: number;
     voiceVolume: number;
   } | null;
+  documents?: { enabled: boolean; requireUploadConsent: boolean; maxFileBytes: number; allowedMimeTypes: string[]; policies: Array<{ intentKey: string; requestMode: string; allowedDocumentTypes: string[]; consentRequired: boolean }> };
 };
+
+type ChatDocument = { id: string; fileName: string; mimeType: string; sizeBytes: number; status: string; errorCode: string | null; createdAt: string };
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -81,6 +84,12 @@ export default function Home() {
   const [assistantCaption, setAssistantCaption] = useState('');
   const [countdown, setCountdown] = useState<number | null>(null);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadConsent, setUploadConsent] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [documentStatus, setDocumentStatus] = useState('');
+  const [documents, setDocuments] = useState<ChatDocument[]>([]);
+  const documentInputRef = useRef<HTMLInputElement>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -484,6 +493,29 @@ export default function Home() {
     }
   };
 
+  const uploadDocument = async () => {
+    if (!selectedFile || !uploadConsent || uploading || !config?.documents?.enabled) return;
+    setUploading(true); setDocumentStatus('Uploading securely…'); setError('');
+    try {
+      let activeSession = sessionId;
+      if (!activeSession) {
+        const sessionRes = await fetch(`${api}/api/v1/chat/sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tenantSlug }) });
+        if (!sessionRes.ok) throw new Error('Could not open a secure conversation session.');
+        activeSession = ((await sessionRes.json()) as { sessionId: string }).sessionId;
+        setSessionId(activeSession); window.localStorage.setItem(`agentic-rag-session:${tenantSlug}`, activeSession);
+      }
+      const base64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] ?? ''); reader.onerror = () => reject(new Error('The document could not be read.')); reader.readAsDataURL(selectedFile); });
+      const response = await fetch(`${api}/api/v1/chat/sessions/${activeSession}/documents`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fileName: selectedFile.name, mimeType: selectedFile.type, contentBase64: base64, processingConsent: true }) });
+      const body = (await response.json()) as { document?: ChatDocument; error?: { message?: string } };
+      if (!response.ok) throw new Error(body.error?.message ?? 'The document could not be registered.');
+      setDocumentStatus('Registered. OCR is processing in the background.');
+      setSelectedFile(null); setUploadConsent(false); if (documentInputRef.current) documentInputRef.current.value = '';
+      if (body.document) setDocuments((current) => [body.document!, ...current.filter((item) => item.id !== body.document!.id)]);
+      window.setTimeout(() => { void fetch(`${api}/api/v1/chat/sessions/${activeSession}/documents`).then((result) => result.json()).then((value: { items?: ChatDocument[] }) => setDocuments(value.items ?? [])).catch(() => undefined); }, 2000);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'The document could not be registered.'); setDocumentStatus(''); }
+    finally { setUploading(false); }
+  };
+
   const toggleVoice = () => {
     if (!voiceSupported) {
       setError('Voice mode is not supported by this browser. You can continue by typing.');
@@ -883,7 +915,7 @@ export default function Home() {
                                   disabled={msg.actionState === 'approved' || msg.actionState === 'processing'}
                                   className="rounded-lg bg-neutral-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 transition-all button-press"
                                 >
-                                  {msg.actionState === 'approved' || msg.actionState === 'processing' ? 'Submitting…' : msg.actionState === 'unknown' ? 'Retry Request' : 'Confirm & Submit'}
+                                  {msg.actionState === 'approved' || msg.actionState === 'processing' ? 'Submitting…' : msg.actionState === 'unknown' ? 'Retry Request' : msg.actionProposal.consentRequired ? 'Consent & Submit' : 'Confirm & Submit'}
                                 </button>
                                 {msg.actionState && (
                                   <span className="text-[11px] font-mono text-neutral-500">
@@ -981,6 +1013,18 @@ export default function Home() {
                     void send();
                   }}
                 >
+                  {config?.documents?.enabled && (
+                    <div className="mb-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input ref={documentInputRef} type="file" accept={config.documents.allowedMimeTypes.join(',')} onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} className="max-w-full text-[11px]" aria-label="Choose a supporting document" />
+                        <button type="button" onClick={() => void uploadDocument()} disabled={!selectedFile || !uploadConsent || uploading} className="rounded-lg bg-neutral-900 px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40">{uploading ? 'Registering…' : 'Register attachment'}</button>
+                      </div>
+                      <label className="mt-2 flex items-start gap-2 text-[11px] text-neutral-600"><input type="checkbox" checked={uploadConsent} onChange={(event) => setUploadConsent(event.target.checked)} />I consent to ANCFZ processing this business document for this enquiry.</label>
+                      {selectedFile && <p className="mt-1 text-[10px] text-neutral-500">Selected: {selectedFile.name}</p>}
+                      {documentStatus && <p className="mt-1 text-[10px] text-emerald-700">{documentStatus}</p>}
+                      {documents.length > 0 && <div className="mt-2 space-y-1">{documents.map((document) => <p key={document.id} className="text-[10px] text-neutral-500">{document.fileName} · {document.status}{document.errorCode ? ` · ${document.errorCode}` : ''}</p>)}</div>}
+                    </div>
+                  )}
                   <div className="relative flex items-end gap-2 rounded-2xl border border-neutral-200 bg-neutral-50/80 p-2 sm:p-2.5 transition-all duration-200 focus-within:border-neutral-900 focus-within:bg-white focus-within:ring-2 focus-within:ring-neutral-900/10">
                     <textarea
                       ref={textareaRef}

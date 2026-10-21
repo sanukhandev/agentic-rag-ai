@@ -28,4 +28,8 @@ export class CrmService {
       this.isLoadingSubject.next(false);
     });
   }
+
+  downloadDocument(documentId: string): Observable<Blob> {
+    return this.http.get(`${this.apiBase}/api/v1/admin/crm/documents/${documentId}/download`, { headers: this.auth.authHeaders, responseType: 'blob' });
+  }
 }

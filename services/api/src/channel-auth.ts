@@ -12,6 +12,13 @@ export interface ChannelContext {
   tenantId: string;
 }
 
+export interface StaticChannelAuth {
+  apiKey: string;
+  tenantId?: string;
+  tenantSlug?: string;
+  channel: string;
+}
+
 export type ChannelRequest = Request & { channel?: ChannelContext; requestId?: string };
 
 const canonicalBody = (body: unknown): string => JSON.stringify(body ?? {});
@@ -19,6 +26,7 @@ const canonicalBody = (body: unknown): string => JSON.stringify(body ?? {});
 export const createChannelSignature = (secret: string, method: string, path: string, timestamp: string, nonce: string, body: unknown): string => createHmac('sha256', secret).update([method.toUpperCase(), path, timestamp, nonce, canonicalBody(body)].join('\n')).digest('base64url');
 
 export const generateChannelSecret = (): string => randomBytes(32).toString('base64url');
+export const generateChannelApiKey = (tenantSlug: string): string => `zv3_${tenantSlug}-${randomBytes(27).toString('base64url')}`;
 export const generateChannelKeyId = (): string => `ch_${randomBytes(18).toString('base64url')}`;
 
 export class ChannelSecretVault {
@@ -43,6 +51,10 @@ export class ChannelSecretVault {
     decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
     return Buffer.concat([decipher.update(Buffer.from(ciphertextText, 'base64url')), decipher.final()]).toString('utf8');
   }
+
+  hashApiKey(value: string): string {
+    return createHmac('sha256', this.key).update(`agentic-channel-api-key-v1:${value}`).digest('hex');
+  }
 }
 
 export const getChannel = (req: Request): ChannelContext | undefined => (req as ChannelRequest).channel;
@@ -57,7 +69,30 @@ const sameSignature = (expected: string, received: string): boolean => {
   return left.length === right.length && timingSafeEqual(left, right);
 };
 
-export const channelAuthMiddleware = (store: Store, vault: ChannelSecretVault) => async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+const sameSecret = (expected: string, received: string): boolean => {
+  const left = Buffer.from(expected);
+  const right = Buffer.from(received);
+  return left.length === right.length && timingSafeEqual(left, right);
+};
+
+export const channelAuthMiddleware = (store: Store, vault: ChannelSecretVault, staticAuth?: StaticChannelAuth) => async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const staticApiKey = req.header('x-agentic-api-key');
+  if (staticApiKey) {
+    const storedCredential = await store.getChannelCredentialByApiKeyHash(vault.hashApiKey(staticApiKey));
+    if (storedCredential?.authMode === 'api_key' && storedCredential.active && !storedCredential.revokedAt) {
+      const tenant = await store.getTenant(storedCredential.tenantId);
+      if (!tenant || tenant.status !== 'active') { rejectChannel(req, res, 'CHANNEL_UNAUTHORIZED'); return; }
+      (req as ChannelRequest).channel = { credentialId: storedCredential.id, keyId: storedCredential.keyId, channel: storedCredential.channel, tenantId: storedCredential.tenantId };
+      next();
+      return;
+    }
+    if (!staticAuth || !sameSecret(staticAuth.apiKey, staticApiKey) || (staticAuth.tenantId && staticAuth.tenantSlug)) { rejectChannel(req, res, 'CHANNEL_UNAUTHORIZED'); return; }
+    const tenant = staticAuth.tenantId ? await store.getTenant(staticAuth.tenantId) : await store.getTenantBySlug(staticAuth.tenantSlug ?? '');
+    if (!tenant || tenant.status !== 'active') { rejectChannel(req, res, 'CHANNEL_UNAUTHORIZED'); return; }
+    (req as ChannelRequest).channel = { credentialId: 'legacy-static-api-key', keyId: 'legacy-static-api-key', channel: staticAuth.channel, tenantId: tenant.id };
+    next();
+    return;
+  }
   const keyId = req.header(`${CHANNEL_HEADER_PREFIX}key-id`);
   const timestamp = req.header(`${CHANNEL_HEADER_PREFIX}timestamp`);
   const nonce = req.header(`${CHANNEL_HEADER_PREFIX}nonce`);

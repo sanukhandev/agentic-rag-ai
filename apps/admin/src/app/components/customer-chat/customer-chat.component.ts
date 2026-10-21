@@ -223,7 +223,7 @@ interface TenantChatConfig {
                     [disabled]="isBusy"
                     class="rounded-lg bg-neutral-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 transition-all button-press"
                   >
-                    {{ msg.actionState === 'unknown' ? 'Retry Request' : 'Confirm & Proceed' }}
+                    {{ msg.actionState === 'unknown' ? 'Retry Request' : msg.actionProposal.consentRequired ? 'Consent & Submit' : 'Confirm & Proceed' }}
                   </button>
                   <span *ngIf="msg.actionState" class="text-[11px] font-mono text-neutral-500">
                     Status: {{ msg.actionState }}

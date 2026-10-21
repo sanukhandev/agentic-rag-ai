@@ -9,7 +9,7 @@ from pathlib import Path
 from ingestion.pipeline import chunk_text, extract_file, fetch_authorized_https, ingest_file, ingest_text, ingest_url, sanitize
 from ingestion.intent_catalog import parse_intent_catalog
 from ingestion.staging import LocalStaging
-from ingestion.worker import claim_next_job, fetch_job_input, main as worker_main, result_payload, submit_failure, submit_result
+from ingestion.worker import claim_next_job, fetch_job_input, main as worker_main, renew_document_job, result_payload, submit_failure, submit_result
 
 
 class IngestionTests(unittest.TestCase):
@@ -319,6 +319,15 @@ class IngestionTests(unittest.TestCase):
 
         response.json.return_value = {"job": None}
         self.assertIsNone(claim_next_job("http://localhost:4000", "worker-secret", session))
+
+    def test_document_worker_renews_its_lease(self) -> None:
+        session = Mock()
+        response = Mock()
+        response.json.return_value = {"job": {"id": "job-1", "status": "processing"}}
+        session.post.return_value = response
+        renewed = renew_document_job("http://localhost:4000", "job-1", "tenant-1", "worker-secret", session=session)
+        self.assertEqual(renewed["status"], "processing")
+        self.assertEqual(session.post.call_args.kwargs["json"], {"tenantId": "tenant-1", "jobId": "job-1", "leaseMs": 120_000})
 
     def test_worker_submits_without_reclaiming_an_already_claimed_upload(self) -> None:
         source = ingest_text("FAQ", "Approved content", "text/plain")

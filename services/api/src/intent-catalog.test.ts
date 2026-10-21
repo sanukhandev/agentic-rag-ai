@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { catalogIntentClarification, catalogSlotQuestion, resolveIntent, validateIntentCatalog } from './intent-catalog.js';
 import type { IntentCatalogVersion } from './types.js';
 
@@ -62,5 +63,14 @@ describe('intent catalog', () => {
     expect(resolution.intentKey).toBe('appointment.request');
     expect(resolution.reason).toBe('intent_inactive');
     expect(resolution.actionAllowed).toBe(false);
+  });
+
+  it('accepts the proposed OCR catalog extensions without activating the pending OCR binding', () => {
+    const catalog = JSON.parse(readFileSync(new URL('../../../docs/feature-specs/dynamic-ocr/ANCFZ-intent-catalog-OCR-WF1-proposed.json', import.meta.url), 'utf8')) as unknown;
+    const result = validateIntentCatalog(catalog);
+    expect(result.errors).toEqual([]);
+    expect(result.catalog?.documentPolicies).toHaveLength(16);
+    expect(result.catalog?.documentSettings?.workflowKey).toBe('anc.document.ocr.extract');
+    expect(result.catalog?.workflowBindings.find((binding) => binding.workflowKey === 'anc.document.ocr.extract')?.active).toBe(false);
   });
 });
