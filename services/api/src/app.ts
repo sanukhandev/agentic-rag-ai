@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { ActionGateway, isSafeExternalReference, leadQuality, verifyN8nPayload, type WorkflowAdapter } from './actions.js';
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
 import { cacheKey, createCache, type CacheStore } from './cache.js';
-import { channelAuthMiddleware, ChannelSecretVault, generateChannelKeyId, generateChannelSecret, getChannel } from './channel-auth.js';
+import { channelAuthMiddleware, ChannelSecretVault, generateChannelKeyId, generateChannelSecret, getChannel, type StaticChannelAuth } from './channel-auth.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, rankChunksWithVector } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, permittedLanguageReply, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence } from './model.js';
@@ -197,6 +197,11 @@ export interface AppDependencies {
   workflow?: WorkflowAdapter;
   jwtSecret?: string;
   channelCredentialKey?: string;
+  staticChannelApiKey?: string;
+  staticChannelTenantId?: string;
+  staticChannelTenantSlug?: string;
+  staticChannelName?: string;
+  allowStaticChannelApiKey?: boolean;
   nodeEnv?: string;
   tokenVault?: TokenVault;
   embedding?: EmbeddingProvider;
@@ -222,6 +227,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const jwtSecret = dependencies.jwtSecret ?? process.env.JWT_SECRET ?? 'local-development-only-change-me';
   const configuredChannelCredentialKey = dependencies.channelCredentialKey ?? process.env.CHANNEL_CREDENTIAL_KEY;
   const channelCredentialKey = configuredChannelCredentialKey ?? 'local-development-channel-key';
+  const staticChannelApiKey = dependencies.staticChannelApiKey || process.env.OMNI_CHANNEL_API_KEY || undefined;
+  const staticChannelTenantId = dependencies.staticChannelTenantId || process.env.OMNI_CHANNEL_TENANT_ID || undefined;
+  const staticChannelTenantSlug = dependencies.staticChannelTenantSlug || process.env.OMNI_CHANNEL_TENANT_SLUG || undefined;
+  const staticChannelName = dependencies.staticChannelName ?? process.env.OMNI_CHANNEL_NAME ?? 'omnichannel';
+  const allowStaticChannelApiKey = dependencies.allowStaticChannelApiKey ?? process.env.OMNI_ALLOW_STATIC_API_KEY === 'true';
+  if (staticChannelApiKey && ((!staticChannelTenantId && !staticChannelTenantSlug) || (staticChannelTenantId && staticChannelTenantSlug) || staticChannelApiKey.length < 32)) throw new Error('Static omnichannel API key requires exactly one tenant scope and at least 32 characters.');
+  if (nodeEnv === 'production' && staticChannelApiKey && !allowStaticChannelApiKey) throw new Error('Production static omnichannel API keys require OMNI_ALLOW_STATIC_API_KEY=true; prefer signed channel credentials.');
   const vaultSecret = process.env.PII_VAULT_KEY ?? 'local-development-pii-vault-key';
   if (nodeEnv === 'production' && ((!dependencies.jwtSecret && !process.env.JWT_SECRET) || (!dependencies.tokenVault && !process.env.PII_VAULT_KEY))) throw new Error('Production JWT_SECRET and PII_VAULT_KEY are required.');
   const tokenVault = dependencies.tokenVault ?? new TokenVault(vaultSecret);
@@ -370,7 +382,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
 
   const protectedApi = authMiddleware(auth);
   const optionalApi = authMiddleware(auth, false);
-  const channelApi = channelAuthMiddleware(store, channelVault);
+  const staticChannelAuth: StaticChannelAuth | undefined = staticChannelApiKey
+    ? { apiKey: staticChannelApiKey, channel: staticChannelName, ...(staticChannelTenantId ? { tenantId: staticChannelTenantId } : { tenantSlug: staticChannelTenantSlug! }) }
+    : undefined;
+  const channelApi = channelAuthMiddleware(store, channelVault, staticChannelAuth);
   const chatApi = (req: Request, res: Response, next: NextFunction): void => {
     optionalApi(req, res, () => {
       if (getAuth(req)) { next(); return; }

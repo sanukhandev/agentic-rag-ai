@@ -51,6 +51,19 @@ curl -X POST "$CHAT_API_BASE/api/v1/admin/channels/$CHANNEL_CREDENTIAL_ID/revoke
 
 Use one credential per independent channel or integration. Revocation blocks new and subsequent signed requests for that credential.
 
+### Temporary static API key (development/controlled VM use)
+
+For a short-lived connector setup, the API also accepts one server-side static key scoped to one configured tenant. Configure `OMNI_CHANNEL_API_KEY` with at least 32 random characters and exactly one of `OMNI_CHANNEL_TENANT_ID` or `OMNI_CHANNEL_TENANT_SLUG`. Production requires explicit `OMNI_ALLOW_STATIC_API_KEY=true`; signed channel credentials remain the recommended multi-connector option.
+
+```bash
+curl -sS -X POST "$CHAT_API_BASE/api/v1/chat/sessions" \
+  -H "X-Agentic-Api-Key: $OMNI_CHANNEL_API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data '{}'
+```
+
+The caller must not send `tenantId` or `tenantSlug`; the server resolves the configured tenant. This key is shared by all connectors using it and cannot be independently revoked, so replace it when moving to signed channel credentials.
+
 ## 3. Signed request contract
 
 Every server-to-server chat request uses these headers:

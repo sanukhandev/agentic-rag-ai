@@ -85,6 +85,11 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-replace-with-a-long-local-secret}
       CHANNEL_CREDENTIAL_KEY: ${CHANNEL_CREDENTIAL_KEY:-replace-with-a-long-channel-credential-key}
+      OMNI_CHANNEL_API_KEY: ${OMNI_CHANNEL_API_KEY:-}
+      OMNI_CHANNEL_TENANT_ID: ${OMNI_CHANNEL_TENANT_ID:-}
+      OMNI_CHANNEL_TENANT_SLUG: ${OMNI_CHANNEL_TENANT_SLUG:-}
+      OMNI_CHANNEL_NAME: ${OMNI_CHANNEL_NAME:-omnichannel}
+      OMNI_ALLOW_STATIC_API_KEY: ${OMNI_ALLOW_STATIC_API_KEY:-false}
       PII_VAULT_KEY: ${PII_VAULT_KEY:-replace-with-a-long-vault-secret}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:4200}
