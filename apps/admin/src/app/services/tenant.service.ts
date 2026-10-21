@@ -6,6 +6,7 @@ import { API_BASE_URL } from './tokens';
 import { AuthService } from './auth.service';
 import { ToastService } from './toast.service';
 import { getTenantChatUrl } from './tenant-chat-url';
+import { apiErrorMessage } from './api-error';
 
 export interface CreateTenantPayload {
   name: string;
@@ -60,7 +61,10 @@ export class TenantService {
       this.http.get<{ tenant: Tenant }>(`${this.apiBase}/api/v1/admin/tenant`, {
         headers: this.auth.authHeaders
       }).pipe(
-        catchError(() => of({ tenant: null as unknown as Tenant }))
+        catchError((error) => {
+          this.toast.show('error', 'Workspace unavailable', apiErrorMessage(error, 'Could not load the current workspace.'));
+          return of({ tenant: null as unknown as Tenant });
+        })
       ).subscribe((res) => {
         this.isLoadingSubject.next(false);
         if (res?.tenant) {
@@ -75,7 +79,10 @@ export class TenantService {
     this.http.get<{ items: Tenant[] }>(`${this.apiBase}/api/v1/admin/tenants`, {
       headers: this.auth.authHeaders
     }).pipe(
-      catchError(() => of({ items: [] }))
+      catchError((error) => {
+        this.toast.show('error', 'Organizations unavailable', apiErrorMessage(error, 'Could not load organizations.'));
+        return of({ items: [] });
+      })
     ).subscribe((res) => {
       this.isLoadingSubject.next(false);
       const items = res.items ?? [];

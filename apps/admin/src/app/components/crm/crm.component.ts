@@ -240,7 +240,7 @@ import { IconComponent } from '../shared/icon.component';
 
             <!-- Qualification Badges Row -->
             <div class="flex flex-wrap items-center gap-2">
-              <app-badge variant="outline" [showDot]="false" [text]="lead.intent"></app-badge>
+              <app-badge variant="outline" [showDot]="false" [text]="lead.leadData.interest || lead.intent"></app-badge>
               <app-badge
                 [variant]="getQualityVariant(lead.quality)"
                 [showDot]="true"
@@ -413,7 +413,7 @@ export class CrmComponent implements OnInit {
         const name = (lead.leadData.name || '').toLowerCase();
         const email = (lead.leadData.email || '').toLowerCase();
         const phone = (lead.leadData.phone || '').toLowerCase();
-        const intent = (lead.intent || '').toLowerCase();
+        const intent = (lead.leadData.interest || lead.intent || '').toLowerCase();
         const summary = (lead.summary || '').toLowerCase();
         return name.includes(query) || email.includes(query) || phone.includes(query) || intent.includes(query) || summary.includes(query);
       }

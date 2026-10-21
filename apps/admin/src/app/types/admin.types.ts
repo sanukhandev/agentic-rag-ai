@@ -136,7 +136,7 @@ export interface CrmLead {
   score: number;
   quality: 'new' | 'nurture' | 'warm' | 'hot';
   validationPass: boolean;
-  leadData: { name?: string; email?: string; phone?: string };
+  leadData: { name?: string; email?: string; phone?: string; interest?: string };
   conversation: Array<{ role: 'user' | 'assistant'; content: string; createdAt: string }>;
   summary: string | null;
   summaryStatus: 'pending' | 'completed' | 'failed';
@@ -191,7 +191,9 @@ export interface IntentCatalogVersion {
   sourceHash: string;
   parserVersion: string;
   catalog: {
-    intents: Array<{ intentKey: string; displayName: string; workflowKey: string; active: boolean }>;
+    intents: Array<{ intentKey: string; displayName: string; description?: string; workflowKey: string; minimumScore?: number; confidenceThreshold?: number; confirmationRequired?: boolean; active: boolean }>;
+    signals: Array<{ intentKey: string; signalId: string; signalType: 'phrase' | 'keyword' | 'exclusion'; value: string; weight: number }>;
+    slots: Array<{ intentKey: string; slotKey: string; required: boolean; alternativeGroup: string | null; promptKey: string }>;
     workflowBindings: Array<{ workflowKey: string; active: boolean }>;
   };
   createdAt: string;

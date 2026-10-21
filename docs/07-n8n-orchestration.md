@@ -1,7 +1,7 @@
 # n8n orchestration and guarded tools
 
 ## Design principle
-n8n is a **workflow execution engine**, not the primary chat brain, source of business facts, policy authority or customer token vault. Node alone authorizes and invokes workflows. The model may propose an intent; a deterministic policy engine decides whether a workflow is permitted.
+n8n is a **workflow execution engine**, not the primary chat brain, source of business facts, policy authority or customer token vault. Node authorizes and queues approved work; n8n polls and executes it. The model may propose an intent; a deterministic policy engine decides whether a workflow is permitted.
 
 ## Intent proposal → action gate
 1. GPT-4.1-mini returns a constrained JSON intent proposal: canonical intent enum, arguments derived from masked conversation, supporting citations when needed, and explicit missing parameters.
@@ -9,8 +9,8 @@ n8n is a **workflow execution engine**, not the primary chat brain, source of bu
 3. Node checks confidence threshold **plus** business rules; low confidence means ask a targeted question or do nothing. Confidence alone is never authorization.
 4. Resolve tenant, session, role, source permissions, user confirmation and action policy; check side effects/consent.
 5. Reserve idempotency key in PostgreSQL transaction; create pending action audit event.
-6. Call only registered internal workflow connector with minimal, sanitized, typed payload and restricted credentials.
-7. Validate n8n result, update action state machine, and return accurate status. Never claim completion from an HTTP timeout or an unverified model statement.
+6. Mark the action `approved` after confirmation. Do not invoke n8n from the API.
+7. n8n claims approved actions through the authenticated polling endpoint, validates the catalog binding, performs the side effect through Node, and reports the resulting state. Never claim completion from an HTTP timeout or an unverified model statement.
 
 ## Registry example (concept, not configured)
 | Key | Risk | Example purpose | Gate |
@@ -21,6 +21,8 @@ n8n is a **workflow execution engine**, not the primary chat brain, source of bu
 | catalog.refresh | admin operation | Reindex approved catalog | admin role + documented source ID |
 
 The local `lead.capture` action is implemented by the checked-in workflows under `infra/n8n/workflows/`. Production destinations and credentials remain deployment decisions.
+
+`ANC Lead Capture WF-1` is the provider-neutral async variant. Its remote CRM lead URL, provider name and remote-ID pattern are n8n environment values (`REMOTE_CRM_*`), while OAuth client credentials remain in n8n's encrypted credential store and are referenced by workflow credential ID/name. Node exposes only an authenticated, tenant/action-matched payload containing the validated lead contact fields and summary; n8n owns the provider calls and sends the returned ID back to Node.
 
 ## Internal request fields
 workflowKey, registryVersion, tenantId (server-derived), actionId, correlationId, idempotencyKey, masked/non-sensitive arguments, consentRef, userRef (opaque). Use HTTPS/mTLS or signed HMAC with replay window; never include raw identity, full transcripts or model prompts. If downstream integration must receive a contact address, authorize and resolve it **inside a separate trusted Node-side integration boundary**, not generically inside n8n.
@@ -39,9 +41,9 @@ Timeout does not mean failure or success; mark outcome unknown until reconciled.
 
 ## Implemented local lead-capture POC
 1. Node collects name plus email/phone through conversation and requires explicit confirmation.
-2. Node sends masked lead fields, score, quality band, validation result and the complete masked conversation to the private `lead-capture` webhook.
-3. `01-lead-capture-and-crm.json` validates `lead.capture`, `score >= 70`, contact data and conversation shape, then inserts the tenant-scoped record through the internal Node API.
-4. The workflow triggers `02-lead-conversation-summary.json`, which stores a deterministic, human-readable summary with the request, contact, intent, score, quality and turn counts while the CRM record retains the full masked conversation JSON for inspection.
+2. Node records the action as `approved`; it does not make an HTTP call to n8n.
+3. `01-lead-capture-and-crm.json` polls `/api/v1/internal/workflow-events/claim`, validates the published intent catalog and masked contact data, then inserts one tenant-scoped CRM record through Node.
+4. The first workflow executes `02-lead-conversation-summary.json` as a sub-workflow. Its `Calculate Catalog Quality` node reads only the claim's published `QualityRules` and slot weights, stores the score, and then stores a deterministic summary with the request, intent, quality and turn counts.
 5. Tenant admins can view the lead, intent, quality, score, validation result, summary and expandable conversation JSON in the CRM section.
 
-The Node API remains the authorization, tenant-isolation and token-rehydration boundary. n8n receives only tokenized values and uses the shared local Compose secret for the internal API calls.
+The Node API remains the authorization, tenant-isolation and token-rehydration boundary. The ANC workflow is an explicit internal exception: after approval, scoring and contact validation, its n8n path receives only the minimum rehydrated contact payload needed by the configured CRM provider—not the full transcript or vault—and uses the shared local Compose secret for internal API calls. Keep n8n private, protect execution history, and never put provider credentials in exported workflow JSON.

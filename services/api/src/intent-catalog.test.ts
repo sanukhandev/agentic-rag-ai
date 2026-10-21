@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveIntent, validateIntentCatalog } from './intent-catalog.js';
+import { catalogIntentClarification, catalogSlotQuestion, resolveIntent, validateIntentCatalog } from './intent-catalog.js';
 import type { IntentCatalogVersion } from './types.js';
 
 const version: IntentCatalogVersion = {
@@ -32,8 +32,29 @@ describe('intent catalog', () => {
   it('requires the catalog signal and contact slots before proposing CRM', () => {
     const resolution = resolveIntent(version, 'I need a demo', { name: '[NAME_1]', email: '[EMAIL_1]' });
     expect(resolution.intentKey).toBe('lead.capture');
+    expect(resolution.interest).toBe('Request a service');
     expect(resolution.actionAllowed).toBe(true);
     expect(resolution.score).toBeGreaterThanOrEqual(70);
+  });
+
+  it('treats an alternative contact group as one required slot and uses a user-facing prompt', () => {
+    const resolution = resolveIntent(version, 'I need a demo', { name: '[NAME_1]' });
+    expect(resolution.missingSlots).toEqual(['email']);
+    expect(resolution.actionAllowed).toBe(false);
+    expect(catalogSlotQuestion(version, 'lead.capture', 'email')).toContain('email address or phone number');
+  });
+
+  it('builds clarification from the published intent signals', () => {
+    const clarification = catalogIntentClarification(version, 'lead.capture');
+    expect(clarification).toContain('request a service');
+    expect(clarification).toContain('need a demo');
+  });
+
+  it('asks for clarification when the matched signal is below the catalog threshold', () => {
+    const resolution = resolveIntent(version, 'I need a demo');
+    expect(resolution.reason).toBe('below_threshold');
+    expect(resolution.actionAllowed).toBe(false);
+    expect(catalogIntentClarification(version, resolution.intentKey ?? '')).toContain('To make sure I route this correctly');
   });
 
   it('blocks inactive workflows even when the intent score is high', () => {

@@ -3,6 +3,8 @@
 ## Mandatory invariant
 **Azure AI Foundry and n8n must not receive plaintext customer information by default.** Node is the trusted privacy gateway. Encryption, tokenization and masking are different mechanisms; use them together where needed. Only a correctly authenticated/authorized Node process can re-identify an allowed token for a specific response, channel and purpose.
 
+Omnichannel clients must use a tenant/channel credential issued by the authenticated admin API. Node stores the credential secret encrypted, verifies a five-minute HMAC timestamp window and one-time nonce, resolves tenant scope from the credential, and then applies the same session, PII, intent and workflow controls as web chat. HTTPS remains mandatory for any non-local deployment.
+
 ## Customer-data lifecycle
 1. At the ingress boundary identify customer PII and secrets (names, email, telephone, address, account identifiers, free-text disclosures). Treat detectors as fallible; augment pattern-based rules with classification and blocked categories.
 2. Assign high-entropy opaque placeholders such as [PERSON_1], [EMAIL_1] or protected random tokens **scoped to a tenant, session, audience and TTL**. Collision/replay cannot cross sessions. Do not encode the original value in a token or use unsalted hashes as reversible pseudonyms.

@@ -47,10 +47,15 @@ services:
       N8N_HOST: "${N8N_HOST:-localhost}"
       N8N_PORT: "${N8N_PORT:-5678}"
       N8N_PROTOCOL: "${N8N_PROTOCOL:-http}"
-      N8N_EDITOR_BASE_URL: "${N8N_EDITOR_BASE_URL:-http://localhost:5678/}"
+      N8N_PATH: "${N8N_PATH:-/}"
+      N8N_PROXY_HOPS: "${N8N_PROXY_HOPS:-0}"
+      N8N_EDITOR_BASE_URL: "${N8N_EDITOR_BASE_URL:-http://localhost:5678/}"    
       N8N_WEBHOOK_URL: "${N8N_WEBHOOK_URL:-http://localhost:5678/}"
       N8N_SECURE_COOKIE: "${N8N_SECURE_COOKIE:-false}"
       N8N_WEBHOOK_SECRET: "${N8N_WEBHOOK_SECRET:-local-n8n-workflow-secret}"
+      REMOTE_CRM_PROVIDER: ${REMOTE_CRM_PROVIDER-}
+      REMOTE_CRM_LEAD_URL: ${REMOTE_CRM_LEAD_URL-}
+      REMOTE_CRM_LEAD_ID_PATTERN: ${REMOTE_CRM_LEAD_ID_PATTERN-}
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
       GENERIC_TIMEZONE: Asia/Dubai
@@ -79,6 +84,7 @@ services:
       DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:-agentic_local_only}@postgres:5432/agentic_rag
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-replace-with-a-long-local-secret}
+      CHANNEL_CREDENTIAL_KEY: ${CHANNEL_CREDENTIAL_KEY:-replace-with-a-long-channel-credential-key}
       PII_VAULT_KEY: ${PII_VAULT_KEY:-replace-with-a-long-vault-secret}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:4200}
@@ -89,7 +95,7 @@ services:
       AZURE_AI_EMBEDDING_DIMENSION: ${AZURE_AI_EMBEDDING_DIMENSION:-1536}
       AZURE_AI_API_KEY: ${AZURE_AI_API_KEY:-}
       AZURE_AI_API_VERSION: ${AZURE_AI_API_VERSION:-2024-10-21}
-      N8N_INTERNAL_URL: ${N8N_INTERNAL_URL:-http://n8n:5678}
+      N8N_INTERNAL_URL: ${N8N_INTERNAL_URL-}
       N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-local-n8n-workflow-secret}
       INGESTION_WORKER_SECRET: ${INGESTION_WORKER_SECRET:-local-ingestion-worker-secret}
       INGESTION_STAGING_ROOT: /app/data/ingestion-staging
@@ -117,12 +123,14 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "${WEB_BIND_ADDRESS:-127.0.0.1}:3000:3000"
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_HOST_PORT:-3000}:3000"
 
   admin:
     build:
       <<: *node-build
       target: admin-runtime
+      args:
+        ADMIN_BASE_HREF: ${ADMIN_BASE_HREF:-/}
     container_name: agentic-admin
     restart: unless-stopped
     depends_on:

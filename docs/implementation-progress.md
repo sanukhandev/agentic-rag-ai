@@ -14,6 +14,7 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 - [x] P05: admin operations, audit, observability and security regression coverage (platform/tenant metrics including ingestion state, RBAC, lifecycle, rate limits, CORS, callback replay guard, durable admin session revocation, tenant session purge, local backup/restore rehearsal, redacted request telemetry and repository secret audit added; local gate passes; production observability remains)
 - [x] P06: PII vault and conversation API (AES-GCM session vault, structured-name masking, lazy token expiry purge, session expiry/purge, rate limiting and Postgres persistence verified; production KMS-backed vault remains open)
 - [x] P07–P10: full persona/version workflow, operations hardening, clean-room acceptance and local readiness review (persona draft/publish/version API, session-pinned persona selection, grounded preview API/UI, history/publish/rollback, tenant domain UI, local OpenAPI/ER model, secret audit and disposable A/B plus five-source acceptance added; local gate passes; manual browser verification and live-provider/production operations remain)
+- [ ] Omnichannel channel gateway: tenant/channel HMAC credentials, replay protection and reuse of the existing chat/action pipeline are implemented locally; provider adapters, HTTPS deployment and admin UI controls remain open.
 
 ## Decisions for this local vertical slice
 

@@ -1,27 +1,21 @@
 {
   "id": "KW2teJmT6SdLV4ow",
-  "name": "Agentic CRM - Summarize Lead Conversation",
+  "name": "Agentic CRM - Calculate Catalog Lead Quality",
   "nodes": [
     {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "lead-summarize",
-        "responseMode": "lastNode",
-        "options": {}
-      },
+      "parameters": { "inputSource": "passthrough" },
       "id": "f8e2e11d-0d3e-4e83-8d21-000000000011",
-      "name": "Lead Summary Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2.1,
-      "position": [0, 0],
-      "webhookId": "agentic-lead-summary"
+      "name": "When Lead Is Captured",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0]
     },
     {
       "parameters": {
-        "jsCode": "const input = $json.body ?? $json;\nif (!input.leadId || !input.tenantId || !Array.isArray(input.conversation)) throw new Error('Conversation summary input is invalid');\nconst userTurns = input.conversation.filter((message) => message.role === 'user').map((message) => String(message.content ?? '').trim()).filter(Boolean);\nconst assistantTurns = input.conversation.filter((message) => message.role === 'assistant').map((message) => String(message.content ?? '').trim()).filter(Boolean);\nconst contactValues = Object.values(input.leadData ?? {}).filter((value) => typeof value === 'string');\nconst contactTurns = /^(?:\\[NAME_\\d+\\]|\\[EMAIL_\\d+\\]|\\[PHONE_\\d+\\])$/u;\nconst contextTurns = userTurns.filter((turn) => {\n  const normalized = turn.replace(/[\\s.!?,;:]+$/gu, '');\n  return !contactValues.some((value) => normalized.includes(value)) && !contactTurns.test(normalized);\n});\nconst customerRequest = contextTurns.at(-1) ?? 'follow-up requested';\nconst projectContext = contextTurns.find((turn) => turn !== customerRequest);\nconst humanIntent = String(input.intent ?? 'lead.capture').replaceAll('.', ' ');\nconst humanQuality = String(input.quality ?? 'unknown').replace(/^\\w/u, (letter) => letter.toUpperCase());\nconst contactStatus = input.leadData?.email || input.leadData?.phone ? 'Provided' : 'Not provided';\nconst summary = [\n  `Customer request: ${customerRequest}`,\n  ...(projectContext ? [`Project context: ${projectContext}`] : []),\n  `Contact details: ${contactStatus}.`,\n  `Intent: ${humanIntent}.`,\n  `Lead quality: ${humanQuality} (${input.score ?? 'unknown'}/100).`,\n  `Validation: ${input.validationPass === true ? 'Passed' : 'Not passed'}.`,\n  `Conversation: ${userTurns.length} visitor message(s), ${assistantTurns.length} assistant response(s).`,\n].join('\\n').slice(0, 20000);\nreturn [{ json: { leadId: input.leadId, tenantId: input.tenantId, summary } }];"
+        "jsCode": "const input = $json;\nconst catalog = input.catalog ?? {};\nconst intent = (catalog.intents ?? []).find((row) => row.intentKey === input.intent);\nconst binding = (catalog.workflowBindings ?? []).find((row) => row.workflowKey === input.workflowKey);\nconst rule = (catalog.qualityRules ?? []).find((row) => row.intentKey === input.intent);\nconst qualityBinding = rule && (catalog.workflowBindings ?? []).find((row) => row.workflowKey === rule.qualityWorkflowKey);\nconst slots = (catalog.slots ?? []).filter((row) => row.intentKey === input.intent);\nconst present = slots.filter((slot) => Boolean(input.leadData?.[slot.slotKey]));\nconst totalWeight = slots.reduce((sum, slot) => sum + Math.max(0, Number(slot.qualityWeight ?? 0)), 0);\nconst presentWeight = present.reduce((sum, slot) => sum + Math.max(0, Number(slot.qualityWeight ?? 0)), 0);\nconst contactScore = totalWeight ? Math.round((presentWeight / totalWeight) * 100) : 0;\nconst validationPass = Boolean(input.leadData?.name && (input.leadData?.email || input.leadData?.phone));\nif (!input.leadId || !input.tenantId || !input.catalogVersionId || !intent?.active || !binding?.active || !rule || rule.qualityWorkflowKey !== input.qualityWorkflowKey || !qualityBinding?.active || !validationPass) throw new Error('Catalog quality input is invalid');\nconst intentScore = Math.max(0, Math.min(100, Number(input.intentScore ?? 0)));\nconst intentConfidence = Math.max(0, Math.min(1, Number(input.intentConfidence ?? 0)));\nconst score = Math.max(0, Math.min(100, Math.round(intentScore * rule.intentWeight + intentConfidence * 100 * rule.confidenceWeight + contactScore * rule.contactWeight)));\nconst quality = score >= rule.hotThreshold ? 'hot' : score >= rule.warmThreshold ? 'warm' : score >= rule.nurtureThreshold ? 'nurture' : 'new';\nreturn [{ json: { ...input, score, quality, validationPass, qualityWorkflowKey: rule.qualityWorkflowKey } }];"
       },
       "id": "f8e2e11d-0d3e-4e83-8d21-000000000012",
-      "name": "Generate Conversation Summary",
+      "name": "Calculate Catalog Quality",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [260, 0]
@@ -29,46 +23,66 @@
     {
       "parameters": {
         "method": "PUT",
+        "url": "={{ 'http://api:4000/api/v1/internal/crm/leads/' + $json.leadId + '/quality' }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, score: $json.score, qualityWorkflowKey: $json.qualityWorkflowKey, catalogVersionId: $json.catalogVersionId, intentKey: $json.intent }) }}",
+        "options": {}
+      },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000013",
+      "name": "Store Catalog Quality",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = (typeof $ !== 'undefined' && $('Calculate Catalog Quality').first()?.json) || $json;\nif (!source.leadId || !source.tenantId || !Array.isArray(source.conversation)) throw new Error('Conversation summary input is invalid');\nconst userTurns = source.conversation.filter((message) => message.role === 'user').map((message) => String(message.content ?? '').trim()).filter(Boolean);\nconst assistantTurns = source.conversation.filter((message) => message.role === 'assistant').map((message) => String(message.content ?? '').trim()).filter(Boolean);\nconst contactValues = Object.entries(source.leadData ?? {}).filter(([key, value]) => key !== 'interest' && typeof value === 'string').map(([, value]) => value);\nconst contactTurns = /^(?:\\[NAME_\\d+\\]|\\[EMAIL_\\d+\\]|\\[PHONE_\\d+\\])$/u;\nconst contextTurns = userTurns.filter((turn) => { const normalized = turn.replace(/[\\s.!?,;:]+$/gu, ''); return !contactValues.some((value) => normalized.includes(value)) && !contactTurns.test(normalized); });\nconst customerRequest = contextTurns.at(-1) ?? 'follow-up requested';\nconst projectContext = contextTurns.find((turn) => turn !== customerRequest);\nconst humanIntent = String(source.intent ?? 'lead.capture').replaceAll('.', ' ');\nconst humanInterest = String(source.leadData?.interest ?? source.intentSummary ?? humanIntent);\nconst humanQuality = String(source.quality ?? 'unknown').replace(/^\\w/u, (letter) => letter.toUpperCase());\nconst contactStatus = source.leadData?.email || source.leadData?.phone ? 'Provided' : 'Not provided';\nconst summary = [`Customer request: ${customerRequest}`, ...(projectContext ? [`Project context: ${projectContext}`] : []), `Contact details: ${contactStatus}.`, `Interest: ${humanInterest}.`, `Intent: ${humanIntent}.`, `Lead quality: ${humanQuality} (${source.score ?? 'unknown'}/100).`, `Validation: ${source.validationPass === true ? 'Passed' : 'Not passed'}.`, `Conversation: ${userTurns.length} visitor message(s), ${assistantTurns.length} assistant response(s).`].join('\\n').slice(0, 20000);\nreturn [{ json: { ...source, summary } }];"
+      },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000014",
+      "name": "Generate Conversation Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 0]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
         "url": "={{ 'http://api:4000/api/v1/internal/crm/leads/' + $json.leadId + '/summary' }}",
         "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "x-agentic-internal-secret",
-              "value": "={{ $env.N8N_WEBHOOK_SECRET }}"
-            }
-          ]
-        },
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, summary: $json.summary, status: 'completed' }) }}",
         "options": {}
       },
-      "id": "f8e2e11d-0d3e-4e83-8d21-000000000013",
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000015",
       "name": "Store Conversation Summary",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [540, 0]
+      "position": [1040, 0]
     },
     {
-      "parameters": {
-        "jsCode": "return [{ json: { accepted: true, leadId: $('Generate Conversation Summary').first().json.leadId } }];"
-      },
-      "id": "f8e2e11d-0d3e-4e83-8d21-000000000014",
-      "name": "Return Summary Status",
+      "parameters": { "jsCode": "return [{ json: { accepted: true, leadId: $('Generate Conversation Summary').first().json.leadId, score: $('Generate Conversation Summary').first().json.score, quality: $('Generate Conversation Summary').first().json.quality } }];" },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000016",
+      "name": "Return Quality Status",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [800, 0]
+      "position": [1300, 0]
     }
   ],
   "connections": {
-    "Lead Summary Webhook": { "main": [[{ "node": "Generate Conversation Summary", "type": "main", "index": 0 }]] },
+    "When Lead Is Captured": { "main": [[{ "node": "Calculate Catalog Quality", "type": "main", "index": 0 }]] },
+    "Calculate Catalog Quality": { "main": [[{ "node": "Store Catalog Quality", "type": "main", "index": 0 }]] },
+    "Store Catalog Quality": { "main": [[{ "node": "Generate Conversation Summary", "type": "main", "index": 0 }]] },
     "Generate Conversation Summary": { "main": [[{ "node": "Store Conversation Summary", "type": "main", "index": 0 }]] },
-    "Store Conversation Summary": { "main": [[{ "node": "Return Summary Status", "type": "main", "index": 0 }]] }
+    "Store Conversation Summary": { "main": [[{ "node": "Return Quality Status", "type": "main", "index": 0 }]] }
   },
   "active": true,
   "settings": { "executionOrder": "v1" },
-  "versionId": "f8e2e11d-0d3e-4e83-8d21-000000000015",
+  "versionId": "f8e2e11d-0d3e-4e83-8d21-000000000017",
   "meta": { "templateCredsSetupCompleted": true },
   "tags": []
 }

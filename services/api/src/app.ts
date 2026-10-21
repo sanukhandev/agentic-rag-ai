@@ -1,33 +1,37 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { ActionGateway, MockWorkflowAdapter, isSafeExternalReference, leadQuality, verifyN8nPayload, type WorkflowAdapter } from './actions.js';
+import { ActionGateway, isSafeExternalReference, leadQuality, verifyN8nPayload, type WorkflowAdapter } from './actions.js';
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
 import { cacheKey, createCache, type CacheStore } from './cache.js';
+import { channelAuthMiddleware, ChannelSecretVault, generateChannelKeyId, generateChannelSecret, getChannel } from './channel-auth.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, rankChunksWithVector } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, permittedLanguageReply, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
-import { resolveIntent, validateIntentCatalog } from './intent-catalog.js';
+import { catalogIntentClarification, catalogSlotQuestion, resolveIntent, validateIntentCatalog } from './intent-catalog.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
-import type { CrmLead, Message, Session, SourceStatus, Store, TenantStatus } from './types.js';
+import type { ChannelCredential, CrmLead, IntentCatalogQualityRule, Message, Session, SourceStatus, Store, TenantStatus } from './types.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null };
 export type RateLimitEntry = { count: number; resetAt: number };
 export const pruneExpiredRateLimits = (entries: Map<string, RateLimitEntry>, now = Date.now()): void => {
   for (const [key, entry] of entries) if (entry.resetAt <= now) entries.delete(key);
 };
+const catalogQuality = (score: number, rule: IntentCatalogQualityRule | undefined): ReturnType<typeof leadQuality> => rule ? score >= rule.hotThreshold ? 'hot' : score >= rule.warmThreshold ? 'warm' : score >= rule.nurtureThreshold ? 'nurture' : 'new' : leadQuality(score);
 
 const passwordSchema = z.string().min(8).max(128).regex(/[A-Z]/, 'Password must contain an uppercase letter.').regex(/\d/, 'Password must contain a number.');
 const tenantSchema = z.object({ name: z.string().trim().min(2).max(120), slug: z.string().trim().regex(/^[a-z0-9-]+$/).max(80), adminEmail: z.string().email(), adminPassword: passwordSchema });
 const memberSchema = z.object({ email: z.string().email(), password: passwordSchema, role: z.enum(['tenant_editor', 'tenant_viewer', 'tenant_agent']) });
 const domainSchema = z.object({ hostname: z.string().trim().toLowerCase().regex(/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/, 'A valid hostname is required.') });
 const channelSchema = z.object({ publicOrigin: z.union([z.literal(''), z.string().url().refine((value) => { const url = new URL(value); return (url.protocol === 'http:' || url.protocol === 'https:') && url.pathname === '/' && !url.search && !url.hash; }, 'A public origin must be an HTTP(S) origin without a path.')]), publicChatEnabled: z.boolean().optional() });
+const channelCredentialSchema = z.object({ channel: z.string().trim().toLowerCase().regex(/^[a-z][a-z0-9_-]{1,31}$/, 'Channel must be 2-32 lowercase characters, digits, underscores or hyphens.') });
 const safePersonaText = (max: number) => z.string().trim().min(1).max(max).refine((value) => !/\b(ignore (?:all )?rules|system prompt|search the web|reveal secrets|bypass security)\b/i.test(value), 'Persona contains an unsafe instruction.');
 const DEFAULT_CONTEXT_WINDOW_MESSAGES = 10;
 const MAX_KNOWLEDGE_CONTENT_CHARS = 1_000_000;
+const MAX_INGESTION_BASE64_CHARS = Math.ceil(MAX_INGESTION_FILE_BYTES / 3) * 4;
 const personaSchema = z.object({
   name: safePersonaText(80),
   greeting: safePersonaText(500),
@@ -44,8 +48,9 @@ const personaSchema = z.object({
 });
 const personaPreviewSchema = personaSchema.extend({ message: z.string().trim().min(1).max(4000) });
 const sourceSchema = z.object({ title: z.string().trim().min(1).max(200), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'application/json', 'application/x-ndjson', 'text/html', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']), sourceUrl: z.string().url().optional(), audience: z.enum(['public', 'internal']).default('public'), content: z.string().trim().min(1).max(MAX_KNOWLEDGE_CONTENT_CHARS) });
-const uploadSchema = z.object({ title: z.string().trim().min(1).max(200), fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'application/json', 'application/x-ndjson', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip']), audience: z.enum(['public', 'internal']).default('public'), contentBase64: z.string().min(1).max(7_000_000) });
-const intentCatalogUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/i).refine((value) => value.toLowerCase().endsWith('.xlsx'), 'An .xlsx workbook is required.'), contentBase64: z.string().min(1).max(7_000_000) });
+const uploadSchema = z.object({ title: z.string().trim().min(1).max(200), fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'application/json', 'application/x-ndjson', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip']), audience: z.enum(['public', 'internal']).default('public'), contentBase64: z.string().min(1).max(MAX_INGESTION_BASE64_CHARS) });
+const intentCatalogUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/i).refine((value) => value.toLowerCase().endsWith('.xlsx'), 'An .xlsx workbook is required.'), contentBase64: z.string().min(1).max(MAX_INGESTION_BASE64_CHARS) });
+const intentCatalogEditSchema = z.object({ catalog: z.unknown() });
 const intentCatalogResultSchema = z.object({ sourceHash: z.string().regex(/^[a-f0-9]{64}$/), parserVersion: z.string().trim().min(1).max(120), catalog: z.unknown() });
 const ingestionRequestSchema = sourceSchema.omit({ content: true });
 const ingestionResultSchema = z.object({
@@ -55,7 +60,7 @@ const ingestionResultSchema = z.object({
   chunks: z.array(z.object({ ordinal: z.number().int().nonnegative(), locator: z.string().trim().min(1).max(200), content: z.string().trim().min(1).max(20_000), contentHash: z.string().regex(/^[a-f0-9]{64}$/) })).min(1).max(2_000),
 });
 const ingestionFailureSchema = z.object({ errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('INGESTION_FAILED') });
-const sessionSchema = z.object({ tenantId: z.string().uuid().optional(), tenantSlug: z.string().regex(/^[a-z0-9-]+$/).optional() }).refine((value) => Boolean(value.tenantId || value.tenantSlug), 'tenantId or tenantSlug is required.');
+const sessionSchema = z.object({ tenantId: z.string().uuid().optional(), tenantSlug: z.string().regex(/^[a-z0-9-]+$/).optional() });
 const messageSchema = z.object({ sessionId: z.string().uuid(), message: z.string().trim().min(1).max(4000), clientMessageId: z.string().trim().min(1).max(128) });
 const confirmSchema = z.object({ sessionId: z.string().uuid(), confirmed: z.literal(true) });
 const retentionSchema = z.object({ before: z.string().datetime() });
@@ -65,18 +70,26 @@ const crmLeadSchema = z.object({
   actionId: z.string().uuid(),
   tenantId: z.string().uuid(),
   sessionId: z.string().uuid(),
-  leadData: z.object({ name: leadTokenSchema.optional(), email: leadTokenSchema.optional(), phone: leadTokenSchema.optional() }).strict(),
+  leadData: z.object({ name: leadTokenSchema.optional(), email: leadTokenSchema.optional(), phone: leadTokenSchema.optional(), interest: z.string().trim().min(1).max(200).optional() }).strict(),
   intent: z.string().trim().min(1).max(80),
   intentScore: z.number().int().min(0).max(100).optional(),
   intentConfidence: z.number().min(0).max(1).optional(),
   catalogVersionId: z.string().uuid().nullable().optional(),
   score: z.number().int().min(0).max(100),
   validationPass: z.boolean(),
-  conversation: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(20_000), createdAt: z.string().datetime() })).min(1).max(200)
+  conversation: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(20_000), createdAt: z.string().datetime() })).min(1).max(200),
+  completeAction: z.boolean().default(true)
 });
 const crmSummarySchema = z.object({ tenantId: z.string().uuid(), summary: z.string().trim().min(1).max(20_000), status: z.enum(['completed', 'failed']) });
+const crmQualificationSchema = z.object({ tenantId: z.string().uuid(), score: z.number().int().min(0).max(100), summary: z.string().trim().min(1).max(20_000) });
+const crmRemoteSchema = z.object({ tenantId: z.string().uuid(), leadId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteCrm: z.string().trim().min(1).max(80).regex(/^[A-Za-z][A-Za-z0-9._:-]*$/u) });
+const crmRemotePayloadSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid() });
+const workflowClaimSchema = z.object({ workflowKey: z.string().trim().regex(/^[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)+$/i), contract: z.string().trim().min(1).max(120).optional(), limit: z.number().int().min(1).max(50).default(10) });
+const workflowCompletionSchema = z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['completed', 'failed']), externalReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u).optional() });
+const crmQualitySchema = z.object({ tenantId: z.string().uuid(), score: z.number().int().min(0).max(100), qualityWorkflowKey: z.string().trim().min(1).max(80), catalogVersionId: z.string().uuid(), intentKey: z.string().trim().min(1).max(80) });
 
 const publicUser = (user: { id: string; email: string; role: string; tenantId: string | null }) => ({ id: user.id, email: user.email, role: user.role, tenantId: user.tenantId });
+const publicChannelCredential = (credential: ChannelCredential) => ({ id: credential.id, tenantId: credential.tenantId, channel: credential.channel, keyId: credential.keyId, active: credential.active, createdAt: credential.createdAt, revokedAt: credential.revokedAt });
 
 class HttpError extends Error {
   constructor(public readonly status: number, public readonly code: string, message: string) { super(message); this.name = 'HttpError'; }
@@ -85,6 +98,17 @@ class HttpError extends Error {
 const errorProperty = (error: unknown, property: string): unknown => typeof error === 'object' && error !== null && property in error ? error[property as keyof typeof error] : undefined;
 const errorType = (error: unknown): string | undefined => { const value = errorProperty(error, 'type'); return typeof value === 'string' ? value : undefined; };
 const errorCode = (error: unknown): string | undefined => { const value = errorProperty(error, 'code'); return typeof value === 'string' ? value : undefined; };
+export const isValidBase64 = (value: string): boolean => {
+  if (value.length === 0 || value.length % 4 !== 0) return false;
+  const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+  const payloadLength = value.length - padding;
+  if (value.slice(0, payloadLength).includes('=')) return false;
+  for (let index = 0; index < payloadLength; index += 1) {
+    const code = value.charCodeAt(index);
+    if (!((code >= 65 && code <= 90) || (code >= 97 && code <= 122) || (code >= 48 && code <= 57) || code === 43 || code === 47)) return false;
+  }
+  return padding === 0 || (padding === 1 ? payloadLength % 4 === 3 : payloadLength % 4 === 2);
+};
 
 const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
   const result = schema.safeParse(value);
@@ -124,7 +148,7 @@ const enforcePublicOrigin = (req: Request, tenant: { publicOrigin: string | null
 };
 
 const enforcePublicChatEnabled = (req: Request, tenant: { publicChatEnabled: boolean }): void => {
-  if (!getAuth(req) && !tenant.publicChatEnabled) throw new HttpError(423, 'TENANT_UNAVAILABLE', 'This tenant is not accepting public chat.');
+  if (!getAuth(req) && !getChannel(req) && !tenant.publicChatEnabled) throw new HttpError(423, 'TENANT_UNAVAILABLE', 'This tenant is not accepting public chat.');
 };
 
 const sessionExpired = (lastActivityAt: string, closedAt: string | null, ttlMs: number): boolean => Boolean(closedAt) || !Number.isFinite(Date.parse(lastActivityAt)) || Date.parse(lastActivityAt) + ttlMs <= Date.now();
@@ -141,11 +165,33 @@ const validateSourceUrl = async (store: Store, tenantId: string, sourceUrl: stri
 
 const canonicalKnowledgeText = (input: string): string => sanitizeKnowledgeText(input.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
 
+const crmDedupeKey = (tenantId: string, leadData: { email?: string; phone?: string }, session: Session, tokenVault: TokenVault, secret: string): string => {
+  const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm');
+  const identity = leadData.email ? `email:${rehydrate(leadData.email).trim().toLowerCase()}` : leadData.phone ? `phone:${rehydrate(leadData.phone).replace(/\D/g, '')}` : '';
+  if (!identity) throw new HttpError(422, 'LEAD_IDENTITY_REQUIRED', 'A lead requires an email address or phone number.');
+  return createHmac('sha256', secret).update(`crm-lead:${tenantId}:${identity}`).digest('hex');
+};
+
+const pendingCatalogSlotValue = (validationRule: string, rawInput: string, maskedInput: string, session: Session, tokenVault: TokenVault): string | null => {
+  const tokenKind = validationRule.match(/^token:(NAME|EMAIL|PHONE)$/u)?.[1];
+  if (tokenKind) {
+    const existing = maskedInput.match(new RegExp(`\\[${tokenKind}_\\d+\\]`, 'u'))?.[0];
+    if (existing) return existing;
+    if (tokenKind !== 'NAME' || !/^\p{L}+(?:[ '\u2019-]\p{L}+){0,3}$/u.test(rawInput.trim())) return null;
+    return maskPiiForSession(session, `My name is ${rawInput.trim()}`, tokenVault).match(/\[NAME_\d+\]/u)?.[0] ?? null;
+  }
+  if (validationRule === 'boolean:explicit_opt_in') {
+    return /^(?:yes|y|yeah|yep|yes\s*,?\s+i\s+(?:(?:do|explicitly)\s+)?consent(?:\s+to\s+.*)?|i\s+(?:(?:do|explicitly)\s+)?consent(?:\s+to\s+.*)?|i\s+agree(?:\s+to\s+.*)?|i\s+authorize(?:\s+.*)?|go\s+ahead|you\s+may\s+contact\s+me)[.!\s]*$/iu.test(rawInput.trim()) ? 'true' : null;
+  }
+  return validationRule === 'text:nonempty' && maskedInput.trim() ? maskedInput.trim() : null;
+};
+
 export interface AppDependencies {
   store?: Store;
   model?: ChatModel;
   workflow?: WorkflowAdapter;
   jwtSecret?: string;
+  channelCredentialKey?: string;
   nodeEnv?: string;
   tokenVault?: TokenVault;
   embedding?: EmbeddingProvider;
@@ -165,12 +211,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const store = dependencies.store ?? new MemoryStore();
   const cache = dependencies.cache ?? createCache(process.env.REDIS_URL);
   const model = dependencies.model ?? new DeterministicGroundedModel();
-  const workflow = dependencies.workflow ?? new MockWorkflowAdapter();
+  const workflow = dependencies.workflow;
   const nodeEnv = dependencies.nodeEnv ?? process.env.NODE_ENV ?? 'development';
   const jwtSecret = dependencies.jwtSecret ?? process.env.JWT_SECRET ?? 'local-development-only-change-me';
+  const configuredChannelCredentialKey = dependencies.channelCredentialKey ?? process.env.CHANNEL_CREDENTIAL_KEY;
+  const channelCredentialKey = configuredChannelCredentialKey ?? 'local-development-channel-key';
   const vaultSecret = process.env.PII_VAULT_KEY ?? 'local-development-pii-vault-key';
   if (nodeEnv === 'production' && ((!dependencies.jwtSecret && !process.env.JWT_SECRET) || (!dependencies.tokenVault && !process.env.PII_VAULT_KEY))) throw new Error('Production JWT_SECRET and PII_VAULT_KEY are required.');
   const tokenVault = dependencies.tokenVault ?? new TokenVault(vaultSecret);
+  const channelVault = new ChannelSecretVault(channelCredentialKey);
   const embedding = dependencies.embedding ?? new DeterministicEmbeddingProvider();
   const n8nCallbackSecret = dependencies.n8nCallbackSecret ?? process.env.N8N_WEBHOOK_SECRET ?? '';
   const ingestionWorkerSecret = dependencies.ingestionWorkerSecret ?? process.env.INGESTION_WORKER_SECRET ?? '';
@@ -184,7 +233,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const chatResponseCacheTtlSeconds = readCacheTtl(dependencies.chatResponseCacheTtlSeconds, 'CHAT_RESPONSE_CACHE_TTL_SECONDS', 60, 300);
   const rateLimitMax = readRateLimit(dependencies.rateLimitMax, 'API_RATE_LIMIT_MAX', nodeEnv === 'development' ? 600 : 120, 100_000);
   const rateLimitWindowMs = readRateLimit(dependencies.rateLimitWindowMs, 'API_RATE_LIMIT_WINDOW_MS', 60_000, 3_600_000);
-  if (nodeEnv === 'production' && (!dependencies.model || !dependencies.embedding || !dependencies.workflow || !n8nCallbackSecret || !ingestionWorkerSecret)) throw new Error('Production Azure, embedding, workflow, callback and ingestion adapters are required.');
+  if (nodeEnv === 'production' && (!dependencies.model || !dependencies.embedding || !n8nCallbackSecret || !ingestionWorkerSecret)) throw new Error('Production Azure, embedding, n8n polling and ingestion adapters are required.');
+  if (nodeEnv === 'production' && (!configuredChannelCredentialKey || /^(?:replace-with|local-development|change-me)/i.test(configuredChannelCredentialKey))) throw new Error('Production CHANNEL_CREDENTIAL_KEY is required.');
   if (nodeEnv === 'production' && !dependencies.cache && !process.env.REDIS_URL) throw new Error('Production requires REDIS_URL.');
   if (!Number.isFinite(chatSessionTtlMs) || chatSessionTtlMs <= 0) throw new Error('CHAT_SESSION_TTL_MS must be a positive number.');
   const ensureLiveSession = (lastActivityAt: string, closedAt: string | null): void => { if (closedAt) throw new HttpError(410, 'SESSION_CLOSED', 'This chat session has ended.'); if (sessionExpired(lastActivityAt, closedAt, chatSessionTtlMs)) throw new HttpError(410, 'SESSION_EXPIRED', 'This chat session has expired.'); };
@@ -238,12 +288,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (origin && !allowed.has(origin)) {
       try { if ((await store.listTenants()).some((tenant) => tenant.status === 'active' && tenant.publicChatEnabled && tenant.publicOrigin === origin)) allowed.add(origin); } catch { /* readiness endpoint reports store failures */ }
     }
-    if (origin && allowed.has(origin)) { res.setHeader('access-control-allow-origin', origin); res.setHeader('access-control-allow-headers', 'content-type,authorization,x-request-id,x-tenant-id'); res.setHeader('access-control-allow-methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS'); res.setHeader('vary', 'Origin'); }
+    if (origin && allowed.has(origin)) { res.setHeader('access-control-allow-origin', origin); res.setHeader('access-control-allow-headers', 'content-type,authorization,x-request-id,x-tenant-id,x-agentic-key-id,x-agentic-timestamp,x-agentic-nonce,x-agentic-signature'); res.setHeader('access-control-allow-methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS'); res.setHeader('vary', 'Origin'); }
     if (req.method === 'OPTIONS') { res.status(origin && allowed.has(origin) ? 204 : 403).end(); return; }
     next();
   });
-  // shortcut: one bounded JSON parser supports local 5 MiB base64 uploads; replace with streaming/object storage before production.
-  app.use(express.json({ limit: '8mb' }));
+  // shortcut: one bounded JSON parser supports local 20 MiB base64 uploads; replace with streaming/object storage before production.
+  app.use(express.json({ limit: '30mb' }));
   app.use((req, res, next) => { const started = Date.now(); res.once('finish', () => { const elapsed = Date.now() - started; const failed = res.statusCode >= 500 ? 1 : 0; const timestamp = new Date().toISOString(); telemetry.requests += 1; telemetry.serverErrors += failed; telemetry.totalLatencyMs += elapsed; telemetry.lastRequestAt = timestamp; const tenantId = (req as AuthedRequest).auth?.tenantId; if (tenantId) { const scoped = tenantTelemetry.get(tenantId) ?? newTelemetry(); scoped.requests += 1; scoped.serverErrors += failed; scoped.totalLatencyMs += elapsed; scoped.lastRequestAt = timestamp; tenantTelemetry.set(tenantId, scoped); } }); next(); });
   app.use((req, res, next) => {
     if (!req.path.startsWith('/api/')) { next(); return; }
@@ -260,10 +310,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
 
   const crmLeadForAdmin = async (lead: CrmLead): Promise<CrmLead & { quality: ReturnType<typeof leadQuality> }> => {
+    const version = lead.catalogVersionId ? await store.getIntentCatalogVersion(lead.tenantId, lead.catalogVersionId) : null;
+    const qualityRule = version?.catalog.qualityRules?.find((rule) => rule.intentKey === lead.intent);
+    const quality = catalogQuality(lead.score, qualityRule);
     const session = await store.getSession(lead.sessionId);
-    if (!session) return { ...lead, quality: leadQuality(lead.score) };
+    if (!session) return { ...lead, quality };
     const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm');
-    return { ...lead, quality: leadQuality(lead.score), leadData: { ...(lead.leadData.name ? { name: rehydrate(lead.leadData.name) } : {}), ...(lead.leadData.email ? { email: rehydrate(lead.leadData.email) } : {}), ...(lead.leadData.phone ? { phone: rehydrate(lead.leadData.phone) } : {}) }, conversation: lead.conversation.map((message) => ({ ...message, content: rehydrate(message.content) })), summary: lead.summary ? rehydrate(lead.summary) : null };
+    return { ...lead, quality, leadData: { ...(lead.leadData.name ? { name: rehydrate(lead.leadData.name) } : {}), ...(lead.leadData.email ? { email: rehydrate(lead.leadData.email) } : {}), ...(lead.leadData.phone ? { phone: rehydrate(lead.leadData.phone) } : {}), ...(lead.leadData.interest ? { interest: lead.leadData.interest } : {}) }, conversation: lead.conversation.map((message) => ({ ...message, content: rehydrate(message.content) })), summary: lead.summary ? rehydrate(lead.summary) : null };
   };
 
   app.get('/api/v1/health/live', (_req, res) => res.json({ status: 'ok' }));
@@ -292,6 +345,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
 
   const protectedApi = authMiddleware(auth);
   const optionalApi = authMiddleware(auth, false);
+  const channelApi = channelAuthMiddleware(store, channelVault);
+  const chatApi = (req: Request, res: Response, next: NextFunction): void => {
+    optionalApi(req, res, () => {
+      if (getAuth(req)) { next(); return; }
+      void channelApi(req, res, next).catch(next);
+    });
+  };
 
   app.post('/api/v1/auth/logout', protectedApi, async (req, res) => { const token = req.header('authorization')?.slice(7); if (token) await auth.revoke(token); res.status(204).send(); });
   app.get('/api/v1/auth/me', protectedApi, (req, res) => { const current = getAuth(req); if (!current) { res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required.' } }); return; } res.json({ user: current }); });
@@ -325,6 +385,20 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.delete('/api/v1/admin/domains/:id', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const id = routeParam(req, 'id'); if (!(await store.removeDomain(id, tenantId))) throw new HttpError(404, 'DOMAIN_NOT_FOUND', 'Domain not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'domain.deleted', metadata: { domainId: id }, createdAt: new Date().toISOString() }); res.status(204).send(); } catch (error) { next(error); } });
   app.get('/api/v1/admin/channel', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenant = await activeTenant(store, await tenantForRequest(store, req)); res.json({ publicOrigin: tenant.publicOrigin, publicChatEnabled: tenant.publicChatEnabled }); } catch (error) { next(error); } });
   app.patch('/api/v1/admin/channel', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const input = parse(channelSchema, req.body); let tenant = await store.setTenantPublicOrigin(tenantId, input.publicOrigin ? new URL(input.publicOrigin).origin : null); if (tenant && input.publicChatEnabled !== undefined) tenant = await store.setTenantPublicChatEnabled(tenantId, input.publicChatEnabled); if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'tenant.channel_updated', metadata: { publicOrigin: tenant.publicOrigin, publicChatEnabled: tenant.publicChatEnabled }, createdAt: new Date().toISOString() }); res.json({ publicOrigin: tenant.publicOrigin, publicChatEnabled: tenant.publicChatEnabled }); } catch (error) { next(error); } });
+  app.get('/api/v1/admin/channels', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { res.json({ items: (await store.listChannelCredentials(await tenantForRequest(store, req))).map(publicChannelCredential) }); } catch (error) { next(error); } });
+  app.post('/api/v1/admin/channels', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      await activeTenant(store, tenantId);
+      const input = parse(channelCredentialSchema, req.body);
+      if ((await store.listChannelCredentials(tenantId)).some((credential) => credential.channel === input.channel && credential.active)) throw new HttpError(409, 'CHANNEL_EXISTS', 'An active credential already exists for this channel.');
+      const secret = generateChannelSecret();
+      const credential = await store.createChannelCredential({ id: randomUUID(), tenantId, channel: input.channel, keyId: generateChannelKeyId(), secretCiphertext: channelVault.encrypt(secret), active: true });
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'channel.credential_created', metadata: { channel: credential.channel, credentialId: credential.id }, createdAt: new Date().toISOString() });
+      res.status(201).json({ credential: publicChannelCredential(credential), secret, warning: 'Store this secret now. It is shown only once.' });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/admin/channels/:id/revoke', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const credential = await store.revokeChannelCredential(routeParam(req, 'id'), tenantId); if (!credential) throw new HttpError(404, 'CHANNEL_NOT_FOUND', 'Channel credential not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'channel.credential_revoked', metadata: { channel: credential.channel, credentialId: credential.id }, createdAt: new Date().toISOString() }); res.json({ credential: publicChannelCredential(credential) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/dashboard/overview', protectedApi, async (req, res, next) => { try { res.json({ tenantId: await tenantForRequest(store, req), metrics: await store.getTenantStats(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.post('/api/v1/admin/retention/purge-sessions', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
     try {
@@ -352,7 +426,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           cache: { status: isCacheOk },
           model: { status: dependencies.model ? 'ok' : 'adapter' },
           embedding: { status: dependencies.embedding ? 'ok' : 'adapter' },
-          workflow: { status: dependencies.workflow ? 'ok' : 'adapter' },
+          workflow: { status: 'catalog-polling' },
           ingestion: { status: ingestionWorkerSecret ? 'ok' : 'ready' }
         }
       });
@@ -366,7 +440,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           cache: { status: 'down' },
           model: { status: dependencies.model ? 'ok' : 'adapter' },
           embedding: { status: dependencies.embedding ? 'ok' : 'adapter' },
-          workflow: { status: dependencies.workflow ? 'ok' : 'adapter' },
+          workflow: { status: 'catalog-polling' },
           ingestion: { status: ingestionWorkerSecret ? 'ok' : 'ready' }
         }
       });
@@ -390,7 +464,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.post('/api/v1/admin/persona/preview', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
     try {
       const tenantId = await tenantForRequest(store, req);
-      await activeTenant(store, tenantId);
+      const tenant = await activeTenant(store, tenantId);
       const input = parse(personaPreviewSchema, req.body);
       const masked = maskPii(input.message);
       const previewSession = { id: randomUUID(), tenantId, createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
@@ -404,14 +478,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const conversational = intent !== null && (languageAllowed || language === 'ar');
       let draft: ModelDraft;
       if (!languageAllowed && !conversational) draft = { answer: permittedLanguageReply(language, input.permittedLanguages), citationIds: [], proposedIntent: null };
+      else if (conversational && intent === 'identity') draft = { answer: conversationalReply(intent, input.name, language, tenant.name), citationIds: [], proposedIntent: null };
       else if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null };
-      else if (conversational && evidence.length === 0) draft = { answer: intent === 'greeting' && language !== 'ar' ? input.greeting : conversationalReply(intent ?? 'identity', input.name, language), citationIds: [], proposedIntent: null };
-      else draft = await model.draft({ maskedMessage: masked.masked, evidence, personaName: input.name, persona: input });
+      else if (conversational && evidence.length === 0) draft = { answer: intent === 'greeting' && language !== 'ar' ? input.greeting : conversationalReply(intent ?? 'identity', input.name, language, tenant.name), citationIds: [], proposedIntent: null };
+      else draft = await model.draft({ maskedMessage: masked.masked, evidence, personaName: input.name, ownerName: tenant.name, persona: input });
       assertKnownTokens(previewSession, draft.answer, tokenVault);
       const citations = validateCitations(draft, evidence);
       const grounded = languageAllowed && hasSufficientEvidence(draft.answer, evidence, citations);
       const safeCitations = grounded ? citations : [];
-      const casualFallback = conversational && evidence.length === 0;
+      const casualFallback = conversational && (evidence.length === 0 || intent === 'identity');
       const answer = !languageAllowed ? draft.answer : casualFallback ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
       res.json({ preview: { answer: rehydrateForSession(previewSession, answer, tokenVault), grounded, citations: safeCitations, persona: { name: input.name, permittedLanguages: input.permittedLanguages } } });
     } catch (error) { next(error); }
@@ -471,9 +546,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const input = parse(uploadSchema, req.body);
       const extension = ingestionStaging.extensionFor(input.mimeType);
       if (!extension || !input.fileName.toLowerCase().endsWith(extension)) throw new HttpError(422, 'FILE_TYPE_MISMATCH', 'The file extension does not match the selected type.');
-      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(input.contentBase64)) throw new HttpError(422, 'INVALID_FILE_ENCODING', 'The file content must be valid base64.');
+      if (!isValidBase64(input.contentBase64)) throw new HttpError(422, 'INVALID_FILE_ENCODING', 'The file content must be valid base64.');
       const content = Buffer.from(input.contentBase64, 'base64');
-      if (content.length === 0 || content.length > MAX_INGESTION_FILE_BYTES || content.toString('base64').replace(/=+$/, '') !== input.contentBase64.replace(/=+$/, '')) throw new HttpError(422, 'INVALID_FILE_CONTENT', 'The file is empty, malformed or exceeds the 5 MiB limit.');
+      if (content.length === 0 || content.length > MAX_INGESTION_FILE_BYTES || content.toString('base64').replace(/=+$/, '') !== input.contentBase64.replace(/=+$/, '')) throw new HttpError(422, 'INVALID_FILE_CONTENT', 'The file is empty, malformed or exceeds the 20 MiB limit.');
       if (!hasValidFileSignature(input.mimeType, content)) throw new HttpError(422, 'INVALID_FILE_SIGNATURE', 'The file signature does not match its declared type.');
       const jobId = randomUUID();
       try {
@@ -492,9 +567,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const tenantId = await tenantForRequest(store, req);
       await activeTenant(store, tenantId);
       const input = parse(intentCatalogUploadSchema, req.body);
-      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(input.contentBase64)) throw new HttpError(422, 'INVALID_FILE_ENCODING', 'The workbook content must be valid base64.');
+      if (!isValidBase64(input.contentBase64)) throw new HttpError(422, 'INVALID_FILE_ENCODING', 'The workbook content must be valid base64.');
       const content = Buffer.from(input.contentBase64, 'base64');
-      if (content.length === 0 || content.length > MAX_INGESTION_FILE_BYTES || content.toString('base64').replace(/=+$/, '') !== input.contentBase64.replace(/=+$/, '')) throw new HttpError(422, 'INVALID_FILE_CONTENT', 'The workbook is empty, malformed or exceeds the 5 MiB limit.');
+      if (content.length === 0 || content.length > MAX_INGESTION_FILE_BYTES || content.toString('base64').replace(/=+$/, '') !== input.contentBase64.replace(/=+$/, '')) throw new HttpError(422, 'INVALID_FILE_CONTENT', 'The workbook is empty, malformed or exceeds the 20 MiB limit.');
       if (!hasValidFileSignature('application/vnd.agentic.intent-catalog+excel', content)) throw new HttpError(422, 'INVALID_FILE_SIGNATURE', 'The workbook signature is invalid.');
       const jobId = randomUUID();
       try {
@@ -509,6 +584,22 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     } catch (error) { next(error); }
   });
   app.get('/api/v1/admin/intent-catalog/versions', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listIntentCatalogVersions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.post('/api/v1/admin/intent-catalog/versions/:id/drafts', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const tenant = await activeTenant(store, tenantId);
+      const version = await store.getIntentCatalogVersion(tenantId, routeParam(req, 'id'));
+      if (!version) throw new HttpError(404, 'INTENT_CATALOG_VERSION_NOT_FOUND', 'Intent catalog version not found.');
+      const input = parse(intentCatalogEditSchema, req.body);
+      const validation = validateIntentCatalog(input.catalog);
+      if (!validation.catalog) throw new HttpError(422, 'CATALOG_VALIDATION_FAILED', validation.errors.join(' '));
+      if (validation.catalog.tenantScope && validation.catalog.tenantScope !== tenant.slug) throw new HttpError(422, 'CATALOG_TENANT_MISMATCH', 'The catalog tenant scope does not match the selected tenant.');
+      const catalogJson = JSON.stringify(validation.catalog);
+      const draft = await store.createIntentCatalogVersion({ tenantId, status: 'draft', sourceFileName: `${version.sourceFileName} (manual edit)`, sourceHash: contentHash(catalogJson), parserVersion: 'intent-catalog-manual-1.0.0', catalog: validation.catalog });
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog.edited', metadata: { baseVersionId: version.id, versionId: draft.id, version: draft.version }, createdAt: new Date().toISOString() });
+      res.status(201).json({ version: draft });
+    } catch (error) { next(error); }
+  });
   app.post('/api/v1/admin/intent-catalog/versions/:id/publish', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
     try {
       const tenantId = await tenantForRequest(store, req);
@@ -681,14 +772,18 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     } catch (error) { next(error); }
   });
 
-  app.post('/api/v1/chat/sessions', optionalApi, async (req, res, next) => {
+  app.post('/api/v1/chat/sessions', chatApi, async (req, res, next) => {
     try {
+      const channel = getChannel(req);
       const input = parse(sessionSchema, req.body);
+      if (channel && (input.tenantId || input.tenantSlug)) throw new HttpError(400, 'CHANNEL_TENANT_INPUT_FORBIDDEN', 'Signed channel sessions resolve the tenant from the channel credential.');
+      if (!channel && !input.tenantId && !input.tenantSlug) throw new HttpError(422, 'TENANT_REQUIRED', 'tenantId or tenantSlug is required.');
       if (input.tenantId && !getAuth(req)) throw new HttpError(403, 'TENANT_REQUIRED', 'Public sessions must use an approved tenant slug.');
-      const tenant = input.tenantId ? await store.getTenant(input.tenantId) : await store.getTenantBySlug(input.tenantSlug ?? '');
+      const tenant = channel ? await store.getTenant(channel.tenantId) : input.tenantId ? await store.getTenant(input.tenantId) : await store.getTenantBySlug(input.tenantSlug ?? '');
       if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.');
+      if (channel && channel.tenantId !== tenant.id) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.');
       if (!ensureTenant(req, tenant.id) && getAuth(req)?.role !== undefined) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.');
-      if (!getAuth(req)) enforcePublicOrigin(req, tenant, nodeEnv);
+      if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
       if (tenant.status !== 'active') throw new HttpError(423, 'TENANT_UNAVAILABLE', 'This tenant is not accepting public chat.');
       enforcePublicChatEnabled(req, tenant);
       const publishedPersona = (await store.listPersonaVersions(tenant.id)).find((version) => version.status === 'published');
@@ -697,17 +792,18 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     } catch (error) { next(error); }
   });
 
-  app.post('/api/v1/chat/messages', optionalApi, async (req, res, next) => {
+  app.post('/api/v1/chat/messages', chatApi, async (req, res, next) => {
     let pendingMessage: Message | null = null;
     try {
       const input = parse(messageSchema, req.body);
+      const channel = getChannel(req);
       const session = await store.getSession(input.sessionId);
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
       ensureLiveSession(session.lastActivityAt, session.closedAt);
       const tenant = await activeTenant(store, session.tenantId);
-      if (!getAuth(req)) enforcePublicOrigin(req, tenant, nodeEnv);
+      if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
       enforcePublicChatEnabled(req, tenant);
-      if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.');
+      if ((channel && channel.tenantId !== session.tenantId) || (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin')) throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.');
       const masked = maskPii(input.message);
       const responseCacheKey = cacheKey('chat-response', session.tenantId, session.id, input.clientMessageId);
       const cachedResponse = await cache.get<Record<string, unknown>>(responseCacheKey);
@@ -720,7 +816,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       saveTokens(session, masked.tokens, tokenVault);
       session.lastActivityAt = new Date().toISOString();
       await store.updateSession(session);
-      const userMessage = durableDuplicate ?? await store.addMessage({ id: randomUUID(), sessionId: session.id, tenantId: session.tenantId, role: 'user', maskedContent: masked.masked, citations: [], clientMessageId: input.clientMessageId, response: null, createdAt: new Date().toISOString() });
+      let userMessage = durableDuplicate ?? await store.addMessage({ id: randomUUID(), sessionId: session.id, tenantId: session.tenantId, role: 'user', maskedContent: masked.masked, citations: [], clientMessageId: input.clientMessageId, response: null, createdAt: new Date().toISOString() });
       pendingMessage = userMessage;
       const internal = ensureTenant(req, session.tenantId) && getAuth(req)?.role !== undefined;
       const persona = session.personaVersionId
@@ -735,23 +831,49 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const contextWindowMessages = persona?.contextWindowMessages ?? DEFAULT_CONTEXT_WINDOW_MESSAGES;
       let evidence: ModelEvidence[] = [];
       let draft: ModelDraft;
-      const recentMessages = intent === null && (needsConversationContext(masked.masked) || leadDataRequested) ? (await store.listMessages(session.id, session.tenantId, contextWindowMessages + 1)).filter((message) => message.id !== userMessage.id).slice(-contextWindowMessages) : [];
-      const conversation = recentMessages.map((message) => ({ role: message.role, content: message.maskedContent }));
-      const retrievalQuery = [masked.masked, ...recentMessages.filter((message) => message.role === 'user').map((message) => message.maskedContent)].join('\n');
-      const leadData = mergeLeadData(...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), extractLeadData(masked.masked));
-      const leadReady = Boolean(leadData.name && (leadData.email || leadData.phone));
       const publishedCatalog = await store.getPublishedIntentCatalog(session.tenantId);
-      const catalogResolution = publishedCatalog ? resolveIntent(publishedCatalog, retrievalQuery, leadData as Record<string, string>) : null;
+      const catalogHistory = publishedCatalog ? await store.listMessages(session.id, session.tenantId, contextWindowMessages + 1) : [];
+      const lastCatalogAssistant = [...catalogHistory].reverse().find((message) => message.role === 'assistant');
+      const pendingCatalogIntent = typeof lastCatalogAssistant?.response?.catalogIntentKey === 'string' && typeof lastCatalogAssistant.response.catalogVersionId === 'string' && lastCatalogAssistant.response.catalogVersionId === publishedCatalog?.id ? lastCatalogAssistant.response.catalogIntentKey : null;
+      const pendingCatalogValues = lastCatalogAssistant?.response?.catalogSlotValues && typeof lastCatalogAssistant.response.catalogSlotValues === 'object' && !Array.isArray(lastCatalogAssistant.response.catalogSlotValues) ? Object.fromEntries(Object.entries(lastCatalogAssistant.response.catalogSlotValues).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {};
+      const pendingSlot = publishedCatalog && pendingCatalogIntent ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === pendingCatalogIntent && slot.slotKey === (lastCatalogAssistant?.response?.catalogSlotKey ?? '')) : null;
+      const pendingNameIsIntentPhrase = pendingSlot?.slotKey === 'name' && publishedCatalog
+        ? publishedCatalog.catalog.signals.some((signal) => signal.intentKey === pendingCatalogIntent && signal.signalType === 'phrase' && signal.value && masked.masked.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').includes(signal.value.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim()))
+        : false;
+      const pendingValue = pendingSlot && !pendingNameIsIntentPhrase ? pendingCatalogSlotValue(pendingSlot.validationRule, input.message, masked.masked, session, tokenVault) : null;
+      const maskedMessage = pendingSlot?.slotKey === 'name' && pendingValue && masked.masked.trim() === input.message.trim() ? pendingValue : masked.masked;
+      if (maskedMessage !== userMessage.maskedContent) {
+        userMessage = await store.updateMessage({ ...userMessage, maskedContent: maskedMessage });
+      }
+      const pendingValueData = pendingSlot?.slotKey === 'name' && pendingValue ? { name: pendingValue } : pendingSlot?.slotKey === 'email' && pendingValue ? { email: pendingValue } : pendingSlot?.slotKey === 'phone' && pendingValue ? { phone: pendingValue } : {};
+      const pendingCatalogValueData = pendingSlot && pendingValue ? { [pendingSlot.slotKey]: pendingValue } : {};
+      const currentLeadData = mergeLeadData(pendingCatalogValues, extractLeadData(maskedMessage), pendingValueData);
+      const currentCatalogSlotValues = { ...pendingCatalogValues, ...extractLeadData(maskedMessage), ...pendingCatalogValueData };
+      const currentCatalogResolution = publishedCatalog ? resolveIntent(publishedCatalog, maskedMessage, currentCatalogSlotValues) : null;
+      const useCatalogContext = Boolean(publishedCatalog && (pendingCatalogIntent || (!currentCatalogResolution?.intentKey && (needsConversationContext(maskedMessage) || leadDataRequested))));
+      const recentMessages = intent === null && (needsConversationContext(maskedMessage) || leadDataRequested || useCatalogContext) ? (publishedCatalog ? catalogHistory : await store.listMessages(session.id, session.tenantId, contextWindowMessages + 1)).filter((message) => message.id !== userMessage.id).slice(-contextWindowMessages) : [];
+      const conversation = recentMessages.map((message) => ({ role: message.role, content: message.maskedContent }));
+      const retrievalQuery = [maskedMessage, ...recentMessages.filter((message) => message.role === 'user').map((message) => message.maskedContent)].join('\n');
+      const leadData = mergeLeadData(pendingCatalogValues, ...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), currentLeadData);
+      const catalogSlotValues = { ...pendingCatalogValues, ...Object.fromEntries(recentMessages.filter((message) => message.role === 'user').flatMap((message) => Object.entries(extractLeadData(message.maskedContent)))), ...extractLeadData(maskedMessage), ...pendingCatalogValueData };
+      const leadReady = Boolean(leadData.name && (leadData.email || leadData.phone));
+      const catalogResolution = publishedCatalog
+        ? useCatalogContext
+          ? resolveIntent(publishedCatalog, retrievalQuery, catalogSlotValues)
+          : currentCatalogResolution
+        : null;
       const legacyLeadIntent = leadRequestedNow || recentMessages.some((message) => message.role === 'user' && hasLeadIntent(message.maskedContent));
       const leadIntent = languageAllowed && (publishedCatalog ? Boolean(catalogResolution?.intentKey) : legacyLeadIntent);
       const catalogSlotsReady = catalogResolution ? catalogResolution.missingSlots.length === 0 : leadReady;
       const leadCollection = leadIntent && !catalogSlotsReady;
-      if (!languageAllowed && !conversational) draft = { answer: permittedLanguageReply(language, persona?.permittedLanguages ?? []), citationIds: [], proposedIntent: null };
-      else if (catalogResolution?.ambiguous) draft = { answer: 'I can help with that. Are you looking to request a service or arrange a meeting?', citationIds: [], proposedIntent: null };
-      else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'intent_inactive') draft = { answer: 'I can note that request, but the matching workflow is not currently enabled.', citationIds: [], proposedIntent: null };
-      else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length > 0 && catalogResolution.intentKey !== 'lead.capture') draft = { answer: `To continue, please provide: ${catalogResolution.missingSlots.join(', ')}.`, citationIds: [], proposedIntent: null };
+       if (!languageAllowed && !conversational) draft = { answer: permittedLanguageReply(language, persona?.permittedLanguages ?? []), citationIds: [], proposedIntent: null };
+       else if (catalogResolution?.ambiguous) draft = { answer: 'I can help with that. Are you looking to request a service or arrange a meeting?', citationIds: [], proposedIntent: null };
+       else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'below_threshold') draft = { answer: catalogIntentClarification(publishedCatalog, catalogResolution.intentKey), citationIds: [], proposedIntent: null };
+       else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'intent_inactive') draft = { answer: 'I can note that request, but the matching workflow is not currently enabled.', citationIds: [], proposedIntent: null };
+      else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length > 0) draft = { answer: catalogSlotQuestion(publishedCatalog, catalogResolution.intentKey, catalogResolution.missingSlots[0] ?? ''), citationIds: [], proposedIntent: null };
       else if (leadIntent && !catalogSlotsReady) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: null };
       else if (leadReady || catalogResolution?.actionAllowed) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: catalogResolution?.intentKey ?? 'lead.capture' };
+      else if (conversational && intent === 'identity') draft = { answer: conversationalReply(intent, persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
       else {
         let queryEmbedding: number[];
         try { queryEmbedding = await embedding.embed(retrievalQuery); } catch { throw new HttpError(503, 'EMBEDDING_UNAVAILABLE', 'The assistant is currently unable to search approved knowledge.'); }
@@ -759,26 +881,29 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const ranked = rankChunksWithVector(retrievalQuery, rows, queryEmbedding, 4);
         evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: chunk.content }));
         if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null };
-        else if (conversational && evidence.length === 0) draft = { answer: intent === 'greeting' && language !== 'ar' ? persona?.greeting ?? conversationalReply(intent, persona?.name ?? 'Sales assistant') : conversationalReply(intent ?? 'identity', persona?.name ?? 'Sales assistant', language), citationIds: [], proposedIntent: null };
-        else try { const modelInput = { maskedMessage: masked.masked, evidence, personaName: persona?.name ?? 'Sales assistant', conversation }; draft = await model.draft(persona ? { ...modelInput, persona } : modelInput); } catch { throw new HttpError(503, 'MODEL_UNAVAILABLE', 'The assistant is currently unable to verify an answer.'); }
+        else if (conversational && evidence.length === 0) draft = { answer: intent === 'greeting' && language !== 'ar' ? persona?.greeting ?? conversationalReply(intent, persona?.name ?? 'Sales assistant', language, tenant.name) : conversationalReply(intent ?? 'identity', persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
+        else try { const modelInput = { maskedMessage, evidence, personaName: persona?.name ?? 'Sales assistant', ownerName: tenant.name, conversation }; draft = await model.draft(persona ? { ...modelInput, persona } : modelInput); } catch { throw new HttpError(503, 'MODEL_UNAVAILABLE', 'The assistant is currently unable to verify an answer.'); }
       }
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       const citations = validateCitations(draft, evidence);
-      const casualFallback = conversational && evidence.length === 0;
+      const casualFallback = conversational && (evidence.length === 0 || intent === 'identity');
       const grounded = !casualFallback && !leadCollection && evidence.length > 0 && hasSufficientEvidence(draft.answer, evidence, citations);
-      const safeCitations = grounded ? citations : [];
-      const answer = !languageAllowed ? draft.answer : casualFallback || leadCollection ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
-      const safeAnswer = casualFallback || leadCollection ? draft.answer : answer;
+       const safeCitations = grounded ? citations : [];
+       const leadAnswer = leadCollection || leadReady || Boolean(catalogResolution?.actionAllowed);
+       const answer = !languageAllowed ? draft.answer : casualFallback || leadAnswer ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
+       const safeAnswer = casualFallback || leadAnswer ? draft.answer : answer;
       const maskedAnswer = maskPiiForSession(session, safeAnswer, tokenVault);
       try { assertKnownTokens(session, maskedAnswer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       if (intent === 'farewell') session.closedAt = new Date().toISOString();
       await store.updateSession(session);
-      const action = (catalogResolution ? catalogResolution.actionAllowed : draft.proposedIntent === 'lead.capture' && leadIntent && leadReady) ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, leadData, catalogResolution ? { workflowKey: catalogResolution.workflowKey ?? 'lead.capture', intentKey: catalogResolution.intentKey ?? 'lead.capture', intentScore: catalogResolution.score, intentConfidence: catalogResolution.confidence, catalogVersionId: catalogResolution.catalogVersionId, webhookPath: publishedCatalog?.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution.workflowKey)?.webhookPath ?? 'lead-capture' } : undefined) : null;
+      const actionLeadData = { ...leadData, ...(catalogResolution?.interest ? { interest: catalogResolution.interest } : {}) };
+      const action = (catalogResolution ? catalogResolution.actionAllowed : draft.proposedIntent === 'lead.capture' && leadIntent && leadReady) ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, actionLeadData, catalogResolution ? { workflowKey: catalogResolution.workflowKey ?? 'lead.capture', intentKey: catalogResolution.intentKey ?? 'lead.capture', intentScore: catalogResolution.score, intentConfidence: catalogResolution.confidence, catalogVersionId: catalogResolution.catalogVersionId, webhookPath: publishedCatalog?.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution.workflowKey)?.webhookPath ?? 'lead-capture' } : undefined) : null;
+      const pendingCatalogState = publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length > 0 ? { catalogIntentKey: catalogResolution.intentKey, catalogVersionId: catalogResolution.catalogVersionId, catalogSlotKey: catalogResolution.missingSlots[0], catalogSlotValues } : null;
       const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, maskedAnswer, tokenVault), grounded, conversational: casualFallback || leadCollection, citations: safeCitations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'I have the details I need. Would you like me to submit this contact request?', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
       const persistedResponse = { ...response, answer: maskedAnswer };
-      const estimatedInputTokens = estimateTokens([masked.masked, ...evidence.map((item) => item.content), persona?.name ?? '', persona?.personality ?? '', persona?.tone ?? '', persona?.speakingStyle ?? ''].join('\n'));
+      const estimatedInputTokens = estimateTokens([maskedMessage, ...evidence.map((item) => item.content), persona?.name ?? '', persona?.personality ?? '', persona?.tone ?? '', persona?.speakingStyle ?? ''].join('\n'));
       const estimatedOutputTokens = estimateTokens(maskedAnswer);
-      await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: maskedAnswer, citations: safeCitations, clientMessageId: null, response: { conversational }, createdAt: new Date().toISOString() });
+      await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: maskedAnswer, citations: safeCitations, clientMessageId: null, response: { conversational, ...(pendingCatalogState ?? {}) }, createdAt: new Date().toISOString() });
       await store.updateMessage({ ...userMessage, response: persistedResponse });
       await cache.set(responseCacheKey, persistedResponse, chatResponseCacheTtlSeconds);
       recordChatOutcome(session.tenantId, grounded, Boolean(action), estimatedInputTokens, estimatedOutputTokens);
@@ -791,37 +916,111 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     }
   });
 
-  app.post('/api/v1/chat/actions/:id/confirm', optionalApi, async (req, res, next) => {
+  app.post('/api/v1/chat/actions/:id/confirm', chatApi, async (req, res, next) => {
     try {
       const input = parse(confirmSchema, req.body);
+      const channel = getChannel(req);
       const action = await store.getAction(routeParam(req, 'id'));
       if (!action || action.sessionId !== input.sessionId) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
       const session = await store.getSession(input.sessionId);
       const tenant = await store.getTenant(action.tenantId);
-      if (!session || session.tenantId !== action.tenantId || !tenant || (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== action.tenantId)) throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.');
-      if (!getAuth(req)) { enforcePublicOrigin(req, tenant, nodeEnv); enforcePublicChatEnabled(req, tenant); }
+      if (!session || session.tenantId !== action.tenantId || !tenant || (channel && channel.tenantId !== action.tenantId) || (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== action.tenantId)) throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.');
+      if (!getAuth(req) && !channel) { enforcePublicOrigin(req, tenant, nodeEnv); enforcePublicChatEnabled(req, tenant); }
       ensureLiveSession(session.lastActivityAt, session.closedAt);
       await activeTenant(store, action.tenantId);
       res.json({ action: await gateway.confirm(action.id, action.tenantId) });
     } catch (error) { next(error); }
   });
-  app.get('/api/v1/chat/actions/:id', optionalApi, async (req, res, next) => { try { const action = await store.getAction(routeParam(req, 'id')); if (!action) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); const sessionId = req.query.sessionId; if (typeof sessionId !== 'string' || sessionId !== action.sessionId) throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.'); const session = await store.getSession(action.sessionId); const tenant = await store.getTenant(action.tenantId); if (!session || session.tenantId !== action.tenantId || !tenant) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); ensureLiveSession(session.lastActivityAt, session.closedAt); if (!getAuth(req)) { if (!tenant.publicChatEnabled) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== action.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.'); res.json({ action }); } catch (error) { next(error); } });
+  app.get('/api/v1/chat/actions/:id', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const action = await store.getAction(routeParam(req, 'id')); if (!action) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); const sessionId = req.query.sessionId; if (typeof sessionId !== 'string' || sessionId !== action.sessionId) throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.'); const session = await store.getSession(action.sessionId); const tenant = await store.getTenant(action.tenantId); if (!session || session.tenantId !== action.tenantId || !tenant || (channel && channel.tenantId !== action.tenantId)) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); ensureLiveSession(session.lastActivityAt, session.closedAt); if (!getAuth(req) && !channel) { if (!tenant.publicChatEnabled) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== action.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.'); res.json({ action }); } catch (error) { next(error); } });
+
+  app.post('/api/v1/internal/workflow-events/claim', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(workflowClaimSchema, req.body);
+      const actions = await store.claimApprovedActions(input.workflowKey, input.limit ?? 10);
+      const items = [];
+      for (const action of actions) {
+        const session = await store.getSession(action.sessionId);
+        const version = action.catalogVersionId ? await store.getIntentCatalogVersion(action.tenantId, action.catalogVersionId) : null;
+        const intent = version?.catalog.intents.find((item) => item.intentKey === action.intentKey);
+        const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
+        const qualityRule = version?.catalog.qualityRules?.find((item) => item.intentKey === action.intentKey);
+        const qualityBinding = qualityRule ? version?.catalog.workflowBindings.find((item) => item.workflowKey === qualityRule.qualityWorkflowKey) : null;
+        if (!session || !version || !intent || !binding?.active || (qualityRule && !qualityBinding?.active)) {
+          const failed = { ...action, state: 'failed' as const, result: null };
+          await store.updateAction(failed);
+          await store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: 'workflow.failed', metadata: { actionId: action.id, workflowKey: action.workflowKey, reason: 'catalog_binding_invalid' }, createdAt: new Date().toISOString() });
+          continue;
+        }
+        const conversation = (await store.listMessages(action.sessionId, action.tenantId)).map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt }));
+        items.push({ actionId: action.id, tenantId: action.tenantId, sessionId: action.sessionId, workflowKey: action.workflowKey, contract: input.contract ?? binding.payloadContract, intent: intent.intentKey, intentSummary: `${intent.displayName}: ${intent.description}`, intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: version.id, qualityWorkflowKey: qualityRule?.qualityWorkflowKey ?? null, idempotencyKey: action.idempotencyKey, opaqueReference: action.opaqueReference, leadData: action.payload, conversation, catalog: version.catalog });
+      }
+      res.json({ items });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/workflow-events/complete', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(workflowCompletionSchema, req.body);
+      const action = await store.getAction(input.actionId);
+      if (!action || action.tenantId !== input.tenantId || !['approved', 'processing'].includes(action.state)) throw new HttpError(403, 'WORKFLOW_FORBIDDEN', 'Workflow completion does not match the authorized action.');
+      const updated = await store.updateAction({ ...action, state: input.state, result: input.state === 'completed' && input.externalReference ? { externalReference: input.externalReference } : null });
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: `workflow.completed.${input.state}`, metadata: { actionId: input.actionId }, createdAt: new Date().toISOString() });
+      res.json({ action: updated });
+    } catch (error) { next(error); }
+  });
 
   app.post('/api/v1/internal/crm/leads', n8nInternalApi, async (req, res, next) => {
     try {
       const input = parse(crmLeadSchema, req.body);
-      if (!input.validationPass || input.score < 70) throw new HttpError(422, 'LEAD_VALIDATION_FAILED', 'The lead did not pass the completeness threshold.');
       const action = await store.getAction(input.actionId);
       const session = await store.getSession(input.sessionId);
-      if (!action || action.tenantId !== input.tenantId || action.sessionId !== input.sessionId || !['lead.capture', 'crm.lead.create'].includes(action.workflowKey) || !session || session.tenantId !== input.tenantId) throw new HttpError(403, 'LEAD_FORBIDDEN', 'Lead context does not match the authorized action.');
-      assertKnownTokens(session, JSON.stringify({ leadData: input.leadData, conversation: input.conversation }), tokenVault);
-      const leadData = { ...(input.leadData.name ? { name: input.leadData.name } : {}), ...(input.leadData.email ? { email: input.leadData.email } : {}), ...(input.leadData.phone ? { phone: input.leadData.phone } : {}) };
+      const catalog = action?.catalogVersionId ? await store.getIntentCatalogVersion(input.tenantId, action.catalogVersionId) : null;
+      const binding = action ? catalog?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey) : null;
+      if (!action || action.tenantId !== input.tenantId || action.sessionId !== input.sessionId || (!['lead.capture', 'crm.lead.create'].includes(action.workflowKey) && !binding?.active) || !session || session.tenantId !== input.tenantId) throw new HttpError(403, 'LEAD_FORBIDDEN', 'Lead context does not match the authorized action.');
+      const authorizedIntent = action.intentKey ?? action.workflowKey;
+      if (input.intent !== authorizedIntent) throw new HttpError(403, 'LEAD_INTENT_MISMATCH', 'Lead intent does not match the authorized action.');
+      const messages = await store.listMessages(input.sessionId, input.tenantId);
+      const leadData = { ...(action.payload.name ? { name: action.payload.name } : {}), ...(action.payload.email ? { email: action.payload.email } : {}), ...(action.payload.phone ? { phone: action.payload.phone } : {}), ...(action.payload.interest ? { interest: action.payload.interest } : {}) };
+      const score = (action.payload.name ? 30 : 0) + (action.payload.email ? 40 : 0) + (action.payload.phone ? 40 : 0);
+      const validationPass = Boolean(action.payload.name && (action.payload.email || action.payload.phone));
+      if (!validationPass || score < 70) throw new HttpError(422, 'LEAD_VALIDATION_FAILED', 'The lead did not pass the completeness threshold.');
+      const conversation = messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt }));
+      assertKnownTokens(session, JSON.stringify({ leadData, conversation }), tokenVault);
       const existing = await store.getCrmLeadByActionId(input.actionId, input.tenantId);
-      if (existing) { res.json({ lead: existing, externalReference: `crm-lead-${existing.id}` }); return; }
-      const lead: CrmLead = { id: randomUUID(), tenantId: input.tenantId, actionId: input.actionId, sessionId: input.sessionId, intent: input.intent, intentScore: input.intentScore ?? action.intentScore ?? 0, intentConfidence: input.intentConfidence ?? action.intentConfidence ?? 0, catalogVersionId: input.catalogVersionId ?? action.catalogVersionId ?? null, score: input.score, validationPass: input.validationPass, leadData, conversation: input.conversation, summary: null, summaryStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-      const created = await store.createCrmLead(lead);
+      if (existing) {
+        if (input.completeAction && action.state !== 'completed') await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${existing.id}` } });
+        res.json({ lead: existing, externalReference: `crm-lead-${existing.id}` }); return;
+      }
+      const lead: CrmLead = { id: randomUUID(), tenantId: input.tenantId, actionId: input.actionId, sessionId: input.sessionId, intent: authorizedIntent, intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: action.catalogVersionId ?? null, score, validationPass, leadData, conversation, summary: null, summaryStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const created = await store.upsertCrmLead(lead, crmDedupeKey(input.tenantId, leadData, session, tokenVault, vaultSecret));
+      if (input.completeAction) await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${created.id}` } });
       await store.addAudit({ id: randomUUID(), tenantId: created.tenantId, actorId: null, eventName: 'crm.lead_created', metadata: { leadId: created.id, intent: created.intent, score: created.score, validationPass: created.validationPass }, createdAt: new Date().toISOString() });
       res.status(201).json({ lead: created, externalReference: `crm-lead-${created.id}` });
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/internal/crm/leads/:id/quality', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(crmQualitySchema, req.body);
+      const lead = await store.getCrmLead(routeParam(req, 'id'), input.tenantId);
+      const version = await store.getIntentCatalogVersion(input.tenantId, input.catalogVersionId);
+      const intent = version?.catalog.intents.find((item) => item.intentKey === input.intentKey);
+      const rule = version?.catalog.qualityRules?.find((item) => item.intentKey === input.intentKey);
+      const binding = rule ? version?.catalog.workflowBindings.find((item) => item.workflowKey === rule.qualityWorkflowKey) : null;
+      if (!lead || lead.intent !== input.intentKey || lead.catalogVersionId !== input.catalogVersionId || !version || !rule || rule.qualityWorkflowKey !== input.qualityWorkflowKey || !binding?.active) throw new HttpError(403, 'QUALITY_FORBIDDEN', 'Lead quality must use the published catalog workflow.');
+      if (!intent) throw new HttpError(403, 'QUALITY_INTENT_MISMATCH', 'Lead quality intent does not match the catalog.');
+      const updated = await store.updateCrmLeadScore(lead.id, input.tenantId, input.score);
+      if (!updated) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
+      res.json({ lead: updated, quality: catalogQuality(updated.score, rule) });
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/internal/crm/leads/:id/qualification', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(crmQualificationSchema, req.body);
+      const lead = await store.getCrmLead(routeParam(req, 'id'), input.tenantId);
+      if (!lead) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
+      const scored = await store.updateCrmLeadScore(lead.id, input.tenantId, input.score);
+      const updated = scored ? await store.updateCrmLeadSummary(scored.id, input.tenantId, input.summary, 'completed') : null;
+      if (!updated) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
+      res.json({ lead: updated });
     } catch (error) { next(error); }
   });
   app.put('/api/v1/internal/crm/leads/:id/summary', n8nInternalApi, async (req, res, next) => {
@@ -834,6 +1033,32 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const updated = await store.updateCrmLeadSummary(lead.id, input.tenantId, input.summary, input.status);
       if (!updated) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
       res.json({ lead: updated });
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/internal/crm/leads/:id/remote', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(crmRemoteSchema, req.body);
+      const updated = await store.updateCrmLeadRemote({ id: routeParam(req, 'id'), tenantId: input.tenantId, leadId: input.leadId, remoteCrm: input.remoteCrm });
+      if (!updated) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'crm.lead.remote_linked', metadata: { leadId: updated.id, remoteCrm: input.remoteCrm }, createdAt: new Date().toISOString() });
+      res.json({ lead: updated });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/crm/leads/:id/remote-payload', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(crmRemotePayloadSchema, req.body);
+      const lead = await store.getCrmLead(routeParam(req, 'id'), input.tenantId);
+      if (!lead) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
+      if (lead.actionId !== input.actionId || lead.leadId || lead.remoteCrm) throw new HttpError(409, 'LEAD_ALREADY_LINKED', 'This lead is already linked to a remote CRM or the action does not match.');
+      const action = await store.getAction(input.actionId);
+      if (!action || action.tenantId !== input.tenantId || action.sessionId !== lead.sessionId || !['approved', 'processing'].includes(action.state)) throw new HttpError(403, 'REMOTE_PAYLOAD_FORBIDDEN', 'Remote CRM payload access is not authorized for this action.');
+      const session = await store.getSession(lead.sessionId);
+      if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Lead session not found.');
+      const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm');
+      if (!lead.validationPass || !lead.leadData.name || (!lead.leadData.email && !lead.leadData.phone)) throw new HttpError(422, 'REMOTE_CONTACT_INCOMPLETE', 'The lead has no valid contact data for remote CRM sync.');
+      const payload = { name: rehydrate(lead.leadData.name), email: lead.leadData.email ? rehydrate(lead.leadData.email) : '', phone: lead.leadData.phone ? rehydrate(lead.leadData.phone) : '', description: rehydrate(lead.summary ?? `Intent: ${lead.intent}`) };
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'crm.lead.remote_payload_issued', metadata: { leadId: lead.id, actionId: action.id }, createdAt: new Date().toISOString() });
+      res.json(payload);
     } catch (error) { next(error); }
   });
   app.post('/api/v1/internal/n8n/callback', async (req, res, next) => {
@@ -854,7 +1079,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     } catch (error) { next(error); }
   });
 
-  app.get('/api/v1/chat/sessions/:id', optionalApi, async (req, res, next) => { try { const session = await store.getSession(routeParam(req, 'id')); if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); ensureLiveSession(session.lastActivityAt, session.closedAt); const tenant = await store.getTenant(session.tenantId); if (!tenant) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (!getAuth(req)) { if (tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.'); const { limit } = parse(historyQuerySchema, req.query); res.json({ sessionId: session.id, tenantId: session.tenantId, createdAt: session.createdAt, messages: (await store.listMessages(session.id, session.tenantId, limit)).map((message) => ({ id: message.id, role: message.role, content: message.role === 'assistant' ? rehydrateForSession(session, message.maskedContent, tokenVault) : message.maskedContent, citations: message.citations, conversational: message.response?.conversational === true, clientMessageId: message.clientMessageId, createdAt: message.createdAt })) }); } catch (error) { next(error); } });
+  app.get('/api/v1/chat/sessions/:id', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const session = await store.getSession(routeParam(req, 'id')); if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); ensureLiveSession(session.lastActivityAt, session.closedAt); const tenant = await store.getTenant(session.tenantId); if (!tenant) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (!getAuth(req) && !channel) { if (tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.'); const { limit } = parse(historyQuerySchema, req.query); res.json({ sessionId: session.id, tenantId: session.tenantId, createdAt: session.createdAt, messages: (await store.listMessages(session.id, session.tenantId, limit)).map((message) => ({ id: message.id, role: message.role, content: message.role === 'assistant' ? rehydrateForSession(session, message.maskedContent, tokenVault) : message.maskedContent, citations: message.citations, conversational: message.response?.conversational === true, clientMessageId: message.clientMessageId, createdAt: message.createdAt })) }); } catch (error) { next(error); } });
 
   app.get('/api/v1/admin/workflow-runs', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listActions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/crm/leads', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); res.json({ items: await Promise.all((await store.listCrmLeads(tenantId)).map(crmLeadForAdmin)) }); } catch (error) { next(error); } });
@@ -869,6 +1094,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (error instanceof HttpError) { res.status(error.status).json({ error: { code: error.code, message: error.message, requestId } }); return; }
     if (errorCode(error) === '23505') { res.status(409).json({ error: { code: 'RESOURCE_CONFLICT', message: 'The requested resource already exists.', requestId } }); return; }
     if (errorCode(error) === '22P02') { res.status(400).json({ error: { code: 'INVALID_DATA', message: 'The request contains invalid data.', requestId } }); return; }
+    console.error(JSON.stringify({ event: 'api.unhandled_error', requestId, type: errorType(error), code: errorCode(error), message: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500) }));
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.', requestId } });
   });
   return { app, store, auth, gateway, workflow };

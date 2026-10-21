@@ -44,7 +44,8 @@ EXPOSE 3000
 CMD ["node", "apps/web/server.js"]
 
 FROM node-source AS admin-build
-RUN npm run build --workspace apps/admin
+ARG ADMIN_BASE_HREF=/
+RUN npm run build --workspace apps/admin -- --base-href="${ADMIN_BASE_HREF}"
 
 FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10 AS admin-runtime
 COPY infra/nginx/admin.conf /etc/nginx/conf.d/default.conf

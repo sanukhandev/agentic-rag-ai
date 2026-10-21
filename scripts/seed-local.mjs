@@ -82,8 +82,8 @@ assert.equal(crossTenant.citations.length, 0);
 const workflowReply = await ask('tenant-a', 'I am interested in a demo.', randomUUID());
 assert.ok(workflowReply.actionProposal?.id, 'A confirmed-action proposal should be returned.');
 const confirmed = await request(`/api/v1/chat/actions/${workflowReply.actionProposal.id}/confirm`, { method: 'POST', headers: publicHeaders, body: JSON.stringify({ sessionId: workflowReply.sessionId, confirmed: true }) });
-assert.equal(confirmed.action.state, 'completed');
+assert.equal(confirmed.action.state, 'approved');
 const duplicate = await request(`/api/v1/chat/actions/${workflowReply.actionProposal.id}/confirm`, { method: 'POST', headers: publicHeaders, body: JSON.stringify({ sessionId: workflowReply.sessionId, confirmed: true }) });
-assert.equal(duplicate.action.state, 'completed');
+assert.equal(duplicate.action.state, 'approved');
 
 console.log(JSON.stringify({ apiBase, tenants: answers, workflow: { state: confirmed.action.state, duplicateState: duplicate.action.state }, checks: ['grounded citations', 'unsupported refusal', 'cross-tenant refusal', 'idempotent mock workflow'] }, null, 2));

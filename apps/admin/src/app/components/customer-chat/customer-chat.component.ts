@@ -633,7 +633,7 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
         const target = this.messages.find((m) => m.actionProposal?.id === proposalId);
         if (target) {
           target.actionState = state;
-          if (state === 'completed') {
+          if (state !== 'awaiting_confirmation' && state !== 'unknown') {
             target.actionProposal = null;
           }
         }

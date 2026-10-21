@@ -7,7 +7,7 @@ from typing import Any
 
 from openpyxl import load_workbook
 
-PARSER_VERSION = "intent-catalog-xlsx-1.0.0"
+PARSER_VERSION = "intent-catalog-xlsx-1.1.0"
 SHEETS = ("README", "Intents", "Signals", "Slots", "Relations", "WorkflowBindings")
 
 
@@ -69,6 +69,7 @@ def parse_intent_catalog(path: Path) -> dict[str, Any]:
                 "slots": _rows(workbook["Slots"]),
                 "relations": _rows(workbook["Relations"]),
                 "workflowBindings": _rows(workbook["WorkflowBindings"]),
+                "qualityRules": _rows(workbook["QualityRules"]) if "QualityRules" in workbook.sheetnames else [],
             },
         }
     finally:

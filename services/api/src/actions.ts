@@ -55,11 +55,10 @@ export class MockWorkflowAdapter implements WorkflowAdapter {
 }
 
 export class ActionGateway {
-  // shortcut: the local API runs one process; replace with a database claim/transaction before multi-instance deployment.
   private readonly confirmations = new Map<string, Promise<ActionRequest>>();
   private readonly proposals = new Map<string, Promise<ActionRequest>>();
 
-  constructor(private readonly store: Store, private readonly adapter: WorkflowAdapter) {}
+  constructor(private readonly store: Store, _adapter?: WorkflowAdapter) {}
 
   async propose(tenantId: string, sessionId: string, idempotencyKey: string, leadData: LeadData = {}, options: { workflowKey?: string; intentKey?: string; intentScore?: number; intentConfidence?: number; catalogVersionId?: string | null; webhookPath?: string } = {}): Promise<ActionRequest> {
     const key = `${tenantId}:${idempotencyKey}`;
@@ -94,7 +93,7 @@ export class ActionGateway {
   private async confirmInternal(actionId: string, tenantId: string): Promise<ActionRequest> {
     const action = await this.store.getAction(actionId);
     if (!action || action.tenantId !== tenantId) throw new Error('Action not found.');
-    if (action.state === 'completed') return action;
+    if (action.state === 'completed' || action.state === 'approved' || action.state === 'processing') return action;
     if (action.state !== 'awaiting_confirmation' && action.state !== 'unknown') throw new Error('Action is not confirmable.');
     if (!Number.isFinite(Date.parse(action.createdAt)) || Date.now() - Date.parse(action.createdAt) > 15 * 60_000) {
       const expired = { ...action, state: 'failed' as const };
@@ -102,20 +101,9 @@ export class ActionGateway {
       await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.expired', metadata: { actionId }, createdAt: new Date().toISOString() });
       return expired;
     }
-    try {
-      const messages = await this.store.listMessages(action.sessionId, tenantId);
-      const score = leadScore(action.payload);
-      const leadContext: LeadWorkflowContext = { actionId: action.id, intent: action.intentKey ?? action.workflowKey, score, quality: leadQuality(score), validationPass: leadValidationPass(action.payload), intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: action.catalogVersionId ?? null, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) };
-      const result = await this.adapter.execute({ workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? 'lead-capture', tenantId, sessionId: action.sessionId, opaqueReference: action.opaqueReference, idempotencyKey: action.idempotencyKey, leadData: action.payload, leadContext });
-      const updated = { ...action, state: 'completed' as const, result };
-      await this.store.updateAction(updated);
-      await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.completed', metadata: { actionId, workflowKey: action.workflowKey }, createdAt: new Date().toISOString() });
-      return updated;
-    } catch {
-      const unknown = { ...action, state: 'unknown' as const };
-      await this.store.updateAction(unknown);
-      await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.unknown', metadata: { actionId, workflowKey: action.workflowKey, reason: 'adapter_error' }, createdAt: new Date().toISOString() });
-      return unknown;
-    }
+    const approved = { ...action, state: 'approved' as const, result: null };
+    await this.store.updateAction(approved);
+    await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.approved', metadata: { actionId, workflowKey: action.workflowKey }, createdAt: new Date().toISOString() });
+    return approved;
   }
 }

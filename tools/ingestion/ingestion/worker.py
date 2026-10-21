@@ -10,7 +10,7 @@ from typing import Any
 import requests
 
 from .intent_catalog import parse_intent_catalog
-from .pipeline import IngestedSource, ingest_file, ingest_url
+from .pipeline import MAX_BYTES, IngestedSource, ingest_file, ingest_url
 from .staging import LocalStaging
 
 
@@ -72,7 +72,7 @@ def fetch_job_input(api_base: str, job_id: str, worker_secret: str, session: req
         content = base64.b64decode(body["contentBase64"], validate=True)
     except (ValueError, TypeError) as error:
         raise ValueError("The ingestion API returned malformed file content.") from error
-    if not content or len(content) > 5 * 1024 * 1024:
+    if not content or len(content) > MAX_BYTES:
         raise ValueError("The ingestion API returned an empty or oversized file.")
     return body["fileName"], body["mimeType"], content
 

@@ -8,7 +8,7 @@ export const rules = [
   ['AWS access key', /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
   ['GitHub token', /\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}\b/],
   ['Slack token', /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/],
-  ['credential assignment', /\b(?:AZURE_AI_API_KEY|N8N_WEBHOOK_SECRET|JWT_SECRET|PII_VAULT_KEY|INGESTION_WORKER_SECRET)[ \t]*=[ \t]*["']?(?!replace|change|example|local|test|placeholder|your)[A-Za-z0-9+/=_-]{24,}/i],
+  ['credential assignment', /\b(?:AZURE_AI_API_KEY|N8N_WEBHOOK_SECRET|JWT_SECRET|CHANNEL_CREDENTIAL_KEY|PII_VAULT_KEY|INGESTION_WORKER_SECRET)[ \t]*=[ \t]*["']?(?!replace|change|example|local|test|placeholder|your)[A-Za-z0-9+/=_-]{24,}/i],
 ];
 export const findPotentialSecrets = (content) => rules.filter(([, pattern]) => pattern.test(content)).map(([label]) => label);
 

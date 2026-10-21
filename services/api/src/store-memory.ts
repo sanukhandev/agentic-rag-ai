@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, AuthSession, Chunk, CrmLead, IngestionJob, IntentCatalogVersion, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, IngestionJob, IntentCatalogVersion, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -10,6 +10,7 @@ export class MemoryStore implements Store {
   private readonly domains = new Map<string, TenantDomain>();
   private readonly authSessions = new Map<string, AuthSession>();
   private readonly callbackNonces = new Map<string, string>();
+  private readonly channelCredentials = new Map<string, ChannelCredential>();
   private readonly personas = new Map<string, Persona>();
   private readonly intentCatalogVersions = new Map<string, IntentCatalogVersion[]>();
   private readonly personaVersions = new Map<string, PersonaVersion[]>();
@@ -21,6 +22,7 @@ export class MemoryStore implements Store {
   private readonly messages = new Map<string, Message>();
   private readonly actions = new Map<string, ActionRequest>();
   private readonly crmLeads = new Map<string, CrmLead>();
+  private readonly crmLeadDedupe = new Map<string, string>();
   private readonly audits: AuditEvent[] = [];
 
   async countUsers(): Promise<number> { return this.users.size; }
@@ -81,6 +83,10 @@ export class MemoryStore implements Store {
     this.callbackNonces.set(nonce, expiresAt);
     return true;
   }
+  async createChannelCredential(input: Omit<ChannelCredential, 'createdAt' | 'revokedAt'>): Promise<ChannelCredential> { const credential: ChannelCredential = { ...input, createdAt: now(), revokedAt: null }; this.channelCredentials.set(credential.id, credential); return credential; }
+  async getChannelCredential(keyId: string): Promise<ChannelCredential | null> { return [...this.channelCredentials.values()].find((credential) => credential.keyId === keyId) ?? null; }
+  async listChannelCredentials(tenantId: string): Promise<ChannelCredential[]> { return [...this.channelCredentials.values()].filter((credential) => credential.tenantId === tenantId).sort((left, right) => right.createdAt.localeCompare(left.createdAt)); }
+  async revokeChannelCredential(id: string, tenantId: string): Promise<ChannelCredential | null> { const credential = this.channelCredentials.get(id); if (!credential || credential.tenantId !== tenantId) return null; const updated = { ...credential, active: false, revokedAt: now() }; this.channelCredentials.set(id, updated); return updated; }
 
   async setPersona(persona: Persona): Promise<Persona> { this.personas.set(persona.tenantId, persona); return persona; }
   async getPersona(tenantId: string): Promise<Persona | null> { return this.personas.get(tenantId) ?? null; }
@@ -228,8 +234,30 @@ export class MemoryStore implements Store {
     return [...this.actions.values()].find((action) => action.tenantId === tenantId && action.idempotencyKey === idempotencyKey) ?? null;
   }
   async updateAction(action: ActionRequest): Promise<ActionRequest> { this.actions.set(action.id, action); return action; }
+  async claimApprovedActions(workflowKey: string, limit: number): Promise<ActionRequest[]> {
+    const actions = [...this.actions.values()]
+      .filter((action) => action.workflowKey === workflowKey && action.state === 'approved')
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .slice(0, limit)
+      .map((action) => ({ ...action, state: 'processing' as const }));
+    for (const action of actions) this.actions.set(action.id, action);
+    return actions;
+  }
   async listActions(tenantId: string): Promise<ActionRequest[]> { return [...this.actions.values()].filter((action) => action.tenantId === tenantId); }
   async createCrmLead(lead: CrmLead): Promise<CrmLead> { this.crmLeads.set(lead.id, lead); return lead; }
+  async upsertCrmLead(lead: CrmLead, dedupeKey: string): Promise<CrmLead> {
+    const key = `${lead.tenantId}:${dedupeKey}`;
+    const existingId = this.crmLeadDedupe.get(key);
+    const existing = existingId ? this.crmLeads.get(existingId) : undefined;
+    if (existing) {
+      const updated = { ...lead, id: existing.id, createdAt: existing.createdAt, updatedAt: now() };
+      this.crmLeads.set(existing.id, updated);
+      return updated;
+    }
+    this.crmLeadDedupe.set(key, lead.id);
+    this.crmLeads.set(lead.id, lead);
+    return lead;
+  }
   async getCrmLeadByActionId(actionId: string, tenantId: string): Promise<CrmLead | null> { return [...this.crmLeads.values()].find((lead) => lead.actionId === actionId && lead.tenantId === tenantId) ?? null; }
   async getCrmLead(id: string, tenantId: string): Promise<CrmLead | null> { const lead = this.crmLeads.get(id); return lead?.tenantId === tenantId ? lead : null; }
   async listCrmLeads(tenantId: string): Promise<CrmLead[]> { return [...this.crmLeads.values()].filter((lead) => lead.tenantId === tenantId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
@@ -238,6 +266,20 @@ export class MemoryStore implements Store {
     if (!lead) return null;
     const updated = { ...lead, summary, summaryStatus: status, updatedAt: now() };
     this.crmLeads.set(id, updated);
+    return updated;
+  }
+  async updateCrmLeadScore(id: string, tenantId: string, score: number): Promise<CrmLead | null> {
+    const lead = await this.getCrmLead(id, tenantId);
+    if (!lead) return null;
+    const updated = { ...lead, score, updatedAt: now() };
+    this.crmLeads.set(id, updated);
+    return updated;
+  }
+  async updateCrmLeadRemote(input: { id: string; tenantId: string; leadId: string; remoteCrm: string }): Promise<CrmLead | null> {
+    const lead = await this.getCrmLead(input.id, input.tenantId);
+    if (!lead) return null;
+    const updated = { ...lead, leadId: input.leadId, remoteCrm: input.remoteCrm, updatedAt: now() };
+    this.crmLeads.set(input.id, updated);
     return updated;
   }
   async addAudit(event: AuditEvent): Promise<void> { this.audits.push(event); }

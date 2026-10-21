@@ -13,6 +13,21 @@ The local vertical slice implements these routes with runtime Zod validation and
 | GET /api/v1/health/live | Lightweight liveness | No secrets/dependency disclosure |
 | GET /api/v1/health/ready | Restricted readiness | Safe dependency status |
 
+## Omnichannel channel gateway
+
+Tenant admins issue one credential per channel through `POST /api/v1/admin/channels`. The response contains the generated secret once; the database stores only encrypted secret material. `GET /api/v1/admin/channels` returns metadata without secrets and `POST /api/v1/admin/channels/:id/revoke` immediately disables a credential.
+
+Signed channel clients reuse the external chat routes (`sessions`, `messages`, `history`, `actions/:id/confirm`, and `actions/:id`) with these headers:
+
+| Header | Value |
+| --- | --- |
+| `X-Agentic-Key-Id` | Issued public key ID |
+| `X-Agentic-Timestamp` | Unix timestamp in seconds |
+| `X-Agentic-Nonce` | Per-request unique value, 8–128 safe characters |
+| `X-Agentic-Signature` | Base64url HMAC-SHA256 signature |
+
+The signature is calculated over `METHOD\nREQUEST_TARGET\nTIMESTAMP\nNONCE\nJSON_BODY`, with the method uppercased, `REQUEST_TARGET` including the raw query string when present, and the exact JSON body sent to Node. Requests older than five minutes or with a reused nonce are rejected. The tenant and channel come from the credential, not request fields; signed session creation therefore uses `{}` as its body. This is server-to-server channel authentication and does not replace HTTPS, rate limiting, idempotency or Node-side intent/workflow authorization.
+
 ## Authentication and platform administration
 
 | Route | Purpose | Required controls |
@@ -38,6 +53,9 @@ The local vertical slice implements these routes with runtime Zod validation and
 | GET /api/v1/admin/dashboard/overview | Tenant-scoped operational counters | Tenant identity from the session |
 | GET /api/v1/admin/services/health | Redacted service and telemetry status | Platform/tenant-admin RBAC |
 | GET/PATCH /api/v1/admin/channel | Configure exact public origin and enablement | Tenant-admin RBAC, origin validation, audited |
+| GET /api/v1/admin/channels | List tenant channel credential metadata | Tenant-admin RBAC; secrets excluded |
+| POST /api/v1/admin/channels | Issue one credential for a channel | Tenant-admin RBAC, encrypted-at-rest secret, audit; secret returned once |
+| POST /api/v1/admin/channels/:id/revoke | Revoke a channel credential | Tenant-admin RBAC, tenant ownership, audit |
 | GET/PUT /api/v1/admin/persona | Read/update the active persona | Tenant scope, persona safety validation |
 | POST /api/v1/admin/persona/drafts | Create a persona version | Tenant-admin RBAC, bounded fields |
 | GET /api/v1/admin/persona/versions | List tenant persona history | Tenant scope |

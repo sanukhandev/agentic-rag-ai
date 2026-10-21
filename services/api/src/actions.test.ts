@@ -10,7 +10,7 @@ describe('action gateway', () => {
     expect(leadQuality(90)).toBe('hot');
   });
 
-  it('requires confirmation, sends only opaque data, and is idempotent', async () => {
+  it('requires confirmation, queues only an opaque action, and is idempotent', async () => {
     const store = new MemoryStore();
     const workflow = new MockWorkflowAdapter();
     const gateway = new ActionGateway(store, workflow);
@@ -18,17 +18,15 @@ describe('action gateway', () => {
     const second = await gateway.propose('tenant-a', 'session-a', 'client-1');
     expect(second.id).toBe(first.id);
     expect(first.state).toBe('awaiting_confirmation');
-    const completed = await gateway.confirm(first.id, 'tenant-a');
-    expect(completed.state).toBe('completed');
-    expect(workflow.calls).toHaveLength(1);
-    expect(workflow.calls[0]?.opaqueReference).toMatch(/^lead-/);
-    expect(workflow.calls[0]?.leadData).toEqual({ name: '[NAME_1]', email: '[EMAIL_1]' });
-    expect(workflow.calls[0]).not.toHaveProperty('message');
-    expect((await gateway.confirm(first.id, 'tenant-a')).result).toEqual(completed.result);
-    expect(workflow.calls).toHaveLength(1);
+    const approved = await gateway.confirm(first.id, 'tenant-a');
+    expect(approved.state).toBe('approved');
+    expect(approved.payload).toEqual({ name: '[NAME_1]', email: '[EMAIL_1]' });
+    expect(workflow.calls).toHaveLength(0);
+    expect((await gateway.confirm(first.id, 'tenant-a')).state).toBe('approved');
+    expect(workflow.calls).toHaveLength(0);
   });
 
-  it('builds a validated lead context from the masked session conversation', async () => {
+  it('does not execute a workflow while confirming a catalog action', async () => {
     const store = new MemoryStore();
     const tenant = await store.createTenant({ name: 'CRM Tenant', slug: `crm-${Date.now()}` });
     const session = await store.createSession(tenant.id);
@@ -36,21 +34,16 @@ describe('action gateway', () => {
     const workflow = new MockWorkflowAdapter();
     const gateway = new ActionGateway(store, workflow);
     const action = await gateway.propose(tenant.id, session.id, 'crm-context', { name: '[NAME_1]', email: '[EMAIL_1]' });
-    await gateway.confirm(action.id, tenant.id);
-    expect(workflow.calls[0]?.leadContext).toMatchObject({ actionId: action.id, intent: 'lead.capture', score: 70, validationPass: true });
-    expect(workflow.calls[0]?.leadContext?.conversation).toHaveLength(1);
-    expect(JSON.stringify(workflow.calls[0]?.leadContext)).not.toContain('alice@example.com');
+    expect(await gateway.confirm(action.id, tenant.id)).toMatchObject({ state: 'approved', payload: { name: '[NAME_1]', email: '[EMAIL_1]' } });
+    expect(workflow.calls).toHaveLength(0);
   });
 
-  it('marks provider failures unknown and verifies replay-resistant signatures', async () => {
+  it('does not depend on a provider adapter and verifies replay-resistant signatures', async () => {
     const store = new MemoryStore();
     const gateway = new ActionGateway(store, { execute: async () => { throw new Error('alice@example.com timeout'); } });
     const action = await gateway.propose('tenant-a', 'session-a', 'client-2');
-    await expect(gateway.confirm(action.id, 'tenant-a')).resolves.toMatchObject({ state: 'unknown' });
-    const audit = (await store.listAudit('tenant-a')).at(-1);
-    expect(audit?.eventName).toBe('workflow.unknown');
-    expect(audit?.metadata).toMatchObject({ reason: 'adapter_error' });
-    expect(JSON.stringify(audit?.metadata)).not.toContain('alice@example.com');
+    await expect(gateway.confirm(action.id, 'tenant-a')).resolves.toMatchObject({ state: 'approved' });
+    expect((await store.listAudit('tenant-a')).at(-1)?.eventName).toBe('workflow.approved');
     const timestamp = Date.now();
     const body = JSON.stringify({ opaqueReference: 'lead-1' });
     const signature = signN8nPayload('shared-secret', timestamp, 'nonce-1', body);
@@ -58,15 +51,15 @@ describe('action gateway', () => {
     expect(verifyN8nPayload('shared-secret', String(timestamp - 301_000), 'nonce-1', body, signature, timestamp)).toBe(false);
   });
 
-  it('retries an unknown workflow with the original idempotency key', async () => {
+  it('does not execute an adapter on a second confirmation', async () => {
     const store = new MemoryStore();
     let attempts = 0;
     const workflow = { execute: async (input: { idempotencyKey: string }) => { attempts += 1; expect(input.idempotencyKey).toBe('retryable'); if (attempts === 1) throw new Error('timeout'); return { externalReference: 'recovered-run' }; } };
     const gateway = new ActionGateway(store, workflow);
     const action = await gateway.propose('tenant-a', 'session-a', 'retryable');
-    await expect(gateway.confirm(action.id, 'tenant-a')).resolves.toMatchObject({ state: 'unknown' });
-    await expect(gateway.confirm(action.id, 'tenant-a')).resolves.toMatchObject({ state: 'completed', result: { externalReference: 'recovered-run' } });
-    expect(attempts).toBe(2);
+    await expect(gateway.confirm(action.id, 'tenant-a')).resolves.toMatchObject({ state: 'approved' });
+    await expect(gateway.confirm(action.id, 'tenant-a')).resolves.toMatchObject({ state: 'approved' });
+    expect(attempts).toBe(0);
   });
 
   it('does not execute an expired confirmation', async () => {
@@ -81,20 +74,11 @@ describe('action gateway', () => {
 
   it('serializes simultaneous confirmations for one action', async () => {
     const store = new MemoryStore();
-    let release!: () => void;
-    let started!: () => void;
-    const adapterStarted = new Promise<void>((resolve) => { started = resolve; });
-    const adapterRelease = new Promise<void>((resolve) => { release = resolve; });
-    const workflow = { execute: async () => { started(); await adapterRelease; return { externalReference: 'run-once' }; } };
-    const gateway = new ActionGateway(store, workflow);
+    const gateway = new ActionGateway(store, new MockWorkflowAdapter());
     const action = await gateway.propose('tenant-a', 'session-a', 'concurrent');
-    const first = gateway.confirm(action.id, 'tenant-a');
-    await adapterStarted;
-    const second = gateway.confirm(action.id, 'tenant-a');
-    release();
-    const [completed, retried] = await Promise.all([first, second]);
-    expect(completed).toMatchObject({ state: 'completed', result: { externalReference: 'run-once' } });
-    expect(retried).toEqual(completed);
+    const [approved, retried] = await Promise.all([gateway.confirm(action.id, 'tenant-a'), gateway.confirm(action.id, 'tenant-a')]);
+    expect(approved).toMatchObject({ state: 'approved' });
+    expect(retried).toEqual(approved);
   });
 
   it('recovers an idempotency race reported by PostgreSQL', async () => {

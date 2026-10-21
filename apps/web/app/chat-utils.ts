@@ -11,12 +11,72 @@ export const resolveTenantSlug = (search?: string, fallback = ''): string => {
   return fallback;
 };
 
+export type VoiceState = 'idle' | 'listening' | 'processing' | 'speaking' | 'waiting_for_next';
+
+export const formatVoiceCountdownText = (countdown: number | null): string => {
+  if (countdown === null || countdown === undefined) return '';
+  return `Auto-closing in ${Math.max(0, countdown)}s`;
+};
+
+export const getVoiceStateMeta = (
+  state: VoiceState,
+  countdown: number | null,
+  agentName = 'Assistant'
+): {
+  title: string;
+  subtitle: string;
+  badgeText: string;
+  badgeClass: string;
+} => {
+  switch (state) {
+    case 'listening':
+      return {
+        title: 'Listening...',
+        subtitle: 'Speak your question clearly into your microphone',
+        badgeText: 'Listening',
+        badgeClass: 'border-emerald-300 bg-emerald-50 text-emerald-700'
+      };
+    case 'processing':
+      return {
+        title: 'Transcribing & Reasoning...',
+        subtitle: 'Validating against approved tenant knowledge',
+        badgeText: 'Transcribing',
+        badgeClass: 'border-neutral-300 bg-neutral-100 text-neutral-700'
+      };
+    case 'speaking':
+      return {
+        title: `${agentName} Speaking`,
+        subtitle: 'Reading the verified response aloud',
+        badgeText: 'Speaking',
+        badgeClass: 'border-emerald-300 bg-emerald-50 text-emerald-700'
+      };
+    case 'waiting_for_next':
+      return {
+        title: 'Waiting for Next Question',
+        subtitle:
+          countdown !== null
+            ? `Speak your follow-up question (${formatVoiceCountdownText(countdown)})`
+            : 'Speak your follow-up question',
+        badgeText: countdown !== null ? `${countdown}s remaining` : 'Waiting',
+        badgeClass: 'border-amber-300 bg-amber-50 text-amber-800'
+      };
+    case 'idle':
+    default:
+      return {
+        title: 'Voice Inactive',
+        subtitle: 'Click the microphone to start voice conversation',
+        badgeText: 'Idle',
+        badgeClass: 'border-neutral-200 bg-neutral-50 text-neutral-500'
+      };
+  }
+};
+
 export const normalizeVoiceTranscript = (parts: readonly string[]): string =>
   parts.map((part) => part.trim()).filter(Boolean).join(' ');
 
 export type ChatCitation = { title: string; locator: string };
 export type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean };
-export type ChatActionState = 'awaiting_confirmation' | 'completed' | 'failed' | 'unknown';
+export type ChatActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'unknown';
 export type ChatActionProposal = { id: string; intent: string; confirmation: string; expiresAt?: string };
 export type ChatReply = {
   answer: string;
@@ -57,13 +117,22 @@ export const historyToReplies = (messages: readonly ChatHistoryMessage[]): ChatR
     }));
 
 export const isChatActionState = (value: unknown): value is ChatActionState =>
-  value === 'awaiting_confirmation' || value === 'completed' || value === 'failed' || value === 'unknown';
+  value === 'awaiting_confirmation' || value === 'approved' || value === 'processing' || value === 'completed' || value === 'failed' || value === 'unknown';
+
+export const actionOutcomeText = (state: ChatActionState): string | null =>
+  state === 'completed'
+    ? 'Your contact request has been submitted successfully. Sanu’s team can follow up using the details you provided.'
+    : state === 'failed'
+      ? 'I could not submit your contact request. Please try again or contact Sanu directly.'
+      : state === 'approved' || state === 'processing'
+        ? 'Your request is registered. We’ll continue processing it asynchronously.'
+      : null;
 
 export const applyActionState = (replies: readonly ChatReply[], proposalId: string, state: ChatActionState): ChatReply[] =>
   replies.map((reply) =>
     reply.actionProposal?.id !== proposalId
       ? reply
-      : { ...reply, actionState: state, actionProposal: state === 'completed' || state === 'failed' ? null : reply.actionProposal }
+      : { ...reply, actionState: state, actionProposal: state === 'awaiting_confirmation' || state === 'unknown' ? reply.actionProposal : null }
   );
 
 export const escapeHtml = (text: string): string => {

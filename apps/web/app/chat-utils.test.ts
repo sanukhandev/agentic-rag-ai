@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyActionState,
+  actionOutcomeText,
   escapeHtml,
   formatInlineMarkdown,
   formatNaturalAbstention,
+  formatVoiceCountdownText,
+  getVoiceStateMeta,
   historyToReplies,
   isChatActionState,
   isValidTenantSlug,
@@ -43,6 +46,9 @@ describe('web chat utilities', () => {
     expect(isChatActionState('invalid')).toBe(false);
     expect(applyActionState(replies, 'action-1', 'completed')[0]).toMatchObject({ actionState: 'completed', actionProposal: null });
     expect(applyActionState(replies, 'action-1', 'unknown')[0]).toMatchObject({ actionState: 'unknown', actionProposal: { id: 'action-1' } });
+    expect(actionOutcomeText('completed')).toContain('submitted successfully');
+    expect(actionOutcomeText('failed')).toContain('could not submit');
+    expect(actionOutcomeText('processing')).toContain('registered');
   });
 
   it('safely escapes HTML and formats markdown blocks and inline tokens', () => {
@@ -57,5 +63,24 @@ describe('web chat utilities', () => {
     const natural = formatNaturalAbstention(technical, 'Sales assistant');
     expect(natural).not.toContain('won’t guess');
     expect(natural).toContain('information available here');
+  });
+
+  it('formats voice countdown and provides voice state metadata', () => {
+    expect(formatVoiceCountdownText(10)).toBe('Auto-closing in 10s');
+    expect(formatVoiceCountdownText(0)).toBe('Auto-closing in 0s');
+    expect(formatVoiceCountdownText(null)).toBe('');
+
+    const waitingMeta = getVoiceStateMeta('waiting_for_next', 10, 'Ava');
+    expect(waitingMeta.badgeText).toBe('10s remaining');
+    expect(waitingMeta.title).toBe('Waiting for Next Question');
+    expect(waitingMeta.subtitle).toContain('10s');
+
+    const listeningMeta = getVoiceStateMeta('listening', null);
+    expect(listeningMeta.badgeText).toBe('Listening');
+    expect(listeningMeta.title).toBe('Listening...');
+
+    const speakingMeta = getVoiceStateMeta('speaking', null, 'Ava');
+    expect(speakingMeta.badgeText).toBe('Speaking');
+    expect(speakingMeta.title).toBe('Ava Speaking');
   });
 });

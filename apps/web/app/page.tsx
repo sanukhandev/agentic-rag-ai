@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   formatNaturalAbstention,
+  actionOutcomeText,
   isChatActionState,
   isValidTenantSlug,
   normalizeVoiceTranscript,
@@ -12,8 +13,10 @@ import {
   type ChatCitation,
   type ChatHistoryMessage,
   type ChatReply,
-  type DisplayMessage
+  type DisplayMessage,
+  type VoiceState
 } from './chat-utils';
+import { VoiceVisualizer } from './voice-visualizer';
 
 type Config = {
   tenant: { name: string; slug: string };
@@ -72,6 +75,11 @@ export default function Home() {
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceSpeaking, setVoiceSpeaking] = useState(false);
+  const [voiceModeActive, setVoiceModeActive] = useState(false);
+  const [voiceState, setVoiceState] = useState<VoiceState>('idle');
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [assistantCaption, setAssistantCaption] = useState('');
+  const [countdown, setCountdown] = useState<number | null>(null);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -79,6 +87,24 @@ export default function Home() {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceTranscriptRef = useRef('');
   const voiceTurnRef = useRef(false);
+  const voiceModeActiveRef = useRef(false);
+  const voiceStateRef = useRef<VoiceState>('idle');
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const appendActionOutcome = (proposalId: string, state: ChatActionState) => {
+    const content = actionOutcomeText(state);
+    if (!content) return;
+    setMessages((prev) => prev.some((m) => m.id === `action-outcome-${proposalId}`) ? prev : [...prev, {
+      id: `action-outcome-${proposalId}`,
+      role: 'assistant',
+      content,
+      grounded: false,
+      conversational: true,
+      citations: [],
+      actionState: state,
+      createdAt: new Date().toISOString()
+    }]);
+  };
 
   useEffect(() => {
     const supported = Boolean(getSpeechRecognitionConstructor()) &&
@@ -86,6 +112,7 @@ export default function Home() {
     setVoiceSupported(supported);
 
     return () => {
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       recognitionRef.current?.stop();
       if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
     };
@@ -179,6 +206,161 @@ export default function Home() {
     .join('')
     .toUpperCase() || 'AG';
 
+  const clearInactivityCountdown = () => {
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    setCountdown(null);
+  };
+
+  const startInactivityCountdown = (seconds = 10) => {
+    clearInactivityCountdown();
+    setCountdown(seconds);
+    const deadline = Date.now() + seconds * 1000;
+
+    countdownIntervalRef.current = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setCountdown(remaining);
+      if (remaining <= 0) {
+        clearInactivityCountdown();
+        terminateVoice('Voice session ended after 10s of inactivity.');
+      }
+    }, 250);
+  };
+
+  const terminateVoice = (reason?: string) => {
+    clearInactivityCountdown();
+    voiceModeActiveRef.current = false;
+    voiceStateRef.current = 'idle';
+    setVoiceModeActive(false);
+    setVoiceState('idle');
+    setVoiceListening(false);
+    setVoiceSpeaking(false);
+    setVoiceTranscript('');
+    setCountdown(null);
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      recognitionRef.current = null;
+    }
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+
+    if (reason) {
+      setError(reason);
+      setTimeout(() => setError((prev) => (prev === reason ? '' : prev)), 4000);
+    }
+  };
+
+  const startListening = (isNextTurn = false) => {
+    if (!voiceSupported) {
+      setError('Voice mode is not supported by this browser. You can continue by typing.');
+      return;
+    }
+
+    const Recognition = getSpeechRecognitionConstructor();
+    if (!Recognition) return;
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      recognitionRef.current = null;
+    }
+
+    const recognition = new Recognition();
+    recognition.lang = config?.persona?.permittedLanguages?.[0] || 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    voiceTranscriptRef.current = '';
+    setVoiceTranscript('');
+    voiceModeActiveRef.current = true;
+    setVoiceModeActive(true);
+
+    if (isNextTurn) {
+      voiceStateRef.current = 'waiting_for_next';
+      setVoiceState('waiting_for_next');
+    } else {
+      voiceStateRef.current = 'listening';
+      setVoiceState('listening');
+    }
+
+    startInactivityCountdown(10);
+    setVoiceListening(true);
+
+    recognition.onresult = (event) => {
+      // User spoke: clear the 10-second silence countdown immediately!
+      clearInactivityCountdown();
+      if (voiceStateRef.current !== 'listening') {
+        voiceStateRef.current = 'listening';
+        setVoiceState('listening');
+      }
+
+      const parts: string[] = [];
+      for (let index = 0; index < event.results.length; index += 1) {
+        parts.push(event.results[index][0].transcript);
+      }
+      const transcript = normalizeVoiceTranscript(parts);
+      voiceTranscriptRef.current = transcript;
+      setVoiceTranscript(transcript);
+      setMessage(transcript);
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === 'no-speech' || event.error === 'aborted') {
+        // Silence will trigger countdown timeout naturally
+        return;
+      }
+      terminateVoice('Voice input encountered an error. You can continue by typing.');
+    };
+
+    recognition.onend = () => {
+      setVoiceListening(false);
+      if (!voiceModeActiveRef.current) return;
+
+      const transcript = voiceTranscriptRef.current.trim();
+      if (transcript) {
+        clearInactivityCountdown();
+        voiceStateRef.current = 'processing';
+        setVoiceState('processing');
+        voiceTranscriptRef.current = '';
+        void send(transcript);
+      } else {
+        // Restart recognition if voice mode is still waiting and timer has not expired
+        if (
+          voiceModeActiveRef.current &&
+          (voiceStateRef.current === 'listening' || voiceStateRef.current === 'waiting_for_next')
+        ) {
+          try {
+            recognition.start();
+            setVoiceListening(true);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    };
+
+    recognitionRef.current = recognition;
+    setError('');
+
+    try {
+      recognition.start();
+    } catch {
+      terminateVoice('Voice input could not start. You can continue by typing.');
+    }
+  };
+
   const speak = (text: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
@@ -196,13 +378,30 @@ export default function Home() {
     utterance.rate = config?.persona?.voiceRate ?? 1;
     utterance.pitch = config?.persona?.voicePitch ?? 1;
     utterance.volume = config?.persona?.voiceVolume ?? 1;
-    utterance.onend = () => setVoiceSpeaking(false);
-    utterance.onerror = () => setVoiceSpeaking(false);
+
+    utterance.onend = () => {
+      setVoiceSpeaking(false);
+      if (voiceModeActiveRef.current) {
+        // Assistant finished speaking: automatically wait for next question with 10s timeout
+        startListening(true);
+      }
+    };
+
+    utterance.onerror = () => {
+      setVoiceSpeaking(false);
+      if (voiceModeActiveRef.current) {
+        startListening(true);
+      }
+    };
+
+    voiceStateRef.current = 'speaking';
+    setVoiceState('speaking');
     setVoiceSpeaking(true);
     window.speechSynthesis.speak(utterance);
   };
 
   const send = async (voiceText?: string) => {
+    const isFromVoice = Boolean(voiceText || voiceModeActiveRef.current);
     const trimmed = (voiceText ?? message).trim();
     if (!trimmed || busy) return;
     if (!isValidTenantSlug(tenantSlug) || !config) {
@@ -212,6 +411,11 @@ export default function Home() {
 
     setBusy(true);
     setError('');
+
+    if (isFromVoice) {
+      voiceStateRef.current = 'processing';
+      setVoiceState('processing');
+    }
 
     const userMsg: DisplayMessage = {
       id: `usr-${Date.now()}`,
@@ -265,13 +469,16 @@ export default function Home() {
         createdAt: new Date().toISOString()
       };
       setMessages((prev) => [...prev, assistantMsg]);
-      if (voiceTurnRef.current) {
+
+      if (isFromVoice && voiceModeActiveRef.current) {
+        setAssistantCaption(naturalText);
         speak(naturalText);
-        voiceTurnRef.current = false;
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unexpected error.');
-      voiceTurnRef.current = false;
+      if (isFromVoice && voiceModeActiveRef.current) {
+        startListening(true);
+      }
     } finally {
       setBusy(false);
     }
@@ -282,69 +489,21 @@ export default function Home() {
       setError('Voice mode is not supported by this browser. You can continue by typing.');
       return;
     }
-    if (voiceSpeaking) {
-      window.speechSynthesis.cancel();
-      setVoiceSpeaking(false);
-      return;
-    }
-    if (voiceListening) {
-      recognitionRef.current?.stop();
-      return;
-    }
-
-    const Recognition = getSpeechRecognitionConstructor();
-    if (!Recognition) return;
-
-    const recognition = new Recognition();
-    recognition.lang = config?.persona?.permittedLanguages?.[0] || 'en-US';
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    voiceTranscriptRef.current = '';
-    voiceTurnRef.current = true;
-    recognition.onresult = (event) => {
-      const parts: string[] = [];
-      for (let index = 0; index < event.results.length; index += 1) {
-        parts.push(event.results[index][0].transcript);
-      }
-      const transcript = normalizeVoiceTranscript(parts);
-      voiceTranscriptRef.current = transcript;
-      setMessage(transcript);
-    };
-    recognition.onerror = (event) => {
-      voiceTurnRef.current = false;
-      setVoiceListening(false);
-      if (event.error !== 'aborted' && event.error !== 'no-speech') {
-        setError('Voice input could not start. You can continue by typing.');
-      }
-    };
-    recognition.onend = () => {
-      setVoiceListening(false);
-      const transcript = voiceTranscriptRef.current.trim();
-      if (transcript) {
-        void send(transcript);
-      } else {
-        voiceTurnRef.current = false;
-      }
-    };
-    recognitionRef.current = recognition;
-    setError('');
-    setVoiceListening(true);
-    try {
-      recognition.start();
-    } catch {
-      voiceTurnRef.current = false;
-      setVoiceListening(false);
-      setError('Voice input could not start. You can continue by typing.');
+    if (voiceModeActive) {
+      terminateVoice();
+    } else {
+      startListening(false);
     }
   };
 
   const confirm = async (proposalId: string) => {
     if (!sessionId) return;
+    const activeSessionId = sessionId;
     try {
       const response = await fetch(`${api}/api/v1/chat/actions/${proposalId}/confirm`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId, confirmed: true })
+        body: JSON.stringify({ sessionId: activeSessionId, confirmed: true })
       });
       const body = (await response.json()) as { action?: { state?: unknown }; error?: { message?: string } };
       if (!response.ok) {
@@ -367,6 +526,28 @@ export default function Home() {
               }
         )
       );
+      if (state === 'approved' || state === 'processing') appendActionOutcome(proposalId, state);
+      if (state === 'completed' || state === 'failed') {
+        appendActionOutcome(proposalId, state);
+        return;
+      }
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const statusResponse = await fetch(`${api}/api/v1/chat/actions/${proposalId}?sessionId=${encodeURIComponent(activeSessionId)}`);
+        if (!statusResponse.ok) continue;
+        const statusBody = (await statusResponse.json()) as { action?: { state?: unknown } };
+        const nextState = statusBody.action?.state;
+        if (!isChatActionState(nextState)) continue;
+        setMessages((prev) => prev.map((m) => m.actionProposal?.id !== proposalId ? m : {
+          ...m,
+          actionState: nextState,
+          actionProposal: nextState === 'completed' || nextState === 'failed' ? null : m.actionProposal
+        }));
+        if (nextState === 'completed' || nextState === 'failed') {
+          appendActionOutcome(proposalId, nextState);
+          return;
+        }
+      }
     } catch {
       setError('The request could not be confirmed.');
     }
@@ -533,7 +714,41 @@ export default function Home() {
             {/* Left: Premium White Conversation Canvas (8 columns) */}
             <div className="lg:col-span-8 flex flex-col rounded-2xl border border-neutral-200/90 bg-white shadow-card overflow-hidden min-h-[660px]">
               
-              {/* Inner Card Header */}
+              {voiceModeActive ? (
+                /* Immersive Voice Mode Window (Hides the main chat window while voice mode is active) */
+                <VoiceVisualizer
+                  isOpen={voiceModeActive}
+                  state={voiceState}
+                  transcript={voiceTranscript}
+                  assistantCaption={assistantCaption}
+                  countdown={countdown}
+                  agentName={agentName}
+                  agentInitials={agentInitials}
+                  onClose={() => terminateVoice()}
+                  onSendNow={() => {
+                    if (voiceTranscript.trim()) {
+                      clearInactivityCountdown();
+                      voiceStateRef.current = 'processing';
+                      setVoiceState('processing');
+                      const toSend = voiceTranscript.trim();
+                      voiceTranscriptRef.current = '';
+                      setVoiceTranscript('');
+                      void send(toSend);
+                    }
+                  }}
+                  onInterrupt={() => {
+                    if (voiceSpeaking) {
+                      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                        window.speechSynthesis.cancel();
+                      }
+                      setVoiceSpeaking(false);
+                      startListening(true);
+                    }
+                  }}
+                />
+              ) : (
+                <>
+                  {/* Inner Card Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 bg-neutral-50/50">
                 <div className="flex items-center gap-3">
                   <div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-900 text-white font-bold text-xs">
@@ -665,9 +880,10 @@ export default function Home() {
                                 <button
                                   type="button"
                                   onClick={() => void confirm(msg.actionProposal!.id)}
+                                  disabled={msg.actionState === 'approved' || msg.actionState === 'processing'}
                                   className="rounded-lg bg-neutral-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 transition-all button-press"
                                 >
-                                  {msg.actionState === 'unknown' ? 'Retry Request' : 'Confirm & Submit'}
+                                  {msg.actionState === 'approved' || msg.actionState === 'processing' ? 'Submitting…' : msg.actionState === 'unknown' ? 'Retry Request' : 'Confirm & Submit'}
                                 </button>
                                 {msg.actionState && (
                                   <span className="text-[11px] font-mono text-neutral-500">
@@ -782,15 +998,35 @@ export default function Home() {
                       type="button"
                       onClick={toggleVoice}
                       disabled={busy}
-                      className={`flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-medium transition-all button-press disabled:cursor-not-allowed disabled:opacity-40 ${voiceListening ? 'border-rose-300 bg-rose-50 text-rose-700' : voiceSpeaking ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100'}`}
-                      aria-label={voiceListening ? 'Stop listening' : voiceSpeaking ? 'Stop speaking' : 'Start voice mode'}
+                      className={`flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-medium transition-all button-press disabled:cursor-not-allowed disabled:opacity-40 ${
+                        voiceModeActive
+                          ? voiceState === 'speaking'
+                            ? 'border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm'
+                            : voiceState === 'waiting_for_next'
+                            ? 'border-amber-400 bg-amber-50 text-amber-800 shadow-sm'
+                            : 'border-emerald-300 bg-emerald-50 text-emerald-700 shadow-sm animate-pulse'
+                          : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100'
+                      }`}
+                      aria-label={voiceModeActive ? 'Exit voice mode' : 'Start voice mode'}
                       title={voiceSupported ? 'Speak a message; audio is not stored by this chat' : 'Voice mode is not supported by this browser'}
                     >
                       <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8" />
                       </svg>
-                      <span className="hidden sm:inline">{voiceListening ? 'Listening…' : voiceSpeaking ? 'Speaking…' : voiceSupported ? 'Voice' : 'Voice unavailable'}</span>
+                      <span className="hidden sm:inline">
+                        {voiceModeActive
+                          ? voiceState === 'speaking'
+                            ? 'Speaking…'
+                            : voiceState === 'waiting_for_next'
+                            ? `Waiting (${countdown ?? 10}s)`
+                            : voiceState === 'processing'
+                            ? 'Transcribing…'
+                            : 'Listening…'
+                          : voiceSupported
+                          ? 'Voice'
+                          : 'Voice unavailable'}
+                      </span>
                     </button>
 
                     <button
@@ -818,8 +1054,10 @@ export default function Home() {
                   </p>
                 </form>
               </div>
+            </>
+          )}
 
-            </div>
+        </div>
 
             {/* Right: Context, Knowledge Scope & Policies (4 columns) */}
             <div className="lg:col-span-4 space-y-6">

@@ -1,7 +1,8 @@
-import type { IntentCatalog, IntentCatalogIntent, IntentCatalogSlot, IntentCatalogVersion } from './types.js';
+import type { IntentCatalog, IntentCatalogIntent, IntentCatalogQualityRule, IntentCatalogSlot, IntentCatalogVersion } from './types.js';
 
 export interface IntentResolution {
   intentKey: string | null;
+  interest: string | null;
   workflowKey: string | null;
   score: number;
   confidence: number;
@@ -49,6 +50,7 @@ export const validateIntentCatalog = (input: unknown): CatalogValidationResult =
   const slots = value.slots as unknown[];
   const relations = value.relations as unknown[];
   const workflowBindings = value.workflowBindings as unknown[];
+  const qualityRules = Array.isArray(value.qualityRules) ? value.qualityRules : [];
   const intentKeys = intents.map((item) => text(record(item).intentKey));
   const workflowKeys = workflowBindings.map((item) => text(record(item).workflowKey));
   errors.push(...duplicateErrors(intentKeys.filter(Boolean), 'Intents'));
@@ -81,7 +83,7 @@ export const validateIntentCatalog = (input: unknown): CatalogValidationResult =
     const intentKey = text(row.intentKey);
     if (!intentSet.has(intentKey)) errors.push(`Slots row ${index + 2} references an unknown intent.`);
     if (!text(row.slotKey) || !text(row.dataType) || !text(row.promptKey) || !text(row.validationRule)) errors.push(`Slots row ${index + 2} has invalid required fields.`);
-    return { intentKey, slotKey: text(row.slotKey), dataType: text(row.dataType), required: bool(row.required), alternativeGroup: text(row.alternativeGroup) || null, collectionOrder: Number.isFinite(finite(row.collectionOrder)) ? finite(row.collectionOrder) : 0, promptKey: text(row.promptKey), validationRule: text(row.validationRule), retentionClass: text(row.retentionClass) };
+    return { intentKey, slotKey: text(row.slotKey), dataType: text(row.dataType), required: bool(row.required), alternativeGroup: text(row.alternativeGroup) || null, collectionOrder: Number.isFinite(finite(row.collectionOrder)) ? finite(row.collectionOrder) : 0, promptKey: text(row.promptKey), validationRule: text(row.validationRule), retentionClass: text(row.retentionClass), qualityWeight: Number.isFinite(finite(row.qualityWeight)) ? finite(row.qualityWeight) : 0 };
   });
   const parsedRelations = relations.map((item, index) => {
     const row = record(item); const sourceIntent = text(row.sourceIntent); const relatedIntent = text(row.relatedIntent);
@@ -93,7 +95,16 @@ export const validateIntentCatalog = (input: unknown): CatalogValidationResult =
     if (!keyPattern.test(workflowKey) || !text(row.n8nWorkflowId) || !safePath(`/${webhookPath.replace(/^\//, '')}`)) errors.push(`WorkflowBindings row ${index + 2} has an invalid binding or webhook path.`);
     return { workflowKey, n8nWorkflowId: text(row.n8nWorkflowId), webhookPath: webhookPath.replace(/^\//, ''), payloadContract: text(row.payloadContract), sideEffectClass: text(row.sideEffectClass), active: bool(row.active) };
   });
-  const catalog: IntentCatalog = { tenantScope: text(value.tenantScope) || null, intents: parsedIntents, signals: parsedSignals, slots: parsedSlots, relations: parsedRelations, workflowBindings: parsedBindings };
+  const parsedQualityRules = qualityRules.map((item, index) => {
+    const row = record(item);
+    const rule = { intentKey: text(row.intentKey), qualityWorkflowKey: text(row.qualityWorkflowKey), intentWeight: finite(row.intentWeight), confidenceWeight: finite(row.confidenceWeight), contactWeight: finite(row.contactWeight), hotThreshold: finite(row.hotThreshold), warmThreshold: finite(row.warmThreshold), nurtureThreshold: finite(row.nurtureThreshold) } satisfies IntentCatalogQualityRule;
+    if (!intentSet.has(rule.intentKey)) errors.push(`QualityRules row ${index + 2} references an unknown intent.`);
+    if (rule.qualityWorkflowKey && !workflowSet.has(rule.qualityWorkflowKey)) errors.push(`QualityRules row ${index + 2} references an unknown workflow binding.`);
+    if (![rule.intentWeight, rule.confidenceWeight, rule.contactWeight].every((weight) => Number.isFinite(weight) && weight >= 0) || Math.abs(rule.intentWeight + rule.confidenceWeight + rule.contactWeight - 1) > 0.001) errors.push(`QualityRules row ${index + 2} weights must be non-negative and sum to 1.`);
+    if (![rule.hotThreshold, rule.warmThreshold, rule.nurtureThreshold].every((threshold) => Number.isFinite(threshold) && threshold >= 0 && threshold <= 100) || rule.hotThreshold < rule.warmThreshold || rule.warmThreshold < rule.nurtureThreshold) errors.push(`QualityRules row ${index + 2} thresholds must be ordered between 0 and 100.`);
+    return rule;
+  });
+  const catalog: IntentCatalog = { tenantScope: text(value.tenantScope) || null, intents: parsedIntents, signals: parsedSignals, slots: parsedSlots, relations: parsedRelations, workflowBindings: parsedBindings, qualityRules: parsedQualityRules };
   if (catalog.intents.length === 0) errors.push('Catalog must contain at least one intent.');
   if (catalog.workflowBindings.length === 0) errors.push('Catalog must contain at least one workflow binding.');
   return { errors: [...new Set(errors)], catalog: errors.length ? null : catalog };
@@ -111,7 +122,41 @@ const slotValues = (intentKey: string, slots: IntentCatalogSlot[], values: Recor
 const missingSlotKeys = (intentKey: string, slots: IntentCatalogSlot[], values: Record<string, string>): string[] => {
   const rows = slots.filter((slot) => slot.intentKey === intentKey).sort((left, right) => left.collectionOrder - right.collectionOrder);
   const present = slotValues(intentKey, slots, values);
-  return rows.filter((slot) => slot.required && !present.has(slot.slotKey) && !(slot.alternativeGroup && rows.some((other) => other.alternativeGroup === slot.alternativeGroup && present.has(other.slotKey)))).map((slot) => slot.slotKey);
+  const missing = rows.filter((slot) => slot.required && !present.has(slot.slotKey) && !(slot.alternativeGroup && rows.some((other) => other.alternativeGroup === slot.alternativeGroup && present.has(other.slotKey)))).map((slot) => slot.slotKey);
+  for (const group of new Set(rows.map((slot) => slot.alternativeGroup).filter((group): group is string => Boolean(group)))) {
+    if (!rows.some((slot) => slot.alternativeGroup === group && present.has(slot.slotKey))) {
+      const first = rows.find((slot) => slot.alternativeGroup === group);
+      if (first && !missing.includes(first.slotKey)) missing.push(first.slotKey);
+    }
+  }
+  return rows.filter((slot) => missing.includes(slot.slotKey)).map((slot) => slot.slotKey);
+};
+
+const slotLabel = (slot: IntentCatalogSlot): string => {
+  if (slot.dataType === 'person_name' || slot.slotKey === 'name') return 'name';
+  if (slot.dataType === 'email' || slot.dataType === 'phone' || slot.alternativeGroup === 'contact') return 'email address or phone number';
+  return slot.slotKey.replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim() || 'this information';
+};
+
+export const catalogSlotQuestion = (version: IntentCatalogVersion, intentKey: string, slotKey: string): string => {
+  const slot = version.catalog.slots.find((candidate) => candidate.intentKey === intentKey && candidate.slotKey === slotKey);
+  if (!slot) return 'To continue, could you provide the requested information?';
+  if (slot.promptKey === 'lead.ask_name') return 'What name should I use?';
+  if (slot.promptKey === 'lead.ask_contact') return 'What’s the best email address or phone number to reach you on?';
+  return `To continue, could you share your ${slotLabel(slot)}?`;
+};
+
+export const catalogIntentClarification = (version: IntentCatalogVersion, intentKey: string): string => {
+  const intent = version.catalog.intents.find((candidate) => candidate.intentKey === intentKey);
+  if (!intent) return 'To make sure I understand, could you tell me a little more about what you need?';
+  const examples = [...new Set(version.catalog.signals
+    .filter((signal) => signal.intentKey === intentKey && signal.signalType !== 'exclusion')
+    .sort((left, right) => right.weight - left.weight)
+    .map((signal) => normalize(signal.value).replace(/[^\p{L}\p{N}\s?'-]/gu, '').trim().slice(0, 80))
+    .filter(Boolean))].slice(0, 4);
+  return examples.length
+    ? `To make sure I route this correctly, are you looking to ${intent.displayName.toLocaleLowerCase('en-US')}? For example: ${examples.map((example) => `“${example}”`).join(', ')}.`
+    : `To make sure I route this correctly, are you looking to ${intent.displayName.toLocaleLowerCase('en-US')}?`;
 };
 
 export const resolveIntent = (version: IntentCatalogVersion, inputText: string, slotValuesByKey: Record<string, string> = {}): IntentResolution => {
@@ -126,11 +171,11 @@ export const resolveIntent = (version: IntentCatalogVersion, inputText: string, 
     return { intent, score, confidence: Math.min(1, score / 100), matchedCount: matched.filter((signal) => signal.signalType !== 'exclusion').length, missing: missingSlotKeys(intent.intentKey, version.catalog.slots, slotValuesByKey) };
   }).filter((candidate) => candidate.matchedCount > 0).sort((left, right) => right.score - left.score || right.intent.priority - left.intent.priority);
   const best = candidates[0];
-  if (!best) return { intentKey: null, workflowKey: null, score: 0, confidence: 0, catalogVersionId: version.id, confirmationRequired: false, missingSlots: [], actionAllowed: false, ambiguous: false, runnerUpIntentKey: null, reason: 'no_signal' };
+  if (!best) return { intentKey: null, interest: null, workflowKey: null, score: 0, confidence: 0, catalogVersionId: version.id, confirmationRequired: false, missingSlots: [], actionAllowed: false, ambiguous: false, runnerUpIntentKey: null, reason: 'no_signal' };
   const runnerUp = candidates[1];
   const ambiguous = Boolean(runnerUp && Math.abs(best.score - runnerUp.score) <= 10 && best.intent.priority === runnerUp.intent.priority);
   const binding = version.catalog.workflowBindings.find((item) => item.workflowKey === best.intent.workflowKey);
   const thresholdMet = best.score >= best.intent.minimumScore && best.confidence >= best.intent.confidenceThreshold;
   const actionAllowed = best.intent.active && Boolean(binding?.active) && thresholdMet && !ambiguous && best.missing.length === 0;
-  return { intentKey: best.intent.intentKey, workflowKey: binding?.active ? best.intent.workflowKey : null, score: best.score, confidence: best.confidence, catalogVersionId: version.id, confirmationRequired: best.intent.confirmationRequired, missingSlots: best.missing, actionAllowed, ambiguous, runnerUpIntentKey: runnerUp?.intent.intentKey ?? null, reason: !best.intent.active ? 'intent_inactive' : !binding?.active ? 'workflow_inactive' : ambiguous ? 'ambiguous' : best.missing.length ? 'missing_slots' : !thresholdMet ? 'below_threshold' : 'matched' };
+  return { intentKey: best.intent.intentKey, interest: best.intent.displayName, workflowKey: binding?.active ? best.intent.workflowKey : null, score: best.score, confidence: best.confidence, catalogVersionId: version.id, confirmationRequired: best.intent.confirmationRequired, missingSlots: best.missing, actionAllowed, ambiguous, runnerUpIntentKey: runnerUp?.intent.intentKey ?? null, reason: !best.intent.active ? 'intent_inactive' : !binding?.active ? 'workflow_inactive' : ambiguous ? 'ambiguous' : !thresholdMet ? 'below_threshold' : best.missing.length ? 'missing_slots' : 'matched' };
 };

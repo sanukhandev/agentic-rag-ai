@@ -1,7 +1,7 @@
 export type Role = 'platform_admin' | 'tenant_admin' | 'tenant_editor' | 'tenant_viewer' | 'tenant_agent';
 export type Audience = 'public' | 'internal';
 export type SourceStatus = 'awaiting_review' | 'active' | 'revoked';
-export type ActionState = 'awaiting_confirmation' | 'completed' | 'failed' | 'unknown';
+export type ActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'unknown';
 export type TenantStatus = 'provisioning' | 'active' | 'suspended' | 'archived';
 export type IngestionJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 
@@ -43,6 +43,18 @@ export interface IntentCatalogSlot {
   promptKey: string;
   validationRule: string;
   retentionClass: string;
+  qualityWeight?: number;
+}
+
+export interface IntentCatalogQualityRule {
+  intentKey: string;
+  qualityWorkflowKey: string;
+  intentWeight: number;
+  confidenceWeight: number;
+  contactWeight: number;
+  hotThreshold: number;
+  warmThreshold: number;
+  nurtureThreshold: number;
 }
 
 export interface IntentCatalogRelation {
@@ -71,6 +83,7 @@ export interface IntentCatalog {
   slots: IntentCatalogSlot[];
   relations: IntentCatalogRelation[];
   workflowBindings: IntentCatalogWorkflowBinding[];
+  qualityRules?: IntentCatalogQualityRule[];
 }
 
 export interface IntentCatalogVersion {
@@ -165,6 +178,17 @@ export interface AuthSession {
   revokedAt: string | null;
 }
 
+export interface ChannelCredential {
+  id: string;
+  tenantId: string;
+  channel: string;
+  keyId: string;
+  secretCiphertext: string;
+  active: boolean;
+  createdAt: string;
+  revokedAt: string | null;
+}
+
 export interface IngestionJob {
   id: string;
   tenantId: string;
@@ -227,6 +251,8 @@ export interface LeadData {
   name?: string;
   email?: string;
   phone?: string;
+  /** Server-derived catalog label. Never populated directly from the visitor. */
+  interest?: string;
 }
 
 export interface LeadConversationMessage {
@@ -250,6 +276,8 @@ export interface CrmLead {
   conversation: LeadConversationMessage[];
   summary: string | null;
   summaryStatus: 'pending' | 'completed' | 'failed';
+  leadId?: string | null;
+  remoteCrm?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -311,6 +339,10 @@ export interface Store {
   getAuthSession(tokenHash: string): Promise<AuthSession | null>;
   revokeAuthSession(tokenHash: string): Promise<void>;
   claimCallbackNonce(nonce: string, expiresAt: string): Promise<boolean>;
+  createChannelCredential(input: Omit<ChannelCredential, 'createdAt' | 'revokedAt'>): Promise<ChannelCredential>;
+  getChannelCredential(keyId: string): Promise<ChannelCredential | null>;
+  listChannelCredentials(tenantId: string): Promise<ChannelCredential[]>;
+  revokeChannelCredential(id: string, tenantId: string): Promise<ChannelCredential | null>;
   setPersona(persona: Persona): Promise<Persona>;
   getPersona(tenantId: string): Promise<Persona | null>;
   createIntentCatalogVersion(input: Omit<IntentCatalogVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<IntentCatalogVersion>;
@@ -351,12 +383,16 @@ export interface Store {
   getAction(id: string): Promise<ActionRequest | null>;
   getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null>;
   updateAction(action: ActionRequest): Promise<ActionRequest>;
+  claimApprovedActions(workflowKey: string, limit: number): Promise<ActionRequest[]>;
   listActions(tenantId: string): Promise<ActionRequest[]>;
   createCrmLead(lead: CrmLead): Promise<CrmLead>;
+  upsertCrmLead(lead: CrmLead, dedupeKey: string): Promise<CrmLead>;
   getCrmLeadByActionId(actionId: string, tenantId: string): Promise<CrmLead | null>;
   getCrmLead(id: string, tenantId: string): Promise<CrmLead | null>;
   listCrmLeads(tenantId: string): Promise<CrmLead[]>;
   updateCrmLeadSummary(id: string, tenantId: string, summary: string, status: CrmLead['summaryStatus']): Promise<CrmLead | null>;
+  updateCrmLeadScore(id: string, tenantId: string, score: number): Promise<CrmLead | null>;
+  updateCrmLeadRemote(input: { id: string; tenantId: string; leadId: string; remoteCrm: string }): Promise<CrmLead | null>;
   addAudit(event: AuditEvent): Promise<void>;
   listAudit(tenantId: string): Promise<AuditEvent[]>;
   getTenantStats(tenantId: string): Promise<TenantStats>;

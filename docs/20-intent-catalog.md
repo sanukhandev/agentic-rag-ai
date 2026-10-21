@@ -5,17 +5,35 @@ The intent catalog is an internal, tenant-scoped reference for deterministic int
 ## Flow
 
 1. A tenant administrator uploads the reviewed `.xlsx` workbook through `POST /api/v1/admin/intent-catalog/upload`.
-2. The private Python worker parses the required `README`, `Intents`, `Signals`, `Slots`, `Relations`, and `WorkflowBindings` sheets. Formulas, external links, unsupported files and malformed rows are rejected.
+2. The private Python worker parses the required `README`, `Intents`, `Signals`, `Slots`, `Relations`, and `WorkflowBindings` sheets plus the optional `QualityRules` sheet. Formulas, external links, unsupported files and malformed rows are rejected.
 3. The API validates the normalized result, checks tenant scope, stores a draft version and records an audit event. Re-uploading the same source hash is idempotent.
 4. A tenant administrator publishes one version through `POST /api/v1/admin/intent-catalog/versions/:id/publish`. Only the published version is used at chat time.
-5. Node scores the masked conversation against the published catalog, collects required slots, checks the threshold/confidence and active allowlisted binding, then creates a confirmation-gated action. The model never authorizes the action.
-6. n8n receives the minimal masked payload and forwards the approved lead data to the internal Node CRM endpoint. The workflow does not receive workbook contents, raw customer messages or token-vault credentials.
+5. Node scores the masked conversation against the published catalog. A signal candidate below its score/confidence threshold gets a catalog-derived clarification question before PII slot collection; once the intent qualifies, required slots are requested in collection order. An `alternative_group` requires one value from that group. Only after the threshold/confidence, active allowlisted binding and required slots pass does Node create a confirmation-gated action. The model never authorizes the action.
+6. Node changes the action to `approved` but never calls n8n. The scheduled n8n lead workflow polls the authenticated claim endpoint, which atomically changes claimed actions to `processing` and returns masked conversation data plus the published catalog metadata.
+7. n8n validates the catalog binding, writes the CRM lead through Node, and executes the separate quality workflow. That workflow calculates the score from `QualityRules` and slot `quality_weight` values, then stores the score and deterministic summary through Node.
+8. The CRM write is an upsert: the tenant-scoped HMAC of the normalized email (or phone fallback) prevents repeated submissions from creating another lead. Chat retries and n8n claims are idempotent.
 
 ## Workbook contract
 
 `README` is a two-column key/value sheet and must include a tenant scope when the workbook is tenant-specific. The other sheets use the headers in the sample workbook. Intent and workflow keys are stable identifiers; scores and confidence thresholds are server-validated.
 
-The current sample enables `crm.lead.create` through `lead-capture`. The appointment binding remains inactive until its consent, slot validation and calendar destination are reviewed.
+The current sample workbook is [crm-lead-capture-intent-catalog.xlsx](../examples/crm-lead-capture-intent-catalog.xlsx). It enables `crm.lead.create` and `crm.lead.quality.score`; `QualityRules` defines a 60% intent, 20% confidence and 20% contact-completeness score with hot/warm/nurture thresholds. The appointment binding remains inactive until its consent, slot validation and calendar destination are reviewed.
+
+The admin Intent Catalog view displays the loaded version's intents, thresholds, signals and workflow bindings. Uploading another `.xlsx` creates a new draft; publishing that draft replaces the active catalog. Tenant admins and platform admins with a selected tenant can use **Edit catalog** to change the JSON contract; `POST /api/v1/admin/intent-catalog/versions/:id/drafts` validates the complete catalog and creates a new draft without mutating the published version. Load and ingestion failures are shown inline with the API error and a retry action.
+
+`QualityRules` is the only source for lead-quality weights and thresholds. Code validates that the selected quality workflow is active and catalog-bound, but does not select or invoke a workflow.
+
+The existing `webhook_path` column remains a stable workflow-registry identifier for compatibility; the sample n8n flow is schedule-triggered and the API never posts to that path.
+
+## CRM lead-capture catalog
+
+The smallest useful catalog for this workflow is:
+
+| Intent | Display name / CRM interest | Signals | Required slots | Workflow |
+| --- | --- | --- | --- | --- |
+| `lead.capture` | Request a service | `i need a demo`, `book a demo`, `live demo`, `schedule a demo`, `schedule a call`, `connect with Sanu`, `call with Sanu`, `talk to Sanu`, `let him know`, `pass along a message`, quote, consultation, developer, ERP, build an ERP solution, hire | `name` plus `email` or `phone` | `crm.lead.create` → `lead-capture` |
+
+Node copies the published display name into the lead as the controlled `interest` value; visitors cannot set it directly. The complete masked conversation is retained on the lead so the CRM summary can capture the request and requirements without sending raw PII to n8n.
 
 ## Safety boundaries
 
@@ -24,3 +42,5 @@ The current sample enables `crm.lead.create` through `lead-capture`. The appoint
 - PII stays tokenized inside the backend boundary; only masked values and opaque IDs cross to n8n.
 - A proposed intent without required slots, threshold, confidence, active binding or explicit confirmation produces no side effect.
 - This local workflow set is a smoke-test/demo configuration, not approval for production n8n exposure or external CRM credentials.
+
+During multi-turn collection, Node stores only masked slot values and the pending catalog intent in the backend session history. A standalone answer such as `Alice` is accepted only for the catalog's supported `token:NAME` slot; unsupported slot validation rules remain unfilled rather than being sent to a workflow as unvalidated text.
