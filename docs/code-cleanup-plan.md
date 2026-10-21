@@ -2,7 +2,7 @@
 
 Branch: `chore/codebase-cleanup-solid-security`
 
-Status: Phases 1–4 are complete on this branch; Phases 5–6 are validated as audit gates and remain operational follow-up.
+Status: Phases 1–4 are complete on this branch; Phases 5–6 are validated as local audit gates. Deployment security sign-off remains operational follow-up.
 
 ## Guardrails
 
@@ -127,6 +127,14 @@ Add or retain tests for:
 
 Static scans are not a production security sign-off. TLS, admin MFA, secret-manager rotation, external provider data-processing approval, firewall policy, and live n8n/Salesforce configuration require deployment evidence.
 
+#### Local validation on this branch
+
+- Full workspace suite: 129 passed, 1 intentional PostgreSQL skip.
+- Strict TypeScript unused/unreachable audit: API, admin, web, shared chat utilities pass.
+- Secret scan, compose security verification, and production dependency audit pass; the latter reports 0 vulnerabilities.
+- Local five-source acceptance and 24 Python ingestion tests pass.
+- Docker health/static asset smoke checks return 200 for API live/ready, web HTML/Next assets, and Angular admin assets.
+
 ### Phase 6 — measured optimization
 
 Use evidence rather than speculative tuning:
@@ -139,6 +147,11 @@ Use evidence rather than speculative tuning:
 - use production-like p95 latency, query duration, queue depth, and error-rate baselines before/after.
 
 Do not add a framework, queue, ORM, or abstraction solely for style.
+
+#### Local validation on this branch
+
+- The shared package and admin route extraction reduce duplicated implementation and remove repeated tenant lookup in the dashboard route without changing public contracts.
+- No query-plan/index change was made because PostgreSQL plan evidence was not available in this cleanup run.
 
 ## SOLID review rules
 
