@@ -10,7 +10,6 @@ import {
   renderMarkdown,
   resolveTenantSlug,
   type ChatActionState,
-  type ChatCitation,
   type ChatHistoryMessage,
   type ChatReply,
   type DisplayMessage,
@@ -74,9 +73,7 @@ export default function Home() {
   const [error, setError] = useState('');
   const [config, setConfig] = useState<Config | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [isAdminTestingMode, setIsAdminTestingMode] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
-  const [voiceListening, setVoiceListening] = useState(false);
   const [voiceSpeaking, setVoiceSpeaking] = useState(false);
   const [voiceModeActive, setVoiceModeActive] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
@@ -95,7 +92,6 @@ export default function Home() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceTranscriptRef = useRef('');
-  const voiceTurnRef = useRef(false);
   const voiceModeActiveRef = useRef(false);
   const voiceStateRef = useRef<VoiceState>('idle');
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -140,10 +136,6 @@ export default function Home() {
     if (typeof window !== 'undefined') {
       const resolved = resolveTenantSlug(window.location.search);
       setTenantSlug(resolved);
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('admin') === 'true' || params.get('debug') === '1') {
-        setIsAdminTestingMode(true);
-      }
     }
   }, []);
 
@@ -244,7 +236,6 @@ export default function Home() {
     voiceStateRef.current = 'idle';
     setVoiceModeActive(false);
     setVoiceState('idle');
-    setVoiceListening(false);
     setVoiceSpeaking(false);
     setVoiceTranscript('');
     setCountdown(null);
@@ -305,7 +296,6 @@ export default function Home() {
     }
 
     startInactivityCountdown(10);
-    setVoiceListening(true);
 
     recognition.onresult = (event) => {
       // User spoke: clear the 10-second silence countdown immediately!
@@ -334,7 +324,6 @@ export default function Home() {
     };
 
     recognition.onend = () => {
-      setVoiceListening(false);
       if (!voiceModeActiveRef.current) return;
 
       const transcript = voiceTranscriptRef.current.trim();
@@ -352,7 +341,6 @@ export default function Home() {
         ) {
           try {
             recognition.start();
-            setVoiceListening(true);
           } catch {
             // ignore
           }
@@ -464,7 +452,7 @@ export default function Home() {
       if (!response.ok) throw new Error(body.error?.message ?? 'The assistant could not respond.');
 
       // Apply natural language formatting to technical abstentions (Requirement 9)
-      const naturalText = formatNaturalAbstention(body.answer, agentName);
+      const naturalText = formatNaturalAbstention(body.answer);
 
       const assistantMsg: DisplayMessage = {
         id: body.messageId ?? `asst-${Date.now()}`,

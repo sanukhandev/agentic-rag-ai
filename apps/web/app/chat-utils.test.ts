@@ -3,7 +3,6 @@ import {
   applyActionState,
   actionOutcomeText,
   escapeHtml,
-  formatInlineMarkdown,
   formatNaturalAbstention,
   formatVoiceCountdownText,
   getVoiceStateMeta,
@@ -60,7 +59,7 @@ describe('web chat utilities', () => {
 
   it('converts technical abstention text into concise, human phrasing', () => {
     const technical = "I’m Sales assistant. The approved knowledge does not establish an answer to that question, so I won’t guess.";
-    const natural = formatNaturalAbstention(technical, 'Sales assistant');
+    const natural = formatNaturalAbstention(technical);
     expect(natural).not.toContain('won’t guess');
     expect(natural).toContain('information available here');
   });

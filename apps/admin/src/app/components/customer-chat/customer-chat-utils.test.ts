@@ -52,7 +52,7 @@ describe('customer-chat-utils', () => {
 
   it('transforms technical abstention messages into natural, helpful language', () => {
     const technical = "I’m Sales assistant. The approved knowledge does not establish an answer to that question, so I won’t guess.";
-    const natural = formatNaturalAbstention(technical, 'Aura Guide');
+    const natural = formatNaturalAbstention(technical);
     expect(natural).toContain('I don’t have verified documentation on that topic in our current records');
     expect(natural).not.toContain('so I won’t guess');
 

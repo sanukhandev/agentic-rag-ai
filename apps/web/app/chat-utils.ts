@@ -227,7 +227,7 @@ export const renderMarkdown = (raw: string): string => {
   return blocks.join('');
 };
 
-export const formatNaturalAbstention = (rawAnswer: string, agentName = 'our assistant'): string => {
+export const formatNaturalAbstention = (rawAnswer: string): string => {
   const technicalPatterns = [
     /approved knowledge does not establish an answer/i,
     /approved sources contain conflicting facts/i,

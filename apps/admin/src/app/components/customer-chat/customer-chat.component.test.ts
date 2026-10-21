@@ -29,7 +29,7 @@ describe('CustomerChatComponent logic and contracts', () => {
   it('converts technical abstention messages to natural, polite customer language', () => {
     // Verifies requirement 9: Replace repetitive technical abstention messages
     const rawAbstention = 'I’m Sales assistant. The approved knowledge does not establish an answer to that question, so I won’t guess.';
-    const natural = formatNaturalAbstention(rawAbstention, 'Aura Guide');
+    const natural = formatNaturalAbstention(rawAbstention);
 
     expect(natural).not.toContain('won’t guess');
     expect(natural).toContain('I don’t have verified documentation on that topic in our current records');
