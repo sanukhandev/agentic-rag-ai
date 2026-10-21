@@ -111,7 +111,7 @@ curl.exe -X POST "$env:CHAT_API_BASE$path" `
   --data-raw $body
 ```
 
-Typical response fields are `messageId`, `sessionId`, `answer`, `grounded`, `citations`, `actionProposal`, and `requestId`. The connector should display only `answer` and approved citations/action prompts; it should not expose internal IDs or raw model output.
+Typical response fields are `messageId`, `sessionId`, `answer`, `grounded`, `citations`, `actionProposal`, and `requestId`. The connector should display only `answer` and approved citations/action prompts; it should not expose internal IDs or raw model output. When `actionProposal.consentRequired` is `true`, render the proposal as one explicit `Consent & Submit` button; its approval records consent and enters the existing asynchronous workflow queue, so no second submit question is needed.
 
 ## Read history and confirm an approved action
 

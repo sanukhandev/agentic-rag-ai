@@ -38,6 +38,15 @@ describe('action gateway', () => {
     expect(workflow.calls).toHaveLength(0);
   });
 
+  it('records button approval as explicit consent before the action is claimable', async () => {
+    const store = new MemoryStore();
+    const gateway = new ActionGateway(store);
+    const action = await gateway.propose('tenant-a', 'session-a', 'consent-button', { name: '[NAME_1]', email: '[EMAIL_1]', contactConsent: false });
+    const approved = await gateway.confirm(action.id, 'tenant-a');
+    expect(approved).toMatchObject({ state: 'approved', payload: { contactConsent: true } });
+    expect((await store.listAudit('tenant-a')).map((event) => event.eventName)).toContain('workflow.consent_granted');
+  });
+
   it('does not depend on a provider adapter and verifies replay-resistant signatures', async () => {
     const store = new MemoryStore();
     const gateway = new ActionGateway(store, { execute: async () => { throw new Error('alice@example.com timeout'); } });

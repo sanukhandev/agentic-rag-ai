@@ -14,7 +14,7 @@ import { catalogIntentClarification, catalogSlotQuestion, resolveIntent, validat
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
-import type { ChannelCredential, CrmLead, DocumentProcessingJob, IntentCatalogQualityRule, Message, Session, SourceStatus, Store, SupportingDocument, TenantStatus } from './types.js';
+import type { ChannelCredential, CrmLead, DocumentProcessingJob, IntentCatalogQualityRule, LeadData, Message, Session, SourceStatus, Store, SupportingDocument, TenantStatus } from './types.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -72,7 +72,7 @@ const crmLeadSchema = z.object({
   actionId: z.string().uuid(),
   tenantId: z.string().uuid(),
   sessionId: z.string().uuid(),
-  leadData: z.object({ name: leadTokenSchema.optional(), email: leadTokenSchema.optional(), phone: leadTokenSchema.optional(), interest: z.string().trim().min(1).max(200).optional() }).strict(),
+  leadData: z.object({ name: leadTokenSchema.optional(), email: leadTokenSchema.optional(), phone: leadTokenSchema.optional(), interest: z.string().trim().min(1).max(200).optional(), contactConsent: z.boolean().optional() }).strict(),
   intent: z.string().trim().min(1).max(80),
   intentScore: z.number().int().min(0).max(100).optional(),
   intentConfidence: z.number().min(0).max(1).optional(),
@@ -926,7 +926,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const catalogHistory = publishedCatalog ? await store.listMessages(session.id, session.tenantId, contextWindowMessages + 1) : [];
       const lastCatalogAssistant = [...catalogHistory].reverse().find((message) => message.role === 'assistant');
       const pendingCatalogIntent = typeof lastCatalogAssistant?.response?.catalogIntentKey === 'string' && typeof lastCatalogAssistant.response.catalogVersionId === 'string' && lastCatalogAssistant.response.catalogVersionId === publishedCatalog?.id ? lastCatalogAssistant.response.catalogIntentKey : null;
-      const pendingCatalogValues = lastCatalogAssistant?.response?.catalogSlotValues && typeof lastCatalogAssistant.response.catalogSlotValues === 'object' && !Array.isArray(lastCatalogAssistant.response.catalogSlotValues) ? Object.fromEntries(Object.entries(lastCatalogAssistant.response.catalogSlotValues).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {};
+      const pendingConsentAction = publishedCatalog && pendingCatalogIntent ? (await store.listActions(session.tenantId)).find((action) => action.sessionId === session.id && action.catalogVersionId === publishedCatalog.id && action.intentKey === pendingCatalogIntent && action.payload.contactConsent === true) : null;
+      const pendingCatalogValues: Record<string, string> = { ...(lastCatalogAssistant?.response?.catalogSlotValues && typeof lastCatalogAssistant.response.catalogSlotValues === 'object' && !Array.isArray(lastCatalogAssistant.response.catalogSlotValues) ? Object.fromEntries(Object.entries(lastCatalogAssistant.response.catalogSlotValues).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {}), ...(pendingConsentAction ? { contact_consent: 'true' } : {}) };
       const pendingSlot = publishedCatalog && pendingCatalogIntent ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === pendingCatalogIntent && slot.slotKey === (lastCatalogAssistant?.response?.catalogSlotKey ?? '')) : null;
       const pendingNameIsIntentPhrase = pendingSlot?.slotKey === 'name' && publishedCatalog
         ? publishedCatalog.catalog.signals.some((signal) => signal.intentKey === pendingCatalogIntent && signal.signalType === 'phrase' && signal.value && masked.masked.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').includes(signal.value.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim()))
@@ -938,14 +939,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       const pendingValueData = pendingSlot?.slotKey === 'name' && pendingValue ? { name: pendingValue } : pendingSlot?.slotKey === 'email' && pendingValue ? { email: pendingValue } : pendingSlot?.slotKey === 'phone' && pendingValue ? { phone: pendingValue } : {};
       const pendingCatalogValueData = pendingSlot && pendingValue ? { [pendingSlot.slotKey]: pendingValue } : {};
-      const currentLeadData = mergeLeadData(pendingCatalogValues, extractLeadData(maskedMessage), pendingValueData);
+      const currentLeadData = mergeLeadData(pendingCatalogValues as LeadData, extractLeadData(maskedMessage), pendingValueData);
       const currentCatalogSlotValues = { ...pendingCatalogValues, ...extractLeadData(maskedMessage), ...pendingCatalogValueData };
       const currentCatalogResolution = publishedCatalog ? resolveIntent(publishedCatalog, maskedMessage, currentCatalogSlotValues) : null;
       const useCatalogContext = Boolean(publishedCatalog && (pendingCatalogIntent || (!currentCatalogResolution?.intentKey && (needsConversationContext(maskedMessage) || leadDataRequested))));
       const recentMessages = intent === null && (needsConversationContext(maskedMessage) || leadDataRequested || useCatalogContext) ? (publishedCatalog ? catalogHistory : await store.listMessages(session.id, session.tenantId, contextWindowMessages + 1)).filter((message) => message.id !== userMessage.id).slice(-contextWindowMessages) : [];
       const conversation = recentMessages.map((message) => ({ role: message.role, content: message.maskedContent }));
       const retrievalQuery = [maskedMessage, ...recentMessages.filter((message) => message.role === 'user').map((message) => message.maskedContent)].join('\n');
-      const leadData = mergeLeadData(pendingCatalogValues, ...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), currentLeadData);
+      const leadData = mergeLeadData(pendingCatalogValues as LeadData, ...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), currentLeadData);
       const catalogSlotValues = { ...pendingCatalogValues, ...Object.fromEntries(recentMessages.filter((message) => message.role === 'user').flatMap((message) => Object.entries(extractLeadData(message.maskedContent)))), ...extractLeadData(maskedMessage), ...pendingCatalogValueData };
       const leadReady = Boolean(leadData.name && (leadData.email || leadData.phone));
       const catalogResolution = publishedCatalog
@@ -953,6 +954,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           ? resolveIntent(publishedCatalog, retrievalQuery, catalogSlotValues)
           : currentCatalogResolution
         : null;
+      const consentSlot = publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length === 1
+        ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === catalogResolution.intentKey && slot.slotKey === catalogResolution.missingSlots[0])
+        : null;
+      const consentActionReady = consentSlot?.validationRule === 'boolean:explicit_opt_in' && catalogResolution?.reason === 'missing_slots';
       const legacyLeadIntent = leadRequestedNow || recentMessages.some((message) => message.role === 'user' && hasLeadIntent(message.maskedContent));
       const leadIntent = languageAllowed && (publishedCatalog ? Boolean(catalogResolution?.intentKey) : legacyLeadIntent);
       const catalogSlotsReady = catalogResolution ? catalogResolution.missingSlots.length === 0 : leadReady;
@@ -961,6 +966,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
        else if (catalogResolution?.ambiguous) draft = { answer: 'I can help with that. Are you looking to request a service or arrange a meeting?', citationIds: [], proposedIntent: null };
        else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'below_threshold') draft = { answer: catalogIntentClarification(publishedCatalog, catalogResolution.intentKey), citationIds: [], proposedIntent: null };
        else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'intent_inactive') draft = { answer: 'I can note that request, but the matching workflow is not currently enabled.', citationIds: [], proposedIntent: null };
+      else if (consentActionReady) draft = { answer: 'I have the details needed. Please approve the consent action below to register your request.', citationIds: [], proposedIntent: catalogResolution?.intentKey ?? null };
       else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length > 0) draft = { answer: catalogSlotQuestion(publishedCatalog, catalogResolution.intentKey, catalogResolution.missingSlots[0] ?? ''), citationIds: [], proposedIntent: null };
       else if (leadIntent && !catalogSlotsReady) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: null };
       else if (leadReady || catalogResolution?.actionAllowed) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: catalogResolution?.intentKey ?? 'lead.capture' };
@@ -980,17 +986,19 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const casualFallback = conversational && (evidence.length === 0 || intent === 'identity');
       const grounded = !casualFallback && !leadCollection && evidence.length > 0 && hasSufficientEvidence(draft.answer, evidence, citations);
        const safeCitations = grounded ? citations : [];
-       const leadAnswer = leadCollection || leadReady || Boolean(catalogResolution?.actionAllowed);
+       const leadAnswer = leadCollection || leadReady || consentActionReady || Boolean(catalogResolution?.actionAllowed);
        const answer = !languageAllowed ? draft.answer : casualFallback || leadAnswer ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
        const safeAnswer = casualFallback || leadAnswer ? draft.answer : answer;
       const maskedAnswer = maskPiiForSession(session, safeAnswer, tokenVault);
       try { assertKnownTokens(session, maskedAnswer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       if (intent === 'farewell') session.closedAt = new Date().toISOString();
       await store.updateSession(session);
-      const actionLeadData = { ...leadData, ...(catalogResolution?.interest ? { interest: catalogResolution.interest } : {}) };
-      const action = (catalogResolution ? catalogResolution.actionAllowed : draft.proposedIntent === 'lead.capture' && leadIntent && leadReady) ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, actionLeadData, catalogResolution ? { workflowKey: catalogResolution.workflowKey ?? 'lead.capture', intentKey: catalogResolution.intentKey ?? 'lead.capture', intentScore: catalogResolution.score, intentConfidence: catalogResolution.confidence, catalogVersionId: catalogResolution.catalogVersionId, webhookPath: publishedCatalog?.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution.workflowKey)?.webhookPath ?? 'lead-capture' } : undefined) : null;
+      const actionLeadData = { ...leadData, ...(catalogResolution?.interest ? { interest: catalogResolution.interest } : {}), ...(consentActionReady ? { contactConsent: false } : (catalogSlotValues as Record<string, string>).contact_consent === 'true' ? { contactConsent: true } : {}) };
+      const actionAlreadySubmitted = Boolean(pendingConsentAction && ['approved', 'processing', 'completed'].includes(pendingConsentAction.state));
+      const shouldProposeAction = catalogResolution ? !actionAlreadySubmitted && (catalogResolution.actionAllowed || consentActionReady) : draft.proposedIntent === 'lead.capture' && leadIntent && leadReady;
+      const action = shouldProposeAction ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, actionLeadData, catalogResolution ? { workflowKey: catalogResolution.workflowKey ?? 'lead.capture', intentKey: catalogResolution.intentKey ?? 'lead.capture', intentScore: catalogResolution.score, intentConfidence: catalogResolution.confidence, catalogVersionId: catalogResolution.catalogVersionId, webhookPath: publishedCatalog?.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution.workflowKey)?.webhookPath ?? 'lead-capture' } : undefined) : null;
       const pendingCatalogState = publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length > 0 ? { catalogIntentKey: catalogResolution.intentKey, catalogVersionId: catalogResolution.catalogVersionId, catalogSlotKey: catalogResolution.missingSlots[0], catalogSlotValues } : null;
-      const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, maskedAnswer, tokenVault), grounded, conversational: casualFallback || leadCollection, citations: safeCitations, actionProposal: action ? { id: action.id, intent: action.workflowKey, confirmation: 'I have the details I need. Would you like me to submit this contact request?', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
+      const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, maskedAnswer, tokenVault), grounded, conversational: casualFallback || leadCollection, citations: safeCitations, actionProposal: action ? { id: action.id, intent: action.workflowKey, consentRequired: consentActionReady, confirmation: consentActionReady ? 'Consent to contact you and register this request.' : 'Your contact request is ready to submit.', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
       const persistedResponse = { ...response, answer: maskedAnswer };
       const estimatedInputTokens = estimateTokens([maskedMessage, ...evidence.map((item) => item.content), persona?.name ?? '', persona?.personality ?? '', persona?.tone ?? '', persona?.speakingStyle ?? ''].join('\n'));
       const estimatedOutputTokens = estimateTokens(maskedAnswer);
@@ -1071,6 +1079,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (input.intent !== authorizedIntent) throw new HttpError(403, 'LEAD_INTENT_MISMATCH', 'Lead intent does not match the authorized action.');
       const messages = await store.listMessages(input.sessionId, input.tenantId);
       const leadData = { ...(action.payload.name ? { name: action.payload.name } : {}), ...(action.payload.email ? { email: action.payload.email } : {}), ...(action.payload.phone ? { phone: action.payload.phone } : {}), ...(action.payload.interest ? { interest: action.payload.interest } : {}) };
+      const consentRequired = Boolean(catalog?.catalog.slots.some((slot) => slot.intentKey === authorizedIntent && slot.required && slot.validationRule === 'boolean:explicit_opt_in'));
+      if (consentRequired && action.payload.contactConsent !== true) throw new HttpError(422, 'LEAD_CONSENT_REQUIRED', 'Explicit contact consent is required before creating this lead.');
       const score = (action.payload.name ? 30 : 0) + (action.payload.email ? 40 : 0) + (action.payload.phone ? 40 : 0);
       const validationPass = Boolean(action.payload.name && (action.payload.email || action.payload.phone));
       if (!validationPass || score < 70) throw new HttpError(422, 'LEAD_VALIDATION_FAILED', 'The lead did not pass the completeness threshold.');

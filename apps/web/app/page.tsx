@@ -915,7 +915,7 @@ export default function Home() {
                                   disabled={msg.actionState === 'approved' || msg.actionState === 'processing'}
                                   className="rounded-lg bg-neutral-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 transition-all button-press"
                                 >
-                                  {msg.actionState === 'approved' || msg.actionState === 'processing' ? 'Submitting…' : msg.actionState === 'unknown' ? 'Retry Request' : 'Confirm & Submit'}
+                                  {msg.actionState === 'approved' || msg.actionState === 'processing' ? 'Submitting…' : msg.actionState === 'unknown' ? 'Retry Request' : msg.actionProposal.consentRequired ? 'Consent & Submit' : 'Confirm & Submit'}
                                 </button>
                                 {msg.actionState && (
                                   <span className="text-[11px] font-mono text-neutral-500">

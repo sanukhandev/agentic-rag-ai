@@ -297,6 +297,11 @@ export interface LeadData {
   interest?: string;
 }
 
+export interface ActionPayload extends LeadData {
+  /** Server-recorded explicit contact consent; never inferred from contact data. */
+  contactConsent?: boolean;
+}
+
 export interface LeadConversationMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -371,7 +376,7 @@ export interface ActionRequest {
   idempotencyKey: string;
   state: ActionState;
   opaqueReference: string;
-  payload: LeadData;
+  payload: ActionPayload;
   createdAt: string;
   result: { externalReference: string } | null;
 }

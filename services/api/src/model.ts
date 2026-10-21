@@ -45,7 +45,7 @@ export const mergeLeadData = (...values: LeadData[]): LeadData => {
 export const leadCollectionReply = (data: LeadData): string => {
   if (!data.name) return 'I’d be happy to help. What name should I use?';
   if (!data.email && !data.phone) return 'Thanks. What’s the best email address or phone number to reach you on?';
-  return 'I have what I need to prepare a contact request. Shall I send it?';
+  return 'I have the details needed. Please use the button below to submit your contact request.';
 };
 
 export class DeterministicGroundedModel implements ChatModel {

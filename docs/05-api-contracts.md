@@ -105,7 +105,7 @@ Examples illustrate schema only; they are not live data and do not imply a shipp
 ## Response and action semantics
 - **answer** is user-safe text; may include a disclosure when evidence is missing; **grounded=false** must not imply factual business assertions. **conversational=true** identifies a short greeting answered from the tenant persona when no matching approved evidence exists. If matching evidence exists, the response is grounded and reported with `conversational=false` and validated citations.
 - **citations** are validated and tenant-authorized; never include storage credentials, private paths, original customer PII or internal embedding data.
-- **actionProposal** contains opaque ID, canonical action type, user-readable confirmation requirement and expiry; never arbitrary executable instructions.
+- **actionProposal** contains opaque ID, canonical action type, user-readable confirmation requirement and expiry; `consentRequired=true` means the same button records explicit visitor consent and approves the action. It never infers consent from an email address or detected intent.
 - **errors**: consistent code, generic message and correlation ID; no traces, raw model output, SQL or PII. Use appropriate 400/401/403/404/409/413/422/429/5xx statuses.
 - **streaming**: optional later SSE design; do not stream unchecked model tokens that may contain PII or unverified claims. Buffer and validate or build a secure streaming gate before enabling.
 

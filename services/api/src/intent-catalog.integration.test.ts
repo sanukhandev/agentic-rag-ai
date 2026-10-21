@@ -51,13 +51,10 @@ describe('published intent catalog runtime', () => {
     expect((await runtime.store.listMessages(multiTurn.body.sessionId, tenant.body.tenant.id)).find((message) => message.clientMessageId === 'catalog-multi-3')?.maskedContent).toBe('[NAME_1]');
     const contactTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'alice@example.com', clientMessageId: 'catalog-multi-4' }).expect(200);
     expect(contactTurn.body.actionProposal).toBeNull();
-    expect(contactTurn.body.answer).toContain('contact consent');
-    const consentTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'I explicitly consent to ANCFZ contacting me and transferring my information to Salesforce.', clientMessageId: 'catalog-multi-5' }).expect(200);
-    expect(consentTurn.body.actionProposal).toBeNull();
-    expect(consentTurn.body.answer).toContain('interest summary');
-    const interestTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'I need help setting up the requested service.', clientMessageId: 'catalog-multi-6' }).expect(200);
-    expect(interestTurn.body.actionProposal).toMatchObject({ intent: 'crm.lead.create' });
-    expect(interestTurn.body.answer).toContain('I have what I need');
+    expect(contactTurn.body.answer).toContain('interest summary');
+    const interestTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'I need help setting up the requested service.', clientMessageId: 'catalog-multi-5' }).expect(200);
+    expect(interestTurn.body.actionProposal).toMatchObject({ intent: 'crm.lead.create', consentRequired: true });
+    expect(interestTurn.body.answer).toContain('consent action');
 
     const demoSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'catalog-tenant' }).expect(201);
     const demoTurn = await api.post('/api/v1/chat/messages').send({ sessionId: demoSession.body.sessionId, message: 'Can I book a demo?', clientMessageId: 'catalog-demo-1' }).expect(200);
@@ -72,13 +69,12 @@ describe('published intent catalog runtime', () => {
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'catalog-tenant' }).expect(201);
     const proposalStart = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need a demo. My name is Alice and my email is alice@example.com.', clientMessageId: 'catalog-lead-1' }).expect(200);
     expect(proposalStart.body.actionProposal).toBeNull();
-    expect(proposalStart.body.answer).toContain('contact consent');
-    const proposalConsent = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Yes, I explicitly consent to ANCFZ contacting me and transferring my information to Salesforce.', clientMessageId: 'catalog-lead-2' }).expect(200);
-    expect(proposalConsent.body.actionProposal).toBeNull();
-    const proposal = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Please arrange the requested demo.', clientMessageId: 'catalog-lead-3' }).expect(200);
-    expect(proposal.body.actionProposal).toMatchObject({ intent: 'crm.lead.create' });
+    expect(proposalStart.body.answer).toContain('interest summary');
+    const proposal = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Please arrange the requested demo for our ERP project.', clientMessageId: 'catalog-lead-2' }).expect(200);
+    expect(proposal.body.actionProposal).toMatchObject({ intent: 'crm.lead.create', consentRequired: true });
     const confirmed = await api.post(`/api/v1/chat/actions/${proposal.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
     expect(confirmed.body.action.state).toBe('approved');
+    expect(confirmed.body.action.payload.contactConsent).toBe(true);
     expect(workflow.calls).toHaveLength(0);
 
     const claimed = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'crm-secret').send({ workflowKey: 'crm.lead.create', limit: 10 }).expect(200);

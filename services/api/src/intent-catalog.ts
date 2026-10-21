@@ -138,7 +138,11 @@ const slotValues = (intentKey: string, slots: IntentCatalogSlot[], values: Recor
 };
 
 const missingSlotKeys = (intentKey: string, slots: IntentCatalogSlot[], values: Record<string, string>): string[] => {
-  const rows = slots.filter((slot) => slot.intentKey === intentKey).sort((left, right) => left.collectionOrder - right.collectionOrder);
+  const rows = slots.filter((slot) => slot.intentKey === intentKey).sort((left, right) => {
+    const leftConsent = left.validationRule === 'boolean:explicit_opt_in' ? 1 : 0;
+    const rightConsent = right.validationRule === 'boolean:explicit_opt_in' ? 1 : 0;
+    return leftConsent - rightConsent || left.collectionOrder - right.collectionOrder;
+  });
   const present = slotValues(intentKey, slots, values);
   const missing = rows.filter((slot) => slot.required && !present.has(slot.slotKey) && !(slot.alternativeGroup && rows.some((other) => other.alternativeGroup === slot.alternativeGroup && present.has(other.slotKey)))).map((slot) => slot.slotKey);
   for (const group of new Set(rows.map((slot) => slot.alternativeGroup).filter((group): group is string => Boolean(group)))) {
