@@ -296,7 +296,7 @@ import { BadgeComponent } from '../shared/badge.component';
                 </label>
                 <p class="pl-1">or drag and drop here</p>
               </div>
-              <p class="text-[11px] text-neutral-400 mt-1">PDF, DOCX, XLSX, TXT, MD, CSV, JSON, JSONL, ZIP up to 5 MiB</p>
+              <p class="text-[11px] text-neutral-400 mt-1">PDF, DOCX, XLSX, TXT, MD, CSV, JSON, JSONL, ZIP up to 20 MiB</p>
               <p *ngIf="selectedFile" class="mt-2 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded inline-block">
                 Selected: {{ selectedFile.name }} ({{ (selectedFile.size / 1024) | number:'1.0-0' }} KB)
               </p>
@@ -470,8 +470,8 @@ export class KnowledgeManagerComponent implements OnInit {
       this.state.showToast('error', 'Unsupported Format', 'Please upload a PDF, DOCX, XLSX, TXT, MD, CSV, JSON, JSONL, or ZIP file.');
       return;
     }
-    if (this.selectedFile.size > 5 * 1024 * 1024) {
-      this.state.showToast('error', 'File Too Large', 'Uploads are limited to 5 MiB.');
+    if (this.selectedFile.size > 20 * 1024 * 1024) {
+      this.state.showToast('error', 'File Too Large', 'Uploads are limited to 20 MiB.');
       return;
     }
 

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { ToastService } from './toast.service';
 import { canAccessAdminSection } from './admin-navigation';
 import { isNavSection } from './ui-navigation.service';
+import { isCatalogJobPending } from './intent-catalog-utils';
 import { isValidTenantSlug, resolveTenantSlug } from '../components/customer-chat/customer-chat-utils';
+import { apiErrorMessage } from './api-error';
 
 describe('SOLID Services and Architecture Contracts', () => {
   it('ToastService adheres to Single Responsibility by managing toast notifications independently', () => {
@@ -55,5 +57,18 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(isNavSection('studio')).toBe(true);
     expect(isNavSection('not-a-section')).toBe(false);
     expect(isNavSection(null)).toBe(false);
+  });
+
+  it('keeps catalog uploads visible until ingestion completes', () => {
+    expect(isCatalogJobPending('queued')).toBe(true);
+    expect(isCatalogJobPending('processing')).toBe(true);
+    expect(isCatalogJobPending('completed')).toBe(false);
+    expect(isCatalogJobPending('failed')).toBe(false);
+  });
+
+  it('shows structured API errors instead of silently replacing them with an empty catalog', () => {
+    expect(apiErrorMessage({ error: { error: { message: 'CATALOG_TENANT_MISMATCH' } } }, 'fallback')).toBe('CATALOG_TENANT_MISMATCH');
+    expect(apiErrorMessage({ error: { message: 'Workbook is invalid.' } }, 'fallback')).toBe('Workbook is invalid.');
+    expect(apiErrorMessage({}, 'fallback')).toBe('fallback');
   });
 });

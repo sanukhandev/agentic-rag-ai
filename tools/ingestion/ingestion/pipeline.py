@@ -13,7 +13,7 @@ from pathlib import Path
 from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
-MAX_BYTES = 5 * 1024 * 1024
+MAX_BYTES = 20 * 1024 * 1024
 MAX_CONTAINER_ENTRIES = 2_000
 MAX_CONTAINER_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 MAX_NORMALIZED_CONTENT_CHARS = 1_000_000
@@ -82,7 +82,7 @@ def _safe_path(path: Path) -> Path:
     if not resolved.is_file():
         raise ValueError("Input file does not exist.")
     if resolved.stat().st_size > MAX_BYTES:
-        raise ValueError("Input exceeds the 5 MiB ingestion limit.")
+        raise ValueError("Input exceeds the 20 MiB ingestion limit.")
     return resolved
 
 
@@ -302,7 +302,7 @@ def fetch_authorized_https(url: str, allowed_hosts: set[str]) -> tuple[str, str]
     for chunk in response.iter_content(chunk_size=64 * 1024):
         size += len(chunk)
         if size > MAX_BYTES:
-            raise ValueError("Website response exceeds the 5 MiB ingestion limit.")
+            raise ValueError("Website response exceeds the 20 MiB ingestion limit.")
         chunks.append(chunk)
     soup = BeautifulSoup(b"".join(chunks).decode(response.encoding or "utf-8", errors="replace"), "html.parser")
     for element in soup(["script", "style", "noscript"]):

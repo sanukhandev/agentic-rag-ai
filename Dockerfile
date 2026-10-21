@@ -44,7 +44,8 @@ EXPOSE 3000
 CMD ["node", "apps/web/server.js"]
 
 FROM node-source AS admin-build
-RUN npm run build --workspace apps/admin
+ARG ADMIN_BASE_HREF=/
+RUN npm run build --workspace apps/admin -- --base-href="${ADMIN_BASE_HREF}"
 
 FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10 AS admin-runtime
 COPY infra/nginx/admin.conf /etc/nginx/conf.d/default.conf
@@ -54,6 +55,6 @@ EXPOSE 80
 FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS ingestion-runtime
 WORKDIR /app
 COPY tools/ingestion/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-ara && rm -rf /var/lib/apt/lists/* && pip install --no-cache-dir -r requirements.txt
 COPY tools/ingestion/ingestion ./ingestion
 ENTRYPOINT ["python", "-m", "ingestion.worker"]

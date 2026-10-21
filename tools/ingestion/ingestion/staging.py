@@ -19,7 +19,7 @@ class LocalStaging:
         if not source.is_file():
             raise ValueError("Input file does not exist.")
         if source.stat().st_size > MAX_BYTES:
-            raise ValueError("Input exceeds the 5 MiB ingestion limit.")
+            raise ValueError("Input exceeds the 20 MiB ingestion limit.")
         destination = self.root / f"{secrets.token_hex(16)}{source.suffix.lower()}"
         shutil.copyfile(source, destination)
         try:
@@ -32,7 +32,7 @@ class LocalStaging:
         if not suffix.startswith(".") or "/" in suffix or "\\" in suffix:
             raise ValueError("Invalid staged file suffix.")
         if not content or len(content) > MAX_BYTES:
-            raise ValueError("Input is empty or exceeds the 5 MiB ingestion limit.")
+            raise ValueError("Input is empty or exceeds the 20 MiB ingestion limit.")
         destination = self.root / f"{secrets.token_hex(16)}{suffix.lower()}"
         destination.write_bytes(content)
         try:

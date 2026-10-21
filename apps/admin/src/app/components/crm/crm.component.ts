@@ -240,7 +240,7 @@ import { IconComponent } from '../shared/icon.component';
 
             <!-- Qualification Badges Row -->
             <div class="flex flex-wrap items-center gap-2">
-              <app-badge variant="outline" [showDot]="false" [text]="lead.intent"></app-badge>
+              <app-badge variant="outline" [showDot]="false" [text]="lead.leadData.interest || lead.intent"></app-badge>
               <app-badge
                 [variant]="getQualityVariant(lead.quality)"
                 [showDot]="true"
@@ -274,6 +274,14 @@ import { IconComponent } from '../shared/icon.component';
                 <p class="whitespace-pre-wrap text-xs sm:text-[13px] leading-relaxed text-neutral-700">
                   {{ lead.summary || 'Summary is being prepared by the workflow...' }}
                 </p>
+                <div *ngIf="lead.documents?.length" class="mt-4 border-t border-neutral-200/60 pt-3">
+                  <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">Supporting documents</span>
+                  <div *ngFor="let document of lead.documents" class="mt-2 flex items-center justify-between gap-2 rounded-lg bg-white p-2 text-xs">
+                    <span class="min-w-0 truncate" [title]="document.fileName">{{ document.fileName }}</span>
+                    <span class="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase">{{ document.status }}</span>
+                    <button type="button" (click)="downloadDocument(document.id, document.fileName)" class="shrink-0 text-[10px] font-semibold text-neutral-700 hover:text-neutral-950">Download</button>
+                  </div>
+                </div>
               </div>
 
               <div class="mt-4 pt-3 border-t border-neutral-200/60 flex items-center justify-between text-[11px] text-neutral-400">
@@ -413,7 +421,7 @@ export class CrmComponent implements OnInit {
         const name = (lead.leadData.name || '').toLowerCase();
         const email = (lead.leadData.email || '').toLowerCase();
         const phone = (lead.leadData.phone || '').toLowerCase();
-        const intent = (lead.intent || '').toLowerCase();
+        const intent = (lead.leadData.interest || lead.intent || '').toLowerCase();
         const summary = (lead.summary || '').toLowerCase();
         return name.includes(query) || email.includes(query) || phone.includes(query) || intent.includes(query) || summary.includes(query);
       }
@@ -441,6 +449,13 @@ export class CrmComponent implements OnInit {
         this.state.showToast('info', 'Contact Info', text);
       });
     }
+  }
+
+  downloadDocument(documentId: string, fileName: string): void {
+    this.state.crm.downloadDocument(documentId).subscribe({
+      next: (blob) => { const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = fileName; anchor.click(); URL.revokeObjectURL(url); },
+      error: () => this.state.showToast('error', 'Download failed', 'The private document could not be downloaded.')
+    });
   }
 
   getQualityVariant(quality: string): 'error' | 'warning' | 'neutral' | 'black' {

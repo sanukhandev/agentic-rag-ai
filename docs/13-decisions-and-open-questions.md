@@ -58,6 +58,8 @@ These decisions are scoped to the local implementation and do not approve produc
 - **D-02 local implementation**: signed development JWTs with tenant memberships and roles. Replace with approved SSO/MFA before real users or customer traffic.
 - **D-10 local implementation**: one `lead.capture` mock action through an injectable private workflow adapter. It accepts only a masked opaque reference, requires confirmation, is idempotent, and records an audit event.
 - **D-05 local implementation**: source text is staged in the application repository boundary for deterministic tests. Production storage must move to approved private object storage with malware scanning and retention controls.
+- **D-15 local implementation**: the reviewed Excel workbook is parsed by the isolated Python worker, stored as a tenant-scoped draft JSON catalog, and activated only by an authenticated tenant-admin publish action. Node resolves signals, slots, thresholds and workflow bindings; n8n receives only the approved masked action payload. Raw workbook cells are never sent to the model.
+- **D-09 local implementation**: the first omnichannel boundary is a provider-neutral, server-to-server HMAC gateway. Credentials are tenant/channel scoped, encrypted at rest, timestamp-bound and nonce-protected; signed clients reuse the existing Node chat/action routes. A provider-specific adapter and message delivery policy remain open.
 
 ## ADR template
 ID / status (proposed|accepted|superseded) / date / context / alternatives / decision / consequences / security-review owner / affected docs/tests. Only mark accepted following an explicit product/engineering decision.

@@ -7,6 +7,7 @@ const NAV_SECTIONS: readonly NavSection[] = [
   'overview',
   'organizations',
   'knowledge',
+  'catalog',
   'studio',
   'chat',
   'crm',

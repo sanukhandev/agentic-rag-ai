@@ -179,6 +179,11 @@
         <app-activity-pipeline *ngIf="role === 'platform_admin'"></app-activity-pipeline>
       </ng-container>
 
+      <!-- Section: Intent Catalog -->
+      <ng-container *ngIf="currentSection === 'catalog'">
+        <app-intent-catalog></app-intent-catalog>
+      </ng-container>
+
       <!-- Section: AI Studio -->
       <ng-container *ngIf="currentSection === 'studio'">
         <app-ai-studio></app-ai-studio>

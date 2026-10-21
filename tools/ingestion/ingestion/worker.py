@@ -3,13 +3,16 @@ from __future__ import annotations
 import argparse
 import base64
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any
 
 import requests
 
-from .pipeline import IngestedSource, ingest_file, ingest_url
+from .intent_catalog import parse_intent_catalog
+from .pipeline import MAX_BYTES, IngestedSource, ingest_file, ingest_url
+from .document_ocr import document_summary, extract_document_text
 from .staging import LocalStaging
 
 
@@ -71,7 +74,7 @@ def fetch_job_input(api_base: str, job_id: str, worker_secret: str, session: req
         content = base64.b64decode(body["contentBase64"], validate=True)
     except (ValueError, TypeError) as error:
         raise ValueError("The ingestion API returned malformed file content.") from error
-    if not content or len(content) > 5 * 1024 * 1024:
+    if not content or len(content) > MAX_BYTES:
         raise ValueError("The ingestion API returned an empty or oversized file.")
     return body["fileName"], body["mimeType"], content
 
@@ -90,6 +93,16 @@ def submit_result(api_base: str, job_id: str, worker_secret: str, source: Ingest
     return body
 
 
+def submit_catalog_result(api_base: str, job_id: str, worker_secret: str, result: dict[str, Any], session: requests.Session | None = None) -> dict[str, Any]:
+    client = session or requests.Session()
+    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/ingestion-jobs/{job_id}/result", headers={"x-ingestion-worker-secret": worker_secret}, json=result, timeout=30)
+    raise_for_api_status(response)
+    body = response.json()
+    if not isinstance(body, dict):
+        raise ValueError("The ingestion API returned an invalid catalog result.")
+    return body
+
+
 def submit_failure(api_base: str, job_id: str, worker_secret: str, error_code: str = "INGESTION_FAILED", session: requests.Session | None = None) -> dict[str, Any]:
     client = session or requests.Session()
     response = client.post(
@@ -103,6 +116,88 @@ def submit_failure(api_base: str, job_id: str, worker_secret: str, error_code: s
     if not isinstance(body, dict):
         raise ValueError("The ingestion API returned an invalid failure result.")
     return body
+
+
+def claim_next_document_job(api_base: str, worker_secret: str, session: requests.Session | None = None) -> dict[str, Any] | None:
+    client = session or requests.Session()
+    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/claim-next", headers={"x-ingestion-worker-secret": worker_secret}, timeout=15)
+    raise_for_api_status(response)
+    body = response.json()
+    job = body.get("job") if isinstance(body, dict) else None
+    return job if isinstance(job, dict) else None
+
+
+def renew_document_job(api_base: str, job_id: str, tenant_id: str, worker_secret: str, lease_ms: int = 120_000, session: requests.Session | None = None) -> dict[str, Any]:
+    client = session or requests.Session()
+    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/{job_id}/renew", headers={"x-ingestion-worker-secret": worker_secret}, json={"tenantId": tenant_id, "jobId": job_id, "leaseMs": lease_ms}, timeout=15)
+    raise_for_api_status(response)
+    body = response.json()
+    if not isinstance(body, dict) or not isinstance(body.get("job"), dict):
+        raise ValueError("The document API returned an invalid renewal result.")
+    return body["job"]
+
+
+def fetch_document_input(api_base: str, job_id: str, tenant_id: str, worker_secret: str, session: requests.Session | None = None) -> tuple[str, str, bytes]:
+    client = session or requests.Session()
+    response = client.get(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/{job_id}/input", headers={"x-ingestion-worker-secret": worker_secret, "x-tenant-id": tenant_id}, timeout=30)
+    raise_for_api_status(response)
+    body = response.json()
+    if not isinstance(body, dict) or not isinstance(body.get("fileName"), str) or not isinstance(body.get("mimeType"), str) or not isinstance(body.get("contentBase64"), str):
+        raise ValueError("The document API returned malformed file content.")
+    try:
+        content = base64.b64decode(body["contentBase64"], validate=True)
+    except (ValueError, TypeError) as error:
+        raise ValueError("The document API returned malformed file content.") from error
+    if not content or len(content) > 15 * 1024 * 1024:
+        raise ValueError("The document API returned an empty or oversized file.")
+    return body["fileName"], body["mimeType"], content
+
+
+def submit_document_result(api_base: str, job_id: str, tenant_id: str, worker_secret: str, extracted_text: str, summary: str, session: requests.Session | None = None) -> dict[str, Any]:
+    client = session or requests.Session()
+    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/{job_id}/result", headers={"x-ingestion-worker-secret": worker_secret}, json={"tenantId": tenant_id, "jobId": job_id, "extractedText": extracted_text, "summary": summary, "executionReference": f"ocr-{job_id}"}, timeout=30)
+    raise_for_api_status(response)
+    body = response.json()
+    if not isinstance(body, dict):
+        raise ValueError("The document API returned an invalid result.")
+    return body
+
+
+def submit_document_failure(api_base: str, job_id: str, tenant_id: str, worker_secret: str, error_code: str = "DOCUMENT_OCR_FAILED", session: requests.Session | None = None) -> dict[str, Any]:
+    client = session or requests.Session()
+    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/{job_id}/failure", headers={"x-ingestion-worker-secret": worker_secret}, json={"tenantId": tenant_id, "jobId": job_id, "errorCode": error_code}, timeout=15)
+    raise_for_api_status(response)
+    body = response.json()
+    if not isinstance(body, dict):
+        raise ValueError("The document API returned an invalid failure result.")
+    return body
+
+
+def process_document_job(api_base: str, job: dict[str, Any], worker_secret: str, session: requests.Session | None = None) -> dict[str, Any]:
+    client = session or requests.Session()
+    job_id = str(job["id"])
+    tenant_id = str(job.get("tenant_id") or job.get("tenantId"))
+    stop_heartbeat = threading.Event()
+
+    def heartbeat() -> None:
+        while not stop_heartbeat.wait(20):
+            try:
+                renew_document_job(api_base, job_id, tenant_id, worker_secret)
+            except requests.RequestException:
+                pass
+
+    heartbeat_thread = threading.Thread(target=heartbeat, name=f"document-lease-{job_id}", daemon=True)
+    heartbeat_thread.start()
+    try:
+        file_name, mime_type, content = fetch_document_input(api_base, job_id, tenant_id, worker_secret, client)
+        text = extract_document_text(file_name, mime_type, content)
+        return submit_document_result(api_base, job_id, tenant_id, worker_secret, text, document_summary(text, file_name), client)
+    except Exception:
+        submit_document_failure(api_base, job_id, tenant_id, worker_secret, session=client)
+        raise
+    finally:
+        stop_heartbeat.set()
+        heartbeat_thread.join(timeout=5)
 
 
 def process_job(
@@ -137,10 +232,12 @@ def process_job(
         else:
             if not staging_root:
                 raise ValueError("A staging root is required for uploaded jobs.")
-            file_name, _mime_type, content = fetch_job_input(api_base, job_id, worker_secret, client)
+            file_name, mime_type, content = fetch_job_input(api_base, job_id, worker_secret, client)
             staging = LocalStaging(staging_root)
             staged = staging.stage_bytes(Path(file_name).suffix, content)
             try:
+                if mime_type == "application/vnd.agentic.intent-catalog+excel":
+                    return submit_catalog_result(api_base, job_id, worker_secret, parse_intent_catalog(staged), client)
                 ingested = ingest_file(staged)
             finally:
                 staging.purge(staged)
@@ -185,11 +282,15 @@ def main() -> None:
     with requests.Session() as session:
         while True:
             try:
-                job_id = claim_next_job(args.api_base, args.worker_secret, session)
-                if job_id:
-                    process_job(args.api_base, job_id, args.worker_secret, staging_root=args.staging_root, session=session, already_claimed=True)
+                document_job = claim_next_document_job(args.api_base, args.worker_secret, session)
+                if document_job:
+                    process_document_job(args.api_base, document_job, args.worker_secret, session)
                 else:
-                    time.sleep(args.poll_interval_seconds)
+                    job_id = claim_next_job(args.api_base, args.worker_secret, session)
+                    if job_id:
+                        process_job(args.api_base, job_id, args.worker_secret, staging_root=args.staging_root, session=session, already_claimed=True)
+                    else:
+                        time.sleep(args.poll_interval_seconds)
             except KeyboardInterrupt:
                 return
             except Exception as error:

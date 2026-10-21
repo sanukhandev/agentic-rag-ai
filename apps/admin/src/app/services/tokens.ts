@@ -4,6 +4,7 @@ export const API_BASE_URL = new InjectionToken<string>('API_BASE_URL', {
   providedIn: 'root',
   factory: () => {
     if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+      if (window.location.port === '3000') return window.location.origin;
       const hostname = window.location.hostname;
       const protocol = window.location.protocol || 'http:';
       return `${protocol}//${hostname}:4000`;

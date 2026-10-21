@@ -1,7 +1,7 @@
 import { chmod, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export const MAX_INGESTION_FILE_BYTES = 5 * 1024 * 1024;
+export const MAX_INGESTION_FILE_BYTES = 20 * 1024 * 1024;
 
 const extensions: Record<string, string> = {
   'text/plain': '.txt',
@@ -13,6 +13,7 @@ const extensions: Record<string, string> = {
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
   'application/zip': '.zip',
+  'application/vnd.agentic.intent-catalog+excel': '.xlsx',
 };
 
 const zipSignature = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
@@ -44,7 +45,7 @@ export const hasValidFileSignature = (mimeType: string, content: Buffer): boolea
   }
   if (mimeType === 'application/x-ndjson') return isValidJsonLines(content);
   if (mimeType === 'application/pdf') return content.subarray(0, 5).toString('ascii') === '%PDF-';
-  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return content.subarray(0, 4).equals(zipSignature);
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || mimeType === 'application/vnd.agentic.intent-catalog+excel') return content.subarray(0, 4).equals(zipSignature);
   if (mimeType === 'application/zip') return content.subarray(0, 4).equals(zipSignature) || content.subarray(0, 4).equals(emptyZipSignature) || content.subarray(0, 4).equals(spannedZipSignature);
   return false;
 };
@@ -67,7 +68,7 @@ export class IngestionStaging {
     const extension = this.extensionFor(mimeType);
     safeJobId(jobId);
     if (!extension) throw new Error('Unsupported ingestion file type.');
-    if (content.length > MAX_INGESTION_FILE_BYTES) throw new Error('Input exceeds the 5 MiB ingestion limit.');
+    if (content.length > MAX_INGESTION_FILE_BYTES) throw new Error('Input exceeds the 20 MiB ingestion limit.');
     if (!hasValidFileSignature(mimeType, content)) throw new Error('Input file signature does not match its declared type.');
     await mkdir(this.root, { recursive: true, mode: 0o700 });
     try {

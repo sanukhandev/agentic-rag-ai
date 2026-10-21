@@ -11,3 +11,5 @@
 **/*.tsbuildinfo
 coverage
 data
+docs
+.tmp-intent-catalog-artifact

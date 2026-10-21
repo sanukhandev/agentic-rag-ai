@@ -81,6 +81,7 @@ export class AdminStateService {
   readonly personaVersions$: Observable<PersonaVersion[]> = this.personaService.personaVersions$;
   readonly domains$: Observable<TenantDomain[]> = this.settings.domains$;
   readonly members$: Observable<Member[]> = this.settings.members$;
+  readonly channelCredentials$ = this.settings.channelCredentials$;
   readonly channel$: Observable<Channel> = this.settings.channel$;
   readonly workflowRuns$: Observable<WorkflowRun[]> = this.observability.workflowRuns$;
   readonly auditEvents$: Observable<AuditEvent[]> = this.observability.auditEvents$;
@@ -321,6 +322,10 @@ export class AdminStateService {
     this.settings.loadMembers();
   }
 
+  loadChannelCredentials(): void {
+    this.settings.loadChannelCredentials();
+  }
+
   loadChannel(): void {
     this.settings.loadChannel();
   }
@@ -334,6 +339,7 @@ export class AdminStateService {
     this.personaService.loadPersonaVersions();
     this.settings.loadDomains();
     this.settings.loadMembers();
+    this.settings.loadChannelCredentials();
     this.settings.loadChannel();
     this.observability.loadWorkflowRuns();
     this.observability.loadAudit();
@@ -380,6 +386,7 @@ export class AdminStateService {
       case 'settings':
         this.settings.loadDomains();
         this.settings.loadMembers();
+        this.settings.loadChannelCredentials();
         this.settings.loadChannel();
         break;
       case 'chat':

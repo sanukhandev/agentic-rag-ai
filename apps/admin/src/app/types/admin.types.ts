@@ -35,6 +35,19 @@ export interface Channel {
   rateLimitPerMinute?: number;
 }
 
+export type ChannelAuthMode = 'hmac' | 'api_key';
+
+export interface ChannelCredential {
+  id: string;
+  tenantId: string;
+  channel: string;
+  authMode: ChannelAuthMode;
+  keyId: string;
+  active: boolean;
+  createdAt: string;
+  revokedAt: string | null;
+}
+
 export type SourceStatus = 'active' | 'awaiting_review' | 'revoked';
 export type SourceAudience = 'public' | 'internal';
 
@@ -136,10 +149,26 @@ export interface CrmLead {
   score: number;
   quality: 'new' | 'nurture' | 'warm' | 'hot';
   validationPass: boolean;
-  leadData: { name?: string; email?: string; phone?: string };
+  leadData: { name?: string; email?: string; phone?: string; interest?: string };
   conversation: Array<{ role: 'user' | 'assistant'; content: string; createdAt: string }>;
   summary: string | null;
   summaryStatus: 'pending' | 'completed' | 'failed';
+  leadId?: string | null;
+  remoteCrm?: string | null;
+  documents?: SupportingDocument[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SupportingDocument {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: 'uploaded' | 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
+  extractedText: string | null;
+  summary: string | null;
+  errorCode: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -181,4 +210,21 @@ export interface PlatformOverview {
   };
 }
 
-export type NavSection = 'overview' | 'organizations' | 'knowledge' | 'studio' | 'chat' | 'crm' | 'observability' | 'settings';
+export type NavSection = 'overview' | 'organizations' | 'knowledge' | 'catalog' | 'studio' | 'chat' | 'crm' | 'observability' | 'settings';
+
+export interface IntentCatalogVersion {
+  id: string;
+  version: number;
+  status: 'draft' | 'published';
+  sourceFileName: string;
+  sourceHash: string;
+  parserVersion: string;
+  catalog: {
+    intents: Array<{ intentKey: string; displayName: string; description?: string; workflowKey: string; minimumScore?: number; confidenceThreshold?: number; confirmationRequired?: boolean; active: boolean }>;
+    signals: Array<{ intentKey: string; signalId: string; signalType: 'phrase' | 'keyword' | 'exclusion'; value: string; weight: number }>;
+    slots: Array<{ intentKey: string; slotKey: string; required: boolean; alternativeGroup: string | null; promptKey: string }>;
+    workflowBindings: Array<{ workflowKey: string; active: boolean }>;
+  };
+  createdAt: string;
+  publishedAt: string | null;
+}

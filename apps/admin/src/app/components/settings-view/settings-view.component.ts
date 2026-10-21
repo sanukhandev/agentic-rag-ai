@@ -2,7 +2,8 @@ import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
-import { Channel, TenantDomain, Member, MemberRole } from '../../types/admin.types';
+import { Channel, ChannelCredential, TenantDomain, Member, MemberRole, Tenant } from '../../types/admin.types';
+import { API_BASE_URL } from '../../services/tokens';
 import { IconComponent } from '../shared/icon.component';
 import { BadgeComponent } from '../shared/badge.component';
 
@@ -26,6 +27,75 @@ import { BadgeComponent } from '../shared/badge.component';
 
         <app-badge variant="neutral" [showDot]="false" text="Air-Gapped Vault Enabled"></app-badge>
       </div>
+
+      <!-- Omnichannel Connector API -->
+      <section class="rounded-2xl border border-neutral-200/90 bg-white p-6 shadow-card">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 class="text-sm font-semibold text-neutral-900">Omnichannel Connector API</h3>
+            <p class="mt-1 max-w-3xl text-xs leading-relaxed text-neutral-500">
+              Create tenant-scoped server credentials for WhatsApp, Telegram, CRM widgets, or other channels. Secrets are shown once and never stored in this admin screen.
+            </p>
+          </div>
+          <app-badge variant="neutral" [showDot]="false" text="Per-tenant credential"></app-badge>
+        </div>
+
+        <div class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div class="rounded-xl border border-neutral-100 bg-neutral-50/70 p-3">
+            <p class="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">API base URL</p>
+            <p class="mt-1 break-all font-mono text-xs text-neutral-900">{{ apiBaseUrl }}</p>
+          </div>
+          <div class="rounded-xl border border-neutral-100 bg-neutral-50/70 p-3">
+            <p class="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Tenant scope</p>
+            <p class="mt-1 font-mono text-xs text-neutral-900">{{ selectedTenant?.slug || 'Select a tenant' }}</p>
+          </div>
+          <div class="rounded-xl border border-neutral-100 bg-neutral-50/70 p-3">
+            <p class="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Authentication</p>
+            <p class="mt-1 font-mono text-xs text-neutral-900">X-Agentic-Api-Key</p>
+            <p class="mt-1 text-[10px] text-neutral-500">Database-backed and revocable per tenant</p>
+          </div>
+        </div>
+
+        <div class="mt-5 rounded-xl border border-neutral-100 bg-neutral-50/70 p-4">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label class="flex-1">
+              <span class="block text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Connector name</span>
+              <input [(ngModel)]="newConnectorChannel" name="connectorChannel" placeholder="whatsapp" class="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-mono text-neutral-900 focus:border-neutral-900 focus:outline-none" />
+            </label>
+            <span class="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-700">Static API key</span>
+            <button type="button" (click)="createConnectorCredential()" [disabled]="!newConnectorChannel.trim()" class="rounded-lg bg-neutral-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">Create credential</button>
+          </div>
+
+          <div *ngIf="oneTimeConnectorSecret" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p class="text-xs font-semibold text-amber-900">Copy this secret now. It will not be shown again.</p>
+            <div class="mt-2 flex items-center gap-2">
+              <code class="min-w-0 flex-1 break-all rounded bg-white px-2 py-1.5 text-[11px] text-amber-950">{{ oneTimeConnectorSecret }}</code>
+              <button type="button" (click)="copySample(oneTimeConnectorSecret)" class="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-[10px] font-semibold text-amber-900">Copy</button>
+            </div>
+          </div>
+
+          <div class="mt-3 space-y-2" *ngIf="connectorCredentials.length">
+            <div *ngFor="let credential of connectorCredentials" class="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-3 text-xs sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p class="font-semibold text-neutral-900">{{ credential.channel }} <span class="font-mono text-[10px] text-neutral-400">{{ credential.authMode }}</span></p>
+                <p class="font-mono text-[10px] text-neutral-500">{{ credential.keyId }} · {{ credential.active ? 'active' : 'revoked' }}</p>
+              </div>
+              <button *ngIf="credential.active" type="button" (click)="revokeConnectorCredential(credential)" class="self-start rounded-md border border-rose-200 px-2.5 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-50 sm:self-auto">Revoke</button>
+            </div>
+          </div>
+          <p class="mt-3 text-[10px] leading-relaxed text-neutral-500">Legacy VM fallback: <code>OMNI_CHANNEL_API_KEY</code>. Use it only until a database credential is created and distributed to the connector.</p>
+        </div>
+
+        <div class="mt-5 space-y-3">
+          <div *ngFor="let sample of apiSamples" class="rounded-xl border border-neutral-100 bg-[#fbfbfb] p-3">
+            <div class="mb-2 flex items-center justify-between gap-3">
+              <p class="text-xs font-semibold text-neutral-900">{{ sample.label }}</p>
+              <button type="button" (click)="copySample(sample.value)" class="rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-neutral-700 hover:bg-neutral-50">Copy curl</button>
+            </div>
+            <pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-neutral-700">{{ sample.value }}</pre>
+          </div>
+        </div>
+      </section>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
@@ -230,19 +300,42 @@ import { BadgeComponent } from '../shared/badge.component';
 export class SettingsViewComponent implements OnInit {
   private readonly state = inject(AdminStateService);
   private readonly cdr = inject(ChangeDetectorRef);
+  private readonly apiBase = inject(API_BASE_URL);
 
   channel: Channel = { publicOrigin: null, publicChatEnabled: false };
+  selectedTenant: Tenant | null = null;
   domains: TenantDomain[] = [];
   members: Member[] = [];
+  connectorCredentials: ChannelCredential[] = [];
 
   newHostname = '';
   newEmail = '';
   newPassword = '';
   newRole: MemberRole = 'tenant_editor';
+  newConnectorChannel = 'omnichannel-api';
+  oneTimeConnectorSecret = '';
+
+  get apiBaseUrl(): string {
+    return this.apiBase;
+  }
+
+  get apiSamples(): Array<{ label: string; value: string }> {
+    const base = this.apiBase.replace(/\/$/, '');
+    return [
+      { label: 'Health', value: `curl -sS ${base}/api/v1/health/live` },
+      { label: 'Tenant configuration', value: `curl -sS ${base}/api/v1/chat/config \\\n  -H "X-Agentic-Api-Key: $CHANNEL_API_KEY"` },
+      { label: 'Create session', value: `curl -sS -X POST ${base}/api/v1/chat/sessions \\\n  -H "X-Agentic-Api-Key: $CHANNEL_API_KEY" \\\n  -H 'Content-Type: application/json' \\\n  --data '{}'` },
+      { label: 'Send conversation message', value: `SESSION_ID='paste-session-id'\n\ncurl -sS -X POST ${base}/api/v1/chat/messages \\\n  -H "X-Agentic-Api-Key: $CHANNEL_API_KEY" \\\n  -H 'Content-Type: application/json' \\\n  --data "{\\"sessionId\\":\\"$SESSION_ID\\",\\"message\\":\\"Hello\\",\\"clientMessageId\\":\\"$(cat /proc/sys/kernel/random/uuid)\\"}"` }
+    ];
+  }
 
   constructor() {
     this.state.channel$.subscribe((c) => {
       this.channel = { ...c };
+      this.cdr.markForCheck();
+    });
+    this.state.selectedTenant$.subscribe((tenant) => {
+      this.selectedTenant = tenant;
       this.cdr.markForCheck();
     });
     this.state.domains$.subscribe((d) => {
@@ -253,12 +346,23 @@ export class SettingsViewComponent implements OnInit {
       this.members = m;
       this.cdr.markForCheck();
     });
+    this.state.channelCredentials$.subscribe((credentials) => {
+      this.connectorCredentials = credentials;
+      this.cdr.markForCheck();
+    });
   }
 
   ngOnInit(): void {
     this.state.loadChannel();
     this.state.loadDomains();
     this.state.loadMembers();
+    this.state.loadChannelCredentials();
+  }
+
+  copySample(value: string): void {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) return;
+    void navigator.clipboard.writeText(value);
+    this.state.showToast('success', 'Curl Copied', 'The connector example is ready to paste into a server terminal.');
   }
 
   saveChannel(): void {
@@ -280,6 +384,21 @@ export class SettingsViewComponent implements OnInit {
     this.state.settings.addMember(this.newEmail, this.newPassword, this.newRole);
     this.newEmail = '';
     this.newPassword = '';
+  }
+
+  createConnectorCredential(): void {
+    const channel = this.newConnectorChannel.trim().toLowerCase();
+    if (!channel) return;
+    this.state.settings.createChannelCredential(channel, 'api_key', (secret) => {
+      this.oneTimeConnectorSecret = secret;
+      this.cdr.markForCheck();
+    });
+  }
+
+  revokeConnectorCredential(credential: ChannelCredential): void {
+    if (window.confirm(`Revoke the ${credential.channel} connector credential?`)) {
+      this.state.settings.revokeChannelCredential(credential);
+    }
   }
 
   purgeExpiredSessions(): void {

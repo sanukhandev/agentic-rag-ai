@@ -1,0 +1,357 @@
+{
+  "catalog": {
+    "intents": [
+      {
+        "active": true,
+        "category": "sales",
+        "confidenceThreshold": 0.8,
+        "confirmationRequired": true,
+        "description": "Capture a qualified CRM lead from a service or demo request.",
+        "displayName": "Request a service",
+        "intentKey": "lead.capture",
+        "minimumScore": 70,
+        "priority": 100,
+        "versionNote": "Initial CRM lead capture catalog.",
+        "workflowKey": "crm.lead.create"
+      }
+    ],
+    "qualityRules": [
+      {
+        "confidenceWeight": 0.2,
+        "contactWeight": 0.2,
+        "hotThreshold": 85,
+        "intentKey": "lead.capture",
+        "intentWeight": 0.6,
+        "nurtureThreshold": 40,
+        "qualityWorkflowKey": "crm.lead.quality.score",
+        "warmThreshold": 70
+      }
+    ],
+    "relations": [],
+    "signals": [
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Strong demo request.",
+        "relationGroup": "service_request",
+        "signalId": "lead-demo",
+        "signalType": "phrase",
+        "value": "i need a demo",
+        "weight": 65
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Strong demo request.",
+        "relationGroup": "service_request",
+        "signalId": "lead-book-demo",
+        "signalType": "phrase",
+        "value": "book a demo",
+        "weight": 65
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Request to see a live demo.",
+        "relationGroup": "service_request",
+        "signalId": "lead-live-demo",
+        "signalType": "phrase",
+        "value": "live demo",
+        "weight": 65
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Request to schedule a demo.",
+        "relationGroup": "service_request",
+        "signalId": "lead-schedule-demo",
+        "signalType": "phrase",
+        "value": "schedule a demo",
+        "weight": 65
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Demo qualifier.",
+        "relationGroup": "service_request",
+        "signalId": "lead-demo-keyword",
+        "signalType": "keyword",
+        "value": "demo",
+        "weight": 20
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Request to schedule a call.",
+        "relationGroup": "service_request",
+        "signalId": "lead-schedule-call",
+        "signalType": "phrase",
+        "value": "schedule a call",
+        "weight": 70
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Request to book a call.",
+        "relationGroup": "service_request",
+        "signalId": "lead-book-call",
+        "signalType": "phrase",
+        "value": "book a call",
+        "weight": 70
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Request to connect with Sanu.",
+        "relationGroup": "service_request",
+        "signalId": "lead-connect-sanu",
+        "signalType": "phrase",
+        "value": "connect with sanu",
+        "weight": 70
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Request to call Sanu.",
+        "relationGroup": "service_request",
+        "signalId": "lead-call-sanu",
+        "signalType": "phrase",
+        "value": "call with sanu",
+        "weight": 70
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Request to talk with Sanu.",
+        "relationGroup": "service_request",
+        "signalId": "lead-talk-sanu",
+        "signalType": "phrase",
+        "value": "talk to sanu",
+        "weight": 70
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Request to pass a message to Sanu.",
+        "relationGroup": "service_request",
+        "signalId": "lead-let-him-know",
+        "signalType": "phrase",
+        "value": "let him know",
+        "weight": 70
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Request to pass a message to Sanu.",
+        "relationGroup": "service_request",
+        "signalId": "lead-can-let-him-know",
+        "signalType": "phrase",
+        "value": "can you let him know",
+        "weight": 70
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Request to pass a message to Sanu.",
+        "relationGroup": "service_request",
+        "signalId": "lead-tell-him-i-was-here",
+        "signalType": "phrase",
+        "value": "tell him i was here",
+        "weight": 70
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Request to pass a message to Sanu.",
+        "relationGroup": "service_request",
+        "signalId": "lead-pass-message",
+        "signalType": "phrase",
+        "value": "pass along a message",
+        "weight": 70
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Commercial intent.",
+        "relationGroup": "service_request",
+        "signalId": "lead-interested",
+        "signalType": "phrase",
+        "value": "interested in your services",
+        "weight": 55
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Commercial qualifier.",
+        "relationGroup": "service_request",
+        "signalId": "lead-interested-keyword",
+        "signalType": "phrase",
+        "value": "interested in",
+        "weight": 25
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Commercial intent.",
+        "relationGroup": "service_request",
+        "signalId": "lead-quote",
+        "signalType": "keyword",
+        "value": "quote",
+        "weight": 45
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Commercial intent.",
+        "relationGroup": "service_request",
+        "signalId": "lead-consultation",
+        "signalType": "keyword",
+        "value": "consultation",
+        "weight": 45
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Commercial intent.",
+        "relationGroup": "service_request",
+        "signalId": "lead-hire",
+        "signalType": "keyword",
+        "value": "hire",
+        "weight": 40
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Project requirement qualifier.",
+        "relationGroup": "project_request",
+        "signalId": "lead-developer",
+        "signalType": "keyword",
+        "value": "developer",
+        "weight": 15
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Project domain qualifier.",
+        "relationGroup": "project_request",
+        "signalId": "lead-erp",
+        "signalType": "keyword",
+        "value": "erp",
+        "weight": 15
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "ERP project qualifier.",
+        "relationGroup": "project_request",
+        "signalId": "lead-erp-build",
+        "signalType": "phrase",
+        "value": "build an erp solution",
+        "weight": 35
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Project requirement qualifier.",
+        "relationGroup": "project_request",
+        "signalId": "lead-build",
+        "signalType": "keyword",
+        "value": "build",
+        "weight": 10
+      },
+      {
+        "intentKey": "lead.capture",
+        "language": "en",
+        "matchMode": "contains",
+        "notes": "Informational questions must not create a lead.",
+        "relationGroup": "information_request",
+        "signalId": "lead-information",
+        "signalType": "exclusion",
+        "value": "what services do you offer",
+        "weight": -50
+      }
+    ],
+    "slots": [
+      {
+        "alternativeGroup": null,
+        "collectionOrder": 1,
+        "dataType": "person_name",
+        "intentKey": "lead.capture",
+        "promptKey": "lead.ask_name",
+        "qualityWeight": 50,
+        "required": true,
+        "retentionClass": "pii",
+        "slotKey": "name",
+        "validationRule": "token:NAME"
+      },
+      {
+        "alternativeGroup": "contact",
+        "collectionOrder": 2,
+        "dataType": "email",
+        "intentKey": "lead.capture",
+        "promptKey": "lead.ask_contact",
+        "qualityWeight": 30,
+        "required": false,
+        "retentionClass": "pii",
+        "slotKey": "email",
+        "validationRule": "token:EMAIL"
+      },
+      {
+        "alternativeGroup": "contact",
+        "collectionOrder": 3,
+        "dataType": "phone",
+        "intentKey": "lead.capture",
+        "promptKey": "lead.ask_contact",
+        "qualityWeight": 20,
+        "required": false,
+        "retentionClass": "pii",
+        "slotKey": "phone",
+        "validationRule": "token:PHONE"
+      }
+    ],
+    "tenantScope": "sanu-khan",
+    "workflowBindings": [
+      {
+        "active": true,
+        "n8nWorkflowId": "jMhE7ENPNNtLUFJm",
+        "payloadContract": "crm-lead-v1",
+        "sideEffectClass": "crm_write",
+        "webhookPath": "lead-capture",
+        "workflowKey": "crm.lead.create"
+      },
+      {
+        "active": true,
+        "n8nWorkflowId": "KW2teJmT6SdLV4ow",
+        "payloadContract": "crm-lead-quality-v1",
+        "sideEffectClass": "crm_write",
+        "webhookPath": "lead-quality-score",
+        "workflowKey": "crm.lead.quality.score"
+      }
+    ]
+  },
+  "parserVersion": "intent-catalog-xlsx-1.1.0",
+  "sourceHash": "932d1f48ffae16f8fdfe7d47e2b68a89016e6129b7310c4f2eb1398cfe1c649f"
+}

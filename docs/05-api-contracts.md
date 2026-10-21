@@ -13,6 +13,23 @@ The local vertical slice implements these routes with runtime Zod validation and
 | GET /api/v1/health/live | Lightweight liveness | No secrets/dependency disclosure |
 | GET /api/v1/health/ready | Restricted readiness | Safe dependency status |
 
+## Omnichannel channel gateway
+
+For runnable VM examples and signing code, see [Omnichannel chat API](12-omnichannel-chat-api.md).
+
+Tenant admins issue one credential per channel through `POST /api/v1/admin/channels`. The response contains the generated secret once; the database stores only encrypted secret material. `GET /api/v1/admin/channels` returns metadata without secrets and `POST /api/v1/admin/channels/:id/revoke` immediately disables a credential.
+
+Signed channel clients reuse the external chat routes (`sessions`, `messages`, `history`, `actions/:id/confirm`, and `actions/:id`) with these headers:
+
+| Header | Value |
+| --- | --- |
+| `X-Agentic-Key-Id` | Issued public key ID |
+| `X-Agentic-Timestamp` | Unix timestamp in seconds |
+| `X-Agentic-Nonce` | Per-request unique value, 8–128 safe characters |
+| `X-Agentic-Signature` | Base64url HMAC-SHA256 signature |
+
+The signature is calculated over `METHOD\nREQUEST_TARGET\nTIMESTAMP\nNONCE\nJSON_BODY`, with the method uppercased, `REQUEST_TARGET` including the raw query string when present, and the exact JSON body sent to Node. Requests older than five minutes or with a reused nonce are rejected. The tenant and channel come from the credential, not request fields; signed session creation therefore uses `{}` as its body. This is server-to-server channel authentication and does not replace HTTPS, rate limiting, idempotency or Node-side intent/workflow authorization.
+
 ## Authentication and platform administration
 
 | Route | Purpose | Required controls |
@@ -38,6 +55,9 @@ The local vertical slice implements these routes with runtime Zod validation and
 | GET /api/v1/admin/dashboard/overview | Tenant-scoped operational counters | Tenant identity from the session |
 | GET /api/v1/admin/services/health | Redacted service and telemetry status | Platform/tenant-admin RBAC |
 | GET/PATCH /api/v1/admin/channel | Configure exact public origin and enablement | Tenant-admin RBAC, origin validation, audited |
+| GET /api/v1/admin/channels | List tenant channel credential metadata | Tenant-admin RBAC; secrets excluded |
+| POST /api/v1/admin/channels | Issue one credential for a channel | Tenant-admin RBAC, encrypted-at-rest secret, audit; secret returned once |
+| POST /api/v1/admin/channels/:id/revoke | Revoke a channel credential | Tenant-admin RBAC, tenant ownership, audit |
 | GET/PUT /api/v1/admin/persona | Read/update the active persona | Tenant scope, persona safety validation |
 | POST /api/v1/admin/persona/drafts | Create a persona version | Tenant-admin RBAC, bounded fields |
 | GET /api/v1/admin/persona/versions | List tenant persona history | Tenant scope |
@@ -85,7 +105,7 @@ Examples illustrate schema only; they are not live data and do not imply a shipp
 ## Response and action semantics
 - **answer** is user-safe text; may include a disclosure when evidence is missing; **grounded=false** must not imply factual business assertions. **conversational=true** identifies a short greeting answered from the tenant persona when no matching approved evidence exists. If matching evidence exists, the response is grounded and reported with `conversational=false` and validated citations.
 - **citations** are validated and tenant-authorized; never include storage credentials, private paths, original customer PII or internal embedding data.
-- **actionProposal** contains opaque ID, canonical action type, user-readable confirmation requirement and expiry; never arbitrary executable instructions.
+- **actionProposal** contains opaque ID, canonical action type, user-readable confirmation requirement and expiry; `consentRequired=true` means the same button records explicit visitor consent and approves the action. It never infers consent from an email address or detected intent.
 - **errors**: consistent code, generic message and correlation ID; no traces, raw model output, SQL or PII. Use appropriate 400/401/403/404/409/413/422/429/5xx statuses.
 - **streaming**: optional later SSE design; do not stream unchecked model tokens that may contain PII or unverified claims. Buffer and validate or build a secure streaming gate before enabling.
 

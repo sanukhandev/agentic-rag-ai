@@ -22,7 +22,7 @@ describe('private ingestion staging', () => {
       await expect(staging.write(jobId, 'text/plain', content)).rejects.toThrow();
       await expect(staging.write('../escape', 'text/plain', content)).rejects.toThrow('Invalid ingestion job ID.');
       await expect(staging.write(jobId, 'application/octet-stream', content)).rejects.toThrow('Unsupported ingestion file type.');
-      await expect(staging.write('22222222-2222-4222-8222-222222222222', 'text/plain', Buffer.alloc(MAX_INGESTION_FILE_BYTES + 1))).rejects.toThrow('Input exceeds the 5 MiB ingestion limit.');
+      await expect(staging.write('22222222-2222-4222-8222-222222222222', 'text/plain', Buffer.alloc(MAX_INGESTION_FILE_BYTES + 1))).rejects.toThrow('Input exceeds the 20 MiB ingestion limit.');
       await expect(staging.write('22222222-2222-4222-8222-222222222222', 'application/pdf', Buffer.from('not a pdf'))).rejects.toThrow('signature');
       expect(hasValidFileSignature('application/pdf', Buffer.from('%PDF-1.7'))).toBe(true);
       expect(hasValidFileSignature('application/pdf', Buffer.from('plain text'))).toBe(false);

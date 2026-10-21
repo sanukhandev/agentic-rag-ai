@@ -16,6 +16,7 @@ import { ToastComponent } from './components/shared/toast.component';
 import { LoginPageComponent } from './components/login-page/login-page.component';
 import { CustomerChatComponent } from './components/customer-chat/customer-chat.component';
 import { CrmComponent } from './components/crm/crm.component';
+import { IntentCatalogComponent } from './components/intent-catalog/intent-catalog.component';
 import { IconComponent } from './components/shared/icon.component';
 import { BadgeComponent } from './components/shared/badge.component';
 import { UserRole } from './services/auth.service';
@@ -40,6 +41,7 @@ import { canAccessAdminSection } from './services/admin-navigation';
     LoginPageComponent,
     CustomerChatComponent,
     CrmComponent,
+    IntentCatalogComponent,
     IconComponent,
     BadgeComponent
   ],
@@ -59,6 +61,7 @@ export class AppComponent implements OnInit {
     { id: 'overview', label: 'Overview', icon: 'overview' },
     { id: 'organizations', label: 'Organizations', icon: 'organizations' },
     { id: 'knowledge', label: 'Content', icon: 'knowledge' },
+    { id: 'catalog', label: 'Intent Catalog', icon: 'studio' },
     { id: 'studio', label: 'Assistant', icon: 'studio' },
     { id: 'chat', label: 'Chat Preview', icon: 'chat' },
     { id: 'crm', label: 'Leads', icon: 'users' },

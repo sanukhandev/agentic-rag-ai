@@ -4,20 +4,23 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { createApp } from './app.js';
+import { createApp, isValidBase64 } from './app.js';
 import { MockWorkflowAdapter, signN8nPayload } from './actions.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import type { EmbeddingProvider } from './embedding.js';
 import type { ChatModel, ModelDraft } from './model.js';
+import type { IntentCatalog } from './types.js';
 import { TokenVault } from './privacy.js';
 
 class CapturingModel implements ChatModel {
   public readonly prompts: string[] = [];
   public readonly personaNames: string[] = [];
+  public readonly ownerNames: string[] = [];
   public readonly conversations: Array<Array<{ role: 'user' | 'assistant'; content: string }>> = [];
   async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
     this.prompts.push(input.maskedMessage);
     this.personaNames.push(input.personaName);
+    this.ownerNames.push(input.ownerName ?? '');
     this.conversations.push(input.conversation ?? []);
     const evidence = input.evidence[0];
     return evidence ? { answer: evidence.content, citationIds: [evidence.citation.chunkId], proposedIntent: /contact/i.test(input.maskedMessage) ? 'lead.capture' : null } : { answer: 'No approved evidence supports that answer.', citationIds: [], proposedIntent: null };
@@ -60,14 +63,14 @@ class FailsOnceModel implements ChatModel {
 
 describe('API vertical slice', () => {
   it('refuses production startup with local model, embedding, workflow or worker fallbacks', () => {
-    expect(() => createApp({ nodeEnv: 'production', jwtSecret: 'production-jwt-secret', tokenVault: new TokenVault('production-vault-secret') })).toThrow('Production Azure, embedding, workflow, callback and ingestion adapters are required.');
+    expect(() => createApp({ nodeEnv: 'production', jwtSecret: 'production-jwt-secret', tokenVault: new TokenVault('production-vault-secret') })).toThrow('Production Azure, embedding, n8n polling and ingestion adapters are required.');
   });
 
   it('rejects invalid usage cost rates', () => {
     expect(() => createApp({ nodeEnv: 'test', inputCostUsdPerMillion: -1 })).toThrow('MODEL_INPUT_COST_USD_PER_MILLION');
   });
 
-  it('onboards tenants, isolates sources, grounds answers, masks PII, and confirms one workflow', async () => {
+  it('onboards tenants, isolates sources, grounds answers, masks PII, and confirms one workflow', { timeout: 10_000 }, async () => {
     const model = new CapturingModel();
     const workflow = new MockWorkflowAdapter();
     const runtime = createApp({ jwtSecret: 'test-secret', model, workflow, nodeEnv: 'test', n8nCallbackSecret: 'callback-secret', inputCostUsdPerMillion: 1, outputCostUsdPerMillion: 2 });
@@ -147,6 +150,11 @@ describe('API vertical slice', () => {
     expect(groundedGreeting.body.answer).toContain('Hello');
     expect(groundedGreeting.body.citations).toHaveLength(1);
     expect(model.prompts).toHaveLength(promptCountBeforeGreeting + 1);
+    const identitySession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
+    const identity = await api.post('/api/v1/chat/messages').send({ sessionId: identitySession.body.sessionId, message: "what's your name?", clientMessageId: 'identity-with-knowledge-1' }).expect(200);
+    expect(identity.body).toMatchObject({ grounded: false, conversational: true, citations: [] });
+    expect(identity.body.answer).toContain('Tenant A’s AI assistant and associate');
+    expect(model.prompts).toHaveLength(promptCountBeforeGreeting + 1);
     const farewellSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
     const farewell = await api.post('/api/v1/chat/messages').send({ sessionId: farewellSession.body.sessionId, message: 'That’s all, bye', clientMessageId: 'farewell-1' }).expect(200);
     expect(farewell.body).toMatchObject({ grounded: false, conversational: true, citations: [] });
@@ -158,6 +166,7 @@ describe('API vertical slice', () => {
     expect(grounded.body.grounded).toBe(true);
     expect(grounded.body.citations).toHaveLength(1);
     expect(model.personaNames.at(-1)).toBe('Ava 2');
+    expect(model.ownerNames.at(-1)).toBe('Tenant A');
     const newerSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
     await api.post('/api/v1/chat/messages').send({ sessionId: newerSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-new-persona' }).expect(200);
     expect(model.personaNames.at(-1)).toBe('Ava New');
@@ -194,14 +203,13 @@ describe('API vertical slice', () => {
     expect((await runtime.store.getAction(proposalId))?.payload).toEqual({ name: '[NAME_1]', email: '[EMAIL_1]' });
     await api.post(`/api/v1/chat/actions/${proposalId}/confirm`).send({ sessionId: publicSession.body.sessionId, confirmed: true }).expect(200);
     await api.post(`/api/v1/chat/actions/${proposalId}/confirm`).send({ sessionId: publicSession.body.sessionId, confirmed: true }).expect(200);
-    expect(workflow.calls).toHaveLength(1);
-    expect(workflow.calls[0]?.leadData).toEqual({ name: '[NAME_1]', email: '[EMAIL_1]' });
+    expect(workflow.calls).toHaveLength(0);
     const tenantARuns = await api.get('/api/v1/admin/workflow-runs').set('Authorization', `Bearer ${adminToken}`).expect(200);
-    expect(tenantARuns.body.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: proposalId, state: 'completed' })]));
+    expect(tenantARuns.body.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: proposalId, state: 'approved' })]));
     const tenantAAudit = await api.get('/api/v1/admin/audit').set('Authorization', `Bearer ${adminToken}`).expect(200);
-    expect(tenantAAudit.body.items.some((event: { eventName: string }) => event.eventName === 'workflow.completed')).toBe(true);
+    expect(tenantAAudit.body.items.some((event: { eventName: string }) => event.eventName === 'workflow.approved')).toBe(true);
     expect((await api.get('/api/v1/admin/workflow-runs').set('Authorization', `Bearer ${adminBToken}`).expect(200)).body.items).toHaveLength(0);
-    expect((await api.get('/api/v1/admin/audit').set('Authorization', `Bearer ${adminBToken}`).expect(200)).body.items.some((event: { eventName: string }) => event.eventName === 'workflow.completed')).toBe(false);
+    expect((await api.get('/api/v1/admin/audit').set('Authorization', `Bearer ${adminBToken}`).expect(200)).body.items.some((event: { eventName: string }) => event.eventName === 'workflow.approved')).toBe(false);
     const callbackReply = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'Please contact me for a demo.', clientMessageId: 'callback-proposal' }).expect(200);
     const callbackActionId = callbackReply.body.actionProposal.id as string;
     const callbackBody = { actionId: callbackActionId, tenantId: tenantA.body.tenant.id as string, state: 'completed', externalReference: 'n8n-callback-1' };
@@ -263,8 +271,14 @@ describe('API vertical slice', () => {
 
   it('rejects oversized JSON with a typed bounded-input error', async () => {
     const api = request(createApp({ nodeEnv: 'test' }).app);
-    const oversized = await api.post('/api/v1/auth/login').send({ padding: 'x'.repeat(9 * 1024 * 1024) }).expect(413);
+    const oversized = await api.post('/api/v1/auth/login').send({ padding: 'x'.repeat(31 * 1024 * 1024) }).expect(413);
     expect(oversized.body.error.code).toBe('PAYLOAD_TOO_LARGE');
+  });
+
+  it('validates large base64 payloads without overflowing the call stack', () => {
+    const encoded = Buffer.alloc(12 * 1024 * 1024, 65).toString('base64');
+    expect(isValidBase64(encoded)).toBe(true);
+    expect(isValidBase64(`${encoded.slice(0, -1)}$`)).toBe(false);
   });
 
   it('returns a typed JSON error and disables browser caching for API responses', async () => {
@@ -546,8 +560,8 @@ describe('API vertical slice', () => {
     expect(stored?.response?.answer).toMatch(/\[EMAIL_\d+\]/);
     const history = await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).expect(200);
     expect(history.body.messages.at(-1).content).toContain('alice@example.com');
-    const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'ignored duplicate', clientMessageId: 'pii-response-1' }).expect(200);
-    expect(duplicate.body.answer).toContain('alice@example.com');
+    const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'ignored duplicate', clientMessageId: 'pii-response-1' }).expect(409);
+    expect(duplicate.body.error.code).toBe('MESSAGE_ID_REUSED');
   });
 
   it('allows a failed model turn to retry once with the same masked idempotency record', async () => {
@@ -563,8 +577,8 @@ describe('API vertical slice', () => {
     const retry = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is retry pricing?', clientMessageId: 'retry-message-1' }).expect(200);
     expect(retry.body.grounded).toBe(true);
     expect((await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).expect(200)).body.messages.filter((message: { clientMessageId: string | null }) => message.clientMessageId === 'retry-message-1')).toHaveLength(1);
-    const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Different retry content', clientMessageId: 'retry-message-1' }).expect(200);
-    expect(duplicate.body.messageId).toBe(retry.body.messageId);
+    const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Different retry content', clientMessageId: 'retry-message-1' }).expect(409);
+    expect(duplicate.body.error.code).toBe('MESSAGE_ID_REUSED');
   });
 
   it('stores a validated CRM lead and rehydrates it only for the tenant admin view', async () => {
@@ -574,17 +588,46 @@ describe('API vertical slice', () => {
     const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'CRM Tenant', slug: 'crm-tenant', adminEmail: 'admin-crm@example.test', adminPassword: 'TenantA1Password' }).expect(201);
     const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-crm@example.test', password: 'TenantA1Password' }).expect(200);
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
-    const proposal = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Please contact me at alice@example.com about a demo. My name is Alice', clientMessageId: 'crm-lead-message' }).expect(200);
+    const proposal = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Please contact me at +971500000000 about a demo. My name is Alice', clientMessageId: 'crm-lead-message' }).expect(200);
     const actionId = proposal.body.actionProposal.id as string;
+    await api.post(`/api/v1/chat/actions/${actionId}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
     const action = await runtime.store.getAction(actionId);
     const messages = await runtime.store.listMessages(session.body.sessionId, tenant.body.tenant.id);
-    const stored = await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: action?.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) }).expect(201);
+    const stored = await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: action?.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })), completeAction: false }).expect(201);
     expect(stored.body.lead).toMatchObject({ intent: 'lead.capture', score: 70, validationPass: true, summaryStatus: 'pending' });
-    await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/summary`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, summary: 'Customer [NAME_1] requested a demo via [EMAIL_1].', status: 'completed' }).expect(200);
+    await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/summary`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, summary: 'Customer [NAME_1] requested a demo via [PHONE_1].', status: 'completed' }).expect(200);
+    const remotePayload = await api.post(`/api/v1/internal/crm/leads/${stored.body.lead.id}/remote-payload`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, actionId }).expect(200);
+    expect(remotePayload.body).toMatchObject({ name: 'Alice', phone: '+971500000000', email: '' });
+    const linked = await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/remote`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, leadId: 'remote-123', remoteCrm: 'remote-crm-test' }).expect(200);
+    expect(linked.body.lead).toMatchObject({ leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'crm-lead-remote-123' }).expect(200);
     const crm = await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${admin.body.token}`).expect(200);
-    expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', email: 'alice@example.com' }, summary: 'Customer Alice requested a demo via alice@example.com.', summaryStatus: 'completed' });
-    expect(JSON.stringify(crm.body.items[0].conversation)).toContain('alice@example.com');
+    expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', phone: '+971500000000' }, score: 70, summary: 'Customer Alice requested a demo via +971500000000.', summaryStatus: 'completed', leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
+    expect(JSON.stringify(crm.body.items[0].conversation)).toContain('+971500000000');
     await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${platform.body.token}`).set('x-tenant-id', tenant.body.tenant.id).expect(200);
+  });
+
+  it('creates a validated draft when a tenant admin edits an intent catalog', async () => {
+    const runtime = createApp({ nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-catalog-edit@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Catalog Edit Tenant', slug: 'catalog-edit-tenant', adminEmail: 'admin-catalog-edit@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-catalog-edit@example.test', password: 'TenantA1Password' }).expect(200);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [{ intentKey: 'lead.capture', displayName: 'Request a service', description: 'Contact request', category: 'lead', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 10, versionNote: 'test' }],
+      signals: [{ intentKey: 'lead.capture', signalId: 'demo', signalType: 'phrase', value: 'i need a demo', language: 'en', matchMode: 'contains', weight: 70, relationGroup: null, notes: '' }],
+      slots: [],
+      relations: [],
+      workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'crm', webhookPath: 'lead-capture', payloadContract: 'lead', sideEffectClass: 'crm', active: true }]
+    } satisfies IntentCatalog;
+    const base = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'catalog.xlsx', sourceHash: '0'.repeat(64), parserVersion: 'test', catalog });
+    const edited = { ...catalog, signals: [{ ...catalog.signals[0], value: 'book a demo' }] };
+    const draft = await api.post(`/api/v1/admin/intent-catalog/versions/${base.id}/drafts`).set('Authorization', `Bearer ${admin.body.token}`).send({ catalog: edited }).expect(201);
+    expect(draft.body.version).toMatchObject({ status: 'draft', version: 2, parserVersion: 'intent-catalog-manual-1.0.0', sourceFileName: 'catalog.xlsx (manual edit)' });
+    expect(draft.body.version.catalog.signals[0].value).toBe('book a demo');
+    expect(draft.body.version.sourceHash).toMatch(/^[a-f0-9]{64}$/);
+    await api.post(`/api/v1/admin/intent-catalog/versions/${draft.body.version.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
   });
 
   it('simulates a natural browser lead journey and exposes workflow summary and quality in tenant CRM', async () => {
@@ -610,14 +653,13 @@ describe('API vertical slice', () => {
     expect(contact.body.actionProposal).toMatchObject({ intent: 'lead.capture' });
 
     const confirmed = await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
-    expect(confirmed.body.action.state).toBe('completed');
-    expect(workflow.calls).toHaveLength(1);
-    expect(workflow.calls[0]?.leadContext).toMatchObject({ intent: 'lead.capture', score: 70, quality: 'warm', validationPass: true });
+    expect(confirmed.body.action.state).toBe('approved');
+    expect(workflow.calls).toHaveLength(0);
 
     const actionId = contact.body.actionProposal.id as string;
     const action = await runtime.store.getAction(actionId);
     const messages = await runtime.store.listMessages(session.body.sessionId, tenant.body.tenant.id);
-    const created = await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: action?.payload, intent: 'lead.capture', score: workflow.calls[0]?.leadContext?.score, validationPass: workflow.calls[0]?.leadContext?.validationPass, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) }).expect(201);
+    const created = await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: action?.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) }).expect(201);
     const summary = `Intent: lead.capture. Score: 70. Quality: warm. Full conversation JSON: ${JSON.stringify(created.body.lead.conversation)}`;
     await api.put(`/api/v1/internal/crm/leads/${created.body.lead.id}/summary`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, summary, status: 'completed' }).expect(200);
 

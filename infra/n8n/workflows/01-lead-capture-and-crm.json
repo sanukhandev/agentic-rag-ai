@@ -1,91 +1,104 @@
 {
   "id": "jMhE7ENPNNtLUFJm",
-  "name": "Agentic CRM - Validate and Store Lead",
+  "name": "Agentic CRM - Poll and Capture Lead",
   "nodes": [
     {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "lead-capture",
-        "responseMode": "lastNode",
-        "options": {}
-      },
+      "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 1 }] } },
       "id": "f8e2e11d-0d3e-4e83-8d21-000000000001",
-      "name": "Lead Capture Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2.1,
-      "position": [0, 0],
-      "webhookId": "agentic-lead-capture"
+      "name": "Poll Approved Lead Actions",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
     },
     {
       "parameters": {
-        "jsCode": "const input = $json.body ?? $json;\nconst hasContact = Boolean(input.leadData?.email || input.leadData?.phone);\nif (input.workflowKey !== 'lead.capture' || !input.actionId || !input.tenantId || !input.sessionId || input.validationPass !== true || input.score < 70 || !input.leadData?.name || !hasContact || !Array.isArray(input.conversation)) throw new Error('Lead validation failed');\nreturn [{ json: input }];"
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/claim",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflowKey: 'crm.lead.create', limit: 10 }) }}",
+        "options": {}
       },
       "id": "f8e2e11d-0d3e-4e83-8d21-000000000002",
-      "name": "Validate Lead",
+      "name": "Claim Approved Catalog Actions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": { "jsCode": "const items = Array.isArray($json.items) ? $json.items : [];\nreturn items.map((item) => ({ json: item }));" },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000003",
+      "name": "Expand Claimed Actions",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [240, 0]
+      "position": [480, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json;\nconst catalog = input.catalog ?? {};\nconst intent = (catalog.intents ?? []).find((row) => row.intentKey === input.intent);\nconst binding = (catalog.workflowBindings ?? []).find((row) => row.workflowKey === input.workflowKey);\nconst rule = (catalog.qualityRules ?? []).find((row) => row.intentKey === input.intent);\nconst qualityBinding = rule && (catalog.workflowBindings ?? []).find((row) => row.workflowKey === rule.qualityWorkflowKey);\nconst slots = (catalog.slots ?? []).filter((row) => row.intentKey === input.intent);\nconst present = slots.filter((slot) => Boolean(input.leadData?.[slot.slotKey]));\nconst totalWeight = slots.reduce((sum, slot) => sum + Math.max(0, Number(slot.qualityWeight ?? 0)), 0);\nconst presentWeight = present.reduce((sum, slot) => sum + Math.max(0, Number(slot.qualityWeight ?? 0)), 0);\nconst contactScore = totalWeight ? Math.round((presentWeight / totalWeight) * 100) : 0;\nconst hasContact = Boolean(input.leadData?.email || input.leadData?.phone);\nconst validationPass = Boolean(input.actionId && input.tenantId && input.sessionId && input.catalogVersionId && input.intent === 'lead.capture' && intent?.active === true && binding?.active === true && rule?.qualityWorkflowKey === input.qualityWorkflowKey && qualityBinding?.active === true && input.leadData?.name && hasContact && Array.isArray(input.conversation));\nif (!validationPass) throw new Error('Catalog lead validation failed');\nreturn [{ json: { ...input, score: contactScore, validationPass } }];"
+      },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000004",
+      "name": "Validate Catalog Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 0]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "http://api:4000/api/v1/internal/crm/leads",
         "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "x-agentic-internal-secret",
-              "value": "={{ $env.N8N_WEBHOOK_SECRET }}"
-            }
-          ]
-        },
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, sessionId: $json.sessionId, leadData: $json.leadData, intent: $json.intent, score: $json.score, validationPass: $json.validationPass, conversation: $json.conversation }) }}",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, sessionId: $json.sessionId, leadData: $json.leadData, intent: $json.intent, intentScore: $json.intentScore, intentConfidence: $json.intentConfidence, catalogVersionId: $json.catalogVersionId, score: $json.score, validationPass: $json.validationPass, conversation: $json.conversation }) }}",
         "options": {}
       },
-      "id": "f8e2e11d-0d3e-4e83-8d21-000000000003",
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000005",
       "name": "Insert CRM Lead",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [500, 0]
+      "position": [960, 0]
     },
     {
-      "parameters": {
-        "method": "POST",
-        "url": "http://n8n:5678/webhook/lead-summarize",
-        "sendHeaders": false,
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ leadId: $('Insert CRM Lead').first().json.lead.id, tenantId: $('Validate Lead').first().json.tenantId, intent: $('Validate Lead').first().json.intent, score: $('Validate Lead').first().json.score, quality: $('Validate Lead').first().json.quality, conversation: $('Validate Lead').first().json.conversation }) }}",
-        "options": {}
-      },
-      "id": "f8e2e11d-0d3e-4e83-8d21-000000000004",
-      "name": "Trigger Conversation Summary",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [760, 0]
+      "parameters": { "jsCode": "const input = $('Validate Catalog Lead').first().json;\nconst result = $('Insert CRM Lead').first().json;\nreturn [{ json: { ...input, leadId: result.lead?.id, externalReference: result.externalReference } }];" },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000006",
+      "name": "Prepare Quality Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 0]
     },
     {
-      "parameters": {
-        "jsCode": "const result = $('Insert CRM Lead').first().json;\nreturn [{ json: { externalReference: result.externalReference } }];"
-      },
-      "id": "f8e2e11d-0d3e-4e83-8d21-000000000005",
+      "parameters": { "workflowId": { "__rl": true, "value": "KW2teJmT6SdLV4ow", "mode": "id" }, "options": { "waitForSubWorkflow": true } },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000007",
+      "name": "Calculate Catalog Lead Quality",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1440, 0]
+    },
+    {
+      "parameters": { "jsCode": "const result = $('Insert CRM Lead').first().json;\nreturn [{ json: { accepted: true, externalReference: result.externalReference } }];" },
+      "id": "f8e2e11d-0d3e-4e83-8d21-000000000008",
       "name": "Return CRM Reference",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1020, 0]
+      "position": [1680, 0]
     }
   ],
   "connections": {
-    "Lead Capture Webhook": { "main": [[{ "node": "Validate Lead", "type": "main", "index": 0 }]] },
-    "Validate Lead": { "main": [[{ "node": "Insert CRM Lead", "type": "main", "index": 0 }]] },
-    "Insert CRM Lead": { "main": [[{ "node": "Trigger Conversation Summary", "type": "main", "index": 0 }]] },
-    "Trigger Conversation Summary": { "main": [[{ "node": "Return CRM Reference", "type": "main", "index": 0 }]] }
+    "Poll Approved Lead Actions": { "main": [[{ "node": "Claim Approved Catalog Actions", "type": "main", "index": 0 }]] },
+    "Claim Approved Catalog Actions": { "main": [[{ "node": "Expand Claimed Actions", "type": "main", "index": 0 }]] },
+    "Expand Claimed Actions": { "main": [[{ "node": "Validate Catalog Lead", "type": "main", "index": 0 }]] },
+    "Validate Catalog Lead": { "main": [[{ "node": "Insert CRM Lead", "type": "main", "index": 0 }]] },
+    "Insert CRM Lead": { "main": [[{ "node": "Prepare Quality Input", "type": "main", "index": 0 }]] },
+    "Prepare Quality Input": { "main": [[{ "node": "Calculate Catalog Lead Quality", "type": "main", "index": 0 }]] },
+    "Calculate Catalog Lead Quality": { "main": [[{ "node": "Return CRM Reference", "type": "main", "index": 0 }]] }
   },
   "active": true,
   "settings": { "executionOrder": "v1" },
-  "versionId": "f8e2e11d-0d3e-4e83-8d21-000000000006",
+  "versionId": "f8e2e11d-0d3e-4e83-8d21-000000000009",
   "meta": { "templateCredsSetupCompleted": true },
   "tags": []
 }

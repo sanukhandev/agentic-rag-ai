@@ -39,7 +39,7 @@ For an approved HTTPS snapshot, create a queued `text/html` job and run:
 
 The worker claims path/URL jobs before fetching or extracting, copies file inputs into the private staging root for the attempt, extracts from the staged copy, and purges it before sending only sanitized normalized content, chunk hashes and locators. The API revalidates hashes, re-sanitizes chunks and performs embedding before staging the source for approval. Keep the staging directory private and outside any web-served path.
 
-The Angular tenant-admin panel can also queue a TXT, Markdown, CSV, JSON, JSONL, PDF, DOCX, XLSX or ZIP upload. A ZIP bundle may contain those supported file types and is indexed as one tenant source with file-name locators on its chunks. The API validates the archive signature and stores it in `INGESTION_STAGING_ROOT` (default `data/ingestion-staging`) with a generated job key, mode `0600`, and a 5 MiB compressed limit. The Python worker applies bounded extraction, rejects unsafe paths, duplicates, nested archives, macros, unsupported members and oversized contents, then sanitizes and embeds each extracted file. The aggregate normalized content limit is 1,000,000 characters. Run the worker without `--path` or `--url` to retrieve that private input after claiming the job:
+The Angular tenant-admin panel can also queue a TXT, Markdown, CSV, JSON, JSONL, PDF, DOCX, XLSX or ZIP upload. A ZIP bundle may contain those supported file types and is indexed as one tenant source with file-name locators on its chunks. The API validates the archive signature and stores it in `INGESTION_STAGING_ROOT` (default `data/ingestion-staging`) with a generated job key, mode `0600`, and a 20 MiB compressed limit. The Python worker applies bounded extraction, rejects unsafe paths, duplicates, nested archives, macros, unsupported members and oversized contents, then sanitizes and embeds each extracted file. The aggregate normalized content limit is 1,000,000 characters. Run the worker without `--path` or `--url` to retrieve that private input after claiming the job:
 
 ```powershell
 \.venv\Scripts\python.exe -m ingestion.worker --staging-root .\private-staging --api-base http://localhost:4000 --job-id <job-id> --worker-secret <local-worker-secret>
@@ -100,3 +100,8 @@ HTTPS ingress/reverse proxy → Next web and Node API. Angular admin behind sepa
 
 ## Deployment readiness gate
 No real customer traffic until TLS everywhere relevant, protected n8n access, identity/authorization, PII isolation, model deployment data-region approval, backup restore, dependency vulnerability checks, logging redaction and adversarial AI tests pass.
+# Supporting document OCR
+
+The ingestion image installs Tesseract English and Arabic language data plus the Python OCR dependencies. The API and ingestion worker share the private `./data/supporting-documents` volume. Set `N8N_INTERNAL_URL=http://n8n:5678` for local dispatch; leave the catalog OCR binding inactive until the imported workflow is reviewed and activated.
+
+Uploaded documents use the existing bounded JSON upload pattern, require explicit visitor consent, are type/signature checked, and are never served as public static files. The API masks OCR output before storing it and composes CRM summaries from masked conversation and OCR excerpts.
