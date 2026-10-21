@@ -51,7 +51,7 @@ export class RedisCache implements CacheStore {
   private connection: Promise<boolean> | null = null;
   private retryAfter = 0;
 
-  constructor(private readonly url: string) {
+  constructor(url: string) {
     this.client = createClient({ url });
     this.client.on('error', () => undefined);
   }

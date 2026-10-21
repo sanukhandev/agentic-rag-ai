@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { ActionGateway, isSafeExternalReference, leadQuality, verifyN8nPayload, type WorkflowAdapter } from './actions.js';
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
 import { cacheKey, createCache, type CacheStore } from './cache.js';
-import { channelAuthMiddleware, ChannelSecretVault, generateChannelApiKey, generateChannelKeyId, generateChannelSecret, getChannel, type StaticChannelAuth } from './channel-auth.js';
+import { channelAuthMiddleware, ChannelSecretVault, getChannel, type StaticChannelAuth } from './channel-auth.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, rankChunksWithVector } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, permittedLanguageReply, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence } from './model.js';
@@ -14,7 +14,38 @@ import { catalogIntentClarification, catalogSlotQuestion, resolveIntent, validat
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
-import type { ChannelCredential, CrmLead, DocumentProcessingJob, IntentCatalogQualityRule, LeadData, Message, Session, SourceStatus, Store, SupportingDocument, TenantStatus } from './types.js';
+import type { ChannelCredential, CrmLead, DocumentProcessingJob, IntentCatalogQualityRule, LeadData, Message, Session, SourceStatus, Store, SupportingDocument } from './types.js';
+import { HttpError, parse } from './http/errors.js';
+import {
+  DEFAULT_CONTEXT_WINDOW_MESSAGES,
+  confirmSchema,
+  crmLeadSchema,
+  crmQualitySchema,
+  crmQualificationSchema,
+  crmRemotePayloadSchema,
+  crmRemoteSchema,
+  crmSummarySchema,
+  documentFailureSchema,
+  documentRenewSchema,
+  documentResultSchema,
+  documentUploadSchema,
+  historyQuerySchema,
+  ingestionFailureSchema,
+  ingestionRequestSchema,
+  ingestionResultSchema,
+  intentCatalogEditSchema,
+  intentCatalogResultSchema,
+  intentCatalogUploadSchema,
+  messageSchema,
+  sessionSchema,
+  sourceSchema,
+  uploadSchema,
+  workflowClaimSchema,
+  workflowCompletionSchema,
+} from './http/schemas.js';
+import { registerAuthRoutes } from './routes/auth.js';
+import { registerAdminRoutes } from './routes/admin.js';
+import { registerHealthRoutes } from './routes/health.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -23,83 +54,8 @@ export const pruneExpiredRateLimits = (entries: Map<string, RateLimitEntry>, now
 };
 const catalogQuality = (score: number, rule: IntentCatalogQualityRule | undefined): ReturnType<typeof leadQuality> => rule ? score >= rule.hotThreshold ? 'hot' : score >= rule.warmThreshold ? 'warm' : score >= rule.nurtureThreshold ? 'nurture' : 'new' : leadQuality(score);
 
-const passwordSchema = z.string().min(8).max(128).regex(/[A-Z]/, 'Password must contain an uppercase letter.').regex(/\d/, 'Password must contain a number.');
-const tenantSchema = z.object({ name: z.string().trim().min(2).max(120), slug: z.string().trim().regex(/^[a-z0-9-]+$/).max(80), adminEmail: z.string().email(), adminPassword: passwordSchema });
-const memberSchema = z.object({ email: z.string().email(), password: passwordSchema, role: z.enum(['tenant_editor', 'tenant_viewer', 'tenant_agent']) });
-const domainSchema = z.object({ hostname: z.string().trim().toLowerCase().regex(/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/, 'A valid hostname is required.') });
-const channelSchema = z.object({ publicOrigin: z.union([z.literal(''), z.string().url().refine((value) => { const url = new URL(value); return (url.protocol === 'http:' || url.protocol === 'https:') && url.pathname === '/' && !url.search && !url.hash; }, 'A public origin must be an HTTP(S) origin without a path.')]), publicChatEnabled: z.boolean().optional() });
-const channelCredentialSchema = z.object({ channel: z.string().trim().toLowerCase().regex(/^[a-z][a-z0-9_-]{1,31}$/, 'Channel must be 2-32 lowercase characters, digits, underscores or hyphens.'), authMode: z.enum(['hmac', 'api_key']).default('hmac') });
-const safePersonaText = (max: number) => z.string().trim().min(1).max(max).refine((value) => !/\b(ignore (?:all )?rules|system prompt|search the web|reveal secrets|bypass security)\b/i.test(value), 'Persona contains an unsafe instruction.');
-const DEFAULT_CONTEXT_WINDOW_MESSAGES = 10;
-const MAX_KNOWLEDGE_CONTENT_CHARS = 1_000_000;
-const MAX_INGESTION_BASE64_CHARS = Math.ceil(MAX_INGESTION_FILE_BYTES / 3) * 4;
-const MAX_DOCUMENT_BASE64_CHARS = Math.ceil(MAX_DOCUMENT_BYTES / 3) * 4;
-const personaSchema = z.object({
-  name: safePersonaText(80),
-  greeting: safePersonaText(500),
-  personality: safePersonaText(500),
-  tone: safePersonaText(200),
-  speakingStyle: safePersonaText(200),
-  permittedLanguages: z.array(z.string().min(2).max(12)).min(1).max(10),
-  contextWindowMessages: z.coerce.number().int().min(1).max(DEFAULT_CONTEXT_WINDOW_MESSAGES).default(DEFAULT_CONTEXT_WINDOW_MESSAGES),
-  voiceName: z.string().trim().max(200).default(''),
-  voiceLanguage: z.string().trim().regex(/^[a-z]{2,3}(?:-[a-z]{2,4})?$/i).default('en-US'),
-  voiceRate: z.coerce.number().min(0.5).max(2).default(1),
-  voicePitch: z.coerce.number().min(0).max(2).default(1),
-  voiceVolume: z.coerce.number().min(0).max(1).default(1)
-});
-const personaPreviewSchema = personaSchema.extend({ message: z.string().trim().min(1).max(4000) });
-const sourceSchema = z.object({ title: z.string().trim().min(1).max(200), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'application/json', 'application/x-ndjson', 'text/html', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']), sourceUrl: z.string().url().optional(), audience: z.enum(['public', 'internal']).default('public'), content: z.string().trim().min(1).max(MAX_KNOWLEDGE_CONTENT_CHARS) });
-const uploadSchema = z.object({ title: z.string().trim().min(1).max(200), fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'application/json', 'application/x-ndjson', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip']), audience: z.enum(['public', 'internal']).default('public'), contentBase64: z.string().min(1).max(MAX_INGESTION_BASE64_CHARS) });
-const intentCatalogUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/i).refine((value) => value.toLowerCase().endsWith('.xlsx'), 'An .xlsx workbook is required.'), contentBase64: z.string().min(1).max(MAX_INGESTION_BASE64_CHARS) });
-const intentCatalogEditSchema = z.object({ catalog: z.unknown() });
-const intentCatalogResultSchema = z.object({ sourceHash: z.string().regex(/^[a-f0-9]{64}$/), parserVersion: z.string().trim().min(1).max(120), catalog: z.unknown() });
-const ingestionRequestSchema = sourceSchema.omit({ content: true });
-const ingestionResultSchema = z.object({
-  normalizedContent: z.string().min(1).max(MAX_KNOWLEDGE_CONTENT_CHARS),
-  contentHash: z.string().regex(/^[a-f0-9]{64}$/),
-  parserVersion: z.string().trim().min(1).max(120),
-  chunks: z.array(z.object({ ordinal: z.number().int().nonnegative(), locator: z.string().trim().min(1).max(200), content: z.string().trim().min(1).max(20_000), contentHash: z.string().regex(/^[a-f0-9]{64}$/) })).min(1).max(2_000),
-});
-const ingestionFailureSchema = z.object({ errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('INGESTION_FAILED') });
-const sessionSchema = z.object({ tenantId: z.string().uuid().optional(), tenantSlug: z.string().regex(/^[a-z0-9-]+$/).optional() });
-const messageSchema = z.object({ sessionId: z.string().uuid(), message: z.string().trim().min(1).max(4000), clientMessageId: z.string().trim().min(1).max(128) });
-const confirmSchema = z.object({ sessionId: z.string().uuid(), confirmed: z.literal(true) });
-const retentionSchema = z.object({ before: z.string().datetime() });
-const historyQuerySchema = z.object({ limit: z.coerce.number().int().min(1).max(200).default(100) });
-const leadTokenSchema = z.string().regex(/^\[(?:NAME|EMAIL|PHONE)_\d+\]$/);
-const crmLeadSchema = z.object({
-  actionId: z.string().uuid(),
-  tenantId: z.string().uuid(),
-  sessionId: z.string().uuid(),
-  leadData: z.object({ name: leadTokenSchema.optional(), email: leadTokenSchema.optional(), phone: leadTokenSchema.optional(), interest: z.string().trim().min(1).max(200).optional(), contactConsent: z.boolean().optional() }).strict(),
-  intent: z.string().trim().min(1).max(80),
-  intentScore: z.number().int().min(0).max(100).optional(),
-  intentConfidence: z.number().min(0).max(1).optional(),
-  catalogVersionId: z.string().uuid().nullable().optional(),
-  score: z.number().int().min(0).max(100),
-  validationPass: z.boolean(),
-  conversation: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(20_000), createdAt: z.string().datetime() })).min(1).max(200),
-  completeAction: z.boolean().default(true)
-});
-const crmSummarySchema = z.object({ tenantId: z.string().uuid(), summary: z.string().trim().min(1).max(20_000), status: z.enum(['completed', 'failed']) });
-const crmQualificationSchema = z.object({ tenantId: z.string().uuid(), score: z.number().int().min(0).max(100), summary: z.string().trim().min(1).max(20_000) });
-const crmRemoteSchema = z.object({ tenantId: z.string().uuid(), leadId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteCrm: z.string().trim().min(1).max(80).regex(/^[A-Za-z][A-Za-z0-9._:-]*$/u) });
-const crmRemotePayloadSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid() });
-const workflowClaimSchema = z.object({ workflowKey: z.string().trim().regex(/^[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)+$/i), contract: z.string().trim().min(1).max(120).optional(), limit: z.number().int().min(1).max(50).default(10) });
-const workflowCompletionSchema = z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['completed', 'failed']), externalReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u).optional() });
-const crmQualitySchema = z.object({ tenantId: z.string().uuid(), score: z.number().int().min(0).max(100), qualityWorkflowKey: z.string().trim().min(1).max(80), catalogVersionId: z.string().uuid(), intentKey: z.string().trim().min(1).max(80) });
-const documentUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.string().trim().min(1).max(160), contentBase64: z.string().min(1).max(MAX_DOCUMENT_BASE64_CHARS), processingConsent: z.literal(true), primaryIntentKey: z.string().trim().min(1).max(80).optional() });
-const documentResultSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), extractedText: z.string().max(100_000).default(''), summary: z.string().max(20_000).default(''), executionReference: z.string().trim().max(200).regex(/^[A-Za-z0-9._:-]+$/u).optional() });
-const documentFailureSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('DOCUMENT_OCR_FAILED') });
-const documentRenewSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), leaseMs: z.number().int().min(60_000).max(900_000).default(120_000) });
-
 const publicUser = (user: { id: string; email: string; role: string; tenantId: string | null }) => ({ id: user.id, email: user.email, role: user.role, tenantId: user.tenantId });
 const publicChannelCredential = (credential: ChannelCredential) => ({ id: credential.id, tenantId: credential.tenantId, channel: credential.channel, authMode: credential.authMode, keyId: credential.keyId, active: credential.active, createdAt: credential.createdAt, revokedAt: credential.revokedAt });
-
-class HttpError extends Error {
-  constructor(public readonly status: number, public readonly code: string, message: string) { super(message); this.name = 'HttpError'; }
-}
 
 const errorProperty = (error: unknown, property: string): unknown => typeof error === 'object' && error !== null && property in error ? error[property as keyof typeof error] : undefined;
 const errorType = (error: unknown): string | undefined => { const value = errorProperty(error, 'type'); return typeof value === 'string' ? value : undefined; };
@@ -114,12 +70,6 @@ export const isValidBase64 = (value: string): boolean => {
     if (!((code >= 65 && code <= 90) || (code >= 97 && code <= 122) || (code >= 48 && code <= 57) || code === 43 || code === 47)) return false;
   }
   return padding === 0 || (padding === 1 ? payloadLength % 4 === 3 : payloadLength % 4 === 2);
-};
-
-const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
-  const result = schema.safeParse(value);
-  if (!result.success) throw new HttpError(422, 'VALIDATION_ERROR', result.error.issues.map((issue) => `${issue.path.join('.') || 'request'}: ${issue.message}`).join(' '));
-  return result.data;
 };
 
 const getAuth = (req: Request) => (req as AuthedRequest).auth;
@@ -357,30 +307,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     } catch { await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'document.workflow_dispatch_failed', metadata: { jobId: job.id, status: 'network_error' }, createdAt: new Date().toISOString() }); }
   };
 
-  app.get('/api/v1/health/live', (_req, res) => res.json({ status: 'ok' }));
-  app.get('/api/v1/health/ready', async (_req, res) => {
-    try { await store.countUsers(); res.json({ status: 'ready', store: 'available', cache: (await cache.ping()) ? 'available' : 'degraded' }); } catch { res.status(503).json({ status: 'not_ready' }); }
-  });
-
-  app.post('/api/v1/auth/register-platform', async (req, res, next) => {
-    try {
-       if (nodeEnv === 'production') throw new HttpError(404, 'NOT_FOUND', 'Not found.');
-      if (await store.countUsers() > 0) throw new HttpError(409, 'BOOTSTRAP_COMPLETE', 'Platform bootstrap is already complete.');
-      const input = parse(z.object({ email: z.string().email(), password: passwordSchema }), req.body);
-      const user = await store.createUser({ email: input.email, passwordHash: await auth.hashPassword(input.password), role: 'platform_admin', tenantId: null });
-      res.status(201).json({ token: await auth.issue(user), user: publicUser(user) });
-    } catch (error) { next(error); }
-  });
-
-  app.post('/api/v1/auth/login', async (req, res, next) => {
-    try {
-      const input = parse(z.object({ email: z.string().email(), password: z.string().min(1) }), req.body);
-      const user = await store.getUserByEmail(input.email);
-      if (!user || !(await auth.verifyPassword(input.password, user.passwordHash))) throw new HttpError(401, 'INVALID_CREDENTIALS', 'Invalid credentials.');
-      res.json({ token: await auth.issue(user), user: publicUser(user) });
-    } catch (error) { next(error); }
-  });
-
   const protectedApi = authMiddleware(auth);
   const optionalApi = authMiddleware(auth, false);
   const staticChannelAuth: StaticChannelAuth | undefined = staticChannelApiKey
@@ -394,148 +320,32 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     });
   };
 
-  app.post('/api/v1/auth/logout', protectedApi, async (req, res) => { const token = req.header('authorization')?.slice(7); if (token) await auth.revoke(token); res.status(204).send(); });
-  app.get('/api/v1/auth/me', protectedApi, (req, res) => { const current = getAuth(req); if (!current) { res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required.' } }); return; } res.json({ user: current }); });
+  registerHealthRoutes(app, { store, cache });
+  registerAuthRoutes(app, { store, auth, nodeEnv, protectedApi, publicUser });
 
-  app.post('/api/v1/admin/tenants', protectedApi, requireRoles('platform_admin'), async (req, res, next) => {
-    try {
-      const input = parse(tenantSchema, req.body);
-      if (await store.getTenantBySlug(input.slug)) throw new HttpError(409, 'TENANT_EXISTS', 'Tenant slug already exists.');
-      if (await store.getUserByEmail(input.adminEmail)) throw new HttpError(409, 'USER_EXISTS', 'Admin email already exists.');
-      const tenant = await store.createTenant({ name: input.name, slug: input.slug });
-      const user = await store.createUser({ email: input.adminEmail, passwordHash: await auth.hashPassword(input.adminPassword), role: 'tenant_admin', tenantId: tenant.id });
-      await store.setPersona({ tenantId: tenant.id, name: 'Sales assistant', greeting: 'How can I help?', personality: 'Helpful and precise.', tone: 'Clear', speakingStyle: 'Concise', permittedLanguages: ['en'], contextWindowMessages: DEFAULT_CONTEXT_WINDOW_MESSAGES, voiceName: '', voiceLanguage: 'en-US', voiceRate: 1, voicePitch: 1, voiceVolume: 1 });
-      await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: getAuth(req)?.userId ?? null, eventName: 'tenant.created', metadata: { slug: tenant.slug }, createdAt: new Date().toISOString() });
-      res.status(201).json({ tenant, admin: publicUser(user) });
-    } catch (error) { next(error); }
-  });
-
-  app.get('/api/v1/admin/tenants', protectedApi, requireRoles('platform_admin'), async (_req, res, next) => { try { res.json({ items: await store.listTenants() }); } catch (error) { next(error); } });
-  app.get('/api/v1/admin/platform/overview', protectedApi, requireRoles('platform_admin'), async (_req, res, next) => { try { const tenants = await store.listTenants(); const stats = await Promise.all(tenants.map(async (tenant) => ({ tenantId: tenant.id, metrics: await store.getTenantStats(tenant.id) }))); res.json({ tenants: { total: tenants.length, active: tenants.filter((tenant) => tenant.status === 'active').length, suspended: tenants.filter((tenant) => tenant.status === 'suspended').length, archived: tenants.filter((tenant) => tenant.status === 'archived').length }, metrics: stats }); } catch (error) { next(error); } });
-  app.patch('/api/v1/admin/tenants/:id/status', protectedApi, requireRoles('platform_admin'), async (req, res, next) => {
-    try { const status = parse(z.object({ status: z.enum(['active', 'suspended', 'archived']) }), req.body).status as TenantStatus; const tenant = await store.setTenantStatus(routeParam(req, 'id'), status); if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: getAuth(req)?.userId ?? null, eventName: `tenant.${status}`, metadata: {}, createdAt: new Date().toISOString() }); res.json({ tenant }); } catch (error) { next(error); }
-  });
-
-  app.get('/api/v1/admin/tenant', protectedApi, async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const tenant = await store.getTenant(tenantId); if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); res.json({ tenant }); } catch (error) { next(error); } });
-
-  app.get('/api/v1/admin/members', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { res.json({ items: (await store.listUsers(await tenantForRequest(store, req))).map(publicUser) }); } catch (error) { next(error); } });
-  app.post('/api/v1/admin/members', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const input = parse(memberSchema, req.body); if (await store.getUserByEmail(input.email)) throw new HttpError(409, 'USER_EXISTS', 'Member email already exists.'); const user = await store.createUser({ email: input.email, passwordHash: await auth.hashPassword(input.password), role: input.role, tenantId }); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'member.created', metadata: { memberId: user.id, role: user.role }, createdAt: new Date().toISOString() }); res.status(201).json({ user: publicUser(user) }); } catch (error) { next(error); } });
-  app.patch('/api/v1/admin/members/:id', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const role = parse(z.object({ role: z.enum(['tenant_editor', 'tenant_viewer', 'tenant_agent']) }), req.body).role; const user = await store.updateUserRole(routeParam(req, 'id'), tenantId, role); if (!user) throw new HttpError(404, 'MEMBER_NOT_FOUND', 'Member not found or not eligible for role changes.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'member.role_updated', metadata: { memberId: user.id, role }, createdAt: new Date().toISOString() }); res.json({ user: publicUser(user) }); } catch (error) { next(error); } });
-  app.get('/api/v1/admin/domains', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { res.json({ items: await store.listDomains(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
-  app.post('/api/v1/admin/domains', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const input = parse(domainSchema, req.body); if ((await store.listDomains(tenantId)).some((domain) => domain.hostname === input.hostname)) throw new HttpError(409, 'DOMAIN_EXISTS', 'Domain already exists.'); const domain = await store.addDomain({ tenantId, hostname: input.hostname }); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'domain.created', metadata: { hostname: domain.hostname }, createdAt: new Date().toISOString() }); res.status(201).json({ domain }); } catch (error) { next(error); } });
-  app.delete('/api/v1/admin/domains/:id', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const id = routeParam(req, 'id'); if (!(await store.removeDomain(id, tenantId))) throw new HttpError(404, 'DOMAIN_NOT_FOUND', 'Domain not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'domain.deleted', metadata: { domainId: id }, createdAt: new Date().toISOString() }); res.status(204).send(); } catch (error) { next(error); } });
-  app.get('/api/v1/admin/channel', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenant = await activeTenant(store, await tenantForRequest(store, req)); res.json({ publicOrigin: tenant.publicOrigin, publicChatEnabled: tenant.publicChatEnabled }); } catch (error) { next(error); } });
-  app.patch('/api/v1/admin/channel', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const input = parse(channelSchema, req.body); let tenant = await store.setTenantPublicOrigin(tenantId, input.publicOrigin ? new URL(input.publicOrigin).origin : null); if (tenant && input.publicChatEnabled !== undefined) tenant = await store.setTenantPublicChatEnabled(tenantId, input.publicChatEnabled); if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'tenant.channel_updated', metadata: { publicOrigin: tenant.publicOrigin, publicChatEnabled: tenant.publicChatEnabled }, createdAt: new Date().toISOString() }); res.json({ publicOrigin: tenant.publicOrigin, publicChatEnabled: tenant.publicChatEnabled }); } catch (error) { next(error); } });
-  app.get('/api/v1/admin/channels', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { res.json({ items: (await store.listChannelCredentials(await tenantForRequest(store, req))).map(publicChannelCredential) }); } catch (error) { next(error); } });
-  app.post('/api/v1/admin/channels', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
-    try {
-      const tenantId = await tenantForRequest(store, req);
-      await activeTenant(store, tenantId);
-      const input = parse(channelCredentialSchema, req.body);
-      if ((await store.listChannelCredentials(tenantId)).some((credential) => credential.channel === input.channel && credential.active)) throw new HttpError(409, 'CHANNEL_EXISTS', 'An active credential already exists for this channel.');
-      const authMode = input.authMode ?? 'hmac';
-      const tenant = await store.getTenant(tenantId);
-      if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.');
-      const secret = authMode === 'api_key' ? generateChannelApiKey(tenant.slug) : generateChannelSecret();
-      const credential = await store.createChannelCredential({ id: randomUUID(), tenantId, channel: input.channel, authMode, keyId: generateChannelKeyId(), secretCiphertext: channelVault.encrypt(secret), apiKeyHash: authMode === 'api_key' ? channelVault.hashApiKey(secret) : null, active: true });
-      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'channel.credential_created', metadata: { channel: credential.channel, credentialId: credential.id }, createdAt: new Date().toISOString() });
-      res.status(201).json({ credential: publicChannelCredential(credential), secret, warning: 'Store this secret now. It is shown only once.' });
-    } catch (error) { next(error); }
-  });
-  app.post('/api/v1/admin/channels/:id/revoke', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const credential = await store.revokeChannelCredential(routeParam(req, 'id'), tenantId); if (!credential) throw new HttpError(404, 'CHANNEL_NOT_FOUND', 'Channel credential not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'channel.credential_revoked', metadata: { channel: credential.channel, credentialId: credential.id }, createdAt: new Date().toISOString() }); res.json({ credential: publicChannelCredential(credential) }); } catch (error) { next(error); } });
-  app.get('/api/v1/admin/dashboard/overview', protectedApi, async (req, res, next) => { try { res.json({ tenantId: await tenantForRequest(store, req), metrics: await store.getTenantStats(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
-  app.post('/api/v1/admin/retention/purge-sessions', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
-    try {
-      const tenantId = await tenantForRequest(store, req);
-      const before = parse(retentionSchema, req.body).before;
-      if (Date.parse(before) > Date.now()) throw new HttpError(422, 'INVALID_RETENTION_CUTOFF', 'Retention cutoff must be in the past.');
-      const expiredDocuments = await store.listExpiredSupportingDocuments(tenantId, before);
-      for (const document of expiredDocuments) await documentStorage.purge(document.storageKey);
-      const purged = await store.purgeExpiredSessions(tenantId, before);
-      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'retention.sessions_purged', metadata: { purged, before }, createdAt: new Date().toISOString() });
-      res.json({ purged, before });
-    } catch (error) { next(error); }
-  });
-  app.get('/api/v1/admin/services/health', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, _next) => {
-    const checkedAt = new Date().toISOString();
-    const auth = getAuth(req);
-    const observed = observedTelemetry(auth?.role === 'platform_admin' ? telemetry : tenantTelemetry.get(auth?.tenantId ?? '') ?? newTelemetry());
-    try {
-      await store.countUsers();
-      const isCacheOk = (await cache.ping()) ? 'ok' : 'degraded';
-      res.json({
-        checkedAt,
-        telemetry: observed,
-        checks: {
-          api: { status: 'ok' },
-          store: { status: 'ok' },
-          cache: { status: isCacheOk },
-          model: { status: dependencies.model ? 'ok' : 'adapter' },
-          embedding: { status: dependencies.embedding ? 'ok' : 'adapter' },
-          workflow: { status: 'catalog-polling' },
-          ingestion: { status: ingestionWorkerSecret ? 'ok' : 'ready' }
-        }
-      });
-    } catch {
-      res.status(503).json({
-        checkedAt,
-        telemetry: observed,
-        checks: {
-          api: { status: 'ok' },
-          store: { status: 'down' },
-          cache: { status: 'down' },
-          model: { status: dependencies.model ? 'ok' : 'adapter' },
-          embedding: { status: dependencies.embedding ? 'ok' : 'adapter' },
-          workflow: { status: 'catalog-polling' },
-          ingestion: { status: ingestionWorkerSecret ? 'ok' : 'ready' }
-        }
-      });
-    }
-  });
-
-  app.put('/api/v1/admin/persona', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
-    try { const tenantId = await tenantForRequest(store, req); const input = parse(personaSchema, req.body); const version = await store.createPersonaVersion({ tenantId, ...input, contextWindowMessages: input.contextWindowMessages ?? DEFAULT_CONTEXT_WINDOW_MESSAGES, voiceName: input.voiceName ?? '', voiceLanguage: input.voiceLanguage ?? 'en-US', voiceRate: input.voiceRate ?? 1, voicePitch: input.voicePitch ?? 1, voiceVolume: input.voiceVolume ?? 1, status: 'draft' }); await store.publishPersonaVersion(tenantId, version.id); const persona = await store.getPersona(tenantId); res.json({ persona }); } catch (error) { next(error); }
-  });
-  app.get('/api/v1/admin/tenants/:tenantId/persona', protectedApi, requireRoles('platform_admin'), async (req, res, next) => {
-    try { const tenant = await store.getTenant(routeParam(req, 'tenantId')); if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); if (tenant.status === 'archived') throw new HttpError(423, 'TENANT_ARCHIVED', 'Archived tenants cannot be managed.'); res.json({ persona: await store.getPersona(tenant.id) }); } catch (error) { next(error); }
-  });
-  app.put('/api/v1/admin/tenants/:tenantId/persona', protectedApi, requireRoles('platform_admin'), async (req, res, next) => {
-    try { const tenant = await store.getTenant(routeParam(req, 'tenantId')); if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); if (tenant.status === 'archived') throw new HttpError(423, 'TENANT_ARCHIVED', 'Archived tenants cannot be managed.'); const input = parse(personaSchema, req.body); const version = await store.createPersonaVersion({ tenantId: tenant.id, ...input, contextWindowMessages: input.contextWindowMessages ?? DEFAULT_CONTEXT_WINDOW_MESSAGES, voiceName: input.voiceName ?? '', voiceLanguage: input.voiceLanguage ?? 'en-US', voiceRate: input.voiceRate ?? 1, voicePitch: input.voicePitch ?? 1, voiceVolume: input.voiceVolume ?? 1, status: 'draft' }); await store.publishPersonaVersion(tenant.id, version.id); const persona = await store.getPersona(tenant.id); await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: getAuth(req)?.userId ?? null, eventName: 'persona.platform_updated', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() }); res.json({ persona }); } catch (error) { next(error); }
-  });
-  app.get('/api/v1/admin/persona', protectedApi, async (req, res, next) => { try { res.json({ persona: await store.getPersona(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
-  app.post('/api/v1/admin/persona/drafts', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const input = parse(personaSchema, req.body); res.status(201).json({ version: await store.createPersonaVersion({ tenantId, ...input, contextWindowMessages: input.contextWindowMessages ?? DEFAULT_CONTEXT_WINDOW_MESSAGES, voiceName: input.voiceName ?? '', voiceLanguage: input.voiceLanguage ?? 'en-US', voiceRate: input.voiceRate ?? 1, voicePitch: input.voicePitch ?? 1, voiceVolume: input.voiceVolume ?? 1, status: 'draft' }) }); } catch (error) { next(error); } });
-  app.get('/api/v1/admin/persona/versions', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listPersonaVersions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
-  app.post('/api/v1/admin/persona/versions/:id/publish', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const version = await store.publishPersonaVersion(tenantId, routeParam(req, 'id')); if (!version) throw new HttpError(404, 'PERSONA_VERSION_NOT_FOUND', 'Persona version not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'persona.published', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() }); res.json({ version }); } catch (error) { next(error); } });
-
-  app.post('/api/v1/admin/persona/preview', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
-    try {
-      const tenantId = await tenantForRequest(store, req);
-      const tenant = await activeTenant(store, tenantId);
-      const input = parse(personaPreviewSchema, req.body);
-      const masked = maskPii(input.message);
-      const previewSession = { id: randomUUID(), tenantId, createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
-      saveTokens(previewSession, masked.tokens, tokenVault);
-      const queryEmbedding = await embedding.embed(masked.masked);
-      const ranked = rankChunksWithVector(masked.masked, await store.searchSearchableChunks(tenantId, 'internal', queryEmbedding, 4), queryEmbedding, 4);
-      const evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: chunk.content }));
-      const language = detectedLanguage(masked.masked);
-      const languageAllowed = isPermittedLanguage(masked.masked, input.permittedLanguages);
-      const intent = conversationalIntent(masked.masked);
-      const conversational = intent !== null && (languageAllowed || language === 'ar');
-      let draft: ModelDraft;
-      if (!languageAllowed && !conversational) draft = { answer: permittedLanguageReply(language, input.permittedLanguages), citationIds: [], proposedIntent: null };
-      else if (conversational && intent === 'identity') draft = { answer: conversationalReply(intent, input.name, language, tenant.name), citationIds: [], proposedIntent: null };
-      else if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null };
-      else if (conversational && evidence.length === 0) draft = { answer: intent === 'greeting' && language !== 'ar' ? input.greeting : conversationalReply(intent ?? 'identity', input.name, language, tenant.name), citationIds: [], proposedIntent: null };
-      else draft = await model.draft({ maskedMessage: masked.masked, evidence, personaName: input.name, ownerName: tenant.name, persona: input });
-      assertKnownTokens(previewSession, draft.answer, tokenVault);
-      const citations = validateCitations(draft, evidence);
-      const grounded = languageAllowed && hasSufficientEvidence(draft.answer, evidence, citations);
-      const safeCitations = grounded ? citations : [];
-      const casualFallback = conversational && (evidence.length === 0 || intent === 'identity');
-      const answer = !languageAllowed ? draft.answer : casualFallback ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
-      res.json({ preview: { answer: rehydrateForSession(previewSession, answer, tokenVault), grounded, citations: safeCitations, persona: { name: input.name, permittedLanguages: input.permittedLanguages } } });
-    } catch (error) { next(error); }
+  registerAdminRoutes(app, {
+    store,
+    auth,
+    model,
+    embedding,
+    protectedApi,
+    documentStorage,
+    channelVault,
+    ingestionWorkerSecret,
+    tokenVault,
+    getAuth,
+    routeParam,
+    tenantForRequest,
+    activeTenant,
+    publicUser,
+    publicChannelCredential,
+    observedTelemetry,
+    newTelemetry,
+    telemetry,
+    tenantTelemetry,
+    cachePing: () => cache.ping(),
+    modelConfigured: Boolean(dependencies.model),
+    embeddingConfigured: Boolean(dependencies.embedding),
   });
 
   app.post('/api/v1/admin/ingestion-jobs', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {

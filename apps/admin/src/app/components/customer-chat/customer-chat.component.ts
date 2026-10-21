@@ -1,8 +1,8 @@
-import { Component, Input, OnInit, OnDestroy, ChangeDetectorRef, inject, ElementRef, ViewChild } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy, inject, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { DomSanitizer } from '@angular/platform-browser';
 import { IconComponent } from '../shared/icon.component';
 import { BadgeComponent } from '../shared/badge.component';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -414,7 +414,6 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
   private readonly http = inject(HttpClient);
   private readonly state = inject(AdminStateService);
   private readonly sanitizer = inject(DomSanitizer);
-  private readonly cdr = inject(ChangeDetectorRef);
 
   // Configuration & Tenant state
   tenantSlug = '';
@@ -585,7 +584,7 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
         this.isBusy = false;
 
         // Apply natural language formatting to technical abstentions (Requirement 9)
-        const naturalText = formatNaturalAbstention(res.answer, this.agentName);
+        const naturalText = formatNaturalAbstention(res.answer);
         const safeHtml = this.sanitizer.bypassSecurityTrustHtml(renderMarkdown(naturalText));
 
         const assistantMsg: CustomerChatMessage = {
@@ -712,7 +711,7 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
   }
 
   private mapHistoryMessage(m: { id: string; role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean; createdAt: string }): CustomerChatMessage {
-    const natural = m.role === 'assistant' ? formatNaturalAbstention(m.content, this.agentName) : m.content;
+    const natural = m.role === 'assistant' ? formatNaturalAbstention(m.content) : m.content;
     const safeHtml = m.role === 'assistant' ? (this.sanitizer.bypassSecurityTrustHtml(renderMarkdown(natural)) as string) : undefined;
     return {
       id: m.id,

@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@agentic-rag/chat-utils": "0.1.0",
     "@angular/common": "^21.2.25",
     "@angular/compiler": "^21.2.25",
     "@angular/core": "^21.2.25",
