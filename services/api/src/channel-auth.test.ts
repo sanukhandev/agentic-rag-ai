@@ -11,6 +11,8 @@ describe('omnichannel HMAC gateway', () => {
     await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Channel Tenant', slug: 'channel-tenant', adminEmail: 'admin-static@channel.test', adminPassword: 'Tenant1Password' }).expect(201);
     const session = await api.post('/api/v1/chat/sessions').set('X-Agentic-Api-Key', 'a'.repeat(32)).send({}).expect(201);
     expect(session.body.tenantId).toEqual(expect.any(String));
+    expect((await api.get('/api/v1/chat/config').set('X-Agentic-Api-Key', 'a'.repeat(32)).expect(200)).body.tenant.slug).toBe('channel-tenant');
+    await api.get('/api/v1/chat/config?tenantSlug=channel-tenant').set('X-Agentic-Api-Key', 'a'.repeat(32)).expect(400);
     await api.post('/api/v1/chat/sessions').set('X-Agentic-Api-Key', 'wrong-key').send({}).expect(401);
     await api.post('/api/v1/chat/sessions').set('X-Agentic-Api-Key', 'a'.repeat(32)).send({ tenantSlug: 'other-tenant' }).expect(400);
   });

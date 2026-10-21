@@ -62,6 +62,13 @@ curl -sS -X POST "$CHAT_API_BASE/api/v1/chat/sessions" \
   --data '{}'
 ```
 
+The same key can read the configured tenant presentation without sending a tenant slug:
+
+```bash
+curl -sS "$CHAT_API_BASE/api/v1/chat/config" \
+  -H "X-Agentic-Api-Key: $OMNI_CHANNEL_API_KEY"
+```
+
 The caller must not send `tenantId` or `tenantSlug`; the server resolves the configured tenant. This key is shared by all connectors using it and cannot be independently revoked, so replace it when moving to signed channel credentials.
 
 ## 3. Signed request contract
