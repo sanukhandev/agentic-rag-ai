@@ -13,5 +13,6 @@ tools/ingestion/__pycache__/
 tools/ingestion/**/*.pyc
 data/
 .angular/
-
+.tmp-intent-catalog-artifact
 login
+docs/feature-specs
