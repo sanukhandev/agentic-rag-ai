@@ -312,7 +312,7 @@ export class SettingsViewComponent implements OnInit {
   newEmail = '';
   newPassword = '';
   newRole: MemberRole = 'tenant_editor';
-  newConnectorChannel = 'omnichannel';
+  newConnectorChannel = 'omnichannel-api';
   oneTimeConnectorSecret = '';
 
   get apiBaseUrl(): string {

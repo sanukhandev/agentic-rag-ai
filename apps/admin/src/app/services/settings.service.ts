@@ -5,6 +5,7 @@ import { Channel, ChannelAuthMode, ChannelCredential, TenantDomain, Member, Memb
 import { API_BASE_URL } from './tokens';
 import { AuthService } from './auth.service';
 import { ToastService } from './toast.service';
+import { apiErrorMessage } from './api-error';
 
 @Injectable({
   providedIn: 'root'
@@ -135,7 +136,7 @@ export class SettingsService {
         onCreated?.(res.secret);
         this.toast.show('success', 'Connector Key Created', 'Copy the one-time secret now; it will not be shown again.');
       },
-      error: () => this.toast.show('error', 'Create Failed', 'Could not create the connector credential.')
+      error: (error) => this.toast.show('error', 'Create Failed', apiErrorMessage(error, 'Could not create the connector credential.'))
     });
   }
 
