@@ -13,7 +13,7 @@ describe('supporting document intake', () => {
     expect(hasSupportingDocumentSignature('application/pdf', pdf)).toBe(true);
     expect(hasSupportingDocumentSignature('image/png', pdf)).toBe(false);
     expect(documentSha256(pdf)).toHaveLength(64);
-    const document: SupportingDocument = { id: '55555555-5555-4555-8555-555555555555', tenantId: lead.tenantId, sessionId: lead.sessionId, leadId: lead.id, fileName: 'requirements.pdf', mimeType: 'application/pdf', sizeBytes: pdf.length, sha256: documentSha256(pdf), storageKey: `${lead.tenantId}/55555555-5555-4555-8555-555555555555.pdf`, status: 'completed', workflowKey: 'anc.document.ocr.extract', extractedText: '[EMAIL_1]', summary: 'OCR extracted business requirements', errorCode: null, consentAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    const document: SupportingDocument = { id: '55555555-5555-4555-8555-555555555555', tenantId: lead.tenantId, sessionId: lead.sessionId, leadId: lead.id, fileName: 'requirements.pdf', mimeType: 'application/pdf', sizeBytes: pdf.length, sha256: documentSha256(pdf), storageKey: `${lead.tenantId}/55555555-5555-4555-8555-555555555555.pdf`, status: 'completed', workflowKey: 'anc.document.ocr.extract', storeExtractedText: true, extractedText: '[EMAIL_1]', summary: 'OCR extracted business requirements', errorCode: null, consentAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     expect(composeDocumentSummary(lead, [document])).toContain('Supporting documents: requirements.pdf: OCR extracted business requirements');
   });
 

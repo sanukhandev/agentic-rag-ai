@@ -92,6 +92,7 @@ const crmQualitySchema = z.object({ tenantId: z.string().uuid(), score: z.number
 const documentUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.string().trim().min(1).max(160), contentBase64: z.string().min(1).max(MAX_DOCUMENT_BASE64_CHARS), processingConsent: z.literal(true), primaryIntentKey: z.string().trim().min(1).max(80).optional() });
 const documentResultSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), extractedText: z.string().max(100_000).default(''), summary: z.string().max(20_000).default(''), executionReference: z.string().trim().max(200).regex(/^[A-Za-z0-9._:-]+$/u).optional() });
 const documentFailureSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('DOCUMENT_OCR_FAILED') });
+const documentRenewSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), leaseMs: z.number().int().min(60_000).max(900_000).default(120_000) });
 
 const publicUser = (user: { id: string; email: string; role: string; tenantId: string | null }) => ({ id: user.id, email: user.email, role: user.role, tenantId: user.tenantId });
 const publicChannelCredential = (credential: ChannelCredential) => ({ id: credential.id, tenantId: credential.tenantId, channel: credential.channel, authMode: credential.authMode, keyId: credential.keyId, active: credential.active, createdAt: credential.createdAt, revokedAt: credential.revokedAt });
@@ -448,6 +449,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const tenantId = await tenantForRequest(store, req);
       const before = parse(retentionSchema, req.body).before;
       if (Date.parse(before) > Date.now()) throw new HttpError(422, 'INVALID_RETENTION_CUTOFF', 'Retention cutoff must be in the past.');
+      const expiredDocuments = await store.listExpiredSupportingDocuments(tenantId, before);
+      for (const document of expiredDocuments) await documentStorage.purge(document.storageKey);
       const purged = await store.purgeExpiredSessions(tenantId, before);
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'retention.sessions_purged', metadata: { purged, before }, createdAt: new Date().toISOString() });
       res.json({ purged, before });
@@ -835,6 +838,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.json({ job, document: { id: document.id, tenantId: document.tenantId, sessionId: document.sessionId, fileName: document.fileName, mimeType: document.mimeType } });
     } catch (error) { next(error); }
   });
+  app.post('/api/v1/internal/document-jobs/:id/renew', workerApi, async (req, res, next) => {
+    try {
+      const input = parse(documentRenewSchema, req.body);
+      if (input.jobId !== routeParam(req, 'id')) throw new HttpError(400, 'DOCUMENT_JOB_MISMATCH', 'The job ID does not match the route.');
+      const job = await store.renewDocumentProcessingJob(input.jobId, input.tenantId, input.leaseMs ?? 120_000);
+      if (!job) throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
+      res.json({ job });
+    } catch (error) { next(error); }
+  });
   app.get('/api/v1/internal/document-jobs/:id/input', workerApi, async (req, res, next) => {
     try {
       const jobId = routeParam(req, 'id');
@@ -857,11 +869,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'Document not found.');
       const session = await store.getSession(document.sessionId);
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Document session not found.');
-      const extractedText = input.extractedText ? maskPiiForSession(session, input.extractedText, tokenVault) : null;
+      const extractedText = document.storeExtractedText && input.extractedText ? maskPiiForSession(session, input.extractedText, tokenVault) : null;
       const summary = input.summary ? maskPiiForSession(session, input.summary, tokenVault) : null;
       const completedDocument = await store.updateSupportingDocument({ ...document, status: 'completed', extractedText, summary, errorCode: null, updatedAt: new Date().toISOString() });
       const completedJob = await store.updateDocumentProcessingJob({ ...job, status: 'completed', leaseExpiresAt: null, executionReference: input.executionReference ?? job.executionReference, updatedAt: new Date().toISOString() });
-      if (document.leadId) { const lead = await store.getCrmLead(document.leadId, input.tenantId); if (lead) await store.updateCrmLeadSummary(lead.id, lead.tenantId, composeDocumentSummary(lead, await store.listSupportingDocuments(lead.tenantId, undefined, lead.id)), 'completed'); }
+      if (document.leadId) { const lead = await store.getCrmLead(document.leadId, input.tenantId); if (lead) { const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id); const composed = [lead.summary, composeDocumentSummary(lead, documents)].filter(Boolean).join('\n').slice(0, 20_000); await store.updateCrmLeadSummary(lead.id, lead.tenantId, composed, 'completed'); } }
       await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'document.completed', metadata: { documentId: document.id, jobId: job.id, status: 'completed' }, createdAt: new Date().toISOString() });
       res.json({ document: publicDocument(completedDocument), job: completedJob });
     } catch (error) { next(error); }
@@ -1240,14 +1252,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const sha256 = documentSha256(content);
       const duplicate = (await store.listSupportingDocuments(session.tenantId, session.id)).find((candidate) => candidate.sha256 === sha256);
       if (duplicate) { res.status(202).json({ accepted: true, idempotent: true, document: publicDocument(duplicate) }); return; }
+      const existingLead = await store.getCrmLeadBySessionId(session.id, session.tenantId);
       const documentId = randomUUID();
       const storageKey = documentStorage.key(session.tenantId, documentId, input.mimeType);
       await documentStorage.write(storageKey, content);
       const createdAt = new Date().toISOString();
-      const document: SupportingDocument = { id: documentId, tenantId: session.tenantId, sessionId: session.id, leadId: null, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, sha256, storageKey, status: 'queued', workflowKey: binding.workflowKey, extractedText: null, summary: null, errorCode: null, consentAt: createdAt, createdAt, updatedAt: createdAt };
+      const document: SupportingDocument = { id: documentId, tenantId: session.tenantId, sessionId: session.id, leadId: existingLead?.id ?? null, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, sha256, storageKey, status: 'queued', workflowKey: binding.workflowKey, storeExtractedText: policy.storeExtractedText, extractedText: null, summary: null, errorCode: null, consentAt: createdAt, createdAt, updatedAt: createdAt };
       const job: DocumentProcessingJob = { id: randomUUID(), documentId, tenantId: session.tenantId, workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, status: 'queued', attempts: 0, leaseExpiresAt: null, executionReference: null, createdAt, updatedAt: createdAt };
-      await store.createSupportingDocument(document);
-      await store.createDocumentProcessingJob(job);
+      try { await store.createSupportingDocumentWithJob(document, job); } catch (error) { await documentStorage.purge(storageKey); throw error; }
       await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'document.uploaded', metadata: { documentId, jobId: job.id, workflowKey: job.workflowKey, bytes: content.length }, createdAt });
       void dispatchDocumentWorkflow(job, binding.payloadContract);
       res.status(202).json({ accepted: true, document: publicDocument(document), jobId: job.id });

@@ -345,6 +345,7 @@ export interface SupportingDocument {
   storageKey: string;
   status: SupportingDocumentStatus;
   workflowKey: string;
+  storeExtractedText: boolean;
   extractedText: string | null;
   summary: string | null;
   errorCode: string | null;
@@ -459,6 +460,7 @@ export interface Store {
   searchSearchableChunks(tenantId: string, audience: Audience, queryEmbedding: number[], limit: number): Promise<Array<{ source: Source; chunk: Chunk }>>;
   createSession(tenantId: string, personaVersionId?: string | null): Promise<Session>;
   getSession(id: string): Promise<Session | null>;
+  listExpiredSupportingDocuments(tenantId: string, before: string): Promise<SupportingDocument[]>;
   purgeExpiredSessions(tenantId: string, before: string): Promise<number>;
   updateSession(session: Session): Promise<Session>;
   addMessage(message: Message): Promise<Message>;
@@ -474,18 +476,21 @@ export interface Store {
   createCrmLead(lead: CrmLead): Promise<CrmLead>;
   upsertCrmLead(lead: CrmLead, dedupeKey: string): Promise<CrmLead>;
   getCrmLeadByActionId(actionId: string, tenantId: string): Promise<CrmLead | null>;
+  getCrmLeadBySessionId(sessionId: string, tenantId: string): Promise<CrmLead | null>;
   getCrmLead(id: string, tenantId: string): Promise<CrmLead | null>;
   listCrmLeads(tenantId: string): Promise<CrmLead[]>;
   updateCrmLeadSummary(id: string, tenantId: string, summary: string, status: CrmLead['summaryStatus']): Promise<CrmLead | null>;
   updateCrmLeadScore(id: string, tenantId: string, score: number): Promise<CrmLead | null>;
   updateCrmLeadRemote(input: { id: string; tenantId: string; leadId: string; remoteCrm: string }): Promise<CrmLead | null>;
   createSupportingDocument(document: SupportingDocument): Promise<SupportingDocument>;
+  createSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<void>;
   getSupportingDocument(id: string, tenantId: string): Promise<SupportingDocument | null>;
   listSupportingDocuments(tenantId: string, sessionId?: string, leadId?: string): Promise<SupportingDocument[]>;
   updateSupportingDocument(document: SupportingDocument): Promise<SupportingDocument>;
   createDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
   getDocumentProcessingJob(id: string, tenantId: string): Promise<DocumentProcessingJob | null>;
   claimNextDocumentProcessingJob(leaseMs: number): Promise<DocumentProcessingJob | null>;
+  renewDocumentProcessingJob(id: string, tenantId: string, leaseMs: number): Promise<DocumentProcessingJob | null>;
   updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
   linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void>;
   addAudit(event: AuditEvent): Promise<void>;

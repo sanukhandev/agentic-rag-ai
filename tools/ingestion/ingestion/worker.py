@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import base64
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -126,6 +127,16 @@ def claim_next_document_job(api_base: str, worker_secret: str, session: requests
     return job if isinstance(job, dict) else None
 
 
+def renew_document_job(api_base: str, job_id: str, tenant_id: str, worker_secret: str, lease_ms: int = 120_000, session: requests.Session | None = None) -> dict[str, Any]:
+    client = session or requests.Session()
+    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/{job_id}/renew", headers={"x-ingestion-worker-secret": worker_secret}, json={"tenantId": tenant_id, "jobId": job_id, "leaseMs": lease_ms}, timeout=15)
+    raise_for_api_status(response)
+    body = response.json()
+    if not isinstance(body, dict) or not isinstance(body.get("job"), dict):
+        raise ValueError("The document API returned an invalid renewal result.")
+    return body["job"]
+
+
 def fetch_document_input(api_base: str, job_id: str, tenant_id: str, worker_secret: str, session: requests.Session | None = None) -> tuple[str, str, bytes]:
     client = session or requests.Session()
     response = client.get(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/{job_id}/input", headers={"x-ingestion-worker-secret": worker_secret, "x-tenant-id": tenant_id}, timeout=30)
@@ -166,6 +177,17 @@ def process_document_job(api_base: str, job: dict[str, Any], worker_secret: str,
     client = session or requests.Session()
     job_id = str(job["id"])
     tenant_id = str(job.get("tenant_id") or job.get("tenantId"))
+    stop_heartbeat = threading.Event()
+
+    def heartbeat() -> None:
+        while not stop_heartbeat.wait(20):
+            try:
+                renew_document_job(api_base, job_id, tenant_id, worker_secret)
+            except requests.RequestException:
+                pass
+
+    heartbeat_thread = threading.Thread(target=heartbeat, name=f"document-lease-{job_id}", daemon=True)
+    heartbeat_thread.start()
     try:
         file_name, mime_type, content = fetch_document_input(api_base, job_id, tenant_id, worker_secret, client)
         text = extract_document_text(file_name, mime_type, content)
@@ -173,6 +195,9 @@ def process_document_job(api_base: str, job: dict[str, Any], worker_secret: str,
     except Exception:
         submit_document_failure(api_base, job_id, tenant_id, worker_secret, session=client)
         raise
+    finally:
+        stop_heartbeat.set()
+        heartbeat_thread.join(timeout=5)
 
 
 def process_job(
