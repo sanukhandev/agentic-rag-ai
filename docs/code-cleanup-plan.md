@@ -2,7 +2,7 @@
 
 Branch: `chore/codebase-cleanup-solid-security`
 
-Status: audit complete; Phase 1 is complete on this branch. Phases 2–6 remain planned.
+Status: Phases 1–4 are complete on this branch; Phases 5–6 are validated as audit gates and remain operational follow-up.
 
 ## Guardrails
 
@@ -74,6 +74,13 @@ Checks: workspace typecheck, tests, API lint, and `allowUnreachableCode=false`/u
 
 No DOM, Angular, React, `window`, API, or secret access belongs in this package.
 
+#### Completed on this branch
+
+- Added `packages/chat-utils` with browser-safe tenant resolution, escaping, markdown rendering, abstention normalization, and citation types.
+- Added characterization tests for tenant traversal input, HTML escaping, markdown formatting, and abstention variants.
+- Switched both web and Angular admin to the package while preserving the admin-specific fallback copy.
+- Built the package before dependent web/admin builds and wired the workspace into Docker dependency/build stages.
+
 ### Phase 3 — backend code split by responsibility
 
 `services/api/src/app.ts` is the primary SRP target. Split only after Phase 1 tests are green:
@@ -87,12 +94,23 @@ No DOM, Angular, React, `window`, API, or secret access belongs in this package.
 
 Each route module receives an explicit typed context. Route handlers remain thin; SQL stays in repositories; external side effects remain behind allowlisted adapters. No endpoint names or response shapes change.
 
+#### Completed on this branch
+
+- Moved Zod boundary schemas to `services/api/src/http/schemas.ts` and shared HTTP error parsing to `http/errors.ts`.
+- Kept `createApp` as the composition root and extracted health, auth, and tenant-scoped admin/persona/channel routes into typed route modules.
+- Preserved route paths, middleware order, tenant authorization, response shapes, masking, and workflow gates; API integration tests cover the moved routes.
+
 ### Phase 4 — admin and web component split
 
 - Extract the large web `page.tsx` into session/config/chat-actions/document-upload hooks and presentational components.
 - Keep `CustomerChatComponent` focused on view state; move transport and mapping helpers into the existing service/util pattern.
 - Share only pure contracts/utilities; do not couple Angular and Next runtime code.
 - Preserve accessibility labels, keyboard behavior, consent action UX, and tenant-scoped local-session keys.
+
+#### Completed on this branch
+
+- Extracted the browser speech-recognition contract and feature detection from the web page into `apps/web/app/voice-recognition.ts`; runtime behavior and voice state ownership remain in the page component.
+- The larger chat/session state split is intentionally deferred until a browser bundle baseline is available; this avoids a speculative hook/component rewrite.
 
 ### Phase 5 — security checklist hardening
 

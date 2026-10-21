@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@agentic-rag/chat-utils": "0.1.0",
     "next": "^16.4.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

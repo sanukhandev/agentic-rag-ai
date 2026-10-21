@@ -3,6 +3,7 @@ WORKDIR /workspace
 COPY package.json package-lock.json ./
 COPY apps/admin/package.json apps/admin/package.json
 COPY apps/web/package.json apps/web/package.json
+COPY packages/chat-utils/package.json packages/chat-utils/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY services/api/package.json services/api/package.json
 RUN npm ci
@@ -32,6 +33,7 @@ CMD ["node", "services/api/dist/index.js"]
 FROM node-source AS web-build
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+RUN npm run build --workspace packages/chat-utils
 RUN npm run build --workspace apps/web
 
 FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS web-runtime
@@ -45,6 +47,7 @@ CMD ["node", "apps/web/server.js"]
 
 FROM node-source AS admin-build
 ARG ADMIN_BASE_HREF=/
+RUN npm run build --workspace packages/chat-utils
 RUN npm run build --workspace apps/admin -- --base-href="${ADMIN_BASE_HREF}"
 
 FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10 AS admin-runtime

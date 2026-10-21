@@ -16,6 +16,7 @@ import {
   type VoiceState
 } from './chat-utils';
 import { VoiceVisualizer } from './voice-visualizer';
+import { getSpeechRecognitionConstructor, type SpeechRecognitionLike } from './voice-recognition';
 
 type Config = {
   tenant: { name: string; slug: string };
@@ -37,32 +38,6 @@ type Config = {
 type ChatDocument = { id: string; fileName: string; mimeType: string; sizeBytes: number; status: string; errorCode: string | null; createdAt: string };
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
-
-type SpeechRecognitionResultLike = { [index: number]: { transcript: string } };
-type SpeechRecognitionEventLike = Event & {
-  results: { length: number; [index: number]: SpeechRecognitionResultLike };
-};
-type SpeechRecognitionErrorLike = Event & { error?: string };
-type SpeechRecognitionLike = {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorLike) => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-};
-type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
-
-const getSpeechRecognitionConstructor = (): SpeechRecognitionConstructor | null => {
-  if (typeof window === 'undefined') return null;
-  const browserWindow = window as Window & {
-    SpeechRecognition?: SpeechRecognitionConstructor;
-    webkitSpeechRecognition?: SpeechRecognitionConstructor;
-  };
-  return browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition ?? null;
-};
 
 export default function Home() {
   const [tenantSlug, setTenantSlug] = useState('');
