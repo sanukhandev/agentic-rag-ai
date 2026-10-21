@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, IngestionJob, IntentCatalogVersion, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, DocumentProcessingJob, IngestionJob, IntentCatalogVersion, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -23,6 +23,8 @@ export class MemoryStore implements Store {
   private readonly actions = new Map<string, ActionRequest>();
   private readonly crmLeads = new Map<string, CrmLead>();
   private readonly crmLeadDedupe = new Map<string, string>();
+  private readonly supportingDocuments = new Map<string, SupportingDocument>();
+  private readonly documentJobs = new Map<string, DocumentProcessingJob>();
   private readonly audits: AuditEvent[] = [];
 
   async countUsers(): Promise<number> { return this.users.size; }
@@ -282,6 +284,20 @@ export class MemoryStore implements Store {
     this.crmLeads.set(input.id, updated);
     return updated;
   }
+  async createSupportingDocument(document: SupportingDocument): Promise<SupportingDocument> { this.supportingDocuments.set(document.id, document); return document; }
+  async getSupportingDocument(id: string, tenantId: string): Promise<SupportingDocument | null> { const document = this.supportingDocuments.get(id); return document?.tenantId === tenantId ? document : null; }
+  async listSupportingDocuments(tenantId: string, sessionId?: string, leadId?: string): Promise<SupportingDocument[]> { return [...this.supportingDocuments.values()].filter((document) => document.tenantId === tenantId && (!sessionId || document.sessionId === sessionId) && (!leadId || document.leadId === leadId)).sort((left, right) => right.createdAt.localeCompare(left.createdAt)); }
+  async updateSupportingDocument(document: SupportingDocument): Promise<SupportingDocument> { this.supportingDocuments.set(document.id, document); return document; }
+  async createDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob> { this.documentJobs.set(job.id, job); return job; }
+  async getDocumentProcessingJob(id: string, tenantId: string): Promise<DocumentProcessingJob | null> { const job = this.documentJobs.get(id); return job?.tenantId === tenantId ? job : null; }
+  async claimNextDocumentProcessingJob(leaseMs: number): Promise<DocumentProcessingJob | null> {
+    const candidate = [...this.documentJobs.values()].find((job) => job.status === 'queued' || (job.status === 'processing' && job.leaseExpiresAt && Date.parse(job.leaseExpiresAt) <= Date.now()));
+    if (!candidate) return null;
+    const claimed = { ...candidate, status: 'processing' as const, attempts: candidate.attempts + 1, leaseExpiresAt: new Date(Date.now() + leaseMs).toISOString(), updatedAt: now() };
+    this.documentJobs.set(candidate.id, claimed); return claimed;
+  }
+  async updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob> { this.documentJobs.set(job.id, job); return job; }
+  async linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void> { for (const document of await this.listSupportingDocuments(tenantId, sessionId)) this.supportingDocuments.set(document.id, { ...document, leadId, updatedAt: now() }); }
   async addAudit(event: AuditEvent): Promise<void> { this.audits.push(event); }
   async listAudit(tenantId: string): Promise<AuditEvent[]> { return this.audits.filter((event) => event.tenantId === tenantId); }
   async getTenantStats(tenantId: string): Promise<TenantStats> {

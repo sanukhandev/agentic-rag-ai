@@ -100,3 +100,8 @@ HTTPS ingress/reverse proxy → Next web and Node API. Angular admin behind sepa
 
 ## Deployment readiness gate
 No real customer traffic until TLS everywhere relevant, protected n8n access, identity/authorization, PII isolation, model deployment data-region approval, backup restore, dependency vulnerability checks, logging redaction and adversarial AI tests pass.
+# Supporting document OCR
+
+The ingestion image installs Tesseract English and Arabic language data plus the Python OCR dependencies. The API and ingestion worker share the private `./data/supporting-documents` volume. Set `N8N_INTERNAL_URL=http://n8n:5678` for local dispatch; leave the catalog OCR binding inactive until the imported workflow is reviewed and activated.
+
+Uploaded documents use the existing bounded JSON upload pattern, require explicit visitor consent, are type/signature checked, and are never served as public static files. The API masks OCR output before storing it and composes CRM summaries from masked conversation and OCR excerpts.

@@ -13,7 +13,8 @@ import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, san
 import { catalogIntentClarification, catalogSlotQuestion, resolveIntent, validateIntentCatalog } from './intent-catalog.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
-import type { ChannelCredential, CrmLead, IntentCatalogQualityRule, Message, Session, SourceStatus, Store, TenantStatus } from './types.js';
+import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
+import type { ChannelCredential, CrmLead, DocumentProcessingJob, IntentCatalogQualityRule, Message, Session, SourceStatus, Store, SupportingDocument, TenantStatus } from './types.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -32,6 +33,7 @@ const safePersonaText = (max: number) => z.string().trim().min(1).max(max).refin
 const DEFAULT_CONTEXT_WINDOW_MESSAGES = 10;
 const MAX_KNOWLEDGE_CONTENT_CHARS = 1_000_000;
 const MAX_INGESTION_BASE64_CHARS = Math.ceil(MAX_INGESTION_FILE_BYTES / 3) * 4;
+const MAX_DOCUMENT_BASE64_CHARS = Math.ceil(MAX_DOCUMENT_BYTES / 3) * 4;
 const personaSchema = z.object({
   name: safePersonaText(80),
   greeting: safePersonaText(500),
@@ -87,6 +89,9 @@ const crmRemotePayloadSchema = z.object({ tenantId: z.string().uuid(), actionId:
 const workflowClaimSchema = z.object({ workflowKey: z.string().trim().regex(/^[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)+$/i), contract: z.string().trim().min(1).max(120).optional(), limit: z.number().int().min(1).max(50).default(10) });
 const workflowCompletionSchema = z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['completed', 'failed']), externalReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u).optional() });
 const crmQualitySchema = z.object({ tenantId: z.string().uuid(), score: z.number().int().min(0).max(100), qualityWorkflowKey: z.string().trim().min(1).max(80), catalogVersionId: z.string().uuid(), intentKey: z.string().trim().min(1).max(80) });
+const documentUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.string().trim().min(1).max(160), contentBase64: z.string().min(1).max(MAX_DOCUMENT_BASE64_CHARS), processingConsent: z.literal(true), primaryIntentKey: z.string().trim().min(1).max(80).optional() });
+const documentResultSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), extractedText: z.string().max(100_000).default(''), summary: z.string().max(20_000).default(''), executionReference: z.string().trim().max(200).regex(/^[A-Za-z0-9._:-]+$/u).optional() });
+const documentFailureSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('DOCUMENT_OCR_FAILED') });
 
 const publicUser = (user: { id: string; email: string; role: string; tenantId: string | null }) => ({ id: user.id, email: user.email, role: user.role, tenantId: user.tenantId });
 const publicChannelCredential = (credential: ChannelCredential) => ({ id: credential.id, tenantId: credential.tenantId, channel: credential.channel, keyId: credential.keyId, active: credential.active, createdAt: credential.createdAt, revokedAt: credential.revokedAt });
@@ -198,6 +203,7 @@ export interface AppDependencies {
   n8nCallbackSecret?: string;
   ingestionWorkerSecret?: string;
   ingestionStagingRoot?: string;
+  documentStorageRoot?: string;
   chatSessionTtlMs?: number;
   rateLimitMax?: number;
   rateLimitWindowMs?: number;
@@ -224,6 +230,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const n8nCallbackSecret = dependencies.n8nCallbackSecret ?? process.env.N8N_WEBHOOK_SECRET ?? '';
   const ingestionWorkerSecret = dependencies.ingestionWorkerSecret ?? process.env.INGESTION_WORKER_SECRET ?? '';
   const ingestionStaging = new IngestionStaging(dependencies.ingestionStagingRoot ?? process.env.INGESTION_STAGING_ROOT ?? join(process.cwd(), 'data', 'ingestion-staging'));
+  const documentStorage = new PrivateDocumentStorage(dependencies.documentStorageRoot ?? process.env.SUPPORTING_DOCUMENT_ROOT ?? join(process.cwd(), 'data', 'supporting-documents'));
   const chatSessionTtlMs = dependencies.chatSessionTtlMs ?? Number(process.env.CHAT_SESSION_TTL_MS ?? 10 * 60 * 1000);
   const readRate = (value: number | undefined, name: string): number | null => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return null; const parsed = Number(raw); if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative number.`); return parsed; };
   const inputCostUsdPerMillion = readRate(dependencies.inputCostUsdPerMillion, 'MODEL_INPUT_COST_USD_PER_MILLION');
@@ -309,14 +316,32 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     next();
   });
 
-  const crmLeadForAdmin = async (lead: CrmLead): Promise<CrmLead & { quality: ReturnType<typeof leadQuality> }> => {
+  const crmLeadForAdmin = async (lead: CrmLead): Promise<CrmLead & { quality: ReturnType<typeof leadQuality>; documents: Array<SupportingDocument & { extractedText: string | null; summary: string | null }> }> => {
     const version = lead.catalogVersionId ? await store.getIntentCatalogVersion(lead.tenantId, lead.catalogVersionId) : null;
     const qualityRule = version?.catalog.qualityRules?.find((rule) => rule.intentKey === lead.intent);
     const quality = catalogQuality(lead.score, qualityRule);
     const session = await store.getSession(lead.sessionId);
-    if (!session) return { ...lead, quality };
+    const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id);
+    if (!session) return { ...lead, quality, documents };
     const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm');
-    return { ...lead, quality, leadData: { ...(lead.leadData.name ? { name: rehydrate(lead.leadData.name) } : {}), ...(lead.leadData.email ? { email: rehydrate(lead.leadData.email) } : {}), ...(lead.leadData.phone ? { phone: rehydrate(lead.leadData.phone) } : {}), ...(lead.leadData.interest ? { interest: lead.leadData.interest } : {}) }, conversation: lead.conversation.map((message) => ({ ...message, content: rehydrate(message.content) })), summary: lead.summary ? rehydrate(lead.summary) : null };
+    return { ...lead, quality, leadData: { ...(lead.leadData.name ? { name: rehydrate(lead.leadData.name) } : {}), ...(lead.leadData.email ? { email: rehydrate(lead.leadData.email) } : {}), ...(lead.leadData.phone ? { phone: rehydrate(lead.leadData.phone) } : {}), ...(lead.leadData.interest ? { interest: lead.leadData.interest } : {}) }, conversation: lead.conversation.map((message) => ({ ...message, content: rehydrate(message.content) })), summary: lead.summary ? rehydrate(lead.summary) : null, documents: documents.map((document) => ({ ...document, extractedText: document.extractedText ? rehydrate(document.extractedText) : null, summary: document.summary ? rehydrate(document.summary) : null })) };
+  };
+
+  const publicDocument = (document: SupportingDocument) => ({ id: document.id, sessionId: document.sessionId, leadId: document.leadId, fileName: document.fileName, mimeType: document.mimeType, sizeBytes: document.sizeBytes, status: document.status, summary: null, errorCode: document.errorCode, createdAt: document.createdAt, updatedAt: document.updatedAt });
+  const documentConfig = async (tenantId: string) => {
+    const version = await store.getPublishedIntentCatalog(tenantId);
+    const settings = version?.catalog.documentSettings;
+    const policies = version?.catalog.documentPolicies ?? [];
+    const binding = settings ? version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === settings.workflowKey && candidate.active) : undefined;
+    return { enabled: Boolean(settings?.enabled && binding), requireUploadConsent: settings?.requireUploadConsent ?? true, maxFileBytes: Math.min(settings?.maxFileBytes ?? MAX_DOCUMENT_BYTES, MAX_DOCUMENT_BYTES), maxFilesPerRequest: settings?.maxFilesPerRequest ?? 1, maxPdfPages: settings?.maxPdfPages ?? 20, allowedMimeTypes: settings?.allowedMimeTypes ?? [], policies: policies.filter((policy) => policy.enabled && policy.allowUserInitiated).map((policy) => ({ intentKey: policy.intentKey, requestMode: policy.requestMode, allowedDocumentTypes: policy.allowedDocumentTypes, consentRequired: policy.consentRequired })), workflowKey: settings?.workflowKey ?? null, binding: binding ? { webhookPath: binding.webhookPath, payloadContract: binding.payloadContract } : null };
+  };
+  const dispatchDocumentWorkflow = async (job: DocumentProcessingJob, contract: string): Promise<void> => {
+    const baseUrl = process.env.N8N_INTERNAL_URL?.trim();
+    if (!baseUrl) return;
+    try {
+      const response = await fetch(`${baseUrl.replace(/\/$/u, '')}/webhook/${job.webhookPath.replace(/^\/+/, '')}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-agentic-internal-secret': n8nCallbackSecret }, body: JSON.stringify({ documentId: job.documentId, jobId: job.id, tenantId: job.tenantId, workflowKey: job.workflowKey, contract }) , signal: AbortSignal.timeout(5000) });
+      if (!response.ok) await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'document.workflow_dispatch_failed', metadata: { jobId: job.id, status: response.status }, createdAt: new Date().toISOString() });
+    } catch { await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'document.workflow_dispatch_failed', metadata: { jobId: job.id, status: 'network_error' }, createdAt: new Date().toISOString() }); }
   };
 
   app.get('/api/v1/health/live', (_req, res) => res.json({ status: 'ok' }));
@@ -771,6 +796,72 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
     } catch (error) { next(error); }
   });
+  app.post('/api/v1/internal/documents/:id/process', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid() }), req.body);
+      const document = await store.getSupportingDocument(routeParam(req, 'id'), input.tenantId);
+      const job = await store.getDocumentProcessingJob(input.jobId, input.tenantId);
+      const config = await documentConfig(input.tenantId);
+      if (!document || !job || job.documentId !== document.id || !config.enabled || job.workflowKey !== config.workflowKey) throw new HttpError(409, 'DOCUMENT_WORKFLOW_NOT_AUTHORIZED', 'The document workflow is not enabled for this tenant.');
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'document.workflow_accepted', metadata: { documentId: document.id, jobId: job.id, workflowKey: job.workflowKey }, createdAt: new Date().toISOString() });
+      res.status(202).json({ accepted: true, documentId: document.id, jobId: job.id });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/document-jobs/claim-next', workerApi, async (_req, res, next) => {
+    try {
+      const job = await store.claimNextDocumentProcessingJob(60_000);
+      if (!job) { res.json({ job: null }); return; }
+      const document = await store.getSupportingDocument(job.documentId, job.tenantId);
+      if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'The document for this job no longer exists.');
+      await store.updateSupportingDocument({ ...document, status: 'processing', updatedAt: new Date().toISOString() });
+      res.json({ job, document: { id: document.id, tenantId: document.tenantId, sessionId: document.sessionId, fileName: document.fileName, mimeType: document.mimeType } });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v1/internal/document-jobs/:id/input', workerApi, async (req, res, next) => {
+    try {
+      const jobId = routeParam(req, 'id');
+      const tenantId = req.header('x-tenant-id') ?? '';
+      const actualJob = await store.getDocumentProcessingJob(jobId, tenantId);
+      if (!actualJob || actualJob.status !== 'processing' || !actualJob.leaseExpiresAt || Date.parse(actualJob.leaseExpiresAt) <= Date.now()) throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
+      const document = await store.getSupportingDocument(actualJob.documentId, actualJob.tenantId);
+      if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'Document not found.');
+      const content = await documentStorage.read(document.storageKey);
+      if (!content) throw new HttpError(404, 'DOCUMENT_INPUT_NOT_FOUND', 'Private document input not found.');
+      res.json({ jobId: actualJob.id, documentId: document.id, fileName: document.fileName, mimeType: document.mimeType, contentBase64: content.toString('base64') });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/document-jobs/:id/result', workerApi, async (req, res, next) => {
+    try {
+      const input = parse(documentResultSchema, req.body);
+      const job = await store.getDocumentProcessingJob(input.jobId, input.tenantId);
+      if (!job || job.id !== routeParam(req, 'id') || job.status !== 'processing' || !job.leaseExpiresAt || Date.parse(job.leaseExpiresAt) <= Date.now()) throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
+      const document = await store.getSupportingDocument(job.documentId, input.tenantId);
+      if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'Document not found.');
+      const session = await store.getSession(document.sessionId);
+      if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Document session not found.');
+      const extractedText = input.extractedText ? maskPiiForSession(session, input.extractedText, tokenVault) : null;
+      const summary = input.summary ? maskPiiForSession(session, input.summary, tokenVault) : null;
+      const completedDocument = await store.updateSupportingDocument({ ...document, status: 'completed', extractedText, summary, errorCode: null, updatedAt: new Date().toISOString() });
+      const completedJob = await store.updateDocumentProcessingJob({ ...job, status: 'completed', leaseExpiresAt: null, executionReference: input.executionReference ?? job.executionReference, updatedAt: new Date().toISOString() });
+      if (document.leadId) { const lead = await store.getCrmLead(document.leadId, input.tenantId); if (lead) await store.updateCrmLeadSummary(lead.id, lead.tenantId, composeDocumentSummary(lead, await store.listSupportingDocuments(lead.tenantId, undefined, lead.id)), 'completed'); }
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'document.completed', metadata: { documentId: document.id, jobId: job.id, status: 'completed' }, createdAt: new Date().toISOString() });
+      res.json({ document: publicDocument(completedDocument), job: completedJob });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/document-jobs/:id/failure', workerApi, async (req, res, next) => {
+    try {
+      const input = parse(documentFailureSchema, req.body);
+      const job = await store.getDocumentProcessingJob(input.jobId, input.tenantId);
+      if (!job || job.id !== routeParam(req, 'id') || job.status !== 'processing') throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
+      const document = await store.getSupportingDocument(job.documentId, input.tenantId);
+      if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'Document not found.');
+      const errorCodeValue = input.errorCode ?? 'DOCUMENT_OCR_FAILED';
+      const failedDocument = await store.updateSupportingDocument({ ...document, status: 'failed', errorCode: errorCodeValue, updatedAt: new Date().toISOString() });
+      const failedJob = await store.updateDocumentProcessingJob({ ...job, status: 'failed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'document.failed', metadata: { documentId: document.id, jobId: job.id, errorCode: errorCodeValue }, createdAt: new Date().toISOString() });
+      res.json({ document: publicDocument(failedDocument), job: failedJob });
+    } catch (error) { next(error); }
+  });
 
   app.post('/api/v1/chat/sessions', chatApi, async (req, res, next) => {
     try {
@@ -992,6 +1083,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       const lead: CrmLead = { id: randomUUID(), tenantId: input.tenantId, actionId: input.actionId, sessionId: input.sessionId, intent: authorizedIntent, intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: action.catalogVersionId ?? null, score, validationPass, leadData, conversation, summary: null, summaryStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       const created = await store.upsertCrmLead(lead, crmDedupeKey(input.tenantId, leadData, session, tokenVault, vaultSecret));
+      await store.linkSessionDocuments(created.sessionId, created.tenantId, created.id);
       if (input.completeAction) await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${created.id}` } });
       await store.addAudit({ id: randomUUID(), tenantId: created.tenantId, actorId: null, eventName: 'crm.lead_created', metadata: { leadId: created.id, intent: created.intent, score: created.score, validationPass: created.validationPass }, createdAt: new Date().toISOString() });
       res.status(201).json({ lead: created, externalReference: `crm-lead-${created.id}` });
@@ -1018,7 +1110,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const lead = await store.getCrmLead(routeParam(req, 'id'), input.tenantId);
       if (!lead) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
       const scored = await store.updateCrmLeadScore(lead.id, input.tenantId, input.score);
-      const updated = scored ? await store.updateCrmLeadSummary(scored.id, input.tenantId, input.summary, 'completed') : null;
+      const documents = scored ? await store.listSupportingDocuments(scored.tenantId, undefined, scored.id) : [];
+      const composed = documents.some((document) => document.status === 'completed') ? `${input.summary}\n${composeDocumentSummary(scored!, documents)}`.slice(0, 20_000) : input.summary;
+      const updated = scored ? await store.updateCrmLeadSummary(scored.id, input.tenantId, composed, 'completed') : null;
       if (!updated) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
       res.json({ lead: updated });
     } catch (error) { next(error); }
@@ -1030,7 +1124,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!lead) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
       const session = await store.getSession(lead.sessionId);
       if (session) assertKnownTokens(session, input.summary, tokenVault);
-      const updated = await store.updateCrmLeadSummary(lead.id, input.tenantId, input.summary, input.status);
+      const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id);
+      const composed = documents.some((document) => document.status === 'completed') ? `${input.summary}\n${composeDocumentSummary(lead, documents)}`.slice(0, 20_000) : input.summary;
+      if (session) assertKnownTokens(session, composed, tokenVault);
+      const updated = await store.updateCrmLeadSummary(lead.id, input.tenantId, composed, input.status);
       if (!updated) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
       res.json({ lead: updated });
     } catch (error) { next(error); }
@@ -1079,12 +1176,83 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     } catch (error) { next(error); }
   });
 
+  app.get('/api/v1/chat/sessions/:id/documents/config', chatApi, async (req, res, next) => {
+    try {
+      const session = await store.getSession(routeParam(req, 'id'));
+      if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      ensureLiveSession(session.lastActivityAt, session.closedAt);
+      const tenant = await activeTenant(store, session.tenantId);
+      const channel = getChannel(req);
+      if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
+      res.json(await documentConfig(session.tenantId));
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/chat/sessions/:id/documents', chatApi, async (req, res, next) => {
+    try {
+      const session = await store.getSession(routeParam(req, 'id'));
+      if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      ensureLiveSession(session.lastActivityAt, session.closedAt);
+      const tenant = await activeTenant(store, session.tenantId);
+      const channel = getChannel(req);
+      if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
+      const input = parse(documentUploadSchema, req.body);
+      const version = await store.getPublishedIntentCatalog(session.tenantId);
+      const settings = version?.catalog.documentSettings;
+      const binding = settings ? version.catalog.workflowBindings.find((candidate) => candidate.workflowKey === settings.workflowKey && candidate.active) : undefined;
+      const policy = version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === input.primaryIntentKey) ?? version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === 'anc.document.supporting_upload');
+      if (!settings?.enabled || !binding || !policy?.enabled || !policy.allowUserInitiated || !policy.consentRequired) throw new HttpError(409, 'DOCUMENT_WORKFLOW_NOT_AVAILABLE', 'Supporting document intake is not enabled for this tenant yet.');
+      if (!settings.allowedMimeTypes.includes(input.mimeType) || !DEFAULT_DOCUMENT_MIME_TYPES.includes(input.mimeType)) throw new HttpError(422, 'DOCUMENT_TYPE_NOT_ALLOWED', 'This document type is not allowed by the published catalog.');
+      if (!isValidBase64(input.contentBase64)) throw new HttpError(422, 'DOCUMENT_ENCODING_INVALID', 'The document encoding is invalid.');
+      const content = Buffer.from(input.contentBase64, 'base64');
+      const maxBytes = Math.min(settings.maxFileBytes, MAX_DOCUMENT_BYTES);
+      if (content.length === 0 || content.length > maxBytes) throw new HttpError(413, 'DOCUMENT_TOO_LARGE', 'The document exceeds the published size limit.');
+      if (!hasSupportingDocumentSignature(input.mimeType, content)) throw new HttpError(422, 'DOCUMENT_SIGNATURE_INVALID', 'The document content does not match its declared type.');
+      const sha256 = documentSha256(content);
+      const duplicate = (await store.listSupportingDocuments(session.tenantId, session.id)).find((candidate) => candidate.sha256 === sha256);
+      if (duplicate) { res.status(202).json({ accepted: true, idempotent: true, document: publicDocument(duplicate) }); return; }
+      const documentId = randomUUID();
+      const storageKey = documentStorage.key(session.tenantId, documentId, input.mimeType);
+      await documentStorage.write(storageKey, content);
+      const createdAt = new Date().toISOString();
+      const document: SupportingDocument = { id: documentId, tenantId: session.tenantId, sessionId: session.id, leadId: null, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, sha256, storageKey, status: 'queued', workflowKey: binding.workflowKey, extractedText: null, summary: null, errorCode: null, consentAt: createdAt, createdAt, updatedAt: createdAt };
+      const job: DocumentProcessingJob = { id: randomUUID(), documentId, tenantId: session.tenantId, workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, status: 'queued', attempts: 0, leaseExpiresAt: null, executionReference: null, createdAt, updatedAt: createdAt };
+      await store.createSupportingDocument(document);
+      await store.createDocumentProcessingJob(job);
+      await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'document.uploaded', metadata: { documentId, jobId: job.id, workflowKey: job.workflowKey, bytes: content.length }, createdAt });
+      void dispatchDocumentWorkflow(job, binding.payloadContract);
+      res.status(202).json({ accepted: true, document: publicDocument(document), jobId: job.id });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v1/chat/sessions/:id/documents', chatApi, async (req, res, next) => {
+    try {
+      const session = await store.getSession(routeParam(req, 'id'));
+      if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      ensureLiveSession(session.lastActivityAt, session.closedAt);
+      const tenant = await activeTenant(store, session.tenantId);
+      const channel = getChannel(req);
+      if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
+      res.json({ items: (await store.listSupportingDocuments(session.tenantId, session.id)).map(publicDocument) });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v1/admin/crm/documents/:id/download', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const document = await store.getSupportingDocument(routeParam(req, 'id'), tenantId);
+      if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'Document not found.');
+      const content = await documentStorage.read(document.storageKey);
+      if (!content) throw new HttpError(404, 'DOCUMENT_INPUT_NOT_FOUND', 'Private document input not found.');
+      res.setHeader('content-type', document.mimeType); res.setHeader('content-disposition', `attachment; filename="${document.fileName.replace(/["\\\r\n]/gu, '_')}"`); res.send(content);
+    } catch (error) { next(error); }
+  });
   app.get('/api/v1/chat/sessions/:id', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const session = await store.getSession(routeParam(req, 'id')); if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); ensureLiveSession(session.lastActivityAt, session.closedAt); const tenant = await store.getTenant(session.tenantId); if (!tenant) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (!getAuth(req) && !channel) { if (tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.'); const { limit } = parse(historyQuerySchema, req.query); res.json({ sessionId: session.id, tenantId: session.tenantId, createdAt: session.createdAt, messages: (await store.listMessages(session.id, session.tenantId, limit)).map((message) => ({ id: message.id, role: message.role, content: message.role === 'assistant' ? rehydrateForSession(session, message.maskedContent, tokenVault) : message.maskedContent, citations: message.citations, conversational: message.response?.conversational === true, clientMessageId: message.clientMessageId, createdAt: message.createdAt })) }); } catch (error) { next(error); } });
 
   app.get('/api/v1/admin/workflow-runs', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listActions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/crm/leads', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); res.json({ items: await Promise.all((await store.listCrmLeads(tenantId)).map(crmLeadForAdmin)) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/audit', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listAudit(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
-  app.get('/api/v1/chat/config', optionalApi, async (req, res, next) => { try { const tenantSlug = typeof req.query.tenantSlug === 'string' ? req.query.tenantSlug : ''; const tenant = await store.getTenantBySlug(tenantSlug); if (!tenant || tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); if (getAuth(req) && !ensureTenant(req, tenant.id)) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.'); if (!getAuth(req)) enforcePublicOrigin(req, tenant, nodeEnv); const persona = await store.getPersona(tenant.id); res.json({ tenant: { slug: tenant.slug, name: tenant.name }, persona: persona ? { name: persona.name, greeting: persona.greeting, tone: persona.tone, speakingStyle: persona.speakingStyle, permittedLanguages: persona.permittedLanguages, voiceName: persona.voiceName, voiceLanguage: persona.voiceLanguage, voiceRate: persona.voiceRate, voicePitch: persona.voicePitch, voiceVolume: persona.voiceVolume } : null }); } catch (error) { next(error); } });
+  app.get('/api/v1/chat/config', optionalApi, async (req, res, next) => { try { const tenantSlug = typeof req.query.tenantSlug === 'string' ? req.query.tenantSlug : ''; const tenant = await store.getTenantBySlug(tenantSlug); if (!tenant || tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); if (getAuth(req) && !ensureTenant(req, tenant.id)) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.'); if (!getAuth(req)) enforcePublicOrigin(req, tenant, nodeEnv); const persona = await store.getPersona(tenant.id); res.json({ tenant: { slug: tenant.slug, name: tenant.name }, persona: persona ? { name: persona.name, greeting: persona.greeting, tone: persona.tone, speakingStyle: persona.speakingStyle, permittedLanguages: persona.permittedLanguages, voiceName: persona.voiceName, voiceLanguage: persona.voiceLanguage, voiceRate: persona.voiceRate, voicePitch: persona.voicePitch, voiceVolume: persona.voiceVolume } : null, documents: await documentConfig(tenant.id) }); } catch (error) { next(error); } });
 
   app.use((error: unknown, req: Request, res: Response, next: NextFunction) => {
     const requestId = (req as AuthedRequest).requestId ?? randomUUID();

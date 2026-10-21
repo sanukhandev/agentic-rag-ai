@@ -1,4 +1,4 @@
-import type { IntentCatalog, IntentCatalogIntent, IntentCatalogQualityRule, IntentCatalogSlot, IntentCatalogVersion } from './types.js';
+import type { IntentCatalog, IntentCatalogDocumentPolicy, IntentCatalogDocumentSettings, IntentCatalogIntent, IntentCatalogQualityRule, IntentCatalogSlot, IntentCatalogVersion } from './types.js';
 
 export interface IntentResolution {
   intentKey: string | null;
@@ -104,7 +104,25 @@ export const validateIntentCatalog = (input: unknown): CatalogValidationResult =
     if (![rule.hotThreshold, rule.warmThreshold, rule.nurtureThreshold].every((threshold) => Number.isFinite(threshold) && threshold >= 0 && threshold <= 100) || rule.hotThreshold < rule.warmThreshold || rule.warmThreshold < rule.nurtureThreshold) errors.push(`QualityRules row ${index + 2} thresholds must be ordered between 0 and 100.`);
     return rule;
   });
-  const catalog: IntentCatalog = { tenantScope: text(value.tenantScope) || null, intents: parsedIntents, signals: parsedSignals, slots: parsedSlots, relations: parsedRelations, workflowBindings: parsedBindings, qualityRules: parsedQualityRules };
+  const documentSettingsInput = record(value.documentSettings);
+  let documentSettings: IntentCatalogDocumentSettings | undefined;
+  if (Object.keys(documentSettingsInput).length > 0) {
+    const allowedMimeTypes = Array.isArray(documentSettingsInput.allowedMimeTypes) ? documentSettingsInput.allowedMimeTypes.map(text).filter(Boolean) : [];
+    const ocrLanguages = Array.isArray(documentSettingsInput.ocrLanguages) ? documentSettingsInput.ocrLanguages.map(text).filter(Boolean) : [];
+    documentSettings = {
+      schemaVersion: text(documentSettingsInput.schemaVersion), enabled: bool(documentSettingsInput.enabled), storageBackend: text(documentSettingsInput.storageBackend), processingProvider: text(documentSettingsInput.processingProvider), workflowKey: text(documentSettingsInput.workflowKey), requireUploadConsent: bool(documentSettingsInput.requireUploadConsent), maxFileBytes: finite(documentSettingsInput.maxFileBytes), maxFilesPerRequest: finite(documentSettingsInput.maxFilesPerRequest), maxPdfPages: finite(documentSettingsInput.maxPdfPages), ocrLanguages, allowedMimeTypes, retentionPolicy: text(documentSettingsInput.retentionPolicy), allowPublicDocumentUrls: bool(documentSettingsInput.allowPublicDocumentUrls), allowAutomaticKnowledgeIngestion: bool(documentSettingsInput.allowAutomaticKnowledgeIngestion), allowPersonalIdentityDocumentsByDefault: bool(documentSettingsInput.allowPersonalIdentityDocumentsByDefault), summaryRendering: text(documentSettingsInput.summaryRendering), notes: text(documentSettingsInput.notes)
+    };
+    if (!documentSettings.schemaVersion || !documentSettings.workflowKey || documentSettings.maxFileBytes <= 0 || documentSettings.maxFileBytes > 50 * 1024 * 1024 || documentSettings.maxFilesPerRequest < 1 || documentSettings.maxFilesPerRequest > 10 || documentSettings.maxPdfPages < 1 || documentSettings.maxPdfPages > 100 || !allowedMimeTypes.length || !ocrLanguages.length) errors.push('documentSettings has invalid limits or allowed types.');
+    if (!workflowSet.has(documentSettings.workflowKey)) errors.push('documentSettings references an unknown workflow binding.');
+  }
+  const documentPoliciesInput = Array.isArray(value.documentPolicies) ? value.documentPolicies : [];
+  const parsedDocumentPolicies: IntentCatalogDocumentPolicy[] = documentPoliciesInput.map((item, index) => {
+    const row = record(item);
+    const policy: IntentCatalogDocumentPolicy = { intentKey: text(row.intentKey), enabled: bool(row.enabled), workflowKey: text(row.workflowKey), requestMode: text(row.requestMode) as IntentCatalogDocumentPolicy['requestMode'], required: bool(row.required), requestPromptKey: text(row.requestPromptKey), allowedDocumentTypes: Array.isArray(row.allowedDocumentTypes) ? row.allowedDocumentTypes.map(text).filter(Boolean) : [], allowUserInitiated: bool(row.allowUserInitiated), consentRequired: bool(row.consentRequired), preservePrimaryIntent: bool(row.preservePrimaryIntent), storeExtractedText: bool(row.storeExtractedText), summaryTarget: text(row.summaryTarget), autoCreateLead: bool(row.autoCreateLead), autoIndexInRag: bool(row.autoIndexInRag), notes: text(row.notes) };
+    if (!intentSet.has(policy.intentKey) || !workflowSet.has(policy.workflowKey) || !['conditional_offer', 'user_offer_only', 'explicit_upload'].includes(policy.requestMode) || !policy.allowedDocumentTypes.length || !policy.requestPromptKey) errors.push(`DocumentPolicies row ${index + 2} has invalid references or required fields.`);
+    return policy;
+  });
+  const catalog: IntentCatalog = { tenantScope: text(value.tenantScope) || null, intents: parsedIntents, signals: parsedSignals, slots: parsedSlots, relations: parsedRelations, workflowBindings: parsedBindings, qualityRules: parsedQualityRules, ...(documentSettings ? { documentSettings } : {}), ...(documentPoliciesInput.length ? { documentPolicies: parsedDocumentPolicies } : {}) };
   if (catalog.intents.length === 0) errors.push('Catalog must contain at least one intent.');
   if (catalog.workflowBindings.length === 0) errors.push('Catalog must contain at least one workflow binding.');
   return { errors: [...new Set(errors)], catalog: errors.length ? null : catalog };

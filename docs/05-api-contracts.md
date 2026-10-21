@@ -15,6 +15,8 @@ The local vertical slice implements these routes with runtime Zod validation and
 
 ## Omnichannel channel gateway
 
+For runnable VM examples and signing code, see [Omnichannel chat API](12-omnichannel-chat-api.md).
+
 Tenant admins issue one credential per channel through `POST /api/v1/admin/channels`. The response contains the generated secret once; the database stores only encrypted secret material. `GET /api/v1/admin/channels` returns metadata without secrets and `POST /api/v1/admin/channels/:id/revoke` immediately disables a credential.
 
 Signed channel clients reuse the external chat routes (`sessions`, `messages`, `history`, `actions/:id/confirm`, and `actions/:id`) with these headers:

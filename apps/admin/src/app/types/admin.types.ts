@@ -140,6 +140,22 @@ export interface CrmLead {
   conversation: Array<{ role: 'user' | 'assistant'; content: string; createdAt: string }>;
   summary: string | null;
   summaryStatus: 'pending' | 'completed' | 'failed';
+  leadId?: string | null;
+  remoteCrm?: string | null;
+  documents?: SupportingDocument[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SupportingDocument {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: 'uploaded' | 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
+  extractedText: string | null;
+  summary: string | null;
+  errorCode: string | null;
   createdAt: string;
   updatedAt: string;
 }

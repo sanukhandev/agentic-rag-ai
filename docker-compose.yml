@@ -95,16 +95,18 @@ services:
       AZURE_AI_EMBEDDING_DIMENSION: ${AZURE_AI_EMBEDDING_DIMENSION:-1536}
       AZURE_AI_API_KEY: ${AZURE_AI_API_KEY:-}
       AZURE_AI_API_VERSION: ${AZURE_AI_API_VERSION:-2024-10-21}
-      N8N_INTERNAL_URL: ${N8N_INTERNAL_URL-}
+      N8N_INTERNAL_URL: ${N8N_INTERNAL_URL:-http://n8n:5678}
       N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-local-n8n-workflow-secret}
       INGESTION_WORKER_SECRET: ${INGESTION_WORKER_SECRET:-local-ingestion-worker-secret}
       INGESTION_STAGING_ROOT: /app/data/ingestion-staging
+      SUPPORTING_DOCUMENT_ROOT: /app/data/supporting-documents
       CHAT_RESPONSE_CACHE_TTL_SECONDS: ${CHAT_RESPONSE_CACHE_TTL_SECONDS:-60}
       CHAT_SESSION_TTL_MS: ${CHAT_SESSION_TTL_MS:-600000}
       API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-600}
       API_RATE_LIMIT_WINDOW_MS: ${API_RATE_LIMIT_WINDOW_MS:-60000}
     volumes:
       - ./data/ingestion-staging:/app/data/ingestion-staging
+      - ./data/supporting-documents:/app/data/supporting-documents
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/v1/health/live').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
@@ -154,4 +156,5 @@ services:
       INGESTION_POLL_INTERVAL_SECONDS: ${INGESTION_POLL_INTERVAL_SECONDS:-5}
     volumes:
       - ./data/ingestion-staging:/app/data/ingestion-staging
+      - ./data/supporting-documents:/app/data/supporting-documents
     command: ["--staging-root", "/app/data/ingestion-staging"]

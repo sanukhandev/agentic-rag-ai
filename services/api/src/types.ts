@@ -4,6 +4,8 @@ export type SourceStatus = 'awaiting_review' | 'active' | 'revoked';
 export type ActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'unknown';
 export type TenantStatus = 'provisioning' | 'active' | 'suspended' | 'archived';
 export type IngestionJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
+export type SupportingDocumentStatus = 'uploaded' | 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
+export type DocumentJobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
 
 export type IntentCatalogStatus = 'draft' | 'published';
 
@@ -76,6 +78,44 @@ export interface IntentCatalogWorkflowBinding {
   active: boolean;
 }
 
+export interface IntentCatalogDocumentPolicy {
+  intentKey: string;
+  enabled: boolean;
+  workflowKey: string;
+  requestMode: 'conditional_offer' | 'user_offer_only' | 'explicit_upload';
+  required: boolean;
+  requestPromptKey: string;
+  allowedDocumentTypes: string[];
+  allowUserInitiated: boolean;
+  consentRequired: boolean;
+  preservePrimaryIntent: boolean;
+  storeExtractedText: boolean;
+  summaryTarget: string;
+  autoCreateLead: boolean;
+  autoIndexInRag: boolean;
+  notes: string;
+}
+
+export interface IntentCatalogDocumentSettings {
+  schemaVersion: string;
+  enabled: boolean;
+  storageBackend: string;
+  processingProvider: string;
+  workflowKey: string;
+  requireUploadConsent: boolean;
+  maxFileBytes: number;
+  maxFilesPerRequest: number;
+  maxPdfPages: number;
+  ocrLanguages: string[];
+  allowedMimeTypes: string[];
+  retentionPolicy: string;
+  allowPublicDocumentUrls: boolean;
+  allowAutomaticKnowledgeIngestion: boolean;
+  allowPersonalIdentityDocumentsByDefault: boolean;
+  summaryRendering: string;
+  notes: string;
+}
+
 export interface IntentCatalog {
   tenantScope: string | null;
   intents: IntentCatalogIntent[];
@@ -84,6 +124,8 @@ export interface IntentCatalog {
   relations: IntentCatalogRelation[];
   workflowBindings: IntentCatalogWorkflowBinding[];
   qualityRules?: IntentCatalogQualityRule[];
+  documentPolicies?: IntentCatalogDocumentPolicy[];
+  documentSettings?: IntentCatalogDocumentSettings;
 }
 
 export interface IntentCatalogVersion {
@@ -282,6 +324,40 @@ export interface CrmLead {
   updatedAt: string;
 }
 
+export interface SupportingDocument {
+  id: string;
+  tenantId: string;
+  sessionId: string;
+  leadId: string | null;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256: string;
+  storageKey: string;
+  status: SupportingDocumentStatus;
+  workflowKey: string;
+  extractedText: string | null;
+  summary: string | null;
+  errorCode: string | null;
+  consentAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DocumentProcessingJob {
+  id: string;
+  documentId: string;
+  tenantId: string;
+  workflowKey: string;
+  webhookPath: string;
+  status: DocumentJobStatus;
+  attempts: number;
+  leaseExpiresAt: string | null;
+  executionReference: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ActionRequest {
   id: string;
   tenantId: string;
@@ -393,6 +469,15 @@ export interface Store {
   updateCrmLeadSummary(id: string, tenantId: string, summary: string, status: CrmLead['summaryStatus']): Promise<CrmLead | null>;
   updateCrmLeadScore(id: string, tenantId: string, score: number): Promise<CrmLead | null>;
   updateCrmLeadRemote(input: { id: string; tenantId: string; leadId: string; remoteCrm: string }): Promise<CrmLead | null>;
+  createSupportingDocument(document: SupportingDocument): Promise<SupportingDocument>;
+  getSupportingDocument(id: string, tenantId: string): Promise<SupportingDocument | null>;
+  listSupportingDocuments(tenantId: string, sessionId?: string, leadId?: string): Promise<SupportingDocument[]>;
+  updateSupportingDocument(document: SupportingDocument): Promise<SupportingDocument>;
+  createDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
+  getDocumentProcessingJob(id: string, tenantId: string): Promise<DocumentProcessingJob | null>;
+  claimNextDocumentProcessingJob(leaseMs: number): Promise<DocumentProcessingJob | null>;
+  updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
+  linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void>;
   addAudit(event: AuditEvent): Promise<void>;
   listAudit(tenantId: string): Promise<AuditEvent[]>;
   getTenantStats(tenantId: string): Promise<TenantStats>;
