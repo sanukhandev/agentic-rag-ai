@@ -338,6 +338,7 @@ export interface Session {
   personaVersionId: string | null;
   tokenMap: Map<string, string>;
   conversationState?: ConversationState;
+  stateVersion?: number;
 }
 
 export interface Message {

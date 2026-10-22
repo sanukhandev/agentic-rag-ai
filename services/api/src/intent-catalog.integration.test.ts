@@ -51,14 +51,18 @@ describe('published intent catalog runtime', () => {
     expect(repeatedIntentTurn.body.answer).toContain('What name');
     const nameTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'Demo Visitor', clientMessageId: 'catalog-multi-3' }).expect(200);
     expect(nameTurn.body.actionProposal).toBeNull();
-    expect(nameTurn.body.answer).toContain('email address or phone number');
+    expect(nameTurn.body.answer).toContain('email address');
     expect((await runtime.store.listMessages(multiTurn.body.sessionId, tenant.body.tenant.id)).find((message) => message.clientMessageId === 'catalog-multi-3')?.maskedContent).toBe('[NAME_1]');
-    const contactTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'alice@example.com', clientMessageId: 'catalog-multi-4' }).expect(200);
+    const contactTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'alice@example.com +971500000000', clientMessageId: 'catalog-multi-4' }).expect(200);
     expect(contactTurn.body.actionProposal).toBeNull();
     expect(contactTurn.body.answer).toContain('interest summary');
     const interestTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'I need help setting up the requested service.', clientMessageId: 'catalog-multi-5' }).expect(200);
     expect(interestTurn.body.actionProposal).toMatchObject({ intent: 'crm.lead.create', consentRequired: true });
     expect(interestTurn.body.answer).toContain('consent action');
+    const declined = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'no', clientMessageId: 'catalog-multi-refuse' }).expect(200);
+    expect(declined.body.actionProposal).toBeNull();
+    expect(declined.body.answer).toContain('will not register');
+    await api.post(`/api/v1/chat/actions/${interestTurn.body.actionProposal.id}/confirm`).send({ sessionId: multiTurn.body.sessionId, confirmed: true }).expect(422);
 
     const demoSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'catalog-tenant' }).expect(201);
     const demoTurn = await api.post('/api/v1/chat/messages').send({ sessionId: demoSession.body.sessionId, message: 'Can I book a demo?', clientMessageId: 'catalog-demo-1' }).expect(200);
@@ -76,7 +80,7 @@ describe('published intent catalog runtime', () => {
     expect(documentTurn.body.answer).toContain('To make sure I route this correctly');
 
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'catalog-tenant' }).expect(201);
-    const proposalStart = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need a demo. My name is Alice and my email is alice@example.com.', clientMessageId: 'catalog-lead-1' }).expect(200);
+    const proposalStart = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need a demo. My name is Alice, my email is alice@example.com and my phone is +971500000000.', clientMessageId: 'catalog-lead-1' }).expect(200);
     expect(proposalStart.body.actionProposal).toBeNull();
     expect(proposalStart.body.answer).toContain('interest summary');
     const proposal = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Please arrange the requested demo for our ERP project.', clientMessageId: 'catalog-lead-2' }).expect(200);
@@ -104,5 +108,7 @@ describe('published intent catalog runtime', () => {
 
     const unrelated = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is the refund policy?', clientMessageId: 'catalog-unrelated-1' }).expect(200);
     expect(unrelated.body.actionProposal).toBeNull();
+    expect(unrelated.body.answer).not.toContain('contact details needed');
+    expect(unrelated.body.answer).not.toContain('submit your contact request');
   });
 });

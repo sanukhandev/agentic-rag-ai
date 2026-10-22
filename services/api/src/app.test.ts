@@ -197,11 +197,11 @@ describe('API vertical slice', () => {
     expect(JSON.stringify(history.body.messages)).not.toContain('alice@example.com');
     expect((await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}?limit=2`).expect(200)).body.messages).toHaveLength(2);
     await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}?limit=201`).expect(422);
-    const pii = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'Please contact me at alice@example.com about pricing. My name is Alice', clientMessageId: 'lead-1' }).expect(200);
+    const pii = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'Please contact me at alice@example.com and +971500000000 about pricing. My name is Alice', clientMessageId: 'lead-1' }).expect(200);
     expect(pii.body.actionProposal).not.toBeNull();
     expect(model.prompts.at(-1)).not.toContain('alice@example.com');
     const proposalId = pii.body.actionProposal.id as string;
-    expect((await runtime.store.getAction(proposalId))?.payload).toEqual({ name: '[NAME_1]', email: '[EMAIL_1]' });
+    expect((await runtime.store.getAction(proposalId))?.payload).toEqual({ name: '[NAME_1]', email: '[EMAIL_1]', phone: '[PHONE_1]', contactConsent: false });
     await api.post(`/api/v1/chat/actions/${proposalId}/confirm`).send({ sessionId: publicSession.body.sessionId, confirmed: true }).expect(200);
     await api.post(`/api/v1/chat/actions/${proposalId}/confirm`).send({ sessionId: publicSession.body.sessionId, confirmed: true }).expect(200);
     expect(workflow.calls).toHaveLength(0);
@@ -510,7 +510,7 @@ describe('API vertical slice', () => {
     await api.post('/api/v1/chat/messages').set('Origin', 'https://other.example').send({ sessionId: session.body.sessionId, message: 'Blocked origin', clientMessageId: 'channel-action-denied' }).expect(403);
     await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'Please contact me for a demo.', clientMessageId: 'channel-action-request' }).expect(200);
     await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'My name is Channel User.', clientMessageId: 'channel-action-name' }).expect(200);
-    const proposal = await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'channel.user@example.com', clientMessageId: 'channel-action-1' }).expect(200);
+    const proposal = await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'channel.user@example.com +971500000000', clientMessageId: 'channel-action-1' }).expect(200);
     const actionId = proposal.body.actionProposal.id as string;
     await api.patch('/api/v1/admin/channel').set('Authorization', `Bearer ${admin.body.token}`).send({ publicOrigin: 'https://chat.channel.example', publicChatEnabled: false }).expect(200);
     await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'Blocked after disable', clientMessageId: 'channel-disabled-message' }).expect(423);
@@ -589,7 +589,7 @@ describe('API vertical slice', () => {
     const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'CRM Tenant', slug: 'crm-tenant', adminEmail: 'admin-crm@example.test', adminPassword: 'TenantA1Password' }).expect(201);
     const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-crm@example.test', password: 'TenantA1Password' }).expect(200);
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
-    const proposal = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Please contact me at +971500000000 about a demo. My name is Alice', clientMessageId: 'crm-lead-message' }).expect(200);
+    const proposal = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Please contact me at +971500000000 and alice@example.com about a demo. My name is Alice', clientMessageId: 'crm-lead-message' }).expect(200);
     const actionId = proposal.body.actionProposal.id as string;
     await api.post(`/api/v1/chat/actions/${actionId}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
     const action = await runtime.store.getAction(actionId);
@@ -598,16 +598,42 @@ describe('API vertical slice', () => {
     expect(stored.body.lead).toMatchObject({ intent: 'lead.capture', score: 70, validationPass: true, summaryStatus: 'pending' });
     await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/summary`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, summary: 'Customer [NAME_1] requested a demo via [PHONE_1].', status: 'completed' }).expect(200);
     const remotePayload = await api.post(`/api/v1/internal/crm/leads/${stored.body.lead.id}/remote-payload`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, actionId }).expect(200);
-    expect(remotePayload.body).toMatchObject({ name: 'Alice', phone: '+971500000000', email: '' });
+    expect(remotePayload.body).toMatchObject({ name: 'Alice', phone: '+971500000000', email: 'alice@example.com' });
     const linked = await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/remote`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, leadId: 'remote-123', remoteCrm: 'remote-crm-test' }).expect(200);
     expect(linked.body.lead).toMatchObject({ leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'crm-lead-remote-123' }).expect(200);
+    const unconsented = await runtime.store.createAction({ ...action!, id: randomUUID(), idempotencyKey: 'crm-another-purpose', payload: { ...action!.payload, contactConsent: false }, state: 'approved' });
+    await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret')
+      .send({ actionId: unconsented.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: unconsented.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) })
+      .expect(422);
+    expect((await runtime.store.listCrmLeads(tenant.body.tenant.id))).toHaveLength(1);
+    for (const missingField of ['email', 'phone'] as const) {
+      const incompletePayload = { ...action!.payload, contactConsent: true };
+      delete incompletePayload[missingField];
+      const incomplete = await runtime.store.createAction({ ...action!, id: randomUUID(), idempotencyKey: `crm-missing-${missingField}`, payload: incompletePayload, state: 'approved' });
+      await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret')
+        .send({ actionId: incomplete.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: incomplete.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) })
+        .expect(422);
+    }
     const crm = await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', phone: '+971500000000' }, score: 70, summaryStatus: 'completed', leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
     expect(crm.body.items[0].summary).toContain('CRM OPPORTUNITY SPECIFICATION');
     expect(crm.body.items[0].summary).toContain('Customer Alice requested a demo via +971500000000.');
     expect(JSON.stringify(crm.body.items[0].conversation)).toContain('+971500000000');
     await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${platform.body.token}`).set('x-tenant-id', tenant.body.tenant.id).expect(200);
+  });
+
+  it('refuses an expired proposal without recording consent or claiming registration', async () => {
+    const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'crm-secret' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'expired-confirm-platform@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Expired Confirm Tenant', slug: 'expired-confirm-tenant', adminEmail: 'expired-confirm-admin@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const expired = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'lead.capture', intentKey: 'lead.capture', intentScore: 80, intentConfidence: 0.9, catalogVersionId: null, idempotencyKey: 'expired-confirmation-test', state: 'awaiting_confirmation', opaqueReference: 'expired-test', payload: { name: '[NAME_1]', email: '[EMAIL_1]', phone: '[PHONE_1]', contactConsent: false }, createdAt: new Date(Date.now() - 16 * 60_000).toISOString(), result: null });
+    const confirmation = await api.post(`/api/v1/chat/actions/${expired.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(409);
+    expect(confirmation.body.error.code).toBe('ACTION_NOT_ACCEPTED');
+    expect((await runtime.store.getAction(expired.id))?.state).toBe('failed');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.contactConsent).not.toBe('granted');
   });
 
   it('creates a validated draft when a tenant admin edits an intent catalog', async () => {
@@ -651,8 +677,8 @@ describe('API vertical slice', () => {
     const interest = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to get a service', clientMessageId: 'browser-lead-4' }).expect(200);
     expect(interest.body.answer).toContain('What name');
     const name = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'My name is Alice', clientMessageId: 'browser-lead-5' }).expect(200);
-    expect(name.body.answer).toContain('email address or phone');
-    const contact = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'alice@example.com', clientMessageId: 'browser-lead-6' }).expect(200);
+    expect(name.body.answer).toContain('email address');
+    const contact = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'alice@example.com and +971500000000', clientMessageId: 'browser-lead-6' }).expect(200);
     expect(contact.body.actionProposal).toMatchObject({ intent: 'lead.capture' });
 
     const confirmed = await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);

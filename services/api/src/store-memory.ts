@@ -4,6 +4,7 @@ import type { ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, 
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
+import { HttpError } from './http/errors.js';
 
 const now = (): string => new Date().toISOString();
 const isUuid = (value: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
@@ -210,11 +211,11 @@ export class MemoryStore implements Store {
 
   async createSession(tenantId: string, personaVersionId: string | null = null): Promise<Session> {
     const timestamp = now();
-    const session: Session = { id: randomUUID(), tenantId, createdAt: timestamp, lastActivityAt: timestamp, closedAt: null, personaVersionId, tokenMap: new Map(), conversationState: newConversationState() };
+    const session: Session = { id: randomUUID(), tenantId, createdAt: timestamp, lastActivityAt: timestamp, closedAt: null, personaVersionId, tokenMap: new Map(), conversationState: newConversationState(), stateVersion: 0 };
     this.sessions.set(session.id, session);
     return session;
   }
-  async getSession(id: string): Promise<Session | null> { return this.sessions.get(id) ?? null; }
+  async getSession(id: string): Promise<Session | null> { const existing = this.sessions.get(id); return existing ? structuredClone(existing) : null; }
   async listExpiredSupportingDocuments(tenantId: string, before: string): Promise<SupportingDocument[]> {
     const cutoff = Date.parse(before);
     const leadSessionIds = new Set([...this.crmLeads.values()].map((lead) => lead.sessionId));
@@ -236,7 +237,13 @@ export class MemoryStore implements Store {
     }
     return expired.length;
   }
-  async updateSession(session: Session): Promise<Session> { this.sessions.set(session.id, session); return session; }
+  async updateSession(session: Session): Promise<Session> {
+    const current = this.sessions.get(session.id);
+    if (!current || current.stateVersion !== session.stateVersion) throw new HttpError(409, 'SESSION_STATE_CONFLICT', 'Another message changed this conversation. Retry with the latest prompt.');
+    session.stateVersion = (session.stateVersion ?? 0) + 1;
+    this.sessions.set(session.id, structuredClone(session));
+    return session;
+  }
   async addMessage(message: Message): Promise<Message> { this.messages.set(message.id, message); return message; }
   async updateMessage(message: Message): Promise<Message> { this.messages.set(message.id, message); return message; }
   async listMessages(sessionId: string, tenantId: string, limit?: number): Promise<Message[]> {
