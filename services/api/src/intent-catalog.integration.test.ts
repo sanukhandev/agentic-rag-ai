@@ -55,6 +55,12 @@ describe('published intent catalog runtime', () => {
     expect(clarificationPrompt.body.answer).toContain('To make sure I route this correctly');
     const acceptedClarification = await api.post('/api/v1/chat/messages').send({ sessionId: clarificationReplySession.body.sessionId, message: 'shared office', clientMessageId: 'catalog-clarification-reply-2' }).expect(200);
     expect(acceptedClarification.body.answer).toContain('What name');
+    const nameAfterClarification = await api.post('/api/v1/chat/messages').send({ sessionId: clarificationReplySession.body.sessionId, message: 'Clarification Visitor', clientMessageId: 'catalog-clarification-reply-3' }).expect(200);
+    expect(nameAfterClarification.body.answer).toContain('email address');
+    const synonymClarificationSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'catalog-tenant' }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: synonymClarificationSession.body.sessionId, message: 'shared office', clientMessageId: 'catalog-synonym-reply-1' }).expect(200);
+    const acceptedSynonym = await api.post('/api/v1/chat/messages').send({ sessionId: synonymClarificationSession.body.sessionId, message: 'I want a shared desk please', clientMessageId: 'catalog-synonym-reply-2' }).expect(200);
+    expect(acceptedSynonym.body.answer).toContain('What name');
     const nameTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'Demo Visitor', clientMessageId: 'catalog-multi-3' }).expect(200);
     expect(nameTurn.body.actionProposal).toBeNull();
     expect(nameTurn.body.answer).toContain('email address');

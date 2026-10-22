@@ -211,7 +211,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   let normalizerBlockedUntil = 0;
   const normalizeCatalogQuery = async (tenantId: string, catalogVersionId: string, input: QueryNormalizationInput, fallback: string): Promise<{ value: string; usedFallback: boolean }> => {
     if (!model.normalizeQuery || !catalogQueryNormalizationEnabled || Date.now() < normalizerBlockedUntil) return { value: fallback, usedFallback: true };
-    const key = cacheKey('catalog-normalized-query', tenantId, catalogVersionId, input.maskedMessage);
+    const key = cacheKey('catalog-normalized-query-v2', tenantId, catalogVersionId, input.maskedMessage);
     const cached = await cache.get<string>(key);
     if (cached) return { value: cached, usedFallback: false };
     try {
@@ -839,7 +839,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const leadData = mergeLeadData(pendingCatalogValues as LeadData, ...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), currentLeadData);
       const catalogSlotValues: Record<string, string> = { ...pendingCatalogValues, ...Object.fromEntries(recentMessages.filter((message) => message.role === 'user').flatMap((message) => Object.entries(extractLeadData(message.maskedContent)))), ...(extractLeadData(maskedMessage) as Record<string, string>), ...pendingCatalogValueData };
       const leadReady = Boolean(leadData.name && (leadData.email || leadData.phone));
-      const intentContinuity = publishedCatalog ? resolveIntentContinuity(publishedCatalog, { currentText: normalizedMessage, contextText: intentContextQuery, slotValues: catalogSlotValues, selectedIntentKey: state.selectedIntentKey }) : null;
+      const intentContinuity = publishedCatalog ? resolveIntentContinuity(publishedCatalog, { currentText: normalizedMessage, contextText: intentContextQuery, slotValues: catalogSlotValues, selectedIntentKey: state.selectedIntentKey, pendingPromptType: state.pendingPrompt?.type ?? null }) : null;
       let catalogResolution = intentContinuity?.primary ?? null;
       // Consent is purpose-bound. A strong, newly requested intent must not inherit
       // the opt-in or pending question from a different customer journey.

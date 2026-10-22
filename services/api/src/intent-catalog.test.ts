@@ -77,6 +77,12 @@ describe('intent catalog', () => {
     expect(continuity.primary.score).toBeGreaterThanOrEqual(80);
   });
 
+  it('accepts a short vocabulary synonym for the selected clarification', () => {
+    const continuity = resolveIntentContinuity(version, { currentText: 'I want a demo please', contextText: 'I want a demo please', selectedIntentKey: 'lead.capture' });
+    expect(continuity.primary.intentKey).toBe('lead.capture');
+    expect(continuity.primary.score).toBeGreaterThanOrEqual(80);
+  });
+
   it('switches only when a new unrelated current intent is strong', () => {
     const continuity = resolveIntentContinuity(version, { currentText: 'appointment', contextText: 'I need a demo\nappointment', selectedIntentKey: 'lead.capture', slotValues: { name: '[NAME_1]' } });
     expect(continuity.primary.intentKey).toBe('appointment.request');
