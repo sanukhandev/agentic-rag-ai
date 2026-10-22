@@ -36,19 +36,12 @@
       "parameters": {
         "method": "POST",
         "url": "={{ \"http://api:4000/api/v1/internal/workflow-events/claim\" }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "x-agentic-internal-secret",
-              "value": "={{ $env.N8N_WEBHOOK_SECRET }}"
-            }
-          ]
-        },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ workflowKey: $json.workflowKey, contract: $json.contract, limit: 10 }) }}",
-        "options": {}
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -76,19 +69,12 @@
       "parameters": {
         "method": "POST",
         "url": "={{ \"http://api:4000/api/v1/internal/crm/leads\" }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "x-agentic-internal-secret",
-              "value": "={{ $env.N8N_WEBHOOK_SECRET }}"
-            }
-          ]
-        },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, sessionId: $json.sessionId, leadData: $json.leadData, intent: $json.intent, intentScore: $json.intentScore, intentConfidence: $json.intentConfidence, catalogVersionId: $json.catalogVersionId, score: $json.score, validationPass: $json.validationPass, conversation: $json.conversation, completeAction: false }) }}",
-        "options": {}
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
       },
       "id": "INTENTancfzint09-target",
       "name": "Internal Intent CRM Upsert",
@@ -155,5 +141,5 @@
     "templateCredsSetupCompleted": false
   },
   "tags": [],
-  "notes": "Generated generic tenant-neutral export. Import and activate only after security approval and credential binding."
+  "notes": "Template only: bind a tenant-authorized n8n HTTP Header Auth credential to both internal API HTTP nodes. Do not activate until provider-side integration, required scope and terminal action completion are configured and verified."
 }
