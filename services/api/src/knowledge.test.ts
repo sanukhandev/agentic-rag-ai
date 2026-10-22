@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DeterministicEmbeddingProvider } from './embedding.js';
 import { contentHash } from './store-memory.js';
-import { buildChunks, buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, chunkText, embedText, hasConflictingEvidence, rankChunks, rankChunksWithEmbedding, rankChunksWithVector } from './knowledge.js';
+import { buildChunks, buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, chunkText, embedText, hasConflictingEvidence, presentKnowledgeText, rankChunks, rankChunksWithEmbedding, rankChunksWithVector } from './knowledge.js';
 
 describe('knowledge pipeline primitives', () => {
   it('chunks deterministically and emits the configured local vector dimension', () => {
@@ -37,6 +37,11 @@ describe('knowledge pipeline primitives', () => {
     const chunks = await buildIngestionChunksWithEmbeddings({ id: 'source', tenantId: 'tenant', versionId: 'version' }, [{ ordinal: 0, locator: 'page 2', content, contentHash: contentHash(content) }], provider);
     expect(chunks[0]).toMatchObject({ ordinal: 0, locator: 'page 2', content, contentHash: contentHash(content) });
     expect(chunks[0]?.embedding).toHaveLength(provider.dimension);
+  });
+
+  it('keeps source-backed facts but removes ingestion metadata from model evidence', () => {
+    expect(presentKnowledgeText(`File: pricing.docx\n\nPRICE-001 — Starter\n\nSource-backed content: AED 4,888 per year\n\nRetrieval keywords: starter, price\n\nSample user query (generated, review required): What is the price?\n\nResponse policy: paraphrase only supported information.`)).toBe('AED 4,888 per year');
+    expect(presentKnowledgeText('Approved support is available by email.')).toBe('Approved support is available by email.');
   });
 
   it('flags active evidence that shares a topic but disagrees on numeric facts', () => {

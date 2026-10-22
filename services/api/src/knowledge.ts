@@ -63,6 +63,35 @@ export const buildIngestionChunksWithEmbeddings = async (
   return result;
 };
 
+const evidenceMetadataLine = /^(?:File|Format|Primary intent|Suggested routing|Retrieval keywords|Sample user query(?:\s*\([^)]*\))?|Response policy):/iu;
+const evidenceMetadataHeader = /^(?:Knowledge Records|tenantScope|sourceKey|sourceFile|sourceSha256|visibility|piiScreening|---)$/iu;
+const evidenceRecordHeader = /^[A-Z][A-Z0-9_.-]*-\d+\s*[—-]/u;
+
+/** Removes ingestion/template metadata while preserving the approved source-backed facts. */
+export const presentKnowledgeText = (input: string): string => {
+  const lines = input.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  const hasSourceBackedContent = lines.some((line) => /^\s*Source-backed content:/iu.test(line));
+  let inSourceBackedContent = false;
+  const visible: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^Source-backed content:/iu.test(trimmed)) {
+      inSourceBackedContent = true;
+      const value = trimmed.replace(/^Source-backed content:\s*/iu, '').trim();
+      if (value) visible.push(value);
+      continue;
+    }
+    if (evidenceMetadataLine.test(trimmed) || evidenceMetadataHeader.test(trimmed) || evidenceRecordHeader.test(trimmed)) {
+      inSourceBackedContent = false;
+      continue;
+    }
+    if (hasSourceBackedContent && !inSourceBackedContent) continue;
+    if (trimmed) visible.push(trimmed);
+    else if (visible.at(-1) !== '') visible.push('');
+  }
+  return visible.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+};
+
 const cosine = (left: number[], right: number[]): number => {
   const length = Math.min(left.length, right.length);
   let dot = 0;
@@ -78,10 +107,10 @@ const cosine = (left: number[], right: number[]): number => {
   return leftMagnitude && rightMagnitude ? dot / Math.sqrt(leftMagnitude * rightMagnitude) : 0;
 };
 
-const rankWithEmbedding = <T extends { chunk: { embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit: number): T[] => {
+const rankWithEmbedding = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit: number): T[] => {
   const terms = query.toLowerCase().match(/[a-z0-9]{4,}/g) ?? [];
   return rows.map((row) => {
-    const content = JSON.stringify(row).toLowerCase();
+    const content = presentKnowledgeText(row.chunk.content).toLowerCase();
     const overlap = terms.filter((term) => content.includes(term)).length;
     return { row, score: cosine(queryEmbedding, row.chunk.embedding) + overlap * 0.1, overlap };
   })
@@ -91,11 +120,11 @@ const rankWithEmbedding = <T extends { chunk: { embedding: number[] } }>(query: 
     .map(({ row }) => row);
 };
 
-export const rankChunks = <T extends { chunk: { embedding: number[] } }>(query: string, rows: T[], limit = 4): T[] => rankWithEmbedding(query, rows, embedText(query), limit);
+export const rankChunks = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], limit = 4): T[] => rankWithEmbedding(query, rows, embedText(query), limit);
 
-export const rankChunksWithEmbedding = async <T extends { chunk: { embedding: number[] } }>(query: string, rows: T[], provider: EmbeddingProvider, limit = 4): Promise<T[]> => rankWithEmbedding(query, rows, await provider.embed(query), limit);
+export const rankChunksWithEmbedding = async <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], provider: EmbeddingProvider, limit = 4): Promise<T[]> => rankWithEmbedding(query, rows, await provider.embed(query), limit);
 
-export const rankChunksWithVector = <T extends { chunk: { embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit = 4): T[] => rankWithEmbedding(query, rows, queryEmbedding, limit);
+export const rankChunksWithVector = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit = 4): T[] => rankWithEmbedding(query, rows, queryEmbedding, limit);
 
 const factualSegments = (content: string): string[] => content
   .replace(/^File:.*$/gim, '')
