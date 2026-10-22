@@ -1,4 +1,4 @@
-import type { IntentCatalog, IntentCatalogDocumentPolicy, IntentCatalogDocumentSettings, IntentCatalogIntent, IntentCatalogQualityRule, IntentCatalogSlot, IntentCatalogVersion } from './types.js';
+import type { IntentCatalog, IntentCatalogDocumentPolicy, IntentCatalogDocumentSettings, IntentCatalogExtensionRow, IntentCatalogIntent, IntentCatalogQualityRule, IntentCatalogSlot, IntentCatalogVersion } from './types.js';
 
 export interface IntentResolution {
   intentKey: string | null;
@@ -28,6 +28,10 @@ const clamp = (value: number): number => Math.max(0, Math.min(100, Math.round(va
 const normalize = (value: string): string => value.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim();
 const keyPattern = /^[a-z][a-z0-9._-]{1,79}$/;
 const safePath = (value: string): boolean => /^\/[A-Za-z0-9._/-]{1,120}$/.test(value) && !value.includes('..');
+const extensionRows = (value: Record<string, unknown>, name: string): IntentCatalogExtensionRow[] => Array.isArray(value[name]) ? value[name].map((item) => {
+  const row = record(item);
+  return Object.fromEntries(Object.entries(row).filter(([, cell]) => cell === null || typeof cell === 'string' || typeof cell === 'number' || typeof cell === 'boolean')) as IntentCatalogExtensionRow;
+}) : [];
 
 const duplicateErrors = (values: string[], label: string): string[] => {
   const seen = new Set<string>();
@@ -122,7 +126,7 @@ export const validateIntentCatalog = (input: unknown): CatalogValidationResult =
     if (!intentSet.has(policy.intentKey) || !workflowSet.has(policy.workflowKey) || !['conditional_offer', 'user_offer_only', 'explicit_upload'].includes(policy.requestMode) || !policy.allowedDocumentTypes.length || !policy.requestPromptKey) errors.push(`DocumentPolicies row ${index + 2} has invalid references or required fields.`);
     return policy;
   });
-  const catalog: IntentCatalog = { tenantScope: text(value.tenantScope) || null, intents: parsedIntents, signals: parsedSignals, slots: parsedSlots, relations: parsedRelations, workflowBindings: parsedBindings, qualityRules: parsedQualityRules, ...(documentSettings ? { documentSettings } : {}), ...(documentPoliciesInput.length ? { documentPolicies: parsedDocumentPolicies } : {}) };
+  const catalog: IntentCatalog = { tenantScope: text(value.tenantScope) || null, intents: parsedIntents, signals: parsedSignals, slots: parsedSlots, relations: parsedRelations, workflowBindings: parsedBindings, qualityRules: parsedQualityRules, ...(documentSettings ? { documentSettings } : {}), ...(documentPoliciesInput.length ? { documentPolicies: parsedDocumentPolicies } : {}), ...(extensionRows(value, 'documentRequirements').length ? { documentRequirements: extensionRows(value, 'documentRequirements') } : {}), ...(extensionRows(value, 'crmFieldMappings').length ? { crmFieldMappings: extensionRows(value, 'crmFieldMappings') } : {}), ...(extensionRows(value, 'channelCapabilities').length ? { channelCapabilities: extensionRows(value, 'channelCapabilities') } : {}), ...(extensionRows(value, 'testUtterances').length ? { testUtterances: extensionRows(value, 'testUtterances') } : {}), ...(extensionRows(value, 'catalogManifest').length ? { catalogManifest: extensionRows(value, 'catalogManifest') } : {}) };
   if (catalog.intents.length === 0) errors.push('Catalog must contain at least one intent.');
   if (catalog.workflowBindings.length === 0) errors.push('Catalog must contain at least one workflow binding.');
   return { errors: [...new Set(errors)], catalog: errors.length ? null : catalog };
@@ -130,7 +134,7 @@ export const validateIntentCatalog = (input: unknown): CatalogValidationResult =
 
 const slotValues = (intentKey: string, slots: IntentCatalogSlot[], values: Record<string, string>): Set<string> => {
   const rows = slots.filter((slot) => slot.intentKey === intentKey);
-  const present = new Set(rows.filter((slot) => Boolean(values[slot.slotKey])).map((slot) => slot.slotKey));
+  const present = new Set(rows.filter((slot) => Boolean(values[slot.slotKey]) && !(slot.validationRule === 'boolean:explicit_opt_in' && values[slot.slotKey] !== 'true')).map((slot) => slot.slotKey));
   for (const group of new Set(rows.map((slot) => slot.alternativeGroup).filter((group): group is string => Boolean(group)))) {
     if (rows.some((slot) => slot.alternativeGroup === group && present.has(slot.slotKey))) for (const slot of rows.filter((item) => item.alternativeGroup === group)) present.add(slot.slotKey);
   }
@@ -164,7 +168,8 @@ export const catalogSlotQuestion = (version: IntentCatalogVersion, intentKey: st
   const slot = version.catalog.slots.find((candidate) => candidate.intentKey === intentKey && candidate.slotKey === slotKey);
   if (!slot) return 'To continue, could you provide the requested information?';
   if (slot.promptKey === 'lead.ask_name') return 'What name should I use?';
-  if (slot.promptKey === 'lead.ask_contact') return 'What’s the best email address or phone number to reach you on?';
+  if (slot.promptKey === 'lead.ask_contact') return slot.slotKey === 'email' ? 'What email address should I use?' : 'What phone number, including country code, should I use?';
+  if (slot.promptKey === 'lead.ask_phone') return 'What phone number, including country code, should I use?';
   return `To continue, could you share your ${slotLabel(slot)}?`;
 };
 

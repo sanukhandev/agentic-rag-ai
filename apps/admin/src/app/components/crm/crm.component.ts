@@ -347,6 +347,12 @@ import { IconComponent } from '../shared/icon.component';
             <div class="flex items-center gap-3">
               <span>Captured: {{ lead.createdAt | date:'medium' }}</span>
               <span class="text-neutral-300">·</span>
+              <span class="font-mono" title="Internal CRM lead ID">Internal CRM: {{ lead.id }}</span>
+              <span class="text-neutral-300">·</span>
+              <span title="Remote CRM provider">Remote CRM: {{ lead.remoteCrm || 'Not synchronized' }}</span>
+              <span class="text-neutral-300">·</span>
+              <span class="font-mono" title="Remote CRM reference ID">CRM reference: {{ lead.leadId || 'Pending' }}</span>
+              <span class="text-neutral-300">·</span>
               <span *ngIf="lead.actionId" class="font-mono truncate max-w-[200px]" title="Action ID: {{ lead.actionId }}">
                 Action: {{ lead.actionId }}
               </span>

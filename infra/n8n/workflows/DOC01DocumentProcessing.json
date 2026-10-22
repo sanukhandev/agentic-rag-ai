@@ -1,0 +1,145 @@
+{
+  "id": "DOC01DocumentProcessing",
+  "name": "DOC-01 Document Processing Request",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "document-processing-request",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "DOC01DocumentProcessing-webhook",
+      "name": "DOC-01 Document Processing Request Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "document-processing-request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nif (input.workflowKey !== \"anc.document.ocr.extract\" || input.contract !== \"anc-document-ocr-v1\") throw new Error('Workflow contract mismatch.');\nif (typeof input.tenantId !== 'string' || typeof input.sessionId !== 'string') throw new Error('Server-generated tenant and session references are required.');\nreturn [{ json: { ...input, workflowKey: \"anc.document.ocr.extract\", contract: \"anc-document-ocr-v1\" } }];"
+      },
+      "id": "DOC01DocumentProcessing-validate",
+      "name": "Validate Server Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://api:4000/api/v1/internal/workflow-events/claim\" }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflowKey: $json.workflowKey, contract: $json.contract, limit: 10 }) }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "id": "DOC01DocumentProcessing-claim",
+      "name": "Authenticate and Claim Event",
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = Array.isArray($json.items) ? $json.items : [];\nreturn items.map((item) => ({ json: item }));"
+      },
+      "id": "DOC01DocumentProcessing-expand",
+      "name": "Expand Claimed Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://api:4000/api/v1/internal/documents/\" + $json.documentId + \"/process\" }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, jobId: $json.jobId }) }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "DOC01DocumentProcessing-target",
+      "name": "Queue Authorized OCR Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        980,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "DOC-01 Document Processing Request Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Server Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Server Event": {
+      "main": [
+        [
+          {
+            "node": "Authenticate and Claim Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authenticate and Claim Event": {
+      "main": [
+        [
+          {
+            "node": "Expand Claimed Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Claimed Events": {
+      "main": [
+        [
+          {
+            "node": "Queue Authorized OCR Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "DOC01DocumentProcessing-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [],
+  "notes": "Template only: bind a tenant-authorized n8n HTTP Header Auth credential to both internal API HTTP nodes. Do not activate until provider-side integration, required scope and terminal action completion are configured and verified."
+}

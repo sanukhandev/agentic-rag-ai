@@ -1,0 +1,63 @@
+name: CRM V2 PR Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/api/**'
+      - 'infra/n8n/workflows/**'
+      - 'tools/n8n/**'
+      - 'tools/ingestion/**'
+      - 'infra/postgres/**'
+      - 'apps/web/**'
+      - 'apps/admin/**'
+      - 'package*.json'
+      - '.github/workflows/crm-v2-pr-validation.yml'
+  push:
+    branches: [feature/crm-omnichannel-conversation-v2]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: tools/ingestion/requirements.txt
+      - name: Install dependencies
+        run: npm ci
+      - name: Build all packages
+        run: npm run build
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit and integration tests
+        run: npm test
+      - name: Workflow JSON contract tests
+        run: node --test infra/n8n/workflows/crm-v2-workflows.test.mjs
+      - name: Verify compose and secrets
+        run: |
+          npm run verify:compose
+          npm run verify:secrets
+          npm run verify:secrets:test
+      - name: Install OCR libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y tesseract-ocr
+          python -m pip install -r tools/ingestion/requirements.txt
+      - name: Python ingestion tests
+        run: python -m unittest discover -s tools/ingestion -p 'test_*.py'

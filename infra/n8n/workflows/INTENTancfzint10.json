@@ -1,0 +1,200 @@
+{
+  "id": "INTENTancfzint10",
+  "name": "INTENT-ancfz.int_10",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "intent-ancfz-int-10",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "INTENTancfzint10-webhook",
+      "name": "INTENT-ancfz.int_10 Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "intent-ancfz-int-10"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nif (input.workflowKey !== \"anc.ancfz.int.10.request\" || input.contract !== \"omnichannel-intent-v1\") throw new Error('Workflow contract mismatch.');\nif (typeof input.tenantId !== 'string' || typeof input.sessionId !== 'string') throw new Error('Server-generated tenant and session references are required.');\nreturn [{ json: { ...input, workflowKey: \"anc.ancfz.int.10.request\", contract: \"omnichannel-intent-v1\" } }];"
+      },
+      "id": "INTENTancfzint10-validate",
+      "name": "Validate Server Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://api:4000/api/v1/internal/workflow-events/claim\" }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflowKey: $json.workflowKey, contract: $json.contract, limit: 10 }) }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "id": "INTENTancfzint10-claim",
+      "name": "Authenticate and Claim Event",
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = Array.isArray($json.items) ? $json.items : [];\nreturn items.map((item) => ({ json: item }));"
+      },
+      "id": "INTENTancfzint10-expand",
+      "name": "Expand Claimed Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://api:4000/api/v1/internal/crm/leads\" }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, sessionId: $json.sessionId, leadData: $json.leadData, intent: $json.intent, intentScore: $json.intentScore, intentConfidence: $json.intentConfidence, catalogVersionId: $json.catalogVersionId, score: $json.score, validationPass: $json.validationPass, conversation: $json.conversation, completeAction: false }) }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "INTENTancfzint10-target",
+      "name": "Internal Intent CRM Upsert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        980,
+        0
+      ]
+    },
+    {
+      "id": "INTENTancfzint10-verify-remote",
+      "name": "Verify Remote CRM Completion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const lead = $json.lead;\nif (!lead || typeof lead.id !== 'string' || typeof lead.actionId !== 'string' || typeof lead.tenantId !== 'string') throw new Error('Expected authorized internal CRM lead response.');\nconst remoteVerified = typeof lead.leadId === 'string' && lead.leadId.length > 0 && typeof lead.remoteCrm === 'string' && lead.remoteCrm.length > 0;\nreturn [{ json: { actionId: lead.actionId, tenantId: lead.tenantId, state: remoteVerified ? 'completed' : 'failed', ...(remoteVerified ? { externalReference: 'crm-lead-' + lead.id } : {}) } }];"
+      }
+    },
+    {
+      "id": "INTENTancfzint10-finish",
+      "name": "Finalize Claimed Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/complete",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, state: $json.state, externalReference: $json.externalReference }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "INTENT-ancfz.int_10 Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Server Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Server Event": {
+      "main": [
+        [
+          {
+            "node": "Authenticate and Claim Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authenticate and Claim Event": {
+      "main": [
+        [
+          {
+            "node": "Expand Claimed Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Claimed Events": {
+      "main": [
+        [
+          {
+            "node": "Internal Intent CRM Upsert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Internal Intent CRM Upsert": {
+      "main": [
+        [
+          {
+            "node": "Verify Remote CRM Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Remote CRM Completion": {
+      "main": [
+        [
+          {
+            "node": "Finalize Claimed Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "INTENTancfzint10-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [],
+  "notes": "INACTIVE TEMPLATE: requires provider-specific Salesforce integration BEFORE Verify Remote CRM Completion, approved field mapping and bound n8n credentials. Until then successful internal registrations deliberately result in FAILED (not a false Salesforce success or a permanently processing action)."
+}

@@ -38,6 +38,7 @@ class IngestionTests(unittest.TestCase):
             self.assertEqual(first["catalog"]["intents"][0]["intentKey"], "lead.capture")
             self.assertEqual(first["catalog"]["tenantScope"], "demo")
             self.assertEqual(first["catalog"]["qualityRules"], [])
+            self.assertEqual(first["catalog"]["catalogManifest"], [])
     def test_masks_pii_and_secrets_before_chunking(self) -> None:
         result = sanitize("Email alice@example.com, call +971 50 123 4567, api_key=secret-value")
         self.assertNotIn("alice@example.com", result)

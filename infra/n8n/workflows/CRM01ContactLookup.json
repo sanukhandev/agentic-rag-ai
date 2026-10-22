@@ -1,0 +1,145 @@
+{
+  "id": "CRM01ContactLookup",
+  "name": "CRM-01 Contact Lookup",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-contact-lookup",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "CRM01ContactLookup-webhook",
+      "name": "CRM-01 Contact Lookup Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "crm-contact-lookup"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nif (input.workflowKey !== \"crm.contact.lookup\" || input.contract !== \"crm-contact-lookup-v1\") throw new Error('Workflow contract mismatch.');\nif (typeof input.tenantId !== 'string' || typeof input.sessionId !== 'string') throw new Error('Server-generated tenant and session references are required.');\nreturn [{ json: { ...input, workflowKey: \"crm.contact.lookup\", contract: \"crm-contact-lookup-v1\" } }];"
+      },
+      "id": "CRM01ContactLookup-validate",
+      "name": "Validate Server Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://api:4000/api/v1/internal/workflow-events/claim\" }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflowKey: $json.workflowKey, contract: $json.contract, limit: 10 }) }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "id": "CRM01ContactLookup-claim",
+      "name": "Authenticate and Claim Event",
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = Array.isArray($json.items) ? $json.items : [];\nreturn items.map((item) => ({ json: item }));"
+      },
+      "id": "CRM01ContactLookup-expand",
+      "name": "Expand Claimed Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://api:4000/api/v1/internal/crm/contact-lookup\" }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, sessionId: $json.sessionId, actionId: $json.actionId }) }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "CRM01ContactLookup-target",
+      "name": "Authorized CRM Contact Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        980,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "CRM-01 Contact Lookup Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Server Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Server Event": {
+      "main": [
+        [
+          {
+            "node": "Authenticate and Claim Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authenticate and Claim Event": {
+      "main": [
+        [
+          {
+            "node": "Expand Claimed Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Claimed Events": {
+      "main": [
+        [
+          {
+            "node": "Authorized CRM Contact Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "CRM01ContactLookup-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [],
+  "notes": "Template only: bind a tenant-authorized n8n HTTP Header Auth credential to both internal API HTTP nodes. Do not activate until provider-side integration, required scope and terminal action completion are configured and verified."
+}

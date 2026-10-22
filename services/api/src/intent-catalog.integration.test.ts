@@ -20,7 +20,10 @@ describe('published intent catalog runtime', () => {
       parserVersion: 'test',
       catalog: {
         tenantScope: 'catalog-tenant',
-        intents: [{ intentKey: 'lead.capture', displayName: 'Request a service', description: 'Capture a qualified lead', category: 'sales', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' }],
+        intents: [
+          { intentKey: 'lead.capture', displayName: 'Request a service', description: 'Capture a qualified lead', category: 'sales', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' },
+          { intentKey: 'anc.document.supporting_upload', displayName: 'Submit supporting documents', description: 'Submit a supporting document for review', category: 'support', workflowKey: 'anc.document.ocr.extract', minimumScore: 0, confidenceThreshold: 0.78, confirmationRequired: true, active: true, priority: 90, versionNote: '' },
+        ],
         signals: [
           { intentKey: 'lead.capture', signalId: 'demo', signalType: 'phrase', value: 'need a demo', language: 'en', matchMode: 'contains', weight: 65, relationGroup: null, notes: '' },
           { intentKey: 'lead.capture', signalId: 'book-demo', signalType: 'phrase', value: 'book a demo', language: 'en', matchMode: 'contains', weight: 65, relationGroup: null, notes: '' },
@@ -30,10 +33,11 @@ describe('published intent catalog runtime', () => {
           { intentKey: 'lead.capture', signalId: 'developer', signalType: 'keyword', value: 'developer', language: 'en', matchMode: 'contains', weight: 15, relationGroup: null, notes: '' },
           { intentKey: 'lead.capture', signalId: 'erp', signalType: 'keyword', value: 'erp', language: 'en', matchMode: 'contains', weight: 15, relationGroup: null, notes: '' },
           { intentKey: 'lead.capture', signalId: 'build', signalType: 'keyword', value: 'build', language: 'en', matchMode: 'contains', weight: 10, relationGroup: null, notes: '' },
+          { intentKey: 'anc.document.supporting_upload', signalId: 'document-upload', signalType: 'phrase', value: 'I have supporting documents to share', language: 'en', matchMode: 'contains', weight: 75, relationGroup: null, notes: '' },
         ],
         slots: [{ intentKey: 'lead.capture', slotKey: 'name', dataType: 'person_name', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', retentionClass: 'pii', qualityWeight: 50 }, { intentKey: 'lead.capture', slotKey: 'email', dataType: 'email', required: false, alternativeGroup: 'contact', collectionOrder: 2, promptKey: 'lead.ask_contact', validationRule: 'token:EMAIL', retentionClass: 'pii', qualityWeight: 50 }, { intentKey: 'lead.capture', slotKey: 'contact_consent', dataType: 'boolean', required: true, alternativeGroup: null, collectionOrder: 3, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', retentionClass: 'consent', qualityWeight: 0 }, { intentKey: 'lead.capture', slotKey: 'interest_summary', dataType: 'string', required: true, alternativeGroup: null, collectionOrder: 4, promptKey: 'lead.ask_interest', validationRule: 'text:nonempty', retentionClass: 'business', qualityWeight: 0 }],
         relations: [],
-        workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'demo', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }, { workflowKey: 'crm.lead.quality.score', n8nWorkflowId: 'quality-demo', webhookPath: 'lead-quality-score', payloadContract: 'crm-lead-quality-v1', sideEffectClass: 'crm_write', active: true }],
+        workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'demo', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }, { workflowKey: 'crm.lead.quality.score', n8nWorkflowId: 'quality-demo', webhookPath: 'lead-quality-score', payloadContract: 'crm-lead-quality-v1', sideEffectClass: 'crm_write', active: true }, { workflowKey: 'anc.document.ocr.extract', n8nWorkflowId: 'ocr-demo', webhookPath: 'document-ocr', payloadContract: 'anc-document-ocr-v1', sideEffectClass: 'document_processing', active: true }],
         qualityRules: [{ intentKey: 'lead.capture', qualityWorkflowKey: 'crm.lead.quality.score', intentWeight: 0.6, confidenceWeight: 0.2, contactWeight: 0.2, hotThreshold: 85, warmThreshold: 70, nurtureThreshold: 40 }]
       }
     });
@@ -47,9 +51,9 @@ describe('published intent catalog runtime', () => {
     expect(repeatedIntentTurn.body.answer).toContain('What name');
     const nameTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'Demo Visitor', clientMessageId: 'catalog-multi-3' }).expect(200);
     expect(nameTurn.body.actionProposal).toBeNull();
-    expect(nameTurn.body.answer).toContain('email address or phone number');
+    expect(nameTurn.body.answer).toContain('email address');
     expect((await runtime.store.listMessages(multiTurn.body.sessionId, tenant.body.tenant.id)).find((message) => message.clientMessageId === 'catalog-multi-3')?.maskedContent).toBe('[NAME_1]');
-    const contactTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'alice@example.com', clientMessageId: 'catalog-multi-4' }).expect(200);
+    const contactTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'alice@example.com +971500000000', clientMessageId: 'catalog-multi-4' }).expect(200);
     expect(contactTurn.body.actionProposal).toBeNull();
     expect(contactTurn.body.answer).toContain('interest summary');
     const interestTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'I need help setting up the requested service.', clientMessageId: 'catalog-multi-5' }).expect(200);
@@ -66,8 +70,13 @@ describe('published intent catalog runtime', () => {
     expect(clarificationTurn.body.actionProposal).toBeNull();
     expect(clarificationTurn.body.answer).toContain('To make sure I route this correctly');
 
+    const documentSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'catalog-tenant' }).expect(201);
+    const documentTurn = await api.post('/api/v1/chat/messages').send({ sessionId: documentSession.body.sessionId, message: 'I have supporting documents to share', clientMessageId: 'catalog-document-1' }).expect(200);
+    expect(documentTurn.body.actionProposal).toBeNull();
+    expect(documentTurn.body.answer).toContain('To make sure I route this correctly');
+
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'catalog-tenant' }).expect(201);
-    const proposalStart = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need a demo. My name is Alice and my email is alice@example.com.', clientMessageId: 'catalog-lead-1' }).expect(200);
+    const proposalStart = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need a demo. My name is Alice, my email is alice@example.com and my phone is +971500000000.', clientMessageId: 'catalog-lead-1' }).expect(200);
     expect(proposalStart.body.actionProposal).toBeNull();
     expect(proposalStart.body.answer).toContain('interest summary');
     const proposal = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Please arrange the requested demo for our ERP project.', clientMessageId: 'catalog-lead-2' }).expect(200);
@@ -95,5 +104,7 @@ describe('published intent catalog runtime', () => {
 
     const unrelated = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is the refund policy?', clientMessageId: 'catalog-unrelated-1' }).expect(200);
     expect(unrelated.body.actionProposal).toBeNull();
+    expect(unrelated.body.answer).not.toContain('contact details needed');
+    expect(unrelated.body.answer).not.toContain('submit your contact request');
   });
 });

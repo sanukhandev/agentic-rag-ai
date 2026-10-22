@@ -1,0 +1,111 @@
+{
+  "schemaVersion": "rag-training-v1",
+  "tenantScope": "anc-test",
+  "sourceZipSha256": "480d6579ec7b43141d6f015a58d769b6fdd64df1af5cf1756326f0fe5fe76fe1",
+  "sources": [
+    {
+      "tenantScope": "anc-test",
+      "sourceKey": "anc-test-source-ancfz-descriptive-rag-business-activity-categories",
+      "title": "ANCFZ Descriptive RAG Business Activity Categories",
+      "sourceFile": "ANCFZ_Descriptive_RAG_Business_Activity_Categories.docx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "sourceSha256": "eb453f556e8df120c9478fedf28cf8a93cf8d0405fdffbbe95f4ffa4d3d17b9c",
+      "artifactPath": "content/ancfz-descriptive-rag-business-activity-categories.md",
+      "chunkCount": 236,
+      "visibility": "public-for-chat",
+      "status": "awaiting_review",
+      "piiScreening": "pattern-redacted-human-review-required"
+    },
+    {
+      "tenantScope": "anc-test",
+      "sourceKey": "anc-test-source-ancfz-descriptive-rag-contact-us",
+      "title": "ANCFZ Descriptive RAG Contact Us",
+      "sourceFile": "ANCFZ_Descriptive_RAG_Contact_Us.docx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "sourceSha256": "84481edfd03391d49cd0818932e3c9bef2047e4bd11fc215e83525abcdc14f3a",
+      "artifactPath": "content/ancfz-descriptive-rag-contact-us.md",
+      "chunkCount": 55,
+      "visibility": "public-for-chat",
+      "status": "awaiting_review",
+      "piiScreening": "pattern-redacted-human-review-required"
+    },
+    {
+      "tenantScope": "anc-test",
+      "sourceKey": "anc-test-source-ancfz-descriptive-rag-faqs",
+      "title": "ANCFZ Descriptive RAG FAQs",
+      "sourceFile": "ANCFZ_Descriptive_RAG_FAQs.docx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "sourceSha256": "d40a3320e869edb20a9087a2c3096dc8579771172604b6e75b125bad6a0b1bd3",
+      "artifactPath": "content/ancfz-descriptive-rag-faqs.md",
+      "chunkCount": 71,
+      "visibility": "public-for-chat",
+      "status": "awaiting_review",
+      "piiScreening": "pattern-redacted-human-review-required"
+    },
+    {
+      "tenantScope": "anc-test",
+      "sourceKey": "anc-test-source-ancfz-descriptive-rag-license-cost-2026",
+      "title": "ANCFZ Descriptive RAG License Cost 2026",
+      "sourceFile": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "sourceSha256": "d3f15b611a88943952c10f684778b71bc1aa33c5cb0d51d92a34e718d3685d11",
+      "artifactPath": "content/ancfz-descriptive-rag-license-cost-2026.md",
+      "chunkCount": 86,
+      "visibility": "public-for-chat",
+      "status": "awaiting_review",
+      "piiScreening": "pattern-redacted-human-review-required"
+    },
+    {
+      "tenantScope": "anc-test",
+      "sourceKey": "anc-test-source-ancfz-descriptive-rag-packages-and-offers",
+      "title": "ANCFZ Descriptive RAG Packages and Offers",
+      "sourceFile": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "sourceSha256": "18693cb74d5c80b1d71cb5875893fa22e550ab4bb064edc04ca2183fe1e6a12b",
+      "artifactPath": "content/ancfz-descriptive-rag-packages-and-offers.md",
+      "chunkCount": 52,
+      "visibility": "public-for-chat",
+      "status": "awaiting_review",
+      "piiScreening": "pattern-redacted-human-review-required"
+    },
+    {
+      "tenantScope": "anc-test",
+      "sourceKey": "anc-test-source-ancfz-descriptive-rag-rules-and-regulations",
+      "title": "ANCFZ Descriptive RAG Rules and Regulations",
+      "sourceFile": "ANCFZ_Descriptive_RAG_Rules_and_Regulations.docx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "sourceSha256": "0dbdb07e4571a12c6fe94bfe7e844ef56ae2701dd678b57648832a4c1aefb620",
+      "artifactPath": "content/ancfz-descriptive-rag-rules-and-regulations.md",
+      "chunkCount": 404,
+      "visibility": "public-for-chat",
+      "status": "awaiting_review",
+      "piiScreening": "pattern-redacted-human-review-required"
+    },
+    {
+      "tenantScope": "anc-test",
+      "sourceKey": "anc-test-source-ancfz-descriptive-rag-strategic-partners",
+      "title": "ANCFZ Descriptive RAG Strategic Partners",
+      "sourceFile": "ANCFZ_Descriptive_RAG_Strategic_Partners.docx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "sourceSha256": "810b0b0ab449af3b98ce1c21256591a1867662dc2b11aec850c4d59aab53c67d",
+      "artifactPath": "content/ancfz-descriptive-rag-strategic-partners.md",
+      "chunkCount": 33,
+      "visibility": "public-for-chat",
+      "status": "awaiting_review",
+      "piiScreening": "pattern-redacted-human-review-required"
+    },
+    {
+      "tenantScope": "anc-test",
+      "sourceKey": "anc-test-source-ancfz-descriptive-rag-types-of-companies",
+      "title": "ANCFZ Descriptive RAG Types of Companies",
+      "sourceFile": "ANCFZ_Descriptive_RAG_Types_of_Companies.docx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "sourceSha256": "f5f4c5286c8f96b11ff826a8e1eea8d544368479eda867d2b49e58bd26614a7c",
+      "artifactPath": "content/ancfz-descriptive-rag-types-of-companies.md",
+      "chunkCount": 54,
+      "visibility": "public-for-chat",
+      "status": "awaiting_review",
+      "piiScreening": "pattern-redacted-human-review-required"
+    }
+  ]
+}

@@ -51,7 +51,7 @@ describe('privacy boundary', () => {
     vault.rotate(session, rotated);
     expect(rehydrateForSession(session, masked.masked, vault)).not.toContain('alice@example.com');
     expect(rehydrateForSession(session, masked.masked, rotated)).toContain('alice@example.com');
-    const expiredSession = { id: 'session-expired', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
+    const expiredSession = { id: 'session-expired', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>(), conversationState: { phase: 'DISCOVERY' as const, catalogVersionId: null, candidateIntentKeys: [], selectedIntentKey: null, slotValues: {}, pendingPrompt: null, rollingSummary: '', summaryRevision: 0, messageSequence: 0, workflowStatus: 'none' as const, contactConsent: 'unknown' as const, consentVersion: null, consentCapturedAt: null } };
     saveTokens(expiredSession, masked.tokens, new TokenVault('expired-vault-secret-2026', -1));
     expect(rehydrateForSession(expiredSession, masked.masked, new TokenVault('expired-vault-secret-2026'), 'admin_crm')).toContain('alice@example.com');
     expect(rehydrateForSession(expiredSession, masked.masked, new TokenVault('expired-vault-secret-2026'))).not.toContain('alice@example.com');

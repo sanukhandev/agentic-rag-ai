@@ -46,7 +46,10 @@ export const ingestionResultSchema = z.object({
 });
 export const ingestionFailureSchema = z.object({ errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('INGESTION_FAILED') });
 export const sessionSchema = z.object({ tenantId: z.string().uuid().optional(), tenantSlug: z.string().regex(/^[a-z0-9-]+$/).optional() });
-export const messageSchema = z.object({ sessionId: z.string().uuid(), message: z.string().trim().min(1).max(4000), clientMessageId: z.string().trim().min(1).max(128) });
+export const messageSchema = z.object({ sessionId: z.string().uuid(), type: z.enum(['text', 'postback', 'attachment']).default('text'), message: z.string().trim().max(4000).default(''), postbackValue: z.string().trim().max(4000).optional(), replyToPromptId: z.string().uuid().optional(), clientMessageId: z.string().trim().min(1).max(128) }).superRefine((value, context) => {
+  if (value.type === 'postback' && !value.postbackValue && !value.message) context.addIssue({ code: z.ZodIssueCode.custom, path: ['postbackValue'], message: 'A postback value is required.' });
+  if (value.type !== 'postback' && !value.message) context.addIssue({ code: z.ZodIssueCode.custom, path: ['message'], message: 'A message is required.' });
+});
 export const confirmSchema = z.object({ sessionId: z.string().uuid(), confirmed: z.literal(true) });
 export const retentionSchema = z.object({ before: z.string().datetime() });
 export const historyQuerySchema = z.object({ limit: z.coerce.number().int().min(1).max(200).default(100) });
@@ -55,7 +58,7 @@ export const crmLeadSchema = z.object({
   actionId: z.string().uuid(),
   tenantId: z.string().uuid(),
   sessionId: z.string().uuid(),
-  leadData: z.object({ name: leadTokenSchema.optional(), email: leadTokenSchema.optional(), phone: leadTokenSchema.optional(), interest: z.string().trim().min(1).max(200).optional(), contactConsent: z.boolean().optional() }).strict(),
+  leadData: z.object({ name: leadTokenSchema.optional(), email: leadTokenSchema.optional(), phone: leadTokenSchema.optional(), interest: z.string().trim().min(1).max(200).optional(), slotValues: z.record(z.string().regex(/^[a-z][a-z0-9._-]{0,79}$/u), z.string().trim().max(2000)).optional(), contactConsent: z.boolean().optional() }).strict(),
   intent: z.string().trim().min(1).max(80),
   intentScore: z.number().int().min(0).max(100).optional(),
   intentConfidence: z.number().min(0).max(1).optional(),

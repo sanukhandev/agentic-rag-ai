@@ -1,0 +1,145 @@
+{
+  "id": "CRM03SummarySync",
+  "name": "CRM-03 Summary Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-summary-sync",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "CRM03SummarySync-webhook",
+      "name": "CRM-03 Summary Sync Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "crm-summary-sync"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nif (input.workflowKey !== \"crm.lead.summary.sync\" || input.contract !== \"crm-summary-sync-v1\") throw new Error('Workflow contract mismatch.');\nif (typeof input.tenantId !== 'string' || typeof input.sessionId !== 'string') throw new Error('Server-generated tenant and session references are required.');\nreturn [{ json: { ...input, workflowKey: \"crm.lead.summary.sync\", contract: \"crm-summary-sync-v1\" } }];"
+      },
+      "id": "CRM03SummarySync-validate",
+      "name": "Validate Server Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://api:4000/api/v1/internal/workflow-events/claim\" }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflowKey: $json.workflowKey, contract: $json.contract, limit: 10 }) }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "id": "CRM03SummarySync-claim",
+      "name": "Authenticate and Claim Event",
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = Array.isArray($json.items) ? $json.items : [];\nreturn items.map((item) => ({ json: item }));"
+      },
+      "id": "CRM03SummarySync-expand",
+      "name": "Expand Claimed Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ \"http://api:4000/api/v1/internal/crm/leads/\" + $json.leadId + \"/summary\" }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, summary: $json.summary, status: $json.status || \"completed\" }) }}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "CRM03SummarySync-target",
+      "name": "Internal CRM Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        980,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "CRM-03 Summary Sync Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Server Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Server Event": {
+      "main": [
+        [
+          {
+            "node": "Authenticate and Claim Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authenticate and Claim Event": {
+      "main": [
+        [
+          {
+            "node": "Expand Claimed Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Claimed Events": {
+      "main": [
+        [
+          {
+            "node": "Internal CRM Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "CRM03SummarySync-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [],
+  "notes": "Template only: bind a tenant-authorized n8n HTTP Header Auth credential to both internal API HTTP nodes. Do not activate until provider-side integration, required scope and terminal action completion are configured and verified."
+}
