@@ -218,6 +218,7 @@ interface TenantChatConfig {
                 </p>
                 <div class="flex items-center gap-2 pt-1">
                   <button
+                    *ngIf="msg.actionState === 'awaiting_confirmation' || msg.actionState === 'unknown'"
                     type="button"
                     (click)="confirmAction(msg.actionProposal.id)"
                     [disabled]="isBusy"
@@ -229,6 +230,7 @@ interface TenantChatConfig {
                     Status: {{ msg.actionState }}
                   </span>
                 </div>
+                <p *ngIf="msg.actionOutcome" class="text-xs text-emerald-700" role="status">{{ msg.actionOutcome }}</p>
               </div>
 
               <!-- Message Utility Toolbar: Copy & Feedback Controls -->
@@ -622,7 +624,7 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
     if (!this.sessionId) return;
     this.isBusy = true;
 
-    this.http.post<{ action?: { state: ChatActionState }; error?: { message?: string } }>(
+    this.http.post<{ action?: { state: ChatActionState }; message?: string; error?: { message?: string } }>(
       `${this.apiBase}/api/v1/chat/actions/${proposalId}/confirm`,
       { sessionId: this.sessionId, confirmed: true }
     ).subscribe({
@@ -632,9 +634,7 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
         const target = this.messages.find((m) => m.actionProposal?.id === proposalId);
         if (target) {
           target.actionState = state;
-          if (state !== 'awaiting_confirmation' && state !== 'unknown') {
-            target.actionProposal = null;
-          }
+          target.actionOutcome = res.message ?? 'Your request is registered and will continue processing asynchronously.';
         }
       },
       error: () => {

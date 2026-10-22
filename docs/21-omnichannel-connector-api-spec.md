@@ -148,7 +148,7 @@ Store only the `sessionId` mapping. Do not expose `tenantId` to the visitor.
 
 ### 4.2 Send a visitor turn
 
-Use a new UUID for `clientMessageId` on each new visitor turn. For a network retry, reuse the same `clientMessageId` and exact body:
+Use a new UUID for `clientMessageId` on each new visitor turn. For a network retry, reuse the same `clientMessageId` and exact body. The API also accepts `type: "postback"`, `postbackValue`, and `replyToPromptId`; a postback must answer the currently returned prompt rather than starting a new intent.
 
 ```bash
 body='{"sessionId":"opaque-session-id","message":"I need a demo for an ERP solution","clientMessageId":"8b6f5d7d-4fa5-4f71-8c2a-19dd6a5c7f11"}'
@@ -175,6 +175,7 @@ Response fields:
   "conversational": true,
   "citations": [],
   "actionProposal": null,
+  "pendingPromptId": "opaque-prompt-id",
   "requestId": "correlation-id"
 }
 ```

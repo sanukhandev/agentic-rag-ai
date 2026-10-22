@@ -39,6 +39,7 @@ export const mergeLeadData = (...values: LeadData[]): LeadData => {
     if (value.name) merged.name = value.name;
     if (value.email) merged.email = value.email;
     if (value.phone) merged.phone = value.phone;
+    if (value.slotValues) merged.slotValues = { ...(merged.slotValues ?? {}), ...value.slotValues };
   }
   return merged;
 };

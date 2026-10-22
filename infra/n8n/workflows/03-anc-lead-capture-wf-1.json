@@ -169,7 +169,7 @@
         ] },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ Name: $('Fetch Authorized Remote CRM Payload').first().json.name, Company: 'Individual', Phone: $('Fetch Authorized Remote CRM Payload').first().json.phone, Email: $('Fetch Authorized Remote CRM Payload').first().json.email, Description: $('Fetch Authorized Remote CRM Payload').first().json.description }) }}",
+        "jsonBody": "={{ JSON.stringify({ Name: $('Fetch Authorized Remote CRM Payload').first().json.name, Company: $('Fetch Authorized Remote CRM Payload').first().json.company || $('Fetch Authorized Remote CRM Payload').first().json.companyName || '', Phone: $('Fetch Authorized Remote CRM Payload').first().json.phone, Email: $('Fetch Authorized Remote CRM Payload').first().json.email, Description: $('Fetch Authorized Remote CRM Payload').first().json.description }) }}",
         "options": {}
       },
       "id": "anc-wf1-remote",
@@ -186,7 +186,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const result = $json;\nconst pattern = $env.REMOTE_CRM_LEAD_ID_PATTERN || '^[A-Za-z0-9._:-]{1,200}$';\nif (typeof result.leadId !== 'string' || !new RegExp(pattern).test(result.leadId)) throw new Error('Remote CRM did not return a valid lead ID.');\nreturn [{ json: { ...$('Lead Scoring and Summary').first().json, remoteLeadId: result.leadId, remoteCrm: $('Lead Scoring and Summary').first().json.remoteCrm } }];"
+        "jsCode": "const result = $json.body && typeof $json.body === 'object' ? $json.body : $json;\nconst candidate = result.leadId ?? result.LeadId ?? result.id ?? result.Id;\nconst pattern = $env.REMOTE_CRM_LEAD_ID_PATTERN || '^[A-Za-z0-9._:-]{1,200}$';\nif (typeof candidate !== 'string' || !new RegExp(pattern).test(candidate)) throw new Error('Remote CRM did not return a valid lead ID; reconciliation is required.');\nreturn [{ json: { ...$('Lead Scoring and Summary').first().json, remoteLeadId: candidate, remoteCrm: $('Lead Scoring and Summary').first().json.remoteCrm } }];"
       },
       "id": "anc-wf1-remote-validate",
       "name": "Validate Remote CRM Lead ID",

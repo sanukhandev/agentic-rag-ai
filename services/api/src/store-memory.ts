@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import type { ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, DocumentProcessingJob, IngestionJob, IntentCatalogVersion, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
+import { newConversationState } from './conversation-state.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -204,7 +205,7 @@ export class MemoryStore implements Store {
 
   async createSession(tenantId: string, personaVersionId: string | null = null): Promise<Session> {
     const timestamp = now();
-    const session: Session = { id: randomUUID(), tenantId, createdAt: timestamp, lastActivityAt: timestamp, closedAt: null, personaVersionId, tokenMap: new Map() };
+    const session: Session = { id: randomUUID(), tenantId, createdAt: timestamp, lastActivityAt: timestamp, closedAt: null, personaVersionId, tokenMap: new Map(), conversationState: newConversationState() };
     this.sessions.set(session.id, session);
     return session;
   }

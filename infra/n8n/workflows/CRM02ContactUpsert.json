@@ -1,0 +1,159 @@
+{
+  "id": "CRM02ContactUpsert",
+  "name": "CRM-02 Contact Upsert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-contact-upsert",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "CRM02ContactUpsert-webhook",
+      "name": "CRM-02 Contact Upsert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "crm-contact-upsert"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nif (input.workflowKey !== \"crm.lead.create\" || input.contract !== \"crm-contact-upsert-v1\") throw new Error('Workflow contract mismatch.');\nif (typeof input.tenantId !== 'string' || typeof input.sessionId !== 'string') throw new Error('Server-generated tenant and session references are required.');\nreturn [{ json: { ...input, workflowKey: \"crm.lead.create\", contract: \"crm-contact-upsert-v1\" } }];"
+      },
+      "id": "CRM02ContactUpsert-validate",
+      "name": "Validate Server Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://api:4000/api/v1/internal/workflow-events/claim\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-agentic-internal-secret",
+              "value": "={{ $env.N8N_WEBHOOK_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflowKey: $json.workflowKey, contract: $json.contract, limit: 10 }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "id": "CRM02ContactUpsert-claim",
+      "name": "Authenticate and Claim Event",
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = Array.isArray($json.items) ? $json.items : [];\nreturn items.map((item) => ({ json: item }));"
+      },
+      "id": "CRM02ContactUpsert-expand",
+      "name": "Expand Claimed Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://api:4000/api/v1/internal/crm/leads\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-agentic-internal-secret",
+              "value": "={{ $env.N8N_WEBHOOK_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, sessionId: $json.sessionId, leadData: $json.leadData, intent: $json.intent, intentScore: $json.intentScore, intentConfidence: $json.intentConfidence, catalogVersionId: $json.catalogVersionId, score: $json.score, validationPass: $json.validationPass, conversation: $json.conversation, completeAction: false }) }}",
+        "options": {}
+      },
+      "id": "CRM02ContactUpsert-target",
+      "name": "Internal CRM Upsert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        980,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "CRM-02 Contact Upsert Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Server Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Server Event": {
+      "main": [
+        [
+          {
+            "node": "Authenticate and Claim Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authenticate and Claim Event": {
+      "main": [
+        [
+          {
+            "node": "Expand Claimed Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Claimed Events": {
+      "main": [
+        [
+          {
+            "node": "Internal CRM Upsert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "CRM02ContactUpsert-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [],
+  "notes": "Generated generic tenant-neutral export. Import and activate only after security approval and credential binding."
+}

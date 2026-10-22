@@ -666,7 +666,7 @@ describe('API vertical slice', () => {
 
     const crm = await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     expect(crm.body.items).toHaveLength(1);
-    expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', email: 'alice@example.com' }, intent: 'lead.capture', score: 70, quality: 'warm', validationPass: true, summaryStatus: 'completed' });
+    expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', email: 'alice@example.com' }, intent: 'lead.capture', score: 80, quality: 'warm', validationPass: true, summaryStatus: 'completed' });
     expect(crm.body.items[0].summary).toContain('Quality: warm');
     expect(crm.body.items[0].conversation).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'user' }), expect.objectContaining({ role: 'assistant' })]));
   });

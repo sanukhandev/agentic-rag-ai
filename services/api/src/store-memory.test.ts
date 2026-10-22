@@ -58,4 +58,15 @@ describe('MemoryStore tenant and lifecycle boundaries', () => {
     expect(await store.getSession(sessionB.id)).not.toBeNull();
     expect(await store.listMessages(sessionB.id, tenantB.id)).toHaveLength(1);
   });
+
+  it('persists pending prompts and consent state with the session', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'Prompt Tenant', slug: `prompt-${randomUUID()}` });
+    const session = await store.createSession(tenant.id);
+    session.conversationState = { ...session.conversationState!, selectedIntentKey: 'lead.capture', pendingPrompt: { id: randomUUID(), type: 'consent', intentKey: 'lead.capture', slotKey: 'contact_consent', issuedAt: new Date().toISOString() }, slotValues: { name: '[NAME_1]' } };
+    await store.updateSession(session);
+    const persisted = await store.getSession(session.id);
+    expect(persisted?.conversationState?.pendingPrompt?.slotKey).toBe('contact_consent');
+    expect(persisted?.conversationState?.slotValues.name).toBe('[NAME_1]');
+  });
 });

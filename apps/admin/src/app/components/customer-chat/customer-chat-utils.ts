@@ -23,6 +23,7 @@ export interface CustomerChatMessage {
   citations: ChatCitation[];
   actionProposal?: ChatActionProposal | null;
   actionState?: ChatActionState;
+  actionOutcome?: string;
   createdAt: string;
   copied?: boolean;
   feedback?: 'up' | 'down';

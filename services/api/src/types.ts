@@ -7,6 +7,33 @@ export type IngestionJobStatus = 'queued' | 'processing' | 'completed' | 'failed
 export type SupportingDocumentStatus = 'uploaded' | 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
 export type DocumentJobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
 
+export type ConversationPhase = 'DISCOVERY' | 'INTENT_CLARIFICATION' | 'SLOT_COLLECTION' | 'CONTACT_COLLECTION' | 'CONSENT_PENDING' | 'DOCUMENT_COLLECTION' | 'ACTION_CONFIRMATION' | 'QUEUED' | 'SUCCEEDED' | 'RECONCILE_REQUIRED' | 'FAILED';
+export type ConversationWorkflowStatus = 'none' | 'queued' | 'processing' | 'succeeded' | 'reconcile_required' | 'failed';
+
+export interface PendingPrompt {
+  id: string;
+  type: 'clarification' | 'slot' | 'consent' | 'confirmation' | 'document';
+  intentKey: string | null;
+  slotKey: string | null;
+  issuedAt: string;
+}
+
+export interface ConversationState {
+  phase: ConversationPhase;
+  catalogVersionId: string | null;
+  candidateIntentKeys: string[];
+  selectedIntentKey: string | null;
+  slotValues: Record<string, string>;
+  pendingPrompt: PendingPrompt | null;
+  rollingSummary: string;
+  summaryRevision: number;
+  messageSequence: number;
+  workflowStatus: ConversationWorkflowStatus;
+  contactConsent: 'unknown' | 'granted' | 'denied';
+  consentVersion: string | null;
+  consentCapturedAt: string | null;
+}
+
 export type IntentCatalogStatus = 'draft' | 'published';
 
 export interface IntentCatalogIntent {
@@ -116,6 +143,8 @@ export interface IntentCatalogDocumentSettings {
   notes: string;
 }
 
+export type IntentCatalogExtensionRow = Record<string, string | number | boolean | null>;
+
 export interface IntentCatalog {
   tenantScope: string | null;
   intents: IntentCatalogIntent[];
@@ -126,6 +155,11 @@ export interface IntentCatalog {
   qualityRules?: IntentCatalogQualityRule[];
   documentPolicies?: IntentCatalogDocumentPolicy[];
   documentSettings?: IntentCatalogDocumentSettings;
+  documentRequirements?: IntentCatalogExtensionRow[];
+  crmFieldMappings?: IntentCatalogExtensionRow[];
+  channelCapabilities?: IntentCatalogExtensionRow[];
+  testUtterances?: IntentCatalogExtensionRow[];
+  catalogManifest?: IntentCatalogExtensionRow[];
 }
 
 export interface IntentCatalogVersion {
@@ -271,6 +305,7 @@ export interface Session {
   closedAt: string | null;
   personaVersionId: string | null;
   tokenMap: Map<string, string>;
+  conversationState?: ConversationState;
 }
 
 export interface Message {
@@ -299,6 +334,7 @@ export interface LeadData {
   phone?: string;
   /** Server-derived catalog label. Never populated directly from the visitor. */
   interest?: string;
+  slotValues?: Record<string, string>;
 }
 
 export interface ActionPayload extends LeadData {
@@ -318,6 +354,7 @@ export interface CrmLead {
   actionId: string;
   sessionId: string;
   intent: string;
+  secondaryIntentKeys?: string[];
   intentScore: number;
   intentConfidence: number;
   catalogVersionId: string | null;
