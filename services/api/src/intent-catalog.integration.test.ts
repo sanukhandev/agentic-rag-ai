@@ -104,5 +104,7 @@ describe('published intent catalog runtime', () => {
 
     const unrelated = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is the refund policy?', clientMessageId: 'catalog-unrelated-1' }).expect(200);
     expect(unrelated.body.actionProposal).toBeNull();
+    expect(unrelated.body.answer).not.toContain('contact details needed');
+    expect(unrelated.body.answer).not.toContain('submit your contact request');
   });
 });
