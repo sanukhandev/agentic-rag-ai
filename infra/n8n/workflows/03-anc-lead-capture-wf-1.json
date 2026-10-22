@@ -3,7 +3,7 @@
   "name": "ANC Lead Capture WF-1",
   "nodes": [
     {
-      "parameters": { "httpMethod": "POST", "path": "anc-lead-capture-wf-1", "responseMode": "lastNode", "options": {} },
+      "parameters": { "httpMethod": "POST", "path": "anc-lead-capture-wf-1", "responseMode": "onReceived", "responseCode": 202, "options": {} },
       "id": "anc-wf1-webhook",
       "name": "ANC Lead Capture Webhook",
       "type": "n8n-nodes-base.webhook",
@@ -95,6 +95,7 @@
       "name": "Internal CRM Upsert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [1620, 20]
     },
     {
@@ -122,6 +123,7 @@
       "name": "Persist Score and Summary",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [2060, 20]
     },
     {
@@ -155,6 +157,7 @@
       "name": "Fetch Authorized Remote CRM Payload",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [2620, 20]
     },
     {
@@ -176,6 +179,7 @@
       "name": "Remote CRM Create Lead",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [2840, 20],
       "credentials": {
         "oAuth2Api": {
@@ -192,6 +196,7 @@
       "name": "Validate Remote CRM Lead ID",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
+      "onError": "continueErrorOutput",
       "position": [3060, 20]
     },
     {
@@ -209,6 +214,7 @@
       "name": "Internal CRM Remote ID Callback",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [3280, 20]
     },
     {
@@ -226,6 +232,7 @@
       "name": "Complete Async Registration",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [3500, 20]
     },
     {
@@ -243,7 +250,69 @@
       "name": "Complete Internal Registration",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [2620, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/complete",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, state: 'reconcile_required', externalReference: 'crm-review-' + $json.actionId }) }}",
+        "options": {}
+      },
+      "id": "anc-wf1-complete-support-review",
+      "name": "Complete Support Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/complete",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, state: 'reconcile_required', externalReference: 'crm-partial-' + $json.actionId }) }}",
+        "options": {}
+      },
+      "id": "anc-wf1-complete-partial-review",
+      "name": "Complete Partial Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
+      "position": [1840, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/complete",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actionId: $('Expand Claimed Events').first().json.actionId, tenantId: $('Expand Claimed Events').first().json.tenantId, state: 'reconcile_required', externalReference: 'crm-reconcile-' + $('Expand Claimed Events').first().json.actionId }) }}",
+        "options": {}
+      },
+      "id": "anc-wf1-complete-reconciliation",
+      "name": "Complete CRM Reconciliation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3940, 180]
+    },
+    {
+      "parameters": { "jsCode": "const input = $('Expand Claimed Events').first().json; return [{ json: { accepted: false, status: 'reconcile_required', actionId: input.actionId, message: 'Your request is registered and requires review before completion.' } }];" },
+      "id": "anc-wf1-return-reconciliation",
+      "name": "Return CRM Reconciliation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4160, 180]
     },
     {
       "parameters": { "jsCode": "const input = $('Prepare Remote CRM Decision').first().json; return [{ json: { accepted: true, status: 'registered', actionId: input.actionId, leadId: input.leadId, remoteCrm: input.remoteCrm ?? null, message: 'Your request is registered. We will continue processing it asynchronously.' } }];" },
@@ -262,7 +331,7 @@
       "position": [3720, 20]
     },
     {
-      "parameters": { "jsCode": "return [{ json: { accepted: true, status: 'queued', actionId: $json.actionId, message: 'Your request is registered and will be reviewed asynchronously.' } }];" },
+      "parameters": { "jsCode": "return [{ json: { accepted: true, status: 'reconcile_required', actionId: $('Multi-Intent Routing').first().json.actionId, message: 'Your request is registered and will be reviewed asynchronously.' } }];" },
       "id": "anc-wf1-nonsales",
       "name": "Return Support or Human Review",
       "type": "n8n-nodes-base.code",
@@ -270,7 +339,7 @@
       "position": [1180, 300]
     },
     {
-      "parameters": { "jsCode": "return [{ json: { accepted: false, status: 'partial', actionId: $json.actionId, message: 'Your request is registered. Sara will ask for the remaining required details in chat.' } }];" },
+      "parameters": { "jsCode": "return [{ json: { accepted: false, status: 'reconcile_required', actionId: $('Extract and Merge Lead Fields').first().json.actionId, message: 'Your request is registered. Sara will ask for the remaining required details in chat.' } }];" },
       "id": "anc-wf1-partial",
       "name": "Return Partial Lead",
       "type": "n8n-nodes-base.code",
@@ -284,20 +353,23 @@
     "Authenticate and Claim Event": { "main": [[{ "node": "Expand Claimed Events", "type": "main", "index": 0 }]] },
     "Expand Claimed Events": { "main": [[{ "node": "Multi-Intent Routing", "type": "main", "index": 0 }]] },
     "Multi-Intent Routing": { "main": [[{ "node": "Commercial Opportunity?", "type": "main", "index": 0 }]] },
-    "Commercial Opportunity?": { "main": [[{ "node": "Extract and Merge Lead Fields", "type": "main", "index": 0 }], [{ "node": "Return Support or Human Review", "type": "main", "index": 0 }]] },
+    "Commercial Opportunity?": { "main": [[{ "node": "Extract and Merge Lead Fields", "type": "main", "index": 0 }], [{ "node": "Complete Support Review", "type": "main", "index": 0 }]] },
     "Extract and Merge Lead Fields": { "main": [[{ "node": "Required Lead Data Present?", "type": "main", "index": 0 }]] },
-    "Required Lead Data Present?": { "main": [[{ "node": "Internal CRM Upsert", "type": "main", "index": 0 }], [{ "node": "Return Partial Lead", "type": "main", "index": 0 }]] },
-    "Internal CRM Upsert": { "main": [[{ "node": "Lead Scoring and Summary", "type": "main", "index": 0 }]] },
+    "Required Lead Data Present?": { "main": [[{ "node": "Internal CRM Upsert", "type": "main", "index": 0 }], [{ "node": "Complete Partial Review", "type": "main", "index": 0 }]] },
+    "Internal CRM Upsert": { "main": [[{ "node": "Lead Scoring and Summary", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
     "Lead Scoring and Summary": { "main": [[{ "node": "Persist Score and Summary", "type": "main", "index": 0 }]] },
-    "Persist Score and Summary": { "main": [[{ "node": "Prepare Remote CRM Decision", "type": "main", "index": 0 }]] },
+    "Persist Score and Summary": { "main": [[{ "node": "Prepare Remote CRM Decision", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
     "Prepare Remote CRM Decision": { "main": [[{ "node": "Remote CRM Qualification Gate", "type": "main", "index": 0 }]] },
     "Remote CRM Qualification Gate": { "main": [[{ "node": "Fetch Authorized Remote CRM Payload", "type": "main", "index": 0 }], [{ "node": "Complete Internal Registration", "type": "main", "index": 0 }]] },
-    "Fetch Authorized Remote CRM Payload": { "main": [[{ "node": "Remote CRM Create Lead", "type": "main", "index": 0 }]] },
-    "Remote CRM Create Lead": { "main": [[{ "node": "Validate Remote CRM Lead ID", "type": "main", "index": 0 }]] },
-    "Validate Remote CRM Lead ID": { "main": [[{ "node": "Internal CRM Remote ID Callback", "type": "main", "index": 0 }]] },
-    "Internal CRM Remote ID Callback": { "main": [[{ "node": "Complete Async Registration", "type": "main", "index": 0 }]] },
-    "Complete Async Registration": { "main": [[{ "node": "Return Completed Registration", "type": "main", "index": 0 }]] },
-    "Complete Internal Registration": { "main": [[{ "node": "Return Internal Registration", "type": "main", "index": 0 }]] }
+    "Fetch Authorized Remote CRM Payload": { "main": [[{ "node": "Remote CRM Create Lead", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
+    "Remote CRM Create Lead": { "main": [[{ "node": "Validate Remote CRM Lead ID", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
+    "Validate Remote CRM Lead ID": { "main": [[{ "node": "Internal CRM Remote ID Callback", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
+    "Internal CRM Remote ID Callback": { "main": [[{ "node": "Complete Async Registration", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
+    "Complete Async Registration": { "main": [[{ "node": "Return Completed Registration", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
+    "Complete Internal Registration": { "main": [[{ "node": "Return Internal Registration", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
+    "Complete Support Review": { "main": [[{ "node": "Return Support or Human Review", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
+    "Complete Partial Review": { "main": [[{ "node": "Return Partial Lead", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
+    "Complete CRM Reconciliation": { "main": [[{ "node": "Return CRM Reconciliation", "type": "main", "index": 0 }]] }
   },
   "active": false,
   "settings": { "executionOrder": "v1" },

@@ -42,6 +42,26 @@ describe('Redis event orchestration primitives', () => {
     expect(bus.acknowledged).toEqual(['1-0', '1-1']);
   });
 
+  it('accepts an immediate webhook response while the workflow continues asynchronously', async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(202, { 'content-type': 'application/json' }).end(JSON.stringify({ accepted: true }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind to a TCP port.');
+    try {
+      const store = new MemoryStore();
+      const tenantId = randomUUID();
+      const sessionId = randomUUID();
+      const action = await store.createAction({ id: randomUUID(), tenantId, sessionId, workflowKey: 'crm.lead.create', webhookPath: 'lead-capture', intentKey: 'lead.capture', state: 'processing', opaqueReference: 'opaque-async', idempotencyKey: 'async-response', payload: {}, createdAt: new Date().toISOString(), result: null });
+      const event = createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId, sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? 'lead-capture' } });
+      await new N8nEventBridge(store, `http://127.0.0.1:${address.port}`, 'secret', 1_000).dispatch(event);
+      expect((await store.getAction(action.id))?.state).toBe('processing');
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
   it('reconciles and acknowledges a workflow rejection instead of leaving it processing', async () => {
     const server = createServer((_request, response) => { response.writeHead(500).end('workflow failed'); });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
