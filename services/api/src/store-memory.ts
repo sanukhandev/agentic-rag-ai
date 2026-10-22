@@ -205,11 +205,11 @@ export class MemoryStore implements Store {
 
   async createSession(tenantId: string, personaVersionId: string | null = null): Promise<Session> {
     const timestamp = now();
-    const session: Session = { id: randomUUID(), tenantId, createdAt: timestamp, lastActivityAt: timestamp, closedAt: null, personaVersionId, tokenMap: new Map(), conversationState: newConversationState() };
+    const session: Session = { id: randomUUID(), tenantId, createdAt: timestamp, lastActivityAt: timestamp, closedAt: null, personaVersionId, tokenMap: new Map(), conversationState: newConversationState(), stateVersion: 0 };
     this.sessions.set(session.id, session);
     return session;
   }
-  async getSession(id: string): Promise<Session | null> { return this.sessions.get(id) ?? null; }
+  async getSession(id: string): Promise<Session | null> { const existing = this.sessions.get(id); return existing ? structuredClone(existing) : null; }
   async listExpiredSupportingDocuments(tenantId: string, before: string): Promise<SupportingDocument[]> {
     const cutoff = Date.parse(before);
     const leadSessionIds = new Set([...this.crmLeads.values()].map((lead) => lead.sessionId));
@@ -231,7 +231,13 @@ export class MemoryStore implements Store {
     }
     return expired.length;
   }
-  async updateSession(session: Session): Promise<Session> { this.sessions.set(session.id, session); return session; }
+  async updateSession(session: Session): Promise<Session> {
+    const current = this.sessions.get(session.id);
+    if (!current || current.stateVersion !== session.stateVersion) throw new Error('SESSION_STATE_CONFLICT');
+    session.stateVersion = (session.stateVersion ?? 0) + 1;
+    this.sessions.set(session.id, structuredClone(session));
+    return session;
+  }
   async addMessage(message: Message): Promise<Message> { this.messages.set(message.id, message); return message; }
   async updateMessage(message: Message): Promise<Message> { this.messages.set(message.id, message); return message; }
   async listMessages(sessionId: string, tenantId: string, limit?: number): Promise<Message[]> {
