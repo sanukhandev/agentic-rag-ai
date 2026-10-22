@@ -8,7 +8,7 @@ import { createApp, isValidBase64 } from './app.js';
 import { MockWorkflowAdapter, signN8nPayload } from './actions.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import type { EmbeddingProvider } from './embedding.js';
-import type { ChatModel, ModelDraft } from './model.js';
+import type { ChatModel, ModelDraft, QueryNormalizationInput } from './model.js';
 import type { IntentCatalog } from './types.js';
 import { TokenVault } from './privacy.js';
 
@@ -28,6 +28,11 @@ class CapturingModel implements ChatModel {
     const evidence = input.evidence[0];
     return evidence ? { answer: evidence.content, citationIds: [evidence.citation.chunkId], proposedIntent: /contact/i.test(input.maskedMessage) ? 'lead.capture' : null } : { answer: 'No approved evidence supports that answer.', citationIds: [], proposedIntent: null };
   }
+}
+
+class ContextNormalizingModel extends CapturingModel {
+  public readonly normalizationInputs: QueryNormalizationInput[] = [];
+  async normalizeQuery(input: QueryNormalizationInput): Promise<string | null> { this.normalizationInputs.push(input); return input.maskedMessage; }
 }
 
 class InvalidCitationModel implements ChatModel {
@@ -67,6 +72,35 @@ class FailsOnceModel implements ChatModel {
 describe('API vertical slice', () => {
   it('refuses production startup with local model, embedding, workflow or worker fallbacks', () => {
     expect(() => createApp({ nodeEnv: 'production', jwtSecret: 'production-jwt-secret', tokenVault: new TokenVault('production-vault-secret') })).toThrow('Production Azure, embedding, n8n polling and ingestion adapters are required.');
+  });
+
+  it('keeps query normalization disabled by default and tenant-scoped when enabled', async () => {
+    const runtime = createApp({ nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-normalization-rollout@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Normalization Tenant', slug: 'normalization-tenant', adminEmail: 'admin-normalization@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-normalization@example.test', password: 'TenantA1Password' }).expect(200);
+    expect((await api.get('/api/v1/admin/features').set('Authorization', `Bearer ${admin.body.token}`).expect(200)).body).toEqual({ catalogQueryNormalizationEnabled: false });
+    expect((await api.patch('/api/v1/admin/features').set('Authorization', `Bearer ${admin.body.token}`).send({ catalogQueryNormalizationEnabled: true }).expect(200)).body).toEqual({ catalogQueryNormalizationEnabled: true });
+    expect((await runtime.store.getTenant(tenant.body.tenant.id))?.catalogQueryNormalizationEnabled).toBe(true);
+  });
+
+  it('does not reuse a contextual normalization across sessions', async () => {
+    const model = new ContextNormalizingModel();
+    const runtime = createApp({ nodeEnv: 'test', model, catalogQueryNormalizationEnabled: true });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-normalization-cache@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Normalization Cache Tenant', slug: 'normalization-cache-tenant', adminEmail: 'admin-normalization-cache@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-normalization-cache@example.test', password: 'TenantA1Password' }).expect(200);
+    await api.patch('/api/v1/admin/features').set('Authorization', `Bearer ${admin.body.token}`).send({ catalogQueryNormalizationEnabled: true }).expect(200);
+    const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'draft', sourceFileName: 'normalization-cache.xlsx', sourceHash: 'b'.repeat(64), parserVersion: 'test', catalog: { tenantScope: 'normalization-cache-tenant', intents: [{ intentKey: 'lead.capture', displayName: 'Request a demo', description: 'Capture a demo request', category: 'sales', workflowKey: 'crm.lead.create', minimumScore: 50, confidenceThreshold: 0.5, confirmationRequired: true, active: true, priority: 100, versionNote: '' }], signals: [{ intentKey: 'lead.capture', signalId: 'demo', signalType: 'phrase', value: 'I need a demo', language: 'en', matchMode: 'contains', weight: 80, relationGroup: null, notes: '' }], slots: [], relations: [], workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'normalization-cache', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }] } });
+    await runtime.store.publishIntentCatalogVersion(tenant.body.tenant.id, version.id);
+    const first = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: first.body.sessionId, message: 'I ned a demo', clientMessageId: 'normalization-cache-first' }).expect(200);
+    const second = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: second.body.sessionId, message: 'Hello', clientMessageId: 'normalization-cache-context' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: second.body.sessionId, message: 'I ned a demo', clientMessageId: 'normalization-cache-second' }).expect(200);
+    expect(model.normalizationInputs.filter((input) => input.maskedMessage === 'I ned a demo')).toHaveLength(2);
   });
 
   it('rejects invalid usage cost rates', () => {
@@ -629,21 +663,18 @@ describe('API vertical slice', () => {
     await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${platform.body.token}`).set('x-tenant-id', tenant.body.tenant.id).expect(200);
   });
 
-  it('accepts a phone-only contact alternative for CRM sync', async () => {
+  it('rejects phone-only contact data before CRM sync', async () => {
     const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'crm-phone-only-secret' });
     const api = request(runtime.app);
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-crm-phone@example.test', password: 'Platform1Password' }).expect(201);
     const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'CRM Phone Tenant', slug: 'crm-phone-tenant', adminEmail: 'admin-crm-phone@example.test', adminPassword: 'TenantA1Password' }).expect(201);
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
-    const proposal = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need a demo for my company next month. My name is Bob. My phone is +971500000001', clientMessageId: 'crm-phone-only-message' }).expect(200);
-    const actionId = proposal.body.actionProposal.id as string;
-    await api.post(`/api/v1/chat/actions/${actionId}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
-    const action = await runtime.store.getAction(actionId);
+    const incomplete = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need a demo for my company next month. My name is Bob. My phone is +971500000001', clientMessageId: 'crm-phone-only-message' }).expect(200);
+    expect(incomplete.body.actionProposal).toBeNull();
+    expect(incomplete.body.answer).toContain('email address');
+    const action = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'lead.capture', intentKey: 'lead.capture', intentScore: 80, intentConfidence: 0.9, catalogVersionId: null, idempotencyKey: 'crm-phone-only-action', state: 'approved', opaqueReference: 'crm-phone-only-reference', payload: { name: '[NAME_1]', phone: '[PHONE_1]', contactConsent: true }, createdAt: new Date().toISOString(), result: null });
     const messages = await runtime.store.listMessages(session.body.sessionId, tenant.body.tenant.id);
-    const stored = await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-phone-only-secret').send({ actionId, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: action?.payload, intent: action?.intentKey ?? 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })), completeAction: false }).expect(201);
-    await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/summary`).set('x-agentic-internal-secret', 'crm-phone-only-secret').send({ tenantId: tenant.body.tenant.id, summary: 'Phone-only CRM regression.', status: 'completed' }).expect(200);
-    const remotePayload = await api.post(`/api/v1/internal/crm/leads/${stored.body.lead.id}/remote-payload`).set('x-agentic-internal-secret', 'crm-phone-only-secret').send({ tenantId: tenant.body.tenant.id, actionId }).expect(200);
-    expect(remotePayload.body).toMatchObject({ name: 'Bob', email: '', phone: '+971500000001' });
+    await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-phone-only-secret').send({ actionId: action.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: action.payload, intent: action.intentKey, score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })), completeAction: false }).expect(422).expect((response) => expect(response.body.error.code).toBe('LEAD_VALIDATION_FAILED'));
   });
 
   it('refuses an expired proposal without recording consent or claiming registration', async () => {

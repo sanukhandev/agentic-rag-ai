@@ -8,7 +8,7 @@ import { cacheKey, createCache, type CacheStore } from './cache.js';
 import { channelAuthMiddleware, ChannelSecretVault, getChannel, type StaticChannelAuth } from './channel-auth.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, presentKnowledgeText, rankChunksWithVector } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
-import { conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, permittedLanguageReply, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
+import { conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogSlotQuestion, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
 import { newConversationState, phaseFor, prompt } from './conversation-state.js';
@@ -50,7 +50,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerHealthRoutes } from './routes/health.js';
 
-type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null; normalizationAttempts: number; normalizationFallbacks: number; normalizationLatencyMs: number };
+type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null; normalizationAttempts: number; normalizationFallbacks: number; normalizationFailures: number; normalizationLatencyMs: number };
 export type RateLimitEntry = { count: number; resetAt: number };
 export const pruneExpiredRateLimits = (entries: Map<string, RateLimitEntry>, now = Date.now()): void => {
   for (const [key, entry] of entries) if (entry.resetAt <= now) entries.delete(key);
@@ -126,8 +126,10 @@ const canonicalKnowledgeText = (input: string): string => sanitizeKnowledgeText(
 
 const crmDedupeKey = (tenantId: string, leadData: { email?: string; phone?: string }, session: Session, tokenVault: TokenVault, secret: string): string => {
   const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm');
-  const identity = leadData.email ? `email:${rehydrate(leadData.email).trim().toLowerCase()}` : leadData.phone ? `phone:${rehydrate(leadData.phone).replace(/\D/g, '')}` : '';
-  if (!identity) throw new HttpError(422, 'LEAD_IDENTITY_REQUIRED', 'A lead requires an email address or phone number.');
+  const email = leadData.email ? rehydrate(leadData.email).trim().toLowerCase() : '';
+  const phone = leadData.phone ? rehydrate(leadData.phone).replace(/\D/g, '') : '';
+  if (!email || !phone) throw new HttpError(422, 'LEAD_IDENTITY_REQUIRED', 'A lead requires both an email address and phone number.');
+  const identity = `email:${email}:phone:${phone}`;
   return createHmac('sha256', secret).update(`crm-lead:${tenantId}:${identity}`).digest('hex');
 };
 
@@ -206,7 +208,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const readCacheTtl = (value: number | undefined, name: string, fallback: number, max: number): number => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return fallback; const parsed = Number(raw); if (!Number.isInteger(parsed) || parsed < 0 || parsed > max) throw new Error(`${name} must be an integer between 0 and ${max}.`); return parsed; };
   const readRateLimit = (value: number | undefined, name: string, fallback: number, max: number): number => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return fallback; const parsed = Number(raw); if (!Number.isInteger(parsed) || parsed < 1 || parsed > max) throw new Error(`${name} must be an integer between 1 and ${max}.`); return parsed; };
   const chatResponseCacheTtlSeconds = readCacheTtl(dependencies.chatResponseCacheTtlSeconds, 'CHAT_RESPONSE_CACHE_TTL_SECONDS', 60, 300);
-  const catalogQueryNormalizationEnabled = dependencies.catalogQueryNormalizationEnabled ?? process.env.CATALOG_QUERY_NORMALIZATION_ENABLED !== 'false';
+  const catalogQueryNormalizationEnabled = dependencies.catalogQueryNormalizationEnabled ?? process.env.CATALOG_QUERY_NORMALIZATION_ENABLED === 'true';
   const workflowStatusRank: Record<string, number> = { none: 0, queued: 1, processing: 2, reconcile_required: 3, failed: 3, succeeded: 4 };
   const mergeConcurrentConversationState = (latest: NonNullable<Session['conversationState']>, candidate: NonNullable<Session['conversationState']>): NonNullable<Session['conversationState']> => {
     const latestWins = (workflowStatusRank[latest.workflowStatus] ?? 0) > (workflowStatusRank[candidate.workflowStatus] ?? 0);
@@ -234,24 +236,28 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       return store.updateSession(retry);
     }
   };
-  let normalizerFailures = 0;
-  let normalizerBlockedUntil = 0;
-  const normalizeCatalogQuery = async (tenantId: string, catalogVersionId: string, input: QueryNormalizationInput, fallback: string): Promise<{ value: string; usedFallback: boolean }> => {
-    if (!model.normalizeQuery || !catalogQueryNormalizationEnabled || Date.now() < normalizerBlockedUntil) return { value: fallback, usedFallback: true };
-    const key = cacheKey('catalog-normalized-query-v2', tenantId, catalogVersionId, input.maskedMessage);
+  const normalizerHealth = new Map<string, { failures: number; blockedUntil: number }>();
+  const normalizeCatalogQuery = async (tenantId: string, catalogVersionId: string, input: QueryNormalizationInput, fallback: string): Promise<{ value: string; usedFallback: boolean; failed: boolean }> => {
+    const health = normalizerHealth.get(tenantId) ?? { failures: 0, blockedUntil: 0 };
+    normalizerHealth.set(tenantId, health);
+    if (!model.normalizeQuery || !catalogQueryNormalizationEnabled || Date.now() < health.blockedUntil) return { value: fallback, usedFallback: true, failed: Date.now() < health.blockedUntil };
+    const contextDigest = contentHash(JSON.stringify((input.conversation ?? []).slice(-8).map((turn) => ({ role: turn.role, content: turn.content.slice(-1_000) }))));
+    const key = cacheKey('catalog-normalized-query-v3', tenantId, catalogVersionId, input.selectedIntentKey ?? '', contextDigest, input.maskedMessage);
     const cached = await cache.get<string>(key);
-    if (cached) return { value: cached, usedFallback: false };
+    if (cached) return { value: cached, usedFallback: false, failed: false };
     try {
       const normalized = await model.normalizeQuery(input);
-      normalizerFailures = 0;
-      if (!normalized) return { value: fallback, usedFallback: true };
+      if (!normalized) throw new Error('normalization unavailable');
       const safe = normalizeConversationQuery(normalized);
+      if (!preservesNormalizationFacts(input.maskedMessage, safe)) throw new Error('normalization changed protected facts');
+      health.failures = 0;
+      health.blockedUntil = 0;
       await cache.set(key, safe, Math.min(300, Math.max(1, chatResponseCacheTtlSeconds)));
-      return { value: safe, usedFallback: false };
+      return { value: safe, usedFallback: false, failed: false };
     } catch {
-      normalizerFailures += 1;
-      if (normalizerFailures >= 3) normalizerBlockedUntil = Date.now() + 30_000;
-      return { value: fallback, usedFallback: true };
+      health.failures += 1;
+      if (health.failures >= 3) health.blockedUntil = Date.now() + 30_000;
+      return { value: fallback, usedFallback: true, failed: true };
     }
   };
   const rateLimitMax = readRateLimit(dependencies.rateLimitMax, 'API_RATE_LIMIT_MAX', nodeEnv === 'development' ? 600 : 120, 100_000);
@@ -283,7 +289,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const gateway = new ActionGateway(store, workflow);
   const app = express();
   const rateLimits = new Map<string, RateLimitEntry>();
-  const newTelemetry = (): Telemetry => ({ requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null, chatResponses: 0, groundedResponses: 0, abstentions: 0, actionProposals: 0, estimatedInputTokens: 0, estimatedOutputTokens: 0, estimatedCostUsd: inputCostUsdPerMillion !== null && outputCostUsdPerMillion !== null ? 0 : null, normalizationAttempts: 0, normalizationFallbacks: 0, normalizationLatencyMs: 0 });
+  const newTelemetry = (): Telemetry => ({ requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null, chatResponses: 0, groundedResponses: 0, abstentions: 0, actionProposals: 0, estimatedInputTokens: 0, estimatedOutputTokens: 0, estimatedCostUsd: inputCostUsdPerMillion !== null && outputCostUsdPerMillion !== null ? 0 : null, normalizationAttempts: 0, normalizationFallbacks: 0, normalizationFailures: 0, normalizationLatencyMs: 0 });
   const telemetry = newTelemetry();
   const tenantTelemetry = new Map<string, Telemetry>();
   const recordChatOutcome = (tenantId: string, grounded: boolean, proposedAction: boolean, inputTokens: number, outputTokens: number): void => {
@@ -299,12 +305,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     }
     tenantTelemetry.set(tenantId, scoped);
   };
-  const recordNormalization = (tenantId: string, usedFallback: boolean, elapsedMs: number): void => {
+  const recordNormalization = (tenantId: string, usedFallback: boolean, failed: boolean, elapsedMs: number): void => {
     const scoped = tenantTelemetry.get(tenantId) ?? newTelemetry();
-    for (const value of [telemetry, scoped]) { value.normalizationAttempts += 1; value.normalizationLatencyMs += elapsedMs; if (usedFallback) value.normalizationFallbacks += 1; }
+    for (const value of [telemetry, scoped]) { value.normalizationAttempts += 1; value.normalizationLatencyMs += elapsedMs; if (usedFallback) value.normalizationFallbacks += 1; if (failed) value.normalizationFailures += 1; }
     tenantTelemetry.set(tenantId, scoped);
   };
-  const observedTelemetry = (value: Telemetry) => ({ requests: value.requests, serverErrors: value.serverErrors, averageLatencyMs: value.requests ? Math.round(value.totalLatencyMs / value.requests) : 0, lastRequestAt: value.lastRequestAt, chatResponses: value.chatResponses, groundedResponses: value.groundedResponses, abstentions: value.abstentions, actionProposals: value.actionProposals, groundingRate: value.chatResponses ? value.groundedResponses / value.chatResponses : 0, abstentionRate: value.chatResponses ? value.abstentions / value.chatResponses : 0, estimatedInputTokens: value.estimatedInputTokens, estimatedOutputTokens: value.estimatedOutputTokens, estimatedCostUsd: value.estimatedCostUsd, normalizationAttempts: value.normalizationAttempts, normalizationFallbacks: value.normalizationFallbacks, normalizationAverageLatencyMs: value.normalizationAttempts ? Math.round(value.normalizationLatencyMs / value.normalizationAttempts) : 0 });
+  const observedTelemetry = (value: Telemetry) => ({ requests: value.requests, serverErrors: value.serverErrors, averageLatencyMs: value.requests ? Math.round(value.totalLatencyMs / value.requests) : 0, lastRequestAt: value.lastRequestAt, chatResponses: value.chatResponses, groundedResponses: value.groundedResponses, abstentions: value.abstentions, actionProposals: value.actionProposals, groundingRate: value.chatResponses ? value.groundedResponses / value.chatResponses : 0, abstentionRate: value.chatResponses ? value.abstentions / value.chatResponses : 0, estimatedInputTokens: value.estimatedInputTokens, estimatedOutputTokens: value.estimatedOutputTokens, estimatedCostUsd: value.estimatedCostUsd, normalizationAttempts: value.normalizationAttempts, normalizationFallbacks: value.normalizationFallbacks, normalizationFailures: value.normalizationFailures, normalizationAverageLatencyMs: value.normalizationAttempts ? Math.round(value.normalizationLatencyMs / value.normalizationAttempts) : 0 });
 
   app.disable('x-powered-by');
   app.use((req: AuthedRequest, res: Response, next: NextFunction) => { req.requestId = req.header('x-request-id') ?? randomUUID(); res.setHeader('x-request-id', req.requestId); next(); });
@@ -826,7 +832,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const pendingCatalogIntent = state.pendingPrompt && state.selectedIntentKey && state.catalogVersionId === publishedCatalog?.id
         ? state.selectedIntentKey
         : state.workflowStatus !== 'queued' && state.contactConsent !== 'granted' && typeof lastCatalogAssistant?.response?.catalogIntentKey === 'string' && typeof lastCatalogAssistant.response.catalogVersionId === 'string' && typeof lastCatalogAssistant.response.catalogSlotKey === 'string' && lastCatalogAssistant.response.catalogSlotKey && lastCatalogAssistant.response.catalogVersionId === publishedCatalog?.id ? lastCatalogAssistant.response.catalogIntentKey : null;
-      const pendingConsentAction = publishedCatalog && pendingCatalogIntent ? (await store.listActions(session.tenantId)).find((action) => action.sessionId === session.id && action.catalogVersionId === publishedCatalog.id && action.intentKey === pendingCatalogIntent && action.payload.contactConsent === true) : null;
+      const sessionActions = (await store.listActions(session.tenantId)).filter((action) => action.sessionId === session.id);
+      const pendingConsentAction = publishedCatalog && pendingCatalogIntent ? sessionActions.find((action) => action.catalogVersionId === publishedCatalog.id && action.intentKey === pendingCatalogIntent && action.payload.contactConsent === true) : null;
       const pendingCatalogValues: Record<string, string> = { ...state.slotValues, ...(lastCatalogAssistant?.response?.catalogSlotValues && typeof lastCatalogAssistant.response.catalogSlotValues === 'object' && !Array.isArray(lastCatalogAssistant.response.catalogSlotValues) ? Object.fromEntries(Object.entries(lastCatalogAssistant.response.catalogSlotValues).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {}), ...(pendingConsentAction?.state === 'approved' || pendingConsentAction?.state === 'processing' || pendingConsentAction?.state === 'completed' ? { contact_consent: 'true' } : {}) };
       const pendingSlotKey = state.pendingPrompt ? state.pendingPrompt.slotKey : lastCatalogAssistant?.response?.catalogSlotKey;
       const pendingSlot = publishedCatalog && pendingCatalogIntent && typeof pendingSlotKey === 'string' ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === pendingCatalogIntent && slot.slotKey === pendingSlotKey) : null;
@@ -850,11 +857,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const recentMessages = intent === null ? history.filter((message) => message.id !== userMessage.id).slice(-contextWindowMessages) : [];
       const conversation = recentMessages.map((message) => ({ role: message.role, content: message.maskedContent }));
       let normalizedMessage = deterministicMessage;
-      if (publishedCatalog && model.normalizeQuery && catalogQueryNormalizationEnabled && (useCatalogContext || currentCatalogResolution?.reason === 'no_signal' || currentCatalogResolution?.reason === 'below_threshold' || currentCatalogResolution?.ambiguous)) {
+      if (publishedCatalog && model.normalizeQuery && catalogQueryNormalizationEnabled && tenant.catalogQueryNormalizationEnabled && (useCatalogContext || currentCatalogResolution?.reason === 'no_signal' || currentCatalogResolution?.reason === 'below_threshold' || currentCatalogResolution?.ambiguous)) {
         try {
           const normalizationStartedAt = Date.now();
-          const result = await normalizeCatalogQuery(session.tenantId, publishedCatalog.id, { maskedMessage, catalog: publishedCatalog.catalog, conversation }, deterministicMessage);
-          recordNormalization(session.tenantId, result.usedFallback, Date.now() - normalizationStartedAt);
+          const result = await normalizeCatalogQuery(session.tenantId, publishedCatalog.id, { maskedMessage, catalog: publishedCatalog.catalog, conversation, selectedIntentKey: state.selectedIntentKey }, deterministicMessage);
+          recordNormalization(session.tenantId, result.usedFallback, result.failed, Date.now() - normalizationStartedAt);
           const candidate = result.value;
           assertKnownTokens(session, candidate, tokenVault);
           normalizedMessage = candidate;
@@ -866,7 +873,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const intentContextQuery = [normalizedMessage, ...intentContext].join('\n');
       const leadData = mergeLeadData(pendingCatalogValues as LeadData, ...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), currentLeadData);
       const catalogSlotValues: Record<string, string> = { ...pendingCatalogValues, ...Object.fromEntries(recentMessages.filter((message) => message.role === 'user').flatMap((message) => Object.entries(extractLeadData(message.maskedContent)))), ...(extractLeadData(maskedMessage) as Record<string, string>), ...pendingCatalogValueData };
-      const leadReady = Boolean(leadData.name && (leadData.email || leadData.phone));
+      const leadReady = Boolean(leadData.name && leadData.email && leadData.phone);
       const intentContinuity = publishedCatalog ? resolveIntentContinuity(publishedCatalog, { currentText: normalizedMessage, contextText: intentContextQuery, slotValues: catalogSlotValues, selectedIntentKey: state.selectedIntentKey, pendingPromptType: state.pendingPrompt?.type ?? null }) : null;
       let catalogResolution = intentContinuity?.primary ?? null;
       // Consent is purpose-bound. A strong, newly requested intent must not inherit
@@ -958,8 +965,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const collectedSlotValues = Object.fromEntries(Object.entries(catalogSlotValues).filter(([key]) => !['name', 'email', 'phone', 'contact_consent'].includes(key)));
       const actionLeadData = { ...leadData, ...(Object.keys(collectedSlotValues).length ? { slotValues: collectedSlotValues } : {}), ...(catalogResolution?.interest ? { interest: catalogResolution.interest } : {}), ...(consentActionReady ? { contactConsent: false } : catalogSlotValues.contact_consent === 'true' ? { contactConsent: true } : !catalogResolution ? { contactConsent: false } : {}) };
       const actionAlreadySubmitted = Boolean(pendingConsentAction && ['approved', 'processing', 'completed'].includes(pendingConsentAction.state));
-      const workflowAlreadyQueued = ['queued', 'processing', 'succeeded'].includes(state.workflowStatus);
-      const shouldProposeAction = !postCaptureFollowUp && (catalogResolution ? !workflowAlreadyQueued && !actionAlreadySubmitted && !consentDenied && !crmContactMissing && (catalogResolution.actionAllowed || consentActionReady) : draft.proposedIntent === 'lead.capture' && leadIntent && leadReady);
+      const intentActionAlreadySubmitted = Boolean(catalogResolution?.intentKey && sessionActions.some((candidate) => (candidate.intentKey ?? candidate.workflowKey) === catalogResolution.intentKey && ['awaiting_confirmation', 'approved', 'processing', 'completed'].includes(candidate.state)));
+      const shouldProposeAction = !postCaptureFollowUp && (catalogResolution ? !intentActionAlreadySubmitted && !actionAlreadySubmitted && !consentDenied && !crmContactMissing && (catalogResolution.actionAllowed || consentActionReady) : draft.proposedIntent === 'lead.capture' && leadIntent && leadReady);
       const action = shouldProposeAction ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, actionLeadData, catalogResolution ? { workflowKey: catalogResolution.workflowKey ?? 'lead.capture', intentKey: catalogResolution.intentKey ?? 'lead.capture', intentScore: catalogResolution.score, intentConfidence: catalogResolution.confidence, catalogVersionId: catalogResolution.catalogVersionId, webhookPath: publishedCatalog?.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution.workflowKey)?.webhookPath ?? 'lead-capture' } : undefined) : null;
       const pendingCatalogState = !postCaptureFollowUp && publishedCatalog && catalogResolution?.intentKey && (catalogResolution.missingSlots.length > 0 || nextPrompt) ? { catalogIntentKey: catalogResolution.intentKey, catalogVersionId: catalogResolution.catalogVersionId, catalogSlotKey: nextPrompt && (nextPrompt.type === 'slot' || nextPrompt.type === 'consent') ? catalogResolution.missingSlots[0] ?? null : null, catalogSlotValues, pendingPromptId: nextPrompt?.id ?? null } : null;
       const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, maskedAnswer, tokenVault), grounded, conversational: casualFallback || leadCollection || catalogClarification, citations: safeCitations, actionProposal: action ? { id: action.id, intent: action.workflowKey, consentRequired: consentActionReady || !catalogResolution, confirmation: consentActionReady || !catalogResolution ? 'I consent to the use of my contact details to register this request.' : 'Your contact request is ready to submit.', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, pendingPromptId: nextPrompt?.id ?? null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
@@ -1078,8 +1085,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const rehydratedPhone = leadData.phone ? rehydrateForSession(session, leadData.phone, tokenVault, 'admin_crm') : '';
       const validName = Boolean(rehydratedName && isValidLeadName(rehydratedName));
       const validContact = Boolean(
-        (rehydratedEmail && isValidLeadEmail(rehydratedEmail))
-        || (rehydratedPhone && isValidLeadPhone(rehydratedPhone))
+        rehydratedEmail && isValidLeadEmail(rehydratedEmail)
+        && rehydratedPhone && isValidLeadPhone(rehydratedPhone)
       );
       const conversationText = messages.map((message) => message.maskedContent).join(' ');
       const intentDefinition = catalog?.catalog.intents.find((intent) => intent.intentKey === authorizedIntent);
@@ -1168,7 +1175,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const session = await store.getSession(lead.sessionId);
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Lead session not found.');
       const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm');
-      if (!lead.validationPass || !lead.leadData.name || (!lead.leadData.email && !lead.leadData.phone) || action.payload.contactConsent !== true) throw new HttpError(422, 'REMOTE_CONTACT_INCOMPLETE', 'The lead has no valid contact data for remote CRM sync.');
+      if (!lead.validationPass || !lead.leadData.name || !lead.leadData.email || !lead.leadData.phone || action.payload.contactConsent !== true) throw new HttpError(422, 'REMOTE_CONTACT_INCOMPLETE', 'The lead requires a valid name, email and phone for remote CRM sync.');
       const payload = { name: rehydrate(lead.leadData.name), company: lead.leadData.slotValues?.company ? rehydrate(lead.leadData.slotValues.company) : '', email: lead.leadData.email ? rehydrate(lead.leadData.email) : '', phone: lead.leadData.phone ? rehydrate(lead.leadData.phone) : '', description: rehydrate(lead.summary ?? `Intent: ${lead.intent}`) };
       await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'crm.lead.remote_payload_issued', metadata: { leadId: lead.id, actionId: action.id }, createdAt: new Date().toISOString() });
       res.json(payload);

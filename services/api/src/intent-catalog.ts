@@ -267,10 +267,10 @@ export const resolveIntentContinuity = (version: IntentCatalogVersion, input: In
     const score = Math.max(selected.score, selected.intent.minimumScore, Math.ceil(selected.intent.confidenceThreshold * 100));
     primary = resolutionFrom(version, [{ ...selected, score, confidence: Math.min(1, score / 100) }]);
   } else if (selected && best && best.intent.intentKey !== selected.intent.intentKey) {
-    const explicitCurrent = currentCandidates[0]?.intent.intentKey === best.intent.intentKey;
-    const currentIsStrong = Boolean(currentCandidates[0] && currentCandidates[0].score >= currentCandidates[0].intent.minimumScore);
-    const switchPrimary = explicitCurrent && currentIsStrong && !relatedIntent(version, selected.intent.intentKey, best.intent.intentKey) && best.score >= selected.score + 15;
-    primary = switchPrimary ? context : resolutionFrom(version, [selected, ...contextCandidates.filter((candidate) => candidate.intent.intentKey !== selected.intent.intentKey)]);
+    const currentTop = currentCandidates[0];
+    const currentIsStrong = Boolean(currentTop && currentTop.score >= currentTop.intent.minimumScore && currentTop.confidence >= currentTop.intent.confidenceThreshold);
+    const switchPrimary = Boolean(currentTop && currentTop.intent.intentKey !== selected.intent.intentKey && currentIsStrong && !relatedIntent(version, selected.intent.intentKey, currentTop.intent.intentKey));
+    primary = switchPrimary && currentTop ? resolutionFrom(version, [currentTop]) : resolutionFrom(version, [selected, ...contextCandidates.filter((candidate) => candidate.intent.intentKey !== selected.intent.intentKey)]);
   } else if (selected && !best) {
     primary = resolutionFrom(version, [selected]);
   }

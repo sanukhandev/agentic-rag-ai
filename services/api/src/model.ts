@@ -15,6 +15,7 @@ export interface QueryNormalizationInput {
   maskedMessage: string;
   catalog: Pick<IntentCatalog, 'intents' | 'signals' | 'relations'>;
   conversation?: ConversationTurn[];
+  selectedIntentKey?: string | null;
 }
 
 export interface ModelFollowUpContext {
@@ -50,6 +51,16 @@ export const normalizeConversationQuery = (text: string): string => text
   .slice(0, 4_000);
 
 const containsUnmaskedContact = (text: string): boolean => /(?:[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\+?\d[\d\s().-]{6,}\d)/u.test(text);
+const normalizationNumbers = (text: string): string[] => normalizeConversationQuery(text).match(/\b\d+(?:\.\d+)?\b/gu) ?? [];
+const normalizationNegation = (text: string): boolean => /\b(?:no|not|never|don't|do not|doesn't|does not|didn't|did not|without|neither|nor|can't|cannot|won't|will not)\b|(?:لا|ليس|لست|لن|بدون)/iu.test(text);
+const normalizationTokens = (text: string): string[] => text.match(/\[(?:EMAIL|PHONE|NAME)_\d+\]/gu) ?? [];
+
+export const preservesNormalizationFacts = (original: string, normalized: string): boolean => {
+  const sorted = (values: string[]): string[] => [...values].sort();
+  return normalizationNegation(original) === normalizationNegation(normalized)
+    && JSON.stringify(sorted(normalizationNumbers(original))) === JSON.stringify(sorted(normalizationNumbers(normalized)))
+    && JSON.stringify(sorted(normalizationTokens(original))) === JSON.stringify(sorted(normalizationTokens(normalized)));
+};
 
 export const naturalAbstention = (language = 'en'): string => language === 'ar'
   ? 'لا أملك معلومات موثقة عن هذا الموضوع في قاعدة معرفتي الحالية حتى الآن. يمكنني مساعدتك في الموضوعات التي أضيفت إلى معلوماتي المعتمدة، مثل المنتجات أو الخدمات أو المشاريع. ماذا تود أن تستكشف؟'
@@ -81,7 +92,8 @@ export const mergeLeadData = (...values: LeadData[]): LeadData => {
 };
 export const leadCollectionReply = (data: LeadData): string => {
   if (!data.name) return 'I’d be happy to help. What name should I use?';
-  if (!data.email && !data.phone) return 'Thanks. What’s the best email address or phone number to reach you on?';
+  if (!data.email) return 'Thanks. What email address should I use?';
+  if (!data.phone) return 'Thanks. What phone number, including country code, should I use?';
   return 'I have the contact details needed. Please explicitly consent before I register the request.';
 };
 
@@ -96,8 +108,7 @@ export class AzureFoundryModel implements ChatModel {
   constructor(private readonly endpoint: string, private readonly deployment: string, private readonly apiKey: string, private readonly apiVersion = '2024-10-21') { assertExternalEndpoint(endpoint, 'Azure AI'); }
 
   async normalizeQuery(input: QueryNormalizationInput): Promise<string | null> {
-    const fallback = normalizeConversationQuery(input.maskedMessage);
-    if (!this.endpoint || !this.deployment || !this.apiKey) return fallback;
+    if (!this.endpoint || !this.deployment || !this.apiKey) return null;
     const endpoint = this.endpoint.replace(/\/$/u, '');
     const v1 = /\/openai\/v1$/iu.test(endpoint);
     const url = v1
@@ -122,16 +133,17 @@ export class AzureFoundryModel implements ChatModel {
         ],
       }),
     });
-    if (!response.ok) return fallback;
+    if (!response.ok) return null;
     let body: { choices?: Array<{ message?: { content?: unknown } }> };
-    try { body = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> }; } catch { return fallback; }
+    try { body = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> }; } catch { return null; }
     const content = body.choices?.[0]?.message?.content;
-    if (typeof content !== 'string') return fallback;
+    if (typeof content !== 'string') return null;
     let parsed: unknown;
-    try { parsed = JSON.parse(content); } catch { return fallback; }
+    try { parsed = JSON.parse(content); } catch { return null; }
     const result = z.object({ query: z.string().min(1).max(4_000) }).strict().safeParse(parsed);
-    if (!result.success || containsUnmaskedContact(result.data.query)) return fallback;
-    return normalizeConversationQuery(result.data.query);
+    if (!result.success || containsUnmaskedContact(result.data.query)) return null;
+    const normalized = normalizeConversationQuery(result.data.query);
+    return preservesNormalizationFacts(input.maskedMessage, normalized) ? normalized : null;
   }
 
   async draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[]; followUpContext?: ModelFollowUpContext }): Promise<ModelDraft> {

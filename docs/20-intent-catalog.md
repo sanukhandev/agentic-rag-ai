@@ -21,6 +21,14 @@ The model may explain packages, requirements, steps or timelines only when the a
 
 The deterministic catalog prompts and action-status messages remain control-plane messages for slot collection, consent and workflow state. They are not used for post-capture business answers; those answers are generated from retrieved evidence and validated citations.
 
+## Query normalization rollout
+
+Deterministic query cleanup is always available. LLM-assisted catalog normalization is disabled by default and requires both the global `CATALOG_QUERY_NORMALIZATION_ENABLED=true` kill-switch and the tenant feature `catalogQueryNormalizationEnabled=true`, managed through `/api/v1/admin/features`.
+
+The normalizer receives masked text and bounded masked conversation context. Its cache key includes the tenant, catalog version, selected intent and context digest. A failed, unsafe or semantically changed rewrite returns `null`; Node then uses the original deterministic query and records the fallback/failure in tenant telemetry. Negation, quantities and privacy tokens must remain unchanged before a rewrite can influence intent routing.
+
+CRM actions require a valid name, email and phone, plus the normal catalog, consent and qualification gates. A session may create separate actions for separate intents, while an already submitted action for the same intent remains idempotently deduplicated.
+
 ## Workbook contract
 
 `README` is a two-column key/value sheet and must include a tenant scope when the workbook is tenant-specific. The other sheets use the headers in the sample workbook. Intent and workflow keys are stable identifiers; scores and confidence thresholds are server-validated.

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isGreeting, isPermittedLanguage, naturalAbstention, needsConversationContext, normalizeConversationQuery, validateCitations } from './model.js';
+import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isGreeting, isPermittedLanguage, naturalAbstention, needsConversationContext, normalizeConversationQuery, preservesNormalizationFacts, validateCitations } from './model.js';
 
 describe('Azure Foundry model adapter', () => {
   it('normalizes generic formatting without tenant-specific vocabulary', () => {
@@ -86,7 +86,20 @@ describe('Azure Foundry model adapter', () => {
     fetchMock.mockRestore();
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ query: 'Email person@example.com' }) } }] }), { status: 200 }));
-    await expect(model.normalizeQuery({ maskedMessage: 'Email [EMAIL_1]', catalog: { intents: [], signals: [], relations: [] } })).resolves.toBe('Email [EMAIL_1]');
+    await expect(model.normalizeQuery({ maskedMessage: 'Email [EMAIL_1]', catalog: { intents: [], signals: [], relations: [] } })).resolves.toBeNull();
+    vi.restoreAllMocks();
+  });
+
+  it('rejects normalizations that change negation, quantities or privacy tokens', () => {
+    expect(preservesNormalizationFacts('I do not need 2 visas for [NAME_1]', 'I need 2 visas for [NAME_1]')).toBe(false);
+    expect(preservesNormalizationFacts('I need two visas for [NAME_1]', 'I need 2 visas for [NAME_1]')).toBe(true);
+    expect(preservesNormalizationFacts('Email [EMAIL_1]', 'Email [EMAIL_2]')).toBe(false);
+  });
+
+  it('rejects an LLM normalization that changes a quantity', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ query: 'I need 3 visas' }) } }] }), { status: 200 }));
+    const model = new AzureFoundryModel('https://foundry.example', 'gpt-4.1-mini', 'server-key');
+    await expect(model.normalizeQuery({ maskedMessage: 'I need 2 visas', catalog: { intents: [], signals: [], relations: [] } })).resolves.toBeNull();
     vi.restoreAllMocks();
   });
 

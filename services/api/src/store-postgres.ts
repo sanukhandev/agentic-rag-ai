@@ -9,7 +9,7 @@ import { HttpError } from './http/errors.js';
 const iso = (value: Date | string): string => value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 const vectorLiteral = (values: number[]): string => `[${values.join(',')}]`;
 type DbTimestamp = Date | string;
-type TenantRow = { id: string; name: string; slug: string; status?: TenantStatus; public_chat_enabled?: boolean; public_origin?: string | null; created_at: DbTimestamp };
+type TenantRow = { id: string; name: string; slug: string; status?: TenantStatus; public_chat_enabled?: boolean; public_origin?: string | null; catalog_query_normalization_enabled?: boolean; created_at: DbTimestamp };
 type TenantDomainRow = { id: string; tenant_id: string; hostname: string; created_at: DbTimestamp };
 type UserRow = { id: string; email: string; password_hash: string; role: User['role']; tenant_id: string | null; created_at: DbTimestamp };
 type AuthSessionRow = { token_hash: string; user_id: string; expires_at: DbTimestamp; revoked_at: DbTimestamp | null };
@@ -36,6 +36,7 @@ export class PostgresStore implements Store {
   async setTenantStatus(id: string, status: TenantStatus): Promise<Tenant | null> { const result = await this.pool.query('UPDATE tenants SET status=$1 WHERE id=$2 RETURNING *', [status, id]); return result.rows[0] ? this.tenant(result.rows[0]) : null; }
   async setTenantPublicOrigin(id: string, publicOrigin: string | null): Promise<Tenant | null> { const result = await this.pool.query('UPDATE tenants SET public_origin=$1 WHERE id=$2 RETURNING *', [publicOrigin, id]); return result.rows[0] ? this.tenant(result.rows[0]) : null; }
   async setTenantPublicChatEnabled(id: string, enabled: boolean): Promise<Tenant | null> { const result = await this.pool.query('UPDATE tenants SET public_chat_enabled=$1 WHERE id=$2 RETURNING *', [enabled, id]); return result.rows[0] ? this.tenant(result.rows[0]) : null; }
+  async setTenantCatalogQueryNormalizationEnabled(id: string, enabled: boolean): Promise<Tenant | null> { const result = await this.pool.query('UPDATE tenants SET catalog_query_normalization_enabled=$1 WHERE id=$2 RETURNING *', [enabled, id]); return result.rows[0] ? this.tenant(result.rows[0]) : null; }
   async updateUserRole(userId: string, tenantId: string, role: Exclude<User['role'], 'platform_admin' | 'tenant_admin'>): Promise<User | null> { const result = await this.pool.query<UserRow>('UPDATE users SET role=$1 WHERE id=$2 AND tenant_id=$3 AND role <> \'tenant_admin\' RETURNING *', [role, userId, tenantId]); return result.rows[0] ? this.user(result.rows[0]) : null; }
   async listUsers(tenantId: string): Promise<User[]> { const result = await this.pool.query('SELECT * FROM users WHERE tenant_id=$1 ORDER BY created_at', [tenantId]); return result.rows.map((row) => this.user(row)); }
   async listDomains(tenantId: string): Promise<TenantDomain[]> { const result = await this.pool.query<TenantDomainRow>('SELECT id,tenant_id,hostname,created_at FROM tenant_domains WHERE tenant_id=$1 ORDER BY hostname', [tenantId]); return result.rows.map((row) => this.domain(row)); }
@@ -220,7 +221,7 @@ export class PostgresStore implements Store {
     return { sourceCounts: counts, ingestionJobs: jobCounts, sessions: Number(row?.sessions ?? 0), messages: Number(row?.messages ?? 0), actions: Number(row?.actions ?? 0), auditEvents: Number(row?.audit_events ?? 0) };
   }
 
-  private tenant(row: TenantRow): Tenant { return { id: row.id, name: row.name, slug: row.slug, status: row.status ?? 'active', publicChatEnabled: row.public_chat_enabled ?? true, publicOrigin: row.public_origin ?? null, createdAt: iso(row.created_at) }; }
+  private tenant(row: TenantRow): Tenant { return { id: row.id, name: row.name, slug: row.slug, status: row.status ?? 'active', publicChatEnabled: row.public_chat_enabled ?? true, publicOrigin: row.public_origin ?? null, catalogQueryNormalizationEnabled: row.catalog_query_normalization_enabled ?? false, createdAt: iso(row.created_at) }; }
   private channelCredential(row: ChannelCredentialRow): ChannelCredential { return { id: row.id, tenantId: row.tenant_id, channel: row.channel, authMode: row.auth_mode, keyId: row.key_id, secretCiphertext: row.secret_ciphertext, apiKeyHash: row.api_key_hash, active: row.active, createdAt: iso(row.created_at), revokedAt: row.revoked_at ? iso(row.revoked_at) : null }; }
   private domain(row: TenantDomainRow): TenantDomain { return { id: row.id, tenantId: row.tenant_id, hostname: row.hostname, createdAt: iso(row.created_at) }; }
   private user(row: UserRow): User { return { id: row.id, email: row.email, passwordHash: row.password_hash, role: row.role, tenantId: row.tenant_id, createdAt: iso(row.created_at) }; }

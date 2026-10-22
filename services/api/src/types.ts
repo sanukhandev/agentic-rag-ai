@@ -214,6 +214,7 @@ export interface Tenant {
   status: TenantStatus;
   publicChatEnabled: boolean;
   publicOrigin: string | null;
+  catalogQueryNormalizationEnabled: boolean;
   createdAt: string;
 }
 
@@ -483,6 +484,7 @@ export interface Store {
   setTenantStatus(id: string, status: TenantStatus): Promise<Tenant | null>;
   setTenantPublicOrigin(id: string, publicOrigin: string | null): Promise<Tenant | null>;
   setTenantPublicChatEnabled(id: string, enabled: boolean): Promise<Tenant | null>;
+  setTenantCatalogQueryNormalizationEnabled(id: string, enabled: boolean): Promise<Tenant | null>;
   listUsers(tenantId: string): Promise<User[]>;
   listDomains(tenantId: string): Promise<TenantDomain[]>;
   addDomain(input: { tenantId: string; hostname: string }): Promise<TenantDomain>;

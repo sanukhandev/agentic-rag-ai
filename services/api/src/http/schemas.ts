@@ -16,6 +16,7 @@ export const tenantSchema = z.object({ name: z.string().trim().min(2).max(120), 
 export const memberSchema = z.object({ email: z.string().email(), password: passwordSchema, role: z.enum(['tenant_editor', 'tenant_viewer', 'tenant_agent']) });
 export const domainSchema = z.object({ hostname: z.string().trim().toLowerCase().regex(/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/, 'A valid hostname is required.') });
 export const channelSchema = z.object({ publicOrigin: z.union([z.literal(''), z.string().url().refine((value) => { const url = new URL(value); return (url.protocol === 'http:' || url.protocol === 'https:') && url.pathname === '/' && !url.search && !url.hash; }, 'A public origin must be an HTTP(S) origin without a path.')]), publicChatEnabled: z.boolean().optional() });
+export const featureSchema = z.object({ catalogQueryNormalizationEnabled: z.boolean() }).strict();
 export const channelCredentialSchema = z.object({ channel: z.string().trim().toLowerCase().regex(/^[a-z][a-z0-9_-]{1,31}$/, 'Channel must be 2-32 lowercase characters, digits, underscores or hyphens.'), authMode: z.enum(['hmac', 'api_key']).default('hmac') });
 export const personaSchema = z.object({
   name: safePersonaText(80),
