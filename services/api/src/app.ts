@@ -859,7 +859,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       try { assertKnownTokens(session, maskedAnswer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       if (intent === 'farewell') session.closedAt = new Date().toISOString();
       const nextMissingSlot = crmContactMissing ?? catalogResolution?.missingSlots[0] ?? null;
-      const nextPrompt = catalogResolution?.ambiguous || (catalogResolution?.reason === 'below_threshold')
+      const nextPrompt = consentDenied ? null : catalogResolution?.ambiguous || (catalogResolution?.reason === 'below_threshold')
         ? prompt('clarification', catalogResolution.intentKey, null)
         : nextMissingSlot
           ? prompt(consentActionReady ? 'consent' : 'slot', catalogResolution?.intentKey ?? pendingCatalogIntent, nextMissingSlot)
@@ -912,9 +912,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!getAuth(req) && !channel) { enforcePublicOrigin(req, tenant, nodeEnv); enforcePublicChatEnabled(req, tenant); }
       ensureLiveSession(session.lastActivityAt, session.closedAt);
       await activeTenant(store, action.tenantId);
+      if (session.conversationState?.contactConsent === 'denied' && action.payload.contactConsent !== true) throw new HttpError(422, 'CONSENT_DECLINED', 'The contact request was declined.');
       if (action.catalogVersionId && action.payload.contactConsent === false
-        && (session.conversationState?.contactConsent === 'denied'
-          || session.conversationState?.pendingPrompt?.type !== 'consent'
+        && (session.conversationState?.pendingPrompt?.type !== 'consent'
           || session.conversationState.pendingPrompt.intentKey !== action.intentKey
           || session.conversationState.catalogVersionId !== action.catalogVersionId)) {
         throw new HttpError(422, 'CONSENT_PROMPT_REQUIRED', 'Consent must be given for the active, purpose-scoped request.');
