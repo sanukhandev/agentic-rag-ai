@@ -59,6 +59,20 @@ describe('MemoryStore tenant and lifecycle boundaries', () => {
     expect(await store.listMessages(sessionB.id, tenantB.id)).toHaveLength(1);
   });
 
+  it('rejects concurrent stale writes to conversation state', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'Concurrency Tenant', slug: `concurrent-${randomUUID()}` });
+    const session = await store.createSession(tenant.id);
+    const a = await store.getSession(session.id);
+    const b = await store.getSession(session.id);
+    expect(a?.stateVersion).toBe(0);
+    a!.conversationState = { ...a!.conversationState!, selectedIntentKey: 'lead.capture' };
+    await store.updateSession(a!);
+    b!.conversationState = { ...b!.conversationState!, selectedIntentKey: 'other.intent' };
+    await expect(store.updateSession(b!)).rejects.toMatchObject({ status: 409, code: 'SESSION_STATE_CONFLICT' });
+    expect((await store.getSession(session.id))?.conversationState?.selectedIntentKey).toBe('lead.capture');
+  });
+
   it('persists pending prompts and consent state with the session', async () => {
     const store = new MemoryStore();
     const tenant = await store.createTenant({ name: 'Prompt Tenant', slug: `prompt-${randomUUID()}` });
