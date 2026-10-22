@@ -32,6 +32,16 @@ const intents = [
 ];
 const sourceSignals = source.catalog.signals.map((row) => ({ intent_key: row.intentKey, signal_id: row.signalId, signal_type: row.signalType, value: row.value, language: row.language || 'en', match_mode: row.matchMode || 'contains', weight: Number(row.weight ?? 0), relation_group: row.relationGroup || '', notes: row.notes || 'Converted source signal.' }));
 const slots = source.catalog.slots.map((row) => ({ intent_key: row.intentKey, slot_key: row.slotKey, data_type: row.dataType, required: Boolean(row.required), alternative_group: row.alternativeGroup || '', collection_order: Number(row.collectionOrder ?? 0), prompt_key: row.promptKey, validation_rule: row.validationRule, retention_class: row.retentionClass || 'session', quality_weight: Number(row.qualityWeight ?? 0) }));
+// CRM writes require all three independently validated contact slots, never an either/or group.
+for (const [field, order, promptKey, dataType, validationRule] of [
+  ['name', 1, 'lead.ask_name', 'person_name', 'token:NAME'],
+  ['email', 2, 'lead.ask_contact', 'email', 'token:EMAIL'],
+  ['phone', 3, 'lead.ask_phone', 'phone', 'token:PHONE'],
+]) {
+  const current = slots.find((row) => row.intent_key === 'lead.capture' && row.slot_key === field);
+  if (current) { current.required = true; current.alternative_group = ''; }
+  else slots.push({ intent_key: 'lead.capture', slot_key: field, data_type: dataType, required: true, alternative_group: '', collection_order: order, prompt_key: promptKey, validation_rule: validationRule, retention_class: 'pii', quality_weight: 0 });
+}
 const relations = source.catalog.relations.map((row) => ({ source_intent: row.sourceIntent, related_intent: row.relatedIntent, relation_type: row.relationType, trigger_group: row.triggerGroup, score_adjustment: Number(row.scoreAdjustment ?? 0), minimum_cooccurrence: Number(row.minimumCooccurrence ?? 1), clarification_prompt_key: row.clarificationPromptKey }));
 const bindings = [
   { workflow_key: 'crm.lead.create', n8n_workflow_id: 'jMhE7ENPNNtLUFJm', webhook_path: 'lead-capture', payload_contract: 'crm-lead-v1', side_effect_class: 'crm_write', active: false },
@@ -41,8 +51,8 @@ const bindings = [
 const documentRequirements = content.map((row) => ({ source_key: row.sourceKey, document_type: 'source-derived-rag-document', requirement_mode: 'knowledge-source', status: row.status, notes: 'Pattern-redacted; human review required before activation.' }));
 const crmFieldMappings = [
   { provider: 'salesforce', object_name: 'Lead', source_field: 'name', remote_field: 'Name', retention_class: 'pii', required: true },
-  { provider: 'salesforce', object_name: 'Lead', source_field: 'email', remote_field: 'Email', retention_class: 'pii', required: false },
-  { provider: 'salesforce', object_name: 'Lead', source_field: 'phone', remote_field: 'Phone', retention_class: 'pii', required: false },
+  { provider: 'salesforce', object_name: 'Lead', source_field: 'email', remote_field: 'Email', retention_class: 'pii', required: true },
+  { provider: 'salesforce', object_name: 'Lead', source_field: 'phone', remote_field: 'Phone', retention_class: 'pii', required: true },
   { provider: 'salesforce', object_name: 'Lead', source_field: 'summary', remote_field: 'Description', retention_class: 'business_context', required: true },
 ];
 const channelCapabilities = ['web', 'whatsapp', 'email', 'sms', 'voice'].map((channel) => ({ channel, text: true, postback: channel === 'web' || channel === 'whatsapp', attachment: channel === 'web' || channel === 'whatsapp', server_authenticated: true }));
