@@ -10,7 +10,13 @@ test('CRM v2 workflow exports are tenant-neutral and server-authenticated', asyn
     const workflow = JSON.parse(text);
     assert.equal(workflow.active, false, `${file} must not be activated without approval`);
     assert.ok(workflow.nodes.some((node) => node.name === 'Authenticate and Claim Event'));
-    assert.match(text, /N8N_WEBHOOK_SECRET/);
+    assert.doesNotMatch(text, /N8N_WEBHOOK_SECRET|\\$env\\./);
+    const internalRequests = workflow.nodes.filter((node) => node.type === 'n8n-nodes-base.httpRequest');
+    assert.ok(internalRequests.length >= 2, `${file} should have authenticated internal HTTP calls`);
+    for (const node of internalRequests) {
+      assert.equal(node.parameters.authentication, 'genericCredentialType', `${file} ${node.name} requires managed authentication`);
+      assert.equal(node.parameters.genericAuthType, 'httpHeaderAuth');
+    }
     assert.doesNotMatch(text, /client_secret|client_id|password|api[_-]?key|techcarrot4--realforce|salesforce\.com|anc-test|sanu-khan/iu);
     assert.ok(workflow.nodes.some((node) => node.type === 'n8n-nodes-base.webhook'));
   }
