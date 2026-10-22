@@ -705,6 +705,25 @@ describe('API vertical slice', () => {
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ catalogVersionId: 'catalog-v2', selectedIntentKey: 'company.setup', workflowStatus: 'queued', phase: 'QUEUED', pendingPrompt: { id: 'new-intent-prompt' } });
   });
 
+  it('keeps routine review and missing-information outcomes distinct from reconciliation', async () => {
+    const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'internal-secret' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'review-status-platform@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Review Status Tenant', slug: 'review-status-tenant', adminEmail: 'review-status-admin@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const reviewSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const reviewAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: reviewSession.body.sessionId, workflowKey: 'crm.support.review', intentKey: 'support.request', state: 'approved', opaqueReference: 'review-status-action', idempotencyKey: 'review-status-action', payload: {}, createdAt: new Date().toISOString(), result: null });
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: reviewAction.id, tenantId: tenant.body.tenant.id, state: 'human_review', externalReference: 'review-task-1' }).expect(200);
+    expect((await runtime.store.getAction(reviewAction.id))?.state).toBe('human_review');
+    expect((await runtime.store.getAction(reviewAction.id))?.result).toEqual({ externalReference: 'review-task-1' });
+    expect((await runtime.store.getSession(reviewSession.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'human_review', phase: 'HUMAN_REVIEW' });
+    const partialSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const partialAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: partialSession.body.sessionId, workflowKey: 'crm.lead.create', intentKey: 'lead.capture', state: 'approved', opaqueReference: 'partial-status-action', idempotencyKey: 'partial-status-action', payload: {}, createdAt: new Date().toISOString(), result: null });
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: partialAction.id, tenantId: tenant.body.tenant.id, state: 'awaiting_customer', externalReference: 'missing-fields-1' }).expect(200);
+    expect((await runtime.store.getAction(partialAction.id))?.state).toBe('awaiting_customer');
+    expect((await runtime.store.getAction(partialAction.id))?.result).toEqual({ externalReference: 'missing-fields-1' });
+    expect((await runtime.store.getSession(partialSession.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'awaiting_customer', phase: 'SLOT_COLLECTION' });
+  });
+
   it('refuses an expired proposal without recording consent or claiming registration', async () => {
     const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'crm-secret' });
     const api = request(runtime.app);

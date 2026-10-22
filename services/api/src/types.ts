@@ -1,7 +1,7 @@
 export type Role = 'platform_admin' | 'tenant_admin' | 'tenant_editor' | 'tenant_viewer' | 'tenant_agent';
 export type Audience = 'public' | 'internal';
 export type SourceStatus = 'awaiting_review' | 'active' | 'revoked';
-export type ActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'unknown';
+export type ActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'awaiting_customer' | 'human_review' | 'unknown';
 export type TenantStatus = 'provisioning' | 'active' | 'suspended' | 'archived';
 export type IngestionJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 export type SupportingDocumentStatus = 'uploaded' | 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
@@ -39,8 +39,8 @@ export interface OutboxEvent {
   lastError: string | null;
 }
 
-export type ConversationPhase = 'DISCOVERY' | 'INTENT_CLARIFICATION' | 'SLOT_COLLECTION' | 'CONTACT_COLLECTION' | 'CONSENT_PENDING' | 'DOCUMENT_COLLECTION' | 'ACTION_CONFIRMATION' | 'QUEUED' | 'SUCCEEDED' | 'RECONCILE_REQUIRED' | 'FAILED';
-export type ConversationWorkflowStatus = 'none' | 'queued' | 'processing' | 'succeeded' | 'reconcile_required' | 'failed';
+export type ConversationPhase = 'DISCOVERY' | 'INTENT_CLARIFICATION' | 'SLOT_COLLECTION' | 'CONTACT_COLLECTION' | 'CONSENT_PENDING' | 'DOCUMENT_COLLECTION' | 'ACTION_CONFIRMATION' | 'QUEUED' | 'SUCCEEDED' | 'RECONCILE_REQUIRED' | 'HUMAN_REVIEW' | 'FAILED';
+export type ConversationWorkflowStatus = 'none' | 'queued' | 'processing' | 'succeeded' | 'reconcile_required' | 'human_review' | 'awaiting_customer' | 'failed';
 
 export interface PendingPrompt {
   id: string;

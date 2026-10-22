@@ -664,9 +664,13 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
                 ? 'The request could not be completed. Please start a new request.'
                 : state === 'reconcile_required'
                   ? 'Your request is registered, but external confirmation needs review.'
+                : state === 'awaiting_customer'
+                  ? 'Your request is saved; more details are still required.'
+                : state === 'human_review'
+                  ? 'Your request is registered and queued for team review.'
                   : target.actionOutcome;
           }
-          if (state !== 'completed' && state !== 'failed' && state !== 'reconcile_required') this.pollActionStatus(proposalId, attempt + 1);
+          if (state !== 'completed' && state !== 'failed' && state !== 'reconcile_required' && state !== 'awaiting_customer' && state !== 'human_review') this.pollActionStatus(proposalId, attempt + 1);
         },
         error: () => this.pollActionStatus(proposalId, attempt + 1)
       });

@@ -107,7 +107,7 @@ export class N8nEventBridge {
       if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
         if (event.actionId) {
           const action = await this.store.getAction(event.actionId);
-          if (action && action.tenantId === event.tenantId && !['completed', 'failed'].includes(action.state)) {
+          if (action && action.tenantId === event.tenantId && !['completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review'].includes(action.state)) {
             await this.store.updateAction({ ...action, state: 'reconcile_required' });
             await this.store.addAudit({ id: randomUUID(), tenantId: event.tenantId, actorId: null, eventName: 'workflow.reconcile_required', metadata: { actionId: action.id, eventId: event.eventId }, createdAt: new Date().toISOString() });
           }
@@ -148,7 +148,7 @@ export class EventConsumer {
         if (error instanceof AmbiguousEventDispatchError || error instanceof ReconcileRequiredDispatchError) {
           if (message.event.actionId) {
             const action = await this.store.getAction(message.event.actionId);
-            if (action && action.tenantId === message.event.tenantId && !['completed', 'failed', 'reconcile_required'].includes(action.state)) {
+            if (action && action.tenantId === message.event.tenantId && !['completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review'].includes(action.state)) {
               await this.store.updateAction({ ...action, state: 'reconcile_required' });
               await this.store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: 'workflow.reconcile_required', metadata: { actionId: action.id, eventId: message.event.eventId, reason: error.message }, createdAt: new Date().toISOString() });
             }

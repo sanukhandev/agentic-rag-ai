@@ -33,6 +33,36 @@ test('binds remote CRM OAuth to the n8n credential store', async () => {
     assert.equal(workflow.connections[name].main[1][0].node, 'Complete CRM Reconciliation');
   }
   assert.equal(workflow.connections['Complete CRM Reconciliation'].main[0][0].node, 'Return CRM Reconciliation');
+  assert.match(workflow.nodes.find((node) => node.name === 'Complete Support Review')?.parameters.jsonBody ?? '', /human_review/);
+  assert.match(workflow.nodes.find((node) => node.name === 'Complete Partial Review')?.parameters.jsonBody ?? '', /awaiting_customer/);
   assert.match(workflow.nodes.find((node) => node.name === 'Complete CRM Reconciliation')?.parameters.jsonBody ?? '', /reconcile_required/);
+  assert.match(workflow.nodes.find((node) => node.name === 'Return Support or Human Review')?.parameters.jsCode ?? '', /human_review/);
+  assert.match(workflow.nodes.find((node) => node.name === 'Return Partial Lead')?.parameters.jsCode ?? '', /awaiting_customer/);
   assert.equal(workflow.nodes.some((node) => node.name === 'Return Registered'), false);
+});
+
+test('routes from the claimed catalog intent and current consent, not message keywords', async () => {
+  const text = await readFile(new URL('./03-anc-lead-capture-wf-1.json', import.meta.url), 'utf8');
+  const workflow = JSON.parse(text);
+  const routeCode = workflow.nodes.find((node) => node.name === 'Multi-Intent Routing')?.parameters.jsCode;
+  assert.equal(typeof routeCode, 'string');
+  assert.doesNotMatch(routeCode, /support\|renew\|licen|do not contact|unsubscribe/iu);
+  const route = (input) => new Function('$json', routeCode)(input)[0].json;
+  const catalog = {
+    intents: [
+      { intentKey: 'trade.license.application', category: 'sales', workflowKey: 'crm.lead.create', active: true, priority: 100 },
+      { intentKey: 'trade.license.renewal', category: 'support', workflowKey: 'crm.support.review', active: true, priority: 90 }
+    ],
+    signals: [
+      { intentKey: 'trade.license.application', value: 'new licence', weight: 80 },
+      { intentKey: 'trade.license.renewal', value: 'renew licence', weight: 80 }
+    ],
+    workflowBindings: [
+      { workflowKey: 'crm.lead.create', active: true },
+      { workflowKey: 'crm.support.review', active: true }
+    ]
+  };
+  assert.equal(route({ intent: 'trade.license.application', workflowKey: 'crm.lead.create', leadData: { contactConsent: true }, catalog, conversation: [{ role: 'user', content: 'I need a new licence' }] }).route, 'commercial');
+  assert.equal(route({ intent: 'trade.license.renewal', workflowKey: 'crm.support.review', leadData: { contactConsent: true }, catalog, conversation: [{ role: 'user', content: 'I need to renew licence' }] }).route, 'support');
+  assert.equal(route({ intent: 'trade.license.application', workflowKey: 'crm.lead.create', leadData: { contactConsent: true }, catalog, conversation: [{ role: 'user', content: 'Do not contact me' }, { role: 'user', content: 'I need a new licence' }] }).route, 'commercial');
 });

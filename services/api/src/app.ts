@@ -228,8 +228,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const currentState = session.conversationState;
     if (currentState && action.intentKey && currentState.selectedIntentKey && currentState.selectedIntentKey !== action.intentKey) return;
     if (currentState && action.catalogVersionId && currentState.catalogVersionId && currentState.catalogVersionId !== action.catalogVersionId) return;
-    const workflowStatus = status === 'completed' ? 'succeeded' : status === 'reconcile_required' ? 'reconcile_required' : status === 'failed' ? 'failed' : 'processing';
-    const phase = status === 'completed' ? 'SUCCEEDED' : status === 'reconcile_required' ? 'RECONCILE_REQUIRED' : status === 'failed' ? 'FAILED' : 'QUEUED';
+    const workflowStatus = status === 'completed' ? 'succeeded' : status === 'reconcile_required' ? 'reconcile_required' : status === 'human_review' ? 'human_review' : status === 'failed' ? 'failed' : status === 'awaiting_customer' ? 'awaiting_customer' : 'processing';
+    const phase = status === 'completed' ? 'SUCCEEDED' : status === 'reconcile_required' ? 'RECONCILE_REQUIRED' : status === 'human_review' ? 'HUMAN_REVIEW' : status === 'failed' ? 'FAILED' : status === 'awaiting_customer' ? 'SLOT_COLLECTION' : 'QUEUED';
     await updateSessionSafely({ ...session, conversationState: { ...(currentState ?? newConversationState()), workflowStatus, phase, pendingPrompt: null } }, true, 'workflow');
   };
   const normalizerHealth = new Map<string, { failures: number; blockedUntil: number }>();
@@ -1067,14 +1067,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const input = parse(workflowCompletionSchema, req.body);
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(403, 'WORKFLOW_FORBIDDEN', 'Workflow completion does not match the authorized action.');
-      if (['completed', 'failed', 'reconcile_required'].includes(action.state)) {
+      if (['completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review'].includes(action.state)) {
         if (action.state !== input.state) throw new HttpError(409, 'WORKFLOW_ALREADY_TERMINAL', 'The workflow action already has a different terminal status.');
         await syncWorkflowState(action, action.state);
         res.json({ action });
         return;
       }
       if (!['approved', 'processing'].includes(action.state)) throw new HttpError(403, 'WORKFLOW_FORBIDDEN', 'Workflow completion does not match the authorized action.');
-      const updated = await store.updateAction({ ...action, state: input.state, result: input.state === 'completed' && input.externalReference ? { externalReference: input.externalReference } : null });
+      const updated = await store.updateAction({ ...action, state: input.state, result: input.externalReference ? { externalReference: input.externalReference } : null });
       await syncWorkflowState(updated, input.state);
       await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: `workflow.completed.${input.state}`, metadata: { actionId: input.actionId }, createdAt: new Date().toISOString() });
       res.json({ action: updated });
@@ -1104,10 +1104,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       );
       const conversationText = messages.map((message) => message.maskedContent).join(' ');
       const intentDefinition = catalog?.catalog.intents.find((intent) => intent.intentKey === authorizedIntent);
-      const supportOnly = Boolean(intentDefinition && /support|renew|portal|regulat|amend|track|complaint/i.test(`${intentDefinition.category} ${intentDefinition.intentKey} ${intentDefinition.displayName}`));
-      const commercialIntent = !supportOnly && (action.intentScore ?? 0) >= (intentDefinition?.minimumScore ?? 0) && (action.intentConfidence ?? 0) >= (intentDefinition?.confidenceThreshold ?? 0);
+      const intentCategory = String(intentDefinition?.category ?? '').trim().toLocaleLowerCase();
+      const supportOnly = ['support', 'customer_support', 'human_review'].includes(intentCategory);
+      const catalogCommercial = Boolean(intentDefinition?.active && binding?.active && ['sales', 'commercial', 'lead', 'service'].includes(intentCategory));
+      const legacyCommercial = !intentDefinition && ['lead.capture', 'crm.lead.create'].includes(action.workflowKey);
+      const commercialIntent = Boolean((catalogCommercial || legacyCommercial) && (action.intentScore ?? 0) >= (intentDefinition?.minimumScore ?? 0) && (action.intentConfidence ?? 0) >= (intentDefinition?.confidenceThreshold ?? 0));
       const score = scoreCrmLead({ commercialIntent, timelineMentioned: /\b(?:today|tomorrow|urgent|asap|next\s+(?:week|month)|this\s+(?:week|month)|deadline|quarter)\b/i.test(conversationText), businessFit: /\b(?:company|business|licen[cs]e|visa|it|software|platform|quote|demo|service|setup)\b/i.test(conversationText), validName, validContact, engagedUserTurns: messages.filter((message) => message.role === 'user').length }).total;
-      const validationPass = validName && validContact && commercialIntent && !supportOnly && !/\b(?:do not contact|don't contact|unsubscribe|no contact)\b/i.test(conversationText) && score >= 70;
+      const validationPass = validName && validContact && commercialIntent && !supportOnly && action.payload.contactConsent === true && score >= 70;
       if (!validationPass) throw new HttpError(422, 'LEAD_VALIDATION_FAILED', 'The lead did not pass the completeness threshold.');
       const conversation = messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt }));
       assertKnownTokens(session, JSON.stringify({ leadData, conversation }), tokenVault);

@@ -66,7 +66,7 @@ export const normalizeVoiceTranscript = (parts: readonly string[]): string =>
   parts.map((part) => part.trim()).filter(Boolean).join(' ');
 
 export type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean };
-export type ChatActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'unknown';
+export type ChatActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'awaiting_customer' | 'human_review' | 'unknown';
 export type ChatActionProposal = { id: string; intent: string; confirmation: string; consentRequired?: boolean; expiresAt?: string };
 export type ChatReply = {
   answer: string;
@@ -107,9 +107,9 @@ export const historyToReplies = (messages: readonly ChatHistoryMessage[]): ChatR
     }));
 
 export const isChatActionState = (value: unknown): value is ChatActionState =>
-  value === 'awaiting_confirmation' || value === 'approved' || value === 'processing' || value === 'completed' || value === 'failed' || value === 'reconcile_required' || value === 'unknown';
+  value === 'awaiting_confirmation' || value === 'approved' || value === 'processing' || value === 'completed' || value === 'failed' || value === 'reconcile_required' || value === 'awaiting_customer' || value === 'human_review' || value === 'unknown';
 
-export const isTerminalChatActionState = (state: ChatActionState): boolean => state === 'completed' || state === 'failed' || state === 'reconcile_required';
+export const isTerminalChatActionState = (state: ChatActionState): boolean => state === 'completed' || state === 'failed' || state === 'reconcile_required' || state === 'awaiting_customer' || state === 'human_review';
 
 export const actionOutcomeText = (state: ChatActionState): string | null =>
   state === 'completed'
@@ -118,6 +118,10 @@ export const actionOutcomeText = (state: ChatActionState): string | null =>
         ? 'I could not submit your contact request. Please try again or contact Sanu directly.'
         : state === 'reconcile_required'
           ? 'Your request is registered, but the external confirmation needs review before I can mark it complete.'
+        : state === 'awaiting_customer'
+          ? 'Your request is saved. I still need a few details from you before it can proceed.'
+        : state === 'human_review'
+          ? 'Your request is registered and has been sent for team review.'
       : state === 'approved' || state === 'processing'
         ? 'Your request is registered. We’ll continue processing it asynchronously.'
       : null;

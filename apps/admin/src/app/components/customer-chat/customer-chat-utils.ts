@@ -12,7 +12,7 @@ export interface ChatActionProposal {
   expiresAt?: string;
 }
 
-export type ChatActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'unknown';
+export type ChatActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'awaiting_customer' | 'human_review' | 'unknown';
 
 export interface CustomerChatMessage {
   id: string;

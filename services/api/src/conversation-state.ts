@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ConversationPhase, ConversationState, PendingPrompt } from './types.js';
 
-const workflowStatusRank: Record<ConversationState['workflowStatus'], number> = { none: 0, queued: 1, processing: 2, reconcile_required: 3, failed: 3, succeeded: 4 };
+const workflowStatusRank: Record<ConversationState['workflowStatus'], number> = { none: 0, awaiting_customer: 1, queued: 1, processing: 2, human_review: 3, reconcile_required: 3, failed: 3, succeeded: 4 };
 
 export const consentVersionForState = (state: Pick<ConversationState, 'catalogVersionId' | 'selectedIntentKey'>): string => `contact-v1:${state.catalogVersionId ?? 'legacy'}:${state.selectedIntentKey ?? 'legacy'}`;
 

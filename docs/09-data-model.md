@@ -27,7 +27,7 @@ pgvector extension operates inside PostgreSQL. Use an index type verified for ac
 ## Key data lifecycle
 Uploads: staged → parsed → validated → embedded → awaiting approval → active → retired/deleted. Use immutable source versions and single active promotion semantics. On revocation immediately filter at query time; asynchronous physical deletion handles indexes/backups according to policy.
 
-Action state: proposed → awaiting_confirmation → authorized → queued/running → completed/failed/unknown/cancelled. Each transition must be monotonic and auditable; unknown is not success. Provider correlation and idempotency prevent duplicates.
+Action state: proposed → awaiting_confirmation → authorized → queued/running → completed/failed/awaiting_customer/human_review/reconcile_required/unknown/cancelled. `awaiting_customer` and `human_review` are expected business outcomes; `reconcile_required` is reserved for ambiguous provider or integration outcomes. Each transition must be monotonic and auditable; unknown is not success. Provider correlation and idempotency prevent duplicates.
 
 ## Isolation and migrations
 Create separate roles for migrations, app runtime, vector retrieval, ingestion writer, audit reader and token vault. Consider DB RLS as defense in depth, but still enforce application authorization. Use zero-downtime migrations when possible, transaction boundaries, encrypted backups with restore drills and a procedure to re-embed on model changes.
