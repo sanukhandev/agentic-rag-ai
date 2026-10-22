@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import type { ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, DocumentProcessingJob, IngestionJob, IntentCatalogVersion, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
 import { newConversationState } from './conversation-state.js';
+import { HttpError } from './http/errors.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -233,7 +234,7 @@ export class MemoryStore implements Store {
   }
   async updateSession(session: Session): Promise<Session> {
     const current = this.sessions.get(session.id);
-    if (!current || current.stateVersion !== session.stateVersion) throw new Error('SESSION_STATE_CONFLICT');
+    if (!current || current.stateVersion !== session.stateVersion) throw new HttpError(409, 'SESSION_STATE_CONFLICT', 'Another message changed this conversation. Retry with the latest prompt.');
     session.stateVersion = (session.stateVersion ?? 0) + 1;
     this.sessions.set(session.id, structuredClone(session));
     return session;
