@@ -257,12 +257,12 @@ import { IconComponent } from '../shared/icon.component';
 
           <!-- Lead Details (Summary + Conversation Transcript) -->
           <div class="grid gap-5 lg:grid-cols-2">
-            <!-- Left: Conversation Summary -->
+            <!-- Left: Backend-generated CRM specification -->
             <div class="rounded-xl border border-neutral-100 bg-neutral-50/70 p-4 flex flex-col justify-between">
               <div>
                 <div class="flex items-center justify-between pb-2 mb-2 border-b border-neutral-200/60">
                   <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">
-                    AI Conversation Summary
+                    CRM Opportunity Specification
                   </span>
                   <span
                     class="rounded px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider"
@@ -271,9 +271,10 @@ import { IconComponent } from '../shared/icon.component';
                     {{ lead.summaryStatus || 'pending' }}
                   </span>
                 </div>
-                <p class="whitespace-pre-wrap text-xs sm:text-[13px] leading-relaxed text-neutral-700">
-                  {{ lead.summary || 'Summary is being prepared by the workflow...' }}
-                </p>
+                <pre *ngIf="lead.summary; else summaryPending" class="whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-3 font-mono text-[11px] leading-relaxed text-neutral-700">{{ lead.summary }}</pre>
+                <ng-template #summaryPending>
+                  <p class="text-xs sm:text-[13px] leading-relaxed text-neutral-500">Summary is being prepared by the backend...</p>
+                </ng-template>
                 <div *ngIf="lead.documents?.length" class="mt-4 border-t border-neutral-200/60 pt-3">
                   <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">Supporting documents</span>
                   <div *ngFor="let document of lead.documents" class="mt-2 flex items-center justify-between gap-2 rounded-lg bg-white p-2 text-xs">

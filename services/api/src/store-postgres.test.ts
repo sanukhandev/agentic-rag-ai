@@ -49,6 +49,10 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       expect(await store.listMessages(session.id, tenant.id)).toHaveLength(1);
       expect(await store.listMessages(session.id, tenant.id, 1)).toHaveLength(1);
       const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'lead.capture', idempotencyKey: 'action-1', state: 'awaiting_confirmation', opaqueReference: 'lead-1', payload: {}, createdAt: new Date().toISOString(), result: null });
+      const approved = await store.approveAction({ ...action, state: 'approved' });
+      expect(approved.state).toBe('approved');
+      const outbox = await pool.query('SELECT event_type,action_id,payload_ref FROM event_outbox WHERE tenant_id=$1', [tenant.id]);
+      expect(outbox.rows).toMatchObject([{ event_type: 'intent.action.requested.v1', action_id: action.id, payload_ref: 'lead-1' }]);
       await store.updateAction({ ...action, state: 'completed', result: { externalReference: 'run-1' } });
       expect((await store.getAction(action.id))?.result).toEqual({ externalReference: 'run-1' });
       expect((await store.getTenantStats(tenant.id)).sourceCounts.active).toBe(1);

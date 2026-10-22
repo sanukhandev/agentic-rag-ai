@@ -118,6 +118,43 @@ services:
       timeout: 5s
       retries: 12
 
+  event-relay:
+    build:
+      <<: *node-build
+      target: api-runtime
+    container_name: agentic-event-relay
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:-agentic_local_only}@postgres:5432/agentic_rag
+      REDIS_URL: redis://redis:6379
+    command: ["node", "services/api/dist/event-relay.js"]
+
+  event-worker:
+    build:
+      <<: *node-build
+      target: api-runtime
+    container_name: agentic-event-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:-agentic_local_only}@postgres:5432/agentic_rag
+      REDIS_URL: redis://redis:6379
+      N8N_INTERNAL_URL: ${N8N_INTERNAL_URL:-http://n8n:5678}
+      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-local-n8n-workflow-secret}
+      EVENT_WORKER_STREAMS: ${EVENT_WORKER_STREAMS:-rag:v2:crm,rag:v2:documents,rag:v2:actions,rag:v2:notifications}
+    command: ["node", "services/api/dist/event-worker.js"]
+
   web:
     build:
       <<: *node-build

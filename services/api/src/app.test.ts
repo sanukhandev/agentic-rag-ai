@@ -603,7 +603,9 @@ describe('API vertical slice', () => {
     expect(linked.body.lead).toMatchObject({ leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'crm-lead-remote-123' }).expect(200);
     const crm = await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${admin.body.token}`).expect(200);
-    expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', phone: '+971500000000' }, score: 70, summary: 'Customer Alice requested a demo via +971500000000.', summaryStatus: 'completed', leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
+    expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', phone: '+971500000000' }, score: 70, summaryStatus: 'completed', leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
+    expect(crm.body.items[0].summary).toContain('CRM OPPORTUNITY SPECIFICATION');
+    expect(crm.body.items[0].summary).toContain('Customer Alice requested a demo via +971500000000.');
     expect(JSON.stringify(crm.body.items[0].conversation)).toContain('+971500000000');
     await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${platform.body.token}`).set('x-tenant-id', tenant.body.tenant.id).expect(200);
   });

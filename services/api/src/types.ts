@@ -1,11 +1,43 @@
 export type Role = 'platform_admin' | 'tenant_admin' | 'tenant_editor' | 'tenant_viewer' | 'tenant_agent';
 export type Audience = 'public' | 'internal';
 export type SourceStatus = 'awaiting_review' | 'active' | 'revoked';
-export type ActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'unknown';
+export type ActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'unknown';
 export type TenantStatus = 'provisioning' | 'active' | 'suspended' | 'archived';
 export type IngestionJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 export type SupportingDocumentStatus = 'uploaded' | 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
 export type DocumentJobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
+
+export type EventStream = 'rag:v2:crm' | 'rag:v2:documents' | 'rag:v2:actions' | 'rag:v2:notifications' | 'rag:v2:dead-letter';
+export type DomainEventType =
+  | 'crm.contact.upsert.requested.v1'
+  | 'crm.summary.update.requested.v1'
+  | 'crm.reconcile.requested.v1'
+  | 'document.extraction.requested.v1'
+  | 'intent.action.requested.v1'
+  | 'conversation.notification.requested.v1';
+
+export type EventPayload = Record<string, string | number | boolean | null>;
+
+export interface OutboxEvent {
+  eventId: string;
+  eventType: DomainEventType;
+  stream: EventStream;
+  tenantId: string;
+  sessionId: string | null;
+  actionId: string | null;
+  aggregateId: string;
+  aggregateVersion: number;
+  workflowKey: string | null;
+  payloadRef: string;
+  idempotencyKey: string;
+  correlationId: string;
+  payload: EventPayload;
+  occurredAt: string;
+  publishedAt: string | null;
+  attempts: number;
+  leaseExpiresAt: string | null;
+  lastError: string | null;
+}
 
 export type ConversationPhase = 'DISCOVERY' | 'INTENT_CLARIFICATION' | 'SLOT_COLLECTION' | 'CONTACT_COLLECTION' | 'CONSENT_PENDING' | 'DOCUMENT_COLLECTION' | 'ACTION_CONFIRMATION' | 'QUEUED' | 'SUCCEEDED' | 'RECONCILE_REQUIRED' | 'FAILED';
 export type ConversationWorkflowStatus = 'none' | 'queued' | 'processing' | 'succeeded' | 'reconcile_required' | 'failed';
@@ -505,6 +537,7 @@ export interface Store {
   getMessageByClientId(sessionId: string, clientMessageId: string): Promise<Message | null>;
   listMessages(sessionId: string, tenantId: string, limit?: number): Promise<Message[]>;
   createAction(action: ActionRequest): Promise<ActionRequest>;
+  approveAction(action: ActionRequest): Promise<ActionRequest>;
   getAction(id: string): Promise<ActionRequest | null>;
   getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null>;
   updateAction(action: ActionRequest): Promise<ActionRequest>;
@@ -530,6 +563,11 @@ export interface Store {
   renewDocumentProcessingJob(id: string, tenantId: string, leaseMs: number): Promise<DocumentProcessingJob | null>;
   updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
   linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void>;
+  enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent>;
+  claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]>;
+  markOutboxPublished(eventId: string, publishedAt?: string): Promise<void>;
+  releaseOutboxEvent(eventId: string, error: string, retryAt: string): Promise<void>;
+  claimInboxEvent(consumer: string, eventId: string): Promise<boolean>;
   addAudit(event: AuditEvent): Promise<void>;
   listAudit(tenantId: string): Promise<AuditEvent[]>;
   getTenantStats(tenantId: string): Promise<TenantStats>;
