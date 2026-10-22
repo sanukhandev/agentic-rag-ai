@@ -1,6 +1,6 @@
 # CRM omnichannel v2 verification
 
-This report records executable checks only. It does not claim live n8n or Salesforce success.
+This report records executable checks and the subsequent authorized local n8n/Salesforce smoke. It does not claim production deployment or production traffic.
 
 ## Source inputs
 
@@ -33,7 +33,8 @@ The release-gate results below are from the local run on 22 Oct 2026:
 | Catalog/artifacts | source generator, artifact-tool inspection, parser and TypeScript validation | passed; package contains 14 deliverables, SHA-256 `6935f15d497fab0bd74d6bfd788211706f786416b0a7b6612237f4f27b84ad6d` |
 | Browser/Docker | `docker compose build api admin web ingestion`, restart, health checks and local Chrome smoke flow | passed after applying migrations 028/029; chat session creation, published ANCFZ intent response and one-question clarification verified |
 | Acceptance | `npm run acceptance:seed`, `npm run acceptance:local` | both passed; tenant A/B isolation, idempotent approval and five-source ingestion/grounded chat verified |
+| Authorized CRM smoke | Local Chrome synthetic callback journey → active n8n execution `584` → PostgreSQL | passed; n8n completed in 5.135s, Salesforce returned a validated Lead ID, and the same tenant lead row is `completed`, score 95 and `remote_crm=salesforce` |
 
 ## External blockers
 
-No connected/authorized n8n instance was used to import or activate the generated exports. Salesforce credentials and the real Apex response were not available to this local run, so remote creation, ID write-back and timeout reconciliation remain unverified integration gates. The source catalog and generated bindings remain draft/inactive by design. The issue must remain open until those gates are executed with approved credentials.
+The authorized local n8n instance and Salesforce sandbox happy path are now verified. OAuth failure, missing-ID and ambiguous-timeout cases were not induced against the live sandbox; retain the existing negative tests and run those cases in a controlled staging environment before production. The generated source catalog and bindings remain draft/inactive by design.

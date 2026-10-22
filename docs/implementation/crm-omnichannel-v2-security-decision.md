@@ -14,7 +14,7 @@ The backend-issued remote payload endpoint is the only place that can rehydrate 
 - The source-derived ANCFZ catalog is draft and does not publish or enable unverified bindings.
 - `crm_leads.lead_id` and `crm_leads.remote_crm` remain the durable remote-link fields.
 - Field-level slot values are persisted masked; tenant-admin rendering rehydrates only inside the authorized API response.
-- A live Salesforce smoke test requires the operator to bind credentials in n8n and provide the actual sandbox response shape. No Salesforce ID is fabricated by local tests.
+- The authorized local Salesforce smoke used the n8n encrypted credential and validated the actual sandbox response shape. The returned ID was written to PostgreSQL; no ID is fabricated by local tests.
 
 ## Rejected shortcut
 

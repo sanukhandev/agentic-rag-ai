@@ -38,6 +38,7 @@ Tracking: [issue #45](https://github.com/sanukhandev/agentic-rag-ai/issues/45)
 - Python `pytest` — unavailable because the provided venv does not install pytest; `python -m unittest discover -s tools/ingestion -p "test_*.py"` passed: 24 tests.
 - Existing n8n tests plus `crm-v2-workflows.test.mjs` — passed.
 - `docker compose build api admin web ingestion` and `docker compose up -d api admin web ingestion` — passed. API ready, web/admin HTTP 200, no browser console errors.
+- Live local n8n/Salesforce smoke — passed: active `ANC Lead Capture WF-1` execution `584` completed in 5.135 seconds using the encrypted `SalesForce ANC - CREDS` credential; the internal CRM row was completed with score `95`, `validation_pass=true`, `remote_crm=salesforce`, and a non-empty Salesforce Lead ID.
 
 ## Browser smoke evidence
 
@@ -49,9 +50,11 @@ The browser smoke used the existing published local catalog. The newly generated
 
 Mock/local: API, MemoryStore/Postgres contracts, deterministic scoring, OCR tests, workflow export validation, idempotency and browser/Docker smoke.
 
-Live/unverified: no authorized n8n import/activation was performed; no Salesforce client credentials or real Apex response were available. Therefore Salesforce creation, returned record-ID write-back, ambiguous timeout reconciliation and live n8n execution remain blocked. No live IDs or success claims were fabricated.
+Live verified: the existing authorized local n8n workflow is active and the synthetic browser journey created one Salesforce sandbox lead; the returned provider ID was validated and written back to PostgreSQL. No credential values, bearer token, or visitor contact details are stored in this report.
 
-The issue remains open and no ready-for-review PR is opened until the approved n8n credentials, Salesforce sandbox response and the remaining live security/acceptance gates are available.
+Remaining unverified provider cases: OAuth failure, missing Salesforce ID and ambiguous timeout reconciliation were not induced against the live sandbox; their rejection/reconciliation behavior remains covered by workflow/API tests and must be exercised in a controlled staging run before production use.
+
+The generated catalog bindings remain draft/inactive by design until their final workflow IDs and tenant approval are applied.
 
 ## Rollback and safety notes
 
