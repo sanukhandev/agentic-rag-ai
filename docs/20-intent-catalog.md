@@ -13,6 +13,14 @@ The intent catalog is an internal, tenant-scoped reference for deterministic int
 7. n8n validates the catalog binding, writes the CRM lead through Node, and executes the separate quality workflow. That workflow calculates the score from `QualityRules` and slot `quality_weight` values, then stores the score and deterministic summary through Node.
 8. The CRM write is an upsert: the tenant-scoped HMAC of the normalized email (or phone fallback) prevents repeated submissions from creating another lead. Chat retries and n8n claims are idempotent.
 
+## Post-capture conversation
+
+After a confirmed CRM action is queued, the conversation remains active. A later visitor turn is treated as a post-capture follow-up rather than another lead-collection turn. Node keeps the published primary intent and sends the masked conversation, the latest question and the tenant's enabled document policies through the normal retrieval and LLM path.
+
+The model may explain packages, requirements, steps or timelines only when the approved tenant sources support them. It may offer the next document upload action only when the published document policy allows it, and it must ask one question at a time. It must not repeat contact collection, create a second lead, invent a requirement or claim that a document was received before the document event is completed.
+
+The deterministic catalog prompts and action-status messages remain control-plane messages for slot collection, consent and workflow state. They are not used for post-capture business answers; those answers are generated from retrieved evidence and validated citations.
+
 ## Workbook contract
 
 `README` is a two-column key/value sheet and must include a tenant scope when the workbook is tenant-specific. The other sheets use the headers in the sample workbook. Intent and workflow keys are stable identifiers; scores and confidence thresholds are server-validated.

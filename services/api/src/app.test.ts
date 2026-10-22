@@ -17,11 +17,14 @@ class CapturingModel implements ChatModel {
   public readonly personaNames: string[] = [];
   public readonly ownerNames: string[] = [];
   public readonly conversations: Array<Array<{ role: 'user' | 'assistant'; content: string }>> = [];
+  public readonly followUpContexts: Array<Parameters<ChatModel['draft']>[0]['followUpContext']> = [];
   async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
     this.prompts.push(input.maskedMessage);
     this.personaNames.push(input.personaName);
     this.ownerNames.push(input.ownerName ?? '');
     this.conversations.push(input.conversation ?? []);
+    this.followUpContexts.push(input.followUpContext);
+    if (input.followUpContext?.leadCaptured && /internal escalation code/i.test(input.maskedMessage)) return { answer: 'No approved evidence supports that answer.', citationIds: [], proposedIntent: null };
     const evidence = input.evidence[0];
     return evidence ? { answer: evidence.content, citationIds: [evidence.citation.chunkId], proposedIntent: /contact/i.test(input.maskedMessage) ? 'lead.capture' : null } : { answer: 'No approved evidence supports that answer.', citationIds: [], proposedIntent: null };
   }
@@ -681,11 +684,14 @@ describe('API vertical slice', () => {
 
   it('simulates a natural browser lead journey and exposes workflow summary and quality in tenant CRM', async () => {
     const workflow = new MockWorkflowAdapter();
-    const runtime = createApp({ nodeEnv: 'test', workflow, n8nCallbackSecret: 'crm-secret' });
+    const model = new CapturingModel();
+    const runtime = createApp({ nodeEnv: 'test', model, workflow, n8nCallbackSecret: 'crm-secret' });
     const api = request(runtime.app);
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-browser-lead@example.test', password: 'Platform1Password' }).expect(201);
     const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Browser Lead Tenant', slug: 'browser-lead-tenant', adminEmail: 'admin-browser-lead@example.test', adminPassword: 'TenantA1Password' }).expect(201);
     const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-browser-lead@example.test', password: 'TenantA1Password' }).expect(200);
+    const knowledge = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Packages and setup guide', mimeType: 'text/plain', audience: 'public', content: 'The Starter package includes company setup support. The approved setup steps and available timelines are described in the current company setup guide.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${knowledge.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
 
     const greeting = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Hello Nova', clientMessageId: 'browser-lead-1' }).expect(200);
@@ -704,6 +710,11 @@ describe('API vertical slice', () => {
     const confirmed = await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
     expect(confirmed.body.action.state).toBe('approved');
     expect(workflow.calls).toHaveLength(0);
+    const followUp = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What packages and setup steps are available?', clientMessageId: 'browser-lead-follow-up-1' }).expect(200);
+    expect(followUp.body.grounded).toBe(true);
+    expect(followUp.body.citations).not.toHaveLength(0);
+    expect(followUp.body.answer).toContain('Starter package');
+    expect(model.followUpContexts.some((context) => context?.leadCaptured === true)).toBe(true);
 
     const actionId = contact.body.actionProposal.id as string;
     const action = await runtime.store.getAction(actionId);
