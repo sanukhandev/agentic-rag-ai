@@ -85,6 +85,7 @@ export class OutboxRelay {
 }
 
 export class AmbiguousEventDispatchError extends Error {}
+export class ReconcileRequiredDispatchError extends Error {}
 
 export class N8nEventBridge {
   constructor(private readonly store: Store, private readonly baseUrl: string, private readonly secret: string, private readonly timeoutMs = 5_000) {}
@@ -100,7 +101,7 @@ export class N8nEventBridge {
           await this.store.addAudit({ id: randomUUID(), tenantId: event.tenantId, actorId: null, eventName: 'workflow.event_fallback_to_polling', metadata: { eventId: event.eventId, workflowKey: route.workflowKey, status: response.status }, createdAt: new Date().toISOString() });
           return;
         }
-        throw new Error(`n8n dispatch failed with status ${response.status}.`);
+        throw new ReconcileRequiredDispatchError(`n8n dispatch failed with status ${response.status}; reconciliation is required.`);
       }
     } catch (error) {
       if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
@@ -144,7 +145,14 @@ export class EventConsumer {
         if (await this.store.claimInboxEvent(group, message.event.eventId)) handled += 1;
         await this.bus.acknowledge(stream, group, message.id);
       } catch (error) {
-        if (error instanceof AmbiguousEventDispatchError) {
+        if (error instanceof AmbiguousEventDispatchError || error instanceof ReconcileRequiredDispatchError) {
+          if (message.event.actionId) {
+            const action = await this.store.getAction(message.event.actionId);
+            if (action && action.tenantId === message.event.tenantId && !['completed', 'failed', 'reconcile_required'].includes(action.state)) {
+              await this.store.updateAction({ ...action, state: 'reconcile_required' });
+              await this.store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: 'workflow.reconcile_required', metadata: { actionId: action.id, eventId: message.event.eventId, reason: error.message }, createdAt: new Date().toISOString() });
+            }
+          }
           await this.bus.deadLetter(message.event, error.message);
           await this.bus.acknowledge(stream, group, message.id);
         }

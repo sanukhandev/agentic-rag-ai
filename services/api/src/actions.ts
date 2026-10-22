@@ -9,7 +9,7 @@ export type LeadQuality = 'new' | 'nurture' | 'warm' | 'hot';
 export interface LeadWorkflowContext { actionId: string; intent: string; score: number; quality: LeadQuality; validationPass: boolean; conversation: LeadConversationMessage[]; intentScore?: number; intentConfidence?: number; catalogVersionId?: string | null; }
 export interface WorkflowAdapter { execute(input: { workflowKey: string; webhookPath?: string; tenantId: string; sessionId: string; opaqueReference: string; idempotencyKey: string; leadData?: LeadData; leadContext?: LeadWorkflowContext }): Promise<WorkflowResult>; }
 
-export const leadValidationPass = (leadData: LeadData): boolean => Boolean(leadData.name && leadData.email && leadData.phone);
+export const leadValidationPass = (leadData: LeadData): boolean => Boolean(leadData.name && (leadData.email || leadData.phone));
 export const leadScore = (leadData: LeadData): number => (leadData.name ? 30 : 0) + (leadData.email ? 40 : 0) + (leadData.phone ? 30 : 0);
 export const leadQuality = (score: number): LeadQuality => score >= 90 ? 'hot' : score >= 70 ? 'warm' : score >= 40 ? 'nurture' : 'new';
 

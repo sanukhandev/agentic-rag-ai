@@ -1035,7 +1035,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const rehydratedEmail = leadData.email ? rehydrateForSession(session, leadData.email, tokenVault, 'admin_crm') : '';
       const rehydratedPhone = leadData.phone ? rehydrateForSession(session, leadData.phone, tokenVault, 'admin_crm') : '';
       const validName = Boolean(rehydratedName && isValidLeadName(rehydratedName));
-      const validContact = Boolean(rehydratedEmail && isValidLeadEmail(rehydratedEmail) && rehydratedPhone && isValidLeadPhone(rehydratedPhone));
+      const validContact = Boolean(
+        (rehydratedEmail && isValidLeadEmail(rehydratedEmail))
+        || (rehydratedPhone && isValidLeadPhone(rehydratedPhone))
+      );
       const conversationText = messages.map((message) => message.maskedContent).join(' ');
       const intentDefinition = catalog?.catalog.intents.find((intent) => intent.intentKey === authorizedIntent);
       const supportOnly = Boolean(intentDefinition && /support|renew|portal|regulat|amend|track|complaint/i.test(`${intentDefinition.category} ${intentDefinition.intentKey} ${intentDefinition.displayName}`));
@@ -1123,7 +1126,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const session = await store.getSession(lead.sessionId);
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Lead session not found.');
       const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm');
-      if (!lead.validationPass || !lead.leadData.name || !lead.leadData.email || !lead.leadData.phone || action.payload.contactConsent !== true) throw new HttpError(422, 'REMOTE_CONTACT_INCOMPLETE', 'The lead has no valid contact data for remote CRM sync.');
+      if (!lead.validationPass || !lead.leadData.name || (!lead.leadData.email && !lead.leadData.phone) || action.payload.contactConsent !== true) throw new HttpError(422, 'REMOTE_CONTACT_INCOMPLETE', 'The lead has no valid contact data for remote CRM sync.');
       const payload = { name: rehydrate(lead.leadData.name), company: lead.leadData.slotValues?.company ? rehydrate(lead.leadData.slotValues.company) : '', email: lead.leadData.email ? rehydrate(lead.leadData.email) : '', phone: lead.leadData.phone ? rehydrate(lead.leadData.phone) : '', description: rehydrate(lead.summary ?? `Intent: ${lead.intent}`) };
       await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'crm.lead.remote_payload_issued', metadata: { leadId: lead.id, actionId: action.id }, createdAt: new Date().toISOString() });
       res.json(payload);

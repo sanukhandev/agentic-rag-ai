@@ -607,20 +607,36 @@ describe('API vertical slice', () => {
       .send({ actionId: unconsented.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: unconsented.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) })
       .expect(422);
     expect((await runtime.store.listCrmLeads(tenant.body.tenant.id))).toHaveLength(1);
-    for (const missingField of ['email', 'phone'] as const) {
-      const incompletePayload = { ...action!.payload, contactConsent: true };
-      delete incompletePayload[missingField];
-      const incomplete = await runtime.store.createAction({ ...action!, id: randomUUID(), idempotencyKey: `crm-missing-${missingField}`, payload: incompletePayload, state: 'approved' });
-      await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret')
-        .send({ actionId: incomplete.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: incomplete.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) })
-        .expect(422);
-    }
+    const incompletePayload = { ...action!.payload, contactConsent: true };
+    delete incompletePayload.email;
+    delete incompletePayload.phone;
+    const incomplete = await runtime.store.createAction({ ...action!, id: randomUUID(), idempotencyKey: 'crm-missing-contact', payload: incompletePayload, state: 'approved' });
+    await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret')
+      .send({ actionId: incomplete.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: incomplete.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) })
+      .expect(422);
     const crm = await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', phone: '+971500000000' }, score: 70, summaryStatus: 'completed', leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
     expect(crm.body.items[0].summary).toContain('CRM OPPORTUNITY SPECIFICATION');
     expect(crm.body.items[0].summary).toContain('Customer Alice requested a demo via +971500000000.');
     expect(JSON.stringify(crm.body.items[0].conversation)).toContain('+971500000000');
     await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${platform.body.token}`).set('x-tenant-id', tenant.body.tenant.id).expect(200);
+  });
+
+  it('accepts a phone-only contact alternative for CRM sync', async () => {
+    const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'crm-phone-only-secret' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-crm-phone@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'CRM Phone Tenant', slug: 'crm-phone-tenant', adminEmail: 'admin-crm-phone@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const proposal = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need a demo for my company next month. My name is Bob. My phone is +971500000001', clientMessageId: 'crm-phone-only-message' }).expect(200);
+    const actionId = proposal.body.actionProposal.id as string;
+    await api.post(`/api/v1/chat/actions/${actionId}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
+    const action = await runtime.store.getAction(actionId);
+    const messages = await runtime.store.listMessages(session.body.sessionId, tenant.body.tenant.id);
+    const stored = await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-phone-only-secret').send({ actionId, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: action?.payload, intent: action?.intentKey ?? 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })), completeAction: false }).expect(201);
+    await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/summary`).set('x-agentic-internal-secret', 'crm-phone-only-secret').send({ tenantId: tenant.body.tenant.id, summary: 'Phone-only CRM regression.', status: 'completed' }).expect(200);
+    const remotePayload = await api.post(`/api/v1/internal/crm/leads/${stored.body.lead.id}/remote-payload`).set('x-agentic-internal-secret', 'crm-phone-only-secret').send({ tenantId: tenant.body.tenant.id, actionId }).expect(200);
+    expect(remotePayload.body).toMatchObject({ name: 'Bob', email: '', phone: '+971500000001' });
   });
 
   it('refuses an expired proposal without recording consent or claiming registration', async () => {
