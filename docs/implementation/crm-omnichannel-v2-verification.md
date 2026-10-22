@@ -32,6 +32,7 @@ The release-gate results below are from the local run on 22 Oct 2026:
 | Workflow export tests | existing workflow tests plus `infra/n8n/workflows/crm-v2-workflows.test.mjs` | passed; exports are inactive and secret-free |
 | Catalog/artifacts | source generator, artifact-tool inspection, parser and TypeScript validation | passed; package contains 14 deliverables, SHA-256 `6935f15d497fab0bd74d6bfd788211706f786416b0a7b6612237f4f27b84ad6d` |
 | Browser/Docker | `docker compose build api admin web ingestion`, restart, health checks and local Chrome smoke flow | passed after applying migrations 028/029; chat session creation, published ANCFZ intent response and one-question clarification verified |
+| Acceptance | `npm run acceptance:seed`, `npm run acceptance:local` | both passed; tenant A/B isolation, idempotent approval and five-source ingestion/grounded chat verified |
 
 ## External blockers
 
