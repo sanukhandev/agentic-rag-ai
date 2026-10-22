@@ -11,7 +11,7 @@ import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedd
 import { conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogSlotQuestion, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
-import { newConversationState, phaseFor, prompt } from './conversation-state.js';
+import { consentVersionForState, mergeConcurrentConversationState, newConversationState, phaseFor, prompt } from './conversation-state.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
@@ -210,23 +210,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const readRateLimit = (value: number | undefined, name: string, fallback: number, max: number): number => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return fallback; const parsed = Number(raw); if (!Number.isInteger(parsed) || parsed < 1 || parsed > max) throw new Error(`${name} must be an integer between 1 and ${max}.`); return parsed; };
   const chatResponseCacheTtlSeconds = readCacheTtl(dependencies.chatResponseCacheTtlSeconds, 'CHAT_RESPONSE_CACHE_TTL_SECONDS', 60, 300);
   const catalogQueryNormalizationEnabled = dependencies.catalogQueryNormalizationEnabled ?? process.env.CATALOG_QUERY_NORMALIZATION_ENABLED === 'true';
-  const workflowStatusRank: Record<string, number> = { none: 0, queued: 1, processing: 2, reconcile_required: 3, failed: 3, succeeded: 4 };
-  const mergeConcurrentConversationState = (latest: NonNullable<Session['conversationState']>, candidate: NonNullable<Session['conversationState']>): NonNullable<Session['conversationState']> => {
-    const latestWins = (workflowStatusRank[latest.workflowStatus] ?? 0) > (workflowStatusRank[candidate.workflowStatus] ?? 0);
-    const workflowState = latestWins ? latest : candidate;
-    return {
-      ...latest,
-      ...candidate,
-      workflowStatus: workflowState.workflowStatus,
-      phase: workflowState.phase,
-      pendingPrompt: workflowState.pendingPrompt,
-      slotValues: { ...latest.slotValues, ...candidate.slotValues },
-      candidateIntentKeys: [...new Set([...latest.candidateIntentKeys, ...candidate.candidateIntentKeys])],
-      contactConsent: latest.contactConsent === 'granted' || candidate.contactConsent === 'granted' ? 'granted' : latest.contactConsent === 'denied' ? 'denied' : candidate.contactConsent,
-      consentCapturedAt: latest.contactConsent === 'granted' ? latest.consentCapturedAt : candidate.consentCapturedAt,
-      consentVersion: latest.contactConsent === 'granted' ? latest.consentVersion : candidate.consentVersion,
-    };
-  };
   const updateSessionSafely = async (session: Session, preserveConcurrentState: boolean): Promise<Session> => {
     try { return await store.updateSession(session); } catch (error) {
       if (errorCode(error) !== 'SESSION_STATE_CONFLICT') throw error;
@@ -1025,7 +1008,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const confirmed = await gateway.confirm(action.id, action.tenantId);
       if (!['approved', 'processing', 'completed'].includes(confirmed.state)) throw new HttpError(409, 'ACTION_NOT_ACCEPTED', 'This request was not accepted. Please start a new request.');
       const consentGranted = confirmed.payload.contactConsent === true;
-      session.conversationState = { ...(session.conversationState ?? newConversationState()), ...(consentGranted ? { contactConsent: 'granted' as const, consentCapturedAt: new Date().toISOString(), consentVersion: 'contact-v1' } : {}), workflowStatus: 'queued', phase: 'QUEUED', pendingPrompt: null };
+      const confirmedState = session.conversationState ?? newConversationState();
+      session.conversationState = { ...confirmedState, ...(consentGranted ? { contactConsent: 'granted' as const, consentCapturedAt: new Date().toISOString(), consentVersion: consentVersionForState({ catalogVersionId: confirmed.catalogVersionId ?? confirmedState.catalogVersionId, selectedIntentKey: confirmed.intentKey ?? confirmedState.selectedIntentKey }) } : {}), workflowStatus: 'queued', phase: 'QUEUED', pendingPrompt: null };
       await updateSessionSafely(session, true);
       res.json({ action: confirmed, message: 'Your request is registered and will continue processing asynchronously.' });
     } catch (error) { next(error); }

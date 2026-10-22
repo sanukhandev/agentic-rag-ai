@@ -1,6 +1,36 @@
 import { randomUUID } from 'node:crypto';
 import type { ConversationPhase, ConversationState, PendingPrompt } from './types.js';
 
+const workflowStatusRank: Record<ConversationState['workflowStatus'], number> = { none: 0, queued: 1, processing: 2, reconcile_required: 3, failed: 3, succeeded: 4 };
+
+export const consentVersionForState = (state: Pick<ConversationState, 'catalogVersionId' | 'selectedIntentKey'>): string => `contact-v1:${state.catalogVersionId ?? 'legacy'}:${state.selectedIntentKey ?? 'legacy'}`;
+
+const hasScopedConsent = (state: ConversationState): boolean => state.contactConsent === 'granted' && state.consentVersion === consentVersionForState(state);
+
+export const mergeConcurrentConversationState = (latest: ConversationState, candidate: ConversationState): ConversationState => {
+  const latestWins = workflowStatusRank[latest.workflowStatus] > workflowStatusRank[candidate.workflowStatus];
+  const workflowState = latestWins ? latest : candidate;
+  const consentPurposeChanged = latest.catalogVersionId !== candidate.catalogVersionId || latest.selectedIntentKey !== candidate.selectedIntentKey;
+  const slotValues = { ...latest.slotValues, ...candidate.slotValues };
+  if (consentPurposeChanged) delete slotValues.contact_consent;
+  const revoked = latest.contactConsent === 'denied' || candidate.contactConsent === 'denied';
+  const granted = !consentPurposeChanged && !revoked && (hasScopedConsent(latest) || hasScopedConsent(candidate));
+  const contactConsent = granted ? 'granted' : revoked ? 'denied' : 'unknown';
+  const consentSource = contactConsent === 'granted' ? (hasScopedConsent(candidate) ? candidate : latest) : null;
+  return {
+    ...latest,
+    ...candidate,
+    workflowStatus: workflowState.workflowStatus,
+    phase: workflowState.phase,
+    pendingPrompt: workflowState.pendingPrompt,
+    slotValues,
+    candidateIntentKeys: [...new Set([...latest.candidateIntentKeys, ...candidate.candidateIntentKeys])],
+    contactConsent,
+    consentCapturedAt: consentSource?.consentCapturedAt ?? null,
+    consentVersion: consentSource?.consentVersion ?? null,
+  };
+};
+
 export const newConversationState = (): ConversationState => ({
   phase: 'DISCOVERY',
   catalogVersionId: null,
