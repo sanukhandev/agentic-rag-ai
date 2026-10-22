@@ -71,7 +71,7 @@
         "url": "={{ \"http://api:4000/api/v1/internal/crm/contact-lookup\" }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, leadId: $json.leadId, correlationId: $json.correlationId }) }}",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, sessionId: $json.sessionId, actionId: $json.actionId }) }}",
         "options": {},
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth"
