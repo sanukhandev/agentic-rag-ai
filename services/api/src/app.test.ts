@@ -682,6 +682,29 @@ describe('API vertical slice', () => {
     await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-phone-only-secret').send({ actionId: action.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: action.payload, intent: action.intentKey, score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })), completeAction: false }).expect(422).expect((response) => expect(response.body.error.code).toBe('LEAD_VALIDATION_FAILED'));
   });
 
+  it('does not apply an old workflow completion to a newer conversation intent', async () => {
+    const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'internal-secret' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-stale-workflow@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Stale Workflow Tenant', slug: 'stale-workflow-tenant', adminEmail: 'admin-stale-workflow@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const current = await runtime.store.getSession(session.body.sessionId);
+    current!.conversationState = {
+      ...current!.conversationState!,
+      catalogVersionId: 'catalog-v2',
+      selectedIntentKey: 'company.setup',
+      workflowStatus: 'queued',
+      phase: 'QUEUED',
+      pendingPrompt: { id: 'new-intent-prompt', type: 'slot', intentKey: 'company.setup', slotKey: 'business_activity', issuedAt: new Date().toISOString() },
+    };
+    await runtime.store.updateSession(current!);
+    const oldAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'lead.capture', intentKey: 'lead.capture', catalogVersionId: 'catalog-v1', idempotencyKey: 'stale-workflow-completion', state: 'approved', opaqueReference: 'stale-workflow-reference', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
+
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: oldAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'old-completion' }).expect(200);
+
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ catalogVersionId: 'catalog-v2', selectedIntentKey: 'company.setup', workflowStatus: 'queued', phase: 'QUEUED', pendingPrompt: { id: 'new-intent-prompt' } });
+  });
+
   it('refuses an expired proposal without recording consent or claiming registration', async () => {
     const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'crm-secret' });
     const api = request(runtime.app);

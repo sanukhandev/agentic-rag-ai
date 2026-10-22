@@ -12,8 +12,8 @@ export const mergeConcurrentConversationState = (latest: ConversationState, cand
   const workflowState = latestWins ? latest : candidate;
   const consentPurposeChanged = latest.catalogVersionId !== candidate.catalogVersionId || latest.selectedIntentKey !== candidate.selectedIntentKey;
   const slotValues = { ...latest.slotValues, ...candidate.slotValues };
-  if (consentPurposeChanged) delete slotValues.contact_consent;
   const revoked = latest.contactConsent === 'denied' || candidate.contactConsent === 'denied';
+  if (consentPurposeChanged || revoked) delete slotValues.contact_consent;
   const granted = !consentPurposeChanged && !revoked && (hasScopedConsent(latest) || hasScopedConsent(candidate));
   const contactConsent = granted ? 'granted' : revoked ? 'denied' : 'unknown';
   const consentSource = contactConsent === 'granted' ? (hasScopedConsent(candidate) ? candidate : latest) : null;
@@ -28,6 +28,18 @@ export const mergeConcurrentConversationState = (latest: ConversationState, cand
     contactConsent,
     consentCapturedAt: consentSource?.consentCapturedAt ?? null,
     consentVersion: consentSource?.consentVersion ?? null,
+  };
+};
+
+export const mergeWorkflowCallbackState = (latest: ConversationState, candidate: ConversationState): ConversationState => {
+  const workflowScopeChanged = latest.catalogVersionId !== candidate.catalogVersionId || latest.selectedIntentKey !== candidate.selectedIntentKey;
+  const latestWins = workflowScopeChanged || workflowStatusRank[latest.workflowStatus] > workflowStatusRank[candidate.workflowStatus];
+  const workflowState = latestWins ? latest : candidate;
+  return {
+    ...latest,
+    workflowStatus: workflowState.workflowStatus,
+    phase: workflowState.phase,
+    pendingPrompt: workflowState.pendingPrompt,
   };
 };
 

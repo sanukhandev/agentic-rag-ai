@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { consentVersionForState, mergeConcurrentConversationState, newConversationState } from './conversation-state.js';
+import { consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState } from './conversation-state.js';
 
 describe('conversation state concurrency merge', () => {
   it('does not carry consent across a conflicting intent transition', () => {
@@ -25,5 +25,34 @@ describe('conversation state concurrency merge', () => {
     expect(merged.contactConsent).toBe('denied');
     expect(merged.consentVersion).toBeNull();
     expect(merged.consentCapturedAt).toBeNull();
+    expect(merged.slotValues.contact_consent).toBeUndefined();
+    expect(merged.contactConsent).toBe('denied');
+  });
+
+  it('keeps the latest intent when an older workflow callback races with it', () => {
+    const latest = {
+      ...newConversationState(),
+      catalogVersionId: 'catalog-v2',
+      selectedIntentKey: 'company.setup',
+      pendingPrompt: { id: 'new-prompt', type: 'slot' as const, intentKey: 'company.setup', slotKey: 'business_activity', issuedAt: '2026-10-22T10:01:00.000Z' },
+      workflowStatus: 'queued' as const,
+    };
+    const candidate = {
+      ...latest,
+      catalogVersionId: 'catalog-v1',
+      selectedIntentKey: 'lead.capture',
+      pendingPrompt: null,
+      workflowStatus: 'succeeded' as const,
+      phase: 'SUCCEEDED' as const,
+      rollingSummary: 'stale callback state',
+    };
+
+    const merged = mergeWorkflowCallbackState(latest, candidate);
+
+    expect(merged.selectedIntentKey).toBe('company.setup');
+    expect(merged.catalogVersionId).toBe('catalog-v2');
+    expect(merged.pendingPrompt).toEqual(latest.pendingPrompt);
+    expect(merged.workflowStatus).toBe('queued');
+    expect(merged.rollingSummary).toBe(latest.rollingSummary);
   });
 });

@@ -11,13 +11,13 @@ import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedd
 import { conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogSlotQuestion, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
-import { consentVersionForState, mergeConcurrentConversationState, newConversationState, phaseFor, prompt } from './conversation-state.js';
+import { consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState, phaseFor, prompt } from './conversation-state.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
 import { isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
-import type { ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, IntentCatalogQualityRule, LeadData, Message, Session, SourceStatus, Store, SupportingDocument } from './types.js';
+import type { ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, IntentCatalogQualityRule, LeadData, Message, Session, SourceStatus, Store, SupportingDocument } from './types.js';
 import { HttpError, parse } from './http/errors.js';
 import {
   DEFAULT_CONTEXT_WINDOW_MESSAGES,
@@ -210,22 +210,27 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const readRateLimit = (value: number | undefined, name: string, fallback: number, max: number): number => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return fallback; const parsed = Number(raw); if (!Number.isInteger(parsed) || parsed < 1 || parsed > max) throw new Error(`${name} must be an integer between 1 and ${max}.`); return parsed; };
   const chatResponseCacheTtlSeconds = readCacheTtl(dependencies.chatResponseCacheTtlSeconds, 'CHAT_RESPONSE_CACHE_TTL_SECONDS', 60, 300);
   const catalogQueryNormalizationEnabled = dependencies.catalogQueryNormalizationEnabled ?? process.env.CATALOG_QUERY_NORMALIZATION_ENABLED === 'true';
-  const updateSessionSafely = async (session: Session, preserveConcurrentState: boolean): Promise<Session> => {
+  const updateSessionSafely = async (session: Session, preserveConcurrentState: boolean, conflictMerge: 'conversation' | 'workflow' = 'conversation'): Promise<Session> => {
     try { return await store.updateSession(session); } catch (error) {
       if (errorCode(error) !== 'SESSION_STATE_CONFLICT') throw error;
       const latest = await store.getSession(session.id);
       if (!latest) throw error;
       const retry: Session = { ...latest, lastActivityAt: session.lastActivityAt, closedAt: session.closedAt ?? latest.closedAt, tokenMap: session.tokenMap };
-      if (preserveConcurrentState && latest.conversationState && session.conversationState) retry.conversationState = mergeConcurrentConversationState(latest.conversationState, session.conversationState);
+      if (preserveConcurrentState && latest.conversationState && session.conversationState) retry.conversationState = conflictMerge === 'workflow'
+        ? mergeWorkflowCallbackState(latest.conversationState, session.conversationState)
+        : mergeConcurrentConversationState(latest.conversationState, session.conversationState);
       return store.updateSession(retry);
     }
   };
-  const syncWorkflowState = async (action: { id: string; tenantId: string; sessionId: string }, status: ActionState): Promise<void> => {
+  const syncWorkflowState = async (action: Pick<ActionRequest, 'id' | 'tenantId' | 'sessionId' | 'intentKey' | 'catalogVersionId'>, status: ActionState): Promise<void> => {
     const session = await store.getSession(action.sessionId);
     if (!session || session.tenantId !== action.tenantId) return;
+    const currentState = session.conversationState;
+    if (currentState && action.intentKey && currentState.selectedIntentKey && currentState.selectedIntentKey !== action.intentKey) return;
+    if (currentState && action.catalogVersionId && currentState.catalogVersionId && currentState.catalogVersionId !== action.catalogVersionId) return;
     const workflowStatus = status === 'completed' ? 'succeeded' : status === 'reconcile_required' ? 'reconcile_required' : status === 'failed' ? 'failed' : 'processing';
     const phase = status === 'completed' ? 'SUCCEEDED' : status === 'reconcile_required' ? 'RECONCILE_REQUIRED' : status === 'failed' ? 'FAILED' : 'QUEUED';
-    await updateSessionSafely({ ...session, conversationState: { ...(session.conversationState ?? newConversationState()), workflowStatus, phase, pendingPrompt: null } }, true);
+    await updateSessionSafely({ ...session, conversationState: { ...(currentState ?? newConversationState()), workflowStatus, phase, pendingPrompt: null } }, true, 'workflow');
   };
   const normalizerHealth = new Map<string, { failures: number; blockedUntil: number }>();
   const normalizeCatalogQuery = async (tenantId: string, catalogVersionId: string, input: QueryNormalizationInput, fallback: string): Promise<{ value: string; usedFallback: boolean; failed: boolean }> => {
