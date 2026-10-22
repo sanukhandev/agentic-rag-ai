@@ -139,10 +139,10 @@ const pendingCatalogSlotValue = (validationRule: string, rawInput: string, maske
     return maskPiiForSession(session, `My name is ${rawInput.trim()}`, tokenVault).match(/\[NAME_\d+\]/u)?.[0] ?? null;
   }
   if (validationRule === 'boolean:explicit_opt_in') {
-    if (/^(?:no|n|no thanks|do not|don't|not now|i do not consent|i don't consent|i refuse)[.!\s]*$/iu.test(rawInput.trim())) return 'false';
-    return /^(?:yes|y|yeah|yep|yes\s*,?\s+i\s+(?:(?:do|explicitly)\s+)?consent(?:\s+to\s+.*)?|i\s+(?:(?:do|explicitly)\s+)?consent(?:\s+to\s+.*)?|i\s+agree(?:\s+to\s+.*)?|i\s+authorize(?:\s+.*)?|go\s+ahead|you\s+may\s+contact\s+me)[.!\s]*$/iu.test(rawInput.trim()) ? 'true' : null;
+    if (/^(?:no|n|nope|nah|no thanks|do not|don't|not now|not interested|decline|cancel|stop|i do not consent|i don't consent|i refuse)[.!\s]*$/iu.test(rawInput.trim())) return 'false';
+    return /^(?:yes|y|yeah|yep|sure|ok|okay|absolutely|confirmed|confirm|i confirm|of course|sounds good|please do|yes please|yes\s*,?\s+i\s+(?:(?:do|explicitly)\s+)?consent(?:\s+to\s+.*)?|i\s+(?:(?:do|explicitly)\s+)?consent(?:\s+to\s+.*)?|i\s+agree(?:\s+to\s+.*)?|i\s+authorize(?:\s+.*)?|go\s+ahead|you\s+may\s+contact\s+me)[.!\s]*$/iu.test(rawInput.trim()) ? 'true' : null;
   }
-  return validationRule === 'text:nonempty' && maskedInput.trim() ? maskedInput.trim() : null;
+  return validationRule === 'text:nonempty' && maskedInput.trim() && !/^(?:yes|no|ok|okay|sure|confirm|nope)$/iu.test(rawInput.trim()) ? maskedInput.trim() : null;
 };
 
 export interface AppDependencies {
@@ -823,6 +823,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const consentSlot = publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length === 1
         ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === catalogResolution.intentKey && slot.slotKey === catalogResolution.missingSlots[0])
         : null;
+      const consentDenied = catalogSlotValues.contact_consent === 'false';
       const crmContactMissing = catalogResolution?.intentKey && catalogResolution.workflowKey?.startsWith('crm.') && !leadReady
         ? !leadData.name ? 'name' : !leadData.email ? 'email' : 'phone' : null;
       const consentActionReady = consentSlot?.validationRule === 'boolean:explicit_opt_in' && catalogResolution?.reason === 'missing_slots' && !crmContactMissing;
@@ -836,6 +837,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
        else if (catalogResolution?.ambiguous) draft = { answer: 'I can help with that. Are you looking to request a service or arrange a meeting?', citationIds: [], proposedIntent: null };
        else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'below_threshold') draft = { answer: catalogIntentClarification(publishedCatalog, catalogResolution.intentKey), citationIds: [], proposedIntent: null };
        else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'intent_inactive') draft = { answer: 'I can note that request, but the matching workflow is not currently enabled.', citationIds: [], proposedIntent: null };
+      else if (consentDenied && catalogResolution?.workflowKey?.startsWith('crm.')) draft = { answer: 'Understood. I will not register or share your contact details without consent. I can still answer your questions.', citationIds: [], proposedIntent: null };
       else if (crmContactMissing) draft = { answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: null };
       else if (consentActionReady) draft = { answer: 'I have the details needed. Please approve the consent action below to register your request.', citationIds: [], proposedIntent: catalogResolution?.intentKey ?? null };
       else if (publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length > 0) draft = { answer: catalogSlotQuestion(publishedCatalog, catalogResolution.intentKey, catalogResolution.missingSlots[0] ?? ''), citationIds: [], proposedIntent: null };
@@ -868,7 +870,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         ? prompt('clarification', catalogResolution.intentKey, null)
         : nextMissingSlot
           ? prompt(consentActionReady ? 'consent' : 'slot', catalogResolution?.intentKey ?? pendingCatalogIntent, nextMissingSlot)
-          : catalogResolution?.actionAllowed ? prompt('confirmation', catalogResolution.intentKey, null) : null;
+          : catalogResolution?.actionAllowed && !consentDenied ? prompt('confirmation', catalogResolution.intentKey, null) : null;
       state.catalogVersionId = catalogResolution?.catalogVersionId ?? state.catalogVersionId;
       state.selectedIntentKey = catalogResolution?.intentKey ?? state.selectedIntentKey;
       state.candidateIntentKeys = [...new Set([...state.candidateIntentKeys, catalogResolution?.intentKey, catalogResolution?.runnerUpIntentKey].filter((value): value is string => Boolean(value)))];
@@ -879,13 +881,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       state.summaryRevision += 1;
       state.messageSequence += 1;
       state.rollingSummary = [state.rollingSummary, `Visitor: ${maskedMessage}`].filter(Boolean).join('\n').slice(-4000);
-      state.phase = phaseFor({ intentKey: catalogResolution?.intentKey ?? pendingCatalogIntent, missingSlot: nextMissingSlot, consentPending: consentActionReady, actionPending: Boolean(catalogResolution?.actionAllowed) });
+      state.phase = phaseFor({ intentKey: catalogResolution?.intentKey ?? pendingCatalogIntent, missingSlot: nextMissingSlot, consentPending: consentActionReady, actionPending: Boolean(catalogResolution?.actionAllowed && !consentDenied) });
       session.conversationState = state;
       await store.updateSession(session);
       const collectedSlotValues = Object.fromEntries(Object.entries(catalogSlotValues).filter(([key]) => !['name', 'email', 'phone', 'contact_consent'].includes(key)));
       const actionLeadData = { ...leadData, ...(Object.keys(collectedSlotValues).length ? { slotValues: collectedSlotValues } : {}), ...(catalogResolution?.interest ? { interest: catalogResolution.interest } : {}), ...(consentActionReady ? { contactConsent: false } : catalogSlotValues.contact_consent === 'true' ? { contactConsent: true } : !catalogResolution ? { contactConsent: false } : {}) };
       const actionAlreadySubmitted = Boolean(pendingConsentAction && ['approved', 'processing', 'completed'].includes(pendingConsentAction.state));
-      const shouldProposeAction = catalogResolution ? !actionAlreadySubmitted && !crmContactMissing && (catalogResolution.actionAllowed || consentActionReady) : draft.proposedIntent === 'lead.capture' && leadIntent && leadReady;
+      const shouldProposeAction = catalogResolution ? !actionAlreadySubmitted && !consentDenied && !crmContactMissing && (catalogResolution.actionAllowed || consentActionReady) : draft.proposedIntent === 'lead.capture' && leadIntent && leadReady;
       const action = shouldProposeAction ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, actionLeadData, catalogResolution ? { workflowKey: catalogResolution.workflowKey ?? 'lead.capture', intentKey: catalogResolution.intentKey ?? 'lead.capture', intentScore: catalogResolution.score, intentConfidence: catalogResolution.confidence, catalogVersionId: catalogResolution.catalogVersionId, webhookPath: publishedCatalog?.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution.workflowKey)?.webhookPath ?? 'lead-capture' } : undefined) : null;
       const pendingCatalogState = publishedCatalog && catalogResolution?.intentKey && (catalogResolution.missingSlots.length > 0 || nextPrompt) ? { catalogIntentKey: catalogResolution.intentKey, catalogVersionId: catalogResolution.catalogVersionId, catalogSlotKey: catalogResolution.missingSlots[0] ?? null, catalogSlotValues, pendingPromptId: nextPrompt?.id ?? null } : null;
       const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, maskedAnswer, tokenVault), grounded, conversational: casualFallback || leadCollection || catalogClarification, citations: safeCitations, actionProposal: action ? { id: action.id, intent: action.workflowKey, consentRequired: consentActionReady || !catalogResolution, confirmation: consentActionReady || !catalogResolution ? 'I consent to the use of my contact details to register this request.' : 'Your contact request is ready to submit.', expiresAt: new Date(Date.parse(action.createdAt) + 15 * 60_000).toISOString() } : null, pendingPromptId: nextPrompt?.id ?? null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
