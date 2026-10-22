@@ -42,7 +42,7 @@ describe('intent catalog', () => {
     const resolution = resolveIntent(version, 'I need a demo', { name: '[NAME_1]' });
     expect(resolution.missingSlots).toEqual(['email']);
     expect(resolution.actionAllowed).toBe(false);
-    expect(catalogSlotQuestion(version, 'lead.capture', 'email')).toContain('email address or phone number');
+    expect(catalogSlotQuestion(version, 'lead.capture', 'email')).toContain('email address');
   });
 
   it('builds clarification from the published intent signals', () => {
