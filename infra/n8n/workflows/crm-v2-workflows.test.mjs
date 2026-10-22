@@ -19,5 +19,14 @@ test('CRM v2 workflow exports are tenant-neutral and server-authenticated', asyn
     }
     assert.doesNotMatch(text, /client_secret|client_id|password|api[_-]?key|techcarrot4--realforce|salesforce\.com|anc-test|sanu-khan/iu);
     assert.ok(workflow.nodes.some((node) => node.type === 'n8n-nodes-base.webhook'));
+    if (file === 'CRM02ContactUpsert.json' || file.startsWith('INTENT')) {
+      const verify = workflow.nodes.find((node) => node.name === 'Verify Remote CRM Completion');
+      const terminal = workflow.nodes.find((node) => node.name === 'Finalize Claimed Action');
+      assert.ok(verify && terminal, `${file} must explicitly complete or fail a claimed CRM action`);
+      assert.match(verify.parameters.jsCode, /remoteVerified \? 'completed' : 'failed'/);
+      assert.match(terminal.parameters.url, /workflow-events\/complete/);
+      assert.ok(workflow.connections['Verify Remote CRM Completion'].main[0].some((item) => item.node === 'Finalize Claimed Action'));
+      assert.match(workflow.notes, /INACTIVE TEMPLATE/);
+    }
   }
 });
