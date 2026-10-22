@@ -41,7 +41,10 @@ const bool = (value: unknown): boolean => value === true;
 const finite = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) ? value : NaN;
 const clamp = (value: number): number => Math.max(0, Math.min(100, Math.round(value)));
 const normalize = (value: string): string => value.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim();
-const phraseTokens = (value: string): string[] => normalize(value).match(/[\p{L}\p{N}]+/gu) ?? [];
+const normalizeCatalogPhrase = (value: string): string => normalize(value)
+  .replace(/\bset[\s-]?up\b/g, 'start')
+  .replace(/\b(?:establish|establishing|launch|launching|open|opening|create|creating|register|registering)\b/g, 'start');
+const phraseTokens = (value: string): string[] => normalizeCatalogPhrase(value).match(/[\p{L}\p{N}]+/gu) ?? [];
 const matchesCatalogPhrase = (input: string, signal: string): boolean => {
   const inputTokens = phraseTokens(input);
   const signalTokens = phraseTokens(signal);
