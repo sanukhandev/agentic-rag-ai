@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isGreeting, isPermittedLanguage, naturalAbstention, needsConversationContext, normalizeConversationQuery, validateCitations } from './model.js';
+import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isGreeting, isPermittedLanguage, naturalAbstention, needsConversationContext, normalizeConversationQuery, validateCitations } from './model.js';
 
 describe('Azure Foundry model adapter', () => {
   it('normalizes generic formatting without tenant-specific vocabulary', () => {
     expect(normalizeConversationQuery('  I need 10k  seats\u200b for two users  ')).toBe('I need 10 thousand seats for 2 users');
+  });
+
+  it('does not echo raw evidence when the external generation model is unavailable', async () => {
+    const model = new DeterministicGroundedModel();
+    await expect(model.draft({ maskedMessage: 'I want to start a fashion boutique', personaName: 'Sara', evidence: [{ citation: { sourceId: 'source', versionId: 'version', chunkId: 'chunk-1', title: 'FAQ', locator: 'section 1' }, content: 'Detailed retrieval-ready knowledge records\nWhat is ANCFZ?\nANCFZ supports company setup.' }] })).resolves.toEqual({ answer: naturalAbstention(), citationIds: [], proposedIntent: null });
   });
 
   it('detects and enforces configured language families', () => {

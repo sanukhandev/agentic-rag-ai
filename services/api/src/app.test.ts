@@ -178,6 +178,10 @@ describe('API vertical slice', () => {
     await api.post('/api/v1/chat/messages').send({ sessionId: contextSession.body.sessionId, message: 'Tell me about services', clientMessageId: 'context-2' }).expect(200);
     await api.post('/api/v1/chat/messages').send({ sessionId: contextSession.body.sessionId, message: 'where is he working?', clientMessageId: 'context-3' }).expect(200);
     expect(model.conversations.at(-1)).toHaveLength(2);
+    const greetingContinuitySession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: greetingContinuitySession.body.sessionId, message: 'Hello', clientMessageId: 'context-greeting-1' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: greetingContinuitySession.body.sessionId, message: 'Tell me about pricing', clientMessageId: 'context-greeting-2' }).expect(200);
+    expect(model.conversations.at(-1)).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'user', content: 'Hello' })]));
     const duplicateGrounded = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-1' }).expect(200);
     expect(duplicateGrounded.body).toEqual(grounded.body);
     const duplicateHistory = await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}`).expect(200);

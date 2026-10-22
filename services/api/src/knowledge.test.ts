@@ -41,7 +41,7 @@ describe('knowledge pipeline primitives', () => {
 
   it('keeps source-backed facts but removes ingestion metadata from model evidence', () => {
     expect(presentKnowledgeText(`File: pricing.docx\n\nPRICE-001 — Starter\n\nSource-backed content: AED 4,888 per year\n\nRetrieval keywords: starter, price\n\nSample user query (generated, review required): What is the price?\n\nResponse policy: paraphrase only supported information.`)).toBe('AED 4,888 per year');
-    expect(presentKnowledgeText(`BUSINESS_ACTIVITY-001 | General\n\nSource-backed knowledge: Business Activity Categories at ANCFZ\n\nSearch phrasing: What does ANCFZ specify about business activity categories?\n\nRelated customer phrasing: Which business activity covers my service?\n\nContext / limitation: Verify the approved source.\n\nResponse pattern: Answer directly.`)).toBe('Business Activity Categories at ANCFZ');
+    expect(presentKnowledgeText(`File: faq.docx\n\n4. Detailed retrieval-ready knowledge records\n\nGENERAL_FAQ-001 | General\n\nSource-backed knowledge: 1. What is ANCFZ?\nANCFZ supports company setup.\n\nSearch phrasing: What is ANCFZ?\n\nRelated customer phrasing: Who can apply?\n\nContext / limitation: Verify the approved source.\n\nResponse pattern: Answer directly.`)).toBe('1. What is ANCFZ?\nANCFZ supports company setup.');
     expect(presentKnowledgeText('Approved support is available by email.')).toBe('Approved support is available by email.');
   });
 

@@ -75,15 +75,7 @@ export const leadCollectionReply = (data: LeadData): string => {
 export class DeterministicGroundedModel implements ChatModel {
   async draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[] }): Promise<ModelDraft> {
     const wantsLead = /\b(contact|call|email|interested|demo|quote)\b/i.test(input.maskedMessage);
-    if (input.evidence.length === 0) {
-      return { answer: naturalAbstention(detectedLanguage(input.maskedMessage)), citationIds: [], proposedIntent: wantsLead ? 'lead.capture' : null };
-    }
-    const evidence = input.evidence[0];
-    return {
-      answer: `${evidence?.content.slice(0, 500) ?? 'The approved source does not contain enough detail.'}${wantsLead ? ' I can prepare a contact request for your confirmation.' : ''}`,
-      citationIds: evidence ? [evidence.citation.chunkId] : [],
-      proposedIntent: wantsLead ? 'lead.capture' : null,
-    };
+    return { answer: naturalAbstention(detectedLanguage(input.maskedMessage)), citationIds: [], proposedIntent: wantsLead ? 'lead.capture' : null };
   }
 }
 

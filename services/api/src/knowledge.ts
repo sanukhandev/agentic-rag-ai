@@ -63,19 +63,20 @@ export const buildIngestionChunksWithEmbeddings = async (
   return result;
 };
 
-const evidenceMetadataLine = /^(?:File|Format|Primary intent|Suggested routing|Retrieval keywords|Sample user query(?:\s*\([^)]*\))?|Search phrasing|Related customer phrasing|Context\s*\/\s*limitation|Response policy|Response pattern|Retrieval metadata):/iu;
-const evidenceMetadataHeader = /^(?:Knowledge Records|tenantScope|sourceKey|sourceFile|sourceSha256|visibility|piiScreening|---)$/iu;
+const evidenceMetadataLine = /^(?:File|Format|Primary intent|Suggested routing|Retrieval keywords|Sample user query(?:\s*\([^)]*\))?|Search phrasing|Related customer phrasing|Context\s*\/\s*limitation|Response policy|Response pattern|Retrieval metadata|Detection examples|Clarification|Next action):/iu;
+const evidenceMetadataHeader = /^(?:Knowledge Records|Detailed retrieval-ready knowledge records|tenantScope|sourceKey|sourceFile|sourceSha256|visibility|piiScreening|---)$/iu;
 const evidenceRecordHeader = /^[A-Z][A-Z0-9_.-]*-\d+\s*(?:[—-]|\|)/u;
+const sourceBackedLine = /^Source-backed\s+(?:content|knowledge):/iu;
 
 /** Removes ingestion/template metadata while preserving the approved source-backed facts. */
 export const presentKnowledgeText = (input: string): string => {
   const lines = input.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-  const hasSourceBackedContent = lines.some((line) => /^\s*Source-backed content:/iu.test(line));
+  const hasSourceBackedContent = lines.some((line) => sourceBackedLine.test(line.trim()));
   let inSourceBackedContent = false;
   const visible: string[] = [];
   for (const line of lines) {
     const trimmed = line.trim();
-    if (/^Source-backed\s+(?:content|knowledge):/iu.test(trimmed)) {
+    if (sourceBackedLine.test(trimmed)) {
       inSourceBackedContent = true;
       const value = trimmed.replace(/^Source-backed\s+(?:content|knowledge):\s*/iu, '').trim();
       if (value) visible.push(value);

@@ -818,7 +818,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const deterministicMessage = normalizeConversationQuery(maskedMessage);
       const currentCatalogResolution = publishedCatalog ? resolveIntent(publishedCatalog, deterministicMessage, currentCatalogSlotValues) : null;
       const useCatalogContext = Boolean(publishedCatalog && (pendingCatalogIntent || state.selectedIntentKey || (!currentCatalogResolution?.intentKey && (needsConversationContext(maskedMessage) || leadDataRequested))));
-      const recentMessages = intent === null && (needsConversationContext(maskedMessage) || leadDataRequested || useCatalogContext) ? (publishedCatalog ? catalogHistory : await store.listMessages(session.id, session.tenantId, contextWindowMessages + 1)).filter((message) => message.id !== userMessage.id).slice(-contextWindowMessages) : [];
+      const history = publishedCatalog ? catalogHistory : await store.listMessages(session.id, session.tenantId, contextWindowMessages + 1);
+      const recentMessages = intent === null ? history.filter((message) => message.id !== userMessage.id).slice(-contextWindowMessages) : [];
       const conversation = recentMessages.map((message) => ({ role: message.role, content: message.maskedContent }));
       let normalizedMessage = deterministicMessage;
       if (publishedCatalog && model.normalizeQuery && catalogQueryNormalizationEnabled && (useCatalogContext || currentCatalogResolution?.reason === 'no_signal' || currentCatalogResolution?.reason === 'below_threshold' || currentCatalogResolution?.ambiguous)) {
@@ -831,11 +832,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           normalizedMessage = candidate;
         } catch { normalizedMessage = deterministicMessage; }
       }
-      const retrievalQuery = [normalizedMessage, ...recentMessages.filter((message) => message.role === 'user').map((message) => normalizeConversationQuery(message.maskedContent))].join('\n');
+      const intentContext = recentMessages.filter((message) => message.role === 'user' && conversationalIntent(message.maskedContent) === null).map((message) => normalizeConversationQuery(message.maskedContent));
+      const retrievalContext = needsConversationContext(maskedMessage) ? recentMessages.filter((message) => message.role === 'user' && conversationalIntent(message.maskedContent) === null).map((message) => normalizeConversationQuery(message.maskedContent)) : [];
+      const retrievalQuery = [normalizedMessage, ...retrievalContext].join('\n');
+      const intentContextQuery = [normalizedMessage, ...intentContext].join('\n');
       const leadData = mergeLeadData(pendingCatalogValues as LeadData, ...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), currentLeadData);
       const catalogSlotValues: Record<string, string> = { ...pendingCatalogValues, ...Object.fromEntries(recentMessages.filter((message) => message.role === 'user').flatMap((message) => Object.entries(extractLeadData(message.maskedContent)))), ...(extractLeadData(maskedMessage) as Record<string, string>), ...pendingCatalogValueData };
       const leadReady = Boolean(leadData.name && (leadData.email || leadData.phone));
-      const intentContinuity = publishedCatalog ? resolveIntentContinuity(publishedCatalog, { currentText: normalizedMessage, contextText: retrievalQuery, slotValues: catalogSlotValues, selectedIntentKey: state.selectedIntentKey }) : null;
+      const intentContinuity = publishedCatalog ? resolveIntentContinuity(publishedCatalog, { currentText: normalizedMessage, contextText: intentContextQuery, slotValues: catalogSlotValues, selectedIntentKey: state.selectedIntentKey }) : null;
       let catalogResolution = intentContinuity?.primary ?? null;
       // Consent is purpose-bound. A strong, newly requested intent must not inherit
       // the opt-in or pending question from a different customer journey.
