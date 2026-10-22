@@ -269,6 +269,13 @@ export class MemoryStore implements Store {
     return [...this.actions.values()].find((action) => action.tenantId === tenantId && action.idempotencyKey === idempotencyKey) ?? null;
   }
   async updateAction(action: ActionRequest): Promise<ActionRequest> { this.actions.set(action.id, action); return action; }
+  async claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null> {
+    const action = this.actions.get(actionId);
+    if (!action || action.workflowKey !== workflowKey || !['approved', 'processing'].includes(action.state)) return null;
+    const claimed = action.state === 'processing' ? action : { ...action, state: 'processing' as const };
+    this.actions.set(actionId, claimed);
+    return claimed;
+  }
   async claimApprovedActions(workflowKey: string, limit: number): Promise<ActionRequest[]> {
     const actions = [...this.actions.values()]
       .filter((action) => action.workflowKey === workflowKey && action.state === 'approved')

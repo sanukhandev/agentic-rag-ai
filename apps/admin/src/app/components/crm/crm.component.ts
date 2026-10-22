@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -268,18 +268,18 @@ import { IconComponent } from '../shared/icon.component';
                     class="rounded px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider"
                     [ngClass]="lead.summaryStatus === 'completed' ? 'bg-emerald-100 text-emerald-800' : 'bg-neutral-200 text-neutral-700'"
                   >
-                    {{ lead.summaryStatus || 'pending' }}
+                    {{ summaryStatusLabel(lead.summaryStatus) }}
                   </span>
                 </div>
                 <pre *ngIf="lead.summary; else summaryPending" class="whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-3 font-mono text-[11px] leading-relaxed text-neutral-700">{{ lead.summary }}</pre>
                 <ng-template #summaryPending>
-                  <p class="text-xs sm:text-[13px] leading-relaxed text-neutral-500">Summary is being prepared by the backend...</p>
+                  <p class="text-xs sm:text-[13px] leading-relaxed text-neutral-500">{{ lead.summaryStatus === 'failed' ? 'Summary processing failed; retry the workflow.' : 'Summary is being prepared by the backend...' }}</p>
                 </ng-template>
                 <div *ngIf="lead.documents?.length" class="mt-4 border-t border-neutral-200/60 pt-3">
                   <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">Supporting documents</span>
                   <div *ngFor="let document of lead.documents" class="mt-2 flex items-center justify-between gap-2 rounded-lg bg-white p-2 text-xs">
                     <span class="min-w-0 truncate" [title]="document.fileName">{{ document.fileName }}</span>
-                    <span class="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase">{{ document.status }}</span>
+                    <span class="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase">{{ documentStatusLabel(document.status) }}</span>
                     <button type="button" (click)="downloadDocument(document.id, document.fileName)" class="shrink-0 text-[10px] font-semibold text-neutral-700 hover:text-neutral-950">Download</button>
                   </div>
                 </div>
@@ -358,14 +358,14 @@ import { IconComponent } from '../shared/icon.component';
                 Action: {{ lead.actionId }}
               </span>
             </div>
-            <span class="font-mono text-[10px] text-neutral-400">Status: {{ lead.summaryStatus }}</span>
+            <span class="font-mono text-[10px] text-neutral-400">Status: {{ summaryStatusLabel(lead.summaryStatus) }}</span>
           </div>
         </div>
       </div>
     </section>
   `
 })
-export class CrmComponent implements OnInit {
+export class CrmComponent implements OnInit, OnDestroy {
   private readonly state = inject(AdminStateService);
   private readonly cdr = inject(ChangeDetectorRef);
 
@@ -373,6 +373,7 @@ export class CrmComponent implements OnInit {
   isLoading = false;
   searchQuery = '';
   qualityFilter: 'all' | 'hot' | 'warm' | 'new' = 'all';
+  private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   ngOnInit(): void {
     this.state.crmLeads$.subscribe((leads) => {
@@ -389,6 +390,11 @@ export class CrmComponent implements OnInit {
 
     // Proactively fetch latest leads on mount
     this.state.loadCrmLeads();
+    this.refreshTimer = setInterval(() => this.state.loadCrmLeads(), 5000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
   }
 
   refresh(): void {
@@ -476,5 +482,13 @@ export class CrmComponent implements OnInit {
       default:
         return 'neutral';
     }
+  }
+
+  summaryStatusLabel(status: CrmLead['summaryStatus']): string {
+    return status === 'completed' ? 'Completed' : status === 'failed' ? 'Failed' : 'Processing';
+  }
+
+  documentStatusLabel(status: string): string {
+    return status === 'completed' ? 'Completed' : status === 'failed' ? 'Failed' : status === 'processing' ? 'Verifying' : status === 'reconciliation' ? 'Needs review' : 'Queued';
   }
 }

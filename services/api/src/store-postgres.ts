@@ -160,6 +160,10 @@ export class PostgresStore implements Store {
   async getAction(id: string): Promise<ActionRequest | null> { const result = await this.pool.query('SELECT * FROM action_requests WHERE id=$1', [id]); return result.rows[0] ? this.action(result.rows[0]) : null; }
   async getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null> { const result = await this.pool.query('SELECT * FROM action_requests WHERE tenant_id=$1 AND idempotency_key=$2', [tenantId, idempotencyKey]); return result.rows[0] ? this.action(result.rows[0]) : null; }
   async updateAction(action: ActionRequest): Promise<ActionRequest> { await this.pool.query('UPDATE action_requests SET state=$1,result=$2,payload=$3 WHERE id=$4 AND tenant_id=$5', [action.state, action.result ? JSON.stringify(action.result) : null, JSON.stringify(action.payload), action.id, action.tenantId]); return action; }
+  async claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null> {
+    const result = await this.pool.query<ActionRow>(`UPDATE action_requests SET state='processing' WHERE id=$1 AND workflow_key=$2 AND state IN ('approved','processing') RETURNING *`, [actionId, workflowKey]);
+    return result.rows[0] ? this.action(result.rows[0]) : null;
+  }
   async claimApprovedActions(workflowKey: string, limit: number): Promise<ActionRequest[]> {
     const result = await this.pool.query<ActionRow>(`WITH candidates AS (
         SELECT id FROM action_requests

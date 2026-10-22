@@ -196,7 +196,7 @@ describe('API vertical slice', () => {
     const farewellSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
     const farewell = await api.post('/api/v1/chat/messages').send({ sessionId: farewellSession.body.sessionId, message: 'That’s all, bye', clientMessageId: 'farewell-1' }).expect(200);
     expect(farewell.body).toMatchObject({ grounded: false, conversational: true, citations: [] });
-    expect(farewell.body.answer).toContain('lovely chatting');
+    expect(farewell.body.answer).toContain('conversation is now closed');
     await api.post('/api/v1/chat/messages').send({ sessionId: farewellSession.body.sessionId, message: 'Can we continue?', clientMessageId: 'farewell-2' }).expect(410).expect((response) => expect(response.body.error.code).toBe('SESSION_CLOSED'));
     const newerPersona = await api.post('/api/v1/admin/persona/drafts').set('Authorization', `Bearer ${adminToken}`).send({ name: 'Ava New', greeting: 'Welcome', personality: 'Warm', tone: 'Friendly', speakingStyle: 'Short', permittedLanguages: ['en'] }).expect(201);
     await api.post(`/api/v1/admin/persona/versions/${newerPersona.body.version.id}/publish`).set('Authorization', `Bearer ${adminToken}`).expect(200);
@@ -643,6 +643,8 @@ describe('API vertical slice', () => {
     const linked = await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/remote`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, leadId: 'remote-123', remoteCrm: 'remote-crm-test' }).expect(200);
     expect(linked.body.lead).toMatchObject({ leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'crm-lead-remote-123' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'succeeded', phase: 'SUCCEEDED', pendingPrompt: null });
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'crm-lead-remote-123' }).expect(200);
     const unconsented = await runtime.store.createAction({ ...action!, id: randomUUID(), idempotencyKey: 'crm-another-purpose', payload: { ...action!.payload, contactConsent: false }, state: 'approved' });
     await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret')
       .send({ actionId: unconsented.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: unconsented.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) })
@@ -746,6 +748,9 @@ describe('API vertical slice', () => {
     expect(followUp.body.citations).not.toHaveLength(0);
     expect(followUp.body.answer).toContain('Starter package');
     expect(model.followUpContexts.some((context) => context?.leadCaptured === true)).toBe(true);
+    const farewell = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Nothing more I need', clientMessageId: 'browser-lead-farewell' }).expect(200);
+    expect(farewell.body.answer).toContain('conversation is now closed');
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Can we continue?', clientMessageId: 'browser-lead-after-farewell' }).expect(410);
 
     const actionId = contact.body.actionProposal.id as string;
     const action = await runtime.store.getAction(actionId);

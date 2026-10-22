@@ -416,6 +416,7 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
   private readonly http = inject(HttpClient);
   private readonly state = inject(AdminStateService);
   private readonly sanitizer = inject(DomSanitizer);
+  private readonly actionPollTimers = new Set<ReturnType<typeof setTimeout>>();
 
   // Configuration & Tenant state
   tenantSlug = '';
@@ -463,7 +464,8 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    // cleanup
+    for (const timer of this.actionPollTimers) clearTimeout(timer);
+    this.actionPollTimers.clear();
   }
 
   toggleAdminTestingMode(): void {
@@ -636,12 +638,40 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
           target.actionState = state;
           target.actionOutcome = res.message ?? 'Your request is registered and will continue processing asynchronously.';
         }
+        if (state === 'approved' || state === 'processing') this.pollActionStatus(proposalId);
       },
       error: () => {
         this.isBusy = false;
         this.errorMessage = 'The workflow action could not be confirmed.';
       }
     });
+  }
+
+  private pollActionStatus(proposalId: string, attempt = 0): void {
+    if (!this.sessionId || attempt >= 90) return;
+    const timer = setTimeout(() => {
+      this.actionPollTimers.delete(timer);
+      this.http.get<{ action?: { state?: ChatActionState } }>(`${this.apiBase}/api/v1/chat/actions/${proposalId}?sessionId=${encodeURIComponent(this.sessionId ?? '')}`).subscribe({
+        next: (response) => {
+          const state = response.action?.state;
+          if (!state) { this.pollActionStatus(proposalId, attempt + 1); return; }
+          const target = this.messages.find((message) => message.actionProposal?.id === proposalId);
+          if (target) {
+            target.actionState = state;
+            target.actionOutcome = state === 'completed'
+              ? 'Your request has been completed and is ready for follow-up.'
+              : state === 'failed'
+                ? 'The request could not be completed. Please start a new request.'
+                : state === 'reconcile_required'
+                  ? 'Your request is registered, but external confirmation needs review.'
+                  : target.actionOutcome;
+          }
+          if (state !== 'completed' && state !== 'failed' && state !== 'reconcile_required') this.pollActionStatus(proposalId, attempt + 1);
+        },
+        error: () => this.pollActionStatus(proposalId, attempt + 1)
+      });
+    }, 1000);
+    this.actionPollTimers.add(timer);
   }
 
   retryLastMessage(): void {

@@ -200,7 +200,7 @@ export const conversationalIntent = (text: string): ConversationalIntent | null 
   if (/^(?:من انت|ما اسمك|ماذا تستطيع|كيف تساعد)$/u.test(normalized)) return 'identity';
   if (/^(?:thanks|thank you)(?: very much| so much)?|^(?:much )?appreciate it$/u.test(normalized)) return 'thanks';
   if (/^(?:شكرا|مشكور|مشكورة|جزاك الله خيرا)$/u.test(normalized)) return 'thanks';
-  if (/^(?:bye|goodbye|see you|talk to you later|have a good (?:day|one)|that (?:is|s) all(?: bye)?|i (?:am|m) done)$/u.test(normalized)) return 'farewell';
+  if (/^(?:bye|goodbye|see you|talk to you later|have a good (?:day|one)|that (?:is|s) all(?: for now| bye)?|i (?:am|m) done|nothing (?:more|else)(?: for now| i need)?|no more (?:questions|help)(?: needed)?|i (?:do not|don't) need anything (?:else|more))$/u.test(normalized)) return 'farewell';
   if (/^(?:مع السلامة|الى اللقاء|وداعا|باي)$/u.test(normalized)) return 'farewell';
   if (/^(?:ok|okay|sure|yes|yeah|yep|got it|sounds good|great|nice|cool|perfect)$/u.test(normalized)) return 'acknowledgement';
   if (/^(?:حسنا|نعم|موافق|رائع)$/u.test(normalized)) return 'acknowledgement';
@@ -217,14 +217,14 @@ export const conversationalReply = (intent: ConversationalIntent, personaName: s
     if (intent === 'greeting') return 'مرحبًا! أنا هنا لمساعدتك. ماذا تود أن تستكشف اليوم؟';
     if (intent === 'wellbeing') return 'أنا بخير، شكرًا لسؤالك! كيف يمكنني مساعدتك؟';
     if (intent === 'thanks') return 'على الرحب والسعة! هل هناك شيء آخر تود استكشافه؟';
-    if (intent === 'farewell') return 'سعدت بالدردشة معك. أنا هنا لمساعدتك متى احتجت.';
+    if (intent === 'farewell') return 'سعدت بالدردشة معك. أغلقت هذه المحادثة الآن؛ يمكنك بدء محادثة جديدة متى احتجت.';
     if (intent === 'acknowledgement') return 'رائع، لنكمل. ما الذي تود معرفته بعد ذلك؟';
     return `أنا ${personaName}، المساعد الذكي والمساعد الشخصي لـ ${ownerName}. يمكنني مساعدتك في المنتجات والخدمات والمشاريع والمعلومات العامة الموثقة هنا.`;
   }
   if (intent === 'greeting') return `Hi! I’m ${personaName}. What would you like to explore today?`;
   if (intent === 'wellbeing') return 'I’m doing great—thanks for asking! What can I help you discover?';
   if (intent === 'thanks') return 'You’re very welcome! Is there anything else you’d like to explore?';
-  if (intent === 'farewell') return 'It was lovely chatting with you. Whenever you’re ready, I’m here to help.';
+  if (intent === 'farewell') return 'It was lovely chatting with you. This conversation is now closed; start a new session whenever you’re ready.';
   if (intent === 'acknowledgement') return 'Great—let’s keep going. What would you like to look at next?';
   return `I’m ${personaName}, ${ownerName}’s AI assistant and associate. I can help with the products, services, projects, and public information documented here.`;
 };
