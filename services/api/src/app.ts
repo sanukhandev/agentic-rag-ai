@@ -923,6 +923,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           || session.conversationState.catalogVersionId !== action.catalogVersionId)) {
         throw new HttpError(422, 'CONSENT_PROMPT_REQUIRED', 'Consent must be given for the active, purpose-scoped request.');
       }
+      if (action.state === 'failed') throw new HttpError(409, 'ACTION_NOT_ACCEPTED', 'This request is no longer confirmable. Please start a new request.');
       const confirmed = await gateway.confirm(action.id, action.tenantId);
       if (!['approved', 'processing', 'completed'].includes(confirmed.state)) throw new HttpError(409, 'ACTION_NOT_ACCEPTED', 'This request was not accepted. Please start a new request.');
       const consentGranted = confirmed.payload.contactConsent === true;
