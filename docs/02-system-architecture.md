@@ -29,13 +29,13 @@ flowchart LR
 
 ## Web chat sequence
 1. Browser opens session through Node; Node establishes tenant and channel context without trusting client-supplied tenant IDs.
-2. Request is authenticated/rate-limited/validated; Node normalizes text and detects/masks customer identifiers.
+2. Request is authenticated/rate-limited/validated; Node masks customer identifiers and applies a tenant-neutral deterministic cleanup. When the published catalog and active conversation make normalization useful, the model may rewrite only the masked query for spelling/wording correction; the server never treats that rewrite as authorization.
 3. Node stores scoped conversation state and masked turns. PII vault stores encrypted mappings separate from prompts and embeddings.
-4. Node creates retrieval query from sanitized message; hybrid lexical/vector strategy may be used, always with SQL-level tenant/source/ACL filters.
+4. Node creates a retrieval query from the normalized masked message and recent masked user turns; hybrid lexical/vector strategy may be used, always with SQL-level tenant/source/ACL filters.
 5. Node assembles limited evidence snippets with document IDs, stable chunk IDs, page/section, version and source validity.
 6. Node calls GPT-4.1-mini with policy, history and relevant snippets. Expected output includes answer, cited chunk IDs and a structured *intent proposal* when useful.
 7. Node verifies evidence IDs against supplied snippets and enforces confidence/claim checks. Unknown facts are not filled in by the model.
-8. Node checks action registry, user confirmation/consent, authorization and idempotency; it alone calls n8n over an authenticated private link.
+8. Node checks action registry, user confirmation/consent, authorization and idempotency; catalog continuity keeps the selected primary intent stable across follow-ups while retaining secondary candidates. It alone calls n8n over an authenticated private link.
 9. Node validates workflow result, rehydrates only allowed approved tokens at the last delivery boundary, and responds to the same authorized recipient.
 10. Node emits a redacted audit event and operational metrics. Workflow failures are not disguised as success.
 

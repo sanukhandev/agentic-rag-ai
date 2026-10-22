@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { catalogIntentClarification, catalogSlotQuestion, resolveIntent, validateIntentCatalog } from './intent-catalog.js';
+import { catalogIntentClarification, catalogSlotQuestion, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
 import type { IntentCatalogVersion } from './types.js';
 
 const version: IntentCatalogVersion = {
@@ -63,6 +63,17 @@ describe('intent catalog', () => {
     expect(resolution.intentKey).toBe('appointment.request');
     expect(resolution.reason).toBe('intent_inactive');
     expect(resolution.actionAllowed).toBe(false);
+  });
+
+  it('keeps the selected primary intent for contextual follow-ups and records alternatives', () => {
+    const continuity = resolveIntentContinuity(version, { currentText: 'sure, continue', contextText: 'I need a demo\nsure, continue', selectedIntentKey: 'lead.capture', slotValues: { name: '[NAME_1]' } });
+    expect(continuity.primary.intentKey).toBe('lead.capture');
+    expect(continuity.secondaryIntentKeys).not.toContain('lead.capture');
+  });
+
+  it('switches only when a new unrelated current intent is strong', () => {
+    const continuity = resolveIntentContinuity(version, { currentText: 'appointment', contextText: 'I need a demo\nappointment', selectedIntentKey: 'lead.capture', slotValues: { name: '[NAME_1]' } });
+    expect(continuity.primary.intentKey).toBe('appointment.request');
   });
 
   it('accepts the proposed OCR catalog extensions without activating the pending OCR binding', () => {

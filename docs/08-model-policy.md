@@ -23,6 +23,11 @@ A plain model promise to cite its sources is **insufficient**. Use deterministic
 ## Structured intent response
 Use strict JSON schema/function calling where supported; define intent enums and action argument types. Typical output: answer text, citationIds, groundingStatus, proposedIntent, proposedArguments, needsClarification. Do not trust "confidence" as calibrated truth; evaluate against an annotated dataset. Never use a model-produced URL or executable script as a tool destination.
 
+## Catalog-guided query normalization
+The server may make a bounded, separate normalization call with the latest masked message, masked conversation context and the active tenant catalog vocabulary. The call returns only a normalized retrieval query. It may correct clear spelling, grammar, transliteration or wording mistakes, but must preserve bracketed privacy tokens, facts, quantities, negation and uncertainty. It must not return an intent, workflow, consent decision or answer.
+
+Normalization output is untrusted: the server length-checks it, rejects unmasked contact data or unknown privacy tokens, and falls back to deterministic cleanup if the call fails. Intent scoring, slot collection, consent, authorization and workflow dispatch remain server-side catalog decisions. Conversation continuity may retain a selected primary intent and record secondary candidates; only a strong unrelated current request may switch the primary intent.
+
 ## Conversation memory
 Node stores scope-limited **masked** summaries/turns, retention and redaction rules. Do not reinject raw historical identities in subsequent model prompts. Retrieval knowledge and customer memory are separate sources with different access lifecycles.
 

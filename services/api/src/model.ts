@@ -1,4 +1,4 @@
-import type { Citation, LeadData } from './types.js';
+import type { Citation, IntentCatalog, LeadData } from './types.js';
 import { z } from 'zod';
 import { assertExternalEndpoint } from './runtime-security.js';
 
@@ -11,9 +11,32 @@ export interface ModelDraft {
   proposedIntent: string | null;
 }
 
+export interface QueryNormalizationInput {
+  maskedMessage: string;
+  catalog: Pick<IntentCatalog, 'intents' | 'signals' | 'relations'>;
+  conversation?: ConversationTurn[];
+}
+
 export interface ChatModel {
   draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[] }): Promise<ModelDraft>;
+  normalizeQuery?(input: QueryNormalizationInput): Promise<string | null>;
 }
+
+const numberWords: Record<string, string> = { zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10' };
+
+/** Keeps the fallback tenant-neutral: it only removes formatting noise and normalizes compact quantities. */
+export const normalizeConversationQuery = (text: string): string => text
+  .normalize('NFKC')
+  .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e]/gu, ' ')
+  .replace(/\b(\d+(?:\.\d+)?)[kK]\b/gu, '$1 thousand')
+  .replace(new RegExp(`\\b(${Object.keys(numberWords).join('|')})\\b`, 'giu'), (word) => numberWords[word.toLowerCase()] ?? word)
+  .replace(/[“”]/gu, '"')
+  .replace(/[‘’]/gu, "'")
+  .replace(/\s+/gu, ' ')
+  .trim()
+  .slice(0, 4_000);
+
+const containsUnmaskedContact = (text: string): boolean => /(?:[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\+?\d[\d\s().-]{6,}\d)/u.test(text);
 
 export const naturalAbstention = (language = 'en'): string => language === 'ar'
   ? 'لا أملك معلومات موثقة عن هذا الموضوع في قاعدة معرفتي الحالية حتى الآن. يمكنني مساعدتك في الموضوعات التي أضيفت إلى معلوماتي المعتمدة، مثل المنتجات أو الخدمات أو المشاريع. ماذا تود أن تستكشف؟'
@@ -45,8 +68,7 @@ export const mergeLeadData = (...values: LeadData[]): LeadData => {
 };
 export const leadCollectionReply = (data: LeadData): string => {
   if (!data.name) return 'I’d be happy to help. What name should I use?';
-  if (!data.email) return 'Thanks. What email address should I use?';
-  if (!data.phone) return 'Thanks. What phone number, including country code, can I use?';
+  if (!data.email && !data.phone) return 'Thanks. What’s the best email address or phone number to reach you on?';
   return 'I have the contact details needed. Please explicitly consent before I register the request.';
 };
 
@@ -67,6 +89,45 @@ export class DeterministicGroundedModel implements ChatModel {
 
 export class AzureFoundryModel implements ChatModel {
   constructor(private readonly endpoint: string, private readonly deployment: string, private readonly apiKey: string, private readonly apiVersion = '2024-10-21') { assertExternalEndpoint(endpoint, 'Azure AI'); }
+
+  async normalizeQuery(input: QueryNormalizationInput): Promise<string | null> {
+    const fallback = normalizeConversationQuery(input.maskedMessage);
+    if (!this.endpoint || !this.deployment || !this.apiKey) return fallback;
+    const endpoint = this.endpoint.replace(/\/$/u, '');
+    const v1 = /\/openai\/v1$/iu.test(endpoint);
+    const url = v1
+      ? `${endpoint}/chat/completions`
+      : `${endpoint}/openai/deployments/${encodeURIComponent(this.deployment)}/chat/completions?api-version=${encodeURIComponent(this.apiVersion)}`;
+    const catalog = {
+      intents: input.catalog.intents.filter((intent) => intent.active).map(({ intentKey, displayName, description, category, priority }) => ({ intentKey, displayName, description, category, priority })),
+      signals: input.catalog.signals.filter((signal) => input.catalog.intents.some((intent) => intent.active && intent.intentKey === signal.intentKey)).map(({ intentKey, signalType, value, language, relationGroup }) => ({ intentKey, signalType, value, language, relationGroup })),
+      relations: input.catalog.relations,
+    };
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'api-key': this.apiKey },
+      signal: AbortSignal.timeout(800),
+      body: JSON.stringify({
+        ...(v1 ? { model: this.deployment } : {}),
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: 'Normalize the latest visitor message for catalog-guided retrieval. Correct spelling, grammar, transliteration and wording only when the meaning is clear. Preserve facts, quantities, negation, uncertainty and bracketed privacy tokens exactly. Use the supplied catalog only as vocabulary context. Do not choose an intent, workflow, consent state or answer the visitor. Return JSON only: {"query":"..."}.' },
+          { role: 'user', content: JSON.stringify({ message: input.maskedMessage, conversation: input.conversation ?? [], catalog }) },
+        ],
+      }),
+    });
+    if (!response.ok) return fallback;
+    let body: { choices?: Array<{ message?: { content?: unknown } }> };
+    try { body = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> }; } catch { return fallback; }
+    const content = body.choices?.[0]?.message?.content;
+    if (typeof content !== 'string') return fallback;
+    let parsed: unknown;
+    try { parsed = JSON.parse(content); } catch { return fallback; }
+    const result = z.object({ query: z.string().min(1).max(4_000) }).strict().safeParse(parsed);
+    if (!result.success || containsUnmaskedContact(result.data.query)) return fallback;
+    return normalizeConversationQuery(result.data.query);
+  }
 
   async draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[] }): Promise<ModelDraft> {
     const safeFallback = (): ModelDraft => ({ answer: naturalAbstention(detectedLanguage(input.maskedMessage)), citationIds: [], proposedIntent: null });
