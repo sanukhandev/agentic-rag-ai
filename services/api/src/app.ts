@@ -917,6 +917,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!getAuth(req) && !channel) { enforcePublicOrigin(req, tenant, nodeEnv); enforcePublicChatEnabled(req, tenant); }
       ensureLiveSession(session.lastActivityAt, session.closedAt);
       await activeTenant(store, action.tenantId);
+      if (action.catalogVersionId && action.payload.contactConsent === false
+        && (session.conversationState?.pendingPrompt?.type !== 'consent'
+          || session.conversationState.pendingPrompt.intentKey !== action.intentKey
+          || session.conversationState.catalogVersionId !== action.catalogVersionId)) {
+        throw new HttpError(422, 'CONSENT_PROMPT_REQUIRED', 'Consent must be given for the active, purpose-scoped request.');
+      }
       const confirmed = await gateway.confirm(action.id, action.tenantId);
       if (!['approved', 'processing', 'completed'].includes(confirmed.state)) throw new HttpError(409, 'ACTION_NOT_ACCEPTED', 'This request was not accepted. Please start a new request.');
       const consentGranted = confirmed.payload.contactConsent === true;
