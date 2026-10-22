@@ -602,10 +602,28 @@ describe('API vertical slice', () => {
     const linked = await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/remote`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, leadId: 'remote-123', remoteCrm: 'remote-crm-test' }).expect(200);
     expect(linked.body.lead).toMatchObject({ leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'crm-lead-remote-123' }).expect(200);
+    const unconsented = await runtime.store.createAction({ ...action!, id: randomUUID(), idempotencyKey: 'crm-another-purpose', payload: { ...action!.payload, contactConsent: false }, state: 'approved' });
+    await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret')
+      .send({ actionId: unconsented.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: unconsented.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) })
+      .expect(422);
+    expect((await runtime.store.listCrmLeads(tenant.body.tenant.id))).toHaveLength(1);
     const crm = await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', phone: '+971500000000' }, score: 70, summary: 'Customer Alice requested a demo via +971500000000.', summaryStatus: 'completed', leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
     expect(JSON.stringify(crm.body.items[0].conversation)).toContain('+971500000000');
     await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${platform.body.token}`).set('x-tenant-id', tenant.body.tenant.id).expect(200);
+  });
+
+  it('refuses an expired proposal without recording consent or claiming registration', async () => {
+    const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'crm-secret' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'expired-confirm-platform@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Expired Confirm Tenant', slug: 'expired-confirm-tenant', adminEmail: 'expired-confirm-admin@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const expired = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'lead.capture', intentKey: 'lead.capture', intentScore: 80, intentConfidence: 0.9, catalogVersionId: null, idempotencyKey: 'expired-confirmation-test', state: 'awaiting_confirmation', opaqueReference: 'expired-test', payload: { name: '[NAME_1]', email: '[EMAIL_1]', phone: '[PHONE_1]', contactConsent: false }, createdAt: new Date(Date.now() - 16 * 60_000).toISOString(), result: null });
+    const confirmation = await api.post(`/api/v1/chat/actions/${expired.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(409);
+    expect(confirmation.body.error.code).toBe('ACTION_NOT_ACCEPTED');
+    expect((await runtime.store.getAction(expired.id))?.state).toBe('failed');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.contactConsent).not.toBe('granted');
   });
 
   it('creates a validated draft when a tenant admin edits an intent catalog', async () => {
