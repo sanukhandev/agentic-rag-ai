@@ -59,6 +59,10 @@ describe('published intent catalog runtime', () => {
     const interestTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'I need help setting up the requested service.', clientMessageId: 'catalog-multi-5' }).expect(200);
     expect(interestTurn.body.actionProposal).toMatchObject({ intent: 'crm.lead.create', consentRequired: true });
     expect(interestTurn.body.answer).toContain('consent action');
+    const declined = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'no', clientMessageId: 'catalog-multi-refuse' }).expect(200);
+    expect(declined.body.actionProposal).toBeNull();
+    expect(declined.body.answer).toContain('will not register');
+    await api.post(`/api/v1/chat/actions/${interestTurn.body.actionProposal.id}/confirm`).send({ sessionId: multiTurn.body.sessionId, confirmed: true }).expect(422);
 
     const demoSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'catalog-tenant' }).expect(201);
     const demoTurn = await api.post('/api/v1/chat/messages').send({ sessionId: demoSession.body.sessionId, message: 'Can I book a demo?', clientMessageId: 'catalog-demo-1' }).expect(200);

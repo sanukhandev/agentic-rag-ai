@@ -510,7 +510,7 @@ describe('API vertical slice', () => {
     await api.post('/api/v1/chat/messages').set('Origin', 'https://other.example').send({ sessionId: session.body.sessionId, message: 'Blocked origin', clientMessageId: 'channel-action-denied' }).expect(403);
     await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'Please contact me for a demo.', clientMessageId: 'channel-action-request' }).expect(200);
     await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'My name is Channel User.', clientMessageId: 'channel-action-name' }).expect(200);
-    const proposal = await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'channel.user@example.com', clientMessageId: 'channel-action-1' }).expect(200);
+    const proposal = await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'channel.user@example.com +971500000000', clientMessageId: 'channel-action-1' }).expect(200);
     const actionId = proposal.body.actionProposal.id as string;
     await api.patch('/api/v1/admin/channel').set('Authorization', `Bearer ${admin.body.token}`).send({ publicOrigin: 'https://chat.channel.example', publicChatEnabled: false }).expect(200);
     await api.post('/api/v1/chat/messages').set('Origin', 'https://chat.channel.example').send({ sessionId: session.body.sessionId, message: 'Blocked after disable', clientMessageId: 'channel-disabled-message' }).expect(423);
