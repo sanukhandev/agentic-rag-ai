@@ -84,6 +84,39 @@
         980,
         0
       ]
+    },
+    {
+      "id": "INTENTancfzint03-verify-remote",
+      "name": "Verify Remote CRM Completion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const lead = $json.lead;\nif (!lead || typeof lead.id !== 'string' || typeof lead.actionId !== 'string' || typeof lead.tenantId !== 'string') throw new Error('Expected authorized internal CRM lead response.');\nconst remoteVerified = typeof lead.leadId === 'string' && lead.leadId.length > 0 && typeof lead.remoteCrm === 'string' && lead.remoteCrm.length > 0;\nreturn [{ json: { actionId: lead.actionId, tenantId: lead.tenantId, state: remoteVerified ? 'completed' : 'failed', ...(remoteVerified ? { externalReference: 'crm-lead-' + lead.id } : {}) } }];"
+      }
+    },
+    {
+      "id": "INTENTancfzint03-finish",
+      "name": "Finalize Claimed Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/complete",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, state: $json.state, externalReference: $json.externalReference }) }}",
+        "options": {}
+      }
     }
   ],
   "connections": {
@@ -130,6 +163,28 @@
           }
         ]
       ]
+    },
+    "Internal Intent CRM Upsert": {
+      "main": [
+        [
+          {
+            "node": "Verify Remote CRM Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Remote CRM Completion": {
+      "main": [
+        [
+          {
+            "node": "Finalize Claimed Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -141,5 +196,5 @@
     "templateCredsSetupCompleted": false
   },
   "tags": [],
-  "notes": "Template only: bind a tenant-authorized n8n HTTP Header Auth credential to both internal API HTTP nodes. Do not activate until provider-side integration, required scope and terminal action completion are configured and verified."
+  "notes": "INACTIVE TEMPLATE: requires provider-specific Salesforce integration BEFORE Verify Remote CRM Completion, approved field mapping and bound n8n credentials. Until then successful internal registrations deliberately result in FAILED (not a false Salesforce success or a permanently processing action)."
 }
