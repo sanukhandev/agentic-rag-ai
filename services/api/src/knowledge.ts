@@ -63,9 +63,9 @@ export const buildIngestionChunksWithEmbeddings = async (
   return result;
 };
 
-const evidenceMetadataLine = /^(?:File|Format|Primary intent|Suggested routing|Retrieval keywords|Sample user query(?:\s*\([^)]*\))?|Response policy):/iu;
+const evidenceMetadataLine = /^(?:File|Format|Primary intent|Suggested routing|Retrieval keywords|Sample user query(?:\s*\([^)]*\))?|Search phrasing|Related customer phrasing|Context\s*\/\s*limitation|Response policy|Response pattern|Retrieval metadata):/iu;
 const evidenceMetadataHeader = /^(?:Knowledge Records|tenantScope|sourceKey|sourceFile|sourceSha256|visibility|piiScreening|---)$/iu;
-const evidenceRecordHeader = /^[A-Z][A-Z0-9_.-]*-\d+\s*[—-]/u;
+const evidenceRecordHeader = /^[A-Z][A-Z0-9_.-]*-\d+\s*(?:[—-]|\|)/u;
 
 /** Removes ingestion/template metadata while preserving the approved source-backed facts. */
 export const presentKnowledgeText = (input: string): string => {
@@ -75,9 +75,9 @@ export const presentKnowledgeText = (input: string): string => {
   const visible: string[] = [];
   for (const line of lines) {
     const trimmed = line.trim();
-    if (/^Source-backed content:/iu.test(trimmed)) {
+    if (/^Source-backed\s+(?:content|knowledge):/iu.test(trimmed)) {
       inSourceBackedContent = true;
-      const value = trimmed.replace(/^Source-backed content:\s*/iu, '').trim();
+      const value = trimmed.replace(/^Source-backed\s+(?:content|knowledge):\s*/iu, '').trim();
       if (value) visible.push(value);
       continue;
     }
