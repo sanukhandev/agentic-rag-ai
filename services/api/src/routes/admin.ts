@@ -36,6 +36,9 @@ export type TelemetrySnapshot = {
   estimatedInputTokens: number;
   estimatedOutputTokens: number;
   estimatedCostUsd: number | null;
+  normalizationAttempts: number;
+  normalizationFallbacks: number;
+  normalizationLatencyMs: number;
 };
 
 export type AdminRouteDependencies = {

@@ -50,7 +50,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerHealthRoutes } from './routes/health.js';
 
-type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null };
+type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null; normalizationAttempts: number; normalizationFallbacks: number; normalizationLatencyMs: number };
 export type RateLimitEntry = { count: number; resetAt: number };
 export const pruneExpiredRateLimits = (entries: Map<string, RateLimitEntry>, now = Date.now()): void => {
   for (const [key, entry] of entries) if (entry.resetAt <= now) entries.delete(key);
@@ -171,6 +171,7 @@ export interface AppDependencies {
   outputCostUsdPerMillion?: number;
   cache?: CacheStore;
   chatResponseCacheTtlSeconds?: number;
+  catalogQueryNormalizationEnabled?: boolean;
 }
 
 export const createApp = (dependencies: AppDependencies = {}) => {
@@ -205,24 +206,25 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const readCacheTtl = (value: number | undefined, name: string, fallback: number, max: number): number => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return fallback; const parsed = Number(raw); if (!Number.isInteger(parsed) || parsed < 0 || parsed > max) throw new Error(`${name} must be an integer between 0 and ${max}.`); return parsed; };
   const readRateLimit = (value: number | undefined, name: string, fallback: number, max: number): number => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return fallback; const parsed = Number(raw); if (!Number.isInteger(parsed) || parsed < 1 || parsed > max) throw new Error(`${name} must be an integer between 1 and ${max}.`); return parsed; };
   const chatResponseCacheTtlSeconds = readCacheTtl(dependencies.chatResponseCacheTtlSeconds, 'CHAT_RESPONSE_CACHE_TTL_SECONDS', 60, 300);
+  const catalogQueryNormalizationEnabled = dependencies.catalogQueryNormalizationEnabled ?? process.env.CATALOG_QUERY_NORMALIZATION_ENABLED !== 'false';
   let normalizerFailures = 0;
   let normalizerBlockedUntil = 0;
-  const normalizeCatalogQuery = async (tenantId: string, catalogVersionId: string, input: QueryNormalizationInput, fallback: string): Promise<string> => {
-    if (!model.normalizeQuery || Date.now() < normalizerBlockedUntil) return fallback;
+  const normalizeCatalogQuery = async (tenantId: string, catalogVersionId: string, input: QueryNormalizationInput, fallback: string): Promise<{ value: string; usedFallback: boolean }> => {
+    if (!model.normalizeQuery || !catalogQueryNormalizationEnabled || Date.now() < normalizerBlockedUntil) return { value: fallback, usedFallback: true };
     const key = cacheKey('catalog-normalized-query', tenantId, catalogVersionId, input.maskedMessage);
     const cached = await cache.get<string>(key);
-    if (cached) return cached;
+    if (cached) return { value: cached, usedFallback: false };
     try {
       const normalized = await model.normalizeQuery(input);
       normalizerFailures = 0;
-      if (!normalized) return fallback;
+      if (!normalized) return { value: fallback, usedFallback: true };
       const safe = normalizeConversationQuery(normalized);
       await cache.set(key, safe, Math.min(300, Math.max(1, chatResponseCacheTtlSeconds)));
-      return safe;
+      return { value: safe, usedFallback: false };
     } catch {
       normalizerFailures += 1;
       if (normalizerFailures >= 3) normalizerBlockedUntil = Date.now() + 30_000;
-      return fallback;
+      return { value: fallback, usedFallback: true };
     }
   };
   const rateLimitMax = readRateLimit(dependencies.rateLimitMax, 'API_RATE_LIMIT_MAX', nodeEnv === 'development' ? 600 : 120, 100_000);
@@ -254,7 +256,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const gateway = new ActionGateway(store, workflow);
   const app = express();
   const rateLimits = new Map<string, RateLimitEntry>();
-  const newTelemetry = (): Telemetry => ({ requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null, chatResponses: 0, groundedResponses: 0, abstentions: 0, actionProposals: 0, estimatedInputTokens: 0, estimatedOutputTokens: 0, estimatedCostUsd: inputCostUsdPerMillion !== null && outputCostUsdPerMillion !== null ? 0 : null });
+  const newTelemetry = (): Telemetry => ({ requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null, chatResponses: 0, groundedResponses: 0, abstentions: 0, actionProposals: 0, estimatedInputTokens: 0, estimatedOutputTokens: 0, estimatedCostUsd: inputCostUsdPerMillion !== null && outputCostUsdPerMillion !== null ? 0 : null, normalizationAttempts: 0, normalizationFallbacks: 0, normalizationLatencyMs: 0 });
   const telemetry = newTelemetry();
   const tenantTelemetry = new Map<string, Telemetry>();
   const recordChatOutcome = (tenantId: string, grounded: boolean, proposedAction: boolean, inputTokens: number, outputTokens: number): void => {
@@ -270,7 +272,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     }
     tenantTelemetry.set(tenantId, scoped);
   };
-  const observedTelemetry = (value: Telemetry) => ({ requests: value.requests, serverErrors: value.serverErrors, averageLatencyMs: value.requests ? Math.round(value.totalLatencyMs / value.requests) : 0, lastRequestAt: value.lastRequestAt, chatResponses: value.chatResponses, groundedResponses: value.groundedResponses, abstentions: value.abstentions, actionProposals: value.actionProposals, groundingRate: value.chatResponses ? value.groundedResponses / value.chatResponses : 0, abstentionRate: value.chatResponses ? value.abstentions / value.chatResponses : 0, estimatedInputTokens: value.estimatedInputTokens, estimatedOutputTokens: value.estimatedOutputTokens, estimatedCostUsd: value.estimatedCostUsd });
+  const recordNormalization = (tenantId: string, usedFallback: boolean, elapsedMs: number): void => {
+    const scoped = tenantTelemetry.get(tenantId) ?? newTelemetry();
+    for (const value of [telemetry, scoped]) { value.normalizationAttempts += 1; value.normalizationLatencyMs += elapsedMs; if (usedFallback) value.normalizationFallbacks += 1; }
+    tenantTelemetry.set(tenantId, scoped);
+  };
+  const observedTelemetry = (value: Telemetry) => ({ requests: value.requests, serverErrors: value.serverErrors, averageLatencyMs: value.requests ? Math.round(value.totalLatencyMs / value.requests) : 0, lastRequestAt: value.lastRequestAt, chatResponses: value.chatResponses, groundedResponses: value.groundedResponses, abstentions: value.abstentions, actionProposals: value.actionProposals, groundingRate: value.chatResponses ? value.groundedResponses / value.chatResponses : 0, abstentionRate: value.chatResponses ? value.abstentions / value.chatResponses : 0, estimatedInputTokens: value.estimatedInputTokens, estimatedOutputTokens: value.estimatedOutputTokens, estimatedCostUsd: value.estimatedCostUsd, normalizationAttempts: value.normalizationAttempts, normalizationFallbacks: value.normalizationFallbacks, normalizationAverageLatencyMs: value.normalizationAttempts ? Math.round(value.normalizationLatencyMs / value.normalizationAttempts) : 0 });
 
   app.disable('x-powered-by');
   app.use((req: AuthedRequest, res: Response, next: NextFunction) => { req.requestId = req.header('x-request-id') ?? randomUUID(); res.setHeader('x-request-id', req.requestId); next(); });
@@ -814,9 +821,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const recentMessages = intent === null && (needsConversationContext(maskedMessage) || leadDataRequested || useCatalogContext) ? (publishedCatalog ? catalogHistory : await store.listMessages(session.id, session.tenantId, contextWindowMessages + 1)).filter((message) => message.id !== userMessage.id).slice(-contextWindowMessages) : [];
       const conversation = recentMessages.map((message) => ({ role: message.role, content: message.maskedContent }));
       let normalizedMessage = deterministicMessage;
-      if (publishedCatalog && model.normalizeQuery && (useCatalogContext || currentCatalogResolution?.reason === 'no_signal' || currentCatalogResolution?.reason === 'below_threshold' || currentCatalogResolution?.ambiguous)) {
+      if (publishedCatalog && model.normalizeQuery && catalogQueryNormalizationEnabled && (useCatalogContext || currentCatalogResolution?.reason === 'no_signal' || currentCatalogResolution?.reason === 'below_threshold' || currentCatalogResolution?.ambiguous)) {
         try {
-          const candidate = await normalizeCatalogQuery(session.tenantId, publishedCatalog.id, { maskedMessage, catalog: publishedCatalog.catalog, conversation }, deterministicMessage);
+          const normalizationStartedAt = Date.now();
+          const result = await normalizeCatalogQuery(session.tenantId, publishedCatalog.id, { maskedMessage, catalog: publishedCatalog.catalog, conversation }, deterministicMessage);
+          recordNormalization(session.tenantId, result.usedFallback, Date.now() - normalizationStartedAt);
+          const candidate = result.value;
           assertKnownTokens(session, candidate, tokenVault);
           normalizedMessage = candidate;
         } catch { normalizedMessage = deterministicMessage; }
