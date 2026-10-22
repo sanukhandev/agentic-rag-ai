@@ -927,6 +927,22 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
   app.get('/api/v1/chat/actions/:id', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const action = await store.getAction(routeParam(req, 'id')); if (!action) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); const sessionId = req.query.sessionId; if (typeof sessionId !== 'string' || sessionId !== action.sessionId) throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.'); const session = await store.getSession(action.sessionId); const tenant = await store.getTenant(action.tenantId); if (!session || session.tenantId !== action.tenantId || !tenant || (channel && channel.tenantId !== action.tenantId)) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); ensureLiveSession(session.lastActivityAt, session.closedAt); if (!getAuth(req) && !channel) { if (!tenant.publicChatEnabled) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== action.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.'); res.json({ action }); } catch (error) { next(error); } });
 
+  app.post('/api/v1/internal/crm/contact-lookup', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(z.object({
+        tenantId: z.string().uuid(), sessionId: z.string().uuid(),
+        actionId: z.string().uuid(),
+      }), req.body);
+      const action = await store.getAction(input.actionId);
+      if (!action || action.tenantId !== input.tenantId || action.sessionId !== input.sessionId
+        || !['approved', 'processing'].includes(action.state)) {
+        throw new HttpError(403, 'CRM_LOOKUP_FORBIDDEN', 'CRM lookup requires an authorized, active tenant action.');
+      }
+      const lead = await store.getCrmLeadBySessionId(input.sessionId, input.tenantId);
+      res.json({ matched: Boolean(lead), leadId: lead?.id ?? null, externalCRMId: lead?.leadId ?? null, crm: lead?.remoteCrm ?? null });
+    } catch (error) { next(error); }
+  });
+
   app.post('/api/v1/internal/workflow-events/claim', n8nInternalApi, async (req, res, next) => {
     try {
       const input = parse(workflowClaimSchema, req.body);
