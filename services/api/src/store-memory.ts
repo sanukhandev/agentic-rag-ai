@@ -1,10 +1,13 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, DocumentProcessingJob, IngestionJob, IntentCatalogVersion, Message, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, DocumentProcessingJob, IngestionJob, IntentCatalogVersion, Message, OutboxEvent, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
 import { newConversationState } from './conversation-state.js';
+import { formatCrmSummarySpec } from './crm-summary.js';
+import { createOutboxEvent } from './events.js';
 import { HttpError } from './http/errors.js';
 
 const now = (): string => new Date().toISOString();
+const isUuid = (value: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
 
 export class MemoryStore implements Store {
   private readonly tenants = new Map<string, Tenant>();
@@ -27,6 +30,8 @@ export class MemoryStore implements Store {
   private readonly crmLeadDedupe = new Map<string, string>();
   private readonly supportingDocuments = new Map<string, SupportingDocument>();
   private readonly documentJobs = new Map<string, DocumentProcessingJob>();
+  private readonly outbox = new Map<string, OutboxEvent>();
+  private readonly inbox = new Set<string>();
   private readonly audits: AuditEvent[] = [];
 
   async countUsers(): Promise<number> { return this.users.size; }
@@ -250,6 +255,14 @@ export class MemoryStore implements Store {
   }
 
   async createAction(action: ActionRequest): Promise<ActionRequest> { this.actions.set(action.id, action); return action; }
+  async approveAction(action: ActionRequest): Promise<ActionRequest> {
+    const current = this.actions.get(action.id);
+    if (!current || current.tenantId !== action.tenantId) throw new Error('Action not found.');
+    if (current.state === 'approved' || current.state === 'processing' || current.state === 'completed') return current;
+    this.actions.set(action.id, action);
+    if (isUuid(action.tenantId) && isUuid(action.sessionId) && isUuid(action.id)) await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: action.tenantId, sessionId: action.sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId: action.sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? null, catalogVersionId: action.catalogVersionId ?? null } }));
+    return action;
+  }
   async getAction(id: string): Promise<ActionRequest | null> { return this.actions.get(id) ?? null; }
   async getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null> {
     return [...this.actions.values()].find((action) => action.tenantId === tenantId && action.idempotencyKey === idempotencyKey) ?? null;
@@ -286,7 +299,7 @@ export class MemoryStore implements Store {
   async updateCrmLeadSummary(id: string, tenantId: string, summary: string, status: CrmLead['summaryStatus']): Promise<CrmLead | null> {
     const lead = await this.getCrmLead(id, tenantId);
     if (!lead) return null;
-    const updated = { ...lead, summary, summaryStatus: status, updatedAt: now() };
+    const updated = { ...lead, summary: formatCrmSummarySpec(summary), summaryStatus: status, updatedAt: now() };
     this.crmLeads.set(id, updated);
     return updated;
   }
@@ -305,7 +318,11 @@ export class MemoryStore implements Store {
     return updated;
   }
   async createSupportingDocument(document: SupportingDocument): Promise<SupportingDocument> { this.supportingDocuments.set(document.id, document); return document; }
-  async createSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<void> { this.supportingDocuments.set(document.id, document); this.documentJobs.set(job.id, job); }
+  async createSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<void> {
+    this.supportingDocuments.set(document.id, document);
+    this.documentJobs.set(job.id, job);
+    await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'document.extraction.requested.v1', tenantId: document.tenantId, sessionId: document.sessionId, aggregateId: document.id, workflowKey: job.workflowKey, payloadRef: job.id, idempotencyKey: `document:${job.id}`, payload: { documentId: document.id, jobId: job.id, sessionId: document.sessionId, workflowKey: job.workflowKey, webhookPath: job.webhookPath } }));
+  }
   async getSupportingDocument(id: string, tenantId: string): Promise<SupportingDocument | null> { const document = this.supportingDocuments.get(id); return document?.tenantId === tenantId ? document : null; }
   async listSupportingDocuments(tenantId: string, sessionId?: string, leadId?: string): Promise<SupportingDocument[]> { return [...this.supportingDocuments.values()].filter((document) => document.tenantId === tenantId && (!sessionId || document.sessionId === sessionId) && (!leadId || document.leadId === leadId)).sort((left, right) => right.createdAt.localeCompare(left.createdAt)); }
   async updateSupportingDocument(document: SupportingDocument): Promise<SupportingDocument> { this.supportingDocuments.set(document.id, document); return document; }
@@ -326,6 +343,16 @@ export class MemoryStore implements Store {
   }
   async updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob> { this.documentJobs.set(job.id, job); return job; }
   async linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void> { for (const document of await this.listSupportingDocuments(tenantId, sessionId)) this.supportingDocuments.set(document.id, { ...document, leadId, updatedAt: now() }); }
+  async enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent> { const existing = this.outbox.get(event.eventId); if (existing) return existing; this.outbox.set(event.eventId, event); return event; }
+  async claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]> {
+    const current = Date.now();
+    const claimed = [...this.outbox.values()].filter((event) => !event.publishedAt && (!event.leaseExpiresAt || Date.parse(event.leaseExpiresAt) <= current)).sort((left, right) => left.occurredAt.localeCompare(right.occurredAt)).slice(0, limit).map((event) => ({ ...event, attempts: event.attempts + 1, leaseExpiresAt: new Date(current + leaseMs).toISOString() }));
+    for (const event of claimed) this.outbox.set(event.eventId, event);
+    return claimed;
+  }
+  async markOutboxPublished(eventId: string, publishedAt = now()): Promise<void> { const event = this.outbox.get(eventId); if (event) this.outbox.set(eventId, { ...event, publishedAt, leaseExpiresAt: null, lastError: null }); }
+  async releaseOutboxEvent(eventId: string, error: string, retryAt: string): Promise<void> { const event = this.outbox.get(eventId); if (event) this.outbox.set(eventId, { ...event, leaseExpiresAt: retryAt, lastError: error.slice(0, 500) }); }
+  async claimInboxEvent(consumer: string, eventId: string): Promise<boolean> { const key = `${consumer}:${eventId}`; if (this.inbox.has(key)) return false; this.inbox.add(key); return true; }
   async addAudit(event: AuditEvent): Promise<void> { this.audits.push(event); }
   async listAudit(tenantId: string): Promise<AuditEvent[]> { return this.audits.filter((event) => event.tenantId === tenantId); }
   async getTenantStats(tenantId: string): Promise<TenantStats> {

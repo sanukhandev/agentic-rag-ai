@@ -79,6 +79,10 @@ Enforce server-side RBAC/ABAC for each handler. Browser cannot choose an arbitra
 
 Action confirmation requests must include the originating `sessionId` alongside `confirmed: true`; Node verifies that the action and session belong together before executing it.
 
+CRM summary writes are backend-normalized before persistence. `PUT /api/v1/internal/crm/leads/:id/summary` and the qualification/document summary paths validate the supplied text, remove control characters, deduplicate repeated values, and store a stable `CRM Opportunity Specification` document with qualification, requirements, contact, document and engagement sections. The admin CRM view renders this stored backend document; it does not summarize or reinterpret the content in the browser.
+
+Async side effects are emitted from the backend through a transactional PostgreSQL outbox and Redis Streams. Chat turns remain synchronous; action confirmation and document upload return immediately after the durable state/outbox transaction. Redis events contain opaque IDs and routing metadata only. Provider completion is reported separately from accepted/started status.
+
 ## Suggested response shape
 ```json
 {

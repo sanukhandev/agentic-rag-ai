@@ -3,6 +3,8 @@
 ## Design principle
 n8n is a **workflow execution engine**, not the primary chat brain, source of business facts, policy authority or customer token vault. Node authorizes and queues approved work; n8n polls and executes it. The model may propose an intent; a deterministic policy engine decides whether a workflow is permitted.
 
+Approved actions and supporting-document jobs are now written with an application-owned PostgreSQL outbox event. The relay publishes to Redis Streams and an isolated worker starts a bounded n8n entrypoint with opaque references. The existing polling endpoints remain a compatibility path during rollout; Redis Pub/Sub is not used as the durable queue.
+
 ## Intent proposal → action gate
 1. GPT-4.1-mini returns a constrained JSON intent proposal: canonical intent enum, arguments derived from masked conversation, supporting citations when needed, and explicit missing parameters.
 2. Node validates against a versioned schema. Ignore extra properties, unknown intent IDs, unsupported arguments, fabricated evidence references and imperative text from retrieved documents.

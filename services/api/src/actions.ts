@@ -103,7 +103,7 @@ export class ActionGateway {
     }
     const consentGranted = action.payload.contactConsent === false;
     const approved = { ...action, state: 'approved' as const, result: null, payload: consentGranted ? { ...action.payload, contactConsent: true } : action.payload };
-    await this.store.updateAction(approved);
+    await this.store.approveAction(approved);
     if (consentGranted) await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.consent_granted', metadata: { actionId }, createdAt: new Date().toISOString() });
     await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.approved', metadata: { actionId, workflowKey: action.workflowKey }, createdAt: new Date().toISOString() });
     return approved;
