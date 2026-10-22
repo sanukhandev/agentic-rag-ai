@@ -21,7 +21,7 @@ describe('published intent catalog runtime', () => {
       catalog: {
         tenantScope: 'catalog-tenant',
         intents: [
-          { intentKey: 'lead.capture', displayName: 'Request a service', description: 'Capture a qualified lead', category: 'sales', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' },
+          { intentKey: 'lead.capture', displayName: 'Request a service', description: 'Capture a qualified lead', category: 'company_formation', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' },
           { intentKey: 'consulting.request', displayName: 'Request a consultation', description: 'Capture a separate consultation request', category: 'sales', workflowKey: 'crm.consulting.create', minimumScore: 70, confidenceThreshold: 0.7, confirmationRequired: true, active: true, priority: 200, versionNote: '' },
           { intentKey: 'anc.document.supporting_upload', displayName: 'Submit supporting documents', description: 'Submit a supporting document for review', category: 'support', workflowKey: 'anc.document.ocr.extract', minimumScore: 0, confidenceThreshold: 0.78, confirmationRequired: true, active: true, priority: 90, versionNote: '' },
         ],

@@ -11,6 +11,8 @@ test('binds remote CRM OAuth to the n8n credential store', async () => {
   assert.equal(webhook?.parameters.path, 'anc-lead-capture-wf-1');
   assert.equal(webhook?.parameters.responseMode, 'onReceived');
   assert.equal(webhook?.parameters.responseCode, 202);
+  assert.match(workflow.nodes.find((node) => node.name === 'Authenticate and Claim Event')?.parameters.jsonBody ?? '', /n8nWorkflowId: \$workflow\.id/);
+  assert.doesNotMatch(workflow.nodes.find((node) => node.name === 'Authenticate and Claim Event')?.parameters.jsonBody ?? '', /anc\.crm\.lead\.capture/);
   assert.match(workflow.nodes.find((node) => node.name === 'Authenticate and Claim Event')?.parameters.jsonBody, /anc-lead-capture-v1/);
   assert.equal(workflow.nodes.find((node) => node.name === 'Fetch Authorized Remote CRM Payload')?.parameters.url.includes('/remote-payload'), true);
   const remoteCreate = workflow.nodes.find((node) => node.name === 'Remote CRM Create Lead');
@@ -50,7 +52,7 @@ test('routes from the claimed catalog intent and current consent, not message ke
   const route = (input) => new Function('$json', routeCode)(input)[0].json;
   const catalog = {
     intents: [
-      { intentKey: 'trade.license.application', category: 'sales', workflowKey: 'crm.lead.create', active: true, priority: 100 },
+      { intentKey: 'trade.license.application', category: 'company_formation', workflowKey: 'crm.lead.create', active: true, priority: 100 },
       { intentKey: 'trade.license.renewal', category: 'support', workflowKey: 'crm.support.review', active: true, priority: 90 }
     ],
     signals: [
@@ -58,8 +60,8 @@ test('routes from the claimed catalog intent and current consent, not message ke
       { intentKey: 'trade.license.renewal', value: 'renew licence', weight: 80 }
     ],
     workflowBindings: [
-      { workflowKey: 'crm.lead.create', active: true },
-      { workflowKey: 'crm.support.review', active: true }
+      { workflowKey: 'crm.lead.create', sideEffectClass: 'crm_write', active: true },
+      { workflowKey: 'crm.support.review', sideEffectClass: 'human_review', active: true }
     ]
   };
   assert.equal(route({ intent: 'trade.license.application', workflowKey: 'crm.lead.create', leadData: { contactConsent: true }, catalog, conversation: [{ role: 'user', content: 'I need a new licence' }] }).route, 'commercial');

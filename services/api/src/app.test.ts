@@ -716,12 +716,43 @@ describe('API vertical slice', () => {
     expect((await runtime.store.getAction(reviewAction.id))?.state).toBe('human_review');
     expect((await runtime.store.getAction(reviewAction.id))?.result).toEqual({ externalReference: 'review-task-1' });
     expect((await runtime.store.getSession(reviewSession.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'human_review', phase: 'HUMAN_REVIEW' });
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: reviewAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'review-completed-1' }).expect(200);
+    expect((await runtime.store.getAction(reviewAction.id))?.state).toBe('completed');
+    expect((await runtime.store.getSession(reviewSession.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'succeeded', phase: 'SUCCEEDED' });
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'review-status-admin@example.test', password: 'TenantA1Password' }).expect(200);
+    const staffAction = await runtime.store.createAction({ ...reviewAction, id: randomUUID(), idempotencyKey: 'review-status-staff-action', state: 'approved' });
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: staffAction.id, tenantId: tenant.body.tenant.id, state: 'human_review', externalReference: 'review-task-2' }).expect(200);
+    await api.post(`/api/v1/admin/workflow-runs/${staffAction.id}/transition`).set('Authorization', `Bearer ${admin.body.token}`).send({ state: 'completed', externalReference: 'review-completed-2' }).expect(200);
+    expect((await api.get('/api/v1/admin/audit').set('Authorization', `Bearer ${admin.body.token}`).expect(200)).body.items).toEqual(expect.arrayContaining([expect.objectContaining({ eventName: 'workflow.transition.human_review.completed', actorId: admin.body.user.id })]));
     const partialSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
     const partialAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: partialSession.body.sessionId, workflowKey: 'crm.lead.create', intentKey: 'lead.capture', state: 'approved', opaqueReference: 'partial-status-action', idempotencyKey: 'partial-status-action', payload: {}, createdAt: new Date().toISOString(), result: null });
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: partialAction.id, tenantId: tenant.body.tenant.id, state: 'awaiting_customer', externalReference: 'missing-fields-1' }).expect(200);
     expect((await runtime.store.getAction(partialAction.id))?.state).toBe('awaiting_customer');
     expect((await runtime.store.getAction(partialAction.id))?.result).toEqual({ externalReference: 'missing-fields-1' });
     expect((await runtime.store.getSession(partialSession.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'awaiting_customer', phase: 'SLOT_COLLECTION' });
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: partialAction.id, tenantId: tenant.body.tenant.id, state: 'processing', externalReference: 'resume-1' }).expect(200);
+    expect((await runtime.store.getAction(partialAction.id))?.state).toBe('processing');
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: partialAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'partial-completed-1' }).expect(200);
+    expect((await runtime.store.getAction(partialAction.id))?.state).toBe('completed');
+  });
+
+  it('polls all active CRM bindings registered to the current n8n workflow', async () => {
+    const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'internal-secret' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'poller-platform@example.test', password: 'Platform1Password' }).expect(201);
+    const createTenant = async (suffix: string, workflowKey: string) => {
+      const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: `Poller Tenant ${suffix}`, slug: `poller-tenant-${suffix}`, adminEmail: `poller-${suffix}@example.test`, adminPassword: 'TenantA1Password' }).expect(201);
+      const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'poller.json', sourceHash: suffix.repeat(64), parserVersion: 'test', catalog: { tenantScope: tenant.body.tenant.slug, intents: [{ intentKey: `${workflowKey}.request`, displayName: 'Commercial request', description: 'Commercial request', category: 'company_formation', workflowKey, minimumScore: 0, confidenceThreshold: 0, confirmationRequired: true, active: true, priority: 1, versionNote: '' }], signals: [], slots: [], relations: [], workflowBindings: [{ workflowKey, n8nWorkflowId: 'shared-poller-workflow', webhookPath: `${workflowKey.replaceAll('.', '-')}`, payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }] } });
+      const session = await runtime.store.createSession(tenant.body.tenant.id);
+      const action = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.id, workflowKey, intentKey: `${workflowKey}.request`, catalogVersionId: version.id, idempotencyKey: `${workflowKey}-action`, state: 'approved', opaqueReference: `${workflowKey}-opaque`, payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
+      return { tenant, action };
+    };
+    const first = await createTenant('one', 'crm.company.create');
+    const second = await createTenant('two', 'crm.service.create');
+    const claimed = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ n8nWorkflowId: 'shared-poller-workflow', limit: 10 }).expect(200);
+    expect(claimed.body.items.map((item: { actionId: string }) => item.actionId)).toEqual(expect.arrayContaining([first.action.id, second.action.id]));
+    expect((await runtime.store.getAction(first.action.id))?.state).toBe('processing');
+    expect((await runtime.store.getAction(second.action.id))?.state).toBe('processing');
   });
 
   it('refuses an expired proposal without recording consent or claiming registration', async () => {
