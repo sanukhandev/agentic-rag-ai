@@ -229,12 +229,29 @@
       "position": [3500, 20]
     },
     {
-      "parameters": { "jsCode": "const input = $json; return [{ json: { accepted: true, status: 'registered', actionId: input.actionId, leadId: input.leadId, remoteCrm: input.remoteCrm ?? null, message: 'Your request is registered. We will continue processing it asynchronously.' } }];" },
-      "id": "anc-wf1-return",
-      "name": "Return Registered",
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/complete",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actionId: $('Prepare Remote CRM Decision').first().json.actionId, tenantId: $('Prepare Remote CRM Decision').first().json.tenantId, state: 'completed', externalReference: 'crm-lead-' + $('Prepare Remote CRM Decision').first().json.leadId }) }}",
+        "options": {}
+      },
+      "id": "anc-wf1-complete-internal",
+      "name": "Complete Internal Registration",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2620, 300]
+    },
+    {
+      "parameters": { "jsCode": "const input = $('Prepare Remote CRM Decision').first().json; return [{ json: { accepted: true, status: 'registered', actionId: input.actionId, leadId: input.leadId, remoteCrm: input.remoteCrm ?? null, message: 'Your request is registered. We will continue processing it asynchronously.' } }];" },
+      "id": "anc-wf1-return-internal",
+      "name": "Return Internal Registration",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2620, 300]
+      "position": [2840, 300]
     },
     {
       "parameters": { "jsCode": "const source = $('Lead Scoring and Summary').first().json;\nconst remote = $('Validate Remote CRM Lead ID').first().json;\nreturn [{ json: { accepted: true, status: 'registered', actionId: source.actionId, leadId: remote.remoteLeadId, remoteCrm: remote.remoteCrm, message: 'Your request is registered. We will continue processing it asynchronously.' } }];" },
@@ -274,12 +291,13 @@
     "Lead Scoring and Summary": { "main": [[{ "node": "Persist Score and Summary", "type": "main", "index": 0 }]] },
     "Persist Score and Summary": { "main": [[{ "node": "Prepare Remote CRM Decision", "type": "main", "index": 0 }]] },
     "Prepare Remote CRM Decision": { "main": [[{ "node": "Remote CRM Qualification Gate", "type": "main", "index": 0 }]] },
-    "Remote CRM Qualification Gate": { "main": [[{ "node": "Fetch Authorized Remote CRM Payload", "type": "main", "index": 0 }], [{ "node": "Return Registered", "type": "main", "index": 0 }]] },
+    "Remote CRM Qualification Gate": { "main": [[{ "node": "Fetch Authorized Remote CRM Payload", "type": "main", "index": 0 }], [{ "node": "Complete Internal Registration", "type": "main", "index": 0 }]] },
     "Fetch Authorized Remote CRM Payload": { "main": [[{ "node": "Remote CRM Create Lead", "type": "main", "index": 0 }]] },
     "Remote CRM Create Lead": { "main": [[{ "node": "Validate Remote CRM Lead ID", "type": "main", "index": 0 }]] },
     "Validate Remote CRM Lead ID": { "main": [[{ "node": "Internal CRM Remote ID Callback", "type": "main", "index": 0 }]] },
     "Internal CRM Remote ID Callback": { "main": [[{ "node": "Complete Async Registration", "type": "main", "index": 0 }]] },
-    "Complete Async Registration": { "main": [[{ "node": "Return Completed Registration", "type": "main", "index": 0 }]] }
+    "Complete Async Registration": { "main": [[{ "node": "Return Completed Registration", "type": "main", "index": 0 }]] },
+    "Complete Internal Registration": { "main": [[{ "node": "Return Internal Registration", "type": "main", "index": 0 }]] }
   },
   "active": false,
   "settings": { "executionOrder": "v1" },

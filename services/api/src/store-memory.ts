@@ -271,8 +271,8 @@ export class MemoryStore implements Store {
   async updateAction(action: ActionRequest): Promise<ActionRequest> { this.actions.set(action.id, action); return action; }
   async claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null> {
     const action = this.actions.get(actionId);
-    if (!action || action.workflowKey !== workflowKey || !['approved', 'processing'].includes(action.state)) return null;
-    const claimed = action.state === 'processing' ? action : { ...action, state: 'processing' as const };
+    if (!action || action.workflowKey !== workflowKey || action.state !== 'approved') return null;
+    const claimed = { ...action, state: 'processing' as const };
     this.actions.set(actionId, claimed);
     return claimed;
   }

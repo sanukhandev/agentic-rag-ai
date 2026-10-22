@@ -17,4 +17,9 @@ test('binds remote CRM OAuth to the n8n credential store', async () => {
   assert.match(text, /Fetch Authorized Remote CRM Payload.*Remote CRM Create Lead/s);
   assert.doesNotMatch(text, /REMOTE_CRM_TOKEN_URL|REMOTE_CRM_GRANT_TYPE|REMOTE_CRM_CLIENT_ID|REMOTE_CRM_CLIENT_SECRET/);
   assert.doesNotMatch(text, /techcarrot4--realforce|salesforce\.com|remote\/sync/iu);
+  const internalCompletion = workflow.nodes.find((node) => node.name === 'Complete Internal Registration');
+  assert.match(internalCompletion?.parameters.url ?? '', /workflow-events\/complete/);
+  assert.equal(workflow.connections['Remote CRM Qualification Gate'].main[1][0].node, 'Complete Internal Registration');
+  assert.equal(workflow.connections['Complete Internal Registration'].main[0][0].node, 'Return Internal Registration');
+  assert.equal(workflow.nodes.some((node) => node.name === 'Return Registered'), false);
 });

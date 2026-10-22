@@ -835,7 +835,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const catalogHistory = publishedCatalog ? await store.listMessages(session.id, session.tenantId, contextWindowMessages + 1) : [];
       const lastCatalogAssistant = [...catalogHistory].reverse().find((message) => message.role === 'assistant');
       const state = session.conversationState ?? newConversationState();
-      const postCaptureFollowUp = ['queued', 'processing', 'succeeded', 'reconcile_required', 'failed'].includes(state.workflowStatus) && !state.pendingPrompt && !leadRequestedNow;
+      let postCaptureFollowUp = ['queued', 'processing', 'succeeded', 'reconcile_required', 'failed'].includes(state.workflowStatus) && !state.pendingPrompt && !leadRequestedNow;
       if (input.replyToPromptId && input.replyToPromptId !== state.pendingPrompt?.id) throw new HttpError(409, 'PROMPT_MISMATCH', 'The reply no longer matches the active conversation prompt.');
       const pendingCatalogIntent = state.pendingPrompt && state.selectedIntentKey && state.catalogVersionId === publishedCatalog?.id
         ? state.selectedIntentKey
@@ -892,6 +892,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         state.consentCapturedAt = null;
         state.consentVersion = null;
         catalogResolution = resolveIntent(publishedCatalog, normalizedMessage, catalogSlotValues);
+        postCaptureFollowUp = false;
       }
       const workflowBinding = publishedCatalog && catalogResolution?.workflowKey ? publishedCatalog.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution?.workflowKey) : null;
       const isContactWorkflow = Boolean(workflowBinding?.sideEffectClass.toLocaleLowerCase('en-US').includes('crm'));
