@@ -642,6 +642,9 @@ describe('API vertical slice', () => {
     expect(remotePayload.body).toMatchObject({ name: 'Alice', phone: '+971500000000', email: 'alice@example.com' });
     const linked = await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/remote`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, leadId: 'remote-123', remoteCrm: 'remote-crm-test' }).expect(200);
     expect(linked.body.lead).toMatchObject({ leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
+    const formatted = await api.post(`/api/v1/admin/crm/leads/${stored.body.lead.id}/summarize`).set('Authorization', `Bearer ${admin.body.token}`).send({}).expect(200);
+    expect(formatted.body).toMatchObject({ aiGenerated: false, lead: { summaryStatus: 'completed' } });
+    expect(formatted.body.lead.summary).toContain('CRM OPPORTUNITY SPECIFICATION');
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'crm-lead-remote-123' }).expect(200);
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'succeeded', phase: 'SUCCEEDED', pendingPrompt: null });
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'crm-lead-remote-123' }).expect(200);

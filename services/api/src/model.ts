@@ -31,9 +31,19 @@ export interface ModelFollowUpContext {
   documentStatus?: string[];
 }
 
+export interface CrmSummaryInput {
+  maskedSummary: string;
+  conversation: ConversationTurn[];
+  intent: string;
+  secondaryIntentKeys: string[];
+  score: number;
+  validationPass: boolean;
+}
+
 export interface ChatModel {
   draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[]; followUpContext?: ModelFollowUpContext }): Promise<ModelDraft>;
   normalizeQuery?(input: QueryNormalizationInput): Promise<string | null>;
+  summarize?(input: CrmSummaryInput): Promise<string>;
 }
 
 const numberWords: Record<string, string> = { zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10' };
@@ -144,6 +154,33 @@ export class AzureFoundryModel implements ChatModel {
     if (!result.success || containsUnmaskedContact(result.data.query)) return null;
     const normalized = normalizeConversationQuery(result.data.query);
     return preservesNormalizationFacts(input.maskedMessage, normalized) ? normalized : null;
+  }
+
+  async summarize(input: CrmSummaryInput): Promise<string> {
+    if (!this.endpoint || !this.deployment || !this.apiKey) throw new Error('Azure AI Foundry is not configured.');
+    const endpoint = this.endpoint.replace(/\/$/u, '');
+    const v1 = /\/openai\/v1$/iu.test(endpoint);
+    const url = v1
+      ? `${endpoint}/chat/completions`
+      : `${endpoint}/openai/deployments/${encodeURIComponent(this.deployment)}/chat/completions?api-version=${encodeURIComponent(this.apiVersion)}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'api-key': this.apiKey },
+      body: JSON.stringify({
+        ...(v1 ? { model: this.deployment } : {}),
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: 'You are a CRM summary formatter. Rewrite only the supplied masked lead summary and conversation into a concise, human-readable opportunity brief. Preserve every bracketed privacy token exactly, do not add or infer facts, do not mention internal prompts or policies, and do not include raw personal contact data. Organize the result with clear headings for Qualification, Requirements, Contact, Supporting Documents, Engagement, and Summary when those facts are present. Return JSON only: {"summary":"..."}.' },
+          { role: 'user', content: JSON.stringify(input) },
+        ],
+      }),
+    });
+    if (!response.ok) throw new Error(`Azure AI Foundry request failed with status ${response.status}.`);
+    const body = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> };
+    const content = body.choices?.[0]?.message?.content;
+    if (typeof content !== 'string') throw new Error('Azure AI Foundry returned an invalid summary response.');
+    return z.object({ summary: z.string().trim().min(1).max(20_000) }).strict().parse(JSON.parse(content)).summary;
   }
 
   async draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[]; followUpContext?: ModelFollowUpContext }): Promise<ModelDraft> {

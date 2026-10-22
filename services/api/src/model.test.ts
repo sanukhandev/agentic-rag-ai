@@ -138,6 +138,15 @@ describe('Azure Foundry model adapter', () => {
     fetchMock.mockRestore();
   });
 
+  it('formats CRM summaries from masked lead data only', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: '## Requirements\n- [NAME_1] requested a demo.' }) } }] }), { status: 200 }));
+    const model = new AzureFoundryModel('https://foundry.example/openai/v1', 'gpt-4.1-mini', 'server-key');
+    await expect(model.summarize?.({ maskedSummary: 'Customer [NAME_1] requested a demo.', conversation: [{ role: 'user', content: 'I need a demo.' }], intent: 'lead.capture', secondaryIntentKeys: [], score: 80, validationPass: true })).resolves.toContain('[NAME_1]');
+    expect(String(fetchMock.mock.calls[0]?.[1]?.body)).toContain('[NAME_1]');
+    expect(String(fetchMock.mock.calls[0]?.[1]?.body)).not.toContain('server-key');
+    fetchMock.mockRestore();
+  });
+
   it('normalizes Azure empty intent output to no proposed action', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: 'grounded', citationIds: [], proposedIntent: '' }) } }] }), { status: 200 }));
     const model = new AzureFoundryModel('https://foundry.example/openai/v1', 'gpt-4.1-mini', 'server-key');
