@@ -802,11 +802,24 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const leadData = mergeLeadData(pendingCatalogValues as LeadData, ...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), currentLeadData);
       const catalogSlotValues: Record<string, string> = { ...pendingCatalogValues, ...Object.fromEntries(recentMessages.filter((message) => message.role === 'user').flatMap((message) => Object.entries(extractLeadData(message.maskedContent)))), ...(extractLeadData(maskedMessage) as Record<string, string>), ...pendingCatalogValueData };
       const leadReady = Boolean(leadData.name && leadData.email && leadData.phone);
-      const catalogResolution = publishedCatalog
+      let catalogResolution = publishedCatalog
         ? useCatalogContext
           ? resolveIntent(publishedCatalog, retrievalQuery, catalogSlotValues)
           : currentCatalogResolution
         : null;
+      // Consent is purpose-bound. A strong, newly requested intent must not inherit
+      // the opt-in or pending question from a different customer journey.
+      const distinctIntent = publishedCatalog && currentCatalogResolution?.intentKey && state.selectedIntentKey
+        && currentCatalogResolution.intentKey !== state.selectedIntentKey
+        && currentCatalogResolution.reason !== 'below_threshold'
+        && currentCatalogResolution.reason !== 'ambiguous';
+      if (distinctIntent && publishedCatalog) {
+        delete catalogSlotValues.contact_consent;
+        state.contactConsent = 'unknown';
+        state.consentCapturedAt = null;
+        state.consentVersion = null;
+        catalogResolution = resolveIntent(publishedCatalog, maskedMessage, catalogSlotValues);
+      }
       const consentSlot = publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length === 1
         ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === catalogResolution.intentKey && slot.slotKey === catalogResolution.missingSlots[0])
         : null;
