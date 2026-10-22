@@ -22,7 +22,7 @@ Tracking: [issue #45](https://github.com/sanukhandev/agentic-rag-ai/issues/45)
 | n8n | CRM-01/02/03, DOC-01 and 13 intent-neutral JSON exports are inactive, authenticated and secret-free. Existing ANC Lead Capture WF-1 remains present and provider endpoint/credentials stay outside source. |
 | OCR | Existing Python/Tesseract document path remains tenant-scoped; OCR/document tests and Python suite passed. |
 | Omnichannel | Text/postback/attachment contract fields and `replyToPromptId` are accepted at the backend boundary; tenant-scoped channel authentication remains in place. |
-| Admin UX | Action outcome remains visible after approval; catalog extension fields are preserved by import/edit validation. |
+| Admin UX | Action outcome remains visible after approval; catalog extension fields are preserved by import/edit validation; CRM cards now show internal CRM ID, remote provider and remote CRM reference. |
 
 ## Commands and results
 
@@ -31,7 +31,7 @@ Tracking: [issue #45](https://github.com/sanukhandev/agentic-rag-ai/issues/45)
 - `npm test` — passed: 132 tests, 1 expected skip; API 91 passed/1 skipped.
 - `npm run build` — passed for Angular admin, Next web, API and shared packages.
 - `npm run verify:compose` — passed.
-- `npm run verify:secrets` — passed; 271 files scanned.
+- `npm run verify:secrets` — passed; 269 files scanned.
 - `npm run verify:secrets:test` — passed: 2/2.
 - `npm run acceptance:seed` — passed: tenant A/B isolation and idempotent approval.
 - `npm run acceptance:local` — passed: TXT, DOCX, XLSX, PDF, HTTPS snapshot and grounded chat.
@@ -39,6 +39,7 @@ Tracking: [issue #45](https://github.com/sanukhandev/agentic-rag-ai/issues/45)
 - Existing n8n tests plus `crm-v2-workflows.test.mjs` — passed.
 - `docker compose build api admin web ingestion` and `docker compose up -d api admin web ingestion` — passed. API ready, web/admin HTTP 200, no browser console errors.
 - Live local n8n/Salesforce smoke — passed: active `ANC Lead Capture WF-1` execution `584` completed in 5.135 seconds using the encrypted `SalesForce ANC - CREDS` credential; the internal CRM row was completed with score `95`, `validation_pass=true`, `remote_crm=salesforce`, and a non-empty Salesforce Lead ID.
+- Live local document smoke — passed: published `anc.document.supporting_upload` intent clarified the request, then a synthetic attachment with explicit processing consent triggered `ANC Document OCR WF-1` execution `596` (succeeded in 78 ms); PostgreSQL recorded the job and document as `completed`, with `execution_reference` set and 226 extracted characters plus a summary.
 
 ## Browser smoke evidence
 
@@ -53,6 +54,8 @@ Mock/local: API, MemoryStore/Postgres contracts, deterministic scoring, OCR test
 Live verified: the existing authorized local n8n workflow is active and the synthetic browser journey created one Salesforce sandbox lead; the returned provider ID was validated and written back to PostgreSQL. No credential values, bearer token, or visitor contact details are stored in this report.
 
 Remaining unverified provider cases: OAuth failure, missing Salesforce ID and ambiguous timeout reconciliation were not induced against the live sandbox; their rejection/reconciliation behavior remains covered by workflow/API tests and must be exercised in a controlled staging run before production use.
+
+The requested OpenAI n8n formatting step is not verified: the connected local n8n credential inventory contains `SalesForce ANC - CREDS` only, and the published OCR workflow currently orchestrates secure queueing to the Python/Tesseract worker. No OpenAI credential or OpenAI node was invented or added without an authorized n8n connection.
 
 The generated catalog bindings remain draft/inactive by design until their final workflow IDs and tenant approval are applied.
 

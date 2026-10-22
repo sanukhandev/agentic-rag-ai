@@ -34,7 +34,8 @@ The release-gate results below are from the local run on 22 Oct 2026:
 | Browser/Docker | `docker compose build api admin web ingestion`, restart, health checks and local Chrome smoke flow | passed after applying migrations 028/029; chat session creation, published ANCFZ intent response and one-question clarification verified |
 | Acceptance | `npm run acceptance:seed`, `npm run acceptance:local` | both passed; tenant A/B isolation, idempotent approval and five-source ingestion/grounded chat verified |
 | Authorized CRM smoke | Local Chrome synthetic callback journey → active n8n execution `584` → PostgreSQL | passed; n8n completed in 5.135s, Salesforce returned a validated Lead ID, and the same tenant lead row is `completed`, score 95 and `remote_crm=salesforce` |
+| Document OCR smoke | Catalog intent → local document API → active n8n execution `596` → Python/Tesseract → PostgreSQL | passed; synthetic attachment was accepted with consent, n8n succeeded in 78ms, and the document/job completed with 226 extracted characters and a stored summary |
 
 ## External blockers
 
-The authorized local n8n instance and Salesforce sandbox happy path are now verified. OAuth failure, missing-ID and ambiguous-timeout cases were not induced against the live sandbox; retain the existing negative tests and run those cases in a controlled staging environment before production. The generated source catalog and bindings remain draft/inactive by design.
+The authorized local n8n instance and Salesforce sandbox happy path are now verified. OAuth failure, missing-ID and ambiguous-timeout cases were not induced against the live sandbox; retain the existing negative tests and run those cases in a controlled staging environment before production. The generated source catalog and bindings remain draft/inactive by design. The local n8n instance has no OpenAI credential, so OpenAI-based OCR formatting remains unverified and was not added implicitly.
