@@ -4,7 +4,7 @@ import path from 'node:path';
 const root = process.cwd();
 const out = path.join(root, 'infra', 'n8n', 'workflows');
 const esc = (value) => value.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
-const header = { parameters: { method: 'POST', url: '={{ "http://api:4000/api/v1/internal/workflow-events/claim" }}', sendHeaders: true, headerParameters: { parameters: [{ name: 'x-agentic-internal-secret', value: '={{ $env.N8N_WEBHOOK_SECRET }}' }] }, sendBody: true, specifyBody: 'json', jsonBody: '={{ JSON.stringify({ workflowKey: $json.workflowKey, contract: $json.contract, limit: 10 }) }}', options: {} }, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2 };
+const header = { parameters: { method: 'POST', url: '={{ "http://api:4000/api/v1/internal/workflow-events/claim" }}', authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth', sendBody: true, specifyBody: 'json', jsonBody: '={{ JSON.stringify({ workflowKey: $json.workflowKey, contract: $json.contract, limit: 10 }) }}', options: {} }, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2 };
 const baseWorkflow = ({ id, name, webhookPath, workflowKey, contract, target }) => {
   const webhook = `${id}-webhook`;
   const validate = `${id}-validate`;
@@ -23,10 +23,10 @@ const baseWorkflow = ({ id, name, webhookPath, workflowKey, contract, target }) 
   };
   if (target) {
     const targetId = `${id}-target`;
-    nodes.push({ parameters: { method: target.method, url: target.url, sendHeaders: true, headerParameters: { parameters: [{ name: 'x-agentic-internal-secret', value: '={{ $env.N8N_WEBHOOK_SECRET }}' }] }, sendBody: true, specifyBody: 'json', jsonBody: target.body, options: {} }, id: targetId, name: target.name, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [980, 0] });
+    nodes.push({ parameters: { method: target.method, url: target.url, authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth', sendBody: true, specifyBody: 'json', jsonBody: target.body, options: {} }, id: targetId, name: target.name, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [980, 0] });
     connections['Expand Claimed Events'] = { main: [[{ node: target.name, type: 'main', index: 0 }]] };
   }
-  return { id, name, nodes, connections, active: false, settings: { executionOrder: 'v1' }, versionId: `${id}-v1`, meta: { templateCredsSetupCompleted: false }, tags: [], notes: 'Generated generic tenant-neutral export. Import and activate only after security approval and credential binding.' };
+  return { id, name, nodes, connections, active: false, settings: { executionOrder: 'v1' }, versionId: `${id}-v1`, meta: { templateCredsSetupCompleted: false }, tags: [], notes: 'Generated generic tenant-neutral export. Internal HTTP nodes require a tenant-authorized n8n HTTP Header Auth credential; keep inactive until provider integration, security approval and terminal action completion are verified.' };
 };
 
 const workflows = [
