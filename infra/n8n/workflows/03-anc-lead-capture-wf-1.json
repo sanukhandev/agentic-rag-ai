@@ -27,7 +27,7 @@
         "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, n8nWorkflowId: $workflow.id, ...($json.workflowKey ? { workflowKey: $json.workflowKey } : {}), contract: 'anc-lead-capture-v1', limit: 10 }) }}",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, n8nWorkflowId: $workflow.id, ...($json.workflowKey ? { workflowKey: $json.workflowKey } : {}), contract: 'anc-lead-capture-v1', limit: 1 }) }}",
         "options": {}
       },
       "id": "anc-wf1-claim",

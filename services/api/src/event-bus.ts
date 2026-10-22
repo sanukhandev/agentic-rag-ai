@@ -108,8 +108,8 @@ export class N8nEventBridge {
         if (event.actionId) {
           const action = await this.store.getAction(event.actionId);
           if (action && action.tenantId === event.tenantId && !['completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review'].includes(action.state)) {
-            await this.store.updateAction({ ...action, state: 'reconcile_required' });
-            await this.store.addAudit({ id: randomUUID(), tenantId: event.tenantId, actorId: null, eventName: 'workflow.reconcile_required', metadata: { actionId: action.id, eventId: event.eventId }, createdAt: new Date().toISOString() });
+            const updated = await this.store.transitionAction(action.id, action.tenantId, action.state, 'reconcile_required', action.result);
+            if (updated) await this.store.addAudit({ id: randomUUID(), tenantId: event.tenantId, actorId: null, eventName: 'workflow.reconcile_required', metadata: { actionId: action.id, eventId: event.eventId }, createdAt: new Date().toISOString() });
           }
         }
         throw new AmbiguousEventDispatchError('n8n dispatch timed out; reconciliation is required.');
@@ -149,8 +149,8 @@ export class EventConsumer {
           if (message.event.actionId) {
             const action = await this.store.getAction(message.event.actionId);
             if (action && action.tenantId === message.event.tenantId && !['completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review'].includes(action.state)) {
-              await this.store.updateAction({ ...action, state: 'reconcile_required' });
-              await this.store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: 'workflow.reconcile_required', metadata: { actionId: action.id, eventId: message.event.eventId, reason: error.message }, createdAt: new Date().toISOString() });
+              const updated = await this.store.transitionAction(action.id, action.tenantId, action.state, 'reconcile_required', action.result);
+              if (updated) await this.store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: 'workflow.reconcile_required', metadata: { actionId: action.id, eventId: message.event.eventId, reason: error.message }, createdAt: new Date().toISOString() });
             }
           }
           await this.bus.deadLetter(message.event, error.message);

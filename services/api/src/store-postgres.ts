@@ -160,24 +160,13 @@ export class PostgresStore implements Store {
   async getAction(id: string): Promise<ActionRequest | null> { const result = await this.pool.query('SELECT * FROM action_requests WHERE id=$1', [id]); return result.rows[0] ? this.action(result.rows[0]) : null; }
   async getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null> { const result = await this.pool.query('SELECT * FROM action_requests WHERE tenant_id=$1 AND idempotency_key=$2', [tenantId, idempotencyKey]); return result.rows[0] ? this.action(result.rows[0]) : null; }
   async updateAction(action: ActionRequest): Promise<ActionRequest> { await this.pool.query('UPDATE action_requests SET state=$1,result=$2,payload=$3 WHERE id=$4 AND tenant_id=$5', [action.state, action.result ? JSON.stringify(action.result) : null, JSON.stringify(action.payload), action.id, action.tenantId]); return action; }
+  async transitionAction(actionId: string, tenantId: string, fromState: ActionRequest['state'], toState: ActionRequest['state'], result: ActionRequest['result']): Promise<ActionRequest | null> {
+    const updated = await this.pool.query<ActionRow>('UPDATE action_requests SET state=$1,result=$2 WHERE id=$3 AND tenant_id=$4 AND state=$5 RETURNING *', [toState, result ? JSON.stringify(result) : null, actionId, tenantId, fromState]);
+    return updated.rows[0] ? this.action(updated.rows[0]) : null;
+  }
   async claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null> {
     const result = await this.pool.query<ActionRow>(`UPDATE action_requests SET state='processing' WHERE id=$1 AND workflow_key=$2 AND state='approved' RETURNING *`, [actionId, workflowKey]);
     return result.rows[0] ? this.action(result.rows[0]) : null;
-  }
-  async claimApprovedActions(workflowKey: string, limit: number): Promise<ActionRequest[]> {
-    const result = await this.pool.query<ActionRow>(`WITH candidates AS (
-        SELECT id FROM action_requests
-        WHERE workflow_key=$1 AND state='approved'
-        ORDER BY created_at, id
-        FOR UPDATE SKIP LOCKED
-        LIMIT $2
-      )
-      UPDATE action_requests AS actions
-      SET state='processing'
-      FROM candidates
-      WHERE actions.id=candidates.id
-      RETURNING actions.*`, [workflowKey, limit]);
-    return result.rows.map((row) => this.action(row));
   }
   async listActions(tenantId: string): Promise<ActionRequest[]> { const result = await this.pool.query('SELECT * FROM action_requests WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId]); return result.rows.map((row) => this.action(row)); }
   async createCrmLead(lead: CrmLead): Promise<CrmLead> { const result = await this.pool.query<CrmLeadRow>('INSERT INTO crm_leads (id,tenant_id,action_id,session_id,intent,secondary_intent_keys,intent_score,intent_confidence,catalog_version_id,score,validation_pass,lead_data,conversation_json,summary,summary_status,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16) RETURNING *', [lead.id, lead.tenantId, lead.actionId, lead.sessionId, lead.intent, JSON.stringify(lead.secondaryIntentKeys ?? []), lead.intentScore, lead.intentConfidence, lead.catalogVersionId, lead.score, lead.validationPass, JSON.stringify(lead.leadData), JSON.stringify(lead.conversation), lead.summary, lead.summaryStatus, lead.createdAt]); return this.crmLead(result.rows[0]!); }

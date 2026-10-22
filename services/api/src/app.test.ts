@@ -734,24 +734,37 @@ describe('API vertical slice', () => {
     expect((await runtime.store.getAction(partialAction.id))?.state).toBe('processing');
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: partialAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'partial-completed-1' }).expect(200);
     expect((await runtime.store.getAction(partialAction.id))?.state).toBe('completed');
+    const raceAction = await runtime.store.createAction({ ...partialAction, id: randomUUID(), idempotencyKey: 'transition-race-action', state: 'processing' });
+    const [raceCompleted, raceReconciled] = await Promise.all([
+      api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: raceAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'race-completed' }),
+      api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: raceAction.id, tenantId: tenant.body.tenant.id, state: 'reconcile_required', externalReference: 'race-reconcile' }),
+    ]);
+    expect([raceCompleted.status, raceReconciled.status].sort()).toEqual([200, 409]);
+    expect((await runtime.store.getAction(raceAction.id))?.state).toBe(raceCompleted.status === 200 ? 'completed' : 'reconcile_required');
   });
 
   it('polls all active CRM bindings registered to the current n8n workflow', async () => {
     const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'internal-secret' });
     const api = request(runtime.app);
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'poller-platform@example.test', password: 'Platform1Password' }).expect(201);
-    const createTenant = async (suffix: string, workflowKey: string) => {
+    const createTenant = async (suffix: string, workflowKey: string, n8nWorkflowId: string) => {
       const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: `Poller Tenant ${suffix}`, slug: `poller-tenant-${suffix}`, adminEmail: `poller-${suffix}@example.test`, adminPassword: 'TenantA1Password' }).expect(201);
-      const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'poller.json', sourceHash: suffix.repeat(64), parserVersion: 'test', catalog: { tenantScope: tenant.body.tenant.slug, intents: [{ intentKey: `${workflowKey}.request`, displayName: 'Commercial request', description: 'Commercial request', category: 'company_formation', workflowKey, minimumScore: 0, confidenceThreshold: 0, confirmationRequired: true, active: true, priority: 1, versionNote: '' }], signals: [], slots: [], relations: [], workflowBindings: [{ workflowKey, n8nWorkflowId: 'shared-poller-workflow', webhookPath: `${workflowKey.replaceAll('.', '-')}`, payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }] } });
+      const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'poller.json', sourceHash: suffix.repeat(64), parserVersion: 'test', catalog: { tenantScope: tenant.body.tenant.slug, intents: [{ intentKey: `${workflowKey}.request`, displayName: 'Commercial request', description: 'Commercial request', category: 'company_formation', workflowKey, minimumScore: 0, confidenceThreshold: 0, confirmationRequired: true, active: true, priority: 1, versionNote: '' }], signals: [], slots: [], relations: [], workflowBindings: [{ workflowKey, n8nWorkflowId, webhookPath: `${workflowKey.replaceAll('.', '-')}`, payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }] } });
       const session = await runtime.store.createSession(tenant.body.tenant.id);
       const action = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.id, workflowKey, intentKey: `${workflowKey}.request`, catalogVersionId: version.id, idempotencyKey: `${workflowKey}-action`, state: 'approved', opaqueReference: `${workflowKey}-opaque`, payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
       return { tenant, action };
     };
-    const first = await createTenant('one', 'crm.company.create');
-    const second = await createTenant('two', 'crm.service.create');
-    const claimed = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ n8nWorkflowId: 'shared-poller-workflow', limit: 10 }).expect(200);
-    expect(claimed.body.items.map((item: { actionId: string }) => item.actionId)).toEqual(expect.arrayContaining([first.action.id, second.action.id]));
+    const first = await createTenant('one', 'crm.lead.create', 'poller-workflow-one');
+    const second = await createTenant('two', 'crm.lead.create', 'poller-workflow-two');
+    const wrongWorkflow = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: first.action.id, workflowKey: 'crm.lead.create', n8nWorkflowId: 'poller-workflow-two', limit: 1 }).expect(200);
+    expect(wrongWorkflow.body.items).toHaveLength(0);
+    expect((await runtime.store.getAction(first.action.id))?.state).toBe('approved');
+    const claimed = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ n8nWorkflowId: 'poller-workflow-one', limit: 10 }).expect(200);
+    expect(claimed.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([first.action.id]);
     expect((await runtime.store.getAction(first.action.id))?.state).toBe('processing');
+    expect((await runtime.store.getAction(second.action.id))?.state).toBe('approved');
+    const secondClaimed = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ n8nWorkflowId: 'poller-workflow-two', limit: 10 }).expect(200);
+    expect(secondClaimed.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([second.action.id]);
     expect((await runtime.store.getAction(second.action.id))?.state).toBe('processing');
   });
 

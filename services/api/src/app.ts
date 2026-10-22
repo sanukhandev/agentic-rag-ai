@@ -240,7 +240,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       || (action.state === 'awaiting_customer' && ['processing', 'completed', 'failed', 'reconcile_required'].includes(status));
     if (!allowed) throw new HttpError(409, 'WORKFLOW_TRANSITION_FORBIDDEN', `Workflow action cannot transition from ${action.state} to ${status}.`);
     if (action.state === status) { await syncWorkflowState(action, status); return action; }
-    const updated = await store.updateAction({ ...action, state: status, result: externalReference ? { externalReference } : action.result });
+    const updated = await store.transitionAction(action.id, action.tenantId, action.state, status, externalReference ? { externalReference } : action.result);
+    if (!updated) {
+      const current = await store.getAction(action.id);
+      if (current?.state === status) { await syncWorkflowState(current, status); return current; }
+      throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action changed before this transition was committed.');
+    }
     await syncWorkflowState(updated, status);
     await store.addAudit({ id: randomUUID(), tenantId: updated.tenantId, actorId, eventName: `workflow.transition.${action.state}.${status}`, metadata: { actionId: updated.id, fromState: action.state, toState: status }, createdAt: new Date().toISOString() });
     return updated;
@@ -1065,15 +1070,30 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.post('/api/v1/internal/workflow-events/claim', n8nInternalApi, async (req, res, next) => {
     try {
       const input = parse(workflowClaimSchema, req.body);
-      const claimed = input.actionId && input.workflowKey ? await store.claimAction(input.actionId, input.workflowKey) : null;
-      const workflowKeys = input.workflowKey ? [input.workflowKey] : [...new Set((await Promise.all((await store.listTenants()).map(async (tenant) => {
-        const version = await store.getPublishedIntentCatalog(tenant.id);
-        return (version?.catalog.workflowBindings ?? []).filter((binding) => binding.active && isCrmWriteBinding(binding) && (!input.n8nWorkflowId || binding.n8nWorkflowId === input.n8nWorkflowId)).map((binding) => binding.workflowKey);
-      }))).flat())];
-      const actions: ActionRequest[] = input.actionId ? claimed ? [claimed] : [] : [];
-      if (!input.actionId) for (const workflowKey of workflowKeys) {
-        if (actions.length >= (input.limit ?? 10)) break;
-        actions.push(...await store.claimApprovedActions(workflowKey, (input.limit ?? 10) - actions.length));
+      const matchesWorkflow = async (action: ActionRequest, expectedWorkflowKey?: string): Promise<boolean> => {
+        if (expectedWorkflowKey && action.workflowKey !== expectedWorkflowKey) return false;
+        if (!action.catalogVersionId) return false;
+        const version = await store.getIntentCatalogVersion(action.tenantId, action.catalogVersionId);
+        const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
+        return Boolean(binding?.active && isCrmWriteBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId);
+      };
+      const actions: ActionRequest[] = [];
+      if (input.actionId) {
+        const candidate = await store.getAction(input.actionId);
+        if (candidate && await matchesWorkflow(candidate, input.workflowKey)) {
+          const claimed = await store.claimAction(candidate.id, candidate.workflowKey);
+          if (claimed) actions.push(claimed);
+        }
+      } else {
+        const candidates = (await Promise.all((await store.listTenants()).map(async (tenant) => (await store.listActions(tenant.id))
+          .filter((action) => action.state === 'approved' && (!input.workflowKey || action.workflowKey === input.workflowKey))))).flat()
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+        for (const candidate of candidates) {
+          if (actions.length >= (input.limit ?? 10)) break;
+          if (!(await matchesWorkflow(candidate, input.workflowKey))) continue;
+          const claimed = await store.claimAction(candidate.id, candidate.workflowKey);
+          if (claimed) actions.push(claimed);
+        }
       }
       const items = [];
       for (const action of actions) {
@@ -1084,9 +1104,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const qualityRule = version?.catalog.qualityRules?.find((item) => item.intentKey === action.intentKey);
         const qualityBinding = qualityRule ? version?.catalog.workflowBindings.find((item) => item.workflowKey === qualityRule.qualityWorkflowKey) : null;
         if (!session || !version || !intent || !binding?.active || (qualityRule && !qualityBinding?.active)) {
-          const failed = { ...action, state: 'failed' as const, result: null };
-          await store.updateAction(failed);
-          await store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: 'workflow.failed', metadata: { actionId: action.id, workflowKey: action.workflowKey, reason: 'catalog_binding_invalid' }, createdAt: new Date().toISOString() });
+          const failed = await store.transitionAction(action.id, action.tenantId, action.state, 'failed', null);
+          if (failed) await store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: 'workflow.failed', metadata: { actionId: action.id, workflowKey: action.workflowKey, reason: 'catalog_binding_invalid' }, createdAt: new Date().toISOString() });
           continue;
         }
         const conversation = (await store.listMessages(action.sessionId, action.tenantId)).map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt }));
@@ -1244,7 +1263,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const input = parse(z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['completed', 'failed']), externalReference: z.string().refine(isSafeExternalReference, 'An opaque external reference is required.') }), req.body);
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
-      const updated = await store.updateAction({ ...action, state: input.state, result: input.state === 'completed' ? { externalReference: input.externalReference } : null });
+      const updated = await store.transitionAction(action.id, action.tenantId, action.state, input.state, input.state === 'completed' ? { externalReference: input.externalReference } : null);
+      if (!updated) throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action changed before this callback was committed.');
       await syncWorkflowState(updated, input.state);
       await store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: `workflow.callback.${input.state}`, metadata: { actionId: action.id }, createdAt: new Date().toISOString() });
       res.json({ action: updated });

@@ -269,21 +269,19 @@ export class MemoryStore implements Store {
     return [...this.actions.values()].find((action) => action.tenantId === tenantId && action.idempotencyKey === idempotencyKey) ?? null;
   }
   async updateAction(action: ActionRequest): Promise<ActionRequest> { this.actions.set(action.id, action); return action; }
+  async transitionAction(actionId: string, tenantId: string, fromState: ActionRequest['state'], toState: ActionRequest['state'], result: ActionRequest['result']): Promise<ActionRequest | null> {
+    const current = this.actions.get(actionId);
+    if (!current || current.tenantId !== tenantId || current.state !== fromState) return null;
+    const updated = { ...current, state: toState, result };
+    this.actions.set(actionId, updated);
+    return updated;
+  }
   async claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null> {
     const action = this.actions.get(actionId);
     if (!action || action.workflowKey !== workflowKey || action.state !== 'approved') return null;
     const claimed = { ...action, state: 'processing' as const };
     this.actions.set(actionId, claimed);
     return claimed;
-  }
-  async claimApprovedActions(workflowKey: string, limit: number): Promise<ActionRequest[]> {
-    const actions = [...this.actions.values()]
-      .filter((action) => action.workflowKey === workflowKey && action.state === 'approved')
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-      .slice(0, limit)
-      .map((action) => ({ ...action, state: 'processing' as const }));
-    for (const action of actions) this.actions.set(action.id, action);
-    return actions;
   }
   async listActions(tenantId: string): Promise<ActionRequest[]> { return [...this.actions.values()].filter((action) => action.tenantId === tenantId); }
   async createCrmLead(lead: CrmLead): Promise<CrmLead> { this.crmLeads.set(lead.id, lead); return lead; }

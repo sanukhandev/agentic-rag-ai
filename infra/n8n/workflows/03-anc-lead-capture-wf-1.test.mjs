@@ -12,6 +12,7 @@ test('binds remote CRM OAuth to the n8n credential store', async () => {
   assert.equal(webhook?.parameters.responseMode, 'onReceived');
   assert.equal(webhook?.parameters.responseCode, 202);
   assert.match(workflow.nodes.find((node) => node.name === 'Authenticate and Claim Event')?.parameters.jsonBody ?? '', /n8nWorkflowId: \$workflow\.id/);
+  assert.match(workflow.nodes.find((node) => node.name === 'Authenticate and Claim Event')?.parameters.jsonBody ?? '', /limit: 1/);
   assert.doesNotMatch(workflow.nodes.find((node) => node.name === 'Authenticate and Claim Event')?.parameters.jsonBody ?? '', /anc\.crm\.lead\.capture/);
   assert.match(workflow.nodes.find((node) => node.name === 'Authenticate and Claim Event')?.parameters.jsonBody, /anc-lead-capture-v1/);
   assert.equal(workflow.nodes.find((node) => node.name === 'Fetch Authorized Remote CRM Payload')?.parameters.url.includes('/remote-payload'), true);
