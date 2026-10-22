@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isGreeting, isPermittedLanguage, naturalAbstention, needsConversationContext, normalizeConversationQuery, preservesNormalizationFacts, validateCitations } from './model.js';
+import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isGreeting, isPermittedLanguage, leadCollectionReply, naturalAbstention, needsConversationContext, normalizeConversationQuery, preservesNormalizationFacts, validateCitations } from './model.js';
 
 describe('Azure Foundry model adapter', () => {
   it('normalizes generic formatting without tenant-specific vocabulary', () => {
@@ -76,6 +76,10 @@ describe('Azure Foundry model adapter', () => {
     expect(String(request.body)).toContain('documentPolicies');
     expect(String(request.body)).not.toContain('server-key');
     fetchMock.mockRestore();
+  });
+  it('asks to replace invalid contact data instead of treating it as complete', () => {
+    expect(leadCollectionReply({ name: '[NAME_1]', email: '[EMAIL_1]', phone: '[PHONE_1]' }, 'email')).toContain('email address');
+    expect(leadCollectionReply({ name: '[NAME_1]', email: '[EMAIL_1]', phone: '[PHONE_1]' }, 'phone')).toContain('phone number');
   });
 
   it('uses catalog vocabulary for normalization and rejects unmasked contact output', async () => {

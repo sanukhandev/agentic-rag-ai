@@ -90,10 +90,10 @@ export const mergeLeadData = (...values: LeadData[]): LeadData => {
   }
   return merged;
 };
-export const leadCollectionReply = (data: LeadData): string => {
-  if (!data.name) return 'I’d be happy to help. What name should I use?';
-  if (!data.email) return 'Thanks. What email address should I use?';
-  if (!data.phone) return 'Thanks. What phone number, including country code, should I use?';
+export const leadCollectionReply = (data: LeadData, invalidField?: 'name' | 'email' | 'phone' | null): string => {
+  if (invalidField === 'name' || !data.name) return 'I’d be happy to help. What name should I use?';
+  if (invalidField === 'email' || !data.email) return 'Thanks. What email address should I use?';
+  if (invalidField === 'phone' || !data.phone) return 'Thanks. What phone number, including country code, should I use?';
   return 'I have the contact details needed. Please explicitly consent before I register the request.';
 };
 
