@@ -104,7 +104,7 @@ export class AzureFoundryModel implements ChatModel {
         temperature: 0,
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: 'Normalize the latest visitor message for catalog-guided retrieval. Correct spelling, grammar, transliteration and wording only when the meaning is clear. Preserve facts, quantities, negation, uncertainty and bracketed privacy tokens exactly. Use the supplied catalog only as vocabulary context. Do not choose an intent, workflow, consent state or answer the visitor. Return JSON only: {"query":"..."}.' },
+          { role: 'system', content: 'Normalize the latest visitor message for catalog-guided retrieval. Correct spelling, grammar, transliteration and wording only when the meaning is clear. If the latest message is a short reply to an assistant clarification, map an unambiguous synonym to the closest supplied catalog signal wording (for example, shared desk to flexi desk) without inventing facts. Preserve facts, quantities, negation, uncertainty and bracketed privacy tokens exactly. Use the supplied catalog only as vocabulary context. Do not choose an intent, workflow, consent state or answer the visitor. Return JSON only: {"query":"..."}.' },
           { role: 'user', content: JSON.stringify({ message: input.maskedMessage, conversation: input.conversation ?? [], catalog }) },
         ],
       }),

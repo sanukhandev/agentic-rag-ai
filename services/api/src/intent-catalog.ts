@@ -234,8 +234,16 @@ export const resolveIntent = (version: IntentCatalogVersion, inputText: string, 
 
 export const resolveIntentContinuity = (version: IntentCatalogVersion, input: IntentContinuityInput): IntentContinuityResolution => {
   const slotValuesByKey = input.slotValues ?? {};
-  const currentCandidates = rankIntentCandidates(version, input.currentText, slotValuesByKey);
-  const contextCandidates = rankIntentCandidates(version, input.contextText?.trim() || input.currentText, slotValuesByKey);
+  const promoteExplicitReply = (candidates: RankedIntent[]): RankedIntent[] => candidates.map((candidate) => {
+    if (!input.selectedIntentKey || candidate.intent.intentKey !== input.selectedIntentKey) return candidate;
+    const normalizedCurrent = normalize(input.currentText);
+    const isShortExactSignal = normalizedCurrent.split(' ').length <= 8 && version.catalog.signals.some((signal) => signal.intentKey === candidate.intent.intentKey && signal.signalType !== 'exclusion' && normalize(signal.value) === normalizedCurrent);
+    if (!isShortExactSignal) return candidate;
+    const score = Math.max(candidate.score, candidate.intent.minimumScore, Math.ceil(candidate.intent.confidenceThreshold * 100));
+    return { ...candidate, score, confidence: Math.min(1, score / 100) };
+  });
+  const currentCandidates = promoteExplicitReply(rankIntentCandidates(version, input.currentText, slotValuesByKey));
+  const contextCandidates = promoteExplicitReply(rankIntentCandidates(version, input.contextText?.trim() || input.currentText, slotValuesByKey));
   const current = resolutionFrom(version, currentCandidates);
   const context = resolutionFrom(version, contextCandidates);
   const selected = input.selectedIntentKey ? contextCandidates.find((candidate) => candidate.intent.intentKey === input.selectedIntentKey) ?? currentCandidates.find((candidate) => candidate.intent.intentKey === input.selectedIntentKey) : undefined;

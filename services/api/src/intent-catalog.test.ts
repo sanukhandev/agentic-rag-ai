@@ -71,6 +71,12 @@ describe('intent catalog', () => {
     expect(continuity.secondaryIntentKeys).not.toContain('lead.capture');
   });
 
+  it('accepts an exact short reply to the selected clarification even when its catalog signal is low-weight', () => {
+    const continuity = resolveIntentContinuity(version, { currentText: 'need a demo', contextText: 'need a demo', selectedIntentKey: 'lead.capture' });
+    expect(continuity.primary.reason).toBe('missing_slots');
+    expect(continuity.primary.score).toBeGreaterThanOrEqual(80);
+  });
+
   it('switches only when a new unrelated current intent is strong', () => {
     const continuity = resolveIntentContinuity(version, { currentText: 'appointment', contextText: 'I need a demo\nappointment', selectedIntentKey: 'lead.capture', slotValues: { name: '[NAME_1]' } });
     expect(continuity.primary.intentKey).toBe('appointment.request');

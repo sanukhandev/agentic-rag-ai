@@ -88,6 +88,14 @@ describe('Azure Foundry model adapter', () => {
     vi.restoreAllMocks();
   });
 
+  it('asks the normalizer to map clear clarification synonyms to catalog wording', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ query: 'I want a flexi desk' }) } }] }), { status: 200 }));
+    const model = new AzureFoundryModel('https://foundry.example/openai/v1', 'gpt-4.1-mini', 'server-key');
+    await expect(model.normalizeQuery({ maskedMessage: 'I want a shared desk', conversation: [{ role: 'assistant', content: 'Are you looking for flexi desk or shared office?' }], catalog: { intents: [{ intentKey: 'workspace.flexidesk', displayName: 'Flexi desk', description: 'workspace', category: 'sales', workflowKey: 'crm.lead.create', minimumScore: 60, confidenceThreshold: 0.78, confirmationRequired: true, active: true, priority: 100, versionNote: '' }], signals: [{ intentKey: 'workspace.flexidesk', signalId: 'flexi', signalType: 'phrase', value: 'I want a flexi desk', language: 'en', matchMode: 'contains', weight: 75, relationGroup: null, notes: '' }], relations: [] } })).resolves.toBe('I want a flexi desk');
+    expect(String(fetchMock.mock.calls[0]?.[1]?.body)).toContain('map an unambiguous synonym');
+    vi.restoreAllMocks();
+  });
+
   it('returns a safe abstention for malformed model output', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: '{"answer":"unsafe"}' } }] }), { status: 200 }));
     const model = new AzureFoundryModel('https://foundry.example', 'gpt-4.1-mini', 'server-key');

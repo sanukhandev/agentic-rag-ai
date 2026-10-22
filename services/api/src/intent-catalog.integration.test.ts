@@ -30,6 +30,7 @@ describe('published intent catalog runtime', () => {
           { intentKey: 'lead.capture', signalId: 'demo-keyword', signalType: 'keyword', value: 'demo', language: 'en', matchMode: 'contains', weight: 20, relationGroup: null, notes: '' },
           { intentKey: 'lead.capture', signalId: 'connect-sanu', signalType: 'phrase', value: 'connect with sanu', language: 'en', matchMode: 'contains', weight: 70, relationGroup: null, notes: '' },
           { intentKey: 'lead.capture', signalId: 'erp-build', signalType: 'phrase', value: 'build an erp solution', language: 'en', matchMode: 'contains', weight: 35, relationGroup: null, notes: '' },
+          { intentKey: 'lead.capture', signalId: 'shared-office', signalType: 'keyword', value: 'shared office', language: 'en', matchMode: 'contains', weight: 25, relationGroup: null, notes: '' },
           { intentKey: 'lead.capture', signalId: 'developer', signalType: 'keyword', value: 'developer', language: 'en', matchMode: 'contains', weight: 15, relationGroup: null, notes: '' },
           { intentKey: 'lead.capture', signalId: 'erp', signalType: 'keyword', value: 'erp', language: 'en', matchMode: 'contains', weight: 15, relationGroup: null, notes: '' },
           { intentKey: 'lead.capture', signalId: 'build', signalType: 'keyword', value: 'build', language: 'en', matchMode: 'contains', weight: 10, relationGroup: null, notes: '' },
@@ -49,6 +50,11 @@ describe('published intent catalog runtime', () => {
     const repeatedIntentTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'connect with sanu', clientMessageId: 'catalog-multi-2' }).expect(200);
     expect(repeatedIntentTurn.body.actionProposal).toBeNull();
     expect(repeatedIntentTurn.body.answer).toContain('What name');
+    const clarificationReplySession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'catalog-tenant' }).expect(201);
+    const clarificationPrompt = await api.post('/api/v1/chat/messages').send({ sessionId: clarificationReplySession.body.sessionId, message: 'shared office', clientMessageId: 'catalog-clarification-reply-1' }).expect(200);
+    expect(clarificationPrompt.body.answer).toContain('To make sure I route this correctly');
+    const acceptedClarification = await api.post('/api/v1/chat/messages').send({ sessionId: clarificationReplySession.body.sessionId, message: 'shared office', clientMessageId: 'catalog-clarification-reply-2' }).expect(200);
+    expect(acceptedClarification.body.answer).toContain('What name');
     const nameTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'Demo Visitor', clientMessageId: 'catalog-multi-3' }).expect(200);
     expect(nameTurn.body.actionProposal).toBeNull();
     expect(nameTurn.body.answer).toContain('email address');
