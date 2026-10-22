@@ -5,6 +5,7 @@ import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
 import { HttpError } from './http/errors.js';
+import { isCrmWriteBinding } from './intent-catalog.js';
 
 const now = (): string => new Date().toISOString();
 const isUuid = (value: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
@@ -281,6 +282,26 @@ export class MemoryStore implements Store {
     if (!action || action.workflowKey !== workflowKey || action.state !== 'approved') return null;
     const claimed = { ...action, state: 'processing' as const };
     this.actions.set(actionId, claimed);
+    return claimed;
+  }
+  async claimActionsForWorkflow(n8nWorkflowId: string, workflowKey: string | undefined, limit: number): Promise<ActionRequest[]> {
+    const candidates = [...this.actions.values()]
+      .filter((action) => action.state === 'approved' && (!workflowKey || action.workflowKey === workflowKey))
+      .filter((action) => {
+        if (!action.catalogVersionId) return false;
+        const version = this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId);
+        const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
+        return Boolean(binding?.active && isCrmWriteBinding(binding) && binding.n8nWorkflowId === n8nWorkflowId);
+      })
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
+    const claimed: ActionRequest[] = [];
+    for (const candidate of candidates.slice(0, limit)) {
+      const current = this.actions.get(candidate.id);
+      if (!current || current.state !== 'approved') continue;
+      const updated = { ...current, state: 'processing' as const };
+      this.actions.set(updated.id, updated);
+      claimed.push(updated);
+    }
     return claimed;
   }
   async listActions(tenantId: string): Promise<ActionRequest[]> { return [...this.actions.values()].filter((action) => action.tenantId === tenantId); }

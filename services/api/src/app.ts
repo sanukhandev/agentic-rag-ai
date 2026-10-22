@@ -1085,15 +1085,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           if (claimed) actions.push(claimed);
         }
       } else {
-        const candidates = (await Promise.all((await store.listTenants()).map(async (tenant) => (await store.listActions(tenant.id))
-          .filter((action) => action.state === 'approved' && (!input.workflowKey || action.workflowKey === input.workflowKey))))).flat()
-          .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-        for (const candidate of candidates) {
-          if (actions.length >= (input.limit ?? 10)) break;
-          if (!(await matchesWorkflow(candidate, input.workflowKey))) continue;
-          const claimed = await store.claimAction(candidate.id, candidate.workflowKey);
-          if (claimed) actions.push(claimed);
-        }
+        actions.push(...await store.claimActionsForWorkflow(input.n8nWorkflowId, input.workflowKey, input.limit ?? 10));
       }
       const items = [];
       for (const action of actions) {

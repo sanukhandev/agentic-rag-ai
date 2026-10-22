@@ -168,6 +168,31 @@ export class PostgresStore implements Store {
     const result = await this.pool.query<ActionRow>(`UPDATE action_requests SET state='processing' WHERE id=$1 AND workflow_key=$2 AND state='approved' RETURNING *`, [actionId, workflowKey]);
     return result.rows[0] ? this.action(result.rows[0]) : null;
   }
+  async claimActionsForWorkflow(n8nWorkflowId: string, workflowKey: string | undefined, limit: number): Promise<ActionRequest[]> {
+    const result = await this.pool.query<ActionRow>(`WITH candidate AS (
+      SELECT action.id
+      FROM action_requests AS action
+      JOIN intent_catalog_versions AS catalog
+        ON catalog.id = action.catalog_version_id
+       AND catalog.tenant_id = action.tenant_id
+      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(catalog.catalog_json->'workflowBindings', '[]'::jsonb)) AS binding(item)
+      WHERE action.state = 'approved'
+        AND ($2::text IS NULL OR action.workflow_key = $2)
+        AND binding.item->>'workflowKey' = action.workflow_key
+        AND binding.item->>'n8nWorkflowId' = $1
+        AND binding.item->>'active' = 'true'
+        AND lower(binding.item->>'sideEffectClass') IN ('crm_write', 'crm')
+      ORDER BY action.created_at, action.id
+      FOR UPDATE OF action SKIP LOCKED
+      LIMIT $3
+    )
+    UPDATE action_requests AS action
+       SET state = 'processing'
+      FROM candidate
+     WHERE action.id = candidate.id
+     RETURNING action.*`, [n8nWorkflowId, workflowKey ?? null, limit]);
+    return result.rows.map((row) => this.action(row));
+  }
   async listActions(tenantId: string): Promise<ActionRequest[]> { const result = await this.pool.query('SELECT * FROM action_requests WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId]); return result.rows.map((row) => this.action(row)); }
   async createCrmLead(lead: CrmLead): Promise<CrmLead> { const result = await this.pool.query<CrmLeadRow>('INSERT INTO crm_leads (id,tenant_id,action_id,session_id,intent,secondary_intent_keys,intent_score,intent_confidence,catalog_version_id,score,validation_pass,lead_data,conversation_json,summary,summary_status,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16) RETURNING *', [lead.id, lead.tenantId, lead.actionId, lead.sessionId, lead.intent, JSON.stringify(lead.secondaryIntentKeys ?? []), lead.intentScore, lead.intentConfidence, lead.catalogVersionId, lead.score, lead.validationPass, JSON.stringify(lead.leadData), JSON.stringify(lead.conversation), lead.summary, lead.summaryStatus, lead.createdAt]); return this.crmLead(result.rows[0]!); }
   async upsertCrmLead(lead: CrmLead, dedupeKey: string): Promise<CrmLead> {
