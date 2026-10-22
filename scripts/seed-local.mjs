@@ -51,9 +51,14 @@ const configureTenant = async ({ definition, adminToken }) => {
 };
 
 const publicHeaders = { Origin: 'http://localhost:3000' };
-const ask = async (tenantSlug, message, clientMessageId) => {
+const createPublicSession = async (tenantSlug) => {
   const session = await request('/api/v1/chat/sessions', { method: 'POST', headers: publicHeaders, body: JSON.stringify({ tenantSlug }) }, [201]);
-  return request('/api/v1/chat/messages', { method: 'POST', headers: publicHeaders, body: JSON.stringify({ sessionId: session.sessionId, message, clientMessageId }) });
+  return session.sessionId;
+};
+const sendMessage = (sessionId, message, clientMessageId) => request('/api/v1/chat/messages', { method: 'POST', headers: publicHeaders, body: JSON.stringify({ sessionId, message, clientMessageId }) });
+const ask = async (tenantSlug, message, clientMessageId) => {
+  const sessionId = await createPublicSession(tenantSlug);
+  return sendMessage(sessionId, message, clientMessageId);
 };
 
 const platform = await bootstrapPlatform();
@@ -79,11 +84,16 @@ const crossTenant = await ask('tenant-a', 'What is the BETA phone?', randomUUID(
 assert.equal(crossTenant.grounded, false);
 assert.equal(crossTenant.citations.length, 0);
 
-const workflowReply = await ask('tenant-a', 'I am interested in a demo.', randomUUID());
+const workflowSessionId = await createPublicSession('tenant-a');
+const workflowInterest = await sendMessage(workflowSessionId, 'I am interested in a demo.', randomUUID());
+assert.match(workflowInterest.answer, /What name/i);
+const workflowName = await sendMessage(workflowSessionId, 'My name is Test Visitor.', randomUUID());
+assert.match(workflowName.answer, /email address or phone/i);
+const workflowReply = await sendMessage(workflowSessionId, 'visitor@example.test', randomUUID());
 assert.ok(workflowReply.actionProposal?.id, 'A confirmed-action proposal should be returned.');
-const confirmed = await request(`/api/v1/chat/actions/${workflowReply.actionProposal.id}/confirm`, { method: 'POST', headers: publicHeaders, body: JSON.stringify({ sessionId: workflowReply.sessionId, confirmed: true }) });
+const confirmed = await request(`/api/v1/chat/actions/${workflowReply.actionProposal.id}/confirm`, { method: 'POST', headers: publicHeaders, body: JSON.stringify({ sessionId: workflowSessionId, confirmed: true }) });
 assert.equal(confirmed.action.state, 'approved');
-const duplicate = await request(`/api/v1/chat/actions/${workflowReply.actionProposal.id}/confirm`, { method: 'POST', headers: publicHeaders, body: JSON.stringify({ sessionId: workflowReply.sessionId, confirmed: true }) });
+const duplicate = await request(`/api/v1/chat/actions/${workflowReply.actionProposal.id}/confirm`, { method: 'POST', headers: publicHeaders, body: JSON.stringify({ sessionId: workflowSessionId, confirmed: true }) });
 assert.equal(duplicate.action.state, 'approved');
 
 console.log(JSON.stringify({ apiBase, tenants: answers, workflow: { state: confirmed.action.state, duplicateState: duplicate.action.state }, checks: ['grounded citations', 'unsupported refusal', 'cross-tenant refusal', 'idempotent mock workflow'] }, null, 2));
