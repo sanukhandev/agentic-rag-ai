@@ -913,7 +913,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       ensureLiveSession(session.lastActivityAt, session.closedAt);
       await activeTenant(store, action.tenantId);
       if (action.catalogVersionId && action.payload.contactConsent === false
-        && (session.conversationState?.pendingPrompt?.type !== 'consent'
+        && (session.conversationState?.contactConsent === 'denied'
+          || session.conversationState?.pendingPrompt?.type !== 'consent'
           || session.conversationState.pendingPrompt.intentKey !== action.intentKey
           || session.conversationState.catalogVersionId !== action.catalogVersionId)) {
         throw new HttpError(422, 'CONSENT_PROMPT_REQUIRED', 'Consent must be given for the active, purpose-scoped request.');
