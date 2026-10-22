@@ -41,6 +41,22 @@ const bool = (value: unknown): boolean => value === true;
 const finite = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) ? value : NaN;
 const clamp = (value: number): number => Math.max(0, Math.min(100, Math.round(value)));
 const normalize = (value: string): string => value.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim();
+const phraseTokens = (value: string): string[] => normalize(value).match(/[\p{L}\p{N}]+/gu) ?? [];
+const matchesCatalogPhrase = (input: string, signal: string): boolean => {
+  const inputTokens = phraseTokens(input);
+  const signalTokens = phraseTokens(signal);
+  if (!signalTokens.length) return false;
+  let cursor = 0;
+  let insertedTokens = 0;
+  for (const token of signalTokens) {
+    const matchIndex = inputTokens.indexOf(token, cursor);
+    if (matchIndex < 0) return false;
+    insertedTokens += matchIndex - cursor;
+    if (insertedTokens > 3) return false;
+    cursor = matchIndex + 1;
+  }
+  return true;
+};
 const keyPattern = /^[a-z][a-z0-9._-]{1,79}$/;
 const safePath = (value: string): boolean => /^\/[A-Za-z0-9._/-]{1,120}$/.test(value) && !value.includes('..');
 const extensionRows = (value: Record<string, unknown>, name: string): IntentCatalogExtensionRow[] => Array.isArray(value[name]) ? value[name].map((item) => {
@@ -207,7 +223,7 @@ const rankIntentCandidates = (version: IntentCatalogVersion, inputText: string, 
   const input = normalize(inputText);
   return version.catalog.intents.map((intent) => {
     const signals = version.catalog.signals.filter((signal) => signal.intentKey === intent.intentKey);
-    const matched = signals.filter((signal) => signal.value && (signal.signalType === 'keyword' ? new RegExp(`\\b${normalize(signal.value).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\b`, 'i').test(input) : input.includes(normalize(signal.value))));
+    const matched = signals.filter((signal) => signal.value && (signal.signalType === 'keyword' ? new RegExp(`\\b${normalize(signal.value).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\b`, 'i').test(input) : input.includes(normalize(signal.value)) || matchesCatalogPhrase(input, signal.value)));
     const signalScore = matched.reduce((sum, signal) => sum + signal.weight, 0);
     const filled = slotValues(intent.intentKey, version.catalog.slots, slotValuesByKey);
     const slotScore = Math.min(50, filled.size * 20);
@@ -259,10 +275,19 @@ export const resolveIntentContinuity = (version: IntentCatalogVersion, input: In
   const contextCandidates = addClarificationSynonym(promoteExplicitReply(rankIntentCandidates(version, input.contextText?.trim() || input.currentText, slotValuesByKey)));
   const current = resolutionFrom(version, currentCandidates);
   const context = resolutionFrom(version, contextCandidates);
-  const selected = input.selectedIntentKey ? contextCandidates.find((candidate) => candidate.intent.intentKey === input.selectedIntentKey) ?? currentCandidates.find((candidate) => candidate.intent.intentKey === input.selectedIntentKey) : undefined;
+  const selected = input.selectedIntentKey
+    ? contextCandidates.find((candidate) => candidate.intent.intentKey === input.selectedIntentKey)
+      ?? currentCandidates.find((candidate) => candidate.intent.intentKey === input.selectedIntentKey)
+      ?? (input.pendingPromptType ? (() => {
+        const intent = version.catalog.intents.find((candidate) => candidate.intentKey === input.selectedIntentKey);
+        return intent ? { intent, score: Math.max(intent.minimumScore, Math.ceil(intent.confidenceThreshold * 100)), confidence: Math.max(intent.confidenceThreshold, intent.minimumScore / 100), matchedCount: 0, missing: missingSlotKeys(intent.intentKey, version.catalog.slots, slotValuesByKey) } : undefined;
+      })() : undefined)
+    : undefined;
   const best = contextCandidates[0] ?? currentCandidates[0];
   let primary = context;
-  const collectingSelectedIntent = Boolean(selected && (input.pendingPromptType === 'slot' || input.pendingPromptType === 'consent' || input.pendingPromptType === 'document') && (!currentCandidates[0] || currentCandidates[0].intent.intentKey === selected.intent.intentKey));
+  const currentTop = currentCandidates[0];
+  const currentIsStrong = Boolean(currentTop && currentTop.score >= currentTop.intent.minimumScore && currentTop.confidence >= currentTop.intent.confidenceThreshold);
+  const collectingSelectedIntent = Boolean(selected && (input.pendingPromptType === 'clarification' || input.pendingPromptType === 'slot' || input.pendingPromptType === 'consent' || input.pendingPromptType === 'document') && (!currentTop || currentTop.intent.intentKey === selected.intent.intentKey || !currentIsStrong));
   if (collectingSelectedIntent && selected) {
     const score = Math.max(selected.score, selected.intent.minimumScore, Math.ceil(selected.intent.confidenceThreshold * 100));
     primary = resolutionFrom(version, [{ ...selected, score, confidence: Math.min(1, score / 100) }]);
