@@ -48,6 +48,14 @@ describe('intent catalog', () => {
     expect(resolveIntent(variant, 'I want to set up a CCTV company').intentKey).toBe('lead.capture');
   });
 
+  it('collects slots after a score-qualified intent without bypassing the confidence action gate', () => {
+    const variant = { ...version, catalog: { ...version.catalog, signals: [...version.catalog.signals, { intentKey: 'lead.capture', signalId: 'lead-5', signalType: 'phrase' as const, value: 'I want to start a company', language: 'en', matchMode: 'exact_phrase' as const, weight: 75, relationGroup: null, notes: '' }] } };
+    const resolution = resolveIntent(variant, 'I want to start a company');
+    expect(resolution.reason).toBe('missing_slots');
+    expect(resolution.missingSlots).toContain('name');
+    expect(resolution.actionAllowed).toBe(false);
+  });
+
   it('treats an alternative contact group as one required slot and uses a user-facing prompt', () => {
     const resolution = resolveIntent(version, 'I need a demo', { name: '[NAME_1]' });
     expect(resolution.missingSlots).toEqual(['email']);
