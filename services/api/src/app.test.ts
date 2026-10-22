@@ -607,6 +607,14 @@ describe('API vertical slice', () => {
       .send({ actionId: unconsented.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: unconsented.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) })
       .expect(422);
     expect((await runtime.store.listCrmLeads(tenant.body.tenant.id))).toHaveLength(1);
+    for (const missingField of ['email', 'phone'] as const) {
+      const incompletePayload = { ...action!.payload, contactConsent: true };
+      delete incompletePayload[missingField];
+      const incomplete = await runtime.store.createAction({ ...action!, id: randomUUID(), idempotencyKey: `crm-missing-${missingField}`, payload: incompletePayload, state: 'approved' });
+      await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret')
+        .send({ actionId: incomplete.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: incomplete.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) })
+        .expect(422);
+    }
     const crm = await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', phone: '+971500000000' }, score: 70, summary: 'Customer Alice requested a demo via +971500000000.', summaryStatus: 'completed', leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
     expect(JSON.stringify(crm.body.items[0].conversation)).toContain('+971500000000');
