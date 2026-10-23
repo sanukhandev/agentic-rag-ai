@@ -10,7 +10,7 @@ import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConfl
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
-import { catalogIntentClarification, catalogSlotQuestion, isCrmWriteBinding, isWorkflowClaimableBinding, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
+import { catalogIntentClarification, catalogSlotQuestion, isCrmWriteBinding, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
 import { composeConversationSummary, consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState, phaseFor, prompt } from './conversation-state.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
@@ -1102,25 +1102,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.post('/api/v1/internal/workflow-events/claim', n8nInternalApi, async (req, res, next) => {
     try {
       const input = parse(workflowClaimSchema, req.body);
-      const matchesWorkflow = async (action: ActionRequest, expectedWorkflowKey?: string): Promise<boolean> => {
-        if (expectedWorkflowKey && action.workflowKey !== expectedWorkflowKey) return false;
-        if (!action.catalogVersionId) return false;
-        const version = await store.getIntentCatalogVersion(action.tenantId, action.catalogVersionId);
-        const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId);
-      };
-      const actions: ActionRequest[] = [];
-      if (input.actionId) {
-        const candidate = await store.getAction(input.actionId);
-        if (candidate && await matchesWorkflow(candidate, input.workflowKey)) {
-          const claimed = await store.claimAction(candidate.id, candidate.workflowKey);
-          if (claimed) actions.push(claimed);
-        }
-      } else {
-        actions.push(...await store.claimActionsForWorkflow(input.n8nWorkflowId, input.workflowKey, input.limit ?? 10));
-      }
+      const completionDeadlineMs = Number(process.env.N8N_COMPLETION_DEADLINE_MS ?? 15 * 60_000);
+      const deadlineAt = new Date(Date.now() + (Number.isFinite(completionDeadlineMs) && completionDeadlineMs > 0 ? completionDeadlineMs : 15 * 60_000)).toISOString();
+      const claims = await store.claimWorkflowActionsWithExecutions({ n8nWorkflowId: input.n8nWorkflowId, limit: input.limit ?? 10, attempt: input.attempt ?? 1, deadlineAt, ...(input.actionId ? { actionId: input.actionId } : {}), ...(input.workflowKey ? { workflowKey: input.workflowKey } : {}), ...(input.eventId ? { eventId: input.eventId } : {}), ...(input.correlationId ? { correlationId: input.correlationId } : {}) });
       const items = [];
-      for (const action of actions) {
+      for (const claim of claims) {
+        const { action, execution } = claim;
         const session = await store.getSession(action.sessionId);
         const version = action.catalogVersionId ? await store.getIntentCatalogVersion(action.tenantId, action.catalogVersionId) : null;
         const intent = version?.catalog.intents.find((item) => item.intentKey === action.intentKey);
@@ -1128,14 +1115,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const qualityRule = version?.catalog.qualityRules?.find((item) => item.intentKey === action.intentKey);
         const qualityBinding = qualityRule ? version?.catalog.workflowBindings.find((item) => item.workflowKey === qualityRule.qualityWorkflowKey) : null;
         if (!session || !version || !intent || !binding?.active || (qualityRule && !qualityBinding?.active)) {
-          const failed = await store.transitionAction(action.id, action.tenantId, action.state, 'failed', null);
+          const failed = await store.transitionActionWithExecution({ actionId: action.id, tenantId: action.tenantId, fromState: action.state, toState: 'failed', result: null, providerStatus: 'failed', n8nExecutionRef: 'claim-validation-failed', eventId: execution.eventId!, correlationId: execution.correlationId!, expectedAttempt: execution.attempt, outcome: { reason: 'catalog_binding_invalid' } });
           if (failed) await store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: 'workflow.failed', metadata: { actionId: action.id, workflowKey: action.workflowKey, reason: 'catalog_binding_invalid' }, createdAt: new Date().toISOString() });
           continue;
-        }
-        let execution = await store.getActionExecution(action.id, action.tenantId);
-        if (!execution) {
-          const completionDeadlineMs = Number(process.env.N8N_COMPLETION_DEADLINE_MS ?? 15 * 60_000);
-          execution = (await store.claimActionExecution({ id: randomUUID(), actionId: action.id, tenantId: action.tenantId, workflowKey: action.workflowKey, catalogVersionId: action.catalogVersionId ?? null, providerStatus: 'dispatching', n8nExecutionRef: null, eventId: input.eventId ?? randomUUID(), correlationId: input.correlationId ?? randomUUID(), idempotencyKey: action.idempotencyKey, attempt: input.attempt ?? 1, deadlineAt: new Date(Date.now() + (Number.isFinite(completionDeadlineMs) && completionDeadlineMs > 0 ? completionDeadlineMs : 15 * 60_000)).toISOString(), outcome: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })).execution;
         }
         const conversation = (await store.listMessages(action.sessionId, action.tenantId)).map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt }));
         items.push({ actionId: action.id, tenantId: action.tenantId, sessionId: action.sessionId, workflowKey: action.workflowKey, contract: input.contract ?? binding.payloadContract, intent: intent.intentKey, intentSummary: `${intent.displayName}: ${intent.description}`, intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: version.id, qualityWorkflowKey: qualityRule?.qualityWorkflowKey ?? null, idempotencyKey: action.idempotencyKey, opaqueReference: action.opaqueReference, eventId: execution.eventId ?? null, correlationId: execution.correlationId ?? null, attempt: execution.attempt, executionReference: execution.n8nExecutionRef ?? null, leadData: action.payload, conversation, catalog: version.catalog });

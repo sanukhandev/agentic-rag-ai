@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, DocumentProcessingJob, EventInboxClaim, EventInboxState, IngestionJob, IntentCatalogVersion, Message, OutboxEvent, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, DocumentProcessingJob, EventInboxClaim, EventInboxState, IngestionJob, IntentCatalogVersion, Message, OutboxEvent, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
@@ -298,6 +298,31 @@ export class MemoryStore implements Store {
     this.actionExecutions.set(execution.id, updatedExecution);
     return { action: updatedAction, execution: updatedExecution };
   }
+  async claimWorkflowActionsWithExecutions(input: { actionId?: string; n8nWorkflowId: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]> {
+    const candidates = [...this.actions.values()]
+      .filter((action) => action.state === 'approved' && (!input.actionId || action.id === input.actionId) && (!input.workflowKey || action.workflowKey === input.workflowKey))
+      .filter((action) => {
+        if (!action.catalogVersionId || [...this.actionExecutions.values()].some((execution) => execution.actionId === action.id && execution.tenantId === action.tenantId)) return false;
+        const version = this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId);
+        const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
+        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId);
+      })
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
+      .slice(0, input.limit);
+    const claims: WorkflowActionClaim[] = [];
+    for (const candidate of candidates) {
+      const current = this.actions.get(candidate.id);
+      if (!current || current.state !== 'approved' || [...this.actionExecutions.values()].some((execution) => execution.actionId === current.id && execution.tenantId === current.tenantId)) continue;
+      const eventId = input.actionId && input.eventId ? input.eventId : randomUUID();
+      const correlationId = input.actionId && input.correlationId ? input.correlationId : randomUUID();
+      const execution: ActionExecution = { id: randomUUID(), actionId: current.id, tenantId: current.tenantId, workflowKey: current.workflowKey, catalogVersionId: current.catalogVersionId ?? null, providerStatus: 'dispatching', n8nExecutionRef: null, eventId, correlationId, idempotencyKey: current.idempotencyKey, attempt: input.attempt, deadlineAt: input.deadlineAt, outcome: { eventId, correlationId }, createdAt: now(), updatedAt: now() };
+      this.actionExecutions.set(execution.id, execution);
+      const updated = { ...current, state: 'processing' as const };
+      this.actions.set(updated.id, updated);
+      claims.push({ action: updated, execution });
+    }
+    return claims;
+  }
   async claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null> {
     const action = this.actions.get(actionId);
     if (!action || action.workflowKey !== workflowKey || action.state !== 'approved') return null;
@@ -443,7 +468,7 @@ export class MemoryStore implements Store {
   }
   async reconcileExpiredActionExecutions(timestamp: string): Promise<ActionExecution[]> {
     const cutoff = Date.parse(timestamp);
-    const expired = [...this.actionExecutions.values()].filter((item) => item.providerStatus === 'accepted' && item.deadlineAt && Date.parse(item.deadlineAt) <= cutoff);
+    const expired = [...this.actionExecutions.values()].filter((item) => ['dispatching', 'accepted'].includes(item.providerStatus) && item.deadlineAt && Date.parse(item.deadlineAt) <= cutoff);
     for (const execution of expired) {
       const action = this.actions.get(execution.actionId);
       if (!action || action.tenantId !== execution.tenantId || !['approved', 'processing'].includes(action.state)) continue;

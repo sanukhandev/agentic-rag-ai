@@ -6,6 +6,6 @@ Consumers claim an `(consumer,eventId)` inbox row before dispatch. The durable l
 
 Outbox publication is also bounded. After the relay limit is reached, the row is marked dead-lettered in PostgreSQL first. The `rag:v2:dead-letter` Redis stream is a retriable projection; Redis being unavailable cannot erase the durable terminal state. Redis acknowledgements happen only after the corresponding durable inbox state is written.
 
-An accepted n8n dispatch is recorded with the inbox claim attempt and a configurable completion deadline (`N8N_COMPLETION_DEADLINE_MS`, default 15 minutes). Callback updates correlate the action execution, while the worker watchdog changes overdue accepted executions and their still-active actions to reconciliation-required. No timeout is treated as a safe duplicate-create retry.
+An n8n dispatch is recorded with the inbox claim attempt and a configurable completion deadline (`N8N_COMPLETION_DEADLINE_MS`, default 15 minutes). Poll claims start as `dispatching`; the same durable lease is used for accepted executions after n8n acknowledges the request. Callback updates correlate the action execution, while the worker watchdog changes overdue `dispatching` or `accepted` executions and their still-active actions to reconciliation-required. No timeout is treated as a safe duplicate-create retry.
 
 The guarantee is at-least-once delivery with effectively-once side effects through stable action idempotency and reconciliation. Redis is not the system of record; PostgreSQL outbox/inbox state is.

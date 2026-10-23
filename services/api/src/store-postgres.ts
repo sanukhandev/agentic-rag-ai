@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
-import type { ActionExecution, ActionPayload, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Citation, CrmLead, DocumentProcessingJob, EventInboxClaim, EventInboxState, IngestionJob, IngestionJobStatus, IntentCatalogVersion, LeadData, Message, OutboxEvent, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionExecution, ActionPayload, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Citation, CrmLead, DocumentProcessingJob, EventInboxClaim, EventInboxState, IngestionJob, IngestionJobStatus, IntentCatalogVersion, LeadData, Message, OutboxEvent, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
@@ -207,6 +207,50 @@ export class PostgresStore implements Store {
       return { action: this.action(updatedAction.rows[0]), execution: this.actionExecution(updatedExecution.rows[0]) };
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
+  async claimWorkflowActionsWithExecutions(input: { actionId?: string; n8nWorkflowId: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const candidates = await client.query<ActionRow>(`WITH candidate AS (
+        SELECT action.*
+        FROM action_requests AS action
+        JOIN intent_catalog_versions AS catalog
+          ON catalog.id = action.catalog_version_id
+         AND catalog.tenant_id = action.tenant_id
+        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(catalog.catalog_json->'workflowBindings', '[]'::jsonb)) AS binding(item)
+        WHERE action.state = 'approved'
+          AND ($1::uuid IS NULL OR action.id = $1)
+          AND ($2::text IS NULL OR action.workflow_key = $2)
+          AND binding.item->>'workflowKey' = action.workflow_key
+          AND binding.item->>'n8nWorkflowId' = $3
+          AND binding.item->>'active' = 'true'
+          AND lower(binding.item->>'sideEffectClass') IN ('crm_write', 'crm', 'human_review')
+          AND NOT EXISTS (SELECT 1 FROM action_executions AS existing WHERE existing.action_id = action.id AND existing.tenant_id = action.tenant_id)
+        ORDER BY action.created_at, action.id
+        FOR UPDATE OF action SKIP LOCKED
+        LIMIT $4
+      )
+      UPDATE action_requests AS action
+         SET state = 'processing'
+        FROM candidate
+       WHERE action.id = candidate.id
+      RETURNING action.*`, [input.actionId ?? null, input.workflowKey ?? null, input.n8nWorkflowId, input.limit]);
+      const claims: WorkflowActionClaim[] = [];
+      for (const row of candidates.rows) {
+        const eventId = input.actionId && input.eventId ? input.eventId : randomUUID();
+        const correlationId = input.actionId && input.correlationId ? input.correlationId : randomUUID();
+        const inserted = await client.query<ActionExecutionRow>(`INSERT INTO action_executions
+          (id,action_id,tenant_id,workflow_key,catalog_version_id,provider_status,n8n_execution_ref,event_id,correlation_id,idempotency_key,attempt,deadline_at,outcome,created_at,updated_at)
+          VALUES ($1,$2,$3,$4,$5,'dispatching',NULL,$6,$7,$8,$9,$10,$11,now(),now())
+          ON CONFLICT (action_id,idempotency_key) DO NOTHING
+          RETURNING *`, [randomUUID(), row.id, row.tenant_id, row.workflow_key, row.catalog_version_id ?? null, eventId, correlationId, row.idempotency_key, input.attempt, input.deadlineAt, JSON.stringify({ eventId, correlationId })]);
+        if (!inserted.rows[0]) throw new Error('Workflow action claim could not create its execution lease; transaction rolled back.');
+        claims.push({ action: this.action(row), execution: this.actionExecution(inserted.rows[0]) });
+      }
+      await client.query('COMMIT');
+      return claims;
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+  }
   async claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null> {
     const result = await this.pool.query<ActionRow>(`UPDATE action_requests SET state='processing' WHERE id=$1 AND workflow_key=$2 AND state='approved' RETURNING *`, [actionId, workflowKey]);
     return result.rows[0] ? this.action(result.rows[0]) : null;
@@ -377,7 +421,7 @@ export class PostgresStore implements Store {
       await client.query('BEGIN');
       const expired = await client.query<ActionExecutionRow & { session_id: string; intent_key: string | null; action_catalog_version_id: string | null }>(`SELECT execution.*,action.session_id,action.intent_key,action.catalog_version_id AS action_catalog_version_id
         FROM action_executions AS execution JOIN action_requests AS action ON action.id=execution.action_id AND action.tenant_id=execution.tenant_id
-        WHERE execution.provider_status='accepted' AND execution.deadline_at IS NOT NULL AND execution.deadline_at <= $1
+        WHERE execution.provider_status IN ('dispatching','accepted') AND execution.deadline_at IS NOT NULL AND execution.deadline_at <= $1
           AND action.state IN ('approved','processing')
         FOR UPDATE OF execution, action SKIP LOCKED`, [timestamp]);
       const updated: ActionExecution[] = [];
@@ -389,7 +433,7 @@ export class PostgresStore implements Store {
           SET provider_status='reconcile_required',
               outcome=COALESCE(outcome,'{}'::jsonb) || jsonb_build_object('reason','completion_deadline_exceeded'),
               updated_at=now()
-          WHERE id=$1 AND provider_status='accepted'
+          WHERE id=$1 AND provider_status IN ('dispatching','accepted')
           RETURNING *`, [row.id]);
         if (!result.rows[0]) { throw new Error('Action execution changed while reconciling an expired action.'); }
         await client.query(`UPDATE chat_sessions

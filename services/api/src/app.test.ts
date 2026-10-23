@@ -810,6 +810,7 @@ describe('API vertical slice', () => {
     const claimed = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ n8nWorkflowId: 'poller-workflow-one', limit: 10 }).expect(200);
     expect(claimed.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([first.action.id]);
     expect((await runtime.store.getAction(first.action.id))?.state).toBe('processing');
+    expect(await runtime.store.getActionExecution(first.action.id, first.tenant.body.tenant.id)).toMatchObject({ providerStatus: 'dispatching', attempt: 1 });
     expect((await runtime.store.getAction(second.action.id))?.state).toBe('approved');
     const secondClaimed = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ n8nWorkflowId: 'poller-workflow-two', limit: 10 }).expect(200);
     expect(secondClaimed.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([second.action.id]);

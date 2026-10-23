@@ -44,6 +44,11 @@ export interface ActionExecution {
   updatedAt: string;
 }
 
+export interface WorkflowActionClaim {
+  action: ActionRequest;
+  execution: ActionExecution;
+}
+
 export interface OutboxEvent {
   eventId: string;
   eventType: DomainEventType;
@@ -577,6 +582,7 @@ export interface Store {
   updateAction(action: ActionRequest): Promise<ActionRequest>;
   transitionAction(actionId: string, tenantId: string, fromState: ActionState, toState: ActionState, result: ActionRequest['result']): Promise<ActionRequest | null>;
   transitionActionWithExecution(input: { actionId: string; tenantId: string; fromState: ActionState; toState: ActionState; result: ActionRequest['result']; providerStatus: string; n8nExecutionRef: string; eventId: string; correlationId: string; expectedAttempt: number; resolveReconciliation?: boolean; outcome?: ActionExecution['outcome'] }): Promise<{ action: ActionRequest; execution: ActionExecution } | null>;
+  claimWorkflowActionsWithExecutions(input: { actionId?: string; n8nWorkflowId: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]>;
   claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null>;
   claimActionsForWorkflow(n8nWorkflowId: string, workflowKey: string | undefined, limit: number): Promise<ActionRequest[]>;
   listActions(tenantId: string): Promise<ActionRequest[]>;
