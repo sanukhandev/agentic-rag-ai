@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
 import { Persona, PersonaVersion } from '../types/admin.types';
@@ -30,6 +30,18 @@ export class PersonaService {
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
 
+  // Angular Signals (Primary reactive state)
+  private readonly _persona = signal<Persona>(EMPTY_PERSONA);
+  private readonly _personaDraft = signal<Persona | null>(null);
+  private readonly _personaVersions = signal<PersonaVersion[]>([]);
+  private readonly _isLoading = signal<boolean>(false);
+
+  readonly persona = this._persona.asReadonly();
+  readonly personaDraft = this._personaDraft.asReadonly();
+  readonly personaVersions = this._personaVersions.asReadonly();
+  readonly isLoading = this._isLoading.asReadonly();
+
+  // Observable streams for backwards compatibility
   private readonly personaSubject = new BehaviorSubject<Persona>(EMPTY_PERSONA);
   private readonly personaDraftSubject = new BehaviorSubject<Persona | null>(null);
   private readonly personaVersionsSubject = new BehaviorSubject<PersonaVersion[]>([]);
@@ -40,45 +52,46 @@ export class PersonaService {
   readonly personaVersions$: Observable<PersonaVersion[]> = this.personaVersionsSubject.asObservable();
   readonly isLoading$: Observable<boolean> = this.isLoadingSubject.asObservable();
 
-  get persona(): Persona {
-    return this.personaSubject.value;
-  }
-
-  get personaDraft(): Persona | null {
-    return this.personaDraftSubject.value;
-  }
-
   setDraft(persona: Persona): void {
-    this.personaDraftSubject.next({ ...persona, permittedLanguages: [...persona.permittedLanguages] });
+    const draft = { ...persona, permittedLanguages: [...persona.permittedLanguages] };
+    this._personaDraft.set(draft);
+    this.personaDraftSubject.next(draft);
   }
 
   clearDraft(): void {
+    this._personaDraft.set(null);
     this.personaDraftSubject.next(null);
   }
 
-  get personaVersions(): PersonaVersion[] {
-    return this.personaVersionsSubject.value;
-  }
-
   loadPersona(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.get<{ persona: Persona | null }>(`${this.apiBase}/api/v1/admin/persona`).pipe(
       catchError(() => of({ persona: null }))
-    ).subscribe((res) => this.personaSubject.next(res.persona ?? EMPTY_PERSONA));
+    ).subscribe((res) => {
+      const p = res.persona ?? EMPTY_PERSONA;
+      this._persona.set(p);
+      this.personaSubject.next(p);
+    });
   }
 
   loadPersonaVersions(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.get<{ items: PersonaVersion[] }>(`${this.apiBase}/api/v1/admin/persona/versions`).pipe(
       catchError(() => of({ items: [] }))
-    ).subscribe((res) => this.personaVersionsSubject.next(res.items ?? []));
+    ).subscribe((res) => {
+      const items = res.items ?? [];
+      this._personaVersions.set(items);
+      this.personaVersionsSubject.next(items);
+    });
   }
 
   saveDraft(persona: Persona): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.post<{ version: PersonaVersion }>(`${this.apiBase}/api/v1/admin/persona/drafts`, persona).subscribe({
       next: ({ version }) => {
-        this.personaVersionsSubject.next([version, ...this.personaVersionsSubject.value.filter((item) => item.id !== version.id)]);
+        const nextList = [version, ...this._personaVersions().filter((item) => item.id !== version.id)];
+        this._personaVersions.set(nextList);
+        this.personaVersionsSubject.next(nextList);
         this.toast.show('info', 'Draft Saved', `Persona v${version.version} saved as draft.`);
       },
       error: (err) => this.toast.show('error', 'Save Failed', err.error?.error?.message || 'Could not save the persona draft.')
@@ -86,10 +99,11 @@ export class PersonaService {
   }
 
   publishVersion(persona: Persona): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.put<{ persona: Persona }>(`${this.apiBase}/api/v1/admin/persona`, persona).subscribe({
       next: ({ persona: savedPersona }) => {
         this.clearDraft();
+        this._persona.set(savedPersona);
         this.personaSubject.next(savedPersona);
         this.loadPersonaVersions();
         this.toast.show('success', 'Persona Published', 'The AI persona is now active across all channels.');
@@ -99,7 +113,7 @@ export class PersonaService {
   }
 
   rollbackTo(version: PersonaVersion): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.post<{ version: PersonaVersion }>(`${this.apiBase}/api/v1/admin/persona/versions/${version.id}/publish`, {}).subscribe({
       next: () => {
         this.clearDraft();
@@ -112,7 +126,7 @@ export class PersonaService {
   }
 
   preview(persona: Persona, message: string, onComplete: (preview: { answer: string; grounded: boolean; citations: Array<{ citation: { title: string; locator: string } }> }) => void): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.post<{ preview: { answer: string; grounded: boolean; citations: Array<{ citation: { title: string; locator: string } }> } }>(`${this.apiBase}/api/v1/admin/persona/preview`, { ...persona, message }).subscribe({
       next: ({ preview }) => onComplete(preview),
       error: (err) => this.toast.show('error', 'Preview Failed', err.error?.error?.message || 'Could not run the persona preview.')

@@ -1,5 +1,4 @@
-import { Component, DestroyRef, inject } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ToastService, ToastMessage } from '../../services/toast.service';
 import { IconComponent } from './icon.component';
@@ -44,10 +43,10 @@ import { IconComponent } from './icon.component';
 export class ToastComponent {
   private readonly toastService = inject(ToastService);
 
-  toasts: ToastMessage[] = [];
+  readonly toastsSignal = this.toastService.toasts;
 
-  constructor() {
-    this.toastService.toasts$.subscribe((t) => (this.toasts = t));
+  get toasts(): ToastMessage[] {
+    return this.toastService.toasts();
   }
 
   dismiss(id: string): void {
@@ -60,6 +59,7 @@ export class ToastComponent {
         return 'check-circle';
       case 'warning':
       case 'error':
+      case 'alert':
         return 'alert-circle';
       case 'info':
       default:

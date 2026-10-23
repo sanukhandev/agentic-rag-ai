@@ -1,5 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef, DestroyRef, inject } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, OnInit, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from './services/admin-state.service';
 import { NavSection, Tenant } from './types/admin.types';
@@ -50,13 +49,8 @@ import { canAccessAdminSection } from './services/admin-navigation';
 })
 export class AppComponent implements OnInit {
   readonly state = inject(AdminStateService);
-  private readonly cdr = inject(ChangeDetectorRef);
 
-  isAuthenticated = false;
   isStandaloneChat = false;
-  currentSection: NavSection = 'overview';
-  role = '';
-  selectedTenant: Tenant | null = null;
 
   readonly navTabs: Array<{ id: NavSection; label: string; icon: string }> = [
     { id: 'overview', label: 'Overview', icon: 'overview' },
@@ -70,6 +64,46 @@ export class AppComponent implements OnInit {
     { id: 'settings', label: 'Workspace Settings', icon: 'settings' }
   ];
 
+  // Fine-grained Signal accessors
+  get isAuthenticated(): boolean {
+    return this.state.isAuthenticated();
+  }
+
+  get currentSection(): NavSection {
+    return this.state.currentSection();
+  }
+
+  get role(): UserRole {
+    return this.state.role();
+  }
+
+  get selectedTenant(): Tenant | null {
+    return this.state.selectedTenant();
+  }
+
+  readonly visibleNavTabsSignal = computed(() => {
+    const currentRole = this.state.role();
+    return this.navTabs.filter((tab) => canAccessAdminSection(currentRole, tab.id));
+  });
+
+  get visibleNavTabs(): Array<{ id: NavSection; label: string; icon: string }> {
+    return this.visibleNavTabsSignal();
+  }
+
+  readonly roleLabelSignal = computed(() => {
+    switch (this.state.role()) {
+      case 'platform_admin': return 'Platform Owner';
+      case 'tenant_admin': return 'Tenant Admin';
+      case 'tenant_editor': return 'Content Editor';
+      case 'tenant_viewer': return 'Viewer';
+      default: return 'Workspace User';
+    }
+  });
+
+  get roleLabel(): string {
+    return this.roleLabelSignal();
+  }
+
   ngOnInit(): void {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -77,41 +111,10 @@ export class AppComponent implements OnInit {
         this.isStandaloneChat = true;
       }
     }
-    this.state.isAuthenticated$.subscribe((auth) => {
-      this.isAuthenticated = auth;
-      this.cdr.markForCheck();
-      this.cdr.detectChanges();
-    });
-    this.state.currentSection$.subscribe((sec) => {
-      this.currentSection = sec;
-      this.cdr.markForCheck();
-    });
-    this.state.role$.subscribe((r) => {
-      this.role = r;
-      this.cdr.markForCheck();
-    });
-    this.state.selectedTenant$.subscribe((st) => {
-      this.selectedTenant = st;
-      this.cdr.markForCheck();
-    });
-  }
-
-  get visibleNavTabs(): Array<{ id: NavSection; label: string; icon: string }> {
-    return this.navTabs.filter((tab) => canAccessAdminSection(this.role as UserRole, tab.id));
-  }
-
-  get roleLabel(): string {
-    switch (this.role) {
-      case 'platform_admin': return 'Platform Owner';
-      case 'tenant_admin': return 'Tenant Admin';
-      case 'tenant_editor': return 'Content Editor';
-      case 'tenant_viewer': return 'Viewer';
-      default: return 'Workspace User';
-    }
   }
 
   setSection(sec: NavSection): void {
-    if (!canAccessAdminSection(this.role as UserRole, sec)) {
+    if (!canAccessAdminSection(this.state.role(), sec)) {
       this.state.setSection('overview');
       return;
     }
@@ -124,7 +127,7 @@ export class AppComponent implements OnInit {
   }
 
   openPrimaryAction(): void {
-    if (this.role === 'platform_admin') {
+    if (this.state.isPlatformAdmin()) {
       this.state.openCreateOrgDrawer();
     } else if (this.state.canAccessSection('knowledge')) {
       this.state.setSection('knowledge');

@@ -1,11 +1,9 @@
-import { Component, DestroyRef, OnInit, inject } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, effect, untracked, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { distinctUntilChanged, filter } from 'rxjs';
 import { AdminStateService } from '../../services/admin-state.service';
 import { IntentCatalogService } from '../../services/intent-catalog.service';
-import { IntentCatalogVersion } from '../../types/admin.types';
+import { IntentCatalogVersion, IngestionJob, Tenant } from '../../types/admin.types';
 import { BadgeComponent } from '../shared/badge.component';
 
 @Component({
@@ -25,21 +23,21 @@ import { BadgeComponent } from '../shared/badge.component';
           <input class="sr-only" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" (change)="upload($event)" />
         </label>
       </div>
-      <div *ngIf="service.catalogJob$ | async as job" class="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+      <div *ngIf="catalogJob as job" class="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <p class="font-semibold">Catalog {{ job.status }}</p>
         <p *ngIf="job.status === 'queued' || job.status === 'processing'" class="mt-1 text-blue-700">The ingestion worker is validating the workbook. The catalog list will update automatically when processing completes.</p>
         <p *ngIf="job.status === 'failed'" class="mt-1 text-red-700">Import failed: {{ job.errorCode || 'unknown error' }}. Upload the workbook again after fixing the reported issue.</p>
       </div>
-      <div *ngIf="service.catalogError$ | async as error" class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900" role="alert">
+      <div *ngIf="catalogError as error" class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900" role="alert">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div><p class="font-semibold">The intent catalog could not be loaded.</p><p class="mt-1 text-rose-700">{{ error }}</p></div>
           <button type="button" (click)="reload()" class="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-100">Retry</button>
         </div>
       </div>
-      <div *ngIf="state.isPlatformAdmin && !(state.selectedTenant$ | async)" class="rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center text-sm text-amber-900">Select an organization first to view its tenant-scoped intent catalog.</div>
-      <div *ngIf="!(service.catalogError$ | async) && (!state.isPlatformAdmin || (state.selectedTenant$ | async)) && (service.versions$ | async)?.length === 0" class="rounded-2xl border border-dashed border-neutral-300 bg-white p-8 text-center text-sm text-neutral-500">No catalog versions have been imported yet.</div>
+      <div *ngIf="isPlatformAdmin && !selectedTenant" class="rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center text-sm text-amber-900">Select an organization first to view its tenant-scoped intent catalog.</div>
+      <div *ngIf="!catalogError && (!isPlatformAdmin || selectedTenant) && versions.length === 0" class="rounded-2xl border border-dashed border-neutral-300 bg-white p-8 text-center text-sm text-neutral-500">No catalog versions have been imported yet.</div>
       <div class="space-y-3">
-        <article *ngFor="let version of service.versions$ | async" class="rounded-2xl border border-neutral-200 bg-white p-5 shadow-card">
+        <article *ngFor="let version of versions" class="rounded-2xl border border-neutral-200 bg-white p-5 shadow-card">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <div class="flex items-center gap-2"><span class="font-mono text-sm font-bold">v{{ version.version }}</span><app-badge [variant]="version.status === 'published' ? 'black' : 'outline'" [showDot]="version.status === 'published'" [text]="version.status | uppercase"></app-badge></div>
@@ -47,7 +45,7 @@ import { BadgeComponent } from '../shared/badge.component';
               <p class="mt-1 text-[11px] text-neutral-400">Imported {{ version.createdAt | date:'medium' }}<span *ngIf="version.publishedAt"> · Published {{ version.publishedAt | date:'medium' }}</span></p>
             </div>
             <div class="flex flex-wrap gap-2">
-              <button *ngIf="state.canManagePersona" type="button" (click)="startEdit(version)" class="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50">Edit catalog</button>
+              <button *ngIf="canManagePersona" type="button" (click)="startEdit(version)" class="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50">Edit catalog</button>
               <button *ngIf="version.status !== 'published'" type="button" (click)="publish(version)" class="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50">Publish version</button>
             </div>
           </div>
@@ -70,20 +68,32 @@ import { BadgeComponent } from '../shared/badge.component';
     </section>
   `
 })
-export class IntentCatalogComponent implements OnInit {
+export class IntentCatalogComponent {
   readonly service = inject(IntentCatalogService);
   readonly state = inject(AdminStateService);
-  private readonly destroyRef = inject(DestroyRef);
+
+  get isPlatformAdmin(): boolean { return this.state.isPlatformAdmin(); }
+  get selectedTenant(): Tenant | null { return this.state.selectedTenant(); }
+  get canManagePersona(): boolean { return this.state.canManagePersona(); }
+
+  get catalogJob(): IngestionJob | null { return this.service.catalogJob(); }
+  get catalogError(): string | null { return this.service.catalogError(); }
+  get versions(): IntentCatalogVersion[] { return this.service.versions(); }
+
   editingVersionId: string | null = null;
   editJson = '';
   editError = '';
 
-  ngOnInit(): void {
-    this.state.selectedTenant$.pipe(
-      filter((tenant) => tenant !== null),
-      distinctUntilChanged((left, right) => left?.id === right?.id),
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe(() => { this.service.load(); this.service.resumePendingJob(); });
+  constructor() {
+    effect(() => {
+      const tenant = this.state.selectedTenant();
+      if (tenant) {
+        untracked(() => {
+          this.service.load();
+          this.service.resumePendingJob();
+        });
+      }
+    });
   }
 
   upload(event: Event): void {
@@ -93,7 +103,10 @@ export class IntentCatalogComponent implements OnInit {
     input.value = '';
   }
 
-  reload(): void { this.service.load(); this.service.resumePendingJob(); }
+  reload(): void {
+    this.service.load();
+    this.service.resumePendingJob();
+  }
 
   signalsFor(version: IntentCatalogVersion, intentKey: string): IntentCatalogVersion['catalog']['signals'] {
     return version.catalog.signals.filter((signal) => signal.intentKey === intentKey);
@@ -120,5 +133,7 @@ export class IntentCatalogComponent implements OnInit {
     }
   }
 
-  publish(version: IntentCatalogVersion): void { this.service.publish(version); }
+  publish(version: IntentCatalogVersion): void {
+    this.service.publish(version);
+  }
 }

@@ -1,4 +1,4 @@
-import { Component, HostListener, ChangeDetectorRef, DestroyRef, inject } from '@angular/core';
+import { Component, HostListener, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -88,33 +88,14 @@ interface CommandItem {
 })
 export class CommandPaletteComponent {
   private readonly state = inject(AdminStateService);
-  private readonly cdr = inject(ChangeDetectorRef);
 
-  isOpen = false;
+  get isOpen(): boolean { return this.state.commandPaletteOpen(); }
+  get tenants(): Tenant[] { return this.state.tenants(); }
+  get sources(): Source[] { return this.state.sources(); }
+
   query = '';
   selectedIndex = 0;
 
-  tenants: Tenant[] = [];
-  sources: Source[] = [];
-
-  constructor() {
-    this.state.commandPaletteOpen$.subscribe((open) => {
-      this.isOpen = open;
-      if (open) {
-        this.query = '';
-        this.selectedIndex = 0;
-      }
-      this.cdr.markForCheck();
-    });
-    this.state.tenants$.subscribe((t) => {
-      this.tenants = t;
-      this.cdr.markForCheck();
-    });
-    this.state.sources$.subscribe((s) => {
-      this.sources = s;
-      this.cdr.markForCheck();
-    });
-  }
 
   @HostListener('document:keydown', ['$event'])
   handleKeyboardEvent(event: KeyboardEvent): void {

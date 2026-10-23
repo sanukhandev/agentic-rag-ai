@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ToastService } from './toast.service';
+import { UiNavigationService, isNavSection } from './ui-navigation.service';
 import { canAccessAdminSection } from './admin-navigation';
-import { isNavSection } from './ui-navigation.service';
 import { isCatalogJobPending } from './intent-catalog-utils';
 import { isValidTenantSlug, resolveTenantSlug } from '../components/customer-chat/customer-chat-utils';
 import { apiErrorMessage } from './api-error';
@@ -24,6 +24,34 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(currentToasts.length).toBe(0);
 
     sub.unsubscribe();
+  });
+
+  it('ToastService provides fine-grained Angular Signals reactivity without subscriptions', () => {
+    const toastService = new ToastService();
+    expect(toastService.toasts().length).toBe(0);
+
+    toastService.show('info', 'Signal Reactive', 'Zero subscription required.');
+    expect(toastService.toasts().length).toBe(1);
+    expect(toastService.toasts()[0].title).toBe('Signal Reactive');
+
+    const id = toastService.toasts()[0].id;
+    toastService.dismiss(id);
+    expect(toastService.toasts().length).toBe(0);
+  });
+
+  it('UiNavigationService manages section and mega menu state via Angular Signals', () => {
+    const navService = new UiNavigationService();
+    expect(navService.currentSection()).toBe('overview');
+    expect(navService.activeMegaMenu()).toBeNull();
+
+    navService.setSection('knowledge');
+    expect(navService.currentSection()).toBe('knowledge');
+
+    navService.toggleMegaMenu('knowledge');
+    expect(navService.activeMegaMenu()).toBe('knowledge');
+
+    navService.closeMegaMenu();
+    expect(navService.activeMegaMenu()).toBeNull();
   });
 
   it('validates tenant slug safety rules', () => {

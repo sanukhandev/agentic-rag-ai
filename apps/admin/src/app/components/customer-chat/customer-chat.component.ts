@@ -440,19 +440,19 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
 
   // Mode: Administrative Testing vs Clean Customer Interface
   isAdminTestingMode = false;
-  canAccessAdminTesting = false;
+  get canAccessAdminTesting(): boolean { return this.state.isAuthenticated(); }
 
   private readonly apiBase = inject(API_BASE_URL);
 
   ngOnInit(): void {
     // 1. Resolve tenant context without customer manual slug input (Requirement 3)
-    const initial = this.initialTenantSlug || resolveTenantSlug() || (this.state.selectedTenant?.slug ?? '');
+    const initial = this.initialTenantSlug || resolveTenantSlug() || (this.state.selectedTenant()?.slug ?? '');
     this.resolveAndLoad(initial);
 
-    // Check if user is authenticated admin
-    this.state.isAuthenticated$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((auth) => {
-      this.canAccessAdminTesting = auth;
-    });
+
+
+
+
 
     // Check if URL specifies debug mode
     if (typeof window !== 'undefined') {
@@ -475,7 +475,7 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   private resolveAndLoad(slug: string): void {
-    this.tenantSlug = slug || (this.state.selectedTenant?.slug ?? '');
+    this.tenantSlug = slug || (this.state.selectedTenant()?.slug ?? '');
     this.resetConversation();
     this.loadTenantConfig();
     this.restoreOrInitSession();

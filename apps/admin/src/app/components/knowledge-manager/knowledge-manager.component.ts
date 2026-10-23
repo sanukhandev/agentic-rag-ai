@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef, DestroyRef, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -378,12 +378,10 @@ import { BadgeComponent } from '../shared/badge.component';
 })
 export class KnowledgeManagerComponent implements OnInit {
   private readonly state = inject(AdminStateService);
-  private readonly cdr = inject(ChangeDetectorRef);
-  private readonly destroyRef = inject(DestroyRef);
 
   activeTab: 'catalog' | 'stage' | 'upload' | 'crawl' = 'catalog';
   selectedStatus: string = 'all';
-  sources: Source[] = [];
+  get sources(): Source[] { return this.state.sources(); }
 
   // Stage form
   stageTitle = '';
@@ -399,12 +397,6 @@ export class KnowledgeManagerComponent implements OnInit {
   crawlTitle = '';
   crawlUrl = '';
 
-  constructor() {
-    this.state.sources$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((s) => {
-      this.sources = s;
-      this.cdr.markForCheck();
-    });
-  }
 
   ngOnInit(): void {
     this.state.loadSources();
