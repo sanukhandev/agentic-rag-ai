@@ -2,6 +2,7 @@ import { Component, Input, OnInit, OnChanges, OnDestroy, SimpleChanges, DestroyR
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
+import { Subscription } from 'rxjs';
 import { DomSanitizer } from '@angular/platform-browser';
 import { IconComponent } from '../shared/icon.component';
 import { BadgeComponent } from '../shared/badge.component';
@@ -443,6 +444,7 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
 
   private readonly apiBase = inject(API_BASE_URL);
   private currentGeneration = 0;
+  private readonly pendingHttpSubscriptions = new Set<Subscription>();
 
   constructor() {
     effect(() => {
@@ -487,6 +489,8 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
   ngOnDestroy(): void {
     for (const timer of this.actionPollTimers) clearTimeout(timer);
     this.actionPollTimers.clear();
+    for (const sub of this.pendingHttpSubscriptions) sub.unsubscribe();
+    this.pendingHttpSubscriptions.clear();
   }
 
   toggleAdminTestingMode(): void {
@@ -500,9 +504,11 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
       return;
     }
     this.isLoadingConfig = true;
-    this.http.get<TenantChatConfig>(`${this.apiBase}/api/v1/chat/config?tenantSlug=${encodeURIComponent(targetSlug)}`)
+    let sub: Subscription | undefined;
+    sub = this.http.get<TenantChatConfig>(`${this.apiBase}/api/v1/chat/config?tenantSlug=${encodeURIComponent(targetSlug)}`)
       .subscribe({
         next: (config) => {
+          if (sub) this.pendingHttpSubscriptions.delete(sub);
           if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) return;
           this.isLoadingConfig = false;
           if (config?.tenant) {
@@ -516,11 +522,13 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
           }
         },
         error: () => {
+          if (sub) this.pendingHttpSubscriptions.delete(sub);
           if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) return;
           this.isLoadingConfig = false;
           this.errorMessage = 'Tenant chat configuration is unavailable.';
         }
       });
+    if (sub && !sub.closed) this.pendingHttpSubscriptions.add(sub);
   }
 
   restoreOrInitSession(targetSlug = this.tenantSlug, generation = this.currentGeneration): void {
@@ -529,21 +537,25 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
     const saved = window.localStorage.getItem(storageKey);
 
     if (saved) {
-      this.http.get<{ sessionId: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean; createdAt: string }> }>(`${this.apiBase}/api/v1/chat/sessions/${saved}`)
+      let sub: Subscription | undefined;
+      sub = this.http.get<{ sessionId: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean; createdAt: string }> }>(`${this.apiBase}/api/v1/chat/sessions/${saved}`)
         .subscribe({
           next: (res) => {
+            if (sub) this.pendingHttpSubscriptions.delete(sub);
             if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) return;
             this.sessionId = res.sessionId;
             this.messages = res.messages.map((m) => this.mapHistoryMessage(m));
             this.scrollToBottom();
           },
           error: () => {
+            if (sub) this.pendingHttpSubscriptions.delete(sub);
             if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) return;
             window.localStorage.removeItem(storageKey);
             this.sessionId = null;
             this.messages = [];
           }
         });
+      if (sub && !sub.closed) this.pendingHttpSubscriptions.add(sub);
     }
   }
 
@@ -573,9 +585,11 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
     const generation = this.currentGeneration;
 
     if (!this.sessionId) {
-      this.http.post<{ sessionId: string }>(`${this.apiBase}/api/v1/chat/sessions`, { tenantSlug: currentTenant })
+      let sub: Subscription | undefined;
+      sub = this.http.post<{ sessionId: string }>(`${this.apiBase}/api/v1/chat/sessions`, { tenantSlug: currentTenant })
         .subscribe({
           next: (sessionRes) => {
+            if (sub) this.pendingHttpSubscriptions.delete(sub);
             if (this.currentGeneration !== generation || this.tenantSlug !== currentTenant) return;
             this.sessionId = sessionRes.sessionId;
             if (typeof window !== 'undefined') {
@@ -584,12 +598,14 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
             this.postChatMessage(text, currentTenant, this.sessionId, generation);
           },
           error: (err) => {
+            if (sub) this.pendingHttpSubscriptions.delete(sub);
             if (this.currentGeneration !== generation || this.tenantSlug !== currentTenant) return;
             this.isBusy = false;
             this.errorMessage = err?.error?.message ?? 'Could not establish a secure conversation session.';
             this.canRetry = true;
           }
         });
+      if (sub && !sub.closed) this.pendingHttpSubscriptions.add(sub);
     } else {
       this.postChatMessage(text, currentTenant, this.sessionId, generation);
     }
@@ -598,7 +614,8 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
   private postChatMessage(message: string, tenantSlug: string, sessionId: string, generation: number): void {
     const clientMessageId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `msg-${Date.now()}`;
 
-    this.http.post<{
+    let sub: Subscription | undefined;
+    sub = this.http.post<{
       messageId: string;
       answer: string;
       grounded: boolean;
@@ -612,6 +629,7 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
       clientMessageId
     }).subscribe({
       next: (res) => {
+        if (sub) this.pendingHttpSubscriptions.delete(sub);
         if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
         this.isBusy = false;
 
@@ -642,12 +660,14 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
         this.scrollToBottom();
       },
       error: (err) => {
+        if (sub) this.pendingHttpSubscriptions.delete(sub);
         if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
         this.isBusy = false;
         this.errorMessage = err?.error?.message ?? 'The assistant was unable to respond. Please try again.';
         this.canRetry = true;
       }
     });
+    if (sub && !sub.closed) this.pendingHttpSubscriptions.add(sub);
   }
 
   confirmAction(proposalId: string): void {
@@ -657,11 +677,13 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
     const currentSession = this.sessionId;
     const generation = this.currentGeneration;
 
-    this.http.post<{ action?: { state: ChatActionState }; message?: string; error?: { message?: string } }>(
+    let sub: Subscription | undefined;
+    sub = this.http.post<{ action?: { state: ChatActionState }; message?: string; error?: { message?: string } }>(
       `${this.apiBase}/api/v1/chat/actions/${proposalId}/confirm`,
       { sessionId: currentSession, confirmed: true }
     ).subscribe({
       next: (res) => {
+        if (sub) this.pendingHttpSubscriptions.delete(sub);
         if (this.currentGeneration !== generation || this.tenantSlug !== currentTenant || this.sessionId !== currentSession) return;
         this.isBusy = false;
         const state = res.action?.state ?? 'completed';
@@ -675,11 +697,13 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
         }
       },
       error: () => {
+        if (sub) this.pendingHttpSubscriptions.delete(sub);
         if (this.currentGeneration !== generation || this.tenantSlug !== currentTenant || this.sessionId !== currentSession) return;
         this.isBusy = false;
         this.errorMessage = 'The workflow action could not be confirmed.';
       }
     });
+    if (sub && !sub.closed) this.pendingHttpSubscriptions.add(sub);
   }
 
   private pollActionStatus(proposalId: string, attempt = 0, tenantSlug = this.tenantSlug, sessionId = this.sessionId ?? '', generation = this.currentGeneration): void {
@@ -687,8 +711,10 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
     const timer = setTimeout(() => {
       this.actionPollTimers.delete(timer);
       if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
-      this.http.get<{ action?: { state?: ChatActionState } }>(`${this.apiBase}/api/v1/chat/actions/${proposalId}?sessionId=${encodeURIComponent(sessionId)}`).subscribe({
+      let sub: Subscription | undefined;
+      sub = this.http.get<{ action?: { state?: ChatActionState } }>(`${this.apiBase}/api/v1/chat/actions/${proposalId}?sessionId=${encodeURIComponent(sessionId)}`).subscribe({
         next: (response) => {
+          if (sub) this.pendingHttpSubscriptions.delete(sub);
           if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
           const state = response.action?.state;
           if (!state) { this.pollActionStatus(proposalId, attempt + 1, tenantSlug, sessionId, generation); return; }
@@ -712,10 +738,12 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
           }
         },
         error: () => {
+          if (sub) this.pendingHttpSubscriptions.delete(sub);
           if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
           this.pollActionStatus(proposalId, attempt + 1, tenantSlug, sessionId, generation);
         }
       });
+      if (sub && !sub.closed) this.pendingHttpSubscriptions.add(sub);
     }, 1000);
     this.actionPollTimers.add(timer);
   }
@@ -737,10 +765,13 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
     this.lastFailedMessage = '';
     for (const timer of this.actionPollTimers) clearTimeout(timer);
     this.actionPollTimers.clear();
+    for (const sub of this.pendingHttpSubscriptions) sub.unsubscribe();
+    this.pendingHttpSubscriptions.clear();
     this.resetTextareaHeight();
   }
 
   newConversation(): void {
+    ++this.currentGeneration;
     if (typeof window !== 'undefined' && isValidTenantSlug(this.tenantSlug)) {
       window.localStorage.removeItem(`agentic-rag-session:${this.tenantSlug}`);
     }

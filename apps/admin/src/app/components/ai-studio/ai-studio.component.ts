@@ -343,6 +343,7 @@ export class AiStudioComponent implements OnInit, OnDestroy {
   private readonly cdr = inject(ChangeDetectorRef);
 
   persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: [], contextWindowMessages: 10, voiceName: '', voiceLanguage: 'en-US', voiceRate: 1, voicePitch: 1, voiceVolume: 1 };
+  activeFormTenantId: string | null = null;
 
   languagesInput = '';
   get versions(): PersonaVersion[] { return this.state.personaVersions(); }
@@ -361,19 +362,30 @@ export class AiStudioComponent implements OnInit, OnDestroy {
 
   constructor() {
     effect(() => {
+      const currentTenantId = this.state.selectedTenant()?.id ?? this.state.auth.selectedTenantId ?? 'default';
       const p = this.state.persona();
-      const currentDraft = untracked(() => this.state.personaService.personaDraft());
-      if (currentDraft) {
-        untracked(() => this.applyPersona(currentDraft));
-      } else {
-        untracked(() => this.applyPersona(p));
-      }
+      const currentDraft = this.state.personaService.personaDraft();
+
+      untracked(() => {
+        const tenantChanged = this.activeFormTenantId !== currentTenantId;
+        this.activeFormTenantId = currentTenantId;
+        const targetPersona = currentDraft || p;
+        this.applyPersona(targetPersona, tenantChanged);
+      });
     });
   }
 
-  private applyPersona(persona: Persona): void {
+  private applyPersona(persona: Persona, tenantChanged = true): void {
     this.persona = { ...persona, permittedLanguages: [...persona.permittedLanguages] };
-    this.languagesInput = persona.permittedLanguages.join(', ');
+    if (tenantChanged || !this.languagesInput.trim()) {
+      this.languagesInput = persona.permittedLanguages.join(', ');
+    } else {
+      const currentParsed = parsePermittedLanguages(this.languagesInput);
+      const languagesChanged = JSON.stringify(currentParsed) !== JSON.stringify(persona.permittedLanguages);
+      if (languagesChanged) {
+        this.languagesInput = persona.permittedLanguages.join(', ');
+      }
+    }
     this.voiceSelection = persona.voiceName ? this.voiceKey({ name: persona.voiceName, lang: persona.voiceLanguage }) : '';
     this.cdr.markForCheck();
   }
@@ -396,7 +408,11 @@ export class AiStudioComponent implements OnInit, OnDestroy {
   }
 
   saveLocalDraft(): void {
-    this.state.personaService.setDraft(this.persona);
+    const currentTenantId = this.state.selectedTenant()?.id ?? this.state.auth.selectedTenantId ?? 'default';
+    if (this.activeFormTenantId && this.activeFormTenantId !== currentTenantId) {
+      return;
+    }
+    this.state.personaService.setDraft(this.persona, this.activeFormTenantId || currentTenantId);
   }
 
   voiceKey(voice: Pick<SpeechSynthesisVoice, 'name' | 'lang'>): string {
@@ -425,15 +441,34 @@ export class AiStudioComponent implements OnInit, OnDestroy {
   }
 
   saveDraft(): void {
-    this.state.personaService.saveDraft(this.persona);
+    const currentTenantId = this.state.selectedTenant()?.id ?? this.state.auth.selectedTenantId ?? 'default';
+    if (this.activeFormTenantId && this.activeFormTenantId !== currentTenantId) {
+      this.state.toastService.show(
+        'error',
+        'Workspace Mismatch',
+        'Cannot save draft: workspace context changed while editing.'
+      );
+      return;
+    }
+    this.state.personaService.saveDraft(this.persona, currentTenantId);
   }
 
   publishCurrent(): void {
-    this.state.personaService.publishVersion(this.persona);
+    const currentTenantId = this.state.selectedTenant()?.id ?? this.state.auth.selectedTenantId ?? 'default';
+    if (this.activeFormTenantId && this.activeFormTenantId !== currentTenantId) {
+      this.state.toastService.show(
+        'error',
+        'Workspace Mismatch',
+        'Cannot publish persona: workspace context changed while editing. Please reload the persona for the active workspace.'
+      );
+      return;
+    }
+    this.state.personaService.publishVersion(this.persona, currentTenantId);
   }
 
   rollbackTo(ver: PersonaVersion): void {
-    this.state.personaService.rollbackTo(ver);
+    const currentTenantId = this.state.selectedTenant()?.id ?? this.state.auth.selectedTenantId ?? 'default';
+    this.state.personaService.rollbackTo(ver, currentTenantId);
   }
 
   setPrompt(p: string): void {
@@ -453,11 +488,12 @@ export class AiStudioComponent implements OnInit, OnDestroy {
     this.previewAnswer = '';
     this.previewGrounded = false;
     this.previewCitations = [];
+    const currentTenantId = this.state.selectedTenant()?.id ?? this.state.auth.selectedTenantId ?? 'default';
     this.state.personaService.preview(this.persona, message, (preview) => {
       this.previewAnswer = preview.answer;
       this.previewGrounded = preview.grounded;
       this.previewCitations = preview.citations.map(({ citation }) => citation);
-    });
+    }, currentTenantId);
   }
 
   openFullCustomerChat(): void {

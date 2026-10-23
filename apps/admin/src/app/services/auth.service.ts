@@ -59,7 +59,8 @@ export class AuthService {
   readonly isAuthenticated$: Observable<boolean> = this.isAuthenticatedSubject.asObservable();
   readonly isAuthenticating$: Observable<boolean> = this.isAuthenticatingSubject.asObservable();
 
-  private _selectedTenantId: string | null = null;
+  private readonly _selectedTenantId = signal<string | null>(null);
+  readonly selectedTenantIdSignal = this._selectedTenantId.asReadonly();
 
   constructor() {
     this.restoreSession();
@@ -70,11 +71,11 @@ export class AuthService {
   }
 
   get selectedTenantId(): string | null {
-    return this._selectedTenantId;
+    return this._selectedTenantId();
   }
 
   setSelectedTenantId(id: string | null): void {
-    this._selectedTenantId = id;
+    this._selectedTenantId.set(id);
     if (typeof window !== 'undefined') {
       try {
         if (id) {
@@ -94,8 +95,9 @@ export class AuthService {
     if (t) {
       headers['Authorization'] = `Bearer ${t}`;
     }
-    if (this._selectedTenantId) {
-      headers['X-Tenant-Id'] = this._selectedTenantId;
+    const tenantId = this._selectedTenantId();
+    if (tenantId) {
+      headers['X-Tenant-Id'] = tenantId;
     }
     return headers;
   }
@@ -119,7 +121,7 @@ export class AuthService {
           this.userEmailSubject.next(savedEmail);
         }
         if (savedTenantId) {
-          this._selectedTenantId = savedTenantId;
+          this._selectedTenantId.set(savedTenantId);
         }
 
         this._isAuthenticated.set(true);
@@ -203,7 +205,7 @@ export class AuthService {
         // Storage access handled gracefully
       }
     }
-    this._selectedTenantId = null;
+    this._selectedTenantId.set(null);
 
     this._token.set('');
     this._role.set('');
@@ -231,7 +233,7 @@ export class AuthService {
         // Storage access handled gracefully
       }
     }
-    this._selectedTenantId = null;
+    this._selectedTenantId.set(null);
 
     this._token.set('');
     this._role.set('');

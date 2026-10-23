@@ -1,5 +1,28 @@
 import '@angular/compiler';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { Injector, runInInjectionContext, signal, ChangeDetectorRef, EnvironmentInjector } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { BrowserDynamicTestingModule, platformBrowserDynamicTesting } from '@angular/platform-browser-dynamic/testing';
+
+if (typeof (globalThis as any).document === 'undefined') {
+  (globalThis as any).document = {
+    querySelector: () => null,
+    createElement: () => ({ setAttribute: () => {} }),
+    createTextNode: () => ({}),
+    createComment: () => ({})
+  };
+}
+if (typeof (globalThis as any).window === 'undefined') {
+  (globalThis as any).window = { document: (globalThis as any).document };
+}
+
+try {
+  TestBed.initTestEnvironment(BrowserDynamicTestingModule, platformBrowserDynamicTesting());
+} catch {
+  // Already initialized
+}
+import { HttpClient } from '@angular/common/http';
+import { Subject, of } from 'rxjs';
 import { ToastService } from './toast.service';
 import { UiNavigationService, isNavSection } from './ui-navigation.service';
 import { canAccessAdminSection } from './admin-navigation';
@@ -11,6 +34,10 @@ import { AdminStateService } from './admin-state.service';
 import { Tenant, Source, NavSection, IngestionJob, Persona } from '../types/admin.types';
 import { isTrustedApiRequest } from './auth.interceptor';
 import { CATALOG_MIME_TYPE } from './intent-catalog.service';
+import { AuthService } from './auth.service';
+import { PersonaService } from './persona.service';
+import { API_BASE_URL } from './tokens';
+import { AiStudioComponent } from '../components/ai-studio/ai-studio.component';
 
 describe('SOLID Services and Architecture Contracts', () => {
   it('ToastService adheres to Single Responsibility by managing toast notifications independently', () => {
@@ -272,22 +299,26 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(filteredCatalogJobs[0].id).toBe('job-cat-1');
   });
 
-  // [P1 Finding 3 Test]: Persona drafts are strictly scoped to the active tenant
-  it('isolates persona drafts per tenant and prevents cross-tenant draft leakage', () => {
-    const draftsByTenant: Record<string, Persona> = {};
-    let selectedTenantId: string | null = 'tenant-a';
-
-    const mockPersonaService = {
-      setDraft(p: Persona) {
-        draftsByTenant[selectedTenantId || 'default'] = { ...p };
-      },
-      clearDraft() {
-        delete draftsByTenant[selectedTenantId || 'default'];
-      },
-      getDraft(): Persona | null {
-        return draftsByTenant[selectedTenantId || 'default'] ?? null;
-      }
+  // [P1 Finding 3 Test]: Persona drafts are strictly scoped to the active tenant via reactive signals
+  it('PersonaService computed personaDraft updates reactively on AuthService tenant switch without manual subscription', () => {
+    const httpMock = {
+      get: vi.fn().mockReturnValue(of({ persona: null })),
+      post: vi.fn().mockReturnValue(of({ version: { id: 'v1', version: 1 } })),
+      put: vi.fn().mockReturnValue(of({ persona: { name: 'Published' } }))
     };
+
+    const injector = Injector.create({
+      providers: [
+        { provide: API_BASE_URL, useValue: 'http://127.0.0.1:4000' },
+        { provide: HttpClient, useValue: httpMock },
+        ToastService,
+        AuthService,
+        PersonaService
+      ]
+    });
+
+    const auth = injector.get(AuthService);
+    const personaService = injector.get(PersonaService);
 
     const draftA: Persona = {
       name: 'Agent Alpha',
@@ -304,29 +335,167 @@ describe('SOLID Services and Architecture Contracts', () => {
       voiceVolume: 1
     };
 
-    // User types draft on Tenant A
-    mockPersonaService.setDraft(draftA);
-    expect(mockPersonaService.getDraft()?.name).toBe('Agent Alpha');
-
-    // Admin switches to Tenant B
-    selectedTenantId = 'tenant-b';
-    // Tenant B must NOT see Tenant A's draft!
-    expect(mockPersonaService.getDraft()).toBeNull();
-
-    // User types draft on Tenant B
     const draftB: Persona = { ...draftA, name: 'Agent Beta', greeting: 'Welcome to Tenant B' };
-    mockPersonaService.setDraft(draftB);
-    expect(mockPersonaService.getDraft()?.name).toBe('Agent Beta');
 
-    // Admin switches back to Tenant A
-    selectedTenantId = 'tenant-a';
-    expect(mockPersonaService.getDraft()?.name).toBe('Agent Alpha');
+    // 1. Initial tenant A
+    auth.setSelectedTenantId('tenant-a');
+    expect(auth.selectedTenantId).toBe('tenant-a');
+    expect(personaService.personaDraft()).toBeNull();
 
-    // Publishing or clearing Tenant A draft does not impact Tenant B
-    mockPersonaService.clearDraft();
-    expect(mockPersonaService.getDraft()).toBeNull();
+    // 2. Save draft on Tenant A
+    personaService.setDraft(draftA);
+    expect(personaService.personaDraft()?.name).toBe('Agent Alpha');
 
-    selectedTenantId = 'tenant-b';
-    expect(mockPersonaService.getDraft()?.name).toBe('Agent Beta');
+    // 3. Switch to Tenant B (A -> B)
+    auth.setSelectedTenantId('tenant-b');
+    // Computed personaDraft must automatically evaluate to null for Tenant B
+    expect(personaService.personaDraft()).toBeNull();
+
+    // 4. Save draft on Tenant B
+    personaService.setDraft(draftB);
+    expect(personaService.personaDraft()?.name).toBe('Agent Beta');
+
+    // 5. Switch back to Tenant A (B -> A)
+    auth.setSelectedTenantId('tenant-a');
+    // Computed personaDraft must automatically evaluate back to draft A
+    expect(personaService.personaDraft()?.name).toBe('Agent Alpha');
+
+    // 6. Clear draft A does not affect draft B
+    personaService.clearDraft();
+    expect(personaService.personaDraft()).toBeNull();
+
+    auth.setSelectedTenantId('tenant-b');
+    expect(personaService.personaDraft()?.name).toBe('Agent Beta');
+  });
+
+  it('PersonaService guards late loadPersona HTTP responses when tenant switched mid-request', () => {
+    const personaResponse$ = new Subject<{ persona: Persona | null }>();
+    const httpMock = {
+      get: vi.fn().mockReturnValue(personaResponse$),
+      post: vi.fn().mockReturnValue(of({})),
+      put: vi.fn().mockReturnValue(of({}))
+    };
+
+    const injector = Injector.create({
+      providers: [
+        { provide: API_BASE_URL, useValue: 'http://127.0.0.1:4000' },
+        { provide: HttpClient, useValue: httpMock },
+        ToastService,
+        AuthService,
+        PersonaService
+      ]
+    });
+
+    const auth = injector.get(AuthService);
+    const personaService = injector.get(PersonaService);
+
+    // Provide a token so loadPersona does not early exit
+    (auth as any)._token.set('mock-token');
+
+    // Start on Tenant A
+    auth.setSelectedTenantId('tenant-a');
+    personaService.loadPersona();
+
+    // While request is pending, tenant switches to Tenant B
+    auth.setSelectedTenantId('tenant-b');
+
+    // Stale response for Tenant A resolves
+    const stalePersonaA: Persona = {
+      name: 'Stale A',
+      greeting: 'Old Greeting',
+      personality: '',
+      tone: '',
+      speakingStyle: '',
+      permittedLanguages: ['en'],
+      contextWindowMessages: 10,
+      voiceName: '',
+      voiceLanguage: 'en-US',
+      voiceRate: 1,
+      voicePitch: 1,
+      voiceVolume: 1
+    };
+    personaResponse$.next({ persona: stalePersonaA });
+
+    // Assert stale persona A was NOT set as active persona because activeTenantKey is now tenant-b!
+    expect(personaService.persona().name).not.toBe('Stale A');
+    expect(personaService.persona().name).toBe('');
+  });
+
+  it('AiStudioComponent prevents publishing when form originating tenant differs from active tenant', () => {
+    const putMock = vi.fn().mockReturnValue(of({ persona: { name: 'Published' } }));
+    const httpMock = {
+      get: vi.fn().mockReturnValue(of({ persona: null })),
+      post: vi.fn().mockReturnValue(of({})),
+      put: putMock
+    };
+
+    const injector = Injector.create({
+      providers: [
+        { provide: API_BASE_URL, useValue: 'http://127.0.0.1:4000' },
+        { provide: HttpClient, useValue: httpMock },
+        ToastService,
+        AuthService,
+        PersonaService
+      ]
+    });
+
+    const toast = injector.get(ToastService);
+    const personaService = injector.get(PersonaService);
+    const selectedTenantSignal = signal<{ id: string; slug: string; name: string } | null>({ id: 'tenant-a', slug: 'tenant-a', name: 'Tenant A' });
+
+    const mockAdminState = {
+      selectedTenant: selectedTenantSignal,
+      auth: { selectedTenantId: 'tenant-a' },
+      persona: signal<Persona>({
+        name: 'Initial Persona',
+        greeting: 'Hello',
+        personality: '',
+        tone: '',
+        speakingStyle: '',
+        permittedLanguages: ['en'],
+        contextWindowMessages: 10,
+        voiceName: '',
+        voiceLanguage: 'en-US',
+        voiceRate: 1,
+        voicePitch: 1,
+        voiceVolume: 1
+      }),
+      personaVersions: signal([]),
+      personaService,
+      toastService: toast,
+      loadPersona: vi.fn(),
+      loadPersonaVersions: vi.fn(),
+      setSection: vi.fn()
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: API_BASE_URL, useValue: 'http://127.0.0.1:4000' },
+        { provide: HttpClient, useValue: httpMock },
+        ToastService,
+        AuthService,
+        PersonaService,
+        { provide: AdminStateService, useValue: mockAdminState },
+        { provide: ChangeDetectorRef, useValue: { markForCheck: vi.fn() } }
+      ]
+    });
+
+    const studio = runInInjectionContext(TestBed.inject(EnvironmentInjector), () => new AiStudioComponent());
+    TestBed.flushEffects();
+    expect(studio.activeFormTenantId).toBe('tenant-a');
+
+    // Simulate workspace context switch to Tenant B while editing
+    mockAdminState.auth.selectedTenantId = 'tenant-b';
+    selectedTenantSignal.set({ id: 'tenant-b', slug: 'tenant-b', name: 'Tenant B' });
+
+    // Attempt to publish form configured for Tenant A
+    studio.publishCurrent();
+
+    // Verify PUT request was blocked
+    expect(putMock).not.toHaveBeenCalled();
+    // Verify toast error was emitted
+    const toasts = toast.toasts();
+    expect(toasts.some((t) => t.type === 'error' && t.title === 'Workspace Mismatch')).toBe(true);
   });
 });

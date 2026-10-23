@@ -85,9 +85,11 @@ export class PersonaService {
 
   loadPersona(): void {
     if (!this.auth.token()) return;
+    const requestedTenant = this.activeTenantKey;
     this.http.get<{ persona: Persona | null }>(`${this.apiBase}/api/v1/admin/persona`).pipe(
       catchError(() => of({ persona: null }))
     ).subscribe((res) => {
+      if (this.activeTenantKey !== requestedTenant) return;
       const p = res.persona ?? EMPTY_PERSONA;
       this._persona.set(p);
       this.personaSubject.next(p);
@@ -96,22 +98,31 @@ export class PersonaService {
 
   loadPersonaVersions(): void {
     if (!this.auth.token()) return;
+    const requestedTenant = this.activeTenantKey;
     this.http.get<{ items: PersonaVersion[] }>(`${this.apiBase}/api/v1/admin/persona/versions`).pipe(
       catchError(() => of({ items: [] }))
     ).subscribe((res) => {
+      if (this.activeTenantKey !== requestedTenant) return;
       const items = res.items ?? [];
       this._personaVersions.set(items);
       this.personaVersionsSubject.next(items);
     });
   }
 
-  saveDraft(persona: Persona): void {
+  saveDraft(persona: Persona, tenantId?: string): void {
     if (!this.auth.token()) return;
-    this.http.post<{ version: PersonaVersion }>(`${this.apiBase}/api/v1/admin/persona/drafts`, persona).subscribe({
+    const activeKey = tenantId || this.activeTenantKey;
+    const headers: Record<string, string> = {};
+    if (activeKey && activeKey !== 'default') {
+      headers['X-Tenant-Id'] = activeKey;
+    }
+    this.http.post<{ version: PersonaVersion }>(`${this.apiBase}/api/v1/admin/persona/drafts`, persona, { headers }).subscribe({
       next: ({ version }) => {
-        const nextList = [version, ...this._personaVersions().filter((item) => item.id !== version.id)];
-        this._personaVersions.set(nextList);
-        this.personaVersionsSubject.next(nextList);
+        if (this.activeTenantKey === activeKey) {
+          const nextList = [version, ...this._personaVersions().filter((item) => item.id !== version.id)];
+          this._personaVersions.set(nextList);
+          this.personaVersionsSubject.next(nextList);
+        }
         this.toast.show('info', 'Draft Saved', `Persona v${version.version} saved as draft.`);
       },
       error: (err) => this.toast.show('error', 'Save Failed', err.error?.error?.message || 'Could not save the persona draft.')
@@ -121,12 +132,18 @@ export class PersonaService {
   publishVersion(persona: Persona, tenantId?: string): void {
     if (!this.auth.token()) return;
     const activeKey = tenantId || this.activeTenantKey;
-    this.http.put<{ persona: Persona }>(`${this.apiBase}/api/v1/admin/persona`, persona).subscribe({
+    const headers: Record<string, string> = {};
+    if (activeKey && activeKey !== 'default') {
+      headers['X-Tenant-Id'] = activeKey;
+    }
+    this.http.put<{ persona: Persona }>(`${this.apiBase}/api/v1/admin/persona`, persona, { headers }).subscribe({
       next: ({ persona: savedPersona }) => {
         this.clearDraft(activeKey);
-        this._persona.set(savedPersona);
-        this.personaSubject.next(savedPersona);
-        this.loadPersonaVersions();
+        if (this.activeTenantKey === activeKey) {
+          this._persona.set(savedPersona);
+          this.personaSubject.next(savedPersona);
+          this.loadPersonaVersions();
+        }
         this.toast.show('success', 'Persona Published', 'The AI persona is now active across all channels.');
       },
       error: (err) => this.toast.show('error', 'Publish Failed', err.error?.error?.message || 'Could not publish the persona.')
@@ -136,20 +153,31 @@ export class PersonaService {
   rollbackTo(version: PersonaVersion, tenantId?: string): void {
     if (!this.auth.token()) return;
     const activeKey = tenantId || this.activeTenantKey;
-    this.http.post<{ version: PersonaVersion }>(`${this.apiBase}/api/v1/admin/persona/versions/${version.id}/publish`, {}).subscribe({
+    const headers: Record<string, string> = {};
+    if (activeKey && activeKey !== 'default') {
+      headers['X-Tenant-Id'] = activeKey;
+    }
+    this.http.post<{ version: PersonaVersion }>(`${this.apiBase}/api/v1/admin/persona/versions/${version.id}/publish`, {}, { headers }).subscribe({
       next: () => {
         this.clearDraft(activeKey);
-        this.loadPersona();
-        this.loadPersonaVersions();
+        if (this.activeTenantKey === activeKey) {
+          this.loadPersona();
+          this.loadPersonaVersions();
+        }
         this.toast.show('info', 'Rollback Executed', `Active persona reverted to v${version.version}.`);
       },
       error: (err) => this.toast.show('error', 'Rollback Failed', err.error?.error?.message || 'Could not roll back the persona.')
     });
   }
 
-  preview(persona: Persona, message: string, onComplete: (preview: { answer: string; grounded: boolean; citations: Array<{ citation: { title: string; locator: string } }> }) => void): void {
+  preview(persona: Persona, message: string, onComplete: (preview: { answer: string; grounded: boolean; citations: Array<{ citation: { title: string; locator: string } }> }) => void, tenantId?: string): void {
     if (!this.auth.token()) return;
-    this.http.post<{ preview: { answer: string; grounded: boolean; citations: Array<{ citation: { title: string; locator: string } }> } }>(`${this.apiBase}/api/v1/admin/persona/preview`, { ...persona, message }).subscribe({
+    const activeKey = tenantId || this.activeTenantKey;
+    const headers: Record<string, string> = {};
+    if (activeKey && activeKey !== 'default') {
+      headers['X-Tenant-Id'] = activeKey;
+    }
+    this.http.post<{ preview: { answer: string; grounded: boolean; citations: Array<{ citation: { title: string; locator: string } }> } }>(`${this.apiBase}/api/v1/admin/persona/preview`, { ...persona, message }, { headers }).subscribe({
       next: ({ preview }) => onComplete(preview),
       error: (err) => this.toast.show('error', 'Preview Failed', err.error?.error?.message || 'Could not run the persona preview.')
     });
