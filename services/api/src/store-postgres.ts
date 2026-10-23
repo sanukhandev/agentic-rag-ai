@@ -273,7 +273,7 @@ export class PostgresStore implements Store {
         const correlationId = input.actionId && input.correlationId ? input.correlationId : randomUUID();
         const inserted = await client.query<ActionExecutionRow>(`INSERT INTO action_executions
           (id,action_id,tenant_id,workflow_key,catalog_version_id,provider_status,n8n_execution_ref,event_id,correlation_id,idempotency_key,attempt,deadline_at,outcome,created_at,updated_at)
-          VALUES ($1,$2,$3,$4,$5,'dispatching',$6,$7,$8,$9,$10,$11,now(),now())
+          VALUES ($1,$2,$3,$4,$5,'dispatching',$6,$7,$8,$9,$10,$11,$12,now(),now())
           ON CONFLICT (action_id,idempotency_key) DO NOTHING
           RETURNING *`, [randomUUID(), row.id, row.tenant_id, row.workflow_key, row.catalog_version_id ?? null, input.executionReference, eventId, correlationId, row.idempotency_key, input.attempt, input.deadlineAt, JSON.stringify({ eventId, correlationId })]);
         if (!inserted.rows[0]) throw new Error('Workflow action claim could not create its execution lease; transaction rolled back.');
