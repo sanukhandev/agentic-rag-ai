@@ -1,5 +1,4 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef, effect, untracked, inject } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -361,12 +360,15 @@ export class AiStudioComponent implements OnInit, OnDestroy {
   testInput = '';
 
   constructor() {
+    const initialDraft = untracked(() => this.state.personaService.personaDraft());
+    if (initialDraft) {
+      this.applyPersona(initialDraft);
+    }
+
     effect(() => {
-      const draft = this.state.personaService.personaDraft();
-      if (draft) {
-        untracked(() => this.applyPersona(draft));
-      } else {
-        const p = this.state.persona();
+      const p = this.state.persona();
+      const currentDraft = untracked(() => this.state.personaService.personaDraft());
+      if (!currentDraft) {
         untracked(() => this.applyPersona(p));
       }
     });

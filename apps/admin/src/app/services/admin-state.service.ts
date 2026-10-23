@@ -192,6 +192,11 @@ export class AdminStateService {
       this.nav.setSection('overview');
       return;
     }
+    const current = this.nav.currentSection();
+    if (current === section && this.auth.isAuthenticated()) {
+      this.loadSectionData(section);
+      return;
+    }
     this.nav.setSection(section);
   }
 
