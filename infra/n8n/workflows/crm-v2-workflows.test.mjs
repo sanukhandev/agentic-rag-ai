@@ -45,6 +45,28 @@ test('every checked-in workflow claim includes its own n8n identity and stays si
       assert.match(node.parameters.jsonBody ?? '', /n8nWorkflowId:\s*\$workflow\.id/);
       assert.match(node.parameters.jsonBody ?? '', /limit:\s*1/);
     }
+    if (file !== '01-lead-capture-and-crm.json') {
+      for (const node of claimNodes) {
+        assert.match(node.parameters.jsonBody ?? '', /actionId:/);
+        assert.match(node.parameters.jsonBody ?? '', /tenantId:/);
+        assert.match(node.parameters.jsonBody ?? '', /eventId:/);
+        assert.match(node.parameters.jsonBody ?? '', /correlationId:/);
+        assert.match(node.parameters.jsonBody ?? '', /attempt:/);
+      }
+      if (file === '03-anc-lead-capture-wf-1.json') {
+        assert.match(claimNodes[0].parameters.jsonBody, /\(\$json\.body \?\? \$json\)\.actionId/);
+        assert.match(claimNodes[0].parameters.jsonBody, /\(\$json\.body \?\? \$json\)\.eventId/);
+      } else {
+        const validation = workflow.nodes.find((node) => node.name === 'Validate Server Event');
+        assert.ok(validation, `${file} must validate its webhook envelope`);
+        assert.match(validation.parameters.jsCode, /input\.actionId/);
+        assert.match(validation.parameters.jsCode, /input\.eventId/);
+        assert.match(validation.parameters.jsCode, /input\.correlationId/);
+        assert.match(validation.parameters.jsCode, /input\.attempt/);
+      }
+    } else {
+      assert.doesNotMatch(claimNodes[0].parameters.jsonBody ?? '', /actionId:/);
+    }
     if (file === '03-anc-lead-capture-wf-1.json') {
       for (const name of ['Complete Async Registration', 'Complete Internal Registration']) {
         const node = workflow.nodes.find((candidate) => candidate.name === name);

@@ -21,7 +21,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $json.body ?? $json;\nif (input.workflowKey !== \"crm.contact.lookup\" || input.contract !== \"crm-contact-lookup-v1\") throw new Error('Workflow contract mismatch.');\nif (typeof input.tenantId !== 'string' || typeof input.sessionId !== 'string') throw new Error('Server-generated tenant and session references are required.');\nreturn [{ json: { ...input, workflowKey: \"crm.contact.lookup\", contract: \"crm-contact-lookup-v1\" } }];"
+        "jsCode": "const input = $json.body ?? $json;\nif (input.workflowKey !== \"crm.contact.lookup\" || input.contract !== \"crm-contact-lookup-v1\") throw new Error('Workflow contract mismatch.');\nif (typeof input.tenantId !== 'string' || typeof input.sessionId !== 'string' || typeof input.actionId !== 'string' || typeof input.eventId !== 'string' || typeof input.correlationId !== 'string' || !Number.isInteger(input.attempt) || input.attempt < 1) throw new Error('Server-issued action, tenant, event, correlation and attempt references are required.');\nreturn [{ json: { ...input, workflowKey: \"crm.contact.lookup\", contract: \"crm-contact-lookup-v1\" } }];"
       },
       "id": "CRM01ContactLookup-validate",
       "name": "Validate Server Event",
@@ -38,7 +38,7 @@
         "url": "={{ \"http://api:4000/api/v1/internal/workflow-events/claim\" }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ workflowKey: $json.workflowKey, n8nWorkflowId: $workflow.id, contract: $json.contract, limit: 1 }) }}",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, eventId: $json.eventId, correlationId: $json.correlationId, attempt: $json.attempt, workflowKey: $json.workflowKey, n8nWorkflowId: $workflow.id, contract: $json.contract, limit: 1 }) }}",
         "options": {},
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth"

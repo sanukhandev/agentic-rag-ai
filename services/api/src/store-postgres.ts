@@ -207,10 +207,34 @@ export class PostgresStore implements Store {
       return { action: this.action(updatedAction.rows[0]), execution: this.actionExecution(updatedExecution.rows[0]) };
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
-  async claimWorkflowActionsWithExecutions(input: { actionId?: string; n8nWorkflowId: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]> {
+  async claimWorkflowActionsWithExecutions(input: { actionId?: string; tenantId?: string; n8nWorkflowId: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      if (input.actionId) {
+        if (!input.tenantId || !input.eventId || !input.correlationId) throw new HttpError(422, 'WORKFLOW_CLAIM_CORRELATION_REQUIRED', 'Webhook claims require the server-issued tenant, event, correlation and attempt tuple.');
+        const actionResult = await client.query<ActionRow>('SELECT * FROM action_requests WHERE id=$1 FOR UPDATE', [input.actionId]);
+        const row = actionResult.rows[0];
+        if (!row || row.tenant_id !== input.tenantId) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the authorized tenant action.');
+        if (!['approved', 'processing'].includes(row.state) || (input.workflowKey && row.workflow_key !== input.workflowKey)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the active workflow action.');
+        const binding = await client.query<{ workflow_key: string }>(`SELECT binding.item->>'workflowKey' AS workflow_key
+          FROM intent_catalog_versions AS catalog
+          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(catalog.catalog_json->'workflowBindings', '[]'::jsonb)) AS binding(item)
+          WHERE catalog.id=$1 AND catalog.tenant_id=$2
+            AND binding.item->>'workflowKey' = $3
+            AND binding.item->>'n8nWorkflowId' = $4
+            AND binding.item->>'active' = 'true'
+            AND lower(binding.item->>'sideEffectClass') IN ('crm_write', 'crm', 'human_review')
+          LIMIT 1`, [row.catalog_version_id, row.tenant_id, row.workflow_key, input.n8nWorkflowId]);
+        if (!binding.rows[0]) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the published workflow binding.');
+        const executionResult = await client.query<ActionExecutionRow>('SELECT * FROM action_executions WHERE action_id=$1 AND tenant_id=$2 AND idempotency_key=$3 FOR UPDATE', [row.id, row.tenant_id, row.idempotency_key]);
+        const execution = executionResult.rows[0];
+        if (!execution || execution.event_id !== input.eventId || execution.correlation_id !== input.correlationId || execution.attempt !== input.attempt || ['completed', 'failed', 'reconcile_required'].includes(execution.provider_status)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the durable workflow execution.');
+        const updatedAction = row.state === 'approved' ? await client.query<ActionRow>("UPDATE action_requests SET state='processing' WHERE id=$1 AND tenant_id=$2 AND state='approved' RETURNING *", [row.id, row.tenant_id]) : { rows: [row] };
+        if (!updatedAction.rows[0]) throw new HttpError(409, 'WORKFLOW_CLAIM_CONFLICT', 'The workflow action changed before the webhook claim was committed.');
+        await client.query('COMMIT');
+        return [{ action: this.action(updatedAction.rows[0]), execution: this.actionExecution(execution) }];
+      }
       const candidates = await client.query<ActionRow>(`WITH candidate AS (
         SELECT action.*
         FROM action_requests AS action

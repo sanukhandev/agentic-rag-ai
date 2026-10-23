@@ -804,8 +804,8 @@ describe('API vertical slice', () => {
     const second = await createTenant('two', 'crm.lead.create', 'poller-workflow-two');
     const explicitReview = await createTenant('review-explicit', 'anc.crm.lead.capture', 'poller-workflow-review-explicit', 'human_review');
     const polledReview = await createTenant('review-polled', 'anc.crm.lead.capture', 'poller-workflow-review-polled', 'human_review');
-    const wrongWorkflow = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: first.action.id, workflowKey: 'crm.lead.create', n8nWorkflowId: 'poller-workflow-two', limit: 1 }).expect(200);
-    expect(wrongWorkflow.body.items).toHaveLength(0);
+    const wrongWorkflow = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: first.action.id, tenantId: first.tenant.body.tenant.id, eventId: randomUUID(), correlationId: randomUUID(), attempt: 1, workflowKey: 'crm.lead.create', n8nWorkflowId: 'poller-workflow-two', limit: 1 }).expect(409);
+    expect(wrongWorkflow.body.error.code).toBe('WORKFLOW_CLAIM_MISMATCH');
     expect((await runtime.store.getAction(first.action.id))?.state).toBe('approved');
     const claimed = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ n8nWorkflowId: 'poller-workflow-one', limit: 10 }).expect(200);
     expect(claimed.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([first.action.id]);
@@ -815,10 +815,13 @@ describe('API vertical slice', () => {
     const secondClaimed = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ n8nWorkflowId: 'poller-workflow-two', limit: 10 }).expect(200);
     expect(secondClaimed.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([second.action.id]);
     expect((await runtime.store.getAction(second.action.id))?.state).toBe('processing');
-    const explicitReviewClaim = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: explicitReview.action.id, workflowKey: 'anc.crm.lead.capture', n8nWorkflowId: 'poller-workflow-review-explicit', limit: 1 }).expect(200);
+    const explicitExecution = await seedWorkflowExecution(runtime.store, explicitReview.action);
+    const explicitReviewClaim = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: explicitReview.action.id, tenantId: explicitReview.tenant.body.tenant.id, eventId: explicitExecution.eventId, correlationId: explicitExecution.correlationId, attempt: explicitExecution.attempt, workflowKey: 'anc.crm.lead.capture', n8nWorkflowId: 'poller-workflow-review-explicit', limit: 1 }).expect(200);
     expect(explicitReviewClaim.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([explicitReview.action.id]);
-    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: explicitReview.action.id, tenantId: explicitReview.tenant.body.tenant.id, state: 'human_review', externalReference: 'review-explicit' }).expect(200);
-    expect((await runtime.store.getAction(explicitReview.action.id))?.state).toBe('human_review');
+    const duplicateExplicitClaim = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: explicitReview.action.id, tenantId: explicitReview.tenant.body.tenant.id, eventId: explicitExecution.eventId, correlationId: explicitExecution.correlationId, attempt: explicitExecution.attempt, workflowKey: 'anc.crm.lead.capture', n8nWorkflowId: 'poller-workflow-review-explicit', limit: 1 }).expect(200);
+    expect(duplicateExplicitClaim.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([explicitReview.action.id]);
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: explicitReview.action.id, tenantId: explicitReview.tenant.body.tenant.id, state: 'completed', externalReference: 'review-explicit', ...explicitExecution }).expect(200);
+    expect((await runtime.store.getAction(explicitReview.action.id))?.state).toBe('completed');
     const polledReviewClaim = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ n8nWorkflowId: 'poller-workflow-review-polled', limit: 1 }).expect(200);
     expect(polledReviewClaim.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([polledReview.action.id]);
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: polledReview.action.id, tenantId: polledReview.tenant.body.tenant.id, state: 'human_review', externalReference: 'review-polled' }).expect(200);

@@ -126,7 +126,7 @@ export class N8nEventBridge {
       }
       throw new PermanentEventDispatchError(`No authorized route exists for event type ${event.eventType}.`);
     }
-    const body = JSON.stringify({ ...event.payload, eventId: event.eventId, eventType: event.eventType, tenantId: event.tenantId, sessionId: event.sessionId, actionId: event.actionId, aggregateId: event.aggregateId, payloadRef: event.payloadRef, webhookPath: route.webhookPath, workflowKey: route.workflowKey, n8nWorkflowId: route.n8nWorkflowId ?? null, contract: route.payloadContract ?? (event.eventType === 'document.extraction.requested.v1' ? 'anc-document-ocr-v1' : 'crm-lead-capture-v1'), correlationId: event.correlationId });
+    const body = JSON.stringify({ ...event.payload, eventId: event.eventId, eventType: event.eventType, tenantId: event.tenantId, sessionId: event.sessionId, actionId: event.actionId, aggregateId: event.aggregateId, payloadRef: event.payloadRef, webhookPath: route.webhookPath, workflowKey: route.workflowKey, n8nWorkflowId: route.n8nWorkflowId ?? null, contract: route.payloadContract ?? (event.eventType === 'document.extraction.requested.v1' ? 'anc-document-ocr-v1' : 'crm-lead-capture-v1'), correlationId: event.correlationId, attempt });
     try {
       if (event.actionId) {
         const action = await this.store.getAction(event.actionId);

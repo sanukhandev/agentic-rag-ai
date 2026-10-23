@@ -150,7 +150,7 @@ describe('Redis event orchestration primitives', () => {
       const action = await store.createAction({ id: randomUUID(), tenantId, sessionId, workflowKey, webhookPath: 'legacy-lead', intentKey: 'lead.capture', catalogVersionId: version.id, state: 'processing', opaqueReference: 'opaque-catalog', idempotencyKey: 'catalog-route', payload: {}, createdAt: new Date().toISOString(), result: null });
       const event = createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId, sessionId, actionId: action.id, aggregateId: action.id, workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId, workflowKey, webhookPath: action.webhookPath ?? 'legacy-lead' } });
       await new N8nEventBridge(store, `http://127.0.0.1:${address.port}`, 'secret').dispatch(event);
-      expect(JSON.parse(received)).toMatchObject({ webhookPath: 'catalog-lead', workflowKey, n8nWorkflowId, contract: 'crm-lead-v1' });
+      expect(JSON.parse(received)).toMatchObject({ webhookPath: 'catalog-lead', workflowKey, n8nWorkflowId, contract: 'crm-lead-v1', eventId: event.eventId, correlationId: event.correlationId, attempt: 1 });
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

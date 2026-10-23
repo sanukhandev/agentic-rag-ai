@@ -298,7 +298,21 @@ export class MemoryStore implements Store {
     this.actionExecutions.set(execution.id, updatedExecution);
     return { action: updatedAction, execution: updatedExecution };
   }
-  async claimWorkflowActionsWithExecutions(input: { actionId?: string; n8nWorkflowId: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]> {
+  async claimWorkflowActionsWithExecutions(input: { actionId?: string; tenantId?: string; n8nWorkflowId: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]> {
+    if (input.actionId) {
+      if (!input.tenantId || !input.eventId || !input.correlationId) throw new HttpError(422, 'WORKFLOW_CLAIM_CORRELATION_REQUIRED', 'Webhook claims require the server-issued tenant, event, correlation and attempt tuple.');
+      const action = this.actions.get(input.actionId);
+      if (!action || action.tenantId !== input.tenantId) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the authorized tenant action.');
+      if (!['approved', 'processing'].includes(action.state) || (input.workflowKey && action.workflowKey !== input.workflowKey)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the active workflow action.');
+      const version = action.catalogVersionId ? this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId) : null;
+      const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
+      if (!binding?.active || !isWorkflowClaimableBinding(binding) || binding.n8nWorkflowId !== input.n8nWorkflowId) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the published workflow binding.');
+      const execution = [...this.actionExecutions.values()].find((item) => item.actionId === action.id && item.tenantId === action.tenantId && item.idempotencyKey === action.idempotencyKey);
+      if (!execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.attempt || ['completed', 'failed', 'reconcile_required'].includes(execution.providerStatus)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the durable workflow execution.');
+      const updated = action.state === 'approved' ? { ...action, state: 'processing' as const } : action;
+      this.actions.set(updated.id, updated);
+      return [{ action: updated, execution }];
+    }
     const candidates = [...this.actions.values()]
       .filter((action) => action.state === 'approved' && (!input.actionId || action.id === input.actionId) && (!input.workflowKey || action.workflowKey === input.workflowKey))
       .filter((action) => {
