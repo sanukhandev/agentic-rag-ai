@@ -10,18 +10,20 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
     const tenant = await store.createTenant({ name: 'Workflow Poll Test', slug: `workflow-poll-${randomUUID()}` });
     try {
       const session = await store.createSession(tenant.id);
-      const catalog = (n8nWorkflowId: string) => ({
+      const catalog = (n8nWorkflowId: string, sideEffectClass = 'crm_write') => ({
         tenantScope: tenant.slug,
         intents: [{ intentKey: 'crm.lead.create.request', displayName: 'Lead request', description: 'Lead request', category: 'sales', workflowKey: 'crm.lead.create', minimumScore: 0, confidenceThreshold: 0, confirmationRequired: true, active: true, priority: 1, versionNote: '' }],
         signals: [], slots: [], relations: [],
-        workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId, webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }]
+        workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId, webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass, active: true }]
       });
       const matchingCatalog = await store.createIntentCatalogVersion({ tenantId: tenant.id, status: 'published', sourceFileName: 'matching.json', sourceHash: 'a'.repeat(64), parserVersion: 'test', catalog: catalog('workflow-match') });
       const otherCatalog = await store.createIntentCatalogVersion({ tenantId: tenant.id, status: 'draft', sourceFileName: 'other.json', sourceHash: 'b'.repeat(64), parserVersion: 'test', catalog: catalog('workflow-other') });
+      const reviewCatalog = await store.createIntentCatalogVersion({ tenantId: tenant.id, status: 'draft', sourceFileName: 'review.json', sourceHash: 'c'.repeat(64), parserVersion: 'test', catalog: catalog('workflow-review', 'human_review') });
       const createAction = (catalogVersionId: string, idempotencyKey: string) => store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'crm.lead.create', intentKey: 'crm.lead.create.request', catalogVersionId, idempotencyKey, state: 'approved', opaqueReference: idempotencyKey, payload: {}, createdAt: new Date().toISOString(), result: null });
       const first = await createAction(matchingCatalog.id, 'matching-one');
       const second = await createAction(matchingCatalog.id, 'matching-two');
       const other = await createAction(otherCatalog.id, 'other-workflow');
+      const review = await createAction(reviewCatalog.id, 'review-action');
 
       const firstClaim = await store.claimActionsForWorkflow('workflow-match', undefined, 1);
       expect(firstClaim).toHaveLength(1);
@@ -31,6 +33,9 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       expect(secondClaim).toHaveLength(1);
       expect([first.id, second.id]).toContain(secondClaim[0]?.id);
       expect(secondClaim[0]?.id).not.toBe(firstClaim[0]?.id);
+      const reviewClaim = await store.claimActionsForWorkflow('workflow-review', undefined, 1);
+      expect(reviewClaim.map((action) => action.id)).toEqual([review.id]);
+      expect((await store.getAction(review.id))?.state).toBe('processing');
     } finally {
       await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
       await pool.end();

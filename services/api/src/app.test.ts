@@ -747,15 +747,17 @@ describe('API vertical slice', () => {
     const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'internal-secret' });
     const api = request(runtime.app);
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'poller-platform@example.test', password: 'Platform1Password' }).expect(201);
-    const createTenant = async (suffix: string, workflowKey: string, n8nWorkflowId: string) => {
+    const createTenant = async (suffix: string, workflowKey: string, n8nWorkflowId: string, sideEffectClass = 'crm_write') => {
       const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: `Poller Tenant ${suffix}`, slug: `poller-tenant-${suffix}`, adminEmail: `poller-${suffix}@example.test`, adminPassword: 'TenantA1Password' }).expect(201);
-      const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'poller.json', sourceHash: suffix.repeat(64), parserVersion: 'test', catalog: { tenantScope: tenant.body.tenant.slug, intents: [{ intentKey: `${workflowKey}.request`, displayName: 'Commercial request', description: 'Commercial request', category: 'company_formation', workflowKey, minimumScore: 0, confidenceThreshold: 0, confirmationRequired: true, active: true, priority: 1, versionNote: '' }], signals: [], slots: [], relations: [], workflowBindings: [{ workflowKey, n8nWorkflowId, webhookPath: `${workflowKey.replaceAll('.', '-')}`, payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }] } });
+      const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'poller.json', sourceHash: suffix.repeat(64), parserVersion: 'test', catalog: { tenantScope: tenant.body.tenant.slug, intents: [{ intentKey: `${workflowKey}.request`, displayName: 'Commercial request', description: 'Commercial request', category: 'company_formation', workflowKey, minimumScore: 0, confidenceThreshold: 0, confirmationRequired: true, active: true, priority: 1, versionNote: '' }], signals: [], slots: [], relations: [], workflowBindings: [{ workflowKey, n8nWorkflowId, webhookPath: `${workflowKey.replaceAll('.', '-')}`, payloadContract: 'crm-lead-v1', sideEffectClass, active: true }] } });
       const session = await runtime.store.createSession(tenant.body.tenant.id);
       const action = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.id, workflowKey, intentKey: `${workflowKey}.request`, catalogVersionId: version.id, idempotencyKey: `${workflowKey}-action`, state: 'approved', opaqueReference: `${workflowKey}-opaque`, payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
       return { tenant, action };
     };
     const first = await createTenant('one', 'crm.lead.create', 'poller-workflow-one');
     const second = await createTenant('two', 'crm.lead.create', 'poller-workflow-two');
+    const explicitReview = await createTenant('review-explicit', 'anc.crm.lead.capture', 'poller-workflow-review-explicit', 'human_review');
+    const polledReview = await createTenant('review-polled', 'anc.crm.lead.capture', 'poller-workflow-review-polled', 'human_review');
     const wrongWorkflow = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: first.action.id, workflowKey: 'crm.lead.create', n8nWorkflowId: 'poller-workflow-two', limit: 1 }).expect(200);
     expect(wrongWorkflow.body.items).toHaveLength(0);
     expect((await runtime.store.getAction(first.action.id))?.state).toBe('approved');
@@ -766,6 +768,14 @@ describe('API vertical slice', () => {
     const secondClaimed = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ n8nWorkflowId: 'poller-workflow-two', limit: 10 }).expect(200);
     expect(secondClaimed.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([second.action.id]);
     expect((await runtime.store.getAction(second.action.id))?.state).toBe('processing');
+    const explicitReviewClaim = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: explicitReview.action.id, workflowKey: 'anc.crm.lead.capture', n8nWorkflowId: 'poller-workflow-review-explicit', limit: 1 }).expect(200);
+    expect(explicitReviewClaim.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([explicitReview.action.id]);
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: explicitReview.action.id, tenantId: explicitReview.tenant.body.tenant.id, state: 'human_review', externalReference: 'review-explicit' }).expect(200);
+    expect((await runtime.store.getAction(explicitReview.action.id))?.state).toBe('human_review');
+    const polledReviewClaim = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ n8nWorkflowId: 'poller-workflow-review-polled', limit: 1 }).expect(200);
+    expect(polledReviewClaim.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([polledReview.action.id]);
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: polledReview.action.id, tenantId: polledReview.tenant.body.tenant.id, state: 'human_review', externalReference: 'review-polled' }).expect(200);
+    expect((await runtime.store.getAction(polledReview.action.id))?.state).toBe('human_review');
   });
 
   it('refuses an expired proposal without recording consent or claiming registration', async () => {

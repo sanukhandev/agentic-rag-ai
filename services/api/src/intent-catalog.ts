@@ -62,6 +62,7 @@ const matchesCatalogPhrase = (input: string, signal: string): boolean => {
 };
 const keyPattern = /^[a-z][a-z0-9._-]{1,79}$/;
 export const isCrmWriteBinding = (binding: Pick<IntentCatalogWorkflowBinding, 'sideEffectClass'> | null | undefined): boolean => ['crm_write', 'crm'].includes(text(binding?.sideEffectClass).toLocaleLowerCase('en-US'));
+export const isWorkflowClaimableBinding = (binding: Pick<IntentCatalogWorkflowBinding, 'sideEffectClass'> | null | undefined): boolean => isCrmWriteBinding(binding) || text(binding?.sideEffectClass).toLocaleLowerCase('en-US') === 'human_review';
 const safePath = (value: string): boolean => /^\/[A-Za-z0-9._/-]{1,120}$/.test(value) && !value.includes('..');
 const extensionRows = (value: Record<string, unknown>, name: string): IntentCatalogExtensionRow[] => Array.isArray(value[name]) ? value[name].map((item) => {
   const row = record(item);

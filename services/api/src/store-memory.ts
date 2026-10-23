@@ -5,7 +5,7 @@ import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
 import { HttpError } from './http/errors.js';
-import { isCrmWriteBinding } from './intent-catalog.js';
+import { isWorkflowClaimableBinding } from './intent-catalog.js';
 
 const now = (): string => new Date().toISOString();
 const isUuid = (value: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
@@ -291,7 +291,7 @@ export class MemoryStore implements Store {
         if (!action.catalogVersionId) return false;
         const version = this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId);
         const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-        return Boolean(binding?.active && isCrmWriteBinding(binding) && binding.n8nWorkflowId === n8nWorkflowId);
+        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === n8nWorkflowId);
       })
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
     const claimed: ActionRequest[] = [];

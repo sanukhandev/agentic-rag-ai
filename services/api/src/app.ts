@@ -10,7 +10,7 @@ import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConfl
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
-import { catalogIntentClarification, catalogSlotQuestion, isCrmWriteBinding, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
+import { catalogIntentClarification, catalogSlotQuestion, isCrmWriteBinding, isWorkflowClaimableBinding, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
 import { consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState, phaseFor, prompt } from './conversation-state.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
@@ -1075,7 +1075,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         if (!action.catalogVersionId) return false;
         const version = await store.getIntentCatalogVersion(action.tenantId, action.catalogVersionId);
         const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-        return Boolean(binding?.active && isCrmWriteBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId);
+        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId);
       };
       const actions: ActionRequest[] = [];
       if (input.actionId) {

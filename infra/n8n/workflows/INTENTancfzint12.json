@@ -38,7 +38,7 @@
         "url": "={{ \"http://api:4000/api/v1/internal/workflow-events/claim\" }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ workflowKey: $json.workflowKey, contract: $json.contract, limit: 10 }) }}",
+        "jsonBody": "={{ JSON.stringify({ workflowKey: $json.workflowKey, n8nWorkflowId: $workflow.id, contract: $json.contract, limit: 1 }) }}",
         "options": {},
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth"

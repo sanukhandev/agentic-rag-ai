@@ -181,7 +181,7 @@ export class PostgresStore implements Store {
         AND binding.item->>'workflowKey' = action.workflow_key
         AND binding.item->>'n8nWorkflowId' = $1
         AND binding.item->>'active' = 'true'
-        AND lower(binding.item->>'sideEffectClass') IN ('crm_write', 'crm')
+        AND lower(binding.item->>'sideEffectClass') IN ('crm_write', 'crm', 'human_review')
       ORDER BY action.created_at, action.id
       FOR UPDATE OF action SKIP LOCKED
       LIMIT $3
