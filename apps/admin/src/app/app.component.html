@@ -192,7 +192,7 @@
       <!-- Section: Customer Chat -->
       <ng-container *ngIf="currentSection === 'chat'">
         <div class="max-w-4xl mx-auto py-2">
-          <app-customer-chat></app-customer-chat>
+          <app-customer-chat [initialTenantSlug]="selectedTenant?.slug"></app-customer-chat>
         </div>
       </ng-container>
 

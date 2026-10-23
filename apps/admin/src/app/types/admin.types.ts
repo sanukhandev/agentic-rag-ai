@@ -183,7 +183,7 @@ export interface SupportingDocument {
 export interface AuditEvent {
   id: string;
   eventName: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   createdAt: string;
   actorEmail?: string;
   ip?: string;

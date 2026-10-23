@@ -1,4 +1,5 @@
-import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -366,10 +367,10 @@ import { IconComponent } from '../shared/icon.component';
 })
 export class CrmComponent implements OnInit, OnDestroy {
   private readonly state = inject(AdminStateService);
-  private readonly cdr = inject(ChangeDetectorRef);
 
-  leads: CrmLead[] = [];
-  isLoading = false;
+  get leads(): CrmLead[] { return this.state.crmLeads(); }
+  get isLoading(): boolean { return this.state.crmIsLoading(); }
+
   searchQuery = '';
   qualityFilter: 'all' | 'hot' | 'warm' | 'new' = 'all';
   expandedLeadId: string | null = null;
@@ -378,21 +379,9 @@ export class CrmComponent implements OnInit, OnDestroy {
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   ngOnInit(): void {
-    this.state.crmLeads$.subscribe((leads) => {
-      this.leads = leads ?? [];
-      this.cdr.markForCheck();
-      this.cdr.detectChanges();
-    });
-
-    this.state.crmIsLoading$.subscribe((loading) => {
-      this.isLoading = loading;
-      this.cdr.markForCheck();
-      this.cdr.detectChanges();
-    });
-
     // Proactively fetch latest leads on mount
     this.state.loadCrmLeads();
-    this.refreshTimer = setInterval(() => this.state.loadCrmLeads(), 5000);
+    this.refreshTimer = setInterval(() => this.state.loadCrmLeads(true), 5000);
   }
 
   ngOnDestroy(): void {
@@ -420,10 +409,10 @@ export class CrmComponent implements OnInit, OnDestroy {
     this.summarizingLeadId = lead.id;
     this.state.crm.summarizeLead(lead.id).subscribe({
       next: (response) => {
-        this.leads = this.leads.map((item) => item.id === response.lead.id ? response.lead : item);
+        this.state.crm.updateLead(response.lead);
         if (this.transcriptLead?.id === response.lead.id) this.transcriptLead = response.lead;
         this.summarizingLeadId = null;
-        this.cdr.markForCheck();
+        // Signal update automatically triggers reactivity
         this.state.showToast('success', 'Summary updated', response.aiGenerated ? 'The AI formatted the CRM opportunity summary.' : 'The CRM summary was formatted.');
       },
       error: () => {

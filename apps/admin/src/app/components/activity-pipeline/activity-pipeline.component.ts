@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
 import { IngestionJob, AuditEvent, WorkflowRun } from '../../types/admin.types';
@@ -206,26 +206,10 @@ import { BadgeComponent } from '../shared/badge.component';
 })
 export class ActivityPipelineComponent implements OnInit {
   private readonly state = inject(AdminStateService);
-  private readonly cdr = inject(ChangeDetectorRef);
 
-  jobs: IngestionJob[] = [];
-  auditEvents: AuditEvent[] = [];
-  workflowRuns: WorkflowRun[] = [];
-
-  constructor() {
-    this.state.ingestionJobs$.subscribe((j) => {
-      this.jobs = j;
-      this.cdr.markForCheck();
-    });
-    this.state.auditEvents$.subscribe((a) => {
-      this.auditEvents = a;
-      this.cdr.markForCheck();
-    });
-    this.state.workflowRuns$.subscribe((runs) => {
-      this.workflowRuns = runs;
-      this.cdr.markForCheck();
-    });
-  }
+  get jobs(): IngestionJob[] { return this.state.ingestionJobs(); }
+  get auditEvents(): AuditEvent[] { return this.state.auditEvents(); }
+  get workflowRuns(): WorkflowRun[] { return this.state.workflowRuns(); }
 
   ngOnInit(): void {
     this.state.loadJobs();

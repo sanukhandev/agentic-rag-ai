@@ -1,4 +1,5 @@
-import { Component, HostListener, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, HostListener, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -191,22 +192,14 @@ import { IconComponent } from '../shared/icon.component';
 })
 export class OnboardDrawerComponent {
   private readonly state = inject(AdminStateService);
-  private readonly cdr = inject(ChangeDetectorRef);
 
-  isOpen = false;
+  get isOpen(): boolean { return this.state.createOrgDrawerOpen(); }
   name = '';
   slug = '';
   adminEmail = '';
   adminPassword = '';
   showPassword = false;
   isSubmitting = false;
-
-  constructor() {
-    this.state.createOrgDrawerOpen$.subscribe((open) => {
-      this.isOpen = open;
-      this.cdr.markForCheck();
-    });
-  }
 
   @HostListener('document:keydown.escape')
   onEscape(): void {

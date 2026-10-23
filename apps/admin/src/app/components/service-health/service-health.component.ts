@@ -1,4 +1,5 @@
-import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
 import { Health } from '../../types/admin.types';
@@ -128,9 +129,8 @@ interface ServiceNode {
 })
 export class ServiceHealthComponent implements OnInit {
   private readonly state = inject(AdminStateService);
-  private readonly cdr = inject(ChangeDetectorRef);
 
-  health: Health | null = null;
+  get health(): Health | null { return this.state.health(); }
 
   readonly services: ServiceNode[] = [
     {
@@ -177,12 +177,7 @@ export class ServiceHealthComponent implements OnInit {
     }
   ];
 
-  constructor() {
-    this.state.health$.subscribe((h) => {
-      this.health = h;
-      this.cdr.markForCheck();
-    });
-  }
+
 
   ngOnInit(): void {
     this.state.loadHealth();

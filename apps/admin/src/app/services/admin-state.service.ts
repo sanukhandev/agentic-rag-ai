@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, NgZone, effect, inject, untracked } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   Tenant,
@@ -32,15 +32,7 @@ export type { ToastMessage };
 
 /**
  * AdminStateService acts as an Application Facade coordinating domain-specific services.
- * Follows the Single Responsibility Principle by delegating concrete domain operations to:
- * - AuthService
- * - UiNavigationService
- * - ToastService
- * - TenantService
- * - KnowledgeService
- * - ObservabilityService
- * - PersonaService
- * - SettingsService
+ * Powered by Angular Signals for fine-grained reactivity, with Observable bridges for compatibility.
  */
 @Injectable({
   providedIn: 'root'
@@ -55,21 +47,56 @@ export class AdminStateService {
   readonly personaService = inject(PersonaService);
   readonly settings = inject(SettingsService);
   readonly crm = inject(CrmService);
+  private readonly ngZone = inject(NgZone);
 
-  // Auth & Session Streams
+  // Angular Signals (Primary reactive state)
+  readonly token = this.auth.token;
+  readonly role = this.auth.role;
+  readonly userEmail = this.auth.userEmail;
+  readonly isAuthenticated = this.auth.isAuthenticated;
+  readonly isAuthenticating = this.auth.isAuthenticating;
+  readonly isPlatformAdmin = this.auth.isPlatformAdmin;
+  readonly canEditSources = this.auth.canEditSources;
+  readonly canManagePersona = this.auth.canManagePersona;
+
+  readonly currentSection = this.nav.currentSection;
+  readonly activeMegaMenu = this.nav.activeMegaMenu;
+  readonly commandPaletteOpen = this.nav.commandPaletteOpen;
+  readonly createOrgDrawerOpen = this.nav.createOrgDrawerOpen;
+  readonly uploadSourceModalOpen = this.nav.uploadSourceModalOpen;
+
+  readonly tenants = this.tenantService.tenants;
+  readonly selectedTenant = this.tenantService.selectedTenant;
+  readonly platformOverview = this.tenantService.platformOverview;
+  readonly health = this.observability.health;
+  readonly metrics = this.observability.metrics;
+  readonly sources = this.knowledge.sources;
+  readonly ingestionJobs = this.knowledge.jobs;
+  readonly persona = this.personaService.persona;
+  readonly isPersonaLoaded = this.personaService.isPersonaLoaded;
+  readonly personaVersions = this.personaService.personaVersions;
+  readonly domains = this.settings.domains;
+  readonly members = this.settings.members;
+  readonly channelCredentials = this.settings.channelCredentials;
+  readonly channel = this.settings.channel;
+  readonly workflowRuns = this.observability.workflowRuns;
+  readonly auditEvents = this.observability.auditEvents;
+  readonly crmLeads = this.crm.leads;
+  readonly crmIsLoading = this.crm.isLoading;
+  readonly toasts = this.toastService.toasts;
+
+  // Observable streams for backwards compatibility
   readonly token$: Observable<string> = this.auth.token$;
   readonly role$: Observable<UserRole> = this.auth.role$;
   readonly userEmail$: Observable<string> = this.auth.userEmail$;
   readonly isAuthenticated$: Observable<boolean> = this.auth.isAuthenticated$;
 
-  // Navigation Streams
   readonly currentSection$: Observable<NavSection> = this.nav.currentSection$;
   readonly activeMegaMenu$: Observable<NavSection | null> = this.nav.activeMegaMenu$;
   readonly commandPaletteOpen$: Observable<boolean> = this.nav.commandPaletteOpen$;
   readonly createOrgDrawerOpen$: Observable<boolean> = this.nav.createOrgDrawerOpen$;
   readonly uploadSourceModalOpen$: Observable<boolean> = this.nav.uploadSourceModalOpen$;
 
-  // Core Data Streams
   readonly tenants$: Observable<Tenant[]> = this.tenantService.tenants$;
   readonly selectedTenant$: Observable<Tenant | null> = this.tenantService.selectedTenant$;
   readonly platformOverview$: Observable<PlatformOverview> = this.tenantService.platformOverview$;
@@ -90,69 +117,66 @@ export class AdminStateService {
   readonly toasts$: Observable<ToastMessage[]> = this.toastService.toasts$;
 
   constructor() {
-    this.auth.isAuthenticated$.subscribe((authenticated) => {
-      if (authenticated) this.refreshAllData();
-    });
-
-    this.nav.currentSection$.subscribe((section) => {
-      if (this.auth.isAuthenticated) {
-        if (!this.canAccessSection(section)) {
-          this.nav.setSection('overview');
-          return;
-        }
-        this.loadSectionData(section);
+    // Reactive signal effect for authentication state changes
+    effect(() => {
+      const authenticated = this.auth.isAuthenticated();
+      if (authenticated) {
+        untracked(() => this.refreshAllData());
       }
     });
 
-    this.tenantService.selectedTenant$.subscribe((tenant) => {
-      if (this.auth.isAuthenticated && tenant) {
-        this.loadTenantScopedData();
+    // Reactive signal effect for section changes
+    effect(() => {
+      const section = this.nav.currentSection();
+      if (this.auth.isAuthenticated()) {
+        untracked(() => {
+          if (!this.canAccessSection(section)) {
+            this.nav.setSection('overview');
+            return;
+          }
+          this.loadSectionData(section);
+        });
+      }
+    });
+
+    // Reactive signal effect for workspace/tenant selection
+    let lastScopedTenantId: string | null = null;
+    effect(() => {
+      const tenant = this.tenantService.selectedTenant();
+      const tenantId = tenant?.id ?? null;
+      if (this.auth.isAuthenticated() && tenantId && tenantId !== lastScopedTenantId) {
+        lastScopedTenantId = tenantId;
+        untracked(() => this.loadTenantScopedData());
+      } else if (!tenantId) {
+        lastScopedTenantId = null;
       }
     });
 
     if (typeof window !== 'undefined') {
       window.addEventListener('focus', () => {
-        if (this.auth.isAuthenticated) {
+        if (this.auth.isAuthenticated()) {
           this.refreshCurrentSection();
         }
       });
-      setInterval(() => {
-        if (this.auth.isAuthenticated) {
-          const sec = this.nav.currentSection;
-          if (this.isPlatformAdmin && (sec === 'overview' || sec === 'observability')) {
-            this.observability.loadHealth();
-            this.observability.loadMetrics();
-          } else if (sec === 'knowledge') {
-            this.knowledge.loadJobs();
-            const hasActiveJob = this.knowledge.jobs.some((j) => j.status === 'queued' || j.status === 'processing');
-            if (hasActiveJob) {
-              this.knowledge.loadSources();
+
+      this.ngZone.runOutsideAngular(() => {
+        setInterval(() => {
+          if (this.auth.isAuthenticated()) {
+            const sec = this.nav.currentSection();
+            if (this.auth.isPlatformAdmin() && (sec === 'overview' || sec === 'observability')) {
+              this.observability.loadHealth();
+              this.observability.loadMetrics();
+            } else if (sec === 'knowledge') {
+              this.knowledge.loadJobs();
+              const hasActiveJob = this.knowledge.jobs().some((j) => j.status === 'queued' || j.status === 'processing');
+              if (hasActiveJob) {
+                this.knowledge.loadSources();
+              }
             }
           }
-        }
-      }, 8000);
+        }, 8000);
+      });
     }
-  }
-
-  // Accessors
-  get token(): string {
-    return this.auth.token;
-  }
-
-  get role(): UserRole {
-    return this.auth.role;
-  }
-
-  get isPlatformAdmin(): boolean {
-    return this.auth.isPlatformAdmin;
-  }
-
-  get canEditSources(): boolean {
-    return this.auth.canEditSources;
-  }
-
-  get canManagePersona(): boolean {
-    return this.auth.canManagePersona;
   }
 
   canAccessSection(section: NavSection): boolean {
@@ -172,6 +196,12 @@ export class AdminStateService {
   setSection(section: NavSection): void {
     if (!this.canAccessSection(section)) {
       this.nav.setSection('overview');
+      return;
+    }
+    const current = this.nav.currentSection();
+    if (current === section && this.auth.isAuthenticated()) {
+      this.nav.closeMegaMenu();
+      this.loadSectionData(section);
       return;
     }
     this.nav.setSection(section);
@@ -218,25 +248,25 @@ export class AdminStateService {
 
   logout(): void {
     this.auth.logout();
-    this.personaService.clearDraft();
+    this.personaService.clearAllDrafts();
     this.nav.setSection('overview');
     this.closeMegaMenu();
   }
 
   // Tenant Facade
   selectTenant(tenant: Tenant): void {
-    if (!this.isPlatformAdmin) return;
+    if (!this.isPlatformAdmin()) return;
     this.tenantService.selectTenant(tenant);
   }
 
   loadTenants(): void {
-    if (!this.isPlatformAdmin) return;
+    if (!this.isPlatformAdmin()) return;
     this.tenantService.loadTenants();
     this.tenantService.loadPlatformOverview();
   }
 
   loadPlatformOverview(): void {
-    if (this.isPlatformAdmin) this.tenantService.loadPlatformOverview();
+    if (this.isPlatformAdmin()) this.tenantService.loadPlatformOverview();
   }
 
   createTenant(payload: CreateTenantPayload, callback?: (success: boolean, tenant?: Tenant) => void): void {
@@ -300,8 +330,8 @@ export class AdminStateService {
     this.observability.loadAudit();
   }
 
-  loadCrmLeads(): void {
-    this.crm.loadLeads();
+  loadCrmLeads(silent = false): void {
+    this.crm.loadLeads(silent);
   }
 
   // Persona Facade
@@ -331,7 +361,7 @@ export class AdminStateService {
   }
 
   loadTenantScopedData(): void {
-    if (this.isPlatformAdmin && !this.tenantService.selectedTenant && !this.auth.selectedTenantId) return;
+    if (this.isPlatformAdmin() && !this.tenantService.selectedTenant() && !this.auth.selectedTenantId) return;
     this.knowledge.loadSources();
     this.knowledge.loadJobs();
     this.observability.loadMetrics();
@@ -349,7 +379,7 @@ export class AdminStateService {
   loadSectionData(section: NavSection): void {
     switch (section) {
       case 'overview':
-        if (this.isPlatformAdmin) {
+        if (this.isPlatformAdmin()) {
           this.observability.loadHealth();
           this.tenantService.loadTenants();
           this.tenantService.loadPlatformOverview();
@@ -374,7 +404,7 @@ export class AdminStateService {
         this.personaService.loadPersonaVersions();
         break;
       case 'observability':
-        if (this.isPlatformAdmin) {
+        if (this.isPlatformAdmin()) {
           this.observability.loadHealth();
           this.observability.loadMetrics();
           this.observability.loadWorkflowRuns();
@@ -399,11 +429,11 @@ export class AdminStateService {
   }
 
   refreshCurrentSection(): void {
-    this.loadSectionData(this.nav.currentSection);
+    this.loadSectionData(this.nav.currentSection());
   }
 
   refreshAllData(): void {
-    if (this.isPlatformAdmin) {
+    if (this.isPlatformAdmin()) {
       this.observability.loadHealth();
       this.tenantService.loadTenants();
       this.tenantService.loadPlatformOverview();

@@ -1,10 +1,43 @@
-import { describe, expect, it } from 'vitest';
+import '@angular/compiler';
+import { describe, expect, it, vi } from 'vitest';
+import { Injector, runInInjectionContext, signal, ChangeDetectorRef, EnvironmentInjector } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { BrowserDynamicTestingModule, platformBrowserDynamicTesting } from '@angular/platform-browser-dynamic/testing';
+
+if (typeof (globalThis as any).document === 'undefined') {
+  (globalThis as any).document = {
+    querySelector: () => null,
+    createElement: () => ({ setAttribute: () => {} }),
+    createTextNode: () => ({}),
+    createComment: () => ({})
+  };
+}
+if (typeof (globalThis as any).window === 'undefined') {
+  (globalThis as any).window = { document: (globalThis as any).document };
+}
+
+try {
+  TestBed.initTestEnvironment(BrowserDynamicTestingModule, platformBrowserDynamicTesting());
+} catch {
+  // Already initialized
+}
+import { HttpClient } from '@angular/common/http';
+import { Subject, of } from 'rxjs';
 import { ToastService } from './toast.service';
+import { UiNavigationService, isNavSection } from './ui-navigation.service';
 import { canAccessAdminSection } from './admin-navigation';
-import { isNavSection } from './ui-navigation.service';
 import { isCatalogJobPending } from './intent-catalog-utils';
 import { isValidTenantSlug, resolveTenantSlug } from '../components/customer-chat/customer-chat-utils';
 import { apiErrorMessage } from './api-error';
+import { filterPermittedCommands } from '../components/shared/command-palette-utils';
+import { AdminStateService } from './admin-state.service';
+import { Tenant, Source, NavSection, IngestionJob, Persona } from '../types/admin.types';
+import { isTrustedApiRequest } from './auth.interceptor';
+import { CATALOG_MIME_TYPE } from './intent-catalog.service';
+import { AuthService } from './auth.service';
+import { PersonaService } from './persona.service';
+import { API_BASE_URL } from './tokens';
+import { AiStudioComponent } from '../components/ai-studio/ai-studio.component';
 
 describe('SOLID Services and Architecture Contracts', () => {
   it('ToastService adheres to Single Responsibility by managing toast notifications independently', () => {
@@ -24,6 +57,34 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(currentToasts.length).toBe(0);
 
     sub.unsubscribe();
+  });
+
+  it('ToastService provides fine-grained Angular Signals reactivity without subscriptions', () => {
+    const toastService = new ToastService();
+    expect(toastService.toasts().length).toBe(0);
+
+    toastService.show('info', 'Signal Reactive', 'Zero subscription required.');
+    expect(toastService.toasts().length).toBe(1);
+    expect(toastService.toasts()[0].title).toBe('Signal Reactive');
+
+    const id = toastService.toasts()[0].id;
+    toastService.dismiss(id);
+    expect(toastService.toasts().length).toBe(0);
+  });
+
+  it('UiNavigationService manages section and mega menu state via Angular Signals', () => {
+    const navService = new UiNavigationService();
+    expect(navService.currentSection()).toBe('overview');
+    expect(navService.activeMegaMenu()).toBeNull();
+
+    navService.setSection('knowledge');
+    expect(navService.currentSection()).toBe('knowledge');
+
+    navService.toggleMegaMenu('knowledge');
+    expect(navService.activeMegaMenu()).toBe('knowledge');
+
+    navService.closeMegaMenu();
+    expect(navService.activeMegaMenu()).toBeNull();
   });
 
   it('validates tenant slug safety rules', () => {
@@ -70,5 +131,441 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(apiErrorMessage({ error: { error: { message: 'CATALOG_TENANT_MISMATCH' } } }, 'fallback')).toBe('CATALOG_TENANT_MISMATCH');
     expect(apiErrorMessage({ error: { message: 'Workbook is invalid.' } }, 'fallback')).toBe('Workbook is invalid.');
     expect(apiErrorMessage({}, 'fallback')).toBe('fallback');
+  });
+
+  it('gates command palette items strictly according to user role and permissions', () => {
+    const sampleTenants: Tenant[] = [
+      { id: 't-1', name: 'Acme Corp', slug: 'acme-corp', status: 'active', createdAt: '2026-01-01T00:00:00Z' }
+    ];
+    const sampleSources: Source[] = [
+      {
+        id: 's-1',
+        title: 'Knowledge Base',
+        status: 'active',
+        audience: 'public',
+        mimeType: 'text/html'
+      }
+    ];
+
+    const createOptions = (role: 'platform_admin' | 'tenant_admin' | 'tenant_editor' | 'tenant_viewer') => {
+      return {
+        isPlatformAdmin: role === 'platform_admin',
+        canAccessSection: (sec: NavSection) => canAccessAdminSection(role, sec),
+        tenants: sampleTenants,
+        sources: sampleSources,
+        onNavigate: () => {},
+        onSelectTenant: () => {},
+        onOpenCreateOrg: () => {},
+        onOpenUpload: () => {},
+        onPurgeSessions: () => {}
+      };
+    };
+
+    // Case 1: Tenant Viewer (only overview and chat allowed, no knowledge, not platform admin)
+    const viewerItems = filterPermittedCommands(createOptions('tenant_viewer'));
+    expect(viewerItems.some((i) => i.id === 'nav-overview')).toBe(true);
+    expect(viewerItems.some((i) => i.id === 'nav-chat')).toBe(true);
+    expect(viewerItems.some((i) => i.id === 'nav-knowledge')).toBe(false);
+    expect(viewerItems.some((i) => i.id === 'nav-organizations')).toBe(false);
+    expect(viewerItems.some((i) => i.id === 'tenant-t-1')).toBe(false);
+    expect(viewerItems.some((i) => i.id === 'source-s-1')).toBe(false);
+
+    // Case 2: Tenant Editor (knowledge allowed, but not platform admin)
+    const editorItems = filterPermittedCommands(createOptions('tenant_editor'));
+    expect(editorItems.some((i) => i.id === 'nav-knowledge')).toBe(true);
+    expect(editorItems.some((i) => i.id === 'act-stage-source')).toBe(true);
+    expect(editorItems.some((i) => i.id === 'source-s-1')).toBe(true);
+    expect(editorItems.some((i) => i.id === 'tenant-t-1')).toBe(false);
+    expect(editorItems.some((i) => i.id === 'nav-organizations')).toBe(false);
+    expect(editorItems.some((i) => i.id === 'act-new-org')).toBe(false);
+
+    // Case 3: Tenant Admin (knowledge, studio, crm allowed; organizations and tenants NOT allowed)
+    const tenantAdminItems = filterPermittedCommands(createOptions('tenant_admin'));
+    expect(tenantAdminItems.some((i) => i.id === 'nav-knowledge')).toBe(true);
+    expect(tenantAdminItems.some((i) => i.id === 'nav-studio')).toBe(true);
+    expect(tenantAdminItems.some((i) => i.id === 'nav-crm')).toBe(true);
+    expect(tenantAdminItems.some((i) => i.id === 'source-s-1')).toBe(true);
+    expect(tenantAdminItems.some((i) => i.id === 'tenant-t-1')).toBe(false);
+    expect(tenantAdminItems.some((i) => i.id === 'nav-organizations')).toBe(false);
+    expect(tenantAdminItems.some((i) => i.id === 'act-new-org')).toBe(false);
+
+    // Case 4: Platform Admin (all sections + tenant entities permitted)
+    const platformAdminItems = filterPermittedCommands(createOptions('platform_admin'));
+    expect(platformAdminItems.some((i) => i.id === 'tenant-t-1')).toBe(true);
+    expect(platformAdminItems.some((i) => i.id === 'source-s-1')).toBe(true);
+    expect(platformAdminItems.some((i) => i.id === 'nav-organizations')).toBe(true);
+    expect(platformAdminItems.some((i) => i.id === 'act-new-org')).toBe(true);
+    expect(platformAdminItems.some((i) => i.id === 'nav-observability')).toBe(true);
+  });
+
+  it('triggers section data reload and closes mega menu when re-selecting the currently active section', () => {
+    const navService = new UiNavigationService();
+    navService.setSection('knowledge');
+    navService.toggleMegaMenu('knowledge');
+    expect(navService.activeMegaMenu()).toBe('knowledge');
+    expect(navService.currentSection()).toBe('knowledge');
+
+    let reloadedSection: NavSection | null = null;
+    const facade = Object.assign(Object.create(AdminStateService.prototype), {
+      nav: navService,
+      auth: { isAuthenticated: () => true },
+      canAccessSection: () => true,
+      loadSectionData: (sec: NavSection) => {
+        reloadedSection = sec;
+      }
+    });
+
+    // Re-select currently active section
+    facade.setSection('knowledge');
+
+    // Asserts:
+    // 1. Data reload was explicitly triggered
+    expect(reloadedSection).toBe('knowledge');
+    // 2. Active mega menu was dismissed
+    expect(navService.activeMegaMenu()).toBeNull();
+  });
+
+  // [P2 Finding 5 Test]: Authorization interceptor URL and origin validation
+  it('isTrustedApiRequest rejects foreign origins and identifies public auth correctly', () => {
+    const trustedBase = 'http://127.0.0.1:4000';
+
+    // Trusted relative and absolute endpoints
+    expect(isTrustedApiRequest('/api/v1/admin/persona', trustedBase)).toEqual({
+      isApiRequest: true,
+      isPublicAuth: false
+    });
+    expect(isTrustedApiRequest('http://127.0.0.1:4000/api/v1/admin/sources', trustedBase)).toEqual({
+      isApiRequest: true,
+      isPublicAuth: false
+    });
+
+    // Public login should be marked as publicAuth (no token injection)
+    expect(isTrustedApiRequest('/api/v1/auth/login', trustedBase)).toEqual({
+      isApiRequest: true,
+      isPublicAuth: true
+    });
+    expect(isTrustedApiRequest('http://127.0.0.1:4000/api/v1/auth/login', trustedBase)).toEqual({
+      isApiRequest: true,
+      isPublicAuth: true
+    });
+
+    // Untrusted foreign origins containing /api/v1/ must be rejected!
+    expect(isTrustedApiRequest('https://evil-attacker.com/api/v1/leak', trustedBase)).toEqual({
+      isApiRequest: false,
+      isPublicAuth: false
+    });
+    expect(isTrustedApiRequest('http://other-domain:4000/api/v1/test', trustedBase)).toEqual({
+      isApiRequest: false,
+      isPublicAuth: false
+    });
+
+    // Non-API paths on trusted origin
+    expect(isTrustedApiRequest('http://127.0.0.1:4000/health', trustedBase)).toEqual({
+      isApiRequest: false,
+      isPublicAuth: false
+    });
+  });
+
+  // [P2 Finding 4 Test]: Intent catalog MIME discriminator matches backend
+  it('identifies intent catalog jobs using exact backend MIME discriminator and ignores generic xlsx', () => {
+    expect(CATALOG_MIME_TYPE).toBe('application/vnd.agentic.intent-catalog+excel');
+
+    const catalogJob: IngestionJob = {
+      id: 'job-cat-1',
+      title: 'Intent Catalog Q4.xlsx',
+      sourceUrl: null,
+      mimeType: 'application/vnd.agentic.intent-catalog+excel',
+      status: 'processing',
+      attempts: 1,
+      errorCode: null,
+      updatedAt: '2026-01-01T00:01:00Z'
+    };
+
+    const regularDocumentJob: IngestionJob = {
+      id: 'job-doc-2',
+      title: 'Sales Strategy.xlsx',
+      sourceUrl: null,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      status: 'processing',
+      attempts: 1,
+      errorCode: null,
+      updatedAt: '2026-01-01T00:01:00Z'
+    };
+
+    const jobs = [catalogJob, regularDocumentJob];
+    const filteredCatalogJobs = jobs.filter((j) => j.mimeType === CATALOG_MIME_TYPE);
+
+    expect(filteredCatalogJobs.length).toBe(1);
+    expect(filteredCatalogJobs[0].id).toBe('job-cat-1');
+  });
+
+  // [P1 Finding 3 Test]: Persona drafts are strictly scoped to the active tenant via reactive signals
+  it('PersonaService computed personaDraft updates reactively on AuthService tenant switch without manual subscription', () => {
+    const httpMock = {
+      get: vi.fn().mockReturnValue(of({ persona: null })),
+      post: vi.fn().mockReturnValue(of({ version: { id: 'v1', version: 1 } })),
+      put: vi.fn().mockReturnValue(of({ persona: { name: 'Published' } }))
+    };
+
+    const injector = Injector.create({
+      providers: [
+        { provide: API_BASE_URL, useValue: 'http://127.0.0.1:4000' },
+        { provide: HttpClient, useValue: httpMock },
+        ToastService,
+        AuthService,
+        PersonaService
+      ]
+    });
+
+    const auth = injector.get(AuthService);
+    const personaService = injector.get(PersonaService);
+
+    const draftA: Persona = {
+      name: 'Agent Alpha',
+      greeting: 'Welcome to Tenant A',
+      personality: 'Formal',
+      tone: 'Assertive',
+      speakingStyle: 'Concise',
+      permittedLanguages: ['en'],
+      contextWindowMessages: 10,
+      voiceName: '',
+      voiceLanguage: 'en-US',
+      voiceRate: 1,
+      voicePitch: 1,
+      voiceVolume: 1
+    };
+
+    const draftB: Persona = { ...draftA, name: 'Agent Beta', greeting: 'Welcome to Tenant B' };
+
+    // 1. Initial tenant A
+    auth.setSelectedTenantId('tenant-a');
+    expect(auth.selectedTenantId).toBe('tenant-a');
+    expect(personaService.personaDraft()).toBeNull();
+
+    // 2. Save draft on Tenant A
+    personaService.setDraft(draftA);
+    expect(personaService.personaDraft()?.name).toBe('Agent Alpha');
+
+    // 3. Switch to Tenant B (A -> B)
+    auth.setSelectedTenantId('tenant-b');
+    // Computed personaDraft must automatically evaluate to null for Tenant B
+    expect(personaService.personaDraft()).toBeNull();
+
+    // 4. Save draft on Tenant B
+    personaService.setDraft(draftB);
+    expect(personaService.personaDraft()?.name).toBe('Agent Beta');
+
+    // 5. Switch back to Tenant A (B -> A)
+    auth.setSelectedTenantId('tenant-a');
+    // Computed personaDraft must automatically evaluate back to draft A
+    expect(personaService.personaDraft()?.name).toBe('Agent Alpha');
+
+    // 6. Clear draft A does not affect draft B
+    personaService.clearDraft();
+    expect(personaService.personaDraft()).toBeNull();
+
+    auth.setSelectedTenantId('tenant-b');
+    expect(personaService.personaDraft()?.name).toBe('Agent Beta');
+  });
+
+  it('PersonaService guards late loadPersona HTTP responses and applies latest-wins generation counter on rapid switches', () => {
+    const a1Response$ = new Subject<{ persona: Persona | null }>();
+    const a2Response$ = new Subject<{ persona: Persona | null }>();
+    let requestCount = 0;
+
+    const httpMock = {
+      get: vi.fn().mockImplementation(() => {
+        requestCount++;
+        return requestCount === 1 ? a1Response$ : a2Response$;
+      }),
+      post: vi.fn().mockReturnValue(of({})),
+      put: vi.fn().mockReturnValue(of({}))
+    };
+
+    const injector = Injector.create({
+      providers: [
+        { provide: API_BASE_URL, useValue: 'http://127.0.0.1:4000' },
+        { provide: HttpClient, useValue: httpMock },
+        ToastService,
+        AuthService,
+        PersonaService
+      ]
+    });
+
+    const auth = injector.get(AuthService);
+    const personaService = injector.get(PersonaService);
+    (auth as any)._token.set('mock-token');
+
+    // 1. Initial Tenant A fetch (request generation 1)
+    auth.setSelectedTenantId('tenant-a');
+    personaService.loadPersona();
+
+    // 2. Rapid switch to B then back to A (request generation 2)
+    auth.setSelectedTenantId('tenant-b');
+    auth.setSelectedTenantId('tenant-a');
+    personaService.loadPersona();
+
+    // 3. Newer A2 response arrives first
+    const personaA2: Persona = {
+      name: 'Agent A - Newer Epoch 2',
+      greeting: 'Welcome from Epoch 2',
+      personality: '',
+      tone: '',
+      speakingStyle: '',
+      permittedLanguages: ['en'],
+      contextWindowMessages: 10,
+      voiceName: '',
+      voiceLanguage: 'en-US',
+      voiceRate: 1,
+      voicePitch: 1,
+      voiceVolume: 1
+    };
+    a2Response$.next({ persona: personaA2 });
+
+    expect(personaService.persona().name).toBe('Agent A - Newer Epoch 2');
+
+    // 4. Stale A1 response arrives second
+    const personaA1: Persona = {
+      ...personaA2,
+      name: 'Agent A - Stale Epoch 1'
+    };
+    a1Response$.next({ persona: personaA1 });
+
+    // Assert: stale A1 was discarded by generation check; latest-wins preserved!
+    expect(personaService.persona().name).toBe('Agent A - Newer Epoch 2');
+  });
+
+  it('AiStudioComponent prevents publishing stale tenant A persona before tenant B persona has loaded, becoming publishable only when B arrives', () => {
+    const putMock = vi.fn().mockReturnValue(of({ persona: { name: 'Published' } }));
+    const personaBResponse$ = new Subject<{ persona: Persona | null }>();
+
+    const httpMock = {
+      get: vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/api/v1/admin/persona')) {
+          return personaBResponse$;
+        }
+        return of({});
+      }),
+      post: vi.fn().mockReturnValue(of({})),
+      put: putMock
+    };
+
+    const injector = Injector.create({
+      providers: [
+        { provide: API_BASE_URL, useValue: 'http://127.0.0.1:4000' },
+        { provide: HttpClient, useValue: httpMock },
+        ToastService,
+        AuthService,
+        PersonaService
+      ]
+    });
+
+    const toast = injector.get(ToastService);
+    const personaService = injector.get(PersonaService);
+    const auth = injector.get(AuthService);
+    (auth as any)._token.set('mock-token');
+
+    // Setup loaded persona for Tenant A
+    auth.setSelectedTenantId('tenant-a');
+    const personaA: Persona = {
+      name: 'Agent Alpha',
+      greeting: 'Tenant A Greeting',
+      personality: '',
+      tone: '',
+      speakingStyle: '',
+      permittedLanguages: ['en'],
+      contextWindowMessages: 10,
+      voiceName: '',
+      voiceLanguage: 'en-US',
+      voiceRate: 1,
+      voicePitch: 1,
+      voiceVolume: 1
+    };
+    (personaService as any)._loadedPersonaByTenant.set({ 'tenant-a': personaA });
+
+    const selectedTenantSignal = signal<{ id: string; slug: string; name: string } | null>({ id: 'tenant-a', slug: 'tenant-a', name: 'Tenant A' });
+
+    const mockAdminState = {
+      selectedTenant: selectedTenantSignal,
+      auth,
+      persona: personaService.persona,
+      isPersonaLoaded: personaService.isPersonaLoaded,
+      personaVersions: personaService.personaVersions,
+      personaService,
+      toastService: toast,
+      loadPersona: () => personaService.loadPersona(),
+      loadPersonaVersions: () => personaService.loadPersonaVersions(),
+      setSection: vi.fn()
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: API_BASE_URL, useValue: 'http://127.0.0.1:4000' },
+        { provide: HttpClient, useValue: httpMock },
+        ToastService,
+        AuthService,
+        PersonaService,
+        { provide: AdminStateService, useValue: mockAdminState },
+        { provide: ChangeDetectorRef, useValue: { markForCheck: vi.fn() } }
+      ]
+    });
+
+    const studio = runInInjectionContext(TestBed.inject(EnvironmentInjector), () => new AiStudioComponent());
+    TestBed.flushEffects();
+
+    // Verify Tenant A is loaded and publishable
+    expect(studio.activeFormTenantId).toBe('tenant-a');
+    expect(studio.persona.name).toBe('Agent Alpha');
+    expect(studio.canPublish).toBe(true);
+
+    // Switch workspace context to Tenant B while Tenant B persona is not loaded yet
+    auth.setSelectedTenantId('tenant-b');
+    selectedTenantSignal.set({ id: 'tenant-b', slug: 'tenant-b', name: 'Tenant B' });
+    TestBed.flushEffects();
+
+    // Verification 1: While B response is pending, form must NOT show A data as B's, activeFormTenantId must be null, and canPublish must be false
+    expect(studio.activeFormTenantId).toBeNull();
+    expect(studio.persona.name).not.toBe('Agent Alpha');
+    expect(studio.canPublish).toBe(false);
+
+    // Attempt to publish before B's response arrives
+    studio.publishCurrent();
+
+    // Verification 2: Zero PUT calls made!
+    expect(putMock).not.toHaveBeenCalled();
+    const toasts = toast.toasts();
+    expect(toasts.some((t) => t.type === 'error' && t.title === 'Workspace Mismatch')).toBe(true);
+
+    // Deliver Tenant B's persona response
+    const personaB: Persona = {
+      name: 'Agent Beta',
+      greeting: 'Welcome to Tenant B',
+      personality: '',
+      tone: '',
+      speakingStyle: '',
+      permittedLanguages: ['en'],
+      contextWindowMessages: 10,
+      voiceName: '',
+      voiceLanguage: 'en-US',
+      voiceRate: 1,
+      voicePitch: 1,
+      voiceVolume: 1
+    };
+    (personaService as any)._loadedPersonaByTenant.update((all: Record<string, Persona>) => ({ ...all, 'tenant-b': personaB }));
+    TestBed.flushEffects();
+
+    // Verification 3: Form now bound to Tenant B, B data applied, and publish becomes active!
+    expect(studio.activeFormTenantId).toBe('tenant-b');
+    expect(studio.persona.name).toBe('Agent Beta');
+    expect(studio.canPublish).toBe(true);
+
+    // Publish now succeeds
+    studio.publishCurrent();
+    expect(putMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:4000/api/v1/admin/persona',
+      expect.objectContaining({ name: 'Agent Beta' }),
+      { headers: { 'X-Tenant-Id': 'tenant-b' } }
+    );
   });
 });

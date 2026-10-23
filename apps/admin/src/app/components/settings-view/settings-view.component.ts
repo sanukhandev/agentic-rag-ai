@@ -1,4 +1,5 @@
-import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, OnInit, effect, untracked, signal, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -66,11 +67,11 @@ import { BadgeComponent } from '../shared/badge.component';
             <button type="button" (click)="createConnectorCredential()" [disabled]="!newConnectorChannel.trim()" class="rounded-lg bg-neutral-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-40">Create credential</button>
           </div>
 
-          <div *ngIf="oneTimeConnectorSecret" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <div *ngIf="oneTimeConnectorSecret()" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
             <p class="text-xs font-semibold text-amber-900">Copy this secret now. It will not be shown again.</p>
             <div class="mt-2 flex items-center gap-2">
-              <code class="min-w-0 flex-1 break-all rounded bg-white px-2 py-1.5 text-[11px] text-amber-950">{{ oneTimeConnectorSecret }}</code>
-              <button type="button" (click)="copySample(oneTimeConnectorSecret)" class="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-[10px] font-semibold text-amber-900">Copy</button>
+              <code class="min-w-0 flex-1 break-all rounded bg-white px-2 py-1.5 text-[11px] text-amber-950">{{ oneTimeConnectorSecret() }}</code>
+              <button type="button" (click)="copySample(oneTimeConnectorSecret())" class="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-[10px] font-semibold text-amber-900">Copy</button>
             </div>
           </div>
 
@@ -299,21 +300,21 @@ import { BadgeComponent } from '../shared/badge.component';
 })
 export class SettingsViewComponent implements OnInit {
   private readonly state = inject(AdminStateService);
-  private readonly cdr = inject(ChangeDetectorRef);
+
   private readonly apiBase = inject(API_BASE_URL);
 
   channel: Channel = { publicOrigin: null, publicChatEnabled: false };
-  selectedTenant: Tenant | null = null;
-  domains: TenantDomain[] = [];
-  members: Member[] = [];
-  connectorCredentials: ChannelCredential[] = [];
+  get selectedTenant(): Tenant | null { return this.state.selectedTenant(); }
+  get domains(): TenantDomain[] { return this.state.domains(); }
+  get members(): Member[] { return this.state.members(); }
+  get connectorCredentials(): ChannelCredential[] { return this.state.channelCredentials(); }
 
   newHostname = '';
   newEmail = '';
   newPassword = '';
   newRole: MemberRole = 'tenant_editor';
   newConnectorChannel = 'omnichannel-api';
-  oneTimeConnectorSecret = '';
+  readonly oneTimeConnectorSecret = signal<string>('');
 
   get apiBaseUrl(): string {
     return this.apiBase;
@@ -330,25 +331,11 @@ export class SettingsViewComponent implements OnInit {
   }
 
   constructor() {
-    this.state.channel$.subscribe((c) => {
-      this.channel = { ...c };
-      this.cdr.markForCheck();
-    });
-    this.state.selectedTenant$.subscribe((tenant) => {
-      this.selectedTenant = tenant;
-      this.cdr.markForCheck();
-    });
-    this.state.domains$.subscribe((d) => {
-      this.domains = d;
-      this.cdr.markForCheck();
-    });
-    this.state.members$.subscribe((m) => {
-      this.members = m;
-      this.cdr.markForCheck();
-    });
-    this.state.channelCredentials$.subscribe((credentials) => {
-      this.connectorCredentials = credentials;
-      this.cdr.markForCheck();
+    effect(() => {
+      const c = this.state.channel();
+      untracked(() => {
+        this.channel = { ...c };
+      });
     });
   }
 
@@ -390,8 +377,8 @@ export class SettingsViewComponent implements OnInit {
     const channel = this.newConnectorChannel.trim().toLowerCase();
     if (!channel) return;
     this.state.settings.createChannelCredential(channel, 'api_key', (secret) => {
-      this.oneTimeConnectorSecret = secret;
-      this.cdr.markForCheck();
+      this.oneTimeConnectorSecret.set(secret);
+      // Signal set triggers view update automatically
     });
   }
 
