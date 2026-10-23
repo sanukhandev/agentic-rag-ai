@@ -5,6 +5,7 @@ import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
 import { HttpError } from './http/errors.js';
+import { isWorkflowClaimableBinding } from './intent-catalog.js';
 
 const now = (): string => new Date().toISOString();
 const isUuid = (value: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
@@ -37,7 +38,7 @@ export class MemoryStore implements Store {
   async countUsers(): Promise<number> { return this.users.size; }
 
   async createTenant(input: { name: string; slug: string }): Promise<Tenant> {
-    const tenant: Tenant = { id: randomUUID(), name: input.name, slug: input.slug, status: 'active', publicChatEnabled: true, publicOrigin: null, createdAt: now() };
+    const tenant: Tenant = { id: randomUUID(), name: input.name, slug: input.slug, status: 'active', publicChatEnabled: true, publicOrigin: null, catalogQueryNormalizationEnabled: false, createdAt: now() };
     this.tenants.set(tenant.id, tenant);
     return tenant;
   }
@@ -60,6 +61,7 @@ export class MemoryStore implements Store {
     return updated;
   }
   async setTenantPublicChatEnabled(id: string, enabled: boolean): Promise<Tenant | null> { const tenant = this.tenants.get(id); if (!tenant) return null; const updated = { ...tenant, publicChatEnabled: enabled }; this.tenants.set(id, updated); return updated; }
+  async setTenantCatalogQueryNormalizationEnabled(id: string, enabled: boolean): Promise<Tenant | null> { const tenant = this.tenants.get(id); if (!tenant) return null; const updated = { ...tenant, catalogQueryNormalizationEnabled: enabled }; this.tenants.set(id, updated); return updated; }
   async updateUserRole(userId: string, tenantId: string, role: Exclude<User['role'], 'platform_admin' | 'tenant_admin'>): Promise<User | null> { const user = this.users.get(userId); if (!user || user.tenantId !== tenantId || user.role === 'tenant_admin') return null; const updated = { ...user, role }; this.users.set(userId, updated); return updated; }
   async listUsers(tenantId: string): Promise<User[]> { return [...this.users.values()].filter((user) => user.tenantId === tenantId); }
   async listDomains(tenantId: string): Promise<TenantDomain[]> { return [...this.domains.values()].filter((domain) => domain.tenantId === tenantId); }
@@ -268,14 +270,39 @@ export class MemoryStore implements Store {
     return [...this.actions.values()].find((action) => action.tenantId === tenantId && action.idempotencyKey === idempotencyKey) ?? null;
   }
   async updateAction(action: ActionRequest): Promise<ActionRequest> { this.actions.set(action.id, action); return action; }
-  async claimApprovedActions(workflowKey: string, limit: number): Promise<ActionRequest[]> {
-    const actions = [...this.actions.values()]
-      .filter((action) => action.workflowKey === workflowKey && action.state === 'approved')
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-      .slice(0, limit)
-      .map((action) => ({ ...action, state: 'processing' as const }));
-    for (const action of actions) this.actions.set(action.id, action);
-    return actions;
+  async transitionAction(actionId: string, tenantId: string, fromState: ActionRequest['state'], toState: ActionRequest['state'], result: ActionRequest['result']): Promise<ActionRequest | null> {
+    const current = this.actions.get(actionId);
+    if (!current || current.tenantId !== tenantId || current.state !== fromState) return null;
+    const updated = { ...current, state: toState, result };
+    this.actions.set(actionId, updated);
+    return updated;
+  }
+  async claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null> {
+    const action = this.actions.get(actionId);
+    if (!action || action.workflowKey !== workflowKey || action.state !== 'approved') return null;
+    const claimed = { ...action, state: 'processing' as const };
+    this.actions.set(actionId, claimed);
+    return claimed;
+  }
+  async claimActionsForWorkflow(n8nWorkflowId: string, workflowKey: string | undefined, limit: number): Promise<ActionRequest[]> {
+    const candidates = [...this.actions.values()]
+      .filter((action) => action.state === 'approved' && (!workflowKey || action.workflowKey === workflowKey))
+      .filter((action) => {
+        if (!action.catalogVersionId) return false;
+        const version = this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId);
+        const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
+        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === n8nWorkflowId);
+      })
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
+    const claimed: ActionRequest[] = [];
+    for (const candidate of candidates.slice(0, limit)) {
+      const current = this.actions.get(candidate.id);
+      if (!current || current.state !== 'approved') continue;
+      const updated = { ...current, state: 'processing' as const };
+      this.actions.set(updated.id, updated);
+      claimed.push(updated);
+    }
+    return claimed;
   }
   async listActions(tenantId: string): Promise<ActionRequest[]> { return [...this.actions.values()].filter((action) => action.tenantId === tenantId); }
   async createCrmLead(lead: CrmLead): Promise<CrmLead> { this.crmLeads.set(lead.id, lead); return lead; }

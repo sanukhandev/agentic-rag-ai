@@ -9,7 +9,7 @@ import { HttpError } from './http/errors.js';
 const iso = (value: Date | string): string => value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 const vectorLiteral = (values: number[]): string => `[${values.join(',')}]`;
 type DbTimestamp = Date | string;
-type TenantRow = { id: string; name: string; slug: string; status?: TenantStatus; public_chat_enabled?: boolean; public_origin?: string | null; created_at: DbTimestamp };
+type TenantRow = { id: string; name: string; slug: string; status?: TenantStatus; public_chat_enabled?: boolean; public_origin?: string | null; catalog_query_normalization_enabled?: boolean; created_at: DbTimestamp };
 type TenantDomainRow = { id: string; tenant_id: string; hostname: string; created_at: DbTimestamp };
 type UserRow = { id: string; email: string; password_hash: string; role: User['role']; tenant_id: string | null; created_at: DbTimestamp };
 type AuthSessionRow = { token_hash: string; user_id: string; expires_at: DbTimestamp; revoked_at: DbTimestamp | null };
@@ -36,6 +36,7 @@ export class PostgresStore implements Store {
   async setTenantStatus(id: string, status: TenantStatus): Promise<Tenant | null> { const result = await this.pool.query('UPDATE tenants SET status=$1 WHERE id=$2 RETURNING *', [status, id]); return result.rows[0] ? this.tenant(result.rows[0]) : null; }
   async setTenantPublicOrigin(id: string, publicOrigin: string | null): Promise<Tenant | null> { const result = await this.pool.query('UPDATE tenants SET public_origin=$1 WHERE id=$2 RETURNING *', [publicOrigin, id]); return result.rows[0] ? this.tenant(result.rows[0]) : null; }
   async setTenantPublicChatEnabled(id: string, enabled: boolean): Promise<Tenant | null> { const result = await this.pool.query('UPDATE tenants SET public_chat_enabled=$1 WHERE id=$2 RETURNING *', [enabled, id]); return result.rows[0] ? this.tenant(result.rows[0]) : null; }
+  async setTenantCatalogQueryNormalizationEnabled(id: string, enabled: boolean): Promise<Tenant | null> { const result = await this.pool.query('UPDATE tenants SET catalog_query_normalization_enabled=$1 WHERE id=$2 RETURNING *', [enabled, id]); return result.rows[0] ? this.tenant(result.rows[0]) : null; }
   async updateUserRole(userId: string, tenantId: string, role: Exclude<User['role'], 'platform_admin' | 'tenant_admin'>): Promise<User | null> { const result = await this.pool.query<UserRow>('UPDATE users SET role=$1 WHERE id=$2 AND tenant_id=$3 AND role <> \'tenant_admin\' RETURNING *', [role, userId, tenantId]); return result.rows[0] ? this.user(result.rows[0]) : null; }
   async listUsers(tenantId: string): Promise<User[]> { const result = await this.pool.query('SELECT * FROM users WHERE tenant_id=$1 ORDER BY created_at', [tenantId]); return result.rows.map((row) => this.user(row)); }
   async listDomains(tenantId: string): Promise<TenantDomain[]> { const result = await this.pool.query<TenantDomainRow>('SELECT id,tenant_id,hostname,created_at FROM tenant_domains WHERE tenant_id=$1 ORDER BY hostname', [tenantId]); return result.rows.map((row) => this.domain(row)); }
@@ -159,19 +160,37 @@ export class PostgresStore implements Store {
   async getAction(id: string): Promise<ActionRequest | null> { const result = await this.pool.query('SELECT * FROM action_requests WHERE id=$1', [id]); return result.rows[0] ? this.action(result.rows[0]) : null; }
   async getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null> { const result = await this.pool.query('SELECT * FROM action_requests WHERE tenant_id=$1 AND idempotency_key=$2', [tenantId, idempotencyKey]); return result.rows[0] ? this.action(result.rows[0]) : null; }
   async updateAction(action: ActionRequest): Promise<ActionRequest> { await this.pool.query('UPDATE action_requests SET state=$1,result=$2,payload=$3 WHERE id=$4 AND tenant_id=$5', [action.state, action.result ? JSON.stringify(action.result) : null, JSON.stringify(action.payload), action.id, action.tenantId]); return action; }
-  async claimApprovedActions(workflowKey: string, limit: number): Promise<ActionRequest[]> {
-    const result = await this.pool.query<ActionRow>(`WITH candidates AS (
-        SELECT id FROM action_requests
-        WHERE workflow_key=$1 AND state='approved'
-        ORDER BY created_at, id
-        FOR UPDATE SKIP LOCKED
-        LIMIT $2
-      )
-      UPDATE action_requests AS actions
-      SET state='processing'
-      FROM candidates
-      WHERE actions.id=candidates.id
-      RETURNING actions.*`, [workflowKey, limit]);
+  async transitionAction(actionId: string, tenantId: string, fromState: ActionRequest['state'], toState: ActionRequest['state'], result: ActionRequest['result']): Promise<ActionRequest | null> {
+    const updated = await this.pool.query<ActionRow>('UPDATE action_requests SET state=$1,result=$2 WHERE id=$3 AND tenant_id=$4 AND state=$5 RETURNING *', [toState, result ? JSON.stringify(result) : null, actionId, tenantId, fromState]);
+    return updated.rows[0] ? this.action(updated.rows[0]) : null;
+  }
+  async claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null> {
+    const result = await this.pool.query<ActionRow>(`UPDATE action_requests SET state='processing' WHERE id=$1 AND workflow_key=$2 AND state='approved' RETURNING *`, [actionId, workflowKey]);
+    return result.rows[0] ? this.action(result.rows[0]) : null;
+  }
+  async claimActionsForWorkflow(n8nWorkflowId: string, workflowKey: string | undefined, limit: number): Promise<ActionRequest[]> {
+    const result = await this.pool.query<ActionRow>(`WITH candidate AS (
+      SELECT action.id
+      FROM action_requests AS action
+      JOIN intent_catalog_versions AS catalog
+        ON catalog.id = action.catalog_version_id
+       AND catalog.tenant_id = action.tenant_id
+      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(catalog.catalog_json->'workflowBindings', '[]'::jsonb)) AS binding(item)
+      WHERE action.state = 'approved'
+        AND ($2::text IS NULL OR action.workflow_key = $2)
+        AND binding.item->>'workflowKey' = action.workflow_key
+        AND binding.item->>'n8nWorkflowId' = $1
+        AND binding.item->>'active' = 'true'
+        AND lower(binding.item->>'sideEffectClass') IN ('crm_write', 'crm', 'human_review')
+      ORDER BY action.created_at, action.id
+      FOR UPDATE OF action SKIP LOCKED
+      LIMIT $3
+    )
+    UPDATE action_requests AS action
+       SET state = 'processing'
+      FROM candidate
+     WHERE action.id = candidate.id
+     RETURNING action.*`, [n8nWorkflowId, workflowKey ?? null, limit]);
     return result.rows.map((row) => this.action(row));
   }
   async listActions(tenantId: string): Promise<ActionRequest[]> { const result = await this.pool.query('SELECT * FROM action_requests WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId]); return result.rows.map((row) => this.action(row)); }
@@ -220,7 +239,7 @@ export class PostgresStore implements Store {
     return { sourceCounts: counts, ingestionJobs: jobCounts, sessions: Number(row?.sessions ?? 0), messages: Number(row?.messages ?? 0), actions: Number(row?.actions ?? 0), auditEvents: Number(row?.audit_events ?? 0) };
   }
 
-  private tenant(row: TenantRow): Tenant { return { id: row.id, name: row.name, slug: row.slug, status: row.status ?? 'active', publicChatEnabled: row.public_chat_enabled ?? true, publicOrigin: row.public_origin ?? null, createdAt: iso(row.created_at) }; }
+  private tenant(row: TenantRow): Tenant { return { id: row.id, name: row.name, slug: row.slug, status: row.status ?? 'active', publicChatEnabled: row.public_chat_enabled ?? true, publicOrigin: row.public_origin ?? null, catalogQueryNormalizationEnabled: row.catalog_query_normalization_enabled ?? false, createdAt: iso(row.created_at) }; }
   private channelCredential(row: ChannelCredentialRow): ChannelCredential { return { id: row.id, tenantId: row.tenant_id, channel: row.channel, authMode: row.auth_mode, keyId: row.key_id, secretCiphertext: row.secret_ciphertext, apiKeyHash: row.api_key_hash, active: row.active, createdAt: iso(row.created_at), revokedAt: row.revoked_at ? iso(row.revoked_at) : null }; }
   private domain(row: TenantDomainRow): TenantDomain { return { id: row.id, tenantId: row.tenant_id, hostname: row.hostname, createdAt: iso(row.created_at) }; }
   private user(row: UserRow): User { return { id: row.id, email: row.email, passwordHash: row.password_hash, role: row.role, tenantId: row.tenant_id, createdAt: iso(row.created_at) }; }

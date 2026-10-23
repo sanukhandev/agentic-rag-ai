@@ -8,7 +8,7 @@ import { createApp, isValidBase64 } from './app.js';
 import { MockWorkflowAdapter, signN8nPayload } from './actions.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import type { EmbeddingProvider } from './embedding.js';
-import type { ChatModel, ModelDraft } from './model.js';
+import type { ChatModel, ModelDraft, QueryNormalizationInput } from './model.js';
 import type { IntentCatalog } from './types.js';
 import { TokenVault } from './privacy.js';
 
@@ -17,14 +17,22 @@ class CapturingModel implements ChatModel {
   public readonly personaNames: string[] = [];
   public readonly ownerNames: string[] = [];
   public readonly conversations: Array<Array<{ role: 'user' | 'assistant'; content: string }>> = [];
+  public readonly followUpContexts: Array<Parameters<ChatModel['draft']>[0]['followUpContext']> = [];
   async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
     this.prompts.push(input.maskedMessage);
     this.personaNames.push(input.personaName);
     this.ownerNames.push(input.ownerName ?? '');
     this.conversations.push(input.conversation ?? []);
+    this.followUpContexts.push(input.followUpContext);
+    if (input.followUpContext?.leadCaptured && /internal escalation code/i.test(input.maskedMessage)) return { answer: 'No approved evidence supports that answer.', citationIds: [], proposedIntent: null };
     const evidence = input.evidence[0];
     return evidence ? { answer: evidence.content, citationIds: [evidence.citation.chunkId], proposedIntent: /contact/i.test(input.maskedMessage) ? 'lead.capture' : null } : { answer: 'No approved evidence supports that answer.', citationIds: [], proposedIntent: null };
   }
+}
+
+class ContextNormalizingModel extends CapturingModel {
+  public readonly normalizationInputs: QueryNormalizationInput[] = [];
+  async normalizeQuery(input: QueryNormalizationInput): Promise<string | null> { this.normalizationInputs.push(input); return input.maskedMessage; }
 }
 
 class InvalidCitationModel implements ChatModel {
@@ -64,6 +72,35 @@ class FailsOnceModel implements ChatModel {
 describe('API vertical slice', () => {
   it('refuses production startup with local model, embedding, workflow or worker fallbacks', () => {
     expect(() => createApp({ nodeEnv: 'production', jwtSecret: 'production-jwt-secret', tokenVault: new TokenVault('production-vault-secret') })).toThrow('Production Azure, embedding, n8n polling and ingestion adapters are required.');
+  });
+
+  it('keeps query normalization disabled by default and tenant-scoped when enabled', async () => {
+    const runtime = createApp({ nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-normalization-rollout@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Normalization Tenant', slug: 'normalization-tenant', adminEmail: 'admin-normalization@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-normalization@example.test', password: 'TenantA1Password' }).expect(200);
+    expect((await api.get('/api/v1/admin/features').set('Authorization', `Bearer ${admin.body.token}`).expect(200)).body).toEqual({ catalogQueryNormalizationEnabled: false });
+    expect((await api.patch('/api/v1/admin/features').set('Authorization', `Bearer ${admin.body.token}`).send({ catalogQueryNormalizationEnabled: true }).expect(200)).body).toEqual({ catalogQueryNormalizationEnabled: true });
+    expect((await runtime.store.getTenant(tenant.body.tenant.id))?.catalogQueryNormalizationEnabled).toBe(true);
+  });
+
+  it('does not reuse a contextual normalization across sessions', async () => {
+    const model = new ContextNormalizingModel();
+    const runtime = createApp({ nodeEnv: 'test', model, catalogQueryNormalizationEnabled: true });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-normalization-cache@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Normalization Cache Tenant', slug: 'normalization-cache-tenant', adminEmail: 'admin-normalization-cache@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-normalization-cache@example.test', password: 'TenantA1Password' }).expect(200);
+    await api.patch('/api/v1/admin/features').set('Authorization', `Bearer ${admin.body.token}`).send({ catalogQueryNormalizationEnabled: true }).expect(200);
+    const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'draft', sourceFileName: 'normalization-cache.xlsx', sourceHash: 'b'.repeat(64), parserVersion: 'test', catalog: { tenantScope: 'normalization-cache-tenant', intents: [{ intentKey: 'lead.capture', displayName: 'Request a demo', description: 'Capture a demo request', category: 'sales', workflowKey: 'crm.lead.create', minimumScore: 50, confidenceThreshold: 0.5, confirmationRequired: true, active: true, priority: 100, versionNote: '' }], signals: [{ intentKey: 'lead.capture', signalId: 'demo', signalType: 'phrase', value: 'I need a demo', language: 'en', matchMode: 'contains', weight: 80, relationGroup: null, notes: '' }], slots: [], relations: [], workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'normalization-cache', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }] } });
+    await runtime.store.publishIntentCatalogVersion(tenant.body.tenant.id, version.id);
+    const first = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: first.body.sessionId, message: 'I ned a demo', clientMessageId: 'normalization-cache-first' }).expect(200);
+    const second = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: second.body.sessionId, message: 'Hello', clientMessageId: 'normalization-cache-context' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: second.body.sessionId, message: 'I ned a demo', clientMessageId: 'normalization-cache-second' }).expect(200);
+    expect(model.normalizationInputs.filter((input) => input.maskedMessage === 'I ned a demo')).toHaveLength(2);
   });
 
   it('rejects invalid usage cost rates', () => {
@@ -159,7 +196,7 @@ describe('API vertical slice', () => {
     const farewellSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
     const farewell = await api.post('/api/v1/chat/messages').send({ sessionId: farewellSession.body.sessionId, message: 'That’s all, bye', clientMessageId: 'farewell-1' }).expect(200);
     expect(farewell.body).toMatchObject({ grounded: false, conversational: true, citations: [] });
-    expect(farewell.body.answer).toContain('lovely chatting');
+    expect(farewell.body.answer).toContain('conversation is now closed');
     await api.post('/api/v1/chat/messages').send({ sessionId: farewellSession.body.sessionId, message: 'Can we continue?', clientMessageId: 'farewell-2' }).expect(410).expect((response) => expect(response.body.error.code).toBe('SESSION_CLOSED'));
     const newerPersona = await api.post('/api/v1/admin/persona/drafts').set('Authorization', `Bearer ${adminToken}`).send({ name: 'Ava New', greeting: 'Welcome', personality: 'Warm', tone: 'Friendly', speakingStyle: 'Short', permittedLanguages: ['en'] }).expect(201);
     await api.post(`/api/v1/admin/persona/versions/${newerPersona.body.version.id}/publish`).set('Authorization', `Bearer ${adminToken}`).expect(200);
@@ -178,6 +215,10 @@ describe('API vertical slice', () => {
     await api.post('/api/v1/chat/messages').send({ sessionId: contextSession.body.sessionId, message: 'Tell me about services', clientMessageId: 'context-2' }).expect(200);
     await api.post('/api/v1/chat/messages').send({ sessionId: contextSession.body.sessionId, message: 'where is he working?', clientMessageId: 'context-3' }).expect(200);
     expect(model.conversations.at(-1)).toHaveLength(2);
+    const greetingContinuitySession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: greetingContinuitySession.body.sessionId, message: 'Hello', clientMessageId: 'context-greeting-1' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: greetingContinuitySession.body.sessionId, message: 'Tell me about pricing', clientMessageId: 'context-greeting-2' }).expect(200);
+    expect(model.conversations.at(-1)).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'user', content: 'Hello' })]));
     const duplicateGrounded = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-1' }).expect(200);
     expect(duplicateGrounded.body).toEqual(grounded.body);
     const duplicateHistory = await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}`).expect(200);
@@ -601,26 +642,140 @@ describe('API vertical slice', () => {
     expect(remotePayload.body).toMatchObject({ name: 'Alice', phone: '+971500000000', email: 'alice@example.com' });
     const linked = await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/remote`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, leadId: 'remote-123', remoteCrm: 'remote-crm-test' }).expect(200);
     expect(linked.body.lead).toMatchObject({ leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
+    const formatted = await api.post(`/api/v1/admin/crm/leads/${stored.body.lead.id}/summarize`).set('Authorization', `Bearer ${admin.body.token}`).send({}).expect(200);
+    expect(formatted.body).toMatchObject({ aiGenerated: false, lead: { summaryStatus: 'completed' } });
+    expect(formatted.body.lead.summary).toContain('CRM OPPORTUNITY SPECIFICATION');
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'crm-lead-remote-123' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'succeeded', phase: 'SUCCEEDED', pendingPrompt: null });
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'crm-lead-remote-123' }).expect(200);
     const unconsented = await runtime.store.createAction({ ...action!, id: randomUUID(), idempotencyKey: 'crm-another-purpose', payload: { ...action!.payload, contactConsent: false }, state: 'approved' });
     await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret')
       .send({ actionId: unconsented.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: unconsented.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) })
       .expect(422);
     expect((await runtime.store.listCrmLeads(tenant.body.tenant.id))).toHaveLength(1);
-    for (const missingField of ['email', 'phone'] as const) {
-      const incompletePayload = { ...action!.payload, contactConsent: true };
-      delete incompletePayload[missingField];
-      const incomplete = await runtime.store.createAction({ ...action!, id: randomUUID(), idempotencyKey: `crm-missing-${missingField}`, payload: incompletePayload, state: 'approved' });
-      await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret')
-        .send({ actionId: incomplete.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: incomplete.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) })
-        .expect(422);
-    }
+    const incompletePayload = { ...action!.payload, contactConsent: true };
+    delete incompletePayload.email;
+    delete incompletePayload.phone;
+    const incomplete = await runtime.store.createAction({ ...action!, id: randomUUID(), idempotencyKey: 'crm-missing-contact', payload: incompletePayload, state: 'approved' });
+    await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret')
+      .send({ actionId: incomplete.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: incomplete.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) })
+      .expect(422);
     const crm = await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', phone: '+971500000000' }, score: 70, summaryStatus: 'completed', leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
     expect(crm.body.items[0].summary).toContain('CRM OPPORTUNITY SPECIFICATION');
     expect(crm.body.items[0].summary).toContain('Customer Alice requested a demo via +971500000000.');
     expect(JSON.stringify(crm.body.items[0].conversation)).toContain('+971500000000');
     await api.get('/api/v1/admin/crm/leads').set('Authorization', `Bearer ${platform.body.token}`).set('x-tenant-id', tenant.body.tenant.id).expect(200);
+  });
+
+  it('rejects phone-only contact data before CRM sync', async () => {
+    const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'crm-phone-only-secret' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-crm-phone@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'CRM Phone Tenant', slug: 'crm-phone-tenant', adminEmail: 'admin-crm-phone@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const incomplete = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need a demo for my company next month. My name is Bob. My phone is +971500000001', clientMessageId: 'crm-phone-only-message' }).expect(200);
+    expect(incomplete.body.actionProposal).toBeNull();
+    expect(incomplete.body.answer).toContain('email address');
+    const action = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'lead.capture', intentKey: 'lead.capture', intentScore: 80, intentConfidence: 0.9, catalogVersionId: null, idempotencyKey: 'crm-phone-only-action', state: 'approved', opaqueReference: 'crm-phone-only-reference', payload: { name: '[NAME_1]', phone: '[PHONE_1]', contactConsent: true }, createdAt: new Date().toISOString(), result: null });
+    const messages = await runtime.store.listMessages(session.body.sessionId, tenant.body.tenant.id);
+    await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-phone-only-secret').send({ actionId: action.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: action.payload, intent: action.intentKey, score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })), completeAction: false }).expect(422).expect((response) => expect(response.body.error.code).toBe('LEAD_VALIDATION_FAILED'));
+  });
+
+  it('does not apply an old workflow completion to a newer conversation intent', async () => {
+    const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'internal-secret' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-stale-workflow@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Stale Workflow Tenant', slug: 'stale-workflow-tenant', adminEmail: 'admin-stale-workflow@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const current = await runtime.store.getSession(session.body.sessionId);
+    current!.conversationState = {
+      ...current!.conversationState!,
+      catalogVersionId: 'catalog-v2',
+      selectedIntentKey: 'company.setup',
+      workflowStatus: 'queued',
+      phase: 'QUEUED',
+      pendingPrompt: { id: 'new-intent-prompt', type: 'slot', intentKey: 'company.setup', slotKey: 'business_activity', issuedAt: new Date().toISOString() },
+    };
+    await runtime.store.updateSession(current!);
+    const oldAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'lead.capture', intentKey: 'lead.capture', catalogVersionId: 'catalog-v1', idempotencyKey: 'stale-workflow-completion', state: 'approved', opaqueReference: 'stale-workflow-reference', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
+
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: oldAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'old-completion' }).expect(200);
+
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ catalogVersionId: 'catalog-v2', selectedIntentKey: 'company.setup', workflowStatus: 'queued', phase: 'QUEUED', pendingPrompt: { id: 'new-intent-prompt' } });
+  });
+
+  it('keeps routine review and missing-information outcomes distinct from reconciliation', async () => {
+    const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'internal-secret' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'review-status-platform@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Review Status Tenant', slug: 'review-status-tenant', adminEmail: 'review-status-admin@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const reviewSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const reviewAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: reviewSession.body.sessionId, workflowKey: 'crm.support.review', intentKey: 'support.request', state: 'approved', opaqueReference: 'review-status-action', idempotencyKey: 'review-status-action', payload: {}, createdAt: new Date().toISOString(), result: null });
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: reviewAction.id, tenantId: tenant.body.tenant.id, state: 'human_review', externalReference: 'review-task-1' }).expect(200);
+    expect((await runtime.store.getAction(reviewAction.id))?.state).toBe('human_review');
+    expect((await runtime.store.getAction(reviewAction.id))?.result).toEqual({ externalReference: 'review-task-1' });
+    expect((await runtime.store.getSession(reviewSession.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'human_review', phase: 'HUMAN_REVIEW' });
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: reviewAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'review-completed-1' }).expect(200);
+    expect((await runtime.store.getAction(reviewAction.id))?.state).toBe('completed');
+    expect((await runtime.store.getSession(reviewSession.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'succeeded', phase: 'SUCCEEDED' });
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'review-status-admin@example.test', password: 'TenantA1Password' }).expect(200);
+    const staffAction = await runtime.store.createAction({ ...reviewAction, id: randomUUID(), idempotencyKey: 'review-status-staff-action', state: 'approved' });
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: staffAction.id, tenantId: tenant.body.tenant.id, state: 'human_review', externalReference: 'review-task-2' }).expect(200);
+    await api.post(`/api/v1/admin/workflow-runs/${staffAction.id}/transition`).set('Authorization', `Bearer ${admin.body.token}`).send({ state: 'completed', externalReference: 'review-completed-2' }).expect(200);
+    expect((await api.get('/api/v1/admin/audit').set('Authorization', `Bearer ${admin.body.token}`).expect(200)).body.items).toEqual(expect.arrayContaining([expect.objectContaining({ eventName: 'workflow.transition.human_review.completed', actorId: admin.body.user.id })]));
+    const partialSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const partialAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: partialSession.body.sessionId, workflowKey: 'crm.lead.create', intentKey: 'lead.capture', state: 'approved', opaqueReference: 'partial-status-action', idempotencyKey: 'partial-status-action', payload: {}, createdAt: new Date().toISOString(), result: null });
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: partialAction.id, tenantId: tenant.body.tenant.id, state: 'awaiting_customer', externalReference: 'missing-fields-1' }).expect(200);
+    expect((await runtime.store.getAction(partialAction.id))?.state).toBe('awaiting_customer');
+    expect((await runtime.store.getAction(partialAction.id))?.result).toEqual({ externalReference: 'missing-fields-1' });
+    expect((await runtime.store.getSession(partialSession.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'awaiting_customer', phase: 'SLOT_COLLECTION' });
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: partialAction.id, tenantId: tenant.body.tenant.id, state: 'processing', externalReference: 'resume-1' }).expect(200);
+    expect((await runtime.store.getAction(partialAction.id))?.state).toBe('processing');
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: partialAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'partial-completed-1' }).expect(200);
+    expect((await runtime.store.getAction(partialAction.id))?.state).toBe('completed');
+    const raceAction = await runtime.store.createAction({ ...partialAction, id: randomUUID(), idempotencyKey: 'transition-race-action', state: 'processing' });
+    const [raceCompleted, raceReconciled] = await Promise.all([
+      api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: raceAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'race-completed' }),
+      api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: raceAction.id, tenantId: tenant.body.tenant.id, state: 'reconcile_required', externalReference: 'race-reconcile' }),
+    ]);
+    expect([raceCompleted.status, raceReconciled.status].sort()).toEqual([200, 409]);
+    expect((await runtime.store.getAction(raceAction.id))?.state).toBe(raceCompleted.status === 200 ? 'completed' : 'reconcile_required');
+  });
+
+  it('polls all active CRM bindings registered to the current n8n workflow', async () => {
+    const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'internal-secret' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'poller-platform@example.test', password: 'Platform1Password' }).expect(201);
+    const createTenant = async (suffix: string, workflowKey: string, n8nWorkflowId: string, sideEffectClass = 'crm_write') => {
+      const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: `Poller Tenant ${suffix}`, slug: `poller-tenant-${suffix}`, adminEmail: `poller-${suffix}@example.test`, adminPassword: 'TenantA1Password' }).expect(201);
+      const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'poller.json', sourceHash: suffix.repeat(64), parserVersion: 'test', catalog: { tenantScope: tenant.body.tenant.slug, intents: [{ intentKey: `${workflowKey}.request`, displayName: 'Commercial request', description: 'Commercial request', category: 'company_formation', workflowKey, minimumScore: 0, confidenceThreshold: 0, confirmationRequired: true, active: true, priority: 1, versionNote: '' }], signals: [], slots: [], relations: [], workflowBindings: [{ workflowKey, n8nWorkflowId, webhookPath: `${workflowKey.replaceAll('.', '-')}`, payloadContract: 'crm-lead-v1', sideEffectClass, active: true }] } });
+      const session = await runtime.store.createSession(tenant.body.tenant.id);
+      const action = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.id, workflowKey, intentKey: `${workflowKey}.request`, catalogVersionId: version.id, idempotencyKey: `${workflowKey}-action`, state: 'approved', opaqueReference: `${workflowKey}-opaque`, payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
+      return { tenant, action };
+    };
+    const first = await createTenant('one', 'crm.lead.create', 'poller-workflow-one');
+    const second = await createTenant('two', 'crm.lead.create', 'poller-workflow-two');
+    const explicitReview = await createTenant('review-explicit', 'anc.crm.lead.capture', 'poller-workflow-review-explicit', 'human_review');
+    const polledReview = await createTenant('review-polled', 'anc.crm.lead.capture', 'poller-workflow-review-polled', 'human_review');
+    const wrongWorkflow = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: first.action.id, workflowKey: 'crm.lead.create', n8nWorkflowId: 'poller-workflow-two', limit: 1 }).expect(200);
+    expect(wrongWorkflow.body.items).toHaveLength(0);
+    expect((await runtime.store.getAction(first.action.id))?.state).toBe('approved');
+    const claimed = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ n8nWorkflowId: 'poller-workflow-one', limit: 10 }).expect(200);
+    expect(claimed.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([first.action.id]);
+    expect((await runtime.store.getAction(first.action.id))?.state).toBe('processing');
+    expect((await runtime.store.getAction(second.action.id))?.state).toBe('approved');
+    const secondClaimed = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ n8nWorkflowId: 'poller-workflow-two', limit: 10 }).expect(200);
+    expect(secondClaimed.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([second.action.id]);
+    expect((await runtime.store.getAction(second.action.id))?.state).toBe('processing');
+    const explicitReviewClaim = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: explicitReview.action.id, workflowKey: 'anc.crm.lead.capture', n8nWorkflowId: 'poller-workflow-review-explicit', limit: 1 }).expect(200);
+    expect(explicitReviewClaim.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([explicitReview.action.id]);
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: explicitReview.action.id, tenantId: explicitReview.tenant.body.tenant.id, state: 'human_review', externalReference: 'review-explicit' }).expect(200);
+    expect((await runtime.store.getAction(explicitReview.action.id))?.state).toBe('human_review');
+    const polledReviewClaim = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'internal-secret').send({ n8nWorkflowId: 'poller-workflow-review-polled', limit: 1 }).expect(200);
+    expect(polledReviewClaim.body.items.map((item: { actionId: string }) => item.actionId)).toEqual([polledReview.action.id]);
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: polledReview.action.id, tenantId: polledReview.tenant.body.tenant.id, state: 'human_review', externalReference: 'review-polled' }).expect(200);
+    expect((await runtime.store.getAction(polledReview.action.id))?.state).toBe('human_review');
   });
 
   it('refuses an expired proposal without recording consent or claiming registration', async () => {
@@ -661,11 +816,14 @@ describe('API vertical slice', () => {
 
   it('simulates a natural browser lead journey and exposes workflow summary and quality in tenant CRM', async () => {
     const workflow = new MockWorkflowAdapter();
-    const runtime = createApp({ nodeEnv: 'test', workflow, n8nCallbackSecret: 'crm-secret' });
+    const model = new CapturingModel();
+    const runtime = createApp({ nodeEnv: 'test', model, workflow, n8nCallbackSecret: 'crm-secret' });
     const api = request(runtime.app);
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-browser-lead@example.test', password: 'Platform1Password' }).expect(201);
     const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Browser Lead Tenant', slug: 'browser-lead-tenant', adminEmail: 'admin-browser-lead@example.test', adminPassword: 'TenantA1Password' }).expect(201);
     const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-browser-lead@example.test', password: 'TenantA1Password' }).expect(200);
+    const knowledge = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Packages and setup guide', mimeType: 'text/plain', audience: 'public', content: 'The Starter package includes company setup support. The approved setup steps and available timelines are described in the current company setup guide.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${knowledge.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
 
     const greeting = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Hello Nova', clientMessageId: 'browser-lead-1' }).expect(200);
@@ -684,6 +842,14 @@ describe('API vertical slice', () => {
     const confirmed = await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
     expect(confirmed.body.action.state).toBe('approved');
     expect(workflow.calls).toHaveLength(0);
+    const followUp = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What packages and setup steps are available?', clientMessageId: 'browser-lead-follow-up-1' }).expect(200);
+    expect(followUp.body.grounded).toBe(true);
+    expect(followUp.body.citations).not.toHaveLength(0);
+    expect(followUp.body.answer).toContain('Starter package');
+    expect(model.followUpContexts.some((context) => context?.leadCaptured === true)).toBe(true);
+    const farewell = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Nothing more I need', clientMessageId: 'browser-lead-farewell' }).expect(200);
+    expect(farewell.body.answer).toContain('conversation is now closed');
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Can we continue?', clientMessageId: 'browser-lead-after-farewell' }).expect(410);
 
     const actionId = contact.body.actionProposal.id as string;
     const action = await runtime.store.getAction(actionId);

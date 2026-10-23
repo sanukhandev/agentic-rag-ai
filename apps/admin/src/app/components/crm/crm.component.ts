@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -160,10 +160,10 @@ import { IconComponent } from '../shared/icon.component';
       </div>
 
       <!-- Leads Grid / List -->
-      <div *ngIf="filteredLeads.length > 0" class="space-y-5">
+      <div *ngIf="filteredLeads.length > 0" class="space-y-3">
         <div
           *ngFor="let lead of filteredLeads"
-          class="rounded-2xl border border-neutral-200/90 bg-white p-6 shadow-subtle transition-all hover:border-neutral-300 hover:shadow-card space-y-5"
+          class="rounded-2xl border border-neutral-200/90 bg-white p-4 shadow-subtle transition-all hover:border-neutral-300 hover:shadow-card"
         >
           <!-- Lead Card Header with Unmasked PII & Outreach Actions -->
           <div class="flex flex-col lg:flex-row lg:items-start justify-between gap-4 border-b border-neutral-100 pb-4">
@@ -174,7 +174,7 @@ import { IconComponent } from '../shared/icon.component';
               </div>
 
               <!-- Contact & Details -->
-              <div class="space-y-1">
+              <div class="space-y-1 min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
                   <h3 class="text-base font-bold text-neutral-900 leading-tight">
                     {{ lead.leadData.name || 'Unnamed Contact Request' }}
@@ -235,28 +235,33 @@ import { IconComponent } from '../shared/icon.component';
                     No direct contact details provided in chat
                   </span>
                 </div>
+                <span class="block text-[11px] text-neutral-500">Captured {{ lead.createdAt | date:'medium' }}</span>
               </div>
             </div>
 
-            <!-- Qualification Badges Row -->
-            <div class="flex flex-wrap items-center gap-2">
-              <app-badge variant="outline" [showDot]="false" [text]="lead.leadData.interest || lead.intent"></app-badge>
+            <div class="flex flex-wrap items-center justify-end gap-2">
+              <app-badge *ngIf="expandedLeadId === lead.id" variant="outline" [showDot]="false" [text]="lead.leadData.interest || lead.intent"></app-badge>
               <app-badge
+                *ngIf="expandedLeadId === lead.id"
                 [variant]="getQualityVariant(lead.quality)"
                 [showDot]="true"
                 [text]="(lead.quality || 'new') | titlecase"
               ></app-badge>
-              <app-badge variant="outline" [showDot]="false" [text]="'Score: ' + (lead.score || 0)"></app-badge>
+              <app-badge *ngIf="expandedLeadId === lead.id" variant="outline" [showDot]="false" [text]="'Score: ' + (lead.score || 0)"></app-badge>
               <app-badge
+                *ngIf="expandedLeadId === lead.id"
                 [variant]="lead.validationPass ? 'success' : 'error'"
                 [showDot]="true"
                 [text]="lead.validationPass ? 'Validation Passed' : 'Validation Failed'"
               ></app-badge>
+              <button type="button" (click)="toggleLead(lead.id)" [attr.aria-expanded]="expandedLeadId === lead.id" class="rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50">
+                {{ expandedLeadId === lead.id ? 'Hide details' : 'View details' }}
+              </button>
             </div>
           </div>
 
           <!-- Lead Details (Summary + Conversation Transcript) -->
-          <div class="grid gap-5 lg:grid-cols-2">
+          <div *ngIf="expandedLeadId === lead.id" class="grid gap-5 lg:grid-cols-2 mt-5">
             <!-- Left: Backend-generated CRM specification -->
             <div class="rounded-xl border border-neutral-100 bg-neutral-50/70 p-4 flex flex-col justify-between">
               <div>
@@ -264,22 +269,27 @@ import { IconComponent } from '../shared/icon.component';
                   <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">
                     CRM Opportunity Specification
                   </span>
-                  <span
-                    class="rounded px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider"
-                    [ngClass]="lead.summaryStatus === 'completed' ? 'bg-emerald-100 text-emerald-800' : 'bg-neutral-200 text-neutral-700'"
-                  >
-                    {{ lead.summaryStatus || 'pending' }}
-                  </span>
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="rounded px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider"
+                      [ngClass]="lead.summaryStatus === 'completed' ? 'bg-emerald-100 text-emerald-800' : 'bg-neutral-200 text-neutral-700'"
+                    >
+                      {{ summaryStatusLabel(lead.summaryStatus) }}
+                    </span>
+                    <button type="button" (click)="summarizeLead(lead)" [disabled]="summarizingLeadId === lead.id" class="rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-[10px] font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-60">
+                      {{ summarizingLeadId === lead.id ? 'Summarizing...' : 'AI summarize' }}
+                    </button>
+                  </div>
                 </div>
                 <pre *ngIf="lead.summary; else summaryPending" class="whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-3 font-mono text-[11px] leading-relaxed text-neutral-700">{{ lead.summary }}</pre>
                 <ng-template #summaryPending>
-                  <p class="text-xs sm:text-[13px] leading-relaxed text-neutral-500">Summary is being prepared by the backend...</p>
+                  <p class="text-xs sm:text-[13px] leading-relaxed text-neutral-500">{{ lead.summaryStatus === 'failed' ? 'Summary processing failed; retry the workflow.' : 'Summary is being prepared by the backend...' }}</p>
                 </ng-template>
                 <div *ngIf="lead.documents?.length" class="mt-4 border-t border-neutral-200/60 pt-3">
                   <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">Supporting documents</span>
                   <div *ngFor="let document of lead.documents" class="mt-2 flex items-center justify-between gap-2 rounded-lg bg-white p-2 text-xs">
                     <span class="min-w-0 truncate" [title]="document.fileName">{{ document.fileName }}</span>
-                    <span class="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase">{{ document.status }}</span>
+                    <span class="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase">{{ documentStatusLabel(document.status) }}</span>
                     <button type="button" (click)="downloadDocument(document.id, document.fileName)" class="shrink-0 text-[10px] font-semibold text-neutral-700 hover:text-neutral-950">Download</button>
                   </div>
                 </div>
@@ -293,58 +303,24 @@ import { IconComponent } from '../shared/icon.component';
               </div>
             </div>
 
-            <!-- Right: Interactive Conversation Transcript -->
-            <div class="rounded-xl border border-neutral-100 bg-neutral-50/70 p-4 space-y-3">
-              <div class="flex items-center justify-between pb-2 border-b border-neutral-200/60">
-                <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">
-                  Dialogue Transcript
-                </span>
-                <span class="text-[11px] text-neutral-500 font-mono">
-                  {{ lead.conversation.length }} turns
-                </span>
-              </div>
-
-              <!-- Message Bubbles Preview -->
-              <div class="max-h-64 overflow-y-auto space-y-2.5 pr-1">
-                <div
-                  *ngFor="let msg of lead.conversation"
-                  class="rounded-lg p-2.5 text-xs transition-colors"
-                  [ngClass]="msg.role === 'user' ? 'bg-white border border-neutral-200/80 text-neutral-900 shadow-2xs' : 'bg-neutral-900 text-white'"
-                >
-                  <div class="flex items-center justify-between gap-2 mb-1">
-                    <span
-                      class="text-[10px] font-bold uppercase tracking-wider"
-                      [ngClass]="msg.role === 'user' ? 'text-neutral-500' : 'text-neutral-300'"
-                    >
-                      {{ msg.role === 'user' ? 'Visitor' : 'Assistant' }}
-                    </span>
-                    <span
-                      *ngIf="msg.createdAt"
-                      class="text-[9px] font-mono opacity-60"
-                    >
-                      {{ msg.createdAt | date:'shortTime' }}
-                    </span>
-                  </div>
-                  <p class="whitespace-pre-wrap leading-relaxed">{{ msg.content }}</p>
+            <!-- Right: Conversation access -->
+            <div class="rounded-xl border border-neutral-100 bg-neutral-50/70 p-4 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between pb-2 mb-3 border-b border-neutral-200/60">
+                  <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">Conversation history</span>
+                  <span class="text-[11px] text-neutral-500 font-mono">{{ lead.conversation.length }} turns</span>
                 </div>
-
-                <div *ngIf="lead.conversation.length === 0" class="text-xs text-neutral-400 italic p-3 text-center">
-                  No turns recorded in session.
-                </div>
+                <p class="text-xs leading-relaxed text-neutral-500">Open the protected transcript when you need the full customer context.</p>
               </div>
-
-              <!-- Collapsible Raw JSON Details -->
-              <details class="pt-2 border-t border-neutral-200/60">
-                <summary class="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-neutral-400 hover:text-neutral-700 transition-colors">
-                  Inspect Raw Conversation JSON
-                </summary>
-                <pre class="mt-2 max-h-40 overflow-auto rounded bg-neutral-950 p-2.5 font-mono text-[10px] text-neutral-300 whitespace-pre-wrap break-words leading-tight">{{ lead.conversation | json }}</pre>
-              </details>
+              <button type="button" (click)="openTranscript(lead)" class="mt-5 inline-flex w-fit items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-800 hover:bg-neutral-50">
+                <app-icon name="chat" classNames="h-3.5 w-3.5"></app-icon>
+                Open chat transcript
+              </button>
             </div>
           </div>
 
           <!-- Lead Card Footer -->
-          <div class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-neutral-100 text-[11px] text-neutral-400">
+          <div *ngIf="expandedLeadId === lead.id" class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-neutral-100 text-[11px] text-neutral-400">
             <div class="flex items-center gap-3">
               <span>Captured: {{ lead.createdAt | date:'medium' }}</span>
               <span class="text-neutral-300">·</span>
@@ -355,17 +331,40 @@ import { IconComponent } from '../shared/icon.component';
               <span class="font-mono" title="Remote CRM reference ID">CRM reference: {{ lead.leadId || 'Pending' }}</span>
               <span class="text-neutral-300">·</span>
               <span *ngIf="lead.actionId" class="font-mono truncate max-w-[200px]" title="Action ID: {{ lead.actionId }}">
-                Action: {{ lead.actionId }}
+                Workflow action: {{ lead.actionId }}
               </span>
             </div>
-            <span class="font-mono text-[10px] text-neutral-400">Status: {{ lead.summaryStatus }}</span>
+            <span class="font-mono text-[10px] text-neutral-400">Status: {{ summaryStatusLabel(lead.summaryStatus) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div *ngIf="transcriptLead" class="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="transcript-title">
+        <div class="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div class="flex items-start justify-between gap-4 border-b border-neutral-200 px-5 py-4">
+            <div>
+              <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">Conversation transcript</p>
+              <h3 id="transcript-title" class="mt-1 text-lg font-bold text-neutral-900">{{ transcriptLead.leadData.name || 'Unnamed contact request' }}</h3>
+              <p class="mt-1 text-xs text-neutral-500">{{ transcriptLead.leadData.email || transcriptLead.leadData.phone || 'No direct contact details' }} · {{ transcriptLead.conversation.length }} turns</p>
+            </div>
+            <button type="button" (click)="closeTranscript()" aria-label="Close transcript" class="rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-50">Close</button>
+          </div>
+          <div class="flex-1 space-y-3 overflow-y-auto bg-neutral-50 p-5">
+            <div *ngFor="let msg of transcriptLead.conversation" class="rounded-xl p-3 text-sm" [ngClass]="msg.role === 'user' ? 'border border-neutral-200 bg-white text-neutral-900' : 'bg-neutral-900 text-white'">
+              <div class="mb-1 flex items-center justify-between gap-3 text-[10px] font-bold uppercase tracking-wider opacity-60">
+                <span>{{ msg.role === 'user' ? 'Visitor' : 'Assistant' }}</span>
+                <span>{{ msg.createdAt | date:'medium' }}</span>
+              </div>
+              <p class="whitespace-pre-wrap leading-relaxed">{{ msg.content }}</p>
+            </div>
+            <p *ngIf="transcriptLead.conversation.length === 0" class="text-center text-sm italic text-neutral-400">No turns recorded in session.</p>
           </div>
         </div>
       </div>
     </section>
   `
 })
-export class CrmComponent implements OnInit {
+export class CrmComponent implements OnInit, OnDestroy {
   private readonly state = inject(AdminStateService);
   private readonly cdr = inject(ChangeDetectorRef);
 
@@ -373,6 +372,10 @@ export class CrmComponent implements OnInit {
   isLoading = false;
   searchQuery = '';
   qualityFilter: 'all' | 'hot' | 'warm' | 'new' = 'all';
+  expandedLeadId: string | null = null;
+  transcriptLead: CrmLead | null = null;
+  summarizingLeadId: string | null = null;
+  private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   ngOnInit(): void {
     this.state.crmLeads$.subscribe((leads) => {
@@ -389,10 +392,45 @@ export class CrmComponent implements OnInit {
 
     // Proactively fetch latest leads on mount
     this.state.loadCrmLeads();
+    this.refreshTimer = setInterval(() => this.state.loadCrmLeads(), 5000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
   }
 
   refresh(): void {
     this.state.loadCrmLeads();
+  }
+
+  toggleLead(leadId: string): void {
+    this.expandedLeadId = this.expandedLeadId === leadId ? null : leadId;
+  }
+
+  openTranscript(lead: CrmLead): void {
+    this.transcriptLead = lead;
+  }
+
+  closeTranscript(): void {
+    this.transcriptLead = null;
+  }
+
+  summarizeLead(lead: CrmLead): void {
+    if (this.summarizingLeadId) return;
+    this.summarizingLeadId = lead.id;
+    this.state.crm.summarizeLead(lead.id).subscribe({
+      next: (response) => {
+        this.leads = this.leads.map((item) => item.id === response.lead.id ? response.lead : item);
+        if (this.transcriptLead?.id === response.lead.id) this.transcriptLead = response.lead;
+        this.summarizingLeadId = null;
+        this.cdr.markForCheck();
+        this.state.showToast('success', 'Summary updated', response.aiGenerated ? 'The AI formatted the CRM opportunity summary.' : 'The CRM summary was formatted.');
+      },
+      error: () => {
+        this.summarizingLeadId = null;
+        this.state.showToast('error', 'Summary failed', 'The summary could not be generated. Please try again.');
+      }
+    });
   }
 
   testChat(): void {
@@ -476,5 +514,13 @@ export class CrmComponent implements OnInit {
       default:
         return 'neutral';
     }
+  }
+
+  summaryStatusLabel(status: CrmLead['summaryStatus']): string {
+    return status === 'completed' ? 'Completed' : status === 'failed' ? 'Failed' : 'Processing';
+  }
+
+  documentStatusLabel(status: string): string {
+    return status === 'completed' ? 'Completed' : status === 'failed' ? 'Failed' : status === 'processing' ? 'Verifying' : status === 'reconciliation' ? 'Needs review' : 'Queued';
   }
 }

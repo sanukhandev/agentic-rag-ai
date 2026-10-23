@@ -33,6 +33,7 @@ workflowKey, registryVersion, tenantId (server-derived), actionId, correlationId
 - Name by domain + action + version, e.g. sales.lead-capture.v1.
 - Validate payload at entry. Use non-public authenticated triggers and least-privileged credentials.
 - Distinguish 202 accepted from completed. For async tasks, require signed callbacks or server-side polling with durable correlation.
+- A non-success n8n dispatch is acknowledged only after the action is moved to `RECONCILE_REQUIRED` and dead-lettered; this prevents a failed or provider-ambiguous execution from remaining `processing` or being replayed blindly.
 - Implement retry/backoff with poison queue/dead-letter handling; no automatic retry of non-idempotent side effects without provider support.
 - Keep workflow nodes minimal; business validation, evidence generation and PII mapping remain in Node.
 - Do not leak request bodies in n8n execution history; use redacted execution retention and appropriate role controls.

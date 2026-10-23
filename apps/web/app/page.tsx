@@ -5,6 +5,7 @@ import {
   formatNaturalAbstention,
   actionOutcomeText,
   isChatActionState,
+  isTerminalChatActionState,
   isValidTenantSlug,
   normalizeVoiceTranscript,
   renderMarkdown,
@@ -71,6 +72,32 @@ export default function Home() {
   const voiceStateRef = useRef<VoiceState>('idle');
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  const refreshDocuments = async (activeSessionId: string): Promise<ChatDocument[]> => {
+    const response = await fetch(`${api}/api/v1/chat/sessions/${activeSessionId}/documents`);
+    if (!response.ok) throw new Error('Could not refresh document status.');
+    const value = (await response.json()) as { items?: ChatDocument[] };
+    const items = value.items ?? [];
+    setDocuments(items);
+    return items;
+  };
+
+  const pollDocument = async (activeSessionId: string, documentId: string): Promise<void> => {
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      try {
+        const current = (await refreshDocuments(activeSessionId)).find((document) => document.id === documentId);
+        if (!current || !['queued', 'processing'].includes(current.status)) {
+          setDocumentStatus(current?.status === 'completed' ? 'Document verified and added to the enquiry.' : current?.status === 'failed' ? 'Document processing failed. You can upload a corrected file.' : 'Document requires review before it can be used.');
+          return;
+        }
+        setDocumentStatus(current.status === 'processing' ? 'Document is being verified…' : 'Document is queued for verification…');
+      } catch {
+        // Keep the last visible status; the next poll can recover from a transient read failure.
+      }
+    }
+    setDocumentStatus('Document verification is still in progress. You can continue chatting.');
+  };
+
   const appendActionOutcome = (proposalId: string, state: ChatActionState) => {
     const content = actionOutcomeText(state);
     if (!content) return;
@@ -119,6 +146,7 @@ export default function Home() {
       setConfig(null);
       setSessionId(null);
       setMessages([]);
+      setDocuments([]);
       return;
     }
 
@@ -133,6 +161,7 @@ export default function Home() {
     if (!savedSession) {
       setSessionId(null);
       setMessages([]);
+      setDocuments([]);
       return;
     }
 
@@ -141,6 +170,7 @@ export default function Home() {
         if (!response.ok) throw new Error('Saved session is unavailable.');
         const body = (await response.json()) as { messages: ChatHistoryMessage[] };
         setSessionId(savedSession);
+        void refreshDocuments(savedSession).catch(() => setDocuments([]));
         const restored: DisplayMessage[] = body.messages.map((m, idx) => ({
           id: `restored-${idx}`,
           role: m.role,
@@ -156,6 +186,7 @@ export default function Home() {
         window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
         setSessionId(null);
         setMessages([]);
+        setDocuments([]);
       });
   }, [tenantSlug]);
 
@@ -471,10 +502,14 @@ export default function Home() {
       const response = await fetch(`${api}/api/v1/chat/sessions/${activeSession}/documents`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fileName: selectedFile.name, mimeType: selectedFile.type, contentBase64: base64, processingConsent: true }) });
       const body = (await response.json()) as { document?: ChatDocument; error?: { message?: string } };
       if (!response.ok) throw new Error(body.error?.message ?? 'The document could not be registered.');
-      setDocumentStatus('Registered. OCR is processing in the background.');
+      setDocumentStatus('Registered. Document verification is starting…');
       setSelectedFile(null); setUploadConsent(false); if (documentInputRef.current) documentInputRef.current.value = '';
-      if (body.document) setDocuments((current) => [body.document!, ...current.filter((item) => item.id !== body.document!.id)]);
-      window.setTimeout(() => { void fetch(`${api}/api/v1/chat/sessions/${activeSession}/documents`).then((result) => result.json()).then((value: { items?: ChatDocument[] }) => setDocuments(value.items ?? [])).catch(() => undefined); }, 2000);
+      if (body.document) {
+        setDocuments((current) => [body.document!, ...current.filter((item) => item.id !== body.document!.id)]);
+        void pollDocument(activeSession, body.document.id);
+      } else {
+        await refreshDocuments(activeSession);
+      }
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'The document could not be registered.'); setDocumentStatus(''); }
     finally { setUploading(false); }
   };
@@ -517,16 +552,16 @@ export default function Home() {
             : {
                 ...m,
                 actionState: state,
-                actionProposal: state === 'completed' || state === 'failed' ? null : m.actionProposal
+                actionProposal: isTerminalChatActionState(state) ? null : m.actionProposal
               }
         )
       );
       if (state === 'approved' || state === 'processing') appendActionOutcome(proposalId, state);
-      if (state === 'completed' || state === 'failed') {
+      if (isTerminalChatActionState(state)) {
         appendActionOutcome(proposalId, state);
         return;
       }
-      for (let attempt = 0; attempt < 30; attempt += 1) {
+      for (let attempt = 0; attempt < 90; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         const statusResponse = await fetch(`${api}/api/v1/chat/actions/${proposalId}?sessionId=${encodeURIComponent(activeSessionId)}`);
         if (!statusResponse.ok) continue;
@@ -536,9 +571,9 @@ export default function Home() {
         setMessages((prev) => prev.map((m) => m.actionProposal?.id !== proposalId ? m : {
           ...m,
           actionState: nextState,
-          actionProposal: nextState === 'completed' || nextState === 'failed' ? null : m.actionProposal
+          actionProposal: isTerminalChatActionState(nextState) ? null : m.actionProposal
         }));
-        if (nextState === 'completed' || nextState === 'failed') {
+        if (isTerminalChatActionState(nextState)) {
           appendActionOutcome(proposalId, nextState);
           return;
         }

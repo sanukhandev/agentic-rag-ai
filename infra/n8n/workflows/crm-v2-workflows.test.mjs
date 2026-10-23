@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const files = ['CRM01ContactLookup.json', 'CRM02ContactUpsert.json', 'CRM03SummarySync.json', 'DOC01DocumentProcessing.json', ...Array.from({ length: 13 }, (_, index) => `INTENTancfzint${String(index + 1).padStart(2, '0')}.json`)];
+const claimFiles = ['01-lead-capture-and-crm.json', '03-anc-lead-capture-wf-1.json', ...files];
 
 test('CRM v2 workflow exports are tenant-neutral and server-authenticated', async () => {
   for (const file of files) {
@@ -27,6 +28,18 @@ test('CRM v2 workflow exports are tenant-neutral and server-authenticated', asyn
       assert.match(terminal.parameters.url, /workflow-events\/complete/);
       assert.ok(workflow.connections['Verify Remote CRM Completion'].main[0].some((item) => item.node === 'Finalize Claimed Action'));
       assert.match(workflow.notes, /INACTIVE TEMPLATE/);
+    }
+  }
+});
+
+test('every checked-in workflow claim includes its own n8n identity and stays single-item', async () => {
+  for (const file of claimFiles) {
+    const workflow = JSON.parse(await readFile(new URL(`./${file}`, import.meta.url), 'utf8'));
+    const claimNodes = workflow.nodes.filter((node) => node.type === 'n8n-nodes-base.httpRequest' && String(node.parameters.url ?? '').includes('/api/v1/internal/workflow-events/claim'));
+    assert.ok(claimNodes.length, `${file} must contain a workflow claim request`);
+    for (const node of claimNodes) {
+      assert.match(node.parameters.jsonBody ?? '', /n8nWorkflowId:\s*\$workflow\.id/);
+      assert.match(node.parameters.jsonBody ?? '', /limit:\s*1/);
     }
   }
 });

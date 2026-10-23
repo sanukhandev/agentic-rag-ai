@@ -16,6 +16,7 @@ export const tenantSchema = z.object({ name: z.string().trim().min(2).max(120), 
 export const memberSchema = z.object({ email: z.string().email(), password: passwordSchema, role: z.enum(['tenant_editor', 'tenant_viewer', 'tenant_agent']) });
 export const domainSchema = z.object({ hostname: z.string().trim().toLowerCase().regex(/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/, 'A valid hostname is required.') });
 export const channelSchema = z.object({ publicOrigin: z.union([z.literal(''), z.string().url().refine((value) => { const url = new URL(value); return (url.protocol === 'http:' || url.protocol === 'https:') && url.pathname === '/' && !url.search && !url.hash; }, 'A public origin must be an HTTP(S) origin without a path.')]), publicChatEnabled: z.boolean().optional() });
+export const featureSchema = z.object({ catalogQueryNormalizationEnabled: z.boolean() }).strict();
 export const channelCredentialSchema = z.object({ channel: z.string().trim().toLowerCase().regex(/^[a-z][a-z0-9_-]{1,31}$/, 'Channel must be 2-32 lowercase characters, digits, underscores or hyphens.'), authMode: z.enum(['hmac', 'api_key']).default('hmac') });
 export const personaSchema = z.object({
   name: safePersonaText(80),
@@ -69,11 +70,13 @@ export const crmLeadSchema = z.object({
   completeAction: z.boolean().default(true)
 });
 export const crmSummarySchema = z.object({ tenantId: z.string().uuid(), summary: z.string().trim().min(1).max(20_000), status: z.enum(['completed', 'failed']) });
+export const crmAdminSummarySchema = z.object({}).strict();
 export const crmQualificationSchema = z.object({ tenantId: z.string().uuid(), score: z.number().int().min(0).max(100), summary: z.string().trim().min(1).max(20_000) });
 export const crmRemoteSchema = z.object({ tenantId: z.string().uuid(), leadId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteCrm: z.string().trim().min(1).max(80).regex(/^[A-Za-z][A-Za-z0-9._:-]*$/u) });
 export const crmRemotePayloadSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid() });
-export const workflowClaimSchema = z.object({ workflowKey: z.string().trim().regex(/^[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)+$/i), contract: z.string().trim().min(1).max(120).optional(), limit: z.number().int().min(1).max(50).default(10) });
-export const workflowCompletionSchema = z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['completed', 'failed', 'reconcile_required']), externalReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u).optional() });
+export const workflowClaimSchema = z.object({ actionId: z.string().uuid().optional(), workflowKey: z.string().trim().regex(/^[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)+$/i).optional(), n8nWorkflowId: z.string().trim().min(1).max(120), contract: z.string().trim().min(1).max(120).optional(), limit: z.number().int().min(1).max(50).default(10) });
+export const workflowCompletionSchema = z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review']), externalReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u).optional() });
+export const workflowTransitionSchema = z.object({ state: z.enum(['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review']), externalReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u).optional() });
 export const crmQualitySchema = z.object({ tenantId: z.string().uuid(), score: z.number().int().min(0).max(100), qualityWorkflowKey: z.string().trim().min(1).max(80), catalogVersionId: z.string().uuid(), intentKey: z.string().trim().min(1).max(80) });
 export const documentUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.string().trim().min(1).max(160), contentBase64: z.string().min(1).max(MAX_DOCUMENT_BASE64_CHARS), processingConsent: z.literal(true), primaryIntentKey: z.string().trim().min(1).max(80).optional() });
 export const documentResultSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), extractedText: z.string().max(100_000).default(''), summary: z.string().max(20_000).default(''), executionReference: z.string().trim().max(200).regex(/^[A-Za-z0-9._:-]+$/u).optional() });

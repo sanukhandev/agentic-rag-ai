@@ -1,4 +1,4 @@
-import type { IntentCatalog, IntentCatalogDocumentPolicy, IntentCatalogDocumentSettings, IntentCatalogExtensionRow, IntentCatalogIntent, IntentCatalogQualityRule, IntentCatalogSlot, IntentCatalogVersion } from './types.js';
+import type { IntentCatalog, IntentCatalogDocumentPolicy, IntentCatalogDocumentSettings, IntentCatalogExtensionRow, IntentCatalogIntent, IntentCatalogQualityRule, IntentCatalogSlot, IntentCatalogVersion, IntentCatalogWorkflowBinding } from './types.js';
 
 export interface IntentResolution {
   intentKey: string | null;
@@ -15,6 +15,21 @@ export interface IntentResolution {
   reason: string;
 }
 
+export interface IntentContinuityInput {
+  currentText: string;
+  contextText?: string;
+  slotValues?: Record<string, string>;
+  selectedIntentKey?: string | null;
+  pendingPromptType?: 'clarification' | 'slot' | 'consent' | 'confirmation' | 'document' | null;
+}
+
+export interface IntentContinuityResolution {
+  primary: IntentResolution;
+  current: IntentResolution;
+  context: IntentResolution;
+  secondaryIntentKeys: string[];
+}
+
 export interface CatalogValidationResult {
   errors: string[];
   catalog: IntentCatalog | null;
@@ -26,7 +41,28 @@ const bool = (value: unknown): boolean => value === true;
 const finite = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) ? value : NaN;
 const clamp = (value: number): number => Math.max(0, Math.min(100, Math.round(value)));
 const normalize = (value: string): string => value.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim();
+const normalizeCatalogPhrase = (value: string): string => normalize(value)
+  .replace(/\bset[\s-]?up\b/g, 'start')
+  .replace(/\b(?:establish|establishing|launch|launching|open|opening|create|creating|register|registering)\b/g, 'start');
+const phraseTokens = (value: string): string[] => normalizeCatalogPhrase(value).match(/[\p{L}\p{N}]+/gu) ?? [];
+const matchesCatalogPhrase = (input: string, signal: string): boolean => {
+  const inputTokens = phraseTokens(input);
+  const signalTokens = phraseTokens(signal);
+  if (!signalTokens.length) return false;
+  let cursor = 0;
+  let insertedTokens = 0;
+  for (const token of signalTokens) {
+    const matchIndex = inputTokens.indexOf(token, cursor);
+    if (matchIndex < 0) return false;
+    insertedTokens += matchIndex - cursor;
+    if (insertedTokens > 3) return false;
+    cursor = matchIndex + 1;
+  }
+  return true;
+};
 const keyPattern = /^[a-z][a-z0-9._-]{1,79}$/;
+export const isCrmWriteBinding = (binding: Pick<IntentCatalogWorkflowBinding, 'sideEffectClass'> | null | undefined): boolean => ['crm_write', 'crm'].includes(text(binding?.sideEffectClass).toLocaleLowerCase('en-US'));
+export const isWorkflowClaimableBinding = (binding: Pick<IntentCatalogWorkflowBinding, 'sideEffectClass'> | null | undefined): boolean => isCrmWriteBinding(binding) || text(binding?.sideEffectClass).toLocaleLowerCase('en-US') === 'human_review';
 const safePath = (value: string): boolean => /^\/[A-Za-z0-9._/-]{1,120}$/.test(value) && !value.includes('..');
 const extensionRows = (value: Record<string, unknown>, name: string): IntentCatalogExtensionRow[] => Array.isArray(value[name]) ? value[name].map((item) => {
   const row = record(item);
@@ -168,7 +204,7 @@ export const catalogSlotQuestion = (version: IntentCatalogVersion, intentKey: st
   const slot = version.catalog.slots.find((candidate) => candidate.intentKey === intentKey && candidate.slotKey === slotKey);
   if (!slot) return 'To continue, could you provide the requested information?';
   if (slot.promptKey === 'lead.ask_name') return 'What name should I use?';
-  if (slot.promptKey === 'lead.ask_contact') return slot.slotKey === 'email' ? 'What email address should I use?' : 'What phone number, including country code, should I use?';
+  if (slot.promptKey === 'lead.ask_contact') return slot.alternativeGroup === 'contact' ? 'What’s the best email address or phone number to reach you on?' : slot.slotKey === 'email' ? 'What email address should I use?' : 'What phone number, including country code, should I use?';
   if (slot.promptKey === 'lead.ask_phone') return 'What phone number, including country code, should I use?';
   return `To continue, could you share your ${slotLabel(slot)}?`;
 };
@@ -186,23 +222,91 @@ export const catalogIntentClarification = (version: IntentCatalogVersion, intent
     : `To make sure I route this correctly, are you looking to ${intent.displayName.toLocaleLowerCase('en-US')}?`;
 };
 
-export const resolveIntent = (version: IntentCatalogVersion, inputText: string, slotValuesByKey: Record<string, string> = {}): IntentResolution => {
+type RankedIntent = { intent: IntentCatalogVersion['catalog']['intents'][number]; score: number; confidence: number; matchedCount: number; strongPhraseMatched: boolean; missing: string[] };
+
+const rankIntentCandidates = (version: IntentCatalogVersion, inputText: string, slotValuesByKey: Record<string, string>): RankedIntent[] => {
   const input = normalize(inputText);
-  const candidates = version.catalog.intents.map((intent) => {
+  return version.catalog.intents.map((intent) => {
     const signals = version.catalog.signals.filter((signal) => signal.intentKey === intent.intentKey);
-    const matched = signals.filter((signal) => signal.value && (signal.signalType === 'keyword' ? new RegExp(`\\b${normalize(signal.value).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\b`, 'i').test(input) : input.includes(normalize(signal.value))));
+    const matched = signals.filter((signal) => signal.value && (signal.signalType === 'keyword' ? new RegExp(`\\b${normalize(signal.value).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\b`, 'i').test(input) : input.includes(normalize(signal.value)) || matchesCatalogPhrase(input, signal.value)));
     const signalScore = matched.reduce((sum, signal) => sum + signal.weight, 0);
     const filled = slotValues(intent.intentKey, version.catalog.slots, slotValuesByKey);
     const slotScore = Math.min(50, filled.size * 20);
     const score = clamp(signalScore + slotScore);
-    return { intent, score, confidence: Math.min(1, score / 100), matchedCount: matched.filter((signal) => signal.signalType !== 'exclusion').length, missing: missingSlotKeys(intent.intentKey, version.catalog.slots, slotValuesByKey) };
+    return { intent, score, confidence: Math.min(1, score / 100), matchedCount: matched.filter((signal) => signal.signalType !== 'exclusion').length, strongPhraseMatched: matched.some((signal) => signal.signalType === 'phrase' && signal.weight >= intent.minimumScore), missing: missingSlotKeys(intent.intentKey, version.catalog.slots, slotValuesByKey) };
   }).filter((candidate) => candidate.matchedCount > 0).sort((left, right) => right.score - left.score || right.intent.priority - left.intent.priority);
-  const best = candidates[0];
-  if (!best) return { intentKey: null, interest: null, workflowKey: null, score: 0, confidence: 0, catalogVersionId: version.id, confirmationRequired: false, missingSlots: [], actionAllowed: false, ambiguous: false, runnerUpIntentKey: null, reason: 'no_signal' };
-  const runnerUp = candidates[1];
+};
+
+const emptyResolution = (version: IntentCatalogVersion): IntentResolution => ({ intentKey: null, interest: null, workflowKey: null, score: 0, confidence: 0, catalogVersionId: version.id, confirmationRequired: false, missingSlots: [], actionAllowed: false, ambiguous: false, runnerUpIntentKey: null, reason: 'no_signal' });
+
+const resolutionFrom = (version: IntentCatalogVersion, candidates: RankedIntent[], index = 0): IntentResolution => {
+  const best = candidates[index];
+  if (!best) return emptyResolution(version);
+  const runnerUp = candidates.find((candidate, candidateIndex) => candidateIndex !== index);
   const ambiguous = Boolean(runnerUp && Math.abs(best.score - runnerUp.score) <= 10 && best.intent.priority === runnerUp.intent.priority);
   const binding = version.catalog.workflowBindings.find((item) => item.workflowKey === best.intent.workflowKey);
-  const thresholdMet = best.score >= best.intent.minimumScore && best.confidence >= best.intent.confidenceThreshold;
+  const scoreMet = best.score >= best.intent.minimumScore;
+  const thresholdMet = scoreMet && best.confidence >= best.intent.confidenceThreshold;
+  const collectionQualified = thresholdMet || (scoreMet && best.strongPhraseMatched);
   const actionAllowed = best.intent.active && Boolean(binding?.active) && thresholdMet && !ambiguous && best.missing.length === 0;
-  return { intentKey: best.intent.intentKey, interest: best.intent.displayName, workflowKey: binding?.active ? best.intent.workflowKey : null, score: best.score, confidence: best.confidence, catalogVersionId: version.id, confirmationRequired: best.intent.confirmationRequired, missingSlots: best.missing, actionAllowed, ambiguous, runnerUpIntentKey: runnerUp?.intent.intentKey ?? null, reason: !best.intent.active ? 'intent_inactive' : !binding?.active ? 'workflow_inactive' : ambiguous ? 'ambiguous' : !thresholdMet ? 'below_threshold' : best.missing.length ? 'missing_slots' : 'matched' };
+  const reason = !best.intent.active ? 'intent_inactive' : !binding?.active ? 'workflow_inactive' : ambiguous ? 'ambiguous' : !collectionQualified ? 'below_threshold' : best.missing.length ? 'missing_slots' : !thresholdMet ? 'below_threshold' : 'matched';
+  return { intentKey: best.intent.intentKey, interest: best.intent.displayName, workflowKey: binding?.active ? best.intent.workflowKey : null, score: best.score, confidence: best.confidence, catalogVersionId: version.id, confirmationRequired: best.intent.confirmationRequired, missingSlots: best.missing, actionAllowed, ambiguous, runnerUpIntentKey: runnerUp?.intent.intentKey ?? null, reason };
+};
+
+const relatedIntent = (version: IntentCatalogVersion, left: string, right: string): boolean => version.catalog.relations.some((relation) => (relation.sourceIntent === left && relation.relatedIntent === right) || (relation.sourceIntent === right && relation.relatedIntent === left));
+
+export const resolveIntent = (version: IntentCatalogVersion, inputText: string, slotValuesByKey: Record<string, string> = {}): IntentResolution => resolutionFrom(version, rankIntentCandidates(version, inputText, slotValuesByKey));
+
+export const resolveIntentContinuity = (version: IntentCatalogVersion, input: IntentContinuityInput): IntentContinuityResolution => {
+  const slotValuesByKey = input.slotValues ?? {};
+  const clarificationStopWords = new Set(['a', 'am', 'for', 'have', 'i', 'is', 'it', 'my', 'need', 'please', 'the', 'to', 'want']);
+  const meaningfulTokens = (value: string): string[] => normalize(value).replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ').filter((token) => token.length >= 4 && !clarificationStopWords.has(token));
+  const promoteExplicitReply = (candidates: RankedIntent[]): RankedIntent[] => candidates.map((candidate) => {
+    if (!input.selectedIntentKey || candidate.intent.intentKey !== input.selectedIntentKey) return candidate;
+    const normalizedCurrent = normalize(input.currentText);
+    const isShortExactSignal = normalizedCurrent.split(' ').length <= 8 && version.catalog.signals.some((signal) => signal.intentKey === candidate.intent.intentKey && signal.signalType !== 'exclusion' && normalize(signal.value) === normalizedCurrent);
+    if (!isShortExactSignal) return candidate;
+    const score = Math.max(candidate.score, candidate.intent.minimumScore, Math.ceil(candidate.intent.confidenceThreshold * 100));
+    return { ...candidate, score, confidence: Math.min(1, score / 100) };
+  });
+  const addClarificationSynonym = (candidates: RankedIntent[]): RankedIntent[] => {
+    if (!input.selectedIntentKey || normalize(input.currentText).split(' ').length > 8) return candidates;
+    const intent = version.catalog.intents.find((candidate) => candidate.intentKey === input.selectedIntentKey);
+    const currentTokens = meaningfulTokens(input.currentText);
+    const matchesCatalogVocabulary = intent && currentTokens.some((token) => version.catalog.signals.some((signal) => signal.intentKey === intent.intentKey && signal.signalType !== 'exclusion' && meaningfulTokens(signal.value).includes(token)));
+    if (!intent || !matchesCatalogVocabulary) return candidates;
+    const score = Math.max(intent.minimumScore, Math.ceil(intent.confidenceThreshold * 100));
+    if (candidates.some((candidate) => candidate.intent.intentKey === input.selectedIntentKey)) return candidates.map((candidate) => candidate.intent.intentKey === input.selectedIntentKey ? { ...candidate, score: Math.max(candidate.score, score), confidence: Math.min(1, Math.max(candidate.confidence, score / 100)) } : candidate);
+    return [{ intent, score, confidence: Math.min(1, score / 100), matchedCount: 1, strongPhraseMatched: false, missing: missingSlotKeys(intent.intentKey, version.catalog.slots, slotValuesByKey) }, ...candidates];
+  };
+  const currentCandidates = addClarificationSynonym(promoteExplicitReply(rankIntentCandidates(version, input.currentText, slotValuesByKey)));
+  const contextCandidates = addClarificationSynonym(promoteExplicitReply(rankIntentCandidates(version, input.contextText?.trim() || input.currentText, slotValuesByKey)));
+  const current = resolutionFrom(version, currentCandidates);
+  const context = resolutionFrom(version, contextCandidates);
+  const selected = input.selectedIntentKey
+    ? contextCandidates.find((candidate) => candidate.intent.intentKey === input.selectedIntentKey)
+      ?? currentCandidates.find((candidate) => candidate.intent.intentKey === input.selectedIntentKey)
+      ?? (input.pendingPromptType ? (() => {
+        const intent = version.catalog.intents.find((candidate) => candidate.intentKey === input.selectedIntentKey);
+        return intent ? { intent, score: Math.max(intent.minimumScore, Math.ceil(intent.confidenceThreshold * 100)), confidence: Math.max(intent.confidenceThreshold, intent.minimumScore / 100), matchedCount: 0, strongPhraseMatched: false, missing: missingSlotKeys(intent.intentKey, version.catalog.slots, slotValuesByKey) } : undefined;
+      })() : undefined)
+    : undefined;
+  const best = contextCandidates[0] ?? currentCandidates[0];
+  let primary = context;
+  const currentTop = currentCandidates[0];
+  const currentIsStrong = Boolean(currentTop && currentTop.score >= currentTop.intent.minimumScore && currentTop.confidence >= currentTop.intent.confidenceThreshold);
+  const collectingSelectedIntent = Boolean(selected && (input.pendingPromptType === 'clarification' || input.pendingPromptType === 'slot' || input.pendingPromptType === 'consent' || input.pendingPromptType === 'document') && (!currentTop || currentTop.intent.intentKey === selected.intent.intentKey || !currentIsStrong));
+  if (collectingSelectedIntent && selected) {
+    const score = Math.max(selected.score, selected.intent.minimumScore, Math.ceil(selected.intent.confidenceThreshold * 100));
+    primary = resolutionFrom(version, [{ ...selected, score, confidence: Math.min(1, score / 100) }]);
+  } else if (selected && best && best.intent.intentKey !== selected.intent.intentKey) {
+    const currentTop = currentCandidates[0];
+    const currentIsStrong = Boolean(currentTop && currentTop.score >= currentTop.intent.minimumScore && currentTop.confidence >= currentTop.intent.confidenceThreshold);
+    const switchPrimary = Boolean(currentTop && currentTop.intent.intentKey !== selected.intent.intentKey && currentIsStrong && !relatedIntent(version, selected.intent.intentKey, currentTop.intent.intentKey));
+    primary = switchPrimary && currentTop ? resolutionFrom(version, [currentTop]) : resolutionFrom(version, [selected, ...contextCandidates.filter((candidate) => candidate.intent.intentKey !== selected.intent.intentKey)]);
+  } else if (selected && !best) {
+    primary = resolutionFrom(version, [selected]);
+  }
+  const secondaryIntentKeys = [...new Set([...contextCandidates, ...currentCandidates].map((candidate) => candidate.intent.intentKey).filter((intentKey) => intentKey !== primary.intentKey))].slice(0, 8);
+  return { primary, current, context, secondaryIntentKeys };
 };

@@ -1,7 +1,7 @@
 export type Role = 'platform_admin' | 'tenant_admin' | 'tenant_editor' | 'tenant_viewer' | 'tenant_agent';
 export type Audience = 'public' | 'internal';
 export type SourceStatus = 'awaiting_review' | 'active' | 'revoked';
-export type ActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'unknown';
+export type ActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'awaiting_customer' | 'human_review' | 'unknown';
 export type TenantStatus = 'provisioning' | 'active' | 'suspended' | 'archived';
 export type IngestionJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 export type SupportingDocumentStatus = 'uploaded' | 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
@@ -39,8 +39,8 @@ export interface OutboxEvent {
   lastError: string | null;
 }
 
-export type ConversationPhase = 'DISCOVERY' | 'INTENT_CLARIFICATION' | 'SLOT_COLLECTION' | 'CONTACT_COLLECTION' | 'CONSENT_PENDING' | 'DOCUMENT_COLLECTION' | 'ACTION_CONFIRMATION' | 'QUEUED' | 'SUCCEEDED' | 'RECONCILE_REQUIRED' | 'FAILED';
-export type ConversationWorkflowStatus = 'none' | 'queued' | 'processing' | 'succeeded' | 'reconcile_required' | 'failed';
+export type ConversationPhase = 'DISCOVERY' | 'INTENT_CLARIFICATION' | 'SLOT_COLLECTION' | 'CONTACT_COLLECTION' | 'CONSENT_PENDING' | 'DOCUMENT_COLLECTION' | 'ACTION_CONFIRMATION' | 'QUEUED' | 'SUCCEEDED' | 'RECONCILE_REQUIRED' | 'HUMAN_REVIEW' | 'FAILED';
+export type ConversationWorkflowStatus = 'none' | 'queued' | 'processing' | 'succeeded' | 'reconcile_required' | 'human_review' | 'awaiting_customer' | 'failed';
 
 export interface PendingPrompt {
   id: string;
@@ -214,6 +214,7 @@ export interface Tenant {
   status: TenantStatus;
   publicChatEnabled: boolean;
   publicOrigin: string | null;
+  catalogQueryNormalizationEnabled: boolean;
   createdAt: string;
 }
 
@@ -483,6 +484,7 @@ export interface Store {
   setTenantStatus(id: string, status: TenantStatus): Promise<Tenant | null>;
   setTenantPublicOrigin(id: string, publicOrigin: string | null): Promise<Tenant | null>;
   setTenantPublicChatEnabled(id: string, enabled: boolean): Promise<Tenant | null>;
+  setTenantCatalogQueryNormalizationEnabled(id: string, enabled: boolean): Promise<Tenant | null>;
   listUsers(tenantId: string): Promise<User[]>;
   listDomains(tenantId: string): Promise<TenantDomain[]>;
   addDomain(input: { tenantId: string; hostname: string }): Promise<TenantDomain>;
@@ -542,7 +544,9 @@ export interface Store {
   getAction(id: string): Promise<ActionRequest | null>;
   getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null>;
   updateAction(action: ActionRequest): Promise<ActionRequest>;
-  claimApprovedActions(workflowKey: string, limit: number): Promise<ActionRequest[]>;
+  transitionAction(actionId: string, tenantId: string, fromState: ActionState, toState: ActionState, result: ActionRequest['result']): Promise<ActionRequest | null>;
+  claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null>;
+  claimActionsForWorkflow(n8nWorkflowId: string, workflowKey: string | undefined, limit: number): Promise<ActionRequest[]>;
   listActions(tenantId: string): Promise<ActionRequest[]>;
   createCrmLead(lead: CrmLead): Promise<CrmLead>;
   upsertCrmLead(lead: CrmLead, dedupeKey: string): Promise<CrmLead>;

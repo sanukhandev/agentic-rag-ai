@@ -42,12 +42,18 @@ describe('web chat utilities', () => {
   it('renders terminal workflow states and keeps unknown actions retryable', () => {
     const replies = [{ answer: 'Done', grounded: true, citations: [], actionProposal: { id: 'action-1', intent: 'lead.capture', confirmation: 'Confirm' } }];
     expect(isChatActionState('completed')).toBe(true);
+    expect(isChatActionState('reconcile_required')).toBe(true);
+    expect(isChatActionState('awaiting_customer')).toBe(true);
+    expect(isChatActionState('human_review')).toBe(true);
     expect(isChatActionState('invalid')).toBe(false);
     expect(applyActionState(replies, 'action-1', 'completed')[0]).toMatchObject({ actionState: 'completed', actionProposal: null });
     expect(applyActionState(replies, 'action-1', 'unknown')[0]).toMatchObject({ actionState: 'unknown', actionProposal: { id: 'action-1' } });
     expect(actionOutcomeText('completed')).toContain('submitted successfully');
     expect(actionOutcomeText('failed')).toContain('could not submit');
     expect(actionOutcomeText('processing')).toContain('registered');
+    expect(actionOutcomeText('reconcile_required')).toContain('needs review');
+    expect(actionOutcomeText('awaiting_customer')).toContain('still need');
+    expect(actionOutcomeText('human_review')).toContain('team review');
   });
 
   it('safely escapes HTML and formats markdown blocks and inline tokens', () => {

@@ -32,4 +32,8 @@ export class CrmService {
   downloadDocument(documentId: string): Observable<Blob> {
     return this.http.get(`${this.apiBase}/api/v1/admin/crm/documents/${documentId}/download`, { headers: this.auth.authHeaders, responseType: 'blob' });
   }
+
+  summarizeLead(leadId: string): Observable<{ lead: CrmLead; aiGenerated: boolean }> {
+    return this.http.post<{ lead: CrmLead; aiGenerated: boolean }>(`${this.apiBase}/api/v1/admin/crm/leads/${leadId}/summarize`, {}, { headers: this.auth.authHeaders });
+  }
 }

@@ -21,6 +21,7 @@ This log explicitly separates accepted requirements from pending architecture ch
 - Model calls use sanitized content. The embedding model is separately chosen; never assume GPT-4.1-mini embeds.
 - File adapters are opt-in per MIME, not a literal any-format guarantee.
 - Server-side ACL filters precede retrieval and server-side checks precede any workflow.
+- Catalog-guided normalization is an optional masked-query preprocessing step. It is not an intent classifier or authorization source; deterministic intent scoring and primary/secondary continuity remain server-side and tenant/catalog driven.
 - User-visible citations and honest "not enough information" fallback.
 
 ## Open decisions requiring explicit approval
