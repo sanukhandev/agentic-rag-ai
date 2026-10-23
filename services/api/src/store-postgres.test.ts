@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { describe, expect, it } from 'vitest';
+import { createOutboxEvent } from './events.js';
 import { PostgresStore } from './store-postgres.js';
 
 describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
@@ -118,12 +119,30 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'crm.lead.create', idempotencyKey: 'execution-recovery', state: 'processing', opaqueReference: 'execution-recovery', payload: {}, createdAt: new Date().toISOString(), result: null });
       const claims = await Promise.all([store.claimInboxEvent('integration-workers', eventId), store.claimInboxEvent('integration-workers', eventId)]);
       expect(claims.filter((claim) => claim.claimed)).toHaveLength(1);
+      const dispatchAction = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'crm.lead.create', idempotencyKey: 'dispatch-claim', state: 'processing', opaqueReference: 'dispatch-claim', payload: {}, createdAt: new Date().toISOString(), result: null });
+      const execution = { id: randomUUID(), actionId: dispatchAction.id, tenantId: tenant.id, workflowKey: dispatchAction.workflowKey, catalogVersionId: null, providerStatus: 'dispatching', n8nExecutionRef: null, eventId: randomUUID(), correlationId: randomUUID(), idempotencyKey: dispatchAction.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() + 60_000).toISOString(), outcome: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const executionClaims = await Promise.all([store.claimActionExecution(execution), store.claimActionExecution({ ...execution, id: randomUUID() })]);
+      expect(executionClaims.filter((claim) => claim.claimed)).toHaveLength(1);
+      await store.updateActionExecution({ actionId: dispatchAction.id, tenantId: tenant.id, providerStatus: 'accepted' });
+      await store.updateActionExecution({ actionId: dispatchAction.id, tenantId: tenant.id, providerStatus: 'completed', n8nExecutionRef: 'execution-complete', outcome: { externalReference: 'remote-1' } });
+      const staleAccepted = await store.recordActionExecution({ ...execution, id: randomUUID(), providerStatus: 'accepted' });
+      expect(staleAccepted.providerStatus).toBe('completed');
       await store.recordActionExecution({ id: randomUUID(), actionId: action.id, tenantId: tenant.id, workflowKey: action.workflowKey, catalogVersionId: null, providerStatus: 'accepted', n8nExecutionRef: null, idempotencyKey: action.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() - 1_000).toISOString(), outcome: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
       const reconciled = await store.reconcileExpiredActionExecutions(new Date().toISOString());
       expect(reconciled).toMatchObject([{ actionId: action.id, providerStatus: 'reconcile_required' }]);
       expect((await store.getAction(action.id))?.state).toBe('reconcile_required');
+      expect((await store.getSession(session.id))?.conversationState).toMatchObject({ workflowStatus: 'reconcile_required', phase: 'RECONCILE_REQUIRED' });
+      expect((await store.listAudit(tenant.id)).some((event) => event.eventName === 'workflow.reconcile_required')).toBe(true);
+      const dlqEvent = createOutboxEvent({ eventId: randomUUID(), eventType: 'conversation.notification.requested.v1', tenantId: tenant.id, sessionId: session.id, aggregateId: session.id, payloadRef: 'dlq-ref', idempotencyKey: 'dlq-projection' });
+      await store.claimInboxEvent('dlq-workers', dlqEvent.eventId);
+      await store.markInboxDeadLettered('dlq-workers', dlqEvent.eventId, 'terminal failure', dlqEvent);
+      expect(await store.claimInboxDeadLetterProjections(1, 60_000)).toMatchObject([{ consumer: 'dlq-workers', eventId: dlqEvent.eventId, reason: 'terminal failure' }]);
+      await store.releaseInboxDeadLetterProjection('dlq-workers', dlqEvent.eventId);
+      expect(await store.claimInboxDeadLetterProjections(1, 60_000)).toHaveLength(1);
+      await store.markInboxDeadLetterPublished('dlq-workers', dlqEvent.eventId);
+      expect(await store.claimInboxDeadLetterProjections(1, 60_000)).toHaveLength(0);
     } finally {
-      await pool.query('DELETE FROM event_inbox WHERE consumer=$1 AND event_id=$2', ['integration-workers', eventId]);
+      await pool.query('DELETE FROM event_inbox WHERE (consumer=$1 AND event_id=$2) OR consumer=$3', ['integration-workers', eventId, 'dlq-workers']);
       await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
       await pool.end();
     }

@@ -25,7 +25,7 @@ type IngestionJobRow = { id: string; tenant_id: string; title: string; mime_type
 type SupportingDocumentRow = { id: string; tenant_id: string; session_id: string; lead_id: string | null; file_name: string; mime_type: string; size_bytes: number; sha256: string; storage_key: string; status: SupportingDocument['status']; workflow_key: string; store_extracted_text: boolean; extracted_text: string | null; summary: string | null; error_code: string | null; consent_at: DbTimestamp; created_at: DbTimestamp; updated_at: DbTimestamp };
 type DocumentJobRow = { id: string; document_id: string; tenant_id: string; workflow_key: string; webhook_path: string; status: DocumentProcessingJob['status']; attempts: number; lease_expires_at: DbTimestamp | null; execution_reference: string | null; created_at: DbTimestamp; updated_at: DbTimestamp };
 type OutboxRow = { event_id: string; event_type: OutboxEvent['eventType']; stream: OutboxEvent['stream']; tenant_id: string; session_id: string | null; action_id: string | null; aggregate_id: string; aggregate_version: number; workflow_key: string | null; payload_ref: string; idempotency_key: string; correlation_id: string; payload: OutboxEvent['payload']; occurred_at: DbTimestamp; published_at: DbTimestamp | null; attempts: number; lease_expires_at: DbTimestamp | null; last_error: string | null; dead_lettered_at?: DbTimestamp | null; dead_letter_published_at?: DbTimestamp | null; dead_letter_lease_expires_at?: DbTimestamp | null };
-type ActionExecutionRow = { id: string; action_id: string; tenant_id: string; workflow_key: string; catalog_version_id: string | null; provider_status: string; n8n_execution_ref: string | null; idempotency_key: string; attempt: number; deadline_at: DbTimestamp | null; outcome: ActionExecution['outcome']; created_at: DbTimestamp; updated_at: DbTimestamp };
+type ActionExecutionRow = { id: string; action_id: string; tenant_id: string; workflow_key: string; catalog_version_id: string | null; provider_status: string; n8n_execution_ref: string | null; event_id: string | null; correlation_id: string | null; idempotency_key: string; attempt: number; deadline_at: DbTimestamp | null; outcome: ActionExecution['outcome']; created_at: DbTimestamp; updated_at: DbTimestamp };
 
 export class PostgresStore implements Store {
   constructor(private readonly pool: Pool) {}
@@ -271,53 +271,88 @@ export class PostgresStore implements Store {
       const inserted = await client.query<{ state: EventInboxState; attempts: number }>('INSERT INTO event_inbox (consumer,event_id,state,attempts,processed_at,lease_expires_at,updated_at) VALUES ($1,$2,\'processing\',1,NULL,now()+($3::double precision * interval \'1 millisecond\'),now()) ON CONFLICT (consumer,event_id) DO NOTHING RETURNING state,attempts', [consumer, eventId, leaseMs]);
       if (inserted.rows[0]) {
         await client.query('COMMIT');
-        return { state: 'processing', attempts: Number(inserted.rows[0].attempts), claimed: true };
+        return { state: 'processing', attempts: Number(inserted.rows[0].attempts), claimed: true, dlqPublished: false };
       }
-      const existing = await client.query<{ state: EventInboxState; attempts: number; lease_expires_at: DbTimestamp | null; retry_at: DbTimestamp | null }>('SELECT state,attempts,lease_expires_at,retry_at FROM event_inbox WHERE consumer=$1 AND event_id=$2 FOR UPDATE', [consumer, eventId]);
+      const existing = await client.query<{ state: EventInboxState; attempts: number; lease_expires_at: DbTimestamp | null; retry_at: DbTimestamp | null; dlq_published_at: DbTimestamp | null }>('SELECT state,attempts,lease_expires_at,retry_at,dlq_published_at FROM event_inbox WHERE consumer=$1 AND event_id=$2 FOR UPDATE', [consumer, eventId]);
       const row = existing.rows[0];
       if (!row) throw new Error('Inbox row disappeared after conflict resolution.');
       const terminal = ['completed', 'reconcile_required', 'dead_lettered'].includes(row.state);
       const leased = row.state === 'processing' && row.lease_expires_at && new Date(row.lease_expires_at).getTime() > Date.now();
       const waiting = row.state === 'retry_scheduled' && row.retry_at && new Date(row.retry_at).getTime() > Date.now();
-      if (terminal || leased || waiting) { await client.query('COMMIT'); return { state: row.state, attempts: row.attempts, claimed: false }; }
+      if (terminal || leased || waiting) { await client.query('COMMIT'); return { state: row.state, attempts: row.attempts, claimed: false, dlqPublished: Boolean(row.dlq_published_at) }; }
       const updated = await client.query<{ attempts: number }>('UPDATE event_inbox SET state=\'processing\',attempts=attempts+1,lease_expires_at=now()+($3::double precision * interval \'1 millisecond\'),retry_at=NULL,last_error=NULL,updated_at=now() WHERE consumer=$1 AND event_id=$2 RETURNING attempts', [consumer, eventId, leaseMs]);
       await client.query('COMMIT');
-      return { state: 'processing', attempts: updated.rows[0]?.attempts ?? row.attempts + 1, claimed: true };
+      return { state: 'processing', attempts: updated.rows[0]?.attempts ?? row.attempts + 1, claimed: true, dlqPublished: false };
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
   async completeInboxEvent(consumer: string, eventId: string): Promise<void> { await this.pool.query('UPDATE event_inbox SET state=\'completed\',processed_at=now(),lease_expires_at=NULL,retry_at=NULL,updated_at=now() WHERE consumer=$1 AND event_id=$2 AND state=\'processing\'', [consumer, eventId]); }
   async scheduleInboxRetry(consumer: string, eventId: string, error: string, retryAt: string): Promise<void> { await this.pool.query('UPDATE event_inbox SET state=\'retry_scheduled\',lease_expires_at=NULL,retry_at=$3,last_error=$4,updated_at=now() WHERE consumer=$1 AND event_id=$2 AND state=\'processing\'', [consumer, eventId, retryAt, error.slice(0, 500)]); }
-  async markInboxReconcileRequired(consumer: string, eventId: string, error: string): Promise<void> { await this.pool.query('UPDATE event_inbox SET state=\'reconcile_required\',lease_expires_at=NULL,retry_at=NULL,last_error=$3,updated_at=now() WHERE consumer=$1 AND event_id=$2 AND state=\'processing\'', [consumer, eventId, error.slice(0, 500)]); }
-  async markInboxDeadLettered(consumer: string, eventId: string, error: string): Promise<void> { await this.pool.query('UPDATE event_inbox SET state=\'dead_lettered\',lease_expires_at=NULL,retry_at=NULL,last_error=$3,updated_at=now() WHERE consumer=$1 AND event_id=$2 AND state=\'processing\'', [consumer, eventId, error.slice(0, 500)]); }
+  async markInboxReconcileRequired(consumer: string, eventId: string, error: string, event?: OutboxEvent): Promise<void> { await this.pool.query('UPDATE event_inbox SET state=\'reconcile_required\',lease_expires_at=NULL,retry_at=NULL,last_error=$3,dlq_reason=$3,dlq_event=COALESCE($4::jsonb,dlq_event),dlq_published_at=NULL,dlq_lease_expires_at=NULL,updated_at=now() WHERE consumer=$1 AND event_id=$2 AND state=\'processing\'', [consumer, eventId, error.slice(0, 500), event ? JSON.stringify(event) : null]); }
+  async markInboxDeadLettered(consumer: string, eventId: string, error: string, event?: OutboxEvent): Promise<void> { await this.pool.query('UPDATE event_inbox SET state=\'dead_lettered\',lease_expires_at=NULL,retry_at=NULL,last_error=$3,dlq_reason=$3,dlq_event=COALESCE($4::jsonb,dlq_event),dlq_published_at=NULL,dlq_lease_expires_at=NULL,updated_at=now() WHERE consumer=$1 AND event_id=$2 AND state=\'processing\'', [consumer, eventId, error.slice(0, 500), event ? JSON.stringify(event) : null]); }
+  async claimInboxDeadLetterProjections(limit: number, leaseMs: number): Promise<Array<{ consumer: string; eventId: string; event: OutboxEvent; reason: string }>> {
+    const result = await this.pool.query<{ consumer: string; event_id: string; dlq_event: OutboxEvent; dlq_reason: string | null }>(`WITH candidate AS (
+      SELECT consumer,event_id FROM event_inbox
+       WHERE state IN ('reconcile_required','dead_lettered') AND dlq_event IS NOT NULL AND dlq_published_at IS NULL
+         AND (dlq_lease_expires_at IS NULL OR dlq_lease_expires_at <= now())
+       ORDER BY updated_at,consumer,event_id FOR UPDATE SKIP LOCKED LIMIT $1
+    )
+    UPDATE event_inbox AS inbox SET dlq_lease_expires_at=now()+($2::text || ' milliseconds')::interval
+      FROM candidate WHERE inbox.consumer=candidate.consumer AND inbox.event_id=candidate.event_id
+      RETURNING inbox.consumer,inbox.event_id,inbox.dlq_event,inbox.dlq_reason`, [limit, leaseMs]);
+    return result.rows.map((row) => ({ consumer: row.consumer, eventId: row.event_id, event: row.dlq_event, reason: row.dlq_reason ?? 'event processing terminally failed' }));
+  }
+  async markInboxDeadLetterPublished(consumer: string, eventId: string, publishedAt = new Date().toISOString()): Promise<void> { await this.pool.query('UPDATE event_inbox SET dlq_published_at=$3,dlq_lease_expires_at=NULL WHERE consumer=$1 AND event_id=$2 AND state IN (\'reconcile_required\',\'dead_lettered\')', [consumer, eventId, publishedAt]); }
+  async releaseInboxDeadLetterProjection(consumer: string, eventId: string): Promise<void> { await this.pool.query('UPDATE event_inbox SET dlq_lease_expires_at=NULL WHERE consumer=$1 AND event_id=$2 AND dlq_published_at IS NULL', [consumer, eventId]); }
+  async claimActionExecution(execution: ActionExecution): Promise<{ execution: ActionExecution; claimed: boolean }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const inserted = await client.query<ActionExecutionRow>(`INSERT INTO action_executions
+        (id,action_id,tenant_id,workflow_key,catalog_version_id,provider_status,n8n_execution_ref,event_id,correlation_id,idempotency_key,attempt,deadline_at,outcome,created_at,updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
+        ON CONFLICT (action_id,idempotency_key) DO NOTHING RETURNING *`, [execution.id, execution.actionId, execution.tenantId, execution.workflowKey, execution.catalogVersionId, execution.providerStatus, execution.n8nExecutionRef, execution.eventId, execution.correlationId, execution.idempotencyKey, execution.attempt, execution.deadlineAt, execution.outcome ? JSON.stringify(execution.outcome) : null, execution.createdAt]);
+      if (inserted.rows[0]) { await client.query('COMMIT'); return { execution: this.actionExecution(inserted.rows[0]), claimed: true }; }
+      const existing = await client.query<ActionExecutionRow>('SELECT * FROM action_executions WHERE action_id=$1 AND idempotency_key=$2 FOR UPDATE', [execution.actionId, execution.idempotencyKey]);
+      const row = existing.rows[0];
+      if (!row) throw new Error('Action execution disappeared after conflict resolution.');
+      if (row.provider_status === 'dispatching' && row.attempt < execution.attempt) {
+        const reclaimed = await client.query<ActionExecutionRow>(`UPDATE action_executions SET provider_status='dispatching',attempt=$3,deadline_at=$4,event_id=COALESCE($5,event_id),correlation_id=COALESCE($6,correlation_id),updated_at=now() WHERE id=$1 AND provider_status='dispatching' RETURNING *`, [row.id, execution.id, execution.attempt, execution.deadlineAt, execution.eventId, execution.correlationId]);
+        if (reclaimed.rows[0]) { await client.query('COMMIT'); return { execution: this.actionExecution(reclaimed.rows[0]), claimed: true }; }
+      }
+      await client.query('COMMIT');
+      return { execution: this.actionExecution(row), claimed: false };
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+  }
   async recordActionExecution(execution: ActionExecution): Promise<ActionExecution> {
-    const result = await this.pool.query<ActionExecutionRow>(`INSERT INTO action_executions (id,action_id,tenant_id,workflow_key,catalog_version_id,provider_status,n8n_execution_ref,idempotency_key,attempt,deadline_at,outcome,created_at,updated_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)
-      ON CONFLICT (action_id,idempotency_key) DO UPDATE SET provider_status=EXCLUDED.provider_status,n8n_execution_ref=COALESCE(EXCLUDED.n8n_execution_ref,action_executions.n8n_execution_ref),attempt=GREATEST(action_executions.attempt,EXCLUDED.attempt),deadline_at=EXCLUDED.deadline_at,outcome=EXCLUDED.outcome,updated_at=now()
-      RETURNING *`, [execution.id, execution.actionId, execution.tenantId, execution.workflowKey, execution.catalogVersionId, execution.providerStatus, execution.n8nExecutionRef, execution.idempotencyKey, execution.attempt, execution.deadlineAt, execution.outcome ? JSON.stringify(execution.outcome) : null, execution.createdAt]);
+    const result = await this.pool.query<ActionExecutionRow>(`INSERT INTO action_executions (id,action_id,tenant_id,workflow_key,catalog_version_id,provider_status,n8n_execution_ref,event_id,correlation_id,idempotency_key,attempt,deadline_at,outcome,created_at,updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
+      ON CONFLICT (action_id,idempotency_key) DO UPDATE SET provider_status=CASE WHEN action_executions.provider_status IN ('completed','failed','reconcile_required') OR (action_executions.provider_status IN ('accepted','processing') AND EXCLUDED.provider_status='dispatching') THEN action_executions.provider_status ELSE EXCLUDED.provider_status END,n8n_execution_ref=COALESCE(EXCLUDED.n8n_execution_ref,action_executions.n8n_execution_ref),event_id=COALESCE(EXCLUDED.event_id,action_executions.event_id),correlation_id=COALESCE(EXCLUDED.correlation_id,action_executions.correlation_id),attempt=GREATEST(action_executions.attempt,EXCLUDED.attempt),deadline_at=CASE WHEN action_executions.provider_status IN ('completed','failed','reconcile_required') OR (action_executions.provider_status IN ('accepted','processing') AND EXCLUDED.provider_status='dispatching') THEN action_executions.deadline_at ELSE EXCLUDED.deadline_at END,outcome=CASE WHEN action_executions.provider_status IN ('completed','failed','reconcile_required') OR (action_executions.provider_status IN ('accepted','processing') AND EXCLUDED.provider_status='dispatching') THEN action_executions.outcome ELSE COALESCE(EXCLUDED.outcome,action_executions.outcome) END,updated_at=now()
+      RETURNING *`, [execution.id, execution.actionId, execution.tenantId, execution.workflowKey, execution.catalogVersionId, execution.providerStatus, execution.n8nExecutionRef, execution.eventId, execution.correlationId, execution.idempotencyKey, execution.attempt, execution.deadlineAt, execution.outcome ? JSON.stringify(execution.outcome) : null, execution.createdAt]);
     return this.actionExecution(result.rows[0]!);
   }
-  async updateActionExecution(input: { actionId: string; tenantId: string; providerStatus: string; n8nExecutionRef?: string | null; outcome?: ActionExecution['outcome'] }): Promise<ActionExecution | null> {
+  async updateActionExecution(input: { actionId: string; tenantId: string; providerStatus: string; n8nExecutionRef?: string | null; outcome?: ActionExecution['outcome']; resolveReconciliation?: boolean }): Promise<ActionExecution | null> {
     const result = await this.pool.query<ActionExecutionRow>(`WITH current_execution AS (
       SELECT id FROM action_executions
-       WHERE action_id=$1 AND tenant_id=$2 AND provider_status NOT IN ('completed','failed','reconcile_required')
+       WHERE action_id=$1 AND tenant_id=$2 AND (provider_status NOT IN ('completed','failed','reconcile_required') OR (provider_status='reconcile_required' AND $6::boolean AND $3='completed'))
        ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE
     )
     UPDATE action_executions AS execution
        SET provider_status=$3,
            n8n_execution_ref=COALESCE($4,execution.n8n_execution_ref),
-           outcome=COALESCE($5::jsonb,execution.outcome),
+           outcome=COALESCE(execution.outcome,'{}'::jsonb) || COALESCE($5::jsonb,'{}'::jsonb),
            updated_at=now()
       FROM current_execution
      WHERE execution.id=current_execution.id
-    RETURNING execution.*`, [input.actionId, input.tenantId, input.providerStatus, input.n8nExecutionRef ?? null, input.outcome ? JSON.stringify(input.outcome) : null]);
+    RETURNING execution.*`, [input.actionId, input.tenantId, input.providerStatus, input.n8nExecutionRef ?? null, input.outcome ? JSON.stringify(input.outcome) : null, input.resolveReconciliation === true]);
     return result.rows[0] ? this.actionExecution(result.rows[0]) : null;
   }
   async reconcileExpiredActionExecutions(timestamp: string): Promise<ActionExecution[]> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const expired = await client.query<ActionExecutionRow>(`SELECT * FROM action_executions
-        WHERE provider_status='accepted' AND deadline_at IS NOT NULL AND deadline_at <= $1
+      const expired = await client.query<ActionExecutionRow & { session_id: string; intent_key: string | null; action_catalog_version_id: string | null }>(`SELECT execution.*,action.session_id,action.intent_key,action.catalog_version_id AS action_catalog_version_id
+        FROM action_executions AS execution JOIN action_requests AS action ON action.id=execution.action_id AND action.tenant_id=execution.tenant_id
+        WHERE execution.provider_status='accepted' AND execution.deadline_at IS NOT NULL AND execution.deadline_at <= $1
         FOR UPDATE SKIP LOCKED`, [timestamp]);
       const updated: ActionExecution[] = [];
       for (const row of expired.rows) {
@@ -328,8 +363,15 @@ export class PostgresStore implements Store {
           WHERE id=$1 AND provider_status='accepted'
           RETURNING *`, [row.id]);
         if (result.rows[0]) {
-          await client.query(`UPDATE action_requests SET state='reconcile_required',result=COALESCE(result,'{}'::jsonb) || jsonb_build_object('reason','completion_deadline_exceeded')
-            WHERE id=$1 AND tenant_id=$2 AND state IN ('approved','processing')`, [row.action_id, row.tenant_id]);
+          const actionResult = await client.query<{ state: string }>(`UPDATE action_requests SET state='reconcile_required',result=COALESCE(result,'{}'::jsonb) || jsonb_build_object('reason','completion_deadline_exceeded')
+            WHERE id=$1 AND tenant_id=$2 AND state IN ('approved','processing') RETURNING state`, [row.action_id, row.tenant_id]);
+          await client.query(`UPDATE chat_sessions
+            SET conversation_state=conversation_state || jsonb_build_object('workflowStatus','reconcile_required','phase','RECONCILE_REQUIRED','pendingPrompt',NULL),state_version=state_version+1,last_activity_at=now()
+            WHERE id=$1 AND tenant_id=$2
+              AND (conversation_state->>'selectedIntentKey' IS NULL OR conversation_state->>'selectedIntentKey'=$3)
+              AND ($4::uuid IS NULL OR conversation_state->>'catalogVersionId' IS NULL OR conversation_state->>'catalogVersionId'=$4::text)
+              AND conversation_state->>'workflowStatus' NOT IN ('succeeded','failed')`, [row.session_id, row.tenant_id, row.intent_key, row.action_catalog_version_id]);
+          if (actionResult.rows[0]) await client.query('INSERT INTO audit_events (id,tenant_id,actor_id,event_name,metadata) VALUES ($1,$2,NULL,$3,$4)', [randomUUID(), row.tenant_id, 'workflow.reconcile_required', JSON.stringify({ actionId: row.action_id, executionId: row.id, reason: 'completion_deadline_exceeded', eventId: row.event_id, correlationId: row.correlation_id })]);
           updated.push(this.actionExecution(result.rows[0]));
         }
       }
@@ -352,7 +394,7 @@ export class PostgresStore implements Store {
   }
 
   private tenant(row: TenantRow): Tenant { return { id: row.id, name: row.name, slug: row.slug, status: row.status ?? 'active', publicChatEnabled: row.public_chat_enabled ?? true, publicOrigin: row.public_origin ?? null, catalogQueryNormalizationEnabled: row.catalog_query_normalization_enabled ?? false, createdAt: iso(row.created_at) }; }
-  private actionExecution(row: ActionExecutionRow): ActionExecution { return { id: row.id, actionId: row.action_id, tenantId: row.tenant_id, workflowKey: row.workflow_key, catalogVersionId: row.catalog_version_id, providerStatus: row.provider_status, n8nExecutionRef: row.n8n_execution_ref, idempotencyKey: row.idempotency_key, attempt: row.attempt, deadlineAt: row.deadline_at ? iso(row.deadline_at) : null, outcome: row.outcome ?? null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }; }
+  private actionExecution(row: ActionExecutionRow): ActionExecution { return { id: row.id, actionId: row.action_id, tenantId: row.tenant_id, workflowKey: row.workflow_key, catalogVersionId: row.catalog_version_id, providerStatus: row.provider_status, n8nExecutionRef: row.n8n_execution_ref, eventId: row.event_id ?? null, correlationId: row.correlation_id ?? null, idempotencyKey: row.idempotency_key, attempt: row.attempt, deadlineAt: row.deadline_at ? iso(row.deadline_at) : null, outcome: row.outcome ?? null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }; }
   private channelCredential(row: ChannelCredentialRow): ChannelCredential { return { id: row.id, tenantId: row.tenant_id, channel: row.channel, authMode: row.auth_mode, keyId: row.key_id, secretCiphertext: row.secret_ciphertext, apiKeyHash: row.api_key_hash, active: row.active, createdAt: iso(row.created_at), revokedAt: row.revoked_at ? iso(row.revoked_at) : null }; }
   private domain(row: TenantDomainRow): TenantDomain { return { id: row.id, tenantId: row.tenant_id, hostname: row.hostname, createdAt: iso(row.created_at) }; }
   private user(row: UserRow): User { return { id: row.id, email: row.email, passwordHash: row.password_hash, role: row.role, tenantId: row.tenant_id, createdAt: iso(row.created_at) }; }

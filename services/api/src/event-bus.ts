@@ -1,6 +1,6 @@
 import { createClient } from 'redis';
 import { randomUUID } from 'node:crypto';
-import type { Store, OutboxEvent } from './types.js';
+import type { ActionExecution, Store, OutboxEvent } from './types.js';
 import { eventFields, eventFromFields } from './events.js';
 
 export interface StreamMessage {
@@ -128,8 +128,24 @@ export class N8nEventBridge {
     }
     const body = JSON.stringify({ ...event.payload, eventId: event.eventId, eventType: event.eventType, tenantId: event.tenantId, sessionId: event.sessionId, actionId: event.actionId, aggregateId: event.aggregateId, payloadRef: event.payloadRef, webhookPath: route.webhookPath, workflowKey: route.workflowKey, n8nWorkflowId: route.n8nWorkflowId ?? null, contract: route.payloadContract ?? (event.eventType === 'document.extraction.requested.v1' ? 'anc-document-ocr-v1' : 'crm-lead-capture-v1'), correlationId: event.correlationId });
     try {
+      if (event.actionId) {
+        const action = await this.store.getAction(event.actionId);
+        if (action && action.tenantId === event.tenantId) {
+          let claim: { execution: ActionExecution; claimed: boolean };
+          try {
+            claim = await this.store.claimActionExecution({ id: randomUUID(), actionId: action.id, tenantId: action.tenantId, workflowKey: action.workflowKey, catalogVersionId: action.catalogVersionId ?? null, providerStatus: 'dispatching', n8nExecutionRef: null, eventId: event.eventId, correlationId: event.correlationId, idempotencyKey: action.idempotencyKey, attempt, deadlineAt: new Date(Date.now() + this.completionDeadlineMs).toISOString(), outcome: { eventId: event.eventId, correlationId: event.correlationId }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+          } catch {
+            throw new ReconcileRequiredDispatchError('The workflow was not dispatched because its execution claim could not be recorded durably; reconciliation is required.');
+          }
+          if (!claim.claimed) return;
+        }
+      }
       const response = await fetch(`${this.baseUrl.replace(/\/$/u, '')}/webhook/${route.webhookPath.replace(/^\/+/, '')}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-agentic-internal-secret': this.secret, 'x-agentic-event-id': event.eventId }, body, signal: AbortSignal.timeout(this.timeoutMs) });
       if (!response.ok) {
+        if (event.actionId) {
+          const providerStatus = response.status === 404 || response.status === 405 ? 'reconcile_required' : [408, 425, 429, 500, 502, 503, 504].includes(response.status) ? 'dispatching' : 'failed';
+          if (providerStatus !== 'dispatching') await this.store.updateActionExecution({ actionId: event.actionId, tenantId: event.tenantId, providerStatus, outcome: { eventId: event.eventId, correlationId: event.correlationId, reason: `n8n dispatch returned status ${response.status}` } });
+        }
         if (response.status === 404 || response.status === 405) throw new ReconcileRequiredDispatchError(`n8n route is not authorized or available (${response.status}); reconciliation is required.`);
         if ([408, 425, 429, 500, 502, 503, 504].includes(response.status)) throw new TransientEventDispatchError(`n8n dispatch returned transient status ${response.status}.`);
         throw new PermanentEventDispatchError(`n8n dispatch returned permanent status ${response.status}.`);
@@ -138,7 +154,7 @@ export class N8nEventBridge {
         const action = await this.store.getAction(event.actionId);
         if (action && action.tenantId === event.tenantId) {
           try {
-            await this.store.recordActionExecution({ id: randomUUID(), actionId: action.id, tenantId: action.tenantId, workflowKey: action.workflowKey, catalogVersionId: action.catalogVersionId ?? null, providerStatus: 'accepted', n8nExecutionRef: null, idempotencyKey: action.idempotencyKey, attempt, deadlineAt: new Date(Date.now() + this.completionDeadlineMs).toISOString(), outcome: { eventId: event.eventId, correlationId: event.correlationId }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+            await this.store.updateActionExecution({ actionId: action.id, tenantId: action.tenantId, providerStatus: 'accepted', outcome: { eventId: event.eventId, correlationId: event.correlationId } });
           } catch {
             throw new ReconcileRequiredDispatchError('n8n accepted the request but the execution could not be recorded durably; reconciliation is required.');
           }
@@ -152,6 +168,7 @@ export class N8nEventBridge {
     } catch (error) {
       if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
         if (event.actionId) {
+          await this.store.updateActionExecution({ actionId: event.actionId, tenantId: event.tenantId, providerStatus: 'reconcile_required', outcome: { eventId: event.eventId, correlationId: event.correlationId, reason: 'n8n_dispatch_timeout' } });
           const action = await this.store.getAction(event.actionId);
           if (action && action.tenantId === event.tenantId && !['completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review'].includes(action.state)) {
             const updated = await this.store.transitionAction(action.id, action.tenantId, action.state, 'reconcile_required', action.result);
@@ -190,12 +207,13 @@ export class EventConsumer {
 
   async runOnce(stream: string, group: string, blockMs = 250): Promise<number> {
     await this.bus.ensureGroup(stream, group);
+    const projected = await this.publishInboxDeadLetterProjections(25);
     const messages = [...await this.bus.reclaim(stream, group, this.consumer, 30_000, 10), ...await this.bus.read(stream, group, this.consumer, 10, blockMs)];
     let handled = 0;
     for (const message of messages) {
       const claim = await this.store.claimInboxEvent(group, message.event.eventId);
       if (!claim.claimed) {
-        if (['completed', 'reconcile_required', 'dead_lettered'].includes(claim.state)) await this.bus.acknowledge(stream, group, message.id);
+        if (claim.state === 'completed' || (['reconcile_required', 'dead_lettered'].includes(claim.state) && (claim.dlqPublished || projected.has(`${group}:${message.event.eventId}`)))) await this.bus.acknowledge(stream, group, message.id);
         continue;
       }
       try {
@@ -211,19 +229,35 @@ export class EventConsumer {
           continue;
         }
         if (error instanceof AmbiguousEventDispatchError || error instanceof ReconcileRequiredDispatchError) {
-          await this.store.markInboxReconcileRequired(group, message.event.eventId, reason);
+          await this.store.markInboxReconcileRequired(group, message.event.eventId, reason, message.event);
           await this.markReconciliationRequired(message.event, reason);
-          await this.bus.deadLetter(message.event, reason);
-          await this.bus.acknowledge(stream, group, message.id);
+          const published = await this.publishInboxDeadLetterProjections(1);
+          if (published.has(`${group}:${message.event.eventId}`)) await this.bus.acknowledge(stream, group, message.id);
           continue;
         }
         await this.markFailed(message.event, reason);
-        await this.store.markInboxDeadLettered(group, message.event.eventId, reason);
-        await this.bus.deadLetter(message.event, reason);
-        await this.bus.acknowledge(stream, group, message.id);
+        await this.store.markInboxDeadLettered(group, message.event.eventId, reason, message.event);
+        const published = await this.publishInboxDeadLetterProjections(1);
+        if (published.has(`${group}:${message.event.eventId}`)) await this.bus.acknowledge(stream, group, message.id);
       }
     }
     return handled;
+  }
+
+  private async publishInboxDeadLetterProjections(limit: number): Promise<Set<string>> {
+    const published = new Set<string>();
+    const projections = await this.store.claimInboxDeadLetterProjections(limit, 30_000);
+    for (const projection of projections) {
+      try {
+        await this.bus.deadLetter(projection.event, projection.reason);
+        await this.store.markInboxDeadLetterPublished(projection.consumer, projection.eventId);
+        published.add(`${projection.consumer}:${projection.eventId}`);
+      } catch {
+        // The inbox row remains terminal and its Redis projection remains retryable.
+        await this.store.releaseInboxDeadLetterProjection(projection.consumer, projection.eventId);
+      }
+    }
+    return published;
   }
 
   private async markReconciliationRequired(event: OutboxEvent, reason: string): Promise<void> {

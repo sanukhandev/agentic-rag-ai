@@ -91,8 +91,9 @@ export const maskPii = (input: string): MaskResult => {
       return tokenValue;
     });
   };
-  const replaceName = (pattern: RegExp): void => {
+  const replaceName = (pattern: RegExp, shouldMask: (name: string) => boolean = () => true): void => {
     masked = masked.replace(pattern, (_value, name: string) => {
+      if (!shouldMask(name)) return _value;
       const tokenValue = token('NAME', tokens.filter((item) => item.token.startsWith('[NAME_')).length + 1);
       tokens.push({ token: tokenValue, value: name });
       return tokenValue;
@@ -100,11 +101,10 @@ export const maskPii = (input: string): MaskResult => {
   };
   replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, 'EMAIL');
   replace(/(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)/g, 'PHONE');
-  // Keep the legacy case-insensitive ASCII matcher first so lowercase surname components stay in the same token.
-  replaceName(/\bmy name is\s+([A-Z][A-Za-z0-9'-]+(?:\s+[A-Z][A-Za-z0-9'-]+)?)/gi);
-  replaceName(/\b[Mm]y name is\s+(\p{Lu}[\p{L}\d'-]*(?:\s+\p{Lu}[\p{L}\d'-]*){0,3})/gu);
-  replaceName(/\b(?:I am|I'm)\s+(\p{Lu}[\p{L}\d'-]*(?:\s+\p{Lu}[\p{L}\d'-]*){0,3})/gu);
-  replaceName(/\b(?:[Ii] am|[Ii]'m)\s+([A-Z][A-Za-z0-9'-]+(?:\s+[A-Z][A-Za-z0-9'-]+)?)/g);
+  const nameComponent = String.raw`[\p{L}\d]+(?:['’\-][\p{L}\d]+)*`;
+  const nonNameOpeners = new Set(['a', 'an', 'available', 'based', 'building', 'calling', 'contacting', 'exploring', 'from', 'happy', 'here', 'interested', 'looking', 'need', 'new', 'planning', 'ready', 'seeking', 'setting', 'starting', 'the', 'trying', 'unable', 'want']);
+  const introductionName = new RegExp(String.raw`\b(?:my name is|i am|i'm)\s+(${nameComponent}(?:\s+(?!(?:and|but|i|i'm|im|need|want|for|from|with|please)\b)${nameComponent}){0,3})(?=\s*(?:[,.!?;]|$|\b(?:and|but|i|i'm|im|need|want|for|from|with|please)\b))`, 'giu');
+  replaceName(introductionName, (name) => !nonNameOpeners.has(name.split(/\s+/u)[0]?.toLocaleLowerCase('en-US') ?? ''));
   replace(/\b(?:passport|account|customer|member)[ #:-]*[A-Z0-9-]{4,}\b/gi, 'ID');
   return { masked, tokens };
 };

@@ -23,6 +23,7 @@ export interface EventInboxClaim {
   state: EventInboxState;
   attempts: number;
   claimed: boolean;
+  dlqPublished: boolean;
 }
 
 export interface ActionExecution {
@@ -33,6 +34,8 @@ export interface ActionExecution {
   catalogVersionId: string | null;
   providerStatus: string;
   n8nExecutionRef: string | null;
+  eventId?: string | null;
+  correlationId?: string | null;
   idempotencyKey: string;
   attempt: number;
   deadlineAt: string | null;
@@ -606,10 +609,14 @@ export interface Store {
   claimInboxEvent(consumer: string, eventId: string, leaseMs?: number): Promise<EventInboxClaim>;
   completeInboxEvent(consumer: string, eventId: string): Promise<void>;
   scheduleInboxRetry(consumer: string, eventId: string, error: string, retryAt: string): Promise<void>;
-  markInboxReconcileRequired(consumer: string, eventId: string, error: string): Promise<void>;
-  markInboxDeadLettered(consumer: string, eventId: string, error: string): Promise<void>;
+  markInboxReconcileRequired(consumer: string, eventId: string, error: string, event?: OutboxEvent): Promise<void>;
+  markInboxDeadLettered(consumer: string, eventId: string, error: string, event?: OutboxEvent): Promise<void>;
+  claimInboxDeadLetterProjections(limit: number, leaseMs: number): Promise<Array<{ consumer: string; eventId: string; event: OutboxEvent; reason: string }>>;
+  markInboxDeadLetterPublished(consumer: string, eventId: string, publishedAt?: string): Promise<void>;
+  releaseInboxDeadLetterProjection(consumer: string, eventId: string): Promise<void>;
+  claimActionExecution(execution: ActionExecution): Promise<{ execution: ActionExecution; claimed: boolean }>;
   recordActionExecution(execution: ActionExecution): Promise<ActionExecution>;
-  updateActionExecution(input: { actionId: string; tenantId: string; providerStatus: string; n8nExecutionRef?: string | null; outcome?: ActionExecution['outcome'] }): Promise<ActionExecution | null>;
+  updateActionExecution(input: { actionId: string; tenantId: string; providerStatus: string; n8nExecutionRef?: string | null; outcome?: ActionExecution['outcome']; resolveReconciliation?: boolean }): Promise<ActionExecution | null>;
   reconcileExpiredActionExecutions(now: string): Promise<ActionExecution[]>;
   addAudit(event: AuditEvent): Promise<void>;
   listAudit(tenantId: string): Promise<AuditEvent[]>;

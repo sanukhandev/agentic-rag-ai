@@ -236,12 +236,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     await updateSessionSafely({ ...session, conversationState: { ...(currentState ?? newConversationState()), workflowStatus, phase, pendingPrompt: null } }, true, 'workflow');
   };
   const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null, executionReference?: string): Promise<ActionRequest> => {
+    const resolvesReconciliation = action.state === 'reconcile_required' && status === 'completed' && Boolean(executionReference);
     const allowed = action.state === status
       || (['approved', 'processing'].includes(action.state) && ['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review'].includes(status))
       || (action.state === 'human_review' && ['completed', 'failed', 'reconcile_required'].includes(status))
-      || (action.state === 'awaiting_customer' && ['processing', 'completed', 'failed', 'reconcile_required'].includes(status));
+      || (action.state === 'awaiting_customer' && ['processing', 'completed', 'failed', 'reconcile_required'].includes(status))
+      || (action.state === 'awaiting_confirmation' && ['completed', 'failed'].includes(status))
+      || resolvesReconciliation;
     if (!allowed) throw new HttpError(409, 'WORKFLOW_TRANSITION_FORBIDDEN', `Workflow action cannot transition from ${action.state} to ${status}.`);
-    if (action.state === status) { await syncWorkflowState(action, status); await store.updateActionExecution({ actionId: action.id, tenantId: action.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: externalReference ? { externalReference } : null }); return action; }
+    if (action.state === status) { await syncWorkflowState(action, status); await store.updateActionExecution({ actionId: action.id, tenantId: action.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: externalReference ? { externalReference } : null, resolveReconciliation: resolvesReconciliation }); return action; }
     const updated = await store.transitionAction(action.id, action.tenantId, action.state, status, externalReference ? { externalReference } : action.result);
     if (!updated) {
       const current = await store.getAction(action.id);
@@ -249,7 +252,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action changed before this transition was committed.');
     }
     await syncWorkflowState(updated, status);
-    await store.updateActionExecution({ actionId: updated.id, tenantId: updated.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: externalReference ? { externalReference } : null });
+    await store.updateActionExecution({ actionId: updated.id, tenantId: updated.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: externalReference ? { externalReference } : null, resolveReconciliation: resolvesReconciliation });
     await store.addAudit({ id: randomUUID(), tenantId: updated.tenantId, actorId, eventName: `workflow.transition.${action.state}.${status}`, metadata: { actionId: updated.id, fromState: action.state, toState: status }, createdAt: new Date().toISOString() });
     return updated;
   };
@@ -1268,11 +1271,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const input = parse(z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['completed', 'failed']), externalReference: z.string().refine(isSafeExternalReference, 'An opaque external reference is required.'), executionReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u).optional() }), req.body);
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
-      const updated = await store.transitionAction(action.id, action.tenantId, action.state, input.state, input.state === 'completed' ? { externalReference: input.externalReference } : null);
-      if (!updated) throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action changed before this callback was committed.');
-      await syncWorkflowState(updated, input.state);
-      await store.updateActionExecution({ actionId: updated.id, tenantId: updated.tenantId, providerStatus: input.state, n8nExecutionRef: input.executionReference ?? null, outcome: input.externalReference ? { externalReference: input.externalReference } : null });
-      await store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: `workflow.callback.${input.state}`, metadata: { actionId: action.id }, createdAt: new Date().toISOString() });
+      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference);
+      await store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: `workflow.callback.${input.state}`, metadata: { actionId: action.id, executionReference: input.executionReference ?? null }, createdAt: new Date().toISOString() });
       res.json({ action: updated });
     } catch (error) { next(error); }
   });
