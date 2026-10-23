@@ -100,9 +100,10 @@ export const maskPii = (input: string): MaskResult => {
   };
   replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, 'EMAIL');
   replace(/(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)/g, 'PHONE');
+  // Keep the legacy case-insensitive ASCII matcher first so lowercase surname components stay in the same token.
+  replaceName(/\bmy name is\s+([A-Z][A-Za-z0-9'-]+(?:\s+[A-Z][A-Za-z0-9'-]+)?)/gi);
   replaceName(/\b[Mm]y name is\s+(\p{Lu}[\p{L}\d'-]*(?:\s+\p{Lu}[\p{L}\d'-]*){0,3})/gu);
   replaceName(/\b(?:I am|I'm)\s+(\p{Lu}[\p{L}\d'-]*(?:\s+\p{Lu}[\p{L}\d'-]*){0,3})/gu);
-  replaceName(/\bmy name is\s+([A-Z][A-Za-z0-9'-]+(?:\s+[A-Z][A-Za-z0-9'-]+)?)/gi);
   replaceName(/\b(?:[Ii] am|[Ii]'m)\s+([A-Z][A-Za-z0-9'-]+(?:\s+[A-Z][A-Za-z0-9'-]+)?)/g);
   replace(/\b(?:passport|account|customer|member)[ #:-]*[A-Z0-9-]{4,}\b/gi, 'ID');
   return { masked, tokens };

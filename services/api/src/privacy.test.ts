@@ -29,6 +29,8 @@ describe('privacy boundary', () => {
     expect(maskPii('I am interested in a demo.').masked).toBe('I am interested in a demo.');
     expect(maskPii('I am Alice.').masked).toBe('[NAME_1].');
     expect(maskPii('My name is N8n Tester.').masked).toBe('[NAME_1].');
+    expect(maskPii('My name is Alice smith.').masked).toBe('[NAME_1].');
+    expect(maskPii('my name is alice smith.').masked).toBe('[NAME_1].');
   });
 
   it('allocates response tokens without overwriting earlier session values', () => {
