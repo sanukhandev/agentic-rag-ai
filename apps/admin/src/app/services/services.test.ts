@@ -1,3 +1,4 @@
+import '@angular/compiler';
 import { describe, expect, it } from 'vitest';
 import { ToastService } from './toast.service';
 import { UiNavigationService, isNavSection } from './ui-navigation.service';
@@ -5,7 +6,8 @@ import { canAccessAdminSection } from './admin-navigation';
 import { isCatalogJobPending } from './intent-catalog-utils';
 import { isValidTenantSlug, resolveTenantSlug } from '../components/customer-chat/customer-chat-utils';
 import { apiErrorMessage } from './api-error';
-import { filterPermittedCommands, COMMAND_SECTION_MAP } from '../components/shared/command-palette-utils';
+import { filterPermittedCommands } from '../components/shared/command-palette-utils';
+import { AdminStateService } from './admin-state.service';
 import { Tenant, Source, NavSection } from '../types/admin.types';
 
 describe('SOLID Services and Architecture Contracts', () => {
@@ -104,10 +106,16 @@ describe('SOLID Services and Architecture Contracts', () => {
 
   it('gates command palette items strictly according to user role and permissions', () => {
     const sampleTenants: Tenant[] = [
-      { id: 't-1', name: 'Acme Corp', slug: 'acme-corp', status: 'active', createdAt: '', updatedAt: '' }
+      { id: 't-1', name: 'Acme Corp', slug: 'acme-corp', status: 'active', createdAt: '2026-01-01T00:00:00Z' }
     ];
     const sampleSources: Source[] = [
-      { id: 's-1', tenantId: 't-1', title: 'Knowledge Base', type: 'url', status: 'indexed', approvedForChat: true, effectiveDate: '', createdAt: '', updatedAt: '', citationsCount: 5 }
+      {
+        id: 's-1',
+        title: 'Knowledge Base',
+        status: 'active',
+        audience: 'public',
+        mimeType: 'text/html'
+      }
     ];
 
     const createOptions = (role: 'platform_admin' | 'tenant_admin' | 'tenant_editor' | 'tenant_viewer') => {
@@ -161,29 +169,30 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(platformAdminItems.some((i) => i.id === 'nav-observability')).toBe(true);
   });
 
-  it('triggers section data reload when re-selecting the currently active section', () => {
-    let reloadedSection: string | null = null;
-    const fakeState = {
-      currentSection: 'knowledge' as NavSection,
-      isAuthenticated: true,
-      canAccessSection: (sec: NavSection) => true,
-      loadSectionData(sec: NavSection) {
-        reloadedSection = sec;
-      },
-      setSection(sec: NavSection) {
-        if (!this.canAccessSection(sec)) {
-          this.currentSection = 'overview';
-          return;
-        }
-        if (this.currentSection === sec && this.isAuthenticated) {
-          this.loadSectionData(sec);
-          return;
-        }
-        this.currentSection = sec;
-      }
-    };
+  it('triggers section data reload and closes mega menu when re-selecting the currently active section', () => {
+    const navService = new UiNavigationService();
+    navService.setSection('knowledge');
+    navService.toggleMegaMenu('knowledge');
+    expect(navService.activeMegaMenu()).toBe('knowledge');
+    expect(navService.currentSection()).toBe('knowledge');
 
-    fakeState.setSection('knowledge');
+    let reloadedSection: NavSection | null = null;
+    const facade = Object.assign(Object.create(AdminStateService.prototype), {
+      nav: navService,
+      auth: { isAuthenticated: () => true },
+      canAccessSection: () => true,
+      loadSectionData: (sec: NavSection) => {
+        reloadedSection = sec;
+      }
+    });
+
+    // Re-select currently active section
+    facade.setSection('knowledge');
+
+    // Asserts:
+    // 1. Data reload was explicitly triggered
     expect(reloadedSection).toBe('knowledge');
+    // 2. Active mega menu was dismissed
+    expect(navService.activeMegaMenu()).toBeNull();
   });
 });

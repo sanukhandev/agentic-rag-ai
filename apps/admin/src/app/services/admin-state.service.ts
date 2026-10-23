@@ -139,10 +139,15 @@ export class AdminStateService {
     });
 
     // Reactive signal effect for workspace/tenant selection
+    let lastScopedTenantId: string | null = null;
     effect(() => {
       const tenant = this.tenantService.selectedTenant();
-      if (this.auth.isAuthenticated() && tenant) {
+      const tenantId = tenant?.id ?? null;
+      if (this.auth.isAuthenticated() && tenantId && tenantId !== lastScopedTenantId) {
+        lastScopedTenantId = tenantId;
         untracked(() => this.loadTenantScopedData());
+      } else if (!tenantId) {
+        lastScopedTenantId = null;
       }
     });
 
@@ -194,6 +199,7 @@ export class AdminStateService {
     }
     const current = this.nav.currentSection();
     if (current === section && this.auth.isAuthenticated()) {
+      this.nav.closeMegaMenu();
       this.loadSectionData(section);
       return;
     }

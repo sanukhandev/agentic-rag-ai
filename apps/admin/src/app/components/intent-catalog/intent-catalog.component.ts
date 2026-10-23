@@ -83,15 +83,19 @@ export class IntentCatalogComponent {
   editingVersionId: string | null = null;
   editJson = '';
   editError = '';
+  private lastLoadedTenantId: string | null = null;
 
   constructor() {
     effect(() => {
-      const tenant = this.state.selectedTenant();
-      if (tenant) {
+      const tenantId = this.state.selectedTenant()?.id ?? null;
+      if (tenantId && tenantId !== this.lastLoadedTenantId) {
+        this.lastLoadedTenantId = tenantId;
         untracked(() => {
           this.service.load();
           this.service.resumePendingJob();
         });
+      } else if (!tenantId) {
+        this.lastLoadedTenantId = null;
       }
     });
   }
