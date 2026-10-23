@@ -324,4 +324,87 @@ describe('CustomerChatComponent logic and contracts', () => {
     expect(component.agentName).toBe('Agent Beta');
     expect(component.tenantName).toBe('Tenant B Org');
   });
+
+  // [P2 Finding 2 Real Component Test]: Deferred history GET blocks send until restored, ensuring single session identity and preserving history
+  it('CustomerChatComponent blocks user send while history restoration is in-flight, preventing dual sessions and history overwrites', () => {
+    const historyGetSubject = new Subject<any>();
+    const sessionPostSubject = new Subject<any>();
+    const messagePostSubject = new Subject<any>();
+
+    const httpMock = {
+      get: vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/api/v1/chat/sessions/saved-session-123')) {
+          return historyGetSubject;
+        }
+        return of({ tenant: { name: 'Acme', slug: 'tenant-acme' } });
+      }),
+      post: vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/api/v1/chat/sessions')) return sessionPostSubject;
+        if (url.includes('/api/v1/chat/messages')) return messagePostSubject;
+        return of({});
+      })
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: API_BASE_URL, useValue: 'http://127.0.0.1:4000' },
+        { provide: HttpClient, useValue: httpMock },
+        { provide: DomSanitizer, useValue: { bypassSecurityTrustHtml: (h: string) => h } },
+        {
+          provide: AdminStateService,
+          useValue: {
+            selectedTenant: signal(null),
+            isAuthenticated: signal(false)
+          }
+        }
+      ]
+    });
+
+    // Populate saved session in localStorage
+    localStorageStore['agentic-rag-session:tenant-acme'] = 'saved-session-123';
+
+    const component = runInInjectionContext(TestBed.inject(EnvironmentInjector), () => new CustomerChatComponent());
+    component.initialTenantSlug = 'tenant-acme';
+    component.ngOnInit();
+    TestBed.flushEffects();
+
+    // 1. History restoration is in-flight: isRestoringSession must be true
+    expect(component.isRestoringSession).toBe(true);
+
+    // 2. User attempts to send a message while history is loading
+    component.currentInput = 'Can I send while restoring?';
+    component.sendMessage();
+
+    // Assert send was blocked: no duplicate session POST was dispatched, no messages added!
+    expect(httpMock.post).not.toHaveBeenCalled();
+    expect(component.messages.length).toBe(0);
+
+    // 3. Deferred history GET now resolves
+    historyGetSubject.next({
+      sessionId: 'saved-session-123',
+      messages: [
+        { id: 'm-old-1', role: 'user', content: 'Previous Question', citations: [], createdAt: '2026-01-01T00:00:00Z' },
+        { id: 'm-old-2', role: 'assistant', content: 'Previous Answer', citations: [], createdAt: '2026-01-01T00:00:01Z' }
+      ]
+    });
+    historyGetSubject.complete();
+
+    // 4. Assert restoration completed: isRestoringSession is false, sessionId matches restored session, history intact
+    expect(component.isRestoringSession).toBe(false);
+    expect(component.sessionId).toBe('saved-session-123');
+    expect(component.messages.length).toBe(2);
+    expect(component.messages[0].content).toBe('Previous Question');
+    expect(component.messages[1].content).toBe('Previous Answer');
+
+    // 5. User now submits a new message
+    component.currentInput = 'Follow-up question';
+    component.sendMessage();
+
+    // Assert message sent under the single restored session identity (NO new session POST)
+    expect(httpMock.post).toHaveBeenCalledWith(
+      'http://127.0.0.1:4000/api/v1/chat/messages',
+      expect.objectContaining({ sessionId: 'saved-session-123', message: 'Follow-up question' })
+    );
+  });
 });

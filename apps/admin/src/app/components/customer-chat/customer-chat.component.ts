@@ -350,23 +350,23 @@ interface TenantChatConfig {
               (keydown)="onTextareaKeyDown($event)"
               (input)="adjustTextareaHeight($event)"
               rows="1"
-              placeholder="Ask a question about our verified products or services..."
-              [disabled]="isBusy"
-              class="min-h-[38px] max-h-32 w-full resize-none bg-transparent px-2 py-1.5 text-xs sm:text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none leading-relaxed"
+              [placeholder]="isRestoringSession ? 'Restoring verified conversation session...' : 'Ask a question about our verified products or services...'"
+              [disabled]="isBusy || isRestoringSession"
+              class="min-h-[38px] max-h-32 w-full resize-none bg-transparent px-2 py-1.5 text-xs sm:text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none leading-relaxed disabled:opacity-40"
               aria-label="Your message"
             ></textarea>
 
             <!-- Minimal Send Button -->
             <button
               type="submit"
-              [disabled]="isBusy || !currentInput.trim()"
+              [disabled]="isBusy || isRestoringSession || !currentInput.trim()"
               class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white shadow-subtle transition-all hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed button-press"
               aria-label="Send message"
               title="Send message"
             >
               <app-icon
-                [name]="isBusy ? 'refresh' : 'send'"
-                [classNames]="isBusy ? 'w-4 h-4 animate-spin text-white' : 'w-4 h-4 text-white'"
+                [name]="(isBusy || isRestoringSession) ? 'refresh' : 'send'"
+                [classNames]="(isBusy || isRestoringSession) ? 'w-4 h-4 animate-spin text-white' : 'w-4 h-4 text-white'"
               ></app-icon>
             </button>
           </div>
@@ -434,6 +434,7 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
   messages: CustomerChatMessage[] = [];
   currentInput = '';
   isBusy = false;
+  isRestoringSession = false;
   errorMessage = '';
   canRetry = false;
   lastFailedMessage = '';
@@ -537,19 +538,28 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
     const saved = window.localStorage.getItem(storageKey);
 
     if (saved) {
+      this.isRestoringSession = true;
       let sub: Subscription | undefined;
       sub = this.http.get<{ sessionId: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean; createdAt: string }> }>(`${this.apiBase}/api/v1/chat/sessions/${saved}`)
         .subscribe({
           next: (res) => {
             if (sub) this.pendingHttpSubscriptions.delete(sub);
-            if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) return;
+            if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) {
+              this.isRestoringSession = false;
+              return;
+            }
+            this.isRestoringSession = false;
             this.sessionId = res.sessionId;
             this.messages = res.messages.map((m) => this.mapHistoryMessage(m));
             this.scrollToBottom();
           },
           error: () => {
             if (sub) this.pendingHttpSubscriptions.delete(sub);
-            if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) return;
+            if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) {
+              this.isRestoringSession = false;
+              return;
+            }
+            this.isRestoringSession = false;
             window.localStorage.removeItem(storageKey);
             this.sessionId = null;
             this.messages = [];
@@ -561,7 +571,7 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
 
   sendMessage(): void {
     const text = this.currentInput.trim();
-    if (!text || this.isBusy) return;
+    if (!text || this.isBusy || this.isRestoringSession) return;
 
     this.errorMessage = '';
     this.canRetry = false;
@@ -761,6 +771,7 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
     this.errorMessage = '';
     this.currentInput = '';
     this.isBusy = false;
+    this.isRestoringSession = false;
     this.canRetry = false;
     this.lastFailedMessage = '';
     for (const timer of this.actionPollTimers) clearTimeout(timer);

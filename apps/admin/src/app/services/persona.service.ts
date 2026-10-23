@@ -6,7 +6,7 @@ import { API_BASE_URL } from './tokens';
 import { AuthService } from './auth.service';
 import { ToastService } from './toast.service';
 
-const EMPTY_PERSONA: Persona = {
+export const EMPTY_PERSONA: Persona = {
   name: '',
   greeting: '',
   personality: '',
@@ -31,20 +31,35 @@ export class PersonaService {
   private readonly toast = inject(ToastService);
 
   // Angular Signals (Primary reactive state)
-  private readonly _persona = signal<Persona>(EMPTY_PERSONA);
+  // Scoped loaded state per tenant prevents cross-tenant data leakage during in-flight fetches
+  private readonly _loadedPersonaByTenant = signal<Record<string, Persona>>({});
   private readonly _draftsByTenant = signal<Record<string, Persona>>({});
-  private readonly _personaVersions = signal<PersonaVersion[]>([]);
+  private readonly _loadedVersionsByTenant = signal<Record<string, PersonaVersion[]>>({});
   private readonly _isLoading = signal<boolean>(false);
 
-  private get activeTenantKey(): string {
+  private personaLoadGeneration = 0;
+  private versionsLoadGeneration = 0;
+
+  get activeTenantKey(): string {
     return this.auth.selectedTenantId || 'default';
   }
 
-  readonly persona = this._persona.asReadonly();
+  readonly persona = computed<Persona>(() => {
+    return this._loadedPersonaByTenant()[this.activeTenantKey] ?? EMPTY_PERSONA;
+  });
+
+  readonly isPersonaLoaded = computed<boolean>(() => {
+    return Object.prototype.hasOwnProperty.call(this._loadedPersonaByTenant(), this.activeTenantKey);
+  });
+
   readonly personaDraft = computed<Persona | null>(() => {
     return this._draftsByTenant()[this.activeTenantKey] ?? null;
   });
-  readonly personaVersions = this._personaVersions.asReadonly();
+
+  readonly personaVersions = computed<PersonaVersion[]>(() => {
+    return this._loadedVersionsByTenant()[this.activeTenantKey] ?? [];
+  });
+
   readonly isLoading = this._isLoading.asReadonly();
 
   // Observable streams for backwards compatibility
@@ -86,12 +101,16 @@ export class PersonaService {
   loadPersona(): void {
     if (!this.auth.token()) return;
     const requestedTenant = this.activeTenantKey;
+    const generation = ++this.personaLoadGeneration;
     this.http.get<{ persona: Persona | null }>(`${this.apiBase}/api/v1/admin/persona`).pipe(
       catchError(() => of({ persona: null }))
     ).subscribe((res) => {
-      if (this.activeTenantKey !== requestedTenant) return;
+      if (this.personaLoadGeneration !== generation || this.activeTenantKey !== requestedTenant) return;
       const p = res.persona ?? EMPTY_PERSONA;
-      this._persona.set(p);
+      this._loadedPersonaByTenant.update((all) => ({
+        ...all,
+        [requestedTenant]: p
+      }));
       this.personaSubject.next(p);
     });
   }
@@ -99,12 +118,16 @@ export class PersonaService {
   loadPersonaVersions(): void {
     if (!this.auth.token()) return;
     const requestedTenant = this.activeTenantKey;
+    const generation = ++this.versionsLoadGeneration;
     this.http.get<{ items: PersonaVersion[] }>(`${this.apiBase}/api/v1/admin/persona/versions`).pipe(
       catchError(() => of({ items: [] }))
     ).subscribe((res) => {
-      if (this.activeTenantKey !== requestedTenant) return;
+      if (this.versionsLoadGeneration !== generation || this.activeTenantKey !== requestedTenant) return;
       const items = res.items ?? [];
-      this._personaVersions.set(items);
+      this._loadedVersionsByTenant.update((all) => ({
+        ...all,
+        [requestedTenant]: items
+      }));
       this.personaVersionsSubject.next(items);
     });
   }
@@ -119,8 +142,12 @@ export class PersonaService {
     this.http.post<{ version: PersonaVersion }>(`${this.apiBase}/api/v1/admin/persona/drafts`, persona, { headers }).subscribe({
       next: ({ version }) => {
         if (this.activeTenantKey === activeKey) {
-          const nextList = [version, ...this._personaVersions().filter((item) => item.id !== version.id)];
-          this._personaVersions.set(nextList);
+          const currentList = this.personaVersions();
+          const nextList = [version, ...currentList.filter((item) => item.id !== version.id)];
+          this._loadedVersionsByTenant.update((all) => ({
+            ...all,
+            [activeKey]: nextList
+          }));
           this.personaVersionsSubject.next(nextList);
         }
         this.toast.show('info', 'Draft Saved', `Persona v${version.version} saved as draft.`);
@@ -139,8 +166,11 @@ export class PersonaService {
     this.http.put<{ persona: Persona }>(`${this.apiBase}/api/v1/admin/persona`, persona, { headers }).subscribe({
       next: ({ persona: savedPersona }) => {
         this.clearDraft(activeKey);
+        this._loadedPersonaByTenant.update((all) => ({
+          ...all,
+          [activeKey]: savedPersona
+        }));
         if (this.activeTenantKey === activeKey) {
-          this._persona.set(savedPersona);
           this.personaSubject.next(savedPersona);
           this.loadPersonaVersions();
         }

@@ -368,10 +368,16 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(personaService.personaDraft()?.name).toBe('Agent Beta');
   });
 
-  it('PersonaService guards late loadPersona HTTP responses when tenant switched mid-request', () => {
-    const personaResponse$ = new Subject<{ persona: Persona | null }>();
+  it('PersonaService guards late loadPersona HTTP responses and applies latest-wins generation counter on rapid switches', () => {
+    const a1Response$ = new Subject<{ persona: Persona | null }>();
+    const a2Response$ = new Subject<{ persona: Persona | null }>();
+    let requestCount = 0;
+
     const httpMock = {
-      get: vi.fn().mockReturnValue(personaResponse$),
+      get: vi.fn().mockImplementation(() => {
+        requestCount++;
+        return requestCount === 1 ? a1Response$ : a2Response$;
+      }),
       post: vi.fn().mockReturnValue(of({})),
       put: vi.fn().mockReturnValue(of({}))
     };
@@ -388,21 +394,21 @@ describe('SOLID Services and Architecture Contracts', () => {
 
     const auth = injector.get(AuthService);
     const personaService = injector.get(PersonaService);
-
-    // Provide a token so loadPersona does not early exit
     (auth as any)._token.set('mock-token');
 
-    // Start on Tenant A
+    // 1. Initial Tenant A fetch (request generation 1)
     auth.setSelectedTenantId('tenant-a');
     personaService.loadPersona();
 
-    // While request is pending, tenant switches to Tenant B
+    // 2. Rapid switch to B then back to A (request generation 2)
     auth.setSelectedTenantId('tenant-b');
+    auth.setSelectedTenantId('tenant-a');
+    personaService.loadPersona();
 
-    // Stale response for Tenant A resolves
-    const stalePersonaA: Persona = {
-      name: 'Stale A',
-      greeting: 'Old Greeting',
+    // 3. Newer A2 response arrives first
+    const personaA2: Persona = {
+      name: 'Agent A - Newer Epoch 2',
+      greeting: 'Welcome from Epoch 2',
       personality: '',
       tone: '',
       speakingStyle: '',
@@ -414,17 +420,32 @@ describe('SOLID Services and Architecture Contracts', () => {
       voicePitch: 1,
       voiceVolume: 1
     };
-    personaResponse$.next({ persona: stalePersonaA });
+    a2Response$.next({ persona: personaA2 });
 
-    // Assert stale persona A was NOT set as active persona because activeTenantKey is now tenant-b!
-    expect(personaService.persona().name).not.toBe('Stale A');
-    expect(personaService.persona().name).toBe('');
+    expect(personaService.persona().name).toBe('Agent A - Newer Epoch 2');
+
+    // 4. Stale A1 response arrives second
+    const personaA1: Persona = {
+      ...personaA2,
+      name: 'Agent A - Stale Epoch 1'
+    };
+    a1Response$.next({ persona: personaA1 });
+
+    // Assert: stale A1 was discarded by generation check; latest-wins preserved!
+    expect(personaService.persona().name).toBe('Agent A - Newer Epoch 2');
   });
 
-  it('AiStudioComponent prevents publishing when form originating tenant differs from active tenant', () => {
+  it('AiStudioComponent prevents publishing stale tenant A persona before tenant B persona has loaded, becoming publishable only when B arrives', () => {
     const putMock = vi.fn().mockReturnValue(of({ persona: { name: 'Published' } }));
+    const personaBResponse$ = new Subject<{ persona: Persona | null }>();
+
     const httpMock = {
-      get: vi.fn().mockReturnValue(of({ persona: null })),
+      get: vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/api/v1/admin/persona')) {
+          return personaBResponse$;
+        }
+        return of({});
+      }),
       post: vi.fn().mockReturnValue(of({})),
       put: putMock
     };
@@ -441,30 +462,39 @@ describe('SOLID Services and Architecture Contracts', () => {
 
     const toast = injector.get(ToastService);
     const personaService = injector.get(PersonaService);
+    const auth = injector.get(AuthService);
+    (auth as any)._token.set('mock-token');
+
+    // Setup loaded persona for Tenant A
+    auth.setSelectedTenantId('tenant-a');
+    const personaA: Persona = {
+      name: 'Agent Alpha',
+      greeting: 'Tenant A Greeting',
+      personality: '',
+      tone: '',
+      speakingStyle: '',
+      permittedLanguages: ['en'],
+      contextWindowMessages: 10,
+      voiceName: '',
+      voiceLanguage: 'en-US',
+      voiceRate: 1,
+      voicePitch: 1,
+      voiceVolume: 1
+    };
+    (personaService as any)._loadedPersonaByTenant.set({ 'tenant-a': personaA });
+
     const selectedTenantSignal = signal<{ id: string; slug: string; name: string } | null>({ id: 'tenant-a', slug: 'tenant-a', name: 'Tenant A' });
 
     const mockAdminState = {
       selectedTenant: selectedTenantSignal,
-      auth: { selectedTenantId: 'tenant-a' },
-      persona: signal<Persona>({
-        name: 'Initial Persona',
-        greeting: 'Hello',
-        personality: '',
-        tone: '',
-        speakingStyle: '',
-        permittedLanguages: ['en'],
-        contextWindowMessages: 10,
-        voiceName: '',
-        voiceLanguage: 'en-US',
-        voiceRate: 1,
-        voicePitch: 1,
-        voiceVolume: 1
-      }),
-      personaVersions: signal([]),
+      auth,
+      persona: personaService.persona,
+      isPersonaLoaded: personaService.isPersonaLoaded,
+      personaVersions: personaService.personaVersions,
       personaService,
       toastService: toast,
-      loadPersona: vi.fn(),
-      loadPersonaVersions: vi.fn(),
+      loadPersona: () => personaService.loadPersona(),
+      loadPersonaVersions: () => personaService.loadPersonaVersions(),
       setSection: vi.fn()
     };
 
@@ -483,19 +513,59 @@ describe('SOLID Services and Architecture Contracts', () => {
 
     const studio = runInInjectionContext(TestBed.inject(EnvironmentInjector), () => new AiStudioComponent());
     TestBed.flushEffects();
+
+    // Verify Tenant A is loaded and publishable
     expect(studio.activeFormTenantId).toBe('tenant-a');
+    expect(studio.persona.name).toBe('Agent Alpha');
+    expect(studio.canPublish).toBe(true);
 
-    // Simulate workspace context switch to Tenant B while editing
-    mockAdminState.auth.selectedTenantId = 'tenant-b';
+    // Switch workspace context to Tenant B while Tenant B persona is not loaded yet
+    auth.setSelectedTenantId('tenant-b');
     selectedTenantSignal.set({ id: 'tenant-b', slug: 'tenant-b', name: 'Tenant B' });
+    TestBed.flushEffects();
 
-    // Attempt to publish form configured for Tenant A
+    // Verification 1: While B response is pending, form must NOT show A data as B's, activeFormTenantId must be null, and canPublish must be false
+    expect(studio.activeFormTenantId).toBeNull();
+    expect(studio.persona.name).not.toBe('Agent Alpha');
+    expect(studio.canPublish).toBe(false);
+
+    // Attempt to publish before B's response arrives
     studio.publishCurrent();
 
-    // Verify PUT request was blocked
+    // Verification 2: Zero PUT calls made!
     expect(putMock).not.toHaveBeenCalled();
-    // Verify toast error was emitted
     const toasts = toast.toasts();
     expect(toasts.some((t) => t.type === 'error' && t.title === 'Workspace Mismatch')).toBe(true);
+
+    // Deliver Tenant B's persona response
+    const personaB: Persona = {
+      name: 'Agent Beta',
+      greeting: 'Welcome to Tenant B',
+      personality: '',
+      tone: '',
+      speakingStyle: '',
+      permittedLanguages: ['en'],
+      contextWindowMessages: 10,
+      voiceName: '',
+      voiceLanguage: 'en-US',
+      voiceRate: 1,
+      voicePitch: 1,
+      voiceVolume: 1
+    };
+    (personaService as any)._loadedPersonaByTenant.update((all: Record<string, Persona>) => ({ ...all, 'tenant-b': personaB }));
+    TestBed.flushEffects();
+
+    // Verification 3: Form now bound to Tenant B, B data applied, and publish becomes active!
+    expect(studio.activeFormTenantId).toBe('tenant-b');
+    expect(studio.persona.name).toBe('Agent Beta');
+    expect(studio.canPublish).toBe(true);
+
+    // Publish now succeeds
+    studio.publishCurrent();
+    expect(putMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:4000/api/v1/admin/persona',
+      expect.objectContaining({ name: 'Agent Beta' }),
+      { headers: { 'X-Tenant-Id': 'tenant-b' } }
+    );
   });
 });

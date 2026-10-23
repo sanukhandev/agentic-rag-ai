@@ -73,6 +73,7 @@ export class AdminStateService {
   readonly sources = this.knowledge.sources;
   readonly ingestionJobs = this.knowledge.jobs;
   readonly persona = this.personaService.persona;
+  readonly isPersonaLoaded = this.personaService.isPersonaLoaded;
   readonly personaVersions = this.personaService.personaVersions;
   readonly domains = this.settings.domains;
   readonly members = this.settings.members;
