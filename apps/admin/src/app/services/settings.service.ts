@@ -49,9 +49,7 @@ export class SettingsService {
 
   loadChannel(): void {
     if (!this.auth.token) return;
-    this.http.get<Channel>(`${this.apiBase}/api/v1/admin/channel`, {
-      headers: this.auth.authHeaders
-    }).pipe(
+    this.http.get<Channel>(`${this.apiBase}/api/v1/admin/channel`).pipe(
       catchError(() => of({ publicOrigin: null, publicChatEnabled: false }))
     ).subscribe((res) => this.channelSubject.next(res));
   }
@@ -61,9 +59,7 @@ export class SettingsService {
     const previous = this.channelSubject.value;
     this.channelSubject.next(channel);
 
-    this.http.patch<Channel>(`${this.apiBase}/api/v1/admin/channel`, channel, {
-      headers: this.auth.authHeaders
-    }).subscribe({
+    this.http.patch<Channel>(`${this.apiBase}/api/v1/admin/channel`, channel).subscribe({
       next: (res) => {
         this.channelSubject.next(res);
         this.toast.show('success', 'Policy Saved', 'Public chat channel origin updated.');
@@ -77,9 +73,7 @@ export class SettingsService {
 
   loadDomains(): void {
     if (!this.auth.token) return;
-    this.http.get<{ items: TenantDomain[] }>(`${this.apiBase}/api/v1/admin/domains`, {
-      headers: this.auth.authHeaders
-    }).pipe(
+    this.http.get<{ items: TenantDomain[] }>(`${this.apiBase}/api/v1/admin/domains`).pipe(
       catchError(() => of({ items: [] }))
     ).subscribe((res) => this.domainsSubject.next(res.items ?? []));
   }
@@ -90,9 +84,7 @@ export class SettingsService {
 
     if (!this.auth.token) return;
 
-    this.http.post(`${this.apiBase}/api/v1/admin/domains`, { hostname: cleanHostname }, {
-      headers: this.auth.authHeaders
-    }).subscribe({
+    this.http.post(`${this.apiBase}/api/v1/admin/domains`, { hostname: cleanHostname }).subscribe({
       next: () => {
         this.loadDomains();
         this.toast.show('success', 'Domain Added', `${cleanHostname} added to allowed origins.`);
@@ -104,9 +96,7 @@ export class SettingsService {
   removeDomain(domain: TenantDomain): void {
     if (!this.auth.token) return;
 
-    this.http.delete(`${this.apiBase}/api/v1/admin/domains/${domain.id}`, {
-      headers: this.auth.authHeaders
-    }).subscribe({
+    this.http.delete(`${this.apiBase}/api/v1/admin/domains/${domain.id}`).subscribe({
       next: () => {
         this.loadDomains();
         this.toast.show('info', 'Domain Removed', `${domain.hostname} removed.`);
@@ -117,9 +107,7 @@ export class SettingsService {
 
   loadChannelCredentials(): void {
     if (!this.auth.token) return;
-    this.http.get<{ items: ChannelCredential[] }>(`${this.apiBase}/api/v1/admin/channels`, {
-      headers: this.auth.authHeaders
-    }).pipe(
+    this.http.get<{ items: ChannelCredential[] }>(`${this.apiBase}/api/v1/admin/channels`).pipe(
       catchError(() => of({ items: [] }))
     ).subscribe((res) => this.channelCredentialsSubject.next(res.items ?? []));
   }
@@ -128,9 +116,7 @@ export class SettingsService {
     const cleanChannel = channel.trim().toLowerCase();
     if (!cleanChannel || !this.auth.token) return;
 
-    this.http.post<{ credential: ChannelCredential; secret: string }>(`${this.apiBase}/api/v1/admin/channels`, { channel: cleanChannel, authMode }, {
-      headers: this.auth.authHeaders
-    }).subscribe({
+    this.http.post<{ credential: ChannelCredential; secret: string }>(`${this.apiBase}/api/v1/admin/channels`, { channel: cleanChannel, authMode }).subscribe({
       next: (res) => {
         this.loadChannelCredentials();
         onCreated?.(res.secret);
@@ -143,9 +129,7 @@ export class SettingsService {
   revokeChannelCredential(credential: ChannelCredential): void {
     if (!this.auth.token) return;
 
-    this.http.post(`${this.apiBase}/api/v1/admin/channels/${credential.id}/revoke`, {}, {
-      headers: this.auth.authHeaders
-    }).subscribe({
+    this.http.post(`${this.apiBase}/api/v1/admin/channels/${credential.id}/revoke`, {}).subscribe({
       next: () => {
         this.loadChannelCredentials();
         this.toast.show('success', 'Connector Revoked', `${credential.channel} can no longer authenticate.`);
@@ -156,9 +140,7 @@ export class SettingsService {
 
   loadMembers(): void {
     if (!this.auth.token) return;
-    this.http.get<{ items: Member[] }>(`${this.apiBase}/api/v1/admin/members`, {
-      headers: this.auth.authHeaders
-    }).pipe(
+    this.http.get<{ items: Member[] }>(`${this.apiBase}/api/v1/admin/members`).pipe(
       catchError(() => of({ items: [] }))
     ).subscribe((res) => this.membersSubject.next(res.items ?? []));
   }
@@ -167,9 +149,7 @@ export class SettingsService {
     const cleanEmail = email.trim().toLowerCase();
     if (!this.auth.token) return;
 
-    this.http.post(`${this.apiBase}/api/v1/admin/members`, { email: cleanEmail, password, role }, {
-      headers: this.auth.authHeaders
-    }).subscribe({
+    this.http.post(`${this.apiBase}/api/v1/admin/members`, { email: cleanEmail, password, role }).subscribe({
       next: () => {
         this.loadMembers();
         this.toast.show('success', 'Member Added', `${cleanEmail} added.`);
@@ -182,9 +162,7 @@ export class SettingsService {
     if (!this.auth.token) return;
 
     const before = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    this.http.post(`${this.apiBase}/api/v1/admin/retention/purge-sessions`, { before }, {
-      headers: this.auth.authHeaders
-    }).subscribe({
+    this.http.post(`${this.apiBase}/api/v1/admin/retention/purge-sessions`, { before }).subscribe({
       next: () => this.toast.show('success', 'Hard Purge Complete', 'Expired sessions wiped.'),
       error: () => this.toast.show('error', 'Purge Failed', 'Could not purge expired sessions.')
     });

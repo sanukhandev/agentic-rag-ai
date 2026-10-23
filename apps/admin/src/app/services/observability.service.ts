@@ -74,9 +74,7 @@ export class ObservabilityService {
 
   loadHealth(): void {
     if (!this.auth.token) return;
-    this.http.get<Health>(`${this.apiBase}/api/v1/admin/services/health`, {
-      headers: this.auth.authHeaders
-    }).pipe(
+    this.http.get<Health>(`${this.apiBase}/api/v1/admin/services/health`).pipe(
       catchError(() => {
         const current = this.healthSubject.value;
         if (current?.checkedAt && Object.keys(current.checks).length > 0) {
@@ -101,27 +99,21 @@ export class ObservabilityService {
 
   loadMetrics(): void {
     if (!this.auth.token) return;
-    this.http.get<{ metrics: Metrics }>(`${this.apiBase}/api/v1/admin/dashboard/overview`, {
-      headers: this.auth.authHeaders
-    }).pipe(
+    this.http.get<{ metrics: Metrics }>(`${this.apiBase}/api/v1/admin/dashboard/overview`).pipe(
       catchError(() => of({ metrics: EMPTY_METRICS }))
     ).subscribe((res) => this.metricsSubject.next(res.metrics));
   }
 
   loadWorkflowRuns(): void {
     if (!this.auth.token) return;
-    this.http.get<{ items: WorkflowRun[] }>(`${this.apiBase}/api/v1/admin/workflow-runs`, {
-      headers: this.auth.authHeaders
-    }).pipe(
+    this.http.get<{ items: WorkflowRun[] }>(`${this.apiBase}/api/v1/admin/workflow-runs`).pipe(
       catchError(() => of({ items: [] }))
     ).subscribe((res) => this.workflowRunsSubject.next(res.items ?? []));
   }
 
   loadAudit(): void {
     if (!this.auth.token) return;
-    this.http.get<{ items: AuditEvent[] }>(`${this.apiBase}/api/v1/admin/audit`, {
-      headers: this.auth.authHeaders
-    }).pipe(
+    this.http.get<{ items: AuditEvent[] }>(`${this.apiBase}/api/v1/admin/audit`).pipe(
       catchError(() => of({ items: [] }))
     ).subscribe((res) => this.auditEventsSubject.next(res.items ?? []));
   }

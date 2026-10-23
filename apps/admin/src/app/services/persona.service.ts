@@ -62,27 +62,21 @@ export class PersonaService {
 
   loadPersona(): void {
     if (!this.auth.token) return;
-    this.http.get<{ persona: Persona | null }>(`${this.apiBase}/api/v1/admin/persona`, {
-      headers: this.auth.authHeaders
-    }).pipe(
+    this.http.get<{ persona: Persona | null }>(`${this.apiBase}/api/v1/admin/persona`).pipe(
       catchError(() => of({ persona: null }))
     ).subscribe((res) => this.personaSubject.next(res.persona ?? EMPTY_PERSONA));
   }
 
   loadPersonaVersions(): void {
     if (!this.auth.token) return;
-    this.http.get<{ items: PersonaVersion[] }>(`${this.apiBase}/api/v1/admin/persona/versions`, {
-      headers: this.auth.authHeaders
-    }).pipe(
+    this.http.get<{ items: PersonaVersion[] }>(`${this.apiBase}/api/v1/admin/persona/versions`).pipe(
       catchError(() => of({ items: [] }))
     ).subscribe((res) => this.personaVersionsSubject.next(res.items ?? []));
   }
 
   saveDraft(persona: Persona): void {
     if (!this.auth.token) return;
-    this.http.post<{ version: PersonaVersion }>(`${this.apiBase}/api/v1/admin/persona/drafts`, persona, {
-      headers: this.auth.authHeaders
-    }).subscribe({
+    this.http.post<{ version: PersonaVersion }>(`${this.apiBase}/api/v1/admin/persona/drafts`, persona).subscribe({
       next: ({ version }) => {
         this.personaVersionsSubject.next([version, ...this.personaVersionsSubject.value.filter((item) => item.id !== version.id)]);
         this.toast.show('info', 'Draft Saved', `Persona v${version.version} saved as draft.`);
@@ -93,9 +87,7 @@ export class PersonaService {
 
   publishVersion(persona: Persona): void {
     if (!this.auth.token) return;
-    this.http.put<{ persona: Persona }>(`${this.apiBase}/api/v1/admin/persona`, persona, {
-      headers: this.auth.authHeaders
-    }).subscribe({
+    this.http.put<{ persona: Persona }>(`${this.apiBase}/api/v1/admin/persona`, persona).subscribe({
       next: ({ persona: savedPersona }) => {
         this.clearDraft();
         this.personaSubject.next(savedPersona);
@@ -108,9 +100,7 @@ export class PersonaService {
 
   rollbackTo(version: PersonaVersion): void {
     if (!this.auth.token) return;
-    this.http.post<{ version: PersonaVersion }>(`${this.apiBase}/api/v1/admin/persona/versions/${version.id}/publish`, {}, {
-      headers: this.auth.authHeaders
-    }).subscribe({
+    this.http.post<{ version: PersonaVersion }>(`${this.apiBase}/api/v1/admin/persona/versions/${version.id}/publish`, {}).subscribe({
       next: () => {
         this.clearDraft();
         this.loadPersona();
@@ -123,9 +113,7 @@ export class PersonaService {
 
   preview(persona: Persona, message: string, onComplete: (preview: { answer: string; grounded: boolean; citations: Array<{ citation: { title: string; locator: string } }> }) => void): void {
     if (!this.auth.token) return;
-    this.http.post<{ preview: { answer: string; grounded: boolean; citations: Array<{ citation: { title: string; locator: string } }> } }>(`${this.apiBase}/api/v1/admin/persona/preview`, { ...persona, message }, {
-      headers: this.auth.authHeaders
-    }).subscribe({
+    this.http.post<{ preview: { answer: string; grounded: boolean; citations: Array<{ citation: { title: string; locator: string } }> } }>(`${this.apiBase}/api/v1/admin/persona/preview`, { ...persona, message }).subscribe({
       next: ({ preview }) => onComplete(preview),
       error: (err) => this.toast.show('error', 'Preview Failed', err.error?.error?.message || 'Could not run the persona preview.')
     });

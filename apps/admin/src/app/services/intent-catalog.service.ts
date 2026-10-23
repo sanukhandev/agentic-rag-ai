@@ -2,13 +2,13 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of, switchMap, takeWhile, timer } from 'rxjs';
 import { IngestionJob, IntentCatalogVersion } from '../types/admin.types';
-import { API_BASE_URL } from './tokens';
-import { AuthService } from './auth.service';
-import { ToastService } from './toast.service';
-import { isCatalogJobPending } from './intent-catalog-utils';
 import { apiErrorMessage } from './api-error';
+import { AuthService } from './auth.service';
+import { isCatalogJobPending } from './intent-catalog-utils';
+import { ToastService } from './toast.service';
+import { API_BASE_URL } from './tokens';
 
-const CATALOG_MIME_TYPE = 'application/vnd.agentic.intent-catalog+excel';
+const CATALOG_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 @Injectable({ providedIn: 'root' })
 export class IntentCatalogService {
@@ -20,6 +20,7 @@ export class IntentCatalogService {
   private readonly catalogJobSubject = new BehaviorSubject<IngestionJob | null>(null);
   private readonly catalogErrorSubject = new BehaviorSubject<string | null>(null);
   private watchedJobId: string | null = null;
+
   readonly versions$: Observable<IntentCatalogVersion[]> = this.versionsSubject.asObservable();
   readonly catalogJob$: Observable<IngestionJob | null> = this.catalogJobSubject.asObservable();
   readonly catalogError$: Observable<string | null> = this.catalogErrorSubject.asObservable();
@@ -27,7 +28,7 @@ export class IntentCatalogService {
   load(): void {
     if (!this.auth.token) return;
     this.catalogErrorSubject.next(null);
-    this.http.get<{ items: IntentCatalogVersion[] }>(`${this.apiBase}/api/v1/admin/intent-catalog/versions`, { headers: this.auth.authHeaders }).pipe(catchError((error) => {
+    this.http.get<{ items: IntentCatalogVersion[] }>(`${this.apiBase}/api/v1/admin/intent-catalog/versions`).pipe(catchError((error) => {
       const message = apiErrorMessage(error, 'Could not load the intent catalog.');
       this.catalogErrorSubject.next(message);
       this.toast.show('error', 'Intent catalog unavailable', message);
@@ -37,7 +38,7 @@ export class IntentCatalogService {
 
   resumePendingJob(): void {
     if (!this.auth.token || this.watchedJobId) return;
-    this.http.get<{ items: IngestionJob[] }>(`${this.apiBase}/api/v1/admin/ingestion-jobs`, { headers: this.auth.authHeaders }).pipe(catchError((error) => {
+    this.http.get<{ items: IngestionJob[] }>(`${this.apiBase}/api/v1/admin/ingestion-jobs`).pipe(catchError((error) => {
       const message = apiErrorMessage(error, 'Could not load catalog ingestion jobs.');
       this.catalogErrorSubject.next(message);
       this.toast.show('error', 'Catalog status unavailable', message);
@@ -60,7 +61,7 @@ export class IntentCatalogService {
     const reader = new FileReader();
     reader.onload = () => {
       const result = typeof reader.result === 'string' ? reader.result.split(',', 2)[1] : '';
-      this.http.post<{ job: IngestionJob }>(`${this.apiBase}/api/v1/admin/intent-catalog/upload`, { fileName: file.name, contentBase64: result }, { headers: this.auth.authHeaders }).subscribe({
+      this.http.post<{ job: IngestionJob }>(`${this.apiBase}/api/v1/admin/intent-catalog/upload`, { fileName: file.name, contentBase64: result }).subscribe({
         next: ({ job }) => {
           this.catalogJobSubject.next(job);
           this.load();
@@ -78,7 +79,7 @@ export class IntentCatalogService {
     if (this.watchedJobId === jobId) return;
     this.watchedJobId = jobId;
     timer(0, 2000).pipe(
-      switchMap(() => this.http.get<{ job: IngestionJob }>(`${this.apiBase}/api/v1/admin/ingestion-jobs/${jobId}`, { headers: this.auth.authHeaders })),
+      switchMap(() => this.http.get<{ job: IngestionJob }>(`${this.apiBase}/api/v1/admin/ingestion-jobs/${jobId}`)),
       takeWhile(({ job }) => isCatalogJobPending(job.status), true),
       catchError((error) => {
         this.catalogJobSubject.next(null);
@@ -110,7 +111,7 @@ export class IntentCatalogService {
 
   publish(version: IntentCatalogVersion): void {
     if (!this.auth.token) return;
-    this.http.post(`${this.apiBase}/api/v1/admin/intent-catalog/versions/${version.id}/publish`, {}, { headers: this.auth.authHeaders }).subscribe({
+    this.http.post(`${this.apiBase}/api/v1/admin/intent-catalog/versions/${version.id}/publish`, {}).subscribe({
       next: () => { this.load(); this.toast.show('success', 'Catalog published', `Intent catalog v${version.version} is now active.`); },
       error: (error) => this.toast.show('error', 'Publish failed', apiErrorMessage(error, 'Could not publish the catalog.'))
     });
@@ -118,7 +119,7 @@ export class IntentCatalogService {
 
   saveDraft(version: IntentCatalogVersion, catalog: unknown, onSaved: () => void): void {
     if (!this.auth.token) return;
-    this.http.post<{ version: IntentCatalogVersion }>(`${this.apiBase}/api/v1/admin/intent-catalog/versions/${version.id}/drafts`, { catalog }, { headers: this.auth.authHeaders }).subscribe({
+    this.http.post<{ version: IntentCatalogVersion }>(`${this.apiBase}/api/v1/admin/intent-catalog/versions/${version.id}/drafts`, { catalog }).subscribe({
       next: () => { this.load(); onSaved(); this.toast.show('success', 'Catalog draft saved', 'Review the new draft, then publish it when ready.'); },
       error: (error) => this.toast.show('error', 'Catalog edit failed', apiErrorMessage(error, 'Could not save the catalog draft.'))
     });

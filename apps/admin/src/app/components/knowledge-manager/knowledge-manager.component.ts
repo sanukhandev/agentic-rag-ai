@@ -1,4 +1,5 @@
-import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, DestroyRef, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -378,6 +379,7 @@ import { BadgeComponent } from '../shared/badge.component';
 export class KnowledgeManagerComponent implements OnInit {
   private readonly state = inject(AdminStateService);
   private readonly cdr = inject(ChangeDetectorRef);
+  private readonly destroyRef = inject(DestroyRef);
 
   activeTab: 'catalog' | 'stage' | 'upload' | 'crawl' = 'catalog';
   selectedStatus: string = 'all';
@@ -398,7 +400,7 @@ export class KnowledgeManagerComponent implements OnInit {
   crawlUrl = '';
 
   constructor() {
-    this.state.sources$.subscribe((s) => {
+    this.state.sources$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((s) => {
       this.sources = s;
       this.cdr.markForCheck();
     });
@@ -463,7 +465,7 @@ export class KnowledgeManagerComponent implements OnInit {
     });
   }
 
-  async submitUpload(): Promise<void> {
+  submitUpload(): void {
     if (!this.selectedFile) return;
     const mime = fileMimeType(this.selectedFile.name);
     if (!mime) {
@@ -477,16 +479,21 @@ export class KnowledgeManagerComponent implements OnInit {
 
     const file = this.selectedFile;
     const title = this.uploadTitle || file.name;
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    let binary = '';
-    for (const byte of bytes) binary += String.fromCharCode(byte);
-    this.state.knowledge.queueFileUpload(title, file.name, mime, this.uploadAudience, btoa(binary), () => {
-      this.selectedFile = null;
-      this.uploadTitle = '';
-      this.activeTab = 'catalog';
-    });
+    const audience = this.uploadAudience;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = typeof reader.result === 'string' ? reader.result.split(',', 2)[1] : '';
+      this.state.knowledge.queueFileUpload(title, file.name, mime, audience, base64, () => {
+        this.selectedFile = null;
+        this.uploadTitle = '';
+        this.activeTab = 'catalog';
+      });
+    };
+    reader.onerror = () => {
+      this.state.showToast('error', 'Read Failed', 'The document file could not be read.');
+    };
+    reader.readAsDataURL(file);
   }
-
   submitCrawl(): void {
     if (!this.crawlTitle || !this.crawlUrl) return;
     this.state.knowledge.queueCrawl(this.crawlTitle, this.crawlUrl, () => {

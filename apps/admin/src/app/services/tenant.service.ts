@@ -58,12 +58,10 @@ export class TenantService {
     this.isLoadingSubject.next(true);
 
     if (!this.auth.isPlatformAdmin) {
-      this.http.get<{ tenant: Tenant }>(`${this.apiBase}/api/v1/admin/tenant`, {
-        headers: this.auth.authHeaders
-      }).pipe(
+      this.http.get<{ tenant: Tenant | null }>(`${this.apiBase}/api/v1/admin/tenant`).pipe(
         catchError((error) => {
           this.toast.show('error', 'Workspace unavailable', apiErrorMessage(error, 'Could not load the current workspace.'));
-          return of({ tenant: null as unknown as Tenant });
+          return of({ tenant: null });
         })
       ).subscribe((res) => {
         this.isLoadingSubject.next(false);
@@ -76,9 +74,7 @@ export class TenantService {
       return;
     }
 
-    this.http.get<{ items: Tenant[] }>(`${this.apiBase}/api/v1/admin/tenants`, {
-      headers: this.auth.authHeaders
-    }).pipe(
+    this.http.get<{ items: Tenant[] }>(`${this.apiBase}/api/v1/admin/tenants`).pipe(
       catchError((error) => {
         this.toast.show('error', 'Organizations unavailable', apiErrorMessage(error, 'Could not load organizations.'));
         return of({ items: [] });
@@ -98,9 +94,7 @@ export class TenantService {
 
   loadPlatformOverview(): void {
     if (!this.auth.token) return;
-    this.http.get<PlatformOverview>(`${this.apiBase}/api/v1/admin/platform/overview`, {
-      headers: this.auth.authHeaders
-    }).pipe(
+    this.http.get<PlatformOverview>(`${this.apiBase}/api/v1/admin/platform/overview`).pipe(
       catchError(() => {
         this.toast.show('error', 'Load Failed', 'Could not load platform overview.');
         return of(EMPTY_PLATFORM_OVERVIEW);
@@ -112,9 +106,7 @@ export class TenantService {
     if (!this.auth.token) return onComplete?.(false);
     this.isLoadingSubject.next(true);
 
-    this.http.post<{ tenant: Tenant }>(`${this.apiBase}/api/v1/admin/tenants`, payload, {
-      headers: this.auth.authHeaders
-    }).subscribe({
+    this.http.post<{ tenant: Tenant }>(`${this.apiBase}/api/v1/admin/tenants`, payload).subscribe({
       next: (res) => {
         this.isLoadingSubject.next(false);
         this.loadTenants();
@@ -138,9 +130,7 @@ export class TenantService {
   updateTenantStatus(tenant: Tenant, status: TenantStatus): void {
     if (!this.auth.token) return;
 
-    this.http.patch<{ tenant: Tenant }>(`${this.apiBase}/api/v1/admin/tenants/${tenant.id}/status`, { status }, {
-      headers: this.auth.authHeaders
-    }).subscribe({
+    this.http.patch<{ tenant: Tenant }>(`${this.apiBase}/api/v1/admin/tenants/${tenant.id}/status`, { status }).subscribe({
       next: () => {
         this.loadTenants();
         this.loadPlatformOverview();

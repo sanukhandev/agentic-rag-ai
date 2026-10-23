@@ -18,22 +18,26 @@ export class CrmService {
 
   get leads(): CrmLead[] { return this.leadsSubject.value; }
 
-  loadLeads(): void {
+  loadLeads(silent = false): void {
     if (!this.auth.token) return;
-    this.isLoadingSubject.next(true);
-    this.http.get<{ items: CrmLead[] }>(`${this.apiBase}/api/v1/admin/crm/leads`, { headers: this.auth.authHeaders }).pipe(
+    if (!silent) {
+      this.isLoadingSubject.next(true);
+    }
+    this.http.get<{ items: CrmLead[] }>(`${this.apiBase}/api/v1/admin/crm/leads`).pipe(
       catchError(() => of({ items: [] })),
     ).subscribe((response) => {
       this.leadsSubject.next(response.items ?? []);
-      this.isLoadingSubject.next(false);
+      if (!silent) {
+        this.isLoadingSubject.next(false);
+      }
     });
   }
 
   downloadDocument(documentId: string): Observable<Blob> {
-    return this.http.get(`${this.apiBase}/api/v1/admin/crm/documents/${documentId}/download`, { headers: this.auth.authHeaders, responseType: 'blob' });
+    return this.http.get(`${this.apiBase}/api/v1/admin/crm/documents/${documentId}/download`, { responseType: 'blob' });
   }
 
   summarizeLead(leadId: string): Observable<{ lead: CrmLead; aiGenerated: boolean }> {
-    return this.http.post<{ lead: CrmLead; aiGenerated: boolean }>(`${this.apiBase}/api/v1/admin/crm/leads/${leadId}/summarize`, {}, { headers: this.auth.authHeaders });
+    return this.http.post<{ lead: CrmLead; aiGenerated: boolean }>(`${this.apiBase}/api/v1/admin/crm/leads/${leadId}/summarize`, {});
   }
 }

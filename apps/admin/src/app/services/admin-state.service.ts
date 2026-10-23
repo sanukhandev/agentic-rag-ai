@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, NgZone, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   Tenant,
@@ -55,6 +55,7 @@ export class AdminStateService {
   readonly personaService = inject(PersonaService);
   readonly settings = inject(SettingsService);
   readonly crm = inject(CrmService);
+  private readonly ngZone = inject(NgZone);
 
   // Auth & Session Streams
   readonly token$: Observable<string> = this.auth.token$;
@@ -116,7 +117,8 @@ export class AdminStateService {
           this.refreshCurrentSection();
         }
       });
-      setInterval(() => {
+      this.ngZone.runOutsideAngular(() => {
+        setInterval(() => {
         if (this.auth.isAuthenticated) {
           const sec = this.nav.currentSection;
           if (this.isPlatformAdmin && (sec === 'overview' || sec === 'observability')) {
@@ -130,7 +132,8 @@ export class AdminStateService {
             }
           }
         }
-      }, 8000);
+        }, 8000);
+      });
     }
   }
 
@@ -141,6 +144,10 @@ export class AdminStateService {
 
   get role(): UserRole {
     return this.auth.role;
+  }
+
+  get selectedTenant(): Tenant | null {
+    return this.tenantService.selectedTenant;
   }
 
   get isPlatformAdmin(): boolean {
@@ -300,8 +307,8 @@ export class AdminStateService {
     this.observability.loadAudit();
   }
 
-  loadCrmLeads(): void {
-    this.crm.loadLeads();
+  loadCrmLeads(silent = false): void {
+    this.crm.loadLeads(silent);
   }
 
   // Persona Facade

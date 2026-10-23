@@ -6,11 +6,26 @@ import { AuthService } from './auth.service';
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
 
-  return next(req).pipe(
+  let modifiedReq = req;
+  const isApiRequest = req.url.includes('/api/v1/');
+  const isPublicAuth = req.url.includes('/api/v1/auth/login');
+
+  if (isApiRequest && !isPublicAuth) {
+    let headers = req.headers;
+    if (auth.token && !headers.has('Authorization')) {
+      headers = headers.set('Authorization', `Bearer ${auth.token}`);
+    }
+    if (auth.selectedTenantId && !headers.has('X-Tenant-Id')) {
+      headers = headers.set('X-Tenant-Id', auth.selectedTenantId);
+    }
+    modifiedReq = req.clone({ headers });
+  }
+
+  return next(modifiedReq).pipe(
     catchError((error: unknown) => {
       if (error instanceof HttpErrorResponse && error.status === 401) {
         // Do not intercept invalid credentials error during login attempt
-        if (!req.url.includes('/api/v1/auth/login')) {
+        if (!isPublicAuth) {
           auth.handleUnauthorized();
         }
       }

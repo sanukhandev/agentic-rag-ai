@@ -1,4 +1,5 @@
-import { Component, Input, OnInit, OnDestroy, inject, ElementRef, ViewChild } from '@angular/core';
+import { Component, Input, OnInit, OnChanges, OnDestroy, SimpleChanges, DestroyRef, inject, ElementRef, ViewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -406,7 +407,8 @@ interface TenantChatConfig {
     }
   `]
 })
-export class CustomerChatComponent implements OnInit, OnDestroy {
+export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
+  private readonly destroyRef = inject(DestroyRef);
   @Input() initialTenantSlug?: string;
   @Input() standalone = false;
 
@@ -444,10 +446,11 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     // 1. Resolve tenant context without customer manual slug input (Requirement 3)
-    this.tenantSlug = this.initialTenantSlug ?? resolveTenantSlug();
+    const initial = this.initialTenantSlug || resolveTenantSlug() || (this.state.selectedTenant?.slug ?? '');
+    this.resolveAndLoad(initial);
 
     // Check if user is authenticated admin
-    this.state.isAuthenticated$.subscribe((auth) => {
+    this.state.isAuthenticated$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((auth) => {
       this.canAccessAdminTesting = auth;
     });
 
@@ -459,6 +462,21 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
       }
     }
 
+
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['initialTenantSlug'] && !changes['initialTenantSlug'].isFirstChange()) {
+      const nextSlug = changes['initialTenantSlug'].currentValue;
+      if (nextSlug && nextSlug !== this.tenantSlug) {
+        this.resolveAndLoad(nextSlug);
+      }
+    }
+  }
+
+  private resolveAndLoad(slug: string): void {
+    this.tenantSlug = slug || (this.state.selectedTenant?.slug ?? '');
+    this.resetConversation();
     this.loadTenantConfig();
     this.restoreOrInitSession();
   }
