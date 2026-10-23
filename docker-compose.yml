@@ -14,7 +14,7 @@ services:
     ports:
       - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:54329:5432"
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data:rw
       - ./infra/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U agentic -d agentic_rag"]
@@ -30,7 +30,7 @@ services:
     ports:
       - "${REDIS_BIND_ADDRESS:-127.0.0.1}:6379:6379"
     volumes:
-      - ./data/redis:/data
+      - ./data/redis:/data:rw
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -49,8 +49,8 @@ services:
       N8N_PROTOCOL: "${N8N_PROTOCOL:-http}"
       N8N_PATH: "${N8N_PATH:-/}"
       N8N_PROXY_HOPS: "${N8N_PROXY_HOPS:-0}"
-      N8N_EDITOR_BASE_URL: "${N8N_EDITOR_BASE_URL:-http://localhost:5678/}"    
-      N8N_WEBHOOK_URL: "${N8N_WEBHOOK_URL:-http://localhost:5678/}"
+      N8N_EDITOR_BASE_URL: "${N8N_EDITOR_BASE_URL:-http://localhost:3000/n8n/}"
+      N8N_WEBHOOK_URL: "${N8N_WEBHOOK_URL:-http://localhost:3000/n8n/}"
       N8N_SECURE_COOKIE: "${N8N_SECURE_COOKIE:-false}"
       N8N_WEBHOOK_SECRET: "${N8N_WEBHOOK_SECRET:-local-n8n-workflow-secret}"
       REMOTE_CRM_PROVIDER: ${REMOTE_CRM_PROVIDER-}
@@ -61,7 +61,7 @@ services:
       GENERIC_TIMEZONE: Asia/Dubai
       TZ: Asia/Dubai
     volumes:
-      - ./data/n8n:/home/node/.n8n
+      - ./data/n8n:/home/node/.n8n:rw
       - ./infra/n8n/workflows:/workflows:ro
 
   api:
@@ -92,7 +92,7 @@ services:
       OMNI_ALLOW_STATIC_API_KEY: ${OMNI_ALLOW_STATIC_API_KEY:-false}
       PII_VAULT_KEY: ${PII_VAULT_KEY:-replace-with-a-long-vault-secret}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
-      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:4200}
+      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:3000}
       AZURE_AI_ENDPOINT: ${AZURE_AI_ENDPOINT:-}
       AZURE_AI_PROJECT_ENDPOINT: ${AZURE_AI_PROJECT_ENDPOINT:-}
       AZURE_AI_CHAT_DEPLOYMENT: ${AZURE_AI_CHAT_DEPLOYMENT:-gpt-4.1-mini}
@@ -111,8 +111,8 @@ services:
       API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-600}
       API_RATE_LIMIT_WINDOW_MS: ${API_RATE_LIMIT_WINDOW_MS:-60000}
     volumes:
-      - ./data/ingestion-staging:/app/data/ingestion-staging
-      - ./data/supporting-documents:/app/data/supporting-documents
+      - ./data/ingestion-staging:/app/data/ingestion-staging:rw
+      - ./data/supporting-documents:/app/data/supporting-documents:rw
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/v1/health/live').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
@@ -161,21 +161,21 @@ services:
       <<: *node-build
       target: web-runtime
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/}
     container_name: agentic-web
     restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
     ports:
-      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_HOST_PORT:-3000}:3000"
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_HOST_PORT:-3001}:3000"
 
   admin:
     build:
       <<: *node-build
       target: admin-runtime
       args:
-        ADMIN_BASE_HREF: ${ADMIN_BASE_HREF:-/}
+        ADMIN_BASE_HREF: ${ADMIN_BASE_HREF:-/admin/}
     container_name: agentic-admin
     restart: unless-stopped
     depends_on:
@@ -198,6 +198,6 @@ services:
       INGESTION_WORKER_SECRET: ${INGESTION_WORKER_SECRET:-local-ingestion-worker-secret}
       INGESTION_POLL_INTERVAL_SECONDS: ${INGESTION_POLL_INTERVAL_SECONDS:-5}
     volumes:
-      - ./data/ingestion-staging:/app/data/ingestion-staging
-      - ./data/supporting-documents:/app/data/supporting-documents
+      - ./data/ingestion-staging:/app/data/ingestion-staging:rw
+      - ./data/supporting-documents:/app/data/supporting-documents:rw
     command: ["--staging-root", "/app/data/ingestion-staging"]

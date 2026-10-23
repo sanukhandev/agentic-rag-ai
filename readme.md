@@ -46,7 +46,7 @@ Unanswered/unsupported business questions are answered with a transparent knowle
 - [Delivery sequence](docs/12-delivery-roadmap.md)
 
 ## Existing Docker Compose
-The root `docker-compose.yml` runs local **n8n and Redis**, persists both data directories, and binds TCP 5678/6379 to localhost by default. It is an **existing development bootstrap, not a production-ready platform**. See [security hardening](docs/06-security-and-privacy.md) before any controlled staging exposure.
+The root `docker-compose.yml` runs the full Docker stack behind one host Nginx listener on port `3000`; PostgreSQL, Redis, n8n, API, web and admin ports bind to loopback only, and local `data/` mounts persist state across rebuilds. It is still **not a production-ready platform** without TLS, identity, n8n hardening and operational controls. See [security hardening](docs/06-security-and-privacy.md) before controlled exposure.
 
 ## Local development
 
@@ -58,7 +58,7 @@ docker compose up -d --build
 docker compose ps
 ```
 
-The root Compose file is the canonical local launch path. It builds the API, Next web, Angular admin and ingestion images through named multi-stage targets, then starts them with PostgreSQL/pgvector, Redis and n8n. Use `npm run typecheck`, `npm test` and `npm run build` for source-level checks.
+The root Compose file is the canonical launch path. It builds the API, Next web, Angular admin, event workers and ingestion images through named multi-stage targets, then starts them with PostgreSQL/pgvector, Redis, n8n and the reverse proxy. Use `npm run typecheck`, `npm test` and `npm run build` for source-level checks.
 
 The API defaults to a deterministic in-memory store for repeatable development/tests:
 
@@ -74,7 +74,7 @@ npm run dev:admin
 
 For the PostgreSQL/pgvector adapter, run `npm run db:migrate`, set `STORE=postgres` and `DATABASE_URL` from `.env.example`, then start the API. The API loads an ignored local `.env` when present; keep real credentials there, never in Git. The Python worker is under `tools/ingestion`; it supports TXT, Markdown, CSV, JSON, DOCX, XLSX, text PDF, bounded ZIP bundles containing those formats, and allowlisted HTTPS snapshots, and must run in a project venv. ZIP bundles are extracted with path, size, duplicate-name, nested-archive, macro and unsupported-file checks before sanitization, chunking and embedding. No real customer data or credentials belong in the repository.
 
-The root `docker-compose.yml` is the single local development deployment for PostgreSQL/pgvector, Redis, n8n, API, web, admin and opt-in ingestion, with localhost-only defaults. It is not a production deployment.
+The root `docker-compose.yml` is the single deployment shape for PostgreSQL/pgvector, Redis, n8n, API, web and admin, with host Nginx routing the apps through port `3000`. Docker service ports are loopback-only by default; `.env` remains untracked and holds VM-specific connection settings. It is not a production deployment without the security controls documented above.
 
 ## Current verification and limitations
 

@@ -31,7 +31,7 @@ EXPOSE 4000
 CMD ["node", "services/api/dist/index.js"]
 
 FROM node-source AS web-build
-ARG NEXT_PUBLIC_API_URL=http://localhost:4000
+ARG NEXT_PUBLIC_API_URL=/
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 RUN npm run build --workspace packages/chat-utils
 RUN npm run build --workspace apps/web
@@ -46,7 +46,7 @@ EXPOSE 3000
 CMD ["node", "apps/web/server.js"]
 
 FROM node-source AS admin-build
-ARG ADMIN_BASE_HREF=/
+ARG ADMIN_BASE_HREF=/admin/
 RUN npm run build --workspace packages/chat-utils
 RUN npm run build --workspace apps/admin -- --base-href="${ADMIN_BASE_HREF}"
 

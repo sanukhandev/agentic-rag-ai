@@ -1,19 +1,29 @@
-# Developer environment and deployment (local implementation)
+# Developer environment and deployment
 
 ## Repository baseline
-The root `docker-compose.yml` is the single local stack: PostgreSQL/pgvector, Redis, n8n, the API, Next web, Angular admin and the opt-in ingestion image. Persistent data stays under `data/`, and service bindings are localhost-only by default. This is development infrastructure only; no VM deployment is performed by the repository.
+The root `docker-compose.yml` is the single stack: PostgreSQL/pgvector, Redis, n8n, the API, Next web, Angular admin and ingestion. Host-level Nginx is the reverse proxy on port `3000`; Docker service ports bind to loopback only, so they are not externally reachable. Persistent data stays under `data/` and is not removed by rebuilds.
 
 ## Intended workstation prerequisites
 Git, Docker Engine/Compose, Node.js 22+, npm, Python 3.x with venv, a PostgreSQL client and optional Azure credentials with an approved model deployment.
 
 ## Starting the master Compose stack
 ```sh
-docker compose config
-docker compose up -d --build
+docker compose --env-file .env config
+docker compose --env-file .env up -d --build
 docker compose ps
 docker compose logs --tail=100 api web admin redis postgres
 ```
-**Security:** the default Compose binding is localhost-only plaintext HTTP with insecure cookies because it is a disposable local development profile. If a controlled staging reverse proxy is intentionally configured, override `N8N_BIND_ADDRESS`, `N8N_HOST`, `N8N_PROTOCOL`, `N8N_EDITOR_BASE_URL`, `N8N_WEBHOOK_URL` and `N8N_SECURE_COOKIE` explicitly; direct public HTTP exposure is not a production configuration. Do not paste real credentials into screenshots, terminal logs or GitHub issues.
+**Security:** `.env` is gitignored and is the only place for VM connection settings and secrets. Docker service ports stay on `127.0.0.1`; host Nginx owns public port `3000`. For the known VM, set the public origins and n8n URLs in the VM-only `.env`; keep SSH access restricted by the VM firewall and verified `known_hosts`. TLS, secure cookies, n8n authentication and operational controls are still required before real-customer traffic.
+
+## VM deployment
+
+From the checked-out repository on the VM:
+
+```sh
+bash scripts/deploy-vm.sh
+```
+
+The script refuses a dirty checkout, switches to `main`, fast-forwards from `origin/main`, validates the rendered Compose file, force-rebuilds every Dockerfile target with fresh base images and no cache, recreates the services without deleting local volumes, then installs and reloads the host Nginx config. Do not use `docker compose down -v`; that removes persisted data.
 
 ## Python venv convention
 ```sh
@@ -81,7 +91,7 @@ docker compose exec -T postgres psql -U agentic -d agentic_rag_restore_check -At
 docker compose exec -T postgres dropdb -U agentic agentic_rag_restore_check
 ```
 
-## Proposed environment contract (names TBD until implementation)
+## Environment contract
 | Secret/config family | Consumer | Handling |
 | --- | --- | --- |
 | DATABASE_URL / separate role DSNs | Node and worker | Secret manager or gitignored env; TLS |
@@ -94,15 +104,16 @@ docker compose exec -T postgres dropdb -U agentic agentic_rag_restore_check
 | SESSION_SIGNING_KEYS / admin identity configuration | Node | Secret store; strong random values |
 | LOG_LEVEL / tracing / permitted origins | All relevant services | Redacted non-secret configuration |
 
-No real IPs, tenant IDs, credentials, encryption keys or webhook secrets in docs, client env, source control or sample output. A future .env.example should contain only non-sensitive placeholders.
+No real IPs, tenant IDs, credentials, encryption keys or webhook secrets in docs, client env, source control or sample output. The committed `.env.example` contains only non-sensitive placeholders; keep the VM `.env` untracked.
 
-## Suggested deployment topology
-HTTPS ingress/reverse proxy → Next web and Node API. Angular admin behind separate authenticated access. Node/worker privately connect to PostgreSQL; pgvector extension enabled on approved DB; n8n private behind signed HTTPS gateway; Azure Foundry over approved network/identity. Provide backups, rotation, audit retention, health checks, tested restore and separated dev/staging/prod.
+## Deployment topology
+
+Host Nginx on port `3000` routes `/` to Next web, `/admin/` to Angular, `/api/` to Node and `/n8n/` to n8n through loopback-bound Docker ports. Node/worker privately connect to PostgreSQL and Redis; the local data mounts retain database, workflow, upload and ingestion state. Provide backups, rotation, audit retention, health checks, tested restore and separated dev/staging/prod.
 
 ## Deployment readiness gate
 No real customer traffic until TLS everywhere relevant, protected n8n access, identity/authorization, PII isolation, model deployment data-region approval, backup restore, dependency vulnerability checks, logging redaction and adversarial AI tests pass.
 # Supporting document OCR
 
-The ingestion image installs Tesseract English and Arabic language data plus the Python OCR dependencies. The API and ingestion worker share the private `./data/supporting-documents` volume. Set `N8N_INTERNAL_URL=http://n8n:5678` for local dispatch; leave the catalog OCR binding inactive until the imported workflow is reviewed and activated.
+The ingestion image installs Tesseract English and Arabic language data plus the Python OCR dependencies. The API and ingestion worker share the private `./data/supporting-documents` volume. Set `N8N_INTERNAL_URL=http://n8n:5678` for private dispatch; leave the catalog OCR binding inactive until the imported workflow is reviewed and activated.
 
 Uploaded documents use the existing bounded JSON upload pattern, require explicit visitor consent, are type/signature checked, and are never served as public static files. The API masks OCR output before storing it and composes CRM summaries from masked conversation and OCR excerpts.

@@ -32,8 +32,8 @@ Omnichannel clients must use a tenant/channel credential issued by the authentic
 | SSRF via document URLs | No arbitrary file/resource fetching; outbound egress allowlist |
 | Supply chain compromise | Lockfiles, dependency audits, pinned images, automated scanning |
 
-## Master Compose — development defaults
-The root `docker-compose.yml` is intentionally development-only. It uses localhost-only bindings for PostgreSQL, Redis, n8n and the application clients, a digest-pinned n8n image, and localhost HTTP URLs with `N8N_SECURE_COOKIE=false` because the local default has no TLS. These defaults are not a production security baseline.
+## Master Compose — deployment defaults
+The root `docker-compose.yml` keeps PostgreSQL, Redis, n8n and the application services loopback-only; the host-level Nginx reverse proxy is the only public listener and listens on port `3000`. Local bind mounts under `data/` preserve state across image rebuilds. The example environment uses localhost HTTP and `N8N_SECURE_COOKIE=false` because it has no TLS. These defaults are not a production security baseline.
 
 Before a public or real-customer rollout:
 - Keep the default private bind; for controlled staging, put n8n behind an authenticated HTTPS reverse proxy before changing the bind address.
