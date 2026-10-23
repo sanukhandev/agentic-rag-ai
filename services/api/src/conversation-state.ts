@@ -11,7 +11,16 @@ export const mergeConcurrentConversationState = (latest: ConversationState, cand
   const latestWins = workflowStatusRank[latest.workflowStatus] > workflowStatusRank[candidate.workflowStatus];
   const workflowState = latestWins ? latest : candidate;
   const consentPurposeChanged = latest.catalogVersionId !== candidate.catalogVersionId || latest.selectedIntentKey !== candidate.selectedIntentKey;
-  const slotValues = { ...latest.slotValues, ...candidate.slotValues };
+  const slotValues = { ...latest.slotValues };
+  const slotProvenance = { ...(latest.slotProvenance ?? {}) };
+  for (const [slotKey, value] of Object.entries(candidate.slotValues)) {
+    const currentProvenance = slotProvenance[slotKey];
+    const incomingProvenance = candidate.slotProvenance?.[slotKey];
+    if (!currentProvenance || !incomingProvenance || incomingProvenance.messageSequence >= currentProvenance.messageSequence) {
+      slotValues[slotKey] = value;
+      if (incomingProvenance) slotProvenance[slotKey] = incomingProvenance;
+    }
+  }
   const revoked = latest.contactConsent === 'denied' || candidate.contactConsent === 'denied';
   if (consentPurposeChanged || revoked) delete slotValues.contact_consent;
   const granted = !consentPurposeChanged && !revoked && (hasScopedConsent(latest) || hasScopedConsent(candidate));
@@ -24,6 +33,12 @@ export const mergeConcurrentConversationState = (latest: ConversationState, cand
     phase: workflowState.phase,
     pendingPrompt: workflowState.pendingPrompt,
     slotValues,
+    slotProvenance,
+    intentScore: workflowState.intentScore ?? latest.intentScore ?? candidate.intentScore ?? 0,
+    intentConfidence: workflowState.intentConfidence ?? latest.intentConfidence ?? candidate.intentConfidence ?? 0,
+    intentEvidence: [...new Set([...(latest.intentEvidence ?? []), ...(candidate.intentEvidence ?? [])])],
+    summaryRevision: Math.max(latest.summaryRevision ?? 0, candidate.summaryRevision ?? 0),
+    messageSequence: Math.max(latest.messageSequence ?? 0, candidate.messageSequence ?? 0),
     candidateIntentKeys: [...new Set([...latest.candidateIntentKeys, ...candidate.candidateIntentKeys])],
     contactConsent,
     consentCapturedAt: consentSource?.consentCapturedAt ?? null,
@@ -48,7 +63,11 @@ export const newConversationState = (): ConversationState => ({
   catalogVersionId: null,
   candidateIntentKeys: [],
   selectedIntentKey: null,
+  intentScore: 0,
+  intentConfidence: 0,
+  intentEvidence: [],
   slotValues: {},
+  slotProvenance: {},
   pendingPrompt: null,
   rollingSummary: '',
   summaryRevision: 0,
@@ -58,6 +77,17 @@ export const newConversationState = (): ConversationState => ({
   consentVersion: null,
   consentCapturedAt: null,
 });
+
+export const composeConversationSummary = (state: ConversationState, latestVisitorMessage: string): string => {
+  const slots = Object.entries(state.slotValues).filter(([key]) => key !== 'contact_consent').map(([key, value]) => `${key}=${value}`).join(', ');
+  return [
+    state.selectedIntentKey ? `Primary intent: ${state.selectedIntentKey} (${Math.round((state.intentConfidence ?? 0) * 100)}% confidence).` : 'Primary intent: unresolved.',
+    slots ? `Visitor-provided requirements: ${slots}.` : 'Visitor-provided requirements: none captured yet.',
+    `Consent: ${state.contactConsent}. Workflow: ${state.workflowStatus}.`,
+    state.pendingPrompt ? `Next question: ${state.pendingPrompt.type}${state.pendingPrompt.slotKey ? `/${state.pendingPrompt.slotKey}` : ''}.` : 'Next question: none.',
+    latestVisitorMessage ? `Latest visitor message: ${latestVisitorMessage.slice(-500)}` : '',
+  ].filter(Boolean).join(' ');
+};
 
 export const prompt = (type: PendingPrompt['type'], intentKey: string | null, slotKey: string | null): PendingPrompt => ({ id: randomUUID(), type, intentKey, slotKey, issuedAt: new Date().toISOString() });
 

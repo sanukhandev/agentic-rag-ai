@@ -1,7 +1,7 @@
 import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
-import { IngestionJob, AuditEvent } from '../../types/admin.types';
+import { IngestionJob, AuditEvent, WorkflowRun } from '../../types/admin.types';
 import { IconComponent } from '../shared/icon.component';
 import { BadgeComponent } from '../shared/badge.component';
 
@@ -176,6 +176,31 @@ import { BadgeComponent } from '../shared/badge.component';
         </div>
       </section>
 
+      <section class="lg:col-span-2 rounded-2xl border border-neutral-200/90 bg-white p-5 shadow-card" aria-labelledby="workflow-heading">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 id="workflow-heading" class="text-sm font-bold text-neutral-900 tracking-tight">Workflow execution timeline</h2>
+            <p class="mt-1 text-xs text-neutral-500">Tenant-scoped action state and correlation references from the API.</p>
+          </div>
+          <button type="button" (click)="refreshWorkflows()" class="rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors button-press">Sync</button>
+        </div>
+        <div *ngIf="workflowRuns.length === 0" class="mt-4 rounded-xl border border-dashed border-neutral-200 p-6 text-center text-xs text-neutral-500">No workflow actions recorded.</div>
+        <div *ngIf="workflowRuns.length > 0" class="mt-3 max-h-[300px] overflow-y-auto space-y-2">
+          <div *ngFor="let run of workflowRuns" class="rounded-xl border border-neutral-100 bg-neutral-50/60 p-3 text-xs">
+            <div class="flex items-center justify-between gap-3">
+              <span class="font-mono font-semibold text-neutral-900 truncate">{{ run.workflowKey }}</span>
+              <app-badge [variant]="run.uiState === 'success' ? 'success' : run.uiState === 'failed' ? 'error' : 'warning'" [showDot]="false" [text]="run.lifecycleState || run.state"></app-badge>
+            </div>
+            <div class="mt-1 grid gap-1 text-[10px] font-mono text-neutral-500 sm:grid-cols-3">
+              <span>Action: {{ run.actionId || run.id }}</span>
+              <span>Session: {{ run.sessionId || '—' }}</span>
+              <span>{{ run.createdAt | date:'short' }}</span>
+            </div>
+            <div *ngIf="run.intentKey || run.idempotencyKey" class="mt-1 text-[10px] text-neutral-500">{{ run.intentKey || 'intent unavailable' }} · {{ run.idempotencyKey || 'idempotency unavailable' }}</div>
+          </div>
+        </div>
+      </section>
+
     </div>
   `
 })
@@ -185,6 +210,7 @@ export class ActivityPipelineComponent implements OnInit {
 
   jobs: IngestionJob[] = [];
   auditEvents: AuditEvent[] = [];
+  workflowRuns: WorkflowRun[] = [];
 
   constructor() {
     this.state.ingestionJobs$.subscribe((j) => {
@@ -195,11 +221,16 @@ export class ActivityPipelineComponent implements OnInit {
       this.auditEvents = a;
       this.cdr.markForCheck();
     });
+    this.state.workflowRuns$.subscribe((runs) => {
+      this.workflowRuns = runs;
+      this.cdr.markForCheck();
+    });
   }
 
   ngOnInit(): void {
     this.state.loadJobs();
     this.state.loadAudit();
+    this.state.loadWorkflowRuns();
   }
 
   getFormatIcon(mime: string): string {
@@ -242,6 +273,10 @@ export class ActivityPipelineComponent implements OnInit {
   refreshAudit(): void {
     this.state.loadAudit();
     this.state.showToast('info', 'Audit Synchronized', 'Tamper-evident event log updated.');
+  }
+
+  refreshWorkflows(): void {
+    this.state.loadWorkflowRuns();
   }
 
   retry(job: IngestionJob): void {

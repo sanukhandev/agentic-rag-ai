@@ -17,6 +17,29 @@ export type DomainEventType =
   | 'conversation.notification.requested.v1';
 
 export type EventPayload = Record<string, string | number | boolean | null>;
+export type EventInboxState = 'pending' | 'processing' | 'completed' | 'retry_scheduled' | 'reconcile_required' | 'dead_lettered';
+
+export interface EventInboxClaim {
+  state: EventInboxState;
+  attempts: number;
+  claimed: boolean;
+}
+
+export interface ActionExecution {
+  id: string;
+  actionId: string;
+  tenantId: string;
+  workflowKey: string;
+  catalogVersionId: string | null;
+  providerStatus: string;
+  n8nExecutionRef: string | null;
+  idempotencyKey: string;
+  attempt: number;
+  deadlineAt: string | null;
+  outcome: Record<string, string | number | boolean | null> | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface OutboxEvent {
   eventId: string;
@@ -55,7 +78,11 @@ export interface ConversationState {
   catalogVersionId: string | null;
   candidateIntentKeys: string[];
   selectedIntentKey: string | null;
+  intentScore?: number;
+  intentConfidence?: number;
+  intentEvidence?: string[];
   slotValues: Record<string, string>;
+  slotProvenance?: Record<string, { source: 'visitor'; messageSequence: number; capturedAt: string; corrected: boolean }>;
   pendingPrompt: PendingPrompt | null;
   rollingSummary: string;
   summaryRevision: number;
@@ -393,6 +420,7 @@ export interface CrmLead {
   intentConfidence: number;
   catalogVersionId: string | null;
   score: number;
+  contactCompletenessScore?: number;
   validationPass: boolean;
   leadData: LeadData;
   conversation: LeadConversationMessage[];
@@ -529,7 +557,7 @@ export interface Store {
   claimNextIngestionJob(leaseMs: number): Promise<IngestionJob | null>;
   updateIngestionJob(job: IngestionJob): Promise<IngestionJob>;
   listSearchableChunks(tenantId: string, audience: Audience): Promise<Array<{ source: Source; chunk: Chunk }>>;
-  searchSearchableChunks(tenantId: string, audience: Audience, queryEmbedding: number[], limit: number): Promise<Array<{ source: Source; chunk: Chunk }>>;
+  searchSearchableChunks(tenantId: string, audience: Audience, queryEmbedding: number[], limit: number, queryText?: string): Promise<Array<{ source: Source; chunk: Chunk }>>;
   createSession(tenantId: string, personaVersionId?: string | null): Promise<Session>;
   getSession(id: string): Promise<Session | null>;
   listExpiredSupportingDocuments(tenantId: string, before: string): Promise<SupportingDocument[]>;
@@ -572,7 +600,13 @@ export interface Store {
   claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]>;
   markOutboxPublished(eventId: string, publishedAt?: string): Promise<void>;
   releaseOutboxEvent(eventId: string, error: string, retryAt: string): Promise<void>;
-  claimInboxEvent(consumer: string, eventId: string): Promise<boolean>;
+  deadLetterOutboxEvent(eventId: string, error: string): Promise<void>;
+  claimInboxEvent(consumer: string, eventId: string, leaseMs?: number): Promise<EventInboxClaim>;
+  completeInboxEvent(consumer: string, eventId: string): Promise<void>;
+  scheduleInboxRetry(consumer: string, eventId: string, error: string, retryAt: string): Promise<void>;
+  markInboxReconcileRequired(consumer: string, eventId: string, error: string): Promise<void>;
+  markInboxDeadLettered(consumer: string, eventId: string, error: string): Promise<void>;
+  recordActionExecution(execution: ActionExecution): Promise<ActionExecution>;
   addAudit(event: AuditEvent): Promise<void>;
   listAudit(tenantId: string): Promise<AuditEvent[]>;
   getTenantStats(tenantId: string): Promise<TenantStats>;

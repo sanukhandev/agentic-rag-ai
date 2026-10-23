@@ -38,7 +38,8 @@ type Config = {
 
 type ChatDocument = { id: string; fileName: string; mimeType: string; sizeBytes: number; status: string; errorCode: string | null; createdAt: string };
 
-const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const configuredApi = process.env.NEXT_PUBLIC_API_URL?.trim();
+const api = configuredApi && configuredApi !== '/' ? configuredApi.replace(/\/$/u, '') : '';
 
 export default function Home() {
   const [tenantSlug, setTenantSlug] = useState('');

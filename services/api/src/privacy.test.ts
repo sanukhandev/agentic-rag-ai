@@ -42,6 +42,14 @@ describe('privacy boundary', () => {
     expect(rehydrateForSession(session, output, vault)).toContain('bob@example.com');
   });
 
+  it('masks international names without treating ordinary lower-case speech as a name', () => {
+    const result = maskPii("My name is Élodie Müller and I'm interested in a demo.");
+    expect(result.masked).toContain('[NAME_1]');
+    expect(result.masked).not.toContain('Élodie Müller');
+    expect(result.masked).toContain("I'm interested in a demo.");
+    expect(result.tokens[0]?.value).toBe('Élodie Müller');
+  });
+
   it('supports key rotation and expiry without exposing the old value', () => {
     const session = { id: 'session-rotate', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
     const vault = new TokenVault('test-vault-secret-2026');

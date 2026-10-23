@@ -11,12 +11,13 @@ import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedd
 import { conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogSlotQuestion, isCrmWriteBinding, isWorkflowClaimableBinding, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
-import { consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState, phaseFor, prompt } from './conversation-state.js';
+import { composeConversationSummary, consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState, phaseFor, prompt } from './conversation-state.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
-import { isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
+import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
+import { assertPiiVaultSecret } from './runtime-security.js';
 import type { ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, IntentCatalogQualityRule, LeadData, Message, Session, SourceStatus, Store, SupportingDocument } from './types.js';
 import { HttpError, parse } from './http/errors.js';
 import {
@@ -196,6 +197,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   if (nodeEnv === 'production' && staticChannelApiKey && !allowStaticChannelApiKey) throw new Error('Production static omnichannel API keys require OMNI_ALLOW_STATIC_API_KEY=true; prefer signed channel credentials.');
   const vaultSecret = process.env.PII_VAULT_KEY ?? 'local-development-pii-vault-key';
   if (nodeEnv === 'production' && ((!dependencies.jwtSecret && !process.env.JWT_SECRET) || (!dependencies.tokenVault && !process.env.PII_VAULT_KEY))) throw new Error('Production JWT_SECRET and PII_VAULT_KEY are required.');
+  if (!dependencies.tokenVault) assertPiiVaultSecret(process.env.PII_VAULT_KEY, nodeEnv);
   const tokenVault = dependencies.tokenVault ?? new TokenVault(vaultSecret);
   const channelVault = new ChannelSecretVault(channelCredentialKey);
   const embedding = dependencies.embedding ?? new DeterministicEmbeddingProvider();
@@ -936,7 +938,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       else {
         let queryEmbedding: number[];
         try { queryEmbedding = await embedding.embed(retrievalQuery); } catch { throw new HttpError(503, 'EMBEDDING_UNAVAILABLE', 'The assistant is currently unable to search approved knowledge.'); }
-        const rows = await store.searchSearchableChunks(session.tenantId, internal ? 'internal' : 'public', queryEmbedding, 24);
+        const rows = await store.searchSearchableChunks(session.tenantId, internal ? 'internal' : 'public', queryEmbedding, 24, retrievalQuery);
         const ranked = rankChunksWithVector(retrievalQuery, rows, queryEmbedding, 4);
         evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: presentKnowledgeText(chunk.content) })).filter((item) => item.content.length > 0);
         if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null };
@@ -973,15 +975,25 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           : catalogResolution?.actionAllowed && !consentDenied ? prompt('confirmation', catalogResolution.intentKey, null) : null;
       state.catalogVersionId = catalogResolution?.catalogVersionId ?? state.catalogVersionId;
       state.selectedIntentKey = postCaptureFollowUp ? state.selectedIntentKey : catalogResolution?.intentKey ?? state.selectedIntentKey;
+      state.intentScore = catalogResolution?.score ?? state.intentScore ?? 0;
+      state.intentConfidence = catalogResolution?.confidence ?? state.intentConfidence ?? 0;
       state.candidateIntentKeys = [...new Set([...state.candidateIntentKeys, catalogResolution?.intentKey, catalogResolution?.runnerUpIntentKey, ...(intentContinuity?.secondaryIntentKeys ?? [])].filter((value): value is string => Boolean(value)))];
+      state.intentEvidence = [...new Set([catalogResolution?.intentKey, ...(intentContinuity?.secondaryIntentKeys ?? [])].filter((value): value is string => Boolean(value)))];
+      const previousSlotValues = state.slotValues ?? {};
       state.slotValues = catalogSlotValues;
+      state.slotProvenance = { ...(state.slotProvenance ?? {}) };
+      const changedVisitorSlots = new Set([...Object.keys(extractLeadData(maskedMessage)), ...Object.keys(pendingCatalogValueData)]);
+      for (const slotKey of changedVisitorSlots) {
+        const value = catalogSlotValues[slotKey];
+        if (value) state.slotProvenance[slotKey] = { source: 'visitor', messageSequence: state.messageSequence + 1, capturedAt: new Date().toISOString(), corrected: Boolean(previousSlotValues[slotKey] && previousSlotValues[slotKey] !== value) };
+      }
       state.pendingPrompt = nextPrompt;
       state.contactConsent = catalogSlotValues.contact_consent === 'true' ? 'granted' : catalogSlotValues.contact_consent === 'false' ? 'denied' : state.contactConsent;
       state.consentCapturedAt = state.contactConsent === 'unknown' ? state.consentCapturedAt : new Date().toISOString();
       state.summaryRevision += 1;
       state.messageSequence += 1;
-      state.rollingSummary = [state.rollingSummary, `Visitor: ${maskedMessage}`].filter(Boolean).join('\n').slice(-4000);
       state.phase = endedConversation ? 'DISCOVERY' : postCaptureFollowUp ? state.phase : phaseFor({ intentKey: catalogResolution?.intentKey ?? pendingCatalogIntent, missingSlot: nextMissingSlot, consentPending: consentActionReady, actionPending: Boolean(catalogResolution?.actionAllowed && !consentDenied) });
+      state.rollingSummary = composeConversationSummary(state, maskedMessage).slice(-4000);
       session.conversationState = state;
       await updateSessionSafely(session, true);
       const collectedSlotValues = Object.fromEntries(Object.entries(catalogSlotValues).filter(([key]) => !['name', 'email', 'phone', 'contact_consent'].includes(key)));
@@ -1164,7 +1176,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         if (input.completeAction && action.state !== 'completed') await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${existing.id}` } });
         res.json({ lead: existing, externalReference: `crm-lead-${existing.id}` }); return;
       }
-      const lead: CrmLead = { id: randomUUID(), tenantId: input.tenantId, actionId: input.actionId, sessionId: input.sessionId, intent: authorizedIntent, secondaryIntentKeys: (session.conversationState?.candidateIntentKeys ?? []).filter((key) => key !== authorizedIntent), intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: action.catalogVersionId ?? null, score, validationPass, leadData, conversation, summary: null, summaryStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const lead: CrmLead = { id: randomUUID(), tenantId: input.tenantId, actionId: input.actionId, sessionId: input.sessionId, intent: authorizedIntent, secondaryIntentKeys: (session.conversationState?.candidateIntentKeys ?? []).filter((key) => key !== authorizedIntent), intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: action.catalogVersionId ?? null, score, contactCompletenessScore: contactCompletenessScore({ validName, validEmail: Boolean(rehydratedEmail && isValidLeadEmail(rehydratedEmail)), validPhone: Boolean(rehydratedPhone && isValidLeadPhone(rehydratedPhone)) }), validationPass, leadData, conversation, summary: null, summaryStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       const created = await store.upsertCrmLead(lead, crmDedupeKey(input.tenantId, leadData, session, tokenVault, vaultSecret));
       await store.linkSessionDocuments(created.sessionId, created.tenantId, created.id);
       if (input.completeAction) await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${created.id}` } });
@@ -1335,7 +1347,20 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
   app.get('/api/v1/chat/sessions/:id', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const session = await store.getSession(routeParam(req, 'id')); if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); ensureLiveSession(session.lastActivityAt, session.closedAt); const tenant = await store.getTenant(session.tenantId); if (!tenant) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (!getAuth(req) && !channel) { if (tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.'); const { limit } = parse(historyQuerySchema, req.query); res.json({ sessionId: session.id, tenantId: session.tenantId, createdAt: session.createdAt, messages: (await store.listMessages(session.id, session.tenantId, limit)).map((message) => ({ id: message.id, role: message.role, content: message.role === 'assistant' ? rehydrateForSession(session, message.maskedContent, tokenVault) : message.maskedContent, citations: message.citations, conversational: message.response?.conversational === true, clientMessageId: message.clientMessageId, createdAt: message.createdAt })) }); } catch (error) { next(error); } });
 
-  app.get('/api/v1/admin/workflow-runs', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listActions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.get('/api/v1/admin/workflow-runs', protectedApi, async (req, res, next) => {
+    try {
+      const actions = await store.listActions(await tenantForRequest(store, req));
+      res.json({ items: actions.map((action) => ({
+        ...action,
+        id: action.id,
+        actionId: action.id,
+        sessionId: action.sessionId,
+        workflowKey: action.workflowKey,
+        uiState: action.state === 'completed' ? 'success' : action.state === 'failed' ? 'failed' : 'running',
+        lifecycleState: action.state,
+      })) });
+    } catch (error) { next(error); }
+  });
   app.post('/api/v1/admin/crm/leads/:id/summarize', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
     try {
       parse(crmAdminSummarySchema, req.body ?? {});

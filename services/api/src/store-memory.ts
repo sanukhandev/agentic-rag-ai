@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, DocumentProcessingJob, IngestionJob, IntentCatalogVersion, Message, OutboxEvent, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, DocumentProcessingJob, EventInboxClaim, EventInboxState, IngestionJob, IntentCatalogVersion, Message, OutboxEvent, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
@@ -32,7 +32,9 @@ export class MemoryStore implements Store {
   private readonly supportingDocuments = new Map<string, SupportingDocument>();
   private readonly documentJobs = new Map<string, DocumentProcessingJob>();
   private readonly outbox = new Map<string, OutboxEvent>();
-  private readonly inbox = new Set<string>();
+  private readonly deadLetteredOutbox = new Set<string>();
+  private readonly inbox = new Map<string, { state: EventInboxState; attempts: number; leaseExpiresAt: number | null; retryAt: number | null; lastError: string | null }>();
+  private readonly actionExecutions = new Map<string, ActionExecution>();
   private readonly audits: AuditEvent[] = [];
 
   async countUsers(): Promise<number> { return this.users.size; }
@@ -209,7 +211,13 @@ export class MemoryStore implements Store {
         return [{ source, chunk }];
       });
   }
-  async searchSearchableChunks(tenantId: string, audience: 'public' | 'internal', _queryEmbedding: number[], limit: number): Promise<Array<{ source: Source; chunk: Chunk }>> { return (await this.listSearchableChunks(tenantId, audience)).slice(0, limit); }
+  async searchSearchableChunks(tenantId: string, audience: 'public' | 'internal', _queryEmbedding: number[], limit: number, queryText = ''): Promise<Array<{ source: Source; chunk: Chunk }>> {
+    const terms = queryText.toLocaleLowerCase('en-US').match(/[\p{L}\p{N}]{3,}/gu) ?? [];
+    return (await this.listSearchableChunks(tenantId, audience)).sort((left, right) => {
+      const overlap = (row: { chunk: Chunk }): number => terms.filter((term) => row.chunk.content.toLocaleLowerCase('en-US').includes(term)).length;
+      return overlap(right) - overlap(left);
+    }).slice(0, limit);
+  }
 
   async createSession(tenantId: string, personaVersionId: string | null = null): Promise<Session> {
     const timestamp = now();
@@ -373,13 +381,29 @@ export class MemoryStore implements Store {
   async enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent> { const existing = this.outbox.get(event.eventId); if (existing) return existing; this.outbox.set(event.eventId, event); return event; }
   async claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]> {
     const current = Date.now();
-    const claimed = [...this.outbox.values()].filter((event) => !event.publishedAt && (!event.leaseExpiresAt || Date.parse(event.leaseExpiresAt) <= current)).sort((left, right) => left.occurredAt.localeCompare(right.occurredAt)).slice(0, limit).map((event) => ({ ...event, attempts: event.attempts + 1, leaseExpiresAt: new Date(current + leaseMs).toISOString() }));
+    const claimed = [...this.outbox.values()].filter((event) => !event.publishedAt && !this.deadLetteredOutbox.has(event.eventId) && (!event.leaseExpiresAt || Date.parse(event.leaseExpiresAt) <= current)).sort((left, right) => left.occurredAt.localeCompare(right.occurredAt)).slice(0, limit).map((event) => ({ ...event, attempts: event.attempts + 1, leaseExpiresAt: new Date(current + leaseMs).toISOString() }));
     for (const event of claimed) this.outbox.set(event.eventId, event);
     return claimed;
   }
   async markOutboxPublished(eventId: string, publishedAt = now()): Promise<void> { const event = this.outbox.get(eventId); if (event) this.outbox.set(eventId, { ...event, publishedAt, leaseExpiresAt: null, lastError: null }); }
   async releaseOutboxEvent(eventId: string, error: string, retryAt: string): Promise<void> { const event = this.outbox.get(eventId); if (event) this.outbox.set(eventId, { ...event, leaseExpiresAt: retryAt, lastError: error.slice(0, 500) }); }
-  async claimInboxEvent(consumer: string, eventId: string): Promise<boolean> { const key = `${consumer}:${eventId}`; if (this.inbox.has(key)) return false; this.inbox.add(key); return true; }
+  async deadLetterOutboxEvent(eventId: string, error: string): Promise<void> { const event = this.outbox.get(eventId); if (event) { this.deadLetteredOutbox.add(eventId); this.outbox.set(eventId, { ...event, leaseExpiresAt: null, lastError: error.slice(0, 500) }); } }
+  async claimInboxEvent(consumer: string, eventId: string, leaseMs = 30_000): Promise<EventInboxClaim> {
+    const key = `${consumer}:${eventId}`;
+    const existing = this.inbox.get(key);
+    const current = Date.now();
+    if (!existing) { this.inbox.set(key, { state: 'processing', attempts: 1, leaseExpiresAt: current + leaseMs, retryAt: null, lastError: null }); return { state: 'processing', attempts: 1, claimed: true }; }
+    if (existing.state === 'completed' || existing.state === 'reconcile_required' || existing.state === 'dead_lettered') return { state: existing.state, attempts: existing.attempts, claimed: false };
+    if (existing.state === 'processing' && existing.leaseExpiresAt && existing.leaseExpiresAt > current) return { state: 'processing', attempts: existing.attempts, claimed: false };
+    if (existing.state === 'retry_scheduled' && existing.retryAt && existing.retryAt > current) return { state: 'retry_scheduled', attempts: existing.attempts, claimed: false };
+    existing.state = 'processing'; existing.attempts += 1; existing.leaseExpiresAt = current + leaseMs; existing.retryAt = null; existing.lastError = null;
+    return { state: 'processing', attempts: existing.attempts, claimed: true };
+  }
+  async completeInboxEvent(consumer: string, eventId: string): Promise<void> { const item = this.inbox.get(`${consumer}:${eventId}`); if (item) { item.state = 'completed'; item.leaseExpiresAt = null; item.retryAt = null; } }
+  async scheduleInboxRetry(consumer: string, eventId: string, error: string, retryAt: string): Promise<void> { const item = this.inbox.get(`${consumer}:${eventId}`); if (item) { item.state = 'retry_scheduled'; item.leaseExpiresAt = null; item.retryAt = Date.parse(retryAt); item.lastError = error.slice(0, 500); } }
+  async markInboxReconcileRequired(consumer: string, eventId: string, error: string): Promise<void> { const item = this.inbox.get(`${consumer}:${eventId}`); if (item) { item.state = 'reconcile_required'; item.leaseExpiresAt = null; item.retryAt = null; item.lastError = error.slice(0, 500); } }
+  async markInboxDeadLettered(consumer: string, eventId: string, error: string): Promise<void> { const item = this.inbox.get(`${consumer}:${eventId}`); if (item) { item.state = 'dead_lettered'; item.leaseExpiresAt = null; item.retryAt = null; item.lastError = error.slice(0, 500); } }
+  async recordActionExecution(execution: ActionExecution): Promise<ActionExecution> { const key = `${execution.actionId}:${execution.idempotencyKey}`; const existing = [...this.actionExecutions.values()].find((item) => `${item.actionId}:${item.idempotencyKey}` === key); const value = existing ? { ...execution, id: existing.id, createdAt: existing.createdAt, updatedAt: now() } : execution; this.actionExecutions.set(value.id, value); return value; }
   async addAudit(event: AuditEvent): Promise<void> { this.audits.push(event); }
   async listAudit(tenantId: string): Promise<AuditEvent[]> { return this.audits.filter((event) => event.tenantId === tenantId); }
   async getTenantStats(tenantId: string): Promise<TenantStats> {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState } from './conversation-state.js';
+import { composeConversationSummary, consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState } from './conversation-state.js';
 
 describe('conversation state concurrency merge', () => {
   it('does not carry consent across a conflicting intent transition', () => {
@@ -54,5 +54,18 @@ describe('conversation state concurrency merge', () => {
     expect(merged.pendingPrompt).toEqual(latest.pendingPrompt);
     expect(merged.workflowStatus).toBe('queued');
     expect(merged.rollingSummary).toBe(latest.rollingSummary);
+  });
+
+  it('builds a deterministic masked summary from authoritative state', () => {
+    const state = { ...newConversationState(), selectedIntentKey: 'company.setup', intentConfidence: 0.91, slotValues: { business_activity: 'fashion boutique', budget: '[PHONE_1]' }, contactConsent: 'unknown' as const, workflowStatus: 'awaiting_customer' as const, pendingPrompt: { id: 'p', type: 'slot' as const, intentKey: 'company.setup', slotKey: 'timeline', issuedAt: '2026-10-23T00:00:00.000Z' } };
+    expect(composeConversationSummary(state, 'within two weeks')).toContain('Primary intent: company.setup (91% confidence).');
+    expect(composeConversationSummary(state, 'within two weeks')).toContain('budget=[PHONE_1]');
+    expect(composeConversationSummary(state, 'within two weeks')).toContain('Next question: slot/timeline.');
+  });
+
+  it('does not let an older concurrent slot update replace a correction', () => {
+    const latest = { ...newConversationState(), slotValues: { email: '[EMAIL_2]' }, slotProvenance: { email: { source: 'visitor' as const, messageSequence: 2, capturedAt: '2026-10-23T00:00:02.000Z', corrected: true } } };
+    const stale = { ...newConversationState(), slotValues: { email: '[EMAIL_1]' }, slotProvenance: { email: { source: 'visitor' as const, messageSequence: 1, capturedAt: '2026-10-23T00:00:01.000Z', corrected: false } } };
+    expect(mergeConcurrentConversationState(latest, stale).slotValues.email).toBe('[EMAIL_2]');
   });
 });

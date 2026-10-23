@@ -132,8 +132,15 @@ export interface Health {
 
 export interface WorkflowRun {
   id: string;
+  actionId?: string;
+  sessionId?: string;
   workflowKey: string;
-  state: 'success' | 'running' | 'failed';
+  state: string;
+  uiState?: 'success' | 'running' | 'failed';
+  lifecycleState?: string;
+  catalogVersionId?: string | null;
+  intentKey?: string;
+  idempotencyKey?: string;
   createdAt: string;
   result: { externalReference: string } | null;
   durationMs?: number;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import type { OutboxEvent } from './types.js';
+import type { IntentCatalog, OutboxEvent } from './types.js';
 import { createOutboxEvent } from './events.js';
 import { EventConsumer, OutboxRelay, type StreamBus, type StreamMessage, N8nEventBridge } from './event-bus.js';
 import { MemoryStore } from './store-memory.js';
@@ -19,6 +19,10 @@ class FakeBus implements StreamBus {
   async reclaim(): Promise<StreamMessage[]> { return []; }
   async acknowledge(_stream: string, _group: string, messageId: string): Promise<void> { this.acknowledged.push(messageId); }
   async deadLetter(event: OutboxEvent, reason: string): Promise<void> { this.deadLetters.push({ event, reason }); }
+}
+
+class FailingBus extends FakeBus {
+  async append(): Promise<string> { throw new Error('redis unavailable'); }
 }
 
 describe('Redis event orchestration primitives', () => {
@@ -62,7 +66,7 @@ describe('Redis event orchestration primitives', () => {
     }
   });
 
-  it('reconciles and acknowledges a workflow rejection instead of leaving it processing', async () => {
+  it('retries a transient workflow rejection without acknowledging it', async () => {
     const server = createServer((_request, response) => { response.writeHead(500).end('workflow failed'); });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
     const address = server.address();
@@ -77,8 +81,104 @@ describe('Redis event orchestration primitives', () => {
       bus.pending.push({ id: 'reconcile-1', event });
       const consumer = new EventConsumer(store, bus, new N8nEventBridge(store, `http://127.0.0.1:${address.port}`, 'secret'));
       expect(await consumer.runOnce('rag:v2:actions', 'intent-workers', 0)).toBe(0);
+      expect((await store.getAction(action.id))?.state).toBe('approved');
+      expect(bus.acknowledged).toEqual([]);
+      expect(bus.deadLetters).toHaveLength(0);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it('resolves the active catalog workflow identity for n8n dispatch', async () => {
+    let received = '';
+    const server = createServer(async (request, response) => {
+      for await (const chunk of request) received += chunk.toString();
+      response.writeHead(202).end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind to a TCP port.');
+    try {
+      const store = new MemoryStore();
+      const tenantId = randomUUID();
+      const sessionId = randomUUID();
+      const workflowKey = 'crm.lead.create';
+      const n8nWorkflowId = 'catalog-workflow-1';
+      const catalog: IntentCatalog = { tenantScope: null, intents: [], signals: [], slots: [], relations: [], workflowBindings: [{ workflowKey, n8nWorkflowId, webhookPath: 'catalog-lead', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }] };
+      const version = await store.createIntentCatalogVersion({ tenantId, status: 'draft', sourceFileName: 'test.json', sourceHash: 'hash', parserVersion: 'test', catalog });
+      const action = await store.createAction({ id: randomUUID(), tenantId, sessionId, workflowKey, webhookPath: 'legacy-lead', intentKey: 'lead.capture', catalogVersionId: version.id, state: 'processing', opaqueReference: 'opaque-catalog', idempotencyKey: 'catalog-route', payload: {}, createdAt: new Date().toISOString(), result: null });
+      const event = createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId, sessionId, actionId: action.id, aggregateId: action.id, workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId, workflowKey, webhookPath: action.webhookPath ?? 'legacy-lead' } });
+      await new N8nEventBridge(store, `http://127.0.0.1:${address.port}`, 'secret').dispatch(event);
+      expect(JSON.parse(received)).toMatchObject({ webhookPath: 'catalog-lead', workflowKey, n8nWorkflowId, contract: 'crm-lead-v1' });
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it('marks an action failed after bounded transient retries', async () => {
+    const server = createServer((_request, response) => { response.writeHead(500).end('workflow failed'); });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind to a TCP port.');
+    try {
+      const store = new MemoryStore();
+      const bus = new FakeBus();
+      const tenantId = randomUUID();
+      const sessionId = randomUUID();
+      const action = await store.createAction({ id: randomUUID(), tenantId, sessionId, workflowKey: 'crm.lead.create', webhookPath: 'lead-capture', intentKey: 'lead.capture', state: 'approved', opaqueReference: 'opaque-failed', idempotencyKey: 'failed-action', payload: {}, createdAt: new Date().toISOString(), result: null });
+      const event = createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId, sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? 'lead-capture' } });
+      bus.pending.push({ id: 'failed-1', event });
+      const consumer = new EventConsumer(store, bus, new N8nEventBridge(store, `http://127.0.0.1:${address.port}`, 'secret'), 'test-worker', 1);
+      expect(await consumer.runOnce('rag:v2:actions', 'intent-workers', 0)).toBe(0);
+      expect((await store.getAction(action.id))?.state).toBe('failed');
+      expect(bus.acknowledged).toEqual(['failed-1']);
+      expect(bus.deadLetters).toHaveLength(1);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it('keeps an active inbox lease exclusive and recovers an expired retry', async () => {
+    const store = new MemoryStore();
+    const consumer = 'intent-workers';
+    const eventId = randomUUID();
+    expect((await store.claimInboxEvent(consumer, eventId, 60_000)).claimed).toBe(true);
+    expect((await store.claimInboxEvent(consumer, eventId, 60_000)).claimed).toBe(false);
+    await store.scheduleInboxRetry(consumer, eventId, 'temporary', new Date(Date.now() - 1).toISOString());
+    const recovered = await store.claimInboxEvent(consumer, eventId, 60_000);
+    expect(recovered).toMatchObject({ claimed: true, state: 'processing', attempts: 2 });
+    await store.completeInboxEvent(consumer, eventId);
+    expect((await store.claimInboxEvent(consumer, eventId, 60_000)).claimed).toBe(false);
+  });
+
+  it('dead-letters an outbox event after bounded publish attempts', async () => {
+    const store = new MemoryStore();
+    const bus = new FailingBus();
+    await store.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'conversation.notification.requested.v1', tenantId: randomUUID(), aggregateId: randomUUID(), payloadRef: 'session-ref', idempotencyKey: 'notify-dead-letter' }));
+    const relay = new OutboxRelay(store, bus, 0, 1);
+    expect(await relay.runOnce()).toBe(0);
+    expect(bus.deadLetters).toHaveLength(1);
+    expect(await relay.runOnce()).toBe(0);
+    expect(bus.deadLetters).toHaveLength(1);
+  });
+
+  it('moves an unavailable workflow route to reconciliation and acknowledges it', async () => {
+    const server = createServer((_request, response) => { response.writeHead(404).end('missing'); });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind to a TCP port.');
+    try {
+      const store = new MemoryStore();
+      const bus = new FakeBus();
+      const tenantId = randomUUID();
+      const sessionId = randomUUID();
+      const action = await store.createAction({ id: randomUUID(), tenantId, sessionId, workflowKey: 'crm.lead.create', webhookPath: 'lead-capture', intentKey: 'lead.capture', state: 'approved', opaqueReference: 'opaque-missing-route', idempotencyKey: 'missing-route', payload: {}, createdAt: new Date().toISOString(), result: null });
+      const event = createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId, sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? 'lead-capture' } });
+      bus.pending.push({ id: 'missing-route-1', event });
+      const consumer = new EventConsumer(store, bus, new N8nEventBridge(store, `http://127.0.0.1:${address.port}`, 'secret'));
+      expect(await consumer.runOnce('rag:v2:actions', 'intent-workers', 0)).toBe(0);
       expect((await store.getAction(action.id))?.state).toBe('reconcile_required');
-      expect(bus.acknowledged).toEqual(['reconcile-1']);
+      expect(bus.acknowledged).toEqual(['missing-route-1']);
       expect(bus.deadLetters).toHaveLength(1);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
