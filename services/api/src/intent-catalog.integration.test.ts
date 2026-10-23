@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
