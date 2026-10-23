@@ -68,4 +68,12 @@ describe('conversation state concurrency merge', () => {
     const stale = { ...newConversationState(), slotValues: { email: '[EMAIL_1]' }, slotProvenance: { email: { source: 'visitor' as const, messageSequence: 1, capturedAt: '2026-10-23T00:00:01.000Z', corrected: false } } };
     expect(mergeConcurrentConversationState(latest, stale).slotValues.email).toBe('[EMAIL_2]');
   });
+
+  it('uses capture time and correction status to resolve equal message sequence provenance', () => {
+    const latest = { ...newConversationState(), slotValues: { phone: '[PHONE_1]' }, slotProvenance: { phone: { source: 'visitor' as const, messageSequence: 4, capturedAt: '2026-10-23T00:00:04.000Z', corrected: false } } };
+    const stale = { ...newConversationState(), slotValues: { phone: '[PHONE_0]' }, slotProvenance: { phone: { source: 'visitor' as const, messageSequence: 4, capturedAt: '2026-10-23T00:00:03.000Z', corrected: true } } };
+    expect(mergeConcurrentConversationState(latest, stale).slotValues.phone).toBe('[PHONE_1]');
+    const correction = { ...stale, slotProvenance: { phone: { ...stale.slotProvenance.phone, capturedAt: latest.slotProvenance.phone.capturedAt, corrected: true } } };
+    expect(mergeConcurrentConversationState(latest, correction).slotValues.phone).toBe('[PHONE_0]');
+  });
 });

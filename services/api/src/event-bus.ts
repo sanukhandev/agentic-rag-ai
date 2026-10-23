@@ -69,6 +69,7 @@ export class OutboxRelay {
   constructor(private readonly store: Store, private readonly bus: StreamBus, private readonly leaseMs = 30_000, private readonly maxAttempts = 10) {}
 
   async runOnce(limit = 25): Promise<number> {
+    await this.publishDeadLetterProjections(limit);
     const events = await this.store.claimOutboxEvents(limit, this.leaseMs);
     let published = 0;
     for (const event of events) {
@@ -79,8 +80,13 @@ export class OutboxRelay {
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         if (event.attempts >= this.maxAttempts) {
-          await this.bus.deadLetter(event, reason);
           await this.store.deadLetterOutboxEvent(event.eventId, reason);
+          try {
+            await this.bus.deadLetter(event, reason);
+            await this.store.markOutboxDeadLetterPublished(event.eventId);
+          } catch {
+            // The database terminal state is authoritative; the Redis DLQ projection is retried on the next relay tick.
+          }
         } else {
           const retryAt = new Date(Date.now() + Math.min(60_000, 1_000 * 2 ** Math.min(event.attempts, 6))).toISOString();
           await this.store.releaseOutboxEvent(event.eventId, reason, retryAt);
@@ -88,6 +94,18 @@ export class OutboxRelay {
       }
     }
     return published;
+  }
+
+  private async publishDeadLetterProjections(limit: number): Promise<void> {
+    const events = await this.store.claimDeadLetterOutboxEvents(limit, this.leaseMs);
+    for (const event of events) {
+      try {
+        await this.bus.deadLetter(event, event.lastError ?? 'outbox event dead-lettered');
+        await this.store.markOutboxDeadLetterPublished(event.eventId);
+      } catch {
+        // Keep the durable row eligible for a later projection attempt.
+      }
+    }
   }
 }
 
@@ -97,9 +115,9 @@ export class TransientEventDispatchError extends Error {}
 export class PermanentEventDispatchError extends Error {}
 
 export class N8nEventBridge {
-  constructor(private readonly store: Store, private readonly baseUrl: string, private readonly secret: string, private readonly timeoutMs = 5_000) {}
+  constructor(private readonly store: Store, private readonly baseUrl: string, private readonly secret: string, private readonly timeoutMs = 5_000, private readonly completionDeadlineMs = 15 * 60_000) {}
 
-  async dispatch(event: OutboxEvent): Promise<void> {
+  async dispatch(event: OutboxEvent, attempt = Math.max(1, event.attempts)): Promise<void> {
     const route = event.eventType === 'intent.action.requested.v1' ? await this.actionRoute(event) : event.eventType === 'document.extraction.requested.v1' ? await this.documentRoute(event) : null;
     if (!route) {
       if (event.eventType === 'crm.contact.upsert.requested.v1' || event.eventType === 'crm.summary.update.requested.v1' || event.eventType === 'crm.reconcile.requested.v1' || event.eventType === 'conversation.notification.requested.v1') {
@@ -118,9 +136,19 @@ export class N8nEventBridge {
       }
       if (event.actionId) {
         const action = await this.store.getAction(event.actionId);
-        if (action && action.tenantId === event.tenantId) await this.store.recordActionExecution({ id: randomUUID(), actionId: action.id, tenantId: action.tenantId, workflowKey: action.workflowKey, catalogVersionId: action.catalogVersionId ?? null, providerStatus: 'accepted', n8nExecutionRef: null, idempotencyKey: action.idempotencyKey, attempt: event.attempts, deadlineAt: null, outcome: { eventId: event.eventId, correlationId: event.correlationId }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+        if (action && action.tenantId === event.tenantId) {
+          try {
+            await this.store.recordActionExecution({ id: randomUUID(), actionId: action.id, tenantId: action.tenantId, workflowKey: action.workflowKey, catalogVersionId: action.catalogVersionId ?? null, providerStatus: 'accepted', n8nExecutionRef: null, idempotencyKey: action.idempotencyKey, attempt, deadlineAt: new Date(Date.now() + this.completionDeadlineMs).toISOString(), outcome: { eventId: event.eventId, correlationId: event.correlationId }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+          } catch {
+            throw new ReconcileRequiredDispatchError('n8n accepted the request but the execution could not be recorded durably; reconciliation is required.');
+          }
+        }
       }
-      await this.store.addAudit({ id: randomUUID(), tenantId: event.tenantId, actorId: null, eventName: 'workflow.dispatch_accepted', metadata: { eventId: event.eventId, actionId: event.actionId, workflowKey: route.workflowKey, correlationId: event.correlationId, attempt: event.attempts }, createdAt: new Date().toISOString() });
+      try {
+        await this.store.addAudit({ id: randomUUID(), tenantId: event.tenantId, actorId: null, eventName: 'workflow.dispatch_accepted', metadata: { eventId: event.eventId, actionId: event.actionId, workflowKey: route.workflowKey, correlationId: event.correlationId, attempt }, createdAt: new Date().toISOString() });
+      } catch {
+        throw new ReconcileRequiredDispatchError('n8n accepted the request but the acceptance audit could not be recorded durably; reconciliation is required.');
+      }
     } catch (error) {
       if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
         if (event.actionId) {
@@ -166,9 +194,12 @@ export class EventConsumer {
     let handled = 0;
     for (const message of messages) {
       const claim = await this.store.claimInboxEvent(group, message.event.eventId);
-      if (!claim.claimed) { await this.bus.acknowledge(stream, group, message.id); continue; }
+      if (!claim.claimed) {
+        if (['completed', 'reconcile_required', 'dead_lettered'].includes(claim.state)) await this.bus.acknowledge(stream, group, message.id);
+        continue;
+      }
       try {
-        await this.bridge.dispatch(message.event);
+        await this.bridge.dispatch(message.event, claim.attempts);
         await this.store.completeInboxEvent(group, message.event.eventId);
         handled += 1;
         await this.bus.acknowledge(stream, group, message.id);

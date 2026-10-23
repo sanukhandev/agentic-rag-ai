@@ -601,12 +601,16 @@ export interface Store {
   markOutboxPublished(eventId: string, publishedAt?: string): Promise<void>;
   releaseOutboxEvent(eventId: string, error: string, retryAt: string): Promise<void>;
   deadLetterOutboxEvent(eventId: string, error: string): Promise<void>;
+  claimDeadLetterOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]>;
+  markOutboxDeadLetterPublished(eventId: string, publishedAt?: string): Promise<void>;
   claimInboxEvent(consumer: string, eventId: string, leaseMs?: number): Promise<EventInboxClaim>;
   completeInboxEvent(consumer: string, eventId: string): Promise<void>;
   scheduleInboxRetry(consumer: string, eventId: string, error: string, retryAt: string): Promise<void>;
   markInboxReconcileRequired(consumer: string, eventId: string, error: string): Promise<void>;
   markInboxDeadLettered(consumer: string, eventId: string, error: string): Promise<void>;
   recordActionExecution(execution: ActionExecution): Promise<ActionExecution>;
+  updateActionExecution(input: { actionId: string; tenantId: string; providerStatus: string; n8nExecutionRef?: string | null; outcome?: ActionExecution['outcome'] }): Promise<ActionExecution | null>;
+  reconcileExpiredActionExecutions(now: string): Promise<ActionExecution[]>;
   addAudit(event: AuditEvent): Promise<void>;
   listAudit(tenantId: string): Promise<AuditEvent[]>;
   getTenantStats(tenantId: string): Promise<TenantStats>;

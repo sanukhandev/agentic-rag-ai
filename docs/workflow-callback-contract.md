@@ -4,4 +4,4 @@ Workflow requests carry opaque references and correlation metadata only. The API
 
 The callback must authenticate the internal caller, validate tenant/action scope, execution correlation, schema version, and legal state transition. A remote CRM ID is accepted only from a verified completion response. Replayed or stale callbacks are ignored or recorded as audit events and cannot overwrite newer state.
 
-The application records workflow acceptance separately from business completion in `action_executions` and audit history.
+The application records workflow acceptance separately from business completion in `action_executions` and audit history. Accepted records include the durable inbox attempt and completion deadline. Completion callbacks may carry a bounded opaque `executionReference`; the backend updates only the tenant-scoped active execution and rejects replayed or stale state transitions.

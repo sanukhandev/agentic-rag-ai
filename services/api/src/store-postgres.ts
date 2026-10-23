@@ -24,7 +24,7 @@ type CrmLeadRow = { id: string; tenant_id: string; action_id: string; session_id
 type IngestionJobRow = { id: string; tenant_id: string; title: string; mime_type: string; source_url: string | null; audience: 'public' | 'internal'; source_id: string | null; status: IngestionJob['status']; attempts: number; error_code: string | null; lease_expires_at: DbTimestamp | null; created_at: DbTimestamp; updated_at: DbTimestamp };
 type SupportingDocumentRow = { id: string; tenant_id: string; session_id: string; lead_id: string | null; file_name: string; mime_type: string; size_bytes: number; sha256: string; storage_key: string; status: SupportingDocument['status']; workflow_key: string; store_extracted_text: boolean; extracted_text: string | null; summary: string | null; error_code: string | null; consent_at: DbTimestamp; created_at: DbTimestamp; updated_at: DbTimestamp };
 type DocumentJobRow = { id: string; document_id: string; tenant_id: string; workflow_key: string; webhook_path: string; status: DocumentProcessingJob['status']; attempts: number; lease_expires_at: DbTimestamp | null; execution_reference: string | null; created_at: DbTimestamp; updated_at: DbTimestamp };
-type OutboxRow = { event_id: string; event_type: OutboxEvent['eventType']; stream: OutboxEvent['stream']; tenant_id: string; session_id: string | null; action_id: string | null; aggregate_id: string; aggregate_version: number; workflow_key: string | null; payload_ref: string; idempotency_key: string; correlation_id: string; payload: OutboxEvent['payload']; occurred_at: DbTimestamp; published_at: DbTimestamp | null; attempts: number; lease_expires_at: DbTimestamp | null; last_error: string | null };
+type OutboxRow = { event_id: string; event_type: OutboxEvent['eventType']; stream: OutboxEvent['stream']; tenant_id: string; session_id: string | null; action_id: string | null; aggregate_id: string; aggregate_version: number; workflow_key: string | null; payload_ref: string; idempotency_key: string; correlation_id: string; payload: OutboxEvent['payload']; occurred_at: DbTimestamp; published_at: DbTimestamp | null; attempts: number; lease_expires_at: DbTimestamp | null; last_error: string | null; dead_lettered_at?: DbTimestamp | null; dead_letter_published_at?: DbTimestamp | null; dead_letter_lease_expires_at?: DbTimestamp | null };
 type ActionExecutionRow = { id: string; action_id: string; tenant_id: string; workflow_key: string; catalog_version_id: string | null; provider_status: string; n8n_execution_ref: string | null; idempotency_key: string; attempt: number; deadline_at: DbTimestamp | null; outcome: ActionExecution['outcome']; created_at: DbTimestamp; updated_at: DbTimestamp };
 
 export class PostgresStore implements Store {
@@ -109,24 +109,28 @@ export class PostgresStore implements Store {
     return result.rows.map((row) => ({ source: this.source(row), chunk: { id: row.chunk_id, sourceId: row.chunk_source_id, tenantId: row.chunk_tenant_id, versionId: row.chunk_version_id, ordinal: row.ordinal, locator: row.locator, content: row.content, contentHash: row.chunk_content_hash, embedding: String(row.embedding_text).replace(/[\[\]]/g, '').split(',').filter(Boolean).map(Number) } }));
   }
   async searchSearchableChunks(tenantId: string, audience: 'public' | 'internal', queryEmbedding: number[], limit: number, queryText = ''): Promise<Array<{ source: Source; chunk: Chunk }>> {
-    const result = await this.pool.query(`WITH authorized AS (
-      SELECT s.*,c.id AS chunk_id,c.source_id AS chunk_source_id,c.tenant_id AS chunk_tenant_id,c.version_id AS chunk_version_id,c.ordinal,c.locator,c.content,c.content_hash AS chunk_content_hash,c.embedding::text AS embedding_text
+    const result = await this.pool.query(`WITH vector_candidates AS (
+      SELECT c.id AS chunk_id, row_number() OVER (ORDER BY c.embedding <=> $3::vector, c.id) AS rank
       FROM knowledge_sources s JOIN source_chunks c ON c.source_id=s.id AND c.version_id=s.version_id
       WHERE s.tenant_id=$1 AND s.status='active' AND (s.audience='public' OR $2='internal')
-    ), vector_rank AS (
-      SELECT chunk_id, row_number() OVER (ORDER BY embedding_text::vector <=> $3::vector) AS rank
-      FROM authorized
-    ), text_rank AS (
-      SELECT chunk_id, row_number() OVER (ORDER BY ts_rank_cd(to_tsvector('simple', content), plainto_tsquery('simple', $4)) DESC, chunk_id) AS rank
-      FROM authorized
-      WHERE $4 <> '' AND to_tsvector('simple', content) @@ plainto_tsquery('simple', $4)
+      ORDER BY c.embedding <=> $3::vector, c.id
+      LIMIT $5 * 3
+    ), text_candidates AS (
+      SELECT c.id AS chunk_id, row_number() OVER (ORDER BY ts_rank_cd(c.search_vector, plainto_tsquery('simple', $4)) DESC, c.id) AS rank
+      FROM knowledge_sources s JOIN source_chunks c ON c.source_id=s.id AND c.version_id=s.version_id
+      WHERE s.tenant_id=$1 AND s.status='active' AND (s.audience='public' OR $2='internal')
+        AND $4 <> '' AND c.search_vector @@ plainto_tsquery('simple', $4)
+      ORDER BY ts_rank_cd(c.search_vector, plainto_tsquery('simple', $4)) DESC, c.id
+      LIMIT $5 * 3
     )
-    SELECT authorized.*
-    FROM authorized
-    LEFT JOIN vector_rank ON vector_rank.chunk_id=authorized.chunk_id
-    LEFT JOIN text_rank ON text_rank.chunk_id=authorized.chunk_id
-    WHERE vector_rank.rank <= $5 * 3 OR text_rank.rank <= $5 * 3
-    ORDER BY (COALESCE(1.0 / (60 + vector_rank.rank), 0) + COALESCE(1.0 / (60 + text_rank.rank), 0)) DESC, authorized.chunk_id
+    SELECT s.*,c.id AS chunk_id,c.source_id AS chunk_source_id,c.tenant_id AS chunk_tenant_id,c.version_id AS chunk_version_id,c.ordinal,c.locator,c.content,c.content_hash AS chunk_content_hash,c.embedding::text AS embedding_text,
+      vector_candidates.rank AS vector_rank,text_candidates.rank AS text_rank
+    FROM knowledge_sources s JOIN source_chunks c ON c.source_id=s.id AND c.version_id=s.version_id
+    LEFT JOIN vector_candidates ON vector_candidates.chunk_id=c.id
+    LEFT JOIN text_candidates ON text_candidates.chunk_id=c.id
+    WHERE s.tenant_id=$1 AND s.status='active' AND (s.audience='public' OR $2='internal')
+      AND (vector_candidates.chunk_id IS NOT NULL OR text_candidates.chunk_id IS NOT NULL)
+    ORDER BY (COALESCE(1.0 / (60 + vector_candidates.rank), 0) + COALESCE(1.0 / (60 + text_candidates.rank), 0)) DESC, c.id
     LIMIT $5`, [tenantId, audience, vectorLiteral(queryEmbedding), queryText.slice(0, 4_000), limit]);
     return result.rows.map((row) => ({ source: this.source(row), chunk: { id: row.chunk_id, sourceId: row.chunk_source_id, tenantId: row.chunk_tenant_id, versionId: row.chunk_version_id, ordinal: row.ordinal, locator: row.locator, content: row.content, contentHash: row.chunk_content_hash, embedding: String(row.embedding_text).replace(/[\[\]]/g, '').split(',').filter(Boolean).map(Number) } }));
   }
@@ -243,18 +247,35 @@ export class PostgresStore implements Store {
   async claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]> { const result = await this.pool.query<OutboxRow>(`WITH candidate AS (SELECT event_id FROM event_outbox WHERE published_at IS NULL AND dead_lettered_at IS NULL AND (lease_expires_at IS NULL OR lease_expires_at <= now()) ORDER BY occurred_at,event_id FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE event_outbox AS event SET attempts=event.attempts+1,lease_expires_at=now()+($2::text || ' milliseconds')::interval FROM candidate WHERE event.event_id=candidate.event_id RETURNING event.*`, [limit, leaseMs]); return result.rows.map((row) => this.outboxEvent(row)); }
   async markOutboxPublished(eventId: string, publishedAt = new Date().toISOString()): Promise<void> { await this.pool.query('UPDATE event_outbox SET published_at=$1,lease_expires_at=NULL,last_error=NULL WHERE event_id=$2', [publishedAt, eventId]); }
   async releaseOutboxEvent(eventId: string, error: string, retryAt: string): Promise<void> { await this.pool.query('UPDATE event_outbox SET lease_expires_at=$1,last_error=$2 WHERE event_id=$3', [retryAt, error.slice(0, 500), eventId]); }
-  async deadLetterOutboxEvent(eventId: string, error: string): Promise<void> { await this.pool.query('UPDATE event_outbox SET dead_lettered_at=now(),lease_expires_at=NULL,last_error=$1 WHERE event_id=$2 AND published_at IS NULL', [error.slice(0, 500), eventId]); }
+  async deadLetterOutboxEvent(eventId: string, error: string): Promise<void> { await this.pool.query('UPDATE event_outbox SET dead_lettered_at=now(),dead_letter_published_at=NULL,dead_letter_lease_expires_at=NULL,lease_expires_at=NULL,last_error=$1 WHERE event_id=$2 AND published_at IS NULL', [error.slice(0, 500), eventId]); }
+  async claimDeadLetterOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]> {
+    const result = await this.pool.query<OutboxRow>(`WITH candidate AS (
+      SELECT event_id FROM event_outbox
+      WHERE dead_lettered_at IS NOT NULL AND dead_letter_published_at IS NULL
+        AND (dead_letter_lease_expires_at IS NULL OR dead_letter_lease_expires_at <= now())
+      ORDER BY dead_lettered_at,event_id
+      FOR UPDATE SKIP LOCKED LIMIT $1
+    )
+    UPDATE event_outbox AS event
+       SET dead_letter_lease_expires_at=now()+($2::text || ' milliseconds')::interval
+      FROM candidate
+     WHERE event.event_id=candidate.event_id
+    RETURNING event.*`, [limit, leaseMs]);
+    return result.rows.map((row) => this.outboxEvent(row));
+  }
+  async markOutboxDeadLetterPublished(eventId: string, publishedAt = new Date().toISOString()): Promise<void> { await this.pool.query('UPDATE event_outbox SET dead_letter_published_at=$1,dead_letter_lease_expires_at=NULL WHERE event_id=$2 AND dead_lettered_at IS NOT NULL', [publishedAt, eventId]); }
   async claimInboxEvent(consumer: string, eventId: string, leaseMs = 30_000): Promise<EventInboxClaim> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const existing = await client.query<{ state: EventInboxState; attempts: number; lease_expires_at: DbTimestamp | null; retry_at: DbTimestamp | null }>('SELECT state,attempts,lease_expires_at,retry_at FROM event_inbox WHERE consumer=$1 AND event_id=$2 FOR UPDATE', [consumer, eventId]);
-      if (!existing.rows[0]) {
-        await client.query('INSERT INTO event_inbox (consumer,event_id,state,attempts,lease_expires_at,updated_at) VALUES ($1,$2,\'processing\',1,now()+($3::double precision * interval \'1 millisecond\'),now())', [consumer, eventId, leaseMs]);
+      const inserted = await client.query<{ state: EventInboxState; attempts: number }>('INSERT INTO event_inbox (consumer,event_id,state,attempts,processed_at,lease_expires_at,updated_at) VALUES ($1,$2,\'processing\',1,NULL,now()+($3::double precision * interval \'1 millisecond\'),now()) ON CONFLICT (consumer,event_id) DO NOTHING RETURNING state,attempts', [consumer, eventId, leaseMs]);
+      if (inserted.rows[0]) {
         await client.query('COMMIT');
-        return { state: 'processing', attempts: 1, claimed: true };
+        return { state: 'processing', attempts: Number(inserted.rows[0].attempts), claimed: true };
       }
+      const existing = await client.query<{ state: EventInboxState; attempts: number; lease_expires_at: DbTimestamp | null; retry_at: DbTimestamp | null }>('SELECT state,attempts,lease_expires_at,retry_at FROM event_inbox WHERE consumer=$1 AND event_id=$2 FOR UPDATE', [consumer, eventId]);
       const row = existing.rows[0];
+      if (!row) throw new Error('Inbox row disappeared after conflict resolution.');
       const terminal = ['completed', 'reconcile_required', 'dead_lettered'].includes(row.state);
       const leased = row.state === 'processing' && row.lease_expires_at && new Date(row.lease_expires_at).getTime() > Date.now();
       const waiting = row.state === 'retry_scheduled' && row.retry_at && new Date(row.retry_at).getTime() > Date.now();
@@ -274,6 +295,47 @@ export class PostgresStore implements Store {
       ON CONFLICT (action_id,idempotency_key) DO UPDATE SET provider_status=EXCLUDED.provider_status,n8n_execution_ref=COALESCE(EXCLUDED.n8n_execution_ref,action_executions.n8n_execution_ref),attempt=GREATEST(action_executions.attempt,EXCLUDED.attempt),deadline_at=EXCLUDED.deadline_at,outcome=EXCLUDED.outcome,updated_at=now()
       RETURNING *`, [execution.id, execution.actionId, execution.tenantId, execution.workflowKey, execution.catalogVersionId, execution.providerStatus, execution.n8nExecutionRef, execution.idempotencyKey, execution.attempt, execution.deadlineAt, execution.outcome ? JSON.stringify(execution.outcome) : null, execution.createdAt]);
     return this.actionExecution(result.rows[0]!);
+  }
+  async updateActionExecution(input: { actionId: string; tenantId: string; providerStatus: string; n8nExecutionRef?: string | null; outcome?: ActionExecution['outcome'] }): Promise<ActionExecution | null> {
+    const result = await this.pool.query<ActionExecutionRow>(`WITH current_execution AS (
+      SELECT id FROM action_executions
+       WHERE action_id=$1 AND tenant_id=$2 AND provider_status NOT IN ('completed','failed','reconcile_required')
+       ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE
+    )
+    UPDATE action_executions AS execution
+       SET provider_status=$3,
+           n8n_execution_ref=COALESCE($4,execution.n8n_execution_ref),
+           outcome=COALESCE($5::jsonb,execution.outcome),
+           updated_at=now()
+      FROM current_execution
+     WHERE execution.id=current_execution.id
+    RETURNING execution.*`, [input.actionId, input.tenantId, input.providerStatus, input.n8nExecutionRef ?? null, input.outcome ? JSON.stringify(input.outcome) : null]);
+    return result.rows[0] ? this.actionExecution(result.rows[0]) : null;
+  }
+  async reconcileExpiredActionExecutions(timestamp: string): Promise<ActionExecution[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const expired = await client.query<ActionExecutionRow>(`SELECT * FROM action_executions
+        WHERE provider_status='accepted' AND deadline_at IS NOT NULL AND deadline_at <= $1
+        FOR UPDATE SKIP LOCKED`, [timestamp]);
+      const updated: ActionExecution[] = [];
+      for (const row of expired.rows) {
+        const result = await client.query<ActionExecutionRow>(`UPDATE action_executions
+          SET provider_status='reconcile_required',
+              outcome=COALESCE(outcome,'{}'::jsonb) || jsonb_build_object('reason','completion_deadline_exceeded'),
+              updated_at=now()
+          WHERE id=$1 AND provider_status='accepted'
+          RETURNING *`, [row.id]);
+        if (result.rows[0]) {
+          await client.query(`UPDATE action_requests SET state='reconcile_required',result=COALESCE(result,'{}'::jsonb) || jsonb_build_object('reason','completion_deadline_exceeded')
+            WHERE id=$1 AND tenant_id=$2 AND state IN ('approved','processing')`, [row.action_id, row.tenant_id]);
+          updated.push(this.actionExecution(result.rows[0]));
+        }
+      }
+      await client.query('COMMIT');
+      return updated;
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
   async addAudit(event: AuditEvent): Promise<void> { await this.pool.query('INSERT INTO audit_events (id,tenant_id,actor_id,event_name,metadata) VALUES ($1,$2,$3,$4,$5)', [event.id, event.tenantId, event.actorId, event.eventName, JSON.stringify(event.metadata)]); }
   async listAudit(tenantId: string): Promise<AuditEvent[]> { const result = await this.pool.query('SELECT * FROM audit_events WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId]); return result.rows.map((row) => ({ id: row.id, tenantId: row.tenant_id, actorId: row.actor_id, eventName: row.event_name, metadata: row.metadata, createdAt: iso(row.created_at) })); }

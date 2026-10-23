@@ -107,4 +107,25 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       await pool.end();
     }
   }, 20_000);
+
+  it('claims an inbox row safely under concurrent delivery and reconciles an overdue accepted execution', async () => {
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const store = new PostgresStore(pool);
+    const tenant = await store.createTenant({ name: 'Execution Recovery Test', slug: `execution-recovery-${randomUUID()}` });
+    const eventId = randomUUID();
+    try {
+      const session = await store.createSession(tenant.id);
+      const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'crm.lead.create', idempotencyKey: 'execution-recovery', state: 'processing', opaqueReference: 'execution-recovery', payload: {}, createdAt: new Date().toISOString(), result: null });
+      const claims = await Promise.all([store.claimInboxEvent('integration-workers', eventId), store.claimInboxEvent('integration-workers', eventId)]);
+      expect(claims.filter((claim) => claim.claimed)).toHaveLength(1);
+      await store.recordActionExecution({ id: randomUUID(), actionId: action.id, tenantId: tenant.id, workflowKey: action.workflowKey, catalogVersionId: null, providerStatus: 'accepted', n8nExecutionRef: null, idempotencyKey: action.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() - 1_000).toISOString(), outcome: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      const reconciled = await store.reconcileExpiredActionExecutions(new Date().toISOString());
+      expect(reconciled).toMatchObject([{ actionId: action.id, providerStatus: 'reconcile_required' }]);
+      expect((await store.getAction(action.id))?.state).toBe('reconcile_required');
+    } finally {
+      await pool.query('DELETE FROM event_inbox WHERE consumer=$1 AND event_id=$2', ['integration-workers', eventId]);
+      await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
+      await pool.end();
+    }
+  }, 20_000);
 });

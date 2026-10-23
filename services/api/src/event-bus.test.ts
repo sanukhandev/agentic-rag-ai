@@ -25,6 +25,16 @@ class FailingBus extends FakeBus {
   async append(): Promise<string> { throw new Error('redis unavailable'); }
 }
 
+class DeadLetterUnavailableBus extends FailingBus {
+  private failDeadLetter = true;
+  async deadLetter(event: OutboxEvent, reason: string): Promise<void> { if (this.failDeadLetter) throw new Error('redis dlq unavailable'); await super.deadLetter(event, reason); }
+  recoverDeadLetter(): void { this.failDeadLetter = false; }
+}
+
+class AcceptancePersistenceFailStore extends MemoryStore {
+  async recordActionExecution(): Promise<never> { throw new Error('postgres unavailable after workflow acceptance'); }
+}
+
 describe('Redis event orchestration primitives', () => {
   it('publishes an outbox event once and leaves the durable row marked', async () => {
     const store = new MemoryStore();
@@ -61,6 +71,9 @@ describe('Redis event orchestration primitives', () => {
       const event = createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId, sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? 'lead-capture' } });
       await new N8nEventBridge(store, `http://127.0.0.1:${address.port}`, 'secret', 1_000).dispatch(event);
       expect((await store.getAction(action.id))?.state).toBe('processing');
+      const accepted = await store.updateActionExecution({ actionId: action.id, tenantId, providerStatus: 'completed', n8nExecutionRef: 'execution-1' });
+      expect(accepted).toMatchObject({ attempt: 1, providerStatus: 'completed' });
+      expect(accepted?.deadlineAt).not.toBeNull();
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
@@ -151,6 +164,17 @@ describe('Redis event orchestration primitives', () => {
     expect((await store.claimInboxEvent(consumer, eventId, 60_000)).claimed).toBe(false);
   });
 
+  it('does not acknowledge a duplicate while another consumer still owns its lease', async () => {
+    const store = new MemoryStore();
+    const bus = new FakeBus();
+    const event = createOutboxEvent({ eventId: randomUUID(), eventType: 'conversation.notification.requested.v1', tenantId: randomUUID(), aggregateId: randomUUID(), payloadRef: 'session-ref', idempotencyKey: 'leased-duplicate' });
+    await store.claimInboxEvent('channel-workers', event.eventId, 60_000);
+    bus.pending.push({ id: 'leased-duplicate-1', event });
+    const consumer = new EventConsumer(store, bus, new N8nEventBridge(store, 'https://n8n.example', 'secret'));
+    expect(await consumer.runOnce('rag:v2:notifications', 'channel-workers', 0)).toBe(0);
+    expect(bus.acknowledged).toEqual([]);
+  });
+
   it('dead-letters an outbox event after bounded publish attempts', async () => {
     const store = new MemoryStore();
     const bus = new FailingBus();
@@ -160,6 +184,35 @@ describe('Redis event orchestration primitives', () => {
     expect(bus.deadLetters).toHaveLength(1);
     expect(await relay.runOnce()).toBe(0);
     expect(bus.deadLetters).toHaveLength(1);
+  });
+
+  it('keeps the durable dead-letter state when Redis DLQ publication is unavailable', async () => {
+    const store = new MemoryStore();
+    const bus = new DeadLetterUnavailableBus();
+    await store.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'conversation.notification.requested.v1', tenantId: randomUUID(), aggregateId: randomUUID(), payloadRef: 'session-ref', idempotencyKey: 'notify-dlq-retry' }));
+    const relay = new OutboxRelay(store, bus, 0, 1);
+    expect(await relay.runOnce()).toBe(0);
+    expect(bus.deadLetters).toHaveLength(0);
+    bus.recoverDeadLetter();
+    expect(await relay.runOnce()).toBe(0);
+    expect(bus.deadLetters).toHaveLength(1);
+  });
+
+  it('moves accepted-workflow persistence failures to reconciliation', async () => {
+    const server = createServer((_request, response) => { response.writeHead(202).end(); });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind to a TCP port.');
+    try {
+      const store = new AcceptancePersistenceFailStore();
+      const tenantId = randomUUID();
+      const sessionId = randomUUID();
+      const action = await store.createAction({ id: randomUUID(), tenantId, sessionId, workflowKey: 'crm.lead.create', webhookPath: 'lead-capture', intentKey: 'lead.capture', state: 'approved', opaqueReference: 'opaque-accepted', idempotencyKey: 'accepted-persistence', payload: {}, createdAt: new Date().toISOString(), result: null });
+      const event = createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId, sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? 'lead-capture' } });
+      await expect(new N8nEventBridge(store, `http://127.0.0.1:${address.port}`, 'secret').dispatch(event)).rejects.toThrow('reconciliation is required');
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
   });
 
   it('moves an unavailable workflow route to reconciliation and acknowledges it', async () => {

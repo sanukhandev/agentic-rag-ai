@@ -16,7 +16,12 @@ export const mergeConcurrentConversationState = (latest: ConversationState, cand
   for (const [slotKey, value] of Object.entries(candidate.slotValues)) {
     const currentProvenance = slotProvenance[slotKey];
     const incomingProvenance = candidate.slotProvenance?.[slotKey];
-    if (!currentProvenance || !incomingProvenance || incomingProvenance.messageSequence >= currentProvenance.messageSequence) {
+    const incomingWins = !currentProvenance || !incomingProvenance
+      || incomingProvenance.messageSequence > currentProvenance.messageSequence
+      || (incomingProvenance.messageSequence === currentProvenance.messageSequence
+        && (incomingProvenance.capturedAt > currentProvenance.capturedAt
+          || (incomingProvenance.capturedAt === currentProvenance.capturedAt && incomingProvenance.corrected && !currentProvenance.corrected)));
+    if (incomingWins) {
       slotValues[slotKey] = value;
       if (incomingProvenance) slotProvenance[slotKey] = incomingProvenance;
     }

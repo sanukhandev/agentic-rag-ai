@@ -33,6 +33,7 @@ export class MemoryStore implements Store {
   private readonly documentJobs = new Map<string, DocumentProcessingJob>();
   private readonly outbox = new Map<string, OutboxEvent>();
   private readonly deadLetteredOutbox = new Set<string>();
+  private readonly publishedDeadLetterProjections = new Set<string>();
   private readonly inbox = new Map<string, { state: EventInboxState; attempts: number; leaseExpiresAt: number | null; retryAt: number | null; lastError: string | null }>();
   private readonly actionExecutions = new Map<string, ActionExecution>();
   private readonly audits: AuditEvent[] = [];
@@ -387,7 +388,9 @@ export class MemoryStore implements Store {
   }
   async markOutboxPublished(eventId: string, publishedAt = now()): Promise<void> { const event = this.outbox.get(eventId); if (event) this.outbox.set(eventId, { ...event, publishedAt, leaseExpiresAt: null, lastError: null }); }
   async releaseOutboxEvent(eventId: string, error: string, retryAt: string): Promise<void> { const event = this.outbox.get(eventId); if (event) this.outbox.set(eventId, { ...event, leaseExpiresAt: retryAt, lastError: error.slice(0, 500) }); }
-  async deadLetterOutboxEvent(eventId: string, error: string): Promise<void> { const event = this.outbox.get(eventId); if (event) { this.deadLetteredOutbox.add(eventId); this.outbox.set(eventId, { ...event, leaseExpiresAt: null, lastError: error.slice(0, 500) }); } }
+  async deadLetterOutboxEvent(eventId: string, error: string): Promise<void> { const event = this.outbox.get(eventId); if (event) { this.deadLetteredOutbox.add(eventId); this.publishedDeadLetterProjections.delete(eventId); this.outbox.set(eventId, { ...event, leaseExpiresAt: null, lastError: error.slice(0, 500) }); } }
+  async claimDeadLetterOutboxEvents(limit: number, _leaseMs: number): Promise<OutboxEvent[]> { return [...this.deadLetteredOutbox].filter((eventId) => !this.publishedDeadLetterProjections.has(eventId)).map((eventId) => this.outbox.get(eventId)).filter((event): event is OutboxEvent => Boolean(event)).slice(0, limit); }
+  async markOutboxDeadLetterPublished(eventId: string): Promise<void> { if (this.deadLetteredOutbox.has(eventId)) this.publishedDeadLetterProjections.add(eventId); }
   async claimInboxEvent(consumer: string, eventId: string, leaseMs = 30_000): Promise<EventInboxClaim> {
     const key = `${consumer}:${eventId}`;
     const existing = this.inbox.get(key);
@@ -404,6 +407,24 @@ export class MemoryStore implements Store {
   async markInboxReconcileRequired(consumer: string, eventId: string, error: string): Promise<void> { const item = this.inbox.get(`${consumer}:${eventId}`); if (item) { item.state = 'reconcile_required'; item.leaseExpiresAt = null; item.retryAt = null; item.lastError = error.slice(0, 500); } }
   async markInboxDeadLettered(consumer: string, eventId: string, error: string): Promise<void> { const item = this.inbox.get(`${consumer}:${eventId}`); if (item) { item.state = 'dead_lettered'; item.leaseExpiresAt = null; item.retryAt = null; item.lastError = error.slice(0, 500); } }
   async recordActionExecution(execution: ActionExecution): Promise<ActionExecution> { const key = `${execution.actionId}:${execution.idempotencyKey}`; const existing = [...this.actionExecutions.values()].find((item) => `${item.actionId}:${item.idempotencyKey}` === key); const value = existing ? { ...execution, id: existing.id, createdAt: existing.createdAt, updatedAt: now() } : execution; this.actionExecutions.set(value.id, value); return value; }
+  async updateActionExecution(input: { actionId: string; tenantId: string; providerStatus: string; n8nExecutionRef?: string | null; outcome?: ActionExecution['outcome'] }): Promise<ActionExecution | null> {
+    const execution = [...this.actionExecutions.values()].filter((item) => item.actionId === input.actionId && item.tenantId === input.tenantId).sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+    if (!execution || ['completed', 'failed', 'reconcile_required'].includes(execution.providerStatus)) return null;
+    const updated = { ...execution, providerStatus: input.providerStatus, n8nExecutionRef: input.n8nExecutionRef ?? execution.n8nExecutionRef, outcome: input.outcome ?? execution.outcome, updatedAt: now() };
+    this.actionExecutions.set(updated.id, updated);
+    return updated;
+  }
+  async reconcileExpiredActionExecutions(timestamp: string): Promise<ActionExecution[]> {
+    const cutoff = Date.parse(timestamp);
+    const expired = [...this.actionExecutions.values()].filter((item) => item.providerStatus === 'accepted' && item.deadlineAt && Date.parse(item.deadlineAt) <= cutoff);
+    for (const execution of expired) {
+      const updated = { ...execution, providerStatus: 'reconcile_required', outcome: { ...(execution.outcome ?? {}), reason: 'completion_deadline_exceeded' }, updatedAt: now() };
+      this.actionExecutions.set(updated.id, updated);
+      const action = this.actions.get(execution.actionId);
+      if (action && action.tenantId === execution.tenantId && ['approved', 'processing'].includes(action.state)) this.actions.set(action.id, { ...action, state: 'reconcile_required' });
+    }
+    return expired.map((execution) => this.actionExecutions.get(execution.id)!).filter(Boolean);
+  }
   async addAudit(event: AuditEvent): Promise<void> { this.audits.push(event); }
   async listAudit(tenantId: string): Promise<AuditEvent[]> { return this.audits.filter((event) => event.tenantId === tenantId); }
   async getTenantStats(tenantId: string): Promise<TenantStats> {
