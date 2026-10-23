@@ -14,7 +14,7 @@ on:
       - 'package*.json'
       - '.github/workflows/crm-v2-pr-validation.yml'
   push:
-    branches: [feature/crm-omnichannel-conversation-v2]
+    branches: [feature/crm-omnichannel-conversation-v2, feat/rag-v2-reliability-conversation-intelligence]
 
 permissions:
   contents: read
@@ -23,6 +23,32 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      DATABASE_URL: postgres://agentic:agentic_ci_only@127.0.0.1:5432/agentic_rag
+      REDIS_URL: redis://127.0.0.1:6379
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: agentic_rag
+          POSTGRES_USER: agentic
+          POSTGRES_PASSWORD: agentic_ci_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U agentic -d agentic_rag"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,6 +71,13 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
+      - name: Apply disposable integration migrations
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+          for migration in infra/postgres/*.sql; do
+            PGPASSWORD=agentic_ci_only psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
+          done
       - name: Unit and integration tests
         run: npm test
       - name: Workflow JSON contract tests
