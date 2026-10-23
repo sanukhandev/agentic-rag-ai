@@ -18,7 +18,7 @@
         "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ workflowKey: 'crm.lead.create', n8nWorkflowId: $workflow.id, limit: 1 }) }}",
+        "jsonBody": "={{ JSON.stringify({ workflowKey: 'crm.lead.create', executionReference: $execution.id, n8nWorkflowId: $workflow.id, limit: 1 }) }}",
         "options": {}
       },
       "id": "f8e2e11d-0d3e-4e83-8d21-000000000002",

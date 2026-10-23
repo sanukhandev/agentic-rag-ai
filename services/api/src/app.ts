@@ -1104,7 +1104,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const input = parse(workflowClaimSchema, req.body);
       const completionDeadlineMs = Number(process.env.N8N_COMPLETION_DEADLINE_MS ?? 15 * 60_000);
       const deadlineAt = new Date(Date.now() + (Number.isFinite(completionDeadlineMs) && completionDeadlineMs > 0 ? completionDeadlineMs : 15 * 60_000)).toISOString();
-      const claims = await store.claimWorkflowActionsWithExecutions({ n8nWorkflowId: input.n8nWorkflowId, limit: input.limit ?? 10, attempt: input.attempt ?? 1, deadlineAt, ...(input.actionId ? { actionId: input.actionId } : {}), ...(input.tenantId ? { tenantId: input.tenantId } : {}), ...(input.workflowKey ? { workflowKey: input.workflowKey } : {}), ...(input.eventId ? { eventId: input.eventId } : {}), ...(input.correlationId ? { correlationId: input.correlationId } : {}) });
+      const claims = await store.claimWorkflowActionsWithExecutions({ n8nWorkflowId: input.n8nWorkflowId, executionReference: input.executionReference, limit: input.limit ?? 10, attempt: input.attempt ?? 1, deadlineAt, ...(input.actionId ? { actionId: input.actionId } : {}), ...(input.tenantId ? { tenantId: input.tenantId } : {}), ...(input.workflowKey ? { workflowKey: input.workflowKey } : {}), ...(input.eventId ? { eventId: input.eventId } : {}), ...(input.correlationId ? { correlationId: input.correlationId } : {}) });
       const items = [];
       for (const claim of claims) {
         const { action, execution } = claim;

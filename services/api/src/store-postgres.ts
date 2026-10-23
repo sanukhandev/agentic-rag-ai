@@ -207,7 +207,7 @@ export class PostgresStore implements Store {
       return { action: this.action(updatedAction.rows[0]), execution: this.actionExecution(updatedExecution.rows[0]) };
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
-  async claimWorkflowActionsWithExecutions(input: { actionId?: string; tenantId?: string; n8nWorkflowId: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]> {
+  async claimWorkflowActionsWithExecutions(input: { actionId?: string; tenantId?: string; n8nWorkflowId: string; executionReference: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -230,10 +230,18 @@ export class PostgresStore implements Store {
         const executionResult = await client.query<ActionExecutionRow>('SELECT * FROM action_executions WHERE action_id=$1 AND tenant_id=$2 AND idempotency_key=$3 FOR UPDATE', [row.id, row.tenant_id, row.idempotency_key]);
         const execution = executionResult.rows[0];
         if (!execution || execution.event_id !== input.eventId || execution.correlation_id !== input.correlationId || execution.attempt !== input.attempt || ['completed', 'failed', 'reconcile_required'].includes(execution.provider_status)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the durable workflow execution.');
+        if (execution.n8n_execution_ref) {
+          if (execution.n8n_execution_ref === input.executionReference) { await client.query('COMMIT'); return []; }
+          throw new HttpError(409, 'WORKFLOW_CLAIM_CONFLICT', 'The workflow action is already owned by another n8n execution.');
+        }
+        if (!['dispatching', 'accepted', 'processing'].includes(execution.provider_status)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The durable workflow execution is not claimable.');
+        const ownedExecution = await client.query<ActionExecutionRow>(`UPDATE action_executions SET n8n_execution_ref=$1,updated_at=now()
+          WHERE id=$2 AND n8n_execution_ref IS NULL AND provider_status IN ('dispatching','accepted','processing') RETURNING *`, [input.executionReference, execution.id]);
+        if (!ownedExecution.rows[0]) { await client.query('ROLLBACK'); return []; }
         const updatedAction = row.state === 'approved' ? await client.query<ActionRow>("UPDATE action_requests SET state='processing' WHERE id=$1 AND tenant_id=$2 AND state='approved' RETURNING *", [row.id, row.tenant_id]) : { rows: [row] };
         if (!updatedAction.rows[0]) throw new HttpError(409, 'WORKFLOW_CLAIM_CONFLICT', 'The workflow action changed before the webhook claim was committed.');
         await client.query('COMMIT');
-        return [{ action: this.action(updatedAction.rows[0]), execution: this.actionExecution(execution) }];
+        return [{ action: this.action(updatedAction.rows[0]), execution: this.actionExecution(ownedExecution.rows[0]) }];
       }
       const candidates = await client.query<ActionRow>(`WITH candidate AS (
         SELECT action.*
@@ -265,9 +273,9 @@ export class PostgresStore implements Store {
         const correlationId = input.actionId && input.correlationId ? input.correlationId : randomUUID();
         const inserted = await client.query<ActionExecutionRow>(`INSERT INTO action_executions
           (id,action_id,tenant_id,workflow_key,catalog_version_id,provider_status,n8n_execution_ref,event_id,correlation_id,idempotency_key,attempt,deadline_at,outcome,created_at,updated_at)
-          VALUES ($1,$2,$3,$4,$5,'dispatching',NULL,$6,$7,$8,$9,$10,$11,now(),now())
+          VALUES ($1,$2,$3,$4,$5,'dispatching',$6,$7,$8,$9,$10,$11,now(),now())
           ON CONFLICT (action_id,idempotency_key) DO NOTHING
-          RETURNING *`, [randomUUID(), row.id, row.tenant_id, row.workflow_key, row.catalog_version_id ?? null, eventId, correlationId, row.idempotency_key, input.attempt, input.deadlineAt, JSON.stringify({ eventId, correlationId })]);
+          RETURNING *`, [randomUUID(), row.id, row.tenant_id, row.workflow_key, row.catalog_version_id ?? null, input.executionReference, eventId, correlationId, row.idempotency_key, input.attempt, input.deadlineAt, JSON.stringify({ eventId, correlationId })]);
         if (!inserted.rows[0]) throw new Error('Workflow action claim could not create its execution lease; transaction rolled back.');
         claims.push({ action: this.action(row), execution: this.actionExecution(inserted.rows[0]) });
       }

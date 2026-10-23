@@ -76,22 +76,22 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
         signals: [], slots: [], relations: [], workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'atomic-poll-workflow', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }]
       } });
       const failedInsertAction = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'crm.lead.create', intentKey: 'crm.lead.create.request', catalogVersionId: catalog.id, idempotencyKey: 'atomic-poll-failed-insert', state: 'approved', opaqueReference: 'atomic-poll-failed-insert', payload: {}, createdAt: new Date().toISOString(), result: null });
-      await expect(store.claimWorkflowActionsWithExecutions({ n8nWorkflowId: 'atomic-poll-workflow', workflowKey: 'crm.lead.create', limit: 1, attempt: 1, deadlineAt: 'not-a-timestamp' })).rejects.toThrow();
+      await expect(store.claimWorkflowActionsWithExecutions({ n8nWorkflowId: 'atomic-poll-workflow', workflowKey: 'crm.lead.create', executionReference: 'atomic-poll-invalid', limit: 1, attempt: 1, deadlineAt: 'not-a-timestamp' })).rejects.toThrow();
       expect((await store.getAction(failedInsertAction.id))?.state).toBe('approved');
       expect(await store.getActionExecution(failedInsertAction.id, tenant.id)).toBeNull();
       await store.transitionAction(failedInsertAction.id, tenant.id, 'approved', 'failed', null);
 
       const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'crm.lead.create', intentKey: 'crm.lead.create.request', catalogVersionId: catalog.id, idempotencyKey: 'atomic-poll-recovery', state: 'approved', opaqueReference: 'atomic-poll-recovery', payload: {}, createdAt: new Date().toISOString(), result: null });
-      const claim = await store.claimWorkflowActionsWithExecutions({ n8nWorkflowId: 'atomic-poll-workflow', workflowKey: 'crm.lead.create', limit: 1, attempt: 1, deadlineAt: new Date(Date.now() - 1_000).toISOString() });
+      const claim = await store.claimWorkflowActionsWithExecutions({ n8nWorkflowId: 'atomic-poll-workflow', workflowKey: 'crm.lead.create', executionReference: 'atomic-poll-recovery-execution', limit: 1, attempt: 1, deadlineAt: new Date(Date.now() - 1_000).toISOString() });
       expect(claim).toHaveLength(1);
-      expect(claim[0]).toMatchObject({ action: { id: action.id, state: 'processing' }, execution: { actionId: action.id, providerStatus: 'dispatching', attempt: 1 } });
+      expect(claim[0]).toMatchObject({ action: { id: action.id, state: 'processing' }, execution: { actionId: action.id, providerStatus: 'dispatching', n8nExecutionRef: 'atomic-poll-recovery-execution', attempt: 1 } });
       const recovered = await store.reconcileExpiredActionExecutions(new Date().toISOString());
       expect(recovered).toMatchObject([{ actionId: action.id, providerStatus: 'reconcile_required' }]);
       expect((await store.getAction(action.id))?.state).toBe('reconcile_required');
       expect((await store.getActionExecution(action.id, tenant.id))?.providerStatus).toBe('reconcile_required');
       expect((await store.getSession(session.id))?.conversationState).toMatchObject({ workflowStatus: 'reconcile_required', phase: 'RECONCILE_REQUIRED' });
       expect((await store.listAudit(tenant.id)).some((event) => event.eventName === 'workflow.reconcile_required' && event.metadata.actionId === action.id)).toBe(true);
-      expect(await store.claimWorkflowActionsWithExecutions({ n8nWorkflowId: 'atomic-poll-workflow', workflowKey: 'crm.lead.create', limit: 1, attempt: 1, deadlineAt: new Date().toISOString() })).toHaveLength(0);
+      expect(await store.claimWorkflowActionsWithExecutions({ n8nWorkflowId: 'atomic-poll-workflow', workflowKey: 'crm.lead.create', executionReference: 'atomic-poll-recovery-execution-2', limit: 1, attempt: 1, deadlineAt: new Date().toISOString() })).toHaveLength(0);
     } finally {
       await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
       await pool.end();
@@ -116,12 +116,12 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       const execution = await store.claimActionExecution({ id: randomUUID(), actionId: action.id, tenantId: tenant.id, workflowKey: action.workflowKey, catalogVersionId: catalog.id, providerStatus: 'dispatching', n8nExecutionRef: null, eventId, correlationId, idempotencyKey: action.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() + 60_000).toISOString(), outcome: { eventId, correlationId }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
       expect(execution.claimed).toBe(true);
 
-      await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'postgres-claim-secret').send({ actionId: action.id, tenantId: tenant.id, n8nWorkflowId: 'webhook-claim-workflow', workflowKey: 'crm.lead.create', eventId: randomUUID(), correlationId, attempt: 1, limit: 1 }).expect(409);
-      await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'postgres-claim-secret').send({ actionId: action.id, tenantId: randomUUID(), n8nWorkflowId: 'webhook-claim-workflow', workflowKey: 'crm.lead.create', eventId, correlationId, attempt: 1, limit: 1 }).expect(409);
+      await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'postgres-claim-secret').send({ actionId: action.id, tenantId: tenant.id, n8nWorkflowId: 'webhook-claim-workflow', workflowKey: 'crm.lead.create', eventId: randomUUID(), correlationId, attempt: 1, executionReference: 'wrong-event-execution', limit: 1 }).expect(409);
+      await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'postgres-claim-secret').send({ actionId: action.id, tenantId: randomUUID(), n8nWorkflowId: 'webhook-claim-workflow', workflowKey: 'crm.lead.create', eventId, correlationId, attempt: 1, executionReference: 'wrong-tenant-execution', limit: 1 }).expect(409);
 
       const [webhookClaim, scheduledPoll] = await Promise.all([
-        api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'postgres-claim-secret').send({ actionId: action.id, tenantId: tenant.id, n8nWorkflowId: 'webhook-claim-workflow', workflowKey: 'crm.lead.create', eventId, correlationId, attempt: 1, limit: 1 }),
-        api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'postgres-claim-secret').send({ n8nWorkflowId: 'webhook-claim-workflow', workflowKey: 'crm.lead.create', limit: 1 }),
+        api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'postgres-claim-secret').send({ actionId: action.id, tenantId: tenant.id, n8nWorkflowId: 'webhook-claim-workflow', workflowKey: 'crm.lead.create', eventId, correlationId, attempt: 1, executionReference: 'n8n-execution-1', limit: 1 }),
+        api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'postgres-claim-secret').send({ n8nWorkflowId: 'webhook-claim-workflow', workflowKey: 'crm.lead.create', executionReference: 'poll-execution-1', limit: 1 }),
       ]);
       expect(webhookClaim.status).toBe(200);
       expect(webhookClaim.body.items).toHaveLength(1);
@@ -129,6 +129,17 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       expect(scheduledPoll.status).toBe(200);
       expect(scheduledPoll.body.items).toHaveLength(0);
       expect((await store.getActionExecution(action.id, tenant.id))?.id).toBe(execution.execution.id);
+
+      const duplicateAction = await store.createAction({ ...action, id: randomUUID(), idempotencyKey: 'webhook-claim-duplicate', state: 'approved' });
+      const duplicateEventId = randomUUID();
+      const duplicateCorrelationId = randomUUID();
+      await store.claimActionExecution({ id: randomUUID(), actionId: duplicateAction.id, tenantId: tenant.id, workflowKey: duplicateAction.workflowKey, catalogVersionId: catalog.id, providerStatus: 'dispatching', n8nExecutionRef: null, eventId: duplicateEventId, correlationId: duplicateCorrelationId, idempotencyKey: duplicateAction.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() + 60_000).toISOString(), outcome: { eventId: duplicateEventId, correlationId: duplicateCorrelationId }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      const [ownerA, ownerB] = await Promise.all([
+        api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'postgres-claim-secret').send({ actionId: duplicateAction.id, tenantId: tenant.id, n8nWorkflowId: 'webhook-claim-workflow', workflowKey: 'crm.lead.create', eventId: duplicateEventId, correlationId: duplicateCorrelationId, attempt: 1, executionReference: 'duplicate-owner-a', limit: 1 }),
+        api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'postgres-claim-secret').send({ actionId: duplicateAction.id, tenantId: tenant.id, n8nWorkflowId: 'webhook-claim-workflow', workflowKey: 'crm.lead.create', eventId: duplicateEventId, correlationId: duplicateCorrelationId, attempt: 1, executionReference: 'duplicate-owner-b', limit: 1 }),
+      ]);
+      expect([ownerA.status, ownerB.status].sort()).toEqual([200, 409]);
+      expect((await store.getActionExecution(duplicateAction.id, tenant.id))?.n8nExecutionRef).toMatch(/duplicate-owner-[ab]/u);
 
       await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'postgres-claim-secret').send({ actionId: action.id, tenantId: tenant.id, state: 'completed', externalReference: 'remote-lead-1', executionReference: 'n8n-execution-1', eventId, correlationId, attempt: 1 }).expect(200);
       expect((await store.getAction(action.id))?.state).toBe('completed');

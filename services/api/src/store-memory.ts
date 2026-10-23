@@ -298,7 +298,7 @@ export class MemoryStore implements Store {
     this.actionExecutions.set(execution.id, updatedExecution);
     return { action: updatedAction, execution: updatedExecution };
   }
-  async claimWorkflowActionsWithExecutions(input: { actionId?: string; tenantId?: string; n8nWorkflowId: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]> {
+  async claimWorkflowActionsWithExecutions(input: { actionId?: string; tenantId?: string; n8nWorkflowId: string; executionReference: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]> {
     if (input.actionId) {
       if (!input.tenantId || !input.eventId || !input.correlationId) throw new HttpError(422, 'WORKFLOW_CLAIM_CORRELATION_REQUIRED', 'Webhook claims require the server-issued tenant, event, correlation and attempt tuple.');
       const action = this.actions.get(input.actionId);
@@ -309,9 +309,16 @@ export class MemoryStore implements Store {
       if (!binding?.active || !isWorkflowClaimableBinding(binding) || binding.n8nWorkflowId !== input.n8nWorkflowId) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the published workflow binding.');
       const execution = [...this.actionExecutions.values()].find((item) => item.actionId === action.id && item.tenantId === action.tenantId && item.idempotencyKey === action.idempotencyKey);
       if (!execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.attempt || ['completed', 'failed', 'reconcile_required'].includes(execution.providerStatus)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the durable workflow execution.');
+      if (execution.n8nExecutionRef) {
+        if (execution.n8nExecutionRef === input.executionReference) return [];
+        throw new HttpError(409, 'WORKFLOW_CLAIM_CONFLICT', 'The workflow action is already owned by another n8n execution.');
+      }
+      if (!['dispatching', 'accepted', 'processing'].includes(execution.providerStatus)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The durable workflow execution is not claimable.');
+      const ownedExecution = { ...execution, n8nExecutionRef: input.executionReference, updatedAt: now() };
+      this.actionExecutions.set(execution.id, ownedExecution);
       const updated = action.state === 'approved' ? { ...action, state: 'processing' as const } : action;
       this.actions.set(updated.id, updated);
-      return [{ action: updated, execution }];
+      return [{ action: updated, execution: ownedExecution }];
     }
     const candidates = [...this.actions.values()]
       .filter((action) => action.state === 'approved' && (!input.actionId || action.id === input.actionId) && (!input.workflowKey || action.workflowKey === input.workflowKey))
@@ -329,7 +336,7 @@ export class MemoryStore implements Store {
       if (!current || current.state !== 'approved' || [...this.actionExecutions.values()].some((execution) => execution.actionId === current.id && execution.tenantId === current.tenantId)) continue;
       const eventId = input.actionId && input.eventId ? input.eventId : randomUUID();
       const correlationId = input.actionId && input.correlationId ? input.correlationId : randomUUID();
-      const execution: ActionExecution = { id: randomUUID(), actionId: current.id, tenantId: current.tenantId, workflowKey: current.workflowKey, catalogVersionId: current.catalogVersionId ?? null, providerStatus: 'dispatching', n8nExecutionRef: null, eventId, correlationId, idempotencyKey: current.idempotencyKey, attempt: input.attempt, deadlineAt: input.deadlineAt, outcome: { eventId, correlationId }, createdAt: now(), updatedAt: now() };
+      const execution: ActionExecution = { id: randomUUID(), actionId: current.id, tenantId: current.tenantId, workflowKey: current.workflowKey, catalogVersionId: current.catalogVersionId ?? null, providerStatus: 'dispatching', n8nExecutionRef: input.executionReference, eventId, correlationId, idempotencyKey: current.idempotencyKey, attempt: input.attempt, deadlineAt: input.deadlineAt, outcome: { eventId, correlationId }, createdAt: now(), updatedAt: now() };
       this.actionExecutions.set(execution.id, execution);
       const updated = { ...current, state: 'processing' as const };
       this.actions.set(updated.id, updated);
