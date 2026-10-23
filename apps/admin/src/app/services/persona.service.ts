@@ -1,4 +1,4 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, inject, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
 import { Persona, PersonaVersion } from '../types/admin.types';
@@ -32,12 +32,18 @@ export class PersonaService {
 
   // Angular Signals (Primary reactive state)
   private readonly _persona = signal<Persona>(EMPTY_PERSONA);
-  private readonly _personaDraft = signal<Persona | null>(null);
+  private readonly _draftsByTenant = signal<Record<string, Persona>>({});
   private readonly _personaVersions = signal<PersonaVersion[]>([]);
   private readonly _isLoading = signal<boolean>(false);
 
+  private get activeTenantKey(): string {
+    return this.auth.selectedTenantId || 'default';
+  }
+
   readonly persona = this._persona.asReadonly();
-  readonly personaDraft = this._personaDraft.asReadonly();
+  readonly personaDraft = computed<Persona | null>(() => {
+    return this._draftsByTenant()[this.activeTenantKey] ?? null;
+  });
   readonly personaVersions = this._personaVersions.asReadonly();
   readonly isLoading = this._isLoading.asReadonly();
 
@@ -52,14 +58,28 @@ export class PersonaService {
   readonly personaVersions$: Observable<PersonaVersion[]> = this.personaVersionsSubject.asObservable();
   readonly isLoading$: Observable<boolean> = this.isLoadingSubject.asObservable();
 
-  setDraft(persona: Persona): void {
+  setDraft(persona: Persona, tenantId?: string): void {
+    const key = tenantId || this.activeTenantKey;
     const draft = { ...persona, permittedLanguages: [...persona.permittedLanguages] };
-    this._personaDraft.set(draft);
+    this._draftsByTenant.update((all) => ({
+      ...all,
+      [key]: draft
+    }));
     this.personaDraftSubject.next(draft);
   }
 
-  clearDraft(): void {
-    this._personaDraft.set(null);
+  clearDraft(tenantId?: string): void {
+    const key = tenantId || this.activeTenantKey;
+    this._draftsByTenant.update((all) => {
+      const copy = { ...all };
+      delete copy[key];
+      return copy;
+    });
+    this.personaDraftSubject.next(null);
+  }
+
+  clearAllDrafts(): void {
+    this._draftsByTenant.set({});
     this.personaDraftSubject.next(null);
   }
 
@@ -98,11 +118,12 @@ export class PersonaService {
     });
   }
 
-  publishVersion(persona: Persona): void {
+  publishVersion(persona: Persona, tenantId?: string): void {
     if (!this.auth.token()) return;
+    const activeKey = tenantId || this.activeTenantKey;
     this.http.put<{ persona: Persona }>(`${this.apiBase}/api/v1/admin/persona`, persona).subscribe({
       next: ({ persona: savedPersona }) => {
-        this.clearDraft();
+        this.clearDraft(activeKey);
         this._persona.set(savedPersona);
         this.personaSubject.next(savedPersona);
         this.loadPersonaVersions();
@@ -112,11 +133,12 @@ export class PersonaService {
     });
   }
 
-  rollbackTo(version: PersonaVersion): void {
+  rollbackTo(version: PersonaVersion, tenantId?: string): void {
     if (!this.auth.token()) return;
+    const activeKey = tenantId || this.activeTenantKey;
     this.http.post<{ version: PersonaVersion }>(`${this.apiBase}/api/v1/admin/persona/versions/${version.id}/publish`, {}).subscribe({
       next: () => {
-        this.clearDraft();
+        this.clearDraft(activeKey);
         this.loadPersona();
         this.loadPersonaVersions();
         this.toast.show('info', 'Rollback Executed', `Active persona reverted to v${version.version}.`);

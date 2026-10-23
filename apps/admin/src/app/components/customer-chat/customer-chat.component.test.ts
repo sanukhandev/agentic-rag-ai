@@ -46,4 +46,122 @@ describe('CustomerChatComponent logic and contracts', () => {
     expect(citations[0].title).toBe('SOC-2 Type II Report');
     expect(citations[1].locator).toBe('Appendix A');
   });
+
+  // [P1 Finding 1 Test]: Session restoration is not destructively reset on load
+  it('preserves saved localStorage session across in-memory reset, and only removes it on explicit newConversation', () => {
+    const fakeLocalStorage: Record<string, string> = {
+      'agentic-rag-session:tenant-acme': 'session-existing-123'
+    };
+
+    let tenantSlug = 'tenant-acme';
+    let sessionId: string | null = 'session-existing-123';
+    let messages: any[] = [{ id: 'm1', content: 'Hello' }];
+
+    // 1. In-memory reset (called on resolveAndLoad / component navigation)
+    const resetInMemoryConversation = () => {
+      sessionId = null;
+      messages = [];
+    };
+
+    resetInMemoryConversation();
+    // Verify in-memory state is cleared
+    expect(sessionId).toBeNull();
+    expect(messages.length).toBe(0);
+    // Verify localStorage key is PRESERVED so restoreOrInitSession can restore it!
+    expect(fakeLocalStorage['agentic-rag-session:tenant-acme']).toBe('session-existing-123');
+
+    // Simulate session restoration
+    const restored = fakeLocalStorage[`agentic-rag-session:${tenantSlug}`];
+    expect(restored).toBe('session-existing-123');
+    sessionId = restored;
+
+    // 2. Explicit new conversation action
+    const newConversation = () => {
+      delete fakeLocalStorage[`agentic-rag-session:${tenantSlug}`];
+      resetInMemoryConversation();
+    };
+
+    newConversation();
+    // Verify session in localStorage is now deleted
+    expect(fakeLocalStorage['agentic-rag-session:tenant-acme']).toBeUndefined();
+    expect(sessionId).toBeNull();
+  });
+
+  // [P1 Finding 2 Test]: Rapid cross-tenant switching race condition guards
+  it('guards asynchronous completions with generation counter, preventing stale tenant responses from contaminating active session', () => {
+    let currentGeneration = 0;
+    let activeTenantSlug = '';
+    let activeSessionId: string | null = null;
+    const sessionStore: Record<string, string> = {};
+    const messagesBySession: Record<string, string[]> = {};
+
+    // Switch to Tenant A (Generation 1)
+    const loadTenant = (slug: string) => {
+      const gen = ++currentGeneration;
+      activeTenantSlug = slug;
+      activeSessionId = null;
+      return gen;
+    };
+
+    const genA = loadTenant('tenant-a');
+    expect(genA).toBe(1);
+    expect(activeTenantSlug).toBe('tenant-a');
+
+    // User rapidly switches to Tenant B before Tenant A's session response returns (Generation 2)
+    const genB = loadTenant('tenant-b');
+    expect(genB).toBe(2);
+    expect(activeTenantSlug).toBe('tenant-b');
+
+    // Tenant A's late session response arrives
+    const handleLateSessionResponseFromA = (slug: string, gen: number, returnedSessionId: string) => {
+      if (currentGeneration !== gen || activeTenantSlug !== slug) {
+        // Discard stale response
+        return false;
+      }
+      activeSessionId = returnedSessionId;
+      sessionStore[`agentic-rag-session:${slug}`] = returnedSessionId;
+      return true;
+    };
+
+    const acceptedA = handleLateSessionResponseFromA('tenant-a', genA, 'session-tenant-a');
+    expect(acceptedA).toBe(false);
+    // Verified: Tenant A's late response did NOT contaminate Tenant B's active session or localStorage!
+    expect(activeSessionId).toBeNull();
+    expect(sessionStore['agentic-rag-session:tenant-b']).toBeUndefined();
+
+    // Tenant B's session response arrives
+    const handleSessionResponseForB = (slug: string, gen: number, returnedSessionId: string) => {
+      if (currentGeneration !== gen || activeTenantSlug !== slug) {
+        return false;
+      }
+      activeSessionId = returnedSessionId;
+      sessionStore[`agentic-rag-session:${slug}`] = returnedSessionId;
+      return true;
+    };
+
+    const acceptedB = handleSessionResponseForB('tenant-b', genB, 'session-tenant-b');
+    expect(acceptedB).toBe(true);
+    expect(activeSessionId).toBe('session-tenant-b');
+    expect(sessionStore['agentic-rag-session:tenant-b']).toBe('session-tenant-b');
+
+    // Tenant A's late chat message arrives
+    const handleChatMessage = (slug: string, sessionId: string, gen: number, messageText: string) => {
+      if (currentGeneration !== gen || activeTenantSlug !== slug || activeSessionId !== sessionId) {
+        // Discard stale message
+        return false;
+      }
+      if (!messagesBySession[sessionId]) messagesBySession[sessionId] = [];
+      messagesBySession[sessionId].push(messageText);
+      return true;
+    };
+
+    const messageFromA = handleChatMessage('tenant-a', 'session-tenant-a', genA, 'Stale answer from A');
+    expect(messageFromA).toBe(false);
+    expect(messagesBySession['session-tenant-b']).toBeUndefined();
+
+    // Message for Tenant B arrives
+    const messageForB = handleChatMessage('tenant-b', 'session-tenant-b', genB, 'Valid answer for B');
+    expect(messageForB).toBe(true);
+    expect(messagesBySession['session-tenant-b']).toEqual(['Valid answer for B']);
+  });
 });

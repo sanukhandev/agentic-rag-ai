@@ -8,7 +8,7 @@ import { isCatalogJobPending } from './intent-catalog-utils';
 import { ToastService } from './toast.service';
 import { API_BASE_URL } from './tokens';
 
-const CATALOG_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+export const CATALOG_MIME_TYPE = 'application/vnd.agentic.intent-catalog+excel';
 
 @Injectable({ providedIn: 'root' })
 export class IntentCatalogService {

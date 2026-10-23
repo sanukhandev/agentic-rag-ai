@@ -247,7 +247,7 @@ export class AdminStateService {
 
   logout(): void {
     this.auth.logout();
-    this.personaService.clearDraft();
+    this.personaService.clearAllDrafts();
     this.nav.setSection('overview');
     this.closeMegaMenu();
   }

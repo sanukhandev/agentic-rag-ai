@@ -1,5 +1,4 @@
-import { Component, Input, OnInit, OnChanges, OnDestroy, SimpleChanges, DestroyRef, inject, ElementRef, ViewChild } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, Input, OnInit, OnChanges, OnDestroy, SimpleChanges, DestroyRef, inject, ElementRef, ViewChild, effect, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -83,7 +82,7 @@ interface TenantChatConfig {
           <!-- Reset Conversation Button -->
           <button
             type="button"
-            (click)="resetConversation()"
+            (click)="newConversation()"
             [disabled]="messages.length === 0 && !sessionId"
             class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 hover:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors button-press shadow-subtle"
             aria-label="Start new conversation"
@@ -443,26 +442,27 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
   get canAccessAdminTesting(): boolean { return this.state.isAuthenticated(); }
 
   private readonly apiBase = inject(API_BASE_URL);
+  private currentGeneration = 0;
+
+  constructor() {
+    effect(() => {
+      const selectedSlug = this.state.selectedTenant()?.slug;
+      if (!this.initialTenantSlug && selectedSlug && selectedSlug !== this.tenantSlug) {
+        untracked(() => this.resolveAndLoad(selectedSlug));
+      }
+    });
+  }
 
   ngOnInit(): void {
-    // 1. Resolve tenant context without customer manual slug input (Requirement 3)
     const initial = this.initialTenantSlug || resolveTenantSlug() || (this.state.selectedTenant()?.slug ?? '');
     this.resolveAndLoad(initial);
 
-
-
-
-
-
-    // Check if URL specifies debug mode
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('debug') === '1' || params.get('adminMode') === 'true') {
         this.isAdminTestingMode = true;
       }
     }
-
-
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -475,10 +475,13 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   private resolveAndLoad(slug: string): void {
-    this.tenantSlug = slug || (this.state.selectedTenant()?.slug ?? '');
-    this.resetConversation();
-    this.loadTenantConfig();
-    this.restoreOrInitSession();
+    const generation = ++this.currentGeneration;
+    const targetSlug = (slug || (this.state.selectedTenant()?.slug ?? '')).trim();
+    this.tenantSlug = targetSlug;
+    this.resetInMemoryConversation();
+    if (!targetSlug) return;
+    this.loadTenantConfig(targetSlug, generation);
+    this.restoreOrInitSession(targetSlug, generation);
   }
 
   ngOnDestroy(): void {
@@ -490,16 +493,17 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
     this.isAdminTestingMode = !this.isAdminTestingMode;
   }
 
-  loadTenantConfig(): void {
-    if (!isValidTenantSlug(this.tenantSlug)) {
+  loadTenantConfig(targetSlug = this.tenantSlug, generation = this.currentGeneration): void {
+    if (!isValidTenantSlug(targetSlug)) {
       this.isLoadingConfig = false;
       this.errorMessage = 'Open chat with a tenant-specific URL after an organization is created.';
       return;
     }
     this.isLoadingConfig = true;
-    this.http.get<TenantChatConfig>(`${this.apiBase}/api/v1/chat/config?tenantSlug=${encodeURIComponent(this.tenantSlug)}`)
+    this.http.get<TenantChatConfig>(`${this.apiBase}/api/v1/chat/config?tenantSlug=${encodeURIComponent(targetSlug)}`)
       .subscribe({
         next: (config) => {
+          if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) return;
           this.isLoadingConfig = false;
           if (config?.tenant) {
             this.tenantName = config.tenant.name;
@@ -512,26 +516,29 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
           }
         },
         error: () => {
+          if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) return;
           this.isLoadingConfig = false;
           this.errorMessage = 'Tenant chat configuration is unavailable.';
         }
       });
   }
 
-  restoreOrInitSession(): void {
-    if (typeof window === 'undefined' || !isValidTenantSlug(this.tenantSlug)) return;
-    const storageKey = `agentic-rag-session:${this.tenantSlug}`;
+  restoreOrInitSession(targetSlug = this.tenantSlug, generation = this.currentGeneration): void {
+    if (typeof window === 'undefined' || !isValidTenantSlug(targetSlug)) return;
+    const storageKey = `agentic-rag-session:${targetSlug}`;
     const saved = window.localStorage.getItem(storageKey);
 
     if (saved) {
       this.http.get<{ sessionId: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean; createdAt: string }> }>(`${this.apiBase}/api/v1/chat/sessions/${saved}`)
         .subscribe({
           next: (res) => {
+            if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) return;
             this.sessionId = res.sessionId;
             this.messages = res.messages.map((m) => this.mapHistoryMessage(m));
             this.scrollToBottom();
           },
           error: () => {
+            if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) return;
             window.localStorage.removeItem(storageKey);
             this.sessionId = null;
             this.messages = [];
@@ -548,7 +555,6 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
     this.canRetry = false;
     this.lastFailedMessage = text;
 
-    // Add user message to UI immediately
     const userMsg: CustomerChatMessage = {
       id: `usr-${Date.now()}`,
       role: 'user',
@@ -563,30 +569,33 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
     this.scrollToBottom();
 
     this.isBusy = true;
+    const currentTenant = this.tenantSlug;
+    const generation = this.currentGeneration;
 
-    // Ensure session exists
     if (!this.sessionId) {
-      this.http.post<{ sessionId: string }>(`${this.apiBase}/api/v1/chat/sessions`, { tenantSlug: this.tenantSlug })
+      this.http.post<{ sessionId: string }>(`${this.apiBase}/api/v1/chat/sessions`, { tenantSlug: currentTenant })
         .subscribe({
           next: (sessionRes) => {
+            if (this.currentGeneration !== generation || this.tenantSlug !== currentTenant) return;
             this.sessionId = sessionRes.sessionId;
             if (typeof window !== 'undefined') {
-              window.localStorage.setItem(`agentic-rag-session:${this.tenantSlug}`, this.sessionId);
+              window.localStorage.setItem(`agentic-rag-session:${currentTenant}`, this.sessionId);
             }
-            this.postChatMessage(text);
+            this.postChatMessage(text, currentTenant, this.sessionId, generation);
           },
           error: (err) => {
+            if (this.currentGeneration !== generation || this.tenantSlug !== currentTenant) return;
             this.isBusy = false;
             this.errorMessage = err?.error?.message ?? 'Could not establish a secure conversation session.';
             this.canRetry = true;
           }
         });
     } else {
-      this.postChatMessage(text);
+      this.postChatMessage(text, currentTenant, this.sessionId, generation);
     }
   }
 
-  private postChatMessage(message: string): void {
+  private postChatMessage(message: string, tenantSlug: string, sessionId: string, generation: number): void {
     const clientMessageId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `msg-${Date.now()}`;
 
     this.http.post<{
@@ -598,14 +607,14 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
       actionProposal?: ChatActionProposal | null;
       requestId: string;
     }>(`${this.apiBase}/api/v1/chat/messages`, {
-      sessionId: this.sessionId,
+      sessionId,
       message,
       clientMessageId
     }).subscribe({
       next: (res) => {
+        if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
         this.isBusy = false;
 
-        // Apply natural language formatting to technical abstentions (Requirement 9)
         const naturalText = formatNaturalAbstention(res.answer);
         const safeHtml = this.sanitizer.bypassSecurityTrustHtml(renderMarkdown(naturalText));
 
@@ -633,6 +642,7 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
         this.scrollToBottom();
       },
       error: (err) => {
+        if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
         this.isBusy = false;
         this.errorMessage = err?.error?.message ?? 'The assistant was unable to respond. Please try again.';
         this.canRetry = true;
@@ -643,12 +653,16 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
   confirmAction(proposalId: string): void {
     if (!this.sessionId) return;
     this.isBusy = true;
+    const currentTenant = this.tenantSlug;
+    const currentSession = this.sessionId;
+    const generation = this.currentGeneration;
 
     this.http.post<{ action?: { state: ChatActionState }; message?: string; error?: { message?: string } }>(
       `${this.apiBase}/api/v1/chat/actions/${proposalId}/confirm`,
-      { sessionId: this.sessionId, confirmed: true }
+      { sessionId: currentSession, confirmed: true }
     ).subscribe({
       next: (res) => {
+        if (this.currentGeneration !== generation || this.tenantSlug !== currentTenant || this.sessionId !== currentSession) return;
         this.isBusy = false;
         const state = res.action?.state ?? 'completed';
         const target = this.messages.find((m) => m.actionProposal?.id === proposalId);
@@ -656,23 +670,28 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
           target.actionState = state;
           target.actionOutcome = res.message ?? 'Your request is registered and will continue processing asynchronously.';
         }
-        if (state === 'approved' || state === 'processing') this.pollActionStatus(proposalId);
+        if (state === 'approved' || state === 'processing') {
+          this.pollActionStatus(proposalId, 0, currentTenant, currentSession, generation);
+        }
       },
       error: () => {
+        if (this.currentGeneration !== generation || this.tenantSlug !== currentTenant || this.sessionId !== currentSession) return;
         this.isBusy = false;
         this.errorMessage = 'The workflow action could not be confirmed.';
       }
     });
   }
 
-  private pollActionStatus(proposalId: string, attempt = 0): void {
-    if (!this.sessionId || attempt >= 90) return;
+  private pollActionStatus(proposalId: string, attempt = 0, tenantSlug = this.tenantSlug, sessionId = this.sessionId ?? '', generation = this.currentGeneration): void {
+    if (!sessionId || attempt >= 90) return;
     const timer = setTimeout(() => {
       this.actionPollTimers.delete(timer);
-      this.http.get<{ action?: { state?: ChatActionState } }>(`${this.apiBase}/api/v1/chat/actions/${proposalId}?sessionId=${encodeURIComponent(this.sessionId ?? '')}`).subscribe({
+      if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
+      this.http.get<{ action?: { state?: ChatActionState } }>(`${this.apiBase}/api/v1/chat/actions/${proposalId}?sessionId=${encodeURIComponent(sessionId)}`).subscribe({
         next: (response) => {
+          if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
           const state = response.action?.state;
-          if (!state) { this.pollActionStatus(proposalId, attempt + 1); return; }
+          if (!state) { this.pollActionStatus(proposalId, attempt + 1, tenantSlug, sessionId, generation); return; }
           const target = this.messages.find((message) => message.actionProposal?.id === proposalId);
           if (target) {
             target.actionState = state;
@@ -688,9 +707,14 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
                   ? 'Your request is registered and queued for team review.'
                   : target.actionOutcome;
           }
-          if (state !== 'completed' && state !== 'failed' && state !== 'reconcile_required' && state !== 'awaiting_customer' && state !== 'human_review') this.pollActionStatus(proposalId, attempt + 1);
+          if (state !== 'completed' && state !== 'failed' && state !== 'reconcile_required' && state !== 'awaiting_customer' && state !== 'human_review') {
+            this.pollActionStatus(proposalId, attempt + 1, tenantSlug, sessionId, generation);
+          }
         },
-        error: () => this.pollActionStatus(proposalId, attempt + 1)
+        error: () => {
+          if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
+          this.pollActionStatus(proposalId, attempt + 1, tenantSlug, sessionId, generation);
+        }
       });
     }, 1000);
     this.actionPollTimers.add(timer);
@@ -703,15 +727,28 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
     }
   }
 
-  resetConversation(): void {
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(`agentic-rag-session:${this.tenantSlug}`);
-    }
+  resetInMemoryConversation(): void {
     this.sessionId = null;
     this.messages = [];
     this.errorMessage = '';
     this.currentInput = '';
+    this.isBusy = false;
+    this.canRetry = false;
+    this.lastFailedMessage = '';
+    for (const timer of this.actionPollTimers) clearTimeout(timer);
+    this.actionPollTimers.clear();
     this.resetTextareaHeight();
+  }
+
+  newConversation(): void {
+    if (typeof window !== 'undefined' && isValidTenantSlug(this.tenantSlug)) {
+      window.localStorage.removeItem(`agentic-rag-session:${this.tenantSlug}`);
+    }
+    this.resetInMemoryConversation();
+  }
+
+  resetConversation(): void {
+    this.newConversation();
   }
 
   copyMessage(msg: CustomerChatMessage): void {

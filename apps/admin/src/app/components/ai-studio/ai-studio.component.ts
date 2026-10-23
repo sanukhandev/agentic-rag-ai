@@ -360,15 +360,12 @@ export class AiStudioComponent implements OnInit, OnDestroy {
   testInput = '';
 
   constructor() {
-    const initialDraft = untracked(() => this.state.personaService.personaDraft());
-    if (initialDraft) {
-      this.applyPersona(initialDraft);
-    }
-
     effect(() => {
       const p = this.state.persona();
       const currentDraft = untracked(() => this.state.personaService.personaDraft());
-      if (!currentDraft) {
+      if (currentDraft) {
+        untracked(() => this.applyPersona(currentDraft));
+      } else {
         untracked(() => this.applyPersona(p));
       }
     });
