@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, DocumentProcessingJob, IngestionJob, IntentCatalogVersion, Message, OutboxEvent, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, DocumentProcessingJob, EventInboxClaim, EventInboxState, IngestionJob, IntentCatalogVersion, Message, OutboxEvent, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
@@ -32,7 +32,10 @@ export class MemoryStore implements Store {
   private readonly supportingDocuments = new Map<string, SupportingDocument>();
   private readonly documentJobs = new Map<string, DocumentProcessingJob>();
   private readonly outbox = new Map<string, OutboxEvent>();
-  private readonly inbox = new Set<string>();
+  private readonly deadLetteredOutbox = new Set<string>();
+  private readonly publishedDeadLetterProjections = new Set<string>();
+  private readonly inbox = new Map<string, { state: EventInboxState; attempts: number; leaseExpiresAt: number | null; retryAt: number | null; lastError: string | null; dlqEvent?: OutboxEvent; dlqReason?: string; dlqPublished?: boolean; dlqLeaseExpiresAt?: number | null }>();
+  private readonly actionExecutions = new Map<string, ActionExecution>();
   private readonly audits: AuditEvent[] = [];
 
   async countUsers(): Promise<number> { return this.users.size; }
@@ -209,7 +212,13 @@ export class MemoryStore implements Store {
         return [{ source, chunk }];
       });
   }
-  async searchSearchableChunks(tenantId: string, audience: 'public' | 'internal', _queryEmbedding: number[], limit: number): Promise<Array<{ source: Source; chunk: Chunk }>> { return (await this.listSearchableChunks(tenantId, audience)).slice(0, limit); }
+  async searchSearchableChunks(tenantId: string, audience: 'public' | 'internal', _queryEmbedding: number[], limit: number, queryText = ''): Promise<Array<{ source: Source; chunk: Chunk }>> {
+    const terms = queryText.toLocaleLowerCase('en-US').match(/[\p{L}\p{N}]{3,}/gu) ?? [];
+    return (await this.listSearchableChunks(tenantId, audience)).sort((left, right) => {
+      const overlap = (row: { chunk: Chunk }): number => terms.filter((term) => row.chunk.content.toLocaleLowerCase('en-US').includes(term)).length;
+      return overlap(right) - overlap(left);
+    }).slice(0, limit);
+  }
 
   async createSession(tenantId: string, personaVersionId: string | null = null): Promise<Session> {
     const timestamp = now();
@@ -276,6 +285,64 @@ export class MemoryStore implements Store {
     const updated = { ...current, state: toState, result };
     this.actions.set(actionId, updated);
     return updated;
+  }
+  async transitionActionWithExecution(input: { actionId: string; tenantId: string; fromState: ActionRequest['state']; toState: ActionRequest['state']; result: ActionRequest['result']; providerStatus: string; n8nExecutionRef: string; eventId: string; correlationId: string; expectedAttempt: number; resolveReconciliation?: boolean; outcome?: ActionExecution['outcome'] }): Promise<{ action: ActionRequest; execution: ActionExecution } | null> {
+    const action = this.actions.get(input.actionId);
+    const execution = await this.getActionExecution(input.actionId, input.tenantId);
+    if (!action || action.tenantId !== input.tenantId || !execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.expectedAttempt || (execution.n8nExecutionRef && execution.n8nExecutionRef !== input.n8nExecutionRef)) return null;
+    if (action.state === input.toState && execution.providerStatus === input.providerStatus) return { action, execution };
+    if (action.state !== input.fromState || ['completed', 'failed'].includes(execution.providerStatus) || (execution.providerStatus === 'reconcile_required' && !(input.resolveReconciliation === true && input.providerStatus === 'completed'))) return null;
+    const updatedAction = { ...action, state: input.toState, result: input.result };
+    const updatedExecution = { ...execution, providerStatus: input.providerStatus, n8nExecutionRef: input.n8nExecutionRef, outcome: { ...(execution.outcome ?? {}), ...(input.outcome ?? {}) }, updatedAt: now() };
+    this.actions.set(action.id, updatedAction);
+    this.actionExecutions.set(execution.id, updatedExecution);
+    return { action: updatedAction, execution: updatedExecution };
+  }
+  async claimWorkflowActionsWithExecutions(input: { actionId?: string; tenantId?: string; n8nWorkflowId: string; executionReference: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]> {
+    if (input.actionId) {
+      if (!input.tenantId || !input.eventId || !input.correlationId) throw new HttpError(422, 'WORKFLOW_CLAIM_CORRELATION_REQUIRED', 'Webhook claims require the server-issued tenant, event, correlation and attempt tuple.');
+      const action = this.actions.get(input.actionId);
+      if (!action || action.tenantId !== input.tenantId) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the authorized tenant action.');
+      if (!['approved', 'processing'].includes(action.state) || (input.workflowKey && action.workflowKey !== input.workflowKey)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the active workflow action.');
+      const version = action.catalogVersionId ? this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId) : null;
+      const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
+      if (!binding?.active || !isWorkflowClaimableBinding(binding) || binding.n8nWorkflowId !== input.n8nWorkflowId) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the published workflow binding.');
+      const execution = [...this.actionExecutions.values()].find((item) => item.actionId === action.id && item.tenantId === action.tenantId && item.idempotencyKey === action.idempotencyKey);
+      if (!execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.attempt || ['completed', 'failed', 'reconcile_required'].includes(execution.providerStatus)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the durable workflow execution.');
+      if (execution.n8nExecutionRef) {
+        if (execution.n8nExecutionRef === input.executionReference) return [];
+        throw new HttpError(409, 'WORKFLOW_CLAIM_CONFLICT', 'The workflow action is already owned by another n8n execution.');
+      }
+      if (!['dispatching', 'accepted', 'processing'].includes(execution.providerStatus)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The durable workflow execution is not claimable.');
+      const ownedExecution = { ...execution, n8nExecutionRef: input.executionReference, updatedAt: now() };
+      this.actionExecutions.set(execution.id, ownedExecution);
+      const updated = action.state === 'approved' ? { ...action, state: 'processing' as const } : action;
+      this.actions.set(updated.id, updated);
+      return [{ action: updated, execution: ownedExecution }];
+    }
+    const candidates = [...this.actions.values()]
+      .filter((action) => action.state === 'approved' && (!input.actionId || action.id === input.actionId) && (!input.workflowKey || action.workflowKey === input.workflowKey))
+      .filter((action) => {
+        if (!action.catalogVersionId || [...this.actionExecutions.values()].some((execution) => execution.actionId === action.id && execution.tenantId === action.tenantId)) return false;
+        const version = this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId);
+        const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
+        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId);
+      })
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
+      .slice(0, input.limit);
+    const claims: WorkflowActionClaim[] = [];
+    for (const candidate of candidates) {
+      const current = this.actions.get(candidate.id);
+      if (!current || current.state !== 'approved' || [...this.actionExecutions.values()].some((execution) => execution.actionId === current.id && execution.tenantId === current.tenantId)) continue;
+      const eventId = input.actionId && input.eventId ? input.eventId : randomUUID();
+      const correlationId = input.actionId && input.correlationId ? input.correlationId : randomUUID();
+      const execution: ActionExecution = { id: randomUUID(), actionId: current.id, tenantId: current.tenantId, workflowKey: current.workflowKey, catalogVersionId: current.catalogVersionId ?? null, providerStatus: 'dispatching', n8nExecutionRef: input.executionReference, eventId, correlationId, idempotencyKey: current.idempotencyKey, attempt: input.attempt, deadlineAt: input.deadlineAt, outcome: { eventId, correlationId }, createdAt: now(), updatedAt: now() };
+      this.actionExecutions.set(execution.id, execution);
+      const updated = { ...current, state: 'processing' as const };
+      this.actions.set(updated.id, updated);
+      claims.push({ action: updated, execution });
+    }
+    return claims;
   }
   async claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null> {
     const action = this.actions.get(actionId);
@@ -373,13 +440,71 @@ export class MemoryStore implements Store {
   async enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent> { const existing = this.outbox.get(event.eventId); if (existing) return existing; this.outbox.set(event.eventId, event); return event; }
   async claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]> {
     const current = Date.now();
-    const claimed = [...this.outbox.values()].filter((event) => !event.publishedAt && (!event.leaseExpiresAt || Date.parse(event.leaseExpiresAt) <= current)).sort((left, right) => left.occurredAt.localeCompare(right.occurredAt)).slice(0, limit).map((event) => ({ ...event, attempts: event.attempts + 1, leaseExpiresAt: new Date(current + leaseMs).toISOString() }));
+    const claimed = [...this.outbox.values()].filter((event) => !event.publishedAt && !this.deadLetteredOutbox.has(event.eventId) && (!event.leaseExpiresAt || Date.parse(event.leaseExpiresAt) <= current)).sort((left, right) => left.occurredAt.localeCompare(right.occurredAt)).slice(0, limit).map((event) => ({ ...event, attempts: event.attempts + 1, leaseExpiresAt: new Date(current + leaseMs).toISOString() }));
     for (const event of claimed) this.outbox.set(event.eventId, event);
     return claimed;
   }
   async markOutboxPublished(eventId: string, publishedAt = now()): Promise<void> { const event = this.outbox.get(eventId); if (event) this.outbox.set(eventId, { ...event, publishedAt, leaseExpiresAt: null, lastError: null }); }
   async releaseOutboxEvent(eventId: string, error: string, retryAt: string): Promise<void> { const event = this.outbox.get(eventId); if (event) this.outbox.set(eventId, { ...event, leaseExpiresAt: retryAt, lastError: error.slice(0, 500) }); }
-  async claimInboxEvent(consumer: string, eventId: string): Promise<boolean> { const key = `${consumer}:${eventId}`; if (this.inbox.has(key)) return false; this.inbox.add(key); return true; }
+  async deadLetterOutboxEvent(eventId: string, error: string): Promise<void> { const event = this.outbox.get(eventId); if (event) { this.deadLetteredOutbox.add(eventId); this.publishedDeadLetterProjections.delete(eventId); this.outbox.set(eventId, { ...event, leaseExpiresAt: null, lastError: error.slice(0, 500) }); } }
+  async claimDeadLetterOutboxEvents(limit: number, _leaseMs: number): Promise<OutboxEvent[]> { return [...this.deadLetteredOutbox].filter((eventId) => !this.publishedDeadLetterProjections.has(eventId)).map((eventId) => this.outbox.get(eventId)).filter((event): event is OutboxEvent => Boolean(event)).slice(0, limit); }
+  async markOutboxDeadLetterPublished(eventId: string): Promise<void> { if (this.deadLetteredOutbox.has(eventId)) this.publishedDeadLetterProjections.add(eventId); }
+  async claimInboxEvent(consumer: string, eventId: string, leaseMs = 30_000): Promise<EventInboxClaim> {
+    const key = `${consumer}:${eventId}`;
+    const existing = this.inbox.get(key);
+    const current = Date.now();
+    if (!existing) { this.inbox.set(key, { state: 'processing', attempts: 1, leaseExpiresAt: current + leaseMs, retryAt: null, lastError: null, dlqPublished: false, dlqLeaseExpiresAt: null }); return { state: 'processing', attempts: 1, claimed: true, dlqPublished: false }; }
+    if (existing.state === 'completed' || existing.state === 'reconcile_required' || existing.state === 'dead_lettered') return { state: existing.state, attempts: existing.attempts, claimed: false, dlqPublished: existing.dlqPublished === true };
+    if (existing.state === 'processing' && existing.leaseExpiresAt && existing.leaseExpiresAt > current) return { state: 'processing', attempts: existing.attempts, claimed: false, dlqPublished: existing.dlqPublished === true };
+    if (existing.state === 'retry_scheduled' && existing.retryAt && existing.retryAt > current) return { state: 'retry_scheduled', attempts: existing.attempts, claimed: false, dlqPublished: existing.dlqPublished === true };
+    existing.state = 'processing'; existing.attempts += 1; existing.leaseExpiresAt = current + leaseMs; existing.retryAt = null; existing.lastError = null;
+    return { state: 'processing', attempts: existing.attempts, claimed: true, dlqPublished: false };
+  }
+  async completeInboxEvent(consumer: string, eventId: string): Promise<void> { const item = this.inbox.get(`${consumer}:${eventId}`); if (item) { item.state = 'completed'; item.leaseExpiresAt = null; item.retryAt = null; } }
+  async scheduleInboxRetry(consumer: string, eventId: string, error: string, retryAt: string): Promise<void> { const item = this.inbox.get(`${consumer}:${eventId}`); if (item) { item.state = 'retry_scheduled'; item.leaseExpiresAt = null; item.retryAt = Date.parse(retryAt); item.lastError = error.slice(0, 500); } }
+  async markInboxReconcileRequired(consumer: string, eventId: string, error: string, event?: OutboxEvent): Promise<void> { const item = this.inbox.get(`${consumer}:${eventId}`); if (item) { item.state = 'reconcile_required'; item.leaseExpiresAt = null; item.retryAt = null; item.lastError = error.slice(0, 500); if (event) item.dlqEvent = event; item.dlqReason = error.slice(0, 500); item.dlqPublished = false; item.dlqLeaseExpiresAt = null; } }
+  async markInboxDeadLettered(consumer: string, eventId: string, error: string, event?: OutboxEvent): Promise<void> { const item = this.inbox.get(`${consumer}:${eventId}`); if (item) { item.state = 'dead_lettered'; item.leaseExpiresAt = null; item.retryAt = null; item.lastError = error.slice(0, 500); if (event) item.dlqEvent = event; item.dlqReason = error.slice(0, 500); item.dlqPublished = false; item.dlqLeaseExpiresAt = null; } }
+  async claimInboxDeadLetterProjections(limit: number, leaseMs: number): Promise<Array<{ consumer: string; eventId: string; event: OutboxEvent; reason: string }>> {
+    const current = Date.now();
+    return [...this.inbox.entries()].filter(([, item]) => ['reconcile_required', 'dead_lettered'].includes(item.state) && item.dlqEvent && !item.dlqPublished && (!item.dlqLeaseExpiresAt || item.dlqLeaseExpiresAt <= current)).slice(0, limit).map(([key, item]) => { item.dlqLeaseExpiresAt = current + leaseMs; const separator = key.indexOf(':'); return { consumer: key.slice(0, separator), eventId: key.slice(separator + 1), event: item.dlqEvent!, reason: item.dlqReason ?? 'event processing terminally failed' }; });
+  }
+  async markInboxDeadLetterPublished(consumer: string, eventId: string): Promise<void> { const item = this.inbox.get(`${consumer}:${eventId}`); if (item) { item.dlqPublished = true; item.dlqLeaseExpiresAt = null; } }
+  async releaseInboxDeadLetterProjection(consumer: string, eventId: string): Promise<void> { const item = this.inbox.get(`${consumer}:${eventId}`); if (item) item.dlqLeaseExpiresAt = null; }
+  async claimActionExecution(execution: ActionExecution): Promise<{ execution: ActionExecution; claimed: boolean }> {
+    const key = `${execution.actionId}:${execution.idempotencyKey}`;
+    const existing = [...this.actionExecutions.values()].find((item) => `${item.actionId}:${item.idempotencyKey}` === key);
+    if (!existing) { this.actionExecutions.set(execution.id, execution); return { execution, claimed: true }; }
+    if (existing.providerStatus === 'dispatching' && existing.attempt < execution.attempt) { const reclaimed = { ...existing, providerStatus: 'dispatching', attempt: execution.attempt, deadlineAt: execution.deadlineAt, eventId: execution.eventId ?? existing.eventId ?? null, correlationId: execution.correlationId ?? existing.correlationId ?? null, updatedAt: now() }; this.actionExecutions.set(existing.id, reclaimed); return { execution: reclaimed, claimed: true }; }
+    return { execution: existing, claimed: false };
+  }
+  async getActionExecution(actionId: string, tenantId: string): Promise<ActionExecution | null> { return [...this.actionExecutions.values()].filter((item) => item.actionId === actionId && item.tenantId === tenantId).sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null; }
+  async recordActionExecution(execution: ActionExecution): Promise<ActionExecution> { const key = `${execution.actionId}:${execution.idempotencyKey}`; const existing = [...this.actionExecutions.values()].find((item) => `${item.actionId}:${item.idempotencyKey}` === key); const protectedState = existing && (['completed', 'failed', 'reconcile_required'].includes(existing.providerStatus) || (['accepted', 'processing'].includes(existing.providerStatus) && execution.providerStatus === 'dispatching')); const value = existing ? { ...existing, providerStatus: protectedState ? existing.providerStatus : execution.providerStatus, n8nExecutionRef: execution.n8nExecutionRef ?? existing.n8nExecutionRef, eventId: execution.eventId ?? existing.eventId ?? null, correlationId: execution.correlationId ?? existing.correlationId ?? null, attempt: Math.max(existing.attempt, execution.attempt), deadlineAt: protectedState ? existing.deadlineAt : execution.deadlineAt, outcome: protectedState ? existing.outcome : execution.outcome ?? existing.outcome, updatedAt: now() } : execution; this.actionExecutions.set(value.id, value); return value; }
+  async updateActionExecution(input: { actionId: string; tenantId: string; providerStatus: string; n8nExecutionRef?: string | null; outcome?: ActionExecution['outcome']; resolveReconciliation?: boolean; eventId?: string; correlationId?: string; expectedAttempt?: number }): Promise<ActionExecution | null> {
+    const execution = [...this.actionExecutions.values()].filter((item) => item.actionId === input.actionId && item.tenantId === input.tenantId).sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+    if (!execution || ['completed', 'failed'].includes(execution.providerStatus) || (execution.providerStatus === 'reconcile_required' && !(input.resolveReconciliation === true && input.providerStatus === 'completed'))) return null;
+    if ((input.eventId && execution.eventId !== input.eventId) || (input.correlationId && execution.correlationId !== input.correlationId) || (input.expectedAttempt !== undefined && execution.attempt !== input.expectedAttempt) || (execution.n8nExecutionRef && input.n8nExecutionRef && execution.n8nExecutionRef !== input.n8nExecutionRef)) return null;
+    const updated = { ...execution, providerStatus: input.providerStatus, n8nExecutionRef: input.n8nExecutionRef ?? execution.n8nExecutionRef, eventId: execution.eventId ?? null, correlationId: execution.correlationId ?? null, outcome: { ...(execution.outcome ?? {}), ...(input.outcome ?? {}) }, updatedAt: now() };
+    this.actionExecutions.set(updated.id, updated);
+    return updated;
+  }
+  async reconcileExpiredActionExecutions(timestamp: string): Promise<ActionExecution[]> {
+    const cutoff = Date.parse(timestamp);
+    const expired = [...this.actionExecutions.values()].filter((item) => ['dispatching', 'accepted'].includes(item.providerStatus) && item.deadlineAt && Date.parse(item.deadlineAt) <= cutoff);
+    for (const execution of expired) {
+      const action = this.actions.get(execution.actionId);
+      if (!action || action.tenantId !== execution.tenantId || !['approved', 'processing'].includes(action.state)) continue;
+      const updated = { ...execution, providerStatus: 'reconcile_required', outcome: { ...(execution.outcome ?? {}), reason: 'completion_deadline_exceeded' }, updatedAt: now() };
+      this.actionExecutions.set(updated.id, updated);
+      this.actions.set(action.id, { ...action, state: 'reconcile_required' });
+      const session = this.sessions.get(action.sessionId);
+      const current = session?.conversationState;
+      if (session && (!current?.selectedIntentKey || current.selectedIntentKey === action.intentKey) && (!current?.catalogVersionId || current.catalogVersionId === action.catalogVersionId)) {
+        this.sessions.set(session.id, { ...session, lastActivityAt: now(), stateVersion: (session.stateVersion ?? 0) + 1, conversationState: { ...(current ?? newConversationState()), workflowStatus: 'reconcile_required', phase: 'RECONCILE_REQUIRED', pendingPrompt: null } });
+      }
+      this.audits.push({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: 'workflow.reconcile_required', metadata: { actionId: action.id, executionId: execution.id, reason: 'completion_deadline_exceeded', eventId: execution.eventId ?? null, correlationId: execution.correlationId ?? null }, createdAt: now() });
+    }
+    return expired.map((execution) => this.actionExecutions.get(execution.id)!).filter(Boolean);
+  }
   async addAudit(event: AuditEvent): Promise<void> { this.audits.push(event); }
   async listAudit(tenantId: string): Promise<AuditEvent[]> { return this.audits.filter((event) => event.tenantId === tenantId); }
   async getTenantStats(tenantId: string): Promise<TenantStats> {

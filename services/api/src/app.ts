@@ -10,13 +10,14 @@ import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConfl
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isPermittedLanguage, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, saveTokens, TokenVault } from './privacy.js';
-import { catalogIntentClarification, catalogSlotQuestion, isCrmWriteBinding, isWorkflowClaimableBinding, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
-import { consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState, phaseFor, prompt } from './conversation-state.js';
+import { catalogIntentClarification, catalogSlotQuestion, isCrmWriteBinding, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
+import { composeConversationSummary, consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState, phaseFor, prompt } from './conversation-state.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
-import { isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
+import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
+import { assertPiiVaultSecret } from './runtime-security.js';
 import type { ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, IntentCatalogQualityRule, LeadData, Message, Session, SourceStatus, Store, SupportingDocument } from './types.js';
 import { HttpError, parse } from './http/errors.js';
 import {
@@ -196,6 +197,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   if (nodeEnv === 'production' && staticChannelApiKey && !allowStaticChannelApiKey) throw new Error('Production static omnichannel API keys require OMNI_ALLOW_STATIC_API_KEY=true; prefer signed channel credentials.');
   const vaultSecret = process.env.PII_VAULT_KEY ?? 'local-development-pii-vault-key';
   if (nodeEnv === 'production' && ((!dependencies.jwtSecret && !process.env.JWT_SECRET) || (!dependencies.tokenVault && !process.env.PII_VAULT_KEY))) throw new Error('Production JWT_SECRET and PII_VAULT_KEY are required.');
+  if (!dependencies.tokenVault) assertPiiVaultSecret(process.env.PII_VAULT_KEY, nodeEnv);
   const tokenVault = dependencies.tokenVault ?? new TokenVault(vaultSecret);
   const channelVault = new ChannelSecretVault(channelCredentialKey);
   const embedding = dependencies.embedding ?? new DeterministicEmbeddingProvider();
@@ -233,13 +235,32 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const phase = status === 'completed' ? 'SUCCEEDED' : status === 'reconcile_required' ? 'RECONCILE_REQUIRED' : status === 'human_review' ? 'HUMAN_REVIEW' : status === 'failed' ? 'FAILED' : status === 'awaiting_customer' ? 'SLOT_COLLECTION' : 'QUEUED';
     await updateSessionSafely({ ...session, conversationState: { ...(currentState ?? newConversationState()), workflowStatus, phase, pendingPrompt: null } }, true, 'workflow');
   };
-  const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null): Promise<ActionRequest> => {
+  const assertWorkflowExecution = async (action: ActionRequest, executionReference: string | undefined, eventId: string | undefined, correlationId: string | undefined, attempt: number | undefined, requireReference: boolean): Promise<void> => {
+    if (!eventId || !correlationId || attempt === undefined || (requireReference && !executionReference)) throw new HttpError(409, 'WORKFLOW_CORRELATION_REQUIRED', 'A verified workflow event, correlation, attempt and execution reference are required.');
+    const execution = await store.getActionExecution(action.id, action.tenantId);
+    if (!execution || execution.eventId !== eventId || execution.correlationId !== correlationId || execution.attempt !== attempt || (execution.n8nExecutionRef && executionReference && execution.n8nExecutionRef !== executionReference)) throw new HttpError(409, 'WORKFLOW_CORRELATION_MISMATCH', 'The workflow completion does not match the current execution claim.');
+  };
+  const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null, executionReference?: string, eventId?: string, correlationId?: string, attempt?: number): Promise<ActionRequest> => {
+    const resolvingReconciliation = action.state === 'reconcile_required' && status === 'completed';
+    const providerTerminal = actorId === null && ['completed', 'failed'].includes(status);
+    if (providerTerminal) await assertWorkflowExecution(action, executionReference, eventId, correlationId, attempt, true);
+    else if (eventId || correlationId || executionReference) await assertWorkflowExecution(action, executionReference, eventId, correlationId, attempt, false);
+    const resolvesReconciliation = resolvingReconciliation;
     const allowed = action.state === status
       || (['approved', 'processing'].includes(action.state) && ['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review'].includes(status))
       || (action.state === 'human_review' && ['completed', 'failed', 'reconcile_required'].includes(status))
-      || (action.state === 'awaiting_customer' && ['processing', 'completed', 'failed', 'reconcile_required'].includes(status));
+      || (action.state === 'awaiting_customer' && ['processing', 'completed', 'failed', 'reconcile_required'].includes(status))
+      || resolvesReconciliation;
     if (!allowed) throw new HttpError(409, 'WORKFLOW_TRANSITION_FORBIDDEN', `Workflow action cannot transition from ${action.state} to ${status}.`);
-    if (action.state === status) { await syncWorkflowState(action, status); return action; }
+    if (providerTerminal) {
+      const committed = await store.transitionActionWithExecution({ actionId: action.id, tenantId: action.tenantId, fromState: action.state, toState: status, result: externalReference ? { externalReference } : action.result, providerStatus: status, n8nExecutionRef: executionReference!, eventId: eventId!, correlationId: correlationId!, expectedAttempt: attempt!, resolveReconciliation: resolvesReconciliation, outcome: externalReference ? { externalReference } : null });
+      if (!committed) throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action and execution changed before this transition was committed.');
+      await syncWorkflowState(committed.action, status);
+      await store.addAudit({ id: randomUUID(), tenantId: committed.action.tenantId, actorId, eventName: `workflow.transition.${action.state}.${status}`, metadata: { actionId: committed.action.id, fromState: action.state, toState: status }, createdAt: new Date().toISOString() });
+      return committed.action;
+    }
+    const executionContext = { ...(eventId ? { eventId } : {}), ...(correlationId ? { correlationId } : {}), ...(attempt !== undefined ? { expectedAttempt: attempt } : {}) };
+    if (action.state === status) { await syncWorkflowState(action, status); await store.updateActionExecution({ actionId: action.id, tenantId: action.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: externalReference ? { externalReference } : null, resolveReconciliation: resolvesReconciliation, ...executionContext }); return action; }
     const updated = await store.transitionAction(action.id, action.tenantId, action.state, status, externalReference ? { externalReference } : action.result);
     if (!updated) {
       const current = await store.getAction(action.id);
@@ -247,6 +268,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action changed before this transition was committed.');
     }
     await syncWorkflowState(updated, status);
+    await store.updateActionExecution({ actionId: updated.id, tenantId: updated.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: externalReference ? { externalReference } : null, resolveReconciliation: resolvesReconciliation, ...executionContext });
     await store.addAudit({ id: randomUUID(), tenantId: updated.tenantId, actorId, eventName: `workflow.transition.${action.state}.${status}`, metadata: { actionId: updated.id, fromState: action.state, toState: status }, createdAt: new Date().toISOString() });
     return updated;
   };
@@ -936,7 +958,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       else {
         let queryEmbedding: number[];
         try { queryEmbedding = await embedding.embed(retrievalQuery); } catch { throw new HttpError(503, 'EMBEDDING_UNAVAILABLE', 'The assistant is currently unable to search approved knowledge.'); }
-        const rows = await store.searchSearchableChunks(session.tenantId, internal ? 'internal' : 'public', queryEmbedding, 24);
+        const rows = await store.searchSearchableChunks(session.tenantId, internal ? 'internal' : 'public', queryEmbedding, 24, retrievalQuery);
         const ranked = rankChunksWithVector(retrievalQuery, rows, queryEmbedding, 4);
         evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: presentKnowledgeText(chunk.content) })).filter((item) => item.content.length > 0);
         if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null };
@@ -973,15 +995,25 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           : catalogResolution?.actionAllowed && !consentDenied ? prompt('confirmation', catalogResolution.intentKey, null) : null;
       state.catalogVersionId = catalogResolution?.catalogVersionId ?? state.catalogVersionId;
       state.selectedIntentKey = postCaptureFollowUp ? state.selectedIntentKey : catalogResolution?.intentKey ?? state.selectedIntentKey;
+      state.intentScore = catalogResolution?.score ?? state.intentScore ?? 0;
+      state.intentConfidence = catalogResolution?.confidence ?? state.intentConfidence ?? 0;
       state.candidateIntentKeys = [...new Set([...state.candidateIntentKeys, catalogResolution?.intentKey, catalogResolution?.runnerUpIntentKey, ...(intentContinuity?.secondaryIntentKeys ?? [])].filter((value): value is string => Boolean(value)))];
+      state.intentEvidence = [...new Set([catalogResolution?.intentKey, ...(intentContinuity?.secondaryIntentKeys ?? [])].filter((value): value is string => Boolean(value)))];
+      const previousSlotValues = state.slotValues ?? {};
       state.slotValues = catalogSlotValues;
+      state.slotProvenance = { ...(state.slotProvenance ?? {}) };
+      const changedVisitorSlots = new Set([...Object.keys(extractLeadData(maskedMessage)), ...Object.keys(pendingCatalogValueData)]);
+      for (const slotKey of changedVisitorSlots) {
+        const value = catalogSlotValues[slotKey];
+        if (value) state.slotProvenance[slotKey] = { source: 'visitor', messageSequence: state.messageSequence + 1, capturedAt: new Date().toISOString(), corrected: Boolean(previousSlotValues[slotKey] && previousSlotValues[slotKey] !== value) };
+      }
       state.pendingPrompt = nextPrompt;
       state.contactConsent = catalogSlotValues.contact_consent === 'true' ? 'granted' : catalogSlotValues.contact_consent === 'false' ? 'denied' : state.contactConsent;
       state.consentCapturedAt = state.contactConsent === 'unknown' ? state.consentCapturedAt : new Date().toISOString();
       state.summaryRevision += 1;
       state.messageSequence += 1;
-      state.rollingSummary = [state.rollingSummary, `Visitor: ${maskedMessage}`].filter(Boolean).join('\n').slice(-4000);
       state.phase = endedConversation ? 'DISCOVERY' : postCaptureFollowUp ? state.phase : phaseFor({ intentKey: catalogResolution?.intentKey ?? pendingCatalogIntent, missingSlot: nextMissingSlot, consentPending: consentActionReady, actionPending: Boolean(catalogResolution?.actionAllowed && !consentDenied) });
+      state.rollingSummary = composeConversationSummary(state, maskedMessage).slice(-4000);
       session.conversationState = state;
       await updateSessionSafely(session, true);
       const collectedSlotValues = Object.fromEntries(Object.entries(catalogSlotValues).filter(([key]) => !['name', 'email', 'phone', 'contact_consent'].includes(key)));
@@ -1070,25 +1102,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.post('/api/v1/internal/workflow-events/claim', n8nInternalApi, async (req, res, next) => {
     try {
       const input = parse(workflowClaimSchema, req.body);
-      const matchesWorkflow = async (action: ActionRequest, expectedWorkflowKey?: string): Promise<boolean> => {
-        if (expectedWorkflowKey && action.workflowKey !== expectedWorkflowKey) return false;
-        if (!action.catalogVersionId) return false;
-        const version = await store.getIntentCatalogVersion(action.tenantId, action.catalogVersionId);
-        const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId);
-      };
-      const actions: ActionRequest[] = [];
-      if (input.actionId) {
-        const candidate = await store.getAction(input.actionId);
-        if (candidate && await matchesWorkflow(candidate, input.workflowKey)) {
-          const claimed = await store.claimAction(candidate.id, candidate.workflowKey);
-          if (claimed) actions.push(claimed);
-        }
-      } else {
-        actions.push(...await store.claimActionsForWorkflow(input.n8nWorkflowId, input.workflowKey, input.limit ?? 10));
-      }
+      const completionDeadlineMs = Number(process.env.N8N_COMPLETION_DEADLINE_MS ?? 15 * 60_000);
+      const deadlineAt = new Date(Date.now() + (Number.isFinite(completionDeadlineMs) && completionDeadlineMs > 0 ? completionDeadlineMs : 15 * 60_000)).toISOString();
+      const claims = await store.claimWorkflowActionsWithExecutions({ n8nWorkflowId: input.n8nWorkflowId, executionReference: input.executionReference, limit: input.limit ?? 10, attempt: input.attempt ?? 1, deadlineAt, ...(input.actionId ? { actionId: input.actionId } : {}), ...(input.tenantId ? { tenantId: input.tenantId } : {}), ...(input.workflowKey ? { workflowKey: input.workflowKey } : {}), ...(input.eventId ? { eventId: input.eventId } : {}), ...(input.correlationId ? { correlationId: input.correlationId } : {}) });
       const items = [];
-      for (const action of actions) {
+      for (const claim of claims) {
+        const { action, execution } = claim;
         const session = await store.getSession(action.sessionId);
         const version = action.catalogVersionId ? await store.getIntentCatalogVersion(action.tenantId, action.catalogVersionId) : null;
         const intent = version?.catalog.intents.find((item) => item.intentKey === action.intentKey);
@@ -1096,12 +1115,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const qualityRule = version?.catalog.qualityRules?.find((item) => item.intentKey === action.intentKey);
         const qualityBinding = qualityRule ? version?.catalog.workflowBindings.find((item) => item.workflowKey === qualityRule.qualityWorkflowKey) : null;
         if (!session || !version || !intent || !binding?.active || (qualityRule && !qualityBinding?.active)) {
-          const failed = await store.transitionAction(action.id, action.tenantId, action.state, 'failed', null);
+          const failed = await store.transitionActionWithExecution({ actionId: action.id, tenantId: action.tenantId, fromState: action.state, toState: 'failed', result: null, providerStatus: 'failed', n8nExecutionRef: 'claim-validation-failed', eventId: execution.eventId!, correlationId: execution.correlationId!, expectedAttempt: execution.attempt, outcome: { reason: 'catalog_binding_invalid' } });
           if (failed) await store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: 'workflow.failed', metadata: { actionId: action.id, workflowKey: action.workflowKey, reason: 'catalog_binding_invalid' }, createdAt: new Date().toISOString() });
           continue;
         }
         const conversation = (await store.listMessages(action.sessionId, action.tenantId)).map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt }));
-        items.push({ actionId: action.id, tenantId: action.tenantId, sessionId: action.sessionId, workflowKey: action.workflowKey, contract: input.contract ?? binding.payloadContract, intent: intent.intentKey, intentSummary: `${intent.displayName}: ${intent.description}`, intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: version.id, qualityWorkflowKey: qualityRule?.qualityWorkflowKey ?? null, idempotencyKey: action.idempotencyKey, opaqueReference: action.opaqueReference, leadData: action.payload, conversation, catalog: version.catalog });
+        items.push({ actionId: action.id, tenantId: action.tenantId, sessionId: action.sessionId, workflowKey: action.workflowKey, contract: input.contract ?? binding.payloadContract, intent: intent.intentKey, intentSummary: `${intent.displayName}: ${intent.description}`, intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: version.id, qualityWorkflowKey: qualityRule?.qualityWorkflowKey ?? null, idempotencyKey: action.idempotencyKey, opaqueReference: action.opaqueReference, eventId: execution.eventId ?? null, correlationId: execution.correlationId ?? null, attempt: execution.attempt, executionReference: execution.n8nExecutionRef ?? null, leadData: action.payload, conversation, catalog: version.catalog });
       }
       res.json({ items });
     } catch (error) { next(error); }
@@ -1111,7 +1130,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const input = parse(workflowCompletionSchema, req.body);
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(403, 'WORKFLOW_FORBIDDEN', 'Workflow completion does not match the authorized action.');
-      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null);
+      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt);
       res.json({ action: updated });
     } catch (error) { next(error); }
   });
@@ -1121,7 +1140,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const action = await store.getAction(routeParam(req, 'id'));
       if (!action || action.tenantId !== tenantId) throw new HttpError(404, 'WORKFLOW_NOT_FOUND', 'Workflow action not found.');
       const input = parse(workflowTransitionSchema, req.body);
-      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, getAuth(req)?.userId ?? null);
+      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, getAuth(req)?.userId ?? null, input.executionReference, input.eventId, input.correlationId, input.attempt);
       res.json({ action: updated });
     } catch (error) { next(error); }
   });
@@ -1164,7 +1183,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         if (input.completeAction && action.state !== 'completed') await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${existing.id}` } });
         res.json({ lead: existing, externalReference: `crm-lead-${existing.id}` }); return;
       }
-      const lead: CrmLead = { id: randomUUID(), tenantId: input.tenantId, actionId: input.actionId, sessionId: input.sessionId, intent: authorizedIntent, secondaryIntentKeys: (session.conversationState?.candidateIntentKeys ?? []).filter((key) => key !== authorizedIntent), intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: action.catalogVersionId ?? null, score, validationPass, leadData, conversation, summary: null, summaryStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const lead: CrmLead = { id: randomUUID(), tenantId: input.tenantId, actionId: input.actionId, sessionId: input.sessionId, intent: authorizedIntent, secondaryIntentKeys: (session.conversationState?.candidateIntentKeys ?? []).filter((key) => key !== authorizedIntent), intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: action.catalogVersionId ?? null, score, contactCompletenessScore: contactCompletenessScore({ validName, validEmail: Boolean(rehydratedEmail && isValidLeadEmail(rehydratedEmail)), validPhone: Boolean(rehydratedPhone && isValidLeadPhone(rehydratedPhone)) }), validationPass, leadData, conversation, summary: null, summaryStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       const created = await store.upsertCrmLead(lead, crmDedupeKey(input.tenantId, leadData, session, tokenVault, vaultSecret));
       await store.linkSessionDocuments(created.sessionId, created.tenantId, created.id);
       if (input.completeAction) await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${created.id}` } });
@@ -1252,13 +1271,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const body = JSON.stringify(req.body);
       if (!verifyN8nPayload(n8nCallbackSecret, timestamp, nonce, body, signature)) throw new HttpError(401, 'INVALID_CALLBACK', 'Callback authentication failed.');
       if (!(await store.claimCallbackNonce(nonce, new Date(Date.now() + 300_000).toISOString()))) throw new HttpError(401, 'REPLAYED_CALLBACK', 'Callback replay rejected.');
-      const input = parse(z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['completed', 'failed']), externalReference: z.string().refine(isSafeExternalReference, 'An opaque external reference is required.') }), req.body);
+      const input = parse(z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['completed', 'failed']), externalReference: z.string().refine(isSafeExternalReference, 'An opaque external reference is required.'), executionReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u), eventId: z.string().uuid(), correlationId: z.string().uuid(), attempt: z.number().int().min(1).max(100_000) }), req.body);
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
-      const updated = await store.transitionAction(action.id, action.tenantId, action.state, input.state, input.state === 'completed' ? { externalReference: input.externalReference } : null);
-      if (!updated) throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action changed before this callback was committed.');
-      await syncWorkflowState(updated, input.state);
-      await store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: `workflow.callback.${input.state}`, metadata: { actionId: action.id }, createdAt: new Date().toISOString() });
+      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt);
+      await store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: `workflow.callback.${input.state}`, metadata: { actionId: action.id, executionReference: input.executionReference ?? null, eventId: input.eventId ?? null, correlationId: input.correlationId ?? null, attempt: input.attempt ?? null }, createdAt: new Date().toISOString() });
       res.json({ action: updated });
     } catch (error) { next(error); }
   });
@@ -1335,7 +1352,20 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
   app.get('/api/v1/chat/sessions/:id', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const session = await store.getSession(routeParam(req, 'id')); if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); ensureLiveSession(session.lastActivityAt, session.closedAt); const tenant = await store.getTenant(session.tenantId); if (!tenant) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (!getAuth(req) && !channel) { if (tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.'); const { limit } = parse(historyQuerySchema, req.query); res.json({ sessionId: session.id, tenantId: session.tenantId, createdAt: session.createdAt, messages: (await store.listMessages(session.id, session.tenantId, limit)).map((message) => ({ id: message.id, role: message.role, content: message.role === 'assistant' ? rehydrateForSession(session, message.maskedContent, tokenVault) : message.maskedContent, citations: message.citations, conversational: message.response?.conversational === true, clientMessageId: message.clientMessageId, createdAt: message.createdAt })) }); } catch (error) { next(error); } });
 
-  app.get('/api/v1/admin/workflow-runs', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listActions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.get('/api/v1/admin/workflow-runs', protectedApi, async (req, res, next) => {
+    try {
+      const actions = await store.listActions(await tenantForRequest(store, req));
+      res.json({ items: actions.map((action) => ({
+        ...action,
+        id: action.id,
+        actionId: action.id,
+        sessionId: action.sessionId,
+        workflowKey: action.workflowKey,
+        uiState: action.state === 'completed' ? 'success' : action.state === 'failed' ? 'failed' : 'running',
+        lifecycleState: action.state,
+      })) });
+    } catch (error) { next(error); }
+  });
   app.post('/api/v1/admin/crm/leads/:id/summarize', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
     try {
       parse(crmAdminSummarySchema, req.body ?? {});

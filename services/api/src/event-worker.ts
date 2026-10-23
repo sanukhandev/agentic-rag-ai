@@ -12,11 +12,13 @@ if (!databaseUrl || !redisUrl || !n8nUrl || !n8nSecret) throw new Error('DATABAS
 const pool = new Pool({ connectionString: databaseUrl });
 const store = new PostgresStore(pool);
 const bus = new RedisStreamBus(redisUrl);
-const bridge = new N8nEventBridge(store, n8nUrl, n8nSecret);
+const completionDeadlineMs = Number(process.env.N8N_COMPLETION_DEADLINE_MS ?? 15 * 60_000);
+const bridge = new N8nEventBridge(store, n8nUrl, n8nSecret, 5_000, Number.isFinite(completionDeadlineMs) && completionDeadlineMs > 0 ? completionDeadlineMs : 15 * 60_000);
 const consumer = new EventConsumer(store, bus, bridge);
 const groups: Record<string, string> = { [EVENT_STREAMS.crm]: 'crm-workers', [EVENT_STREAMS.documents]: 'document-workers', [EVENT_STREAMS.actions]: 'intent-workers', [EVENT_STREAMS.notifications]: 'channel-workers' };
 const configuredStreams = (process.env.EVENT_WORKER_STREAMS ?? Object.keys(groups).join(',')).split(',').map((value) => value.trim()).filter((value): value is keyof typeof groups => value in groups);
 let stopping = false;
+let lastExecutionRecoveryAt = 0;
 
 const shutdown = async (): Promise<void> => {
   if (stopping) return;
@@ -28,6 +30,10 @@ process.once('SIGINT', () => { void shutdown(); });
 process.once('SIGTERM', () => { void shutdown(); });
 
 while (!stopping) {
+  if (Date.now() - lastExecutionRecoveryAt >= 5_000) {
+    lastExecutionRecoveryAt = Date.now();
+    try { await store.reconcileExpiredActionExecutions(new Date().toISOString()); } catch (error) { console.error(JSON.stringify({ event: 'event_worker.execution_recovery_error', message: error instanceof Error ? error.message : String(error) })); }
+  }
   await Promise.all(configuredStreams.map(async (stream) => {
     const group = groups[stream];
     if (!group) return;

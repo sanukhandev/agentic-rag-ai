@@ -111,12 +111,16 @@ describe('published intent catalog runtime', () => {
     expect(secondConfirmed.body.action.state).toBe('approved');
     expect((await runtime.store.listActions(tenant.body.tenant.id)).filter((action) => action.sessionId === session.body.sessionId)).toHaveLength(2);
 
-    const claimed = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'crm-secret').send({ actionId: proposal.body.actionProposal.id, workflowKey: 'crm.lead.create', n8nWorkflowId: 'demo', limit: 1 }).expect(200);
+    const proposalAction = await runtime.store.getAction(proposal.body.actionProposal.id);
+    const eventId = randomUUID();
+    const correlationId = randomUUID();
+    await runtime.store.recordActionExecution({ id: randomUUID(), actionId: proposalAction!.id, tenantId: tenant.body.tenant.id, workflowKey: proposalAction!.workflowKey, catalogVersionId: version.id, providerStatus: 'dispatching', n8nExecutionRef: null, eventId, correlationId, idempotencyKey: proposalAction!.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() + 60_000).toISOString(), outcome: { eventId, correlationId }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    const claimed = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'crm-secret').send({ actionId: proposal.body.actionProposal.id, tenantId: tenant.body.tenant.id, eventId, correlationId, attempt: 1, executionReference: 'catalog-execution-1', workflowKey: 'crm.lead.create', n8nWorkflowId: 'demo', limit: 1 }).expect(200);
     expect(claimed.body.items).toHaveLength(1);
     expect(claimed.body.items[0]).toMatchObject({ actionId: proposal.body.actionProposal.id, qualityWorkflowKey: 'crm.lead.quality.score', catalogVersionId: version.id });
     expect((await runtime.store.getAction(proposal.body.actionProposal.id))?.state).toBe('processing');
-    const replayedClaim = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'crm-secret').send({ actionId: proposal.body.actionProposal.id, workflowKey: 'crm.lead.create', n8nWorkflowId: 'demo', limit: 1 }).expect(200);
-    expect(replayedClaim.body.items).toHaveLength(0);
+    const replayedClaim = await api.post('/api/v1/internal/workflow-events/claim').set('x-agentic-internal-secret', 'crm-secret').send({ actionId: proposal.body.actionProposal.id, tenantId: tenant.body.tenant.id, eventId, correlationId, attempt: 1, executionReference: 'catalog-execution-1', workflowKey: 'crm.lead.create', n8nWorkflowId: 'demo', limit: 1 }).expect(200);
+    expect(replayedClaim.body.items).toEqual([]);
 
     const action = await runtime.store.getAction(proposal.body.actionProposal.id);
     const messages = await runtime.store.listMessages(session.body.sessionId, tenant.body.tenant.id);

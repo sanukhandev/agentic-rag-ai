@@ -153,6 +153,7 @@ services:
       REDIS_URL: redis://redis:6379
       N8N_INTERNAL_URL: ${N8N_INTERNAL_URL:-http://n8n:5678}
       N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-local-n8n-workflow-secret}
+      N8N_COMPLETION_DEADLINE_MS: ${N8N_COMPLETION_DEADLINE_MS:-900000}
       EVENT_WORKER_STREAMS: ${EVENT_WORKER_STREAMS:-rag:v2:crm,rag:v2:documents,rag:v2:actions,rag:v2:notifications}
     command: ["node", "services/api/dist/event-worker.js"]
 

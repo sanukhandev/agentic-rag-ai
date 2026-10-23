@@ -21,7 +21,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $json.body ?? $json;\nif (input.workflowKey !== \"anc.ancfz.int.13.request\" || input.contract !== \"omnichannel-intent-v1\") throw new Error('Workflow contract mismatch.');\nif (typeof input.tenantId !== 'string' || typeof input.sessionId !== 'string') throw new Error('Server-generated tenant and session references are required.');\nreturn [{ json: { ...input, workflowKey: \"anc.ancfz.int.13.request\", contract: \"omnichannel-intent-v1\" } }];"
+        "jsCode": "const input = $json.body ?? $json;\nif (input.workflowKey !== \"anc.ancfz.int.13.request\" || input.contract !== \"omnichannel-intent-v1\") throw new Error('Workflow contract mismatch.');\nif (typeof input.tenantId !== 'string' || typeof input.sessionId !== 'string' || typeof input.actionId !== 'string' || typeof input.eventId !== 'string' || typeof input.correlationId !== 'string' || !Number.isInteger(input.attempt) || input.attempt < 1) throw new Error('Server-issued action, tenant, event, correlation and attempt references are required.');\nreturn [{ json: { ...input, workflowKey: \"anc.ancfz.int.13.request\", contract: \"omnichannel-intent-v1\" } }];"
       },
       "id": "INTENTancfzint13-validate",
       "name": "Validate Server Event",
@@ -38,7 +38,7 @@
         "url": "={{ \"http://api:4000/api/v1/internal/workflow-events/claim\" }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ workflowKey: $json.workflowKey, n8nWorkflowId: $workflow.id, contract: $json.contract, limit: 1 }) }}",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, eventId: $json.eventId, correlationId: $json.correlationId, attempt: $json.attempt, workflowKey: $json.workflowKey, executionReference: $execution.id, n8nWorkflowId: $workflow.id, contract: $json.contract, limit: 1 }) }}",
         "options": {},
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth"
@@ -114,7 +114,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, state: $json.state, externalReference: $json.externalReference }) }}",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, state: $json.state, externalReference: $json.externalReference, executionReference: $execution.id, eventId: $('Expand Claimed Events').first().json.eventId, correlationId: $('Expand Claimed Events').first().json.correlationId, attempt: $('Expand Claimed Events').first().json.attempt }) }}",
         "options": {}
       }
     }

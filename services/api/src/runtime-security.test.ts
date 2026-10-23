@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pruneExpiredRateLimits } from './app.js';
-import { assertExternalEndpoint } from './runtime-security.js';
+import { assertExternalEndpoint, assertPiiVaultSecret } from './runtime-security.js';
 
 describe('external endpoint security', () => {
   it('allows local HTTP but requires HTTPS and no URL credentials in production', () => {
@@ -17,5 +17,11 @@ describe('external endpoint security', () => {
     ]);
     pruneExpiredRateLimits(entries, 100);
     expect([...entries.keys()]).toEqual(['active']);
+  });
+
+  it('fails closed for missing or placeholder production vault keys', () => {
+    expect(() => assertPiiVaultSecret(undefined, 'production')).toThrow('PII_VAULT_KEY');
+    expect(() => assertPiiVaultSecret('local-development-pii-vault-key', 'production')).toThrow('PII_VAULT_KEY');
+    expect(() => assertPiiVaultSecret('a'.repeat(32), 'production')).not.toThrow();
   });
 });

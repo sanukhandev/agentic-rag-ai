@@ -29,6 +29,11 @@ describe('privacy boundary', () => {
     expect(maskPii('I am interested in a demo.').masked).toBe('I am interested in a demo.');
     expect(maskPii('I am Alice.').masked).toBe('[NAME_1].');
     expect(maskPii('My name is N8n Tester.').masked).toBe('[NAME_1].');
+    expect(maskPii('My name is Alice smith.').masked).toBe('[NAME_1].');
+    expect(maskPii('my name is alice smith.').masked).toBe('[NAME_1].');
+    expect(maskPii('My name is Alice Smith Johnson.').masked).toBe('[NAME_1].');
+    expect(maskPii('I am alice smith.').masked).toBe('[NAME_1].');
+    expect(maskPii("I'm Anne-Marie O'Neil.").masked).toBe('[NAME_1].');
   });
 
   it('allocates response tokens without overwriting earlier session values', () => {
@@ -40,6 +45,14 @@ describe('privacy boundary', () => {
     expect(output).toBe('Please contact [EMAIL_2].');
     expect(rehydrateForSession(session, input.masked, vault)).toContain('alice@example.com');
     expect(rehydrateForSession(session, output, vault)).toContain('bob@example.com');
+  });
+
+  it('masks international names without treating ordinary lower-case speech as a name', () => {
+    const result = maskPii("My name is Élodie Müller and I'm interested in a demo.");
+    expect(result.masked).toContain('[NAME_1]');
+    expect(result.masked).not.toContain('Élodie Müller');
+    expect(result.masked).toContain("I'm interested in a demo.");
+    expect(result.tokens[0]?.value).toBe('Élodie Müller');
   });
 
   it('supports key rotation and expiry without exposing the old value', () => {

@@ -27,6 +27,11 @@ export const scoreCrmLead = (input: CrmScoreInput): CrmScoreBreakdown => {
   return { ...breakdown, total: breakdown.commercialIntent + breakdown.timeline + breakdown.businessFit + breakdown.contactQuality + breakdown.engagement };
 };
 
+export const contactCompletenessScore = (input: { validName: boolean; validEmail: boolean; validPhone: boolean }): number => {
+  const fields = [input.validName, input.validEmail, input.validPhone].filter(Boolean).length;
+  return Math.round((fields / 3) * 100);
+};
+
 export const isValidLeadName = (value: string): boolean => /^\p{L}+(?:[ '\u2019-]\p{L}+){0,3}$/u.test(value.trim());
 export const isValidLeadEmail = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value.trim());
 export const isValidLeadPhone = (value: string): boolean => /^\+[1-9]\d{7,14}$/u.test(value.replace(/[ ()-]/g, ''));

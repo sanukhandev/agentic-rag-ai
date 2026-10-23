@@ -17,6 +17,37 @@ export type DomainEventType =
   | 'conversation.notification.requested.v1';
 
 export type EventPayload = Record<string, string | number | boolean | null>;
+export type EventInboxState = 'pending' | 'processing' | 'completed' | 'retry_scheduled' | 'reconcile_required' | 'dead_lettered';
+
+export interface EventInboxClaim {
+  state: EventInboxState;
+  attempts: number;
+  claimed: boolean;
+  dlqPublished: boolean;
+}
+
+export interface ActionExecution {
+  id: string;
+  actionId: string;
+  tenantId: string;
+  workflowKey: string;
+  catalogVersionId: string | null;
+  providerStatus: string;
+  n8nExecutionRef: string | null;
+  eventId?: string | null;
+  correlationId?: string | null;
+  idempotencyKey: string;
+  attempt: number;
+  deadlineAt: string | null;
+  outcome: Record<string, string | number | boolean | null> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowActionClaim {
+  action: ActionRequest;
+  execution: ActionExecution;
+}
 
 export interface OutboxEvent {
   eventId: string;
@@ -55,7 +86,11 @@ export interface ConversationState {
   catalogVersionId: string | null;
   candidateIntentKeys: string[];
   selectedIntentKey: string | null;
+  intentScore?: number;
+  intentConfidence?: number;
+  intentEvidence?: string[];
   slotValues: Record<string, string>;
+  slotProvenance?: Record<string, { source: 'visitor'; messageSequence: number; capturedAt: string; corrected: boolean }>;
   pendingPrompt: PendingPrompt | null;
   rollingSummary: string;
   summaryRevision: number;
@@ -393,6 +428,7 @@ export interface CrmLead {
   intentConfidence: number;
   catalogVersionId: string | null;
   score: number;
+  contactCompletenessScore?: number;
   validationPass: boolean;
   leadData: LeadData;
   conversation: LeadConversationMessage[];
@@ -529,7 +565,7 @@ export interface Store {
   claimNextIngestionJob(leaseMs: number): Promise<IngestionJob | null>;
   updateIngestionJob(job: IngestionJob): Promise<IngestionJob>;
   listSearchableChunks(tenantId: string, audience: Audience): Promise<Array<{ source: Source; chunk: Chunk }>>;
-  searchSearchableChunks(tenantId: string, audience: Audience, queryEmbedding: number[], limit: number): Promise<Array<{ source: Source; chunk: Chunk }>>;
+  searchSearchableChunks(tenantId: string, audience: Audience, queryEmbedding: number[], limit: number, queryText?: string): Promise<Array<{ source: Source; chunk: Chunk }>>;
   createSession(tenantId: string, personaVersionId?: string | null): Promise<Session>;
   getSession(id: string): Promise<Session | null>;
   listExpiredSupportingDocuments(tenantId: string, before: string): Promise<SupportingDocument[]>;
@@ -545,6 +581,8 @@ export interface Store {
   getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null>;
   updateAction(action: ActionRequest): Promise<ActionRequest>;
   transitionAction(actionId: string, tenantId: string, fromState: ActionState, toState: ActionState, result: ActionRequest['result']): Promise<ActionRequest | null>;
+  transitionActionWithExecution(input: { actionId: string; tenantId: string; fromState: ActionState; toState: ActionState; result: ActionRequest['result']; providerStatus: string; n8nExecutionRef: string; eventId: string; correlationId: string; expectedAttempt: number; resolveReconciliation?: boolean; outcome?: ActionExecution['outcome'] }): Promise<{ action: ActionRequest; execution: ActionExecution } | null>;
+  claimWorkflowActionsWithExecutions(input: { actionId?: string; tenantId?: string; n8nWorkflowId: string; executionReference: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]>;
   claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null>;
   claimActionsForWorkflow(n8nWorkflowId: string, workflowKey: string | undefined, limit: number): Promise<ActionRequest[]>;
   listActions(tenantId: string): Promise<ActionRequest[]>;
@@ -572,7 +610,22 @@ export interface Store {
   claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]>;
   markOutboxPublished(eventId: string, publishedAt?: string): Promise<void>;
   releaseOutboxEvent(eventId: string, error: string, retryAt: string): Promise<void>;
-  claimInboxEvent(consumer: string, eventId: string): Promise<boolean>;
+  deadLetterOutboxEvent(eventId: string, error: string): Promise<void>;
+  claimDeadLetterOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]>;
+  markOutboxDeadLetterPublished(eventId: string, publishedAt?: string): Promise<void>;
+  claimInboxEvent(consumer: string, eventId: string, leaseMs?: number): Promise<EventInboxClaim>;
+  completeInboxEvent(consumer: string, eventId: string): Promise<void>;
+  scheduleInboxRetry(consumer: string, eventId: string, error: string, retryAt: string): Promise<void>;
+  markInboxReconcileRequired(consumer: string, eventId: string, error: string, event?: OutboxEvent): Promise<void>;
+  markInboxDeadLettered(consumer: string, eventId: string, error: string, event?: OutboxEvent): Promise<void>;
+  claimInboxDeadLetterProjections(limit: number, leaseMs: number): Promise<Array<{ consumer: string; eventId: string; event: OutboxEvent; reason: string }>>;
+  markInboxDeadLetterPublished(consumer: string, eventId: string, publishedAt?: string): Promise<void>;
+  releaseInboxDeadLetterProjection(consumer: string, eventId: string): Promise<void>;
+  claimActionExecution(execution: ActionExecution): Promise<{ execution: ActionExecution; claimed: boolean }>;
+  getActionExecution(actionId: string, tenantId: string): Promise<ActionExecution | null>;
+  recordActionExecution(execution: ActionExecution): Promise<ActionExecution>;
+  updateActionExecution(input: { actionId: string; tenantId: string; providerStatus: string; n8nExecutionRef?: string | null; outcome?: ActionExecution['outcome']; resolveReconciliation?: boolean; eventId?: string; correlationId?: string; expectedAttempt?: number }): Promise<ActionExecution | null>;
+  reconcileExpiredActionExecutions(now: string): Promise<ActionExecution[]>;
   addAudit(event: AuditEvent): Promise<void>;
   listAudit(tenantId: string): Promise<AuditEvent[]>;
   getTenantStats(tenantId: string): Promise<TenantStats>;

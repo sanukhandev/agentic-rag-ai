@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
-import type { ActionPayload, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Citation, CrmLead, DocumentProcessingJob, IngestionJob, IngestionJobStatus, IntentCatalogVersion, LeadData, Message, OutboxEvent, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User } from './types.js';
+import type { ActionExecution, ActionPayload, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Citation, CrmLead, DocumentProcessingJob, EventInboxClaim, EventInboxState, IngestionJob, IngestionJobStatus, IntentCatalogVersion, LeadData, Message, OutboxEvent, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
@@ -20,11 +20,12 @@ type SourceRow = { id: string; tenant_id: string; title: string; mime_type: stri
 type SourceVersionRow = { source_id: string; tenant_id: string; version_id: string; content_hash: string; created_at: DbTimestamp };
 type MessageRow = { id: string; session_id: string; tenant_id: string; role: Message['role']; masked_content: string; citations: Citation[]; client_message_id: string | null; response?: Record<string, unknown> | null; created_at: DbTimestamp };
 type ActionRow = { id: string; tenant_id: string; session_id: string; workflow_key: ActionRequest['workflowKey']; webhook_path?: string | null; intent_key?: string | null; intent_score?: number | null; intent_confidence?: number | null; catalog_version_id?: string | null; idempotency_key: string; state: ActionRequest['state']; opaque_reference: string; payload?: ActionPayload | null; result?: { external_reference?: string; externalReference?: string } | null; created_at: DbTimestamp };
-type CrmLeadRow = { id: string; tenant_id: string; action_id: string; session_id: string; intent: string; secondary_intent_keys?: string[]; intent_score?: number | null; intent_confidence?: number | null; catalog_version_id?: string | null; score: number; validation_pass: boolean; lead_data: LeadData; conversation_json: CrmLead['conversation']; summary: string | null; summary_status: CrmLead['summaryStatus']; lead_id?: string | null; remote_crm?: string | null; created_at: DbTimestamp; updated_at: DbTimestamp };
+type CrmLeadRow = { id: string; tenant_id: string; action_id: string; session_id: string; intent: string; secondary_intent_keys?: string[]; intent_score?: number | null; intent_confidence?: number | null; catalog_version_id?: string | null; score: number; contact_completeness_score?: number | null; validation_pass: boolean; lead_data: LeadData; conversation_json: CrmLead['conversation']; summary: string | null; summary_status: CrmLead['summaryStatus']; lead_id?: string | null; remote_crm?: string | null; created_at: DbTimestamp; updated_at: DbTimestamp };
 type IngestionJobRow = { id: string; tenant_id: string; title: string; mime_type: string; source_url: string | null; audience: 'public' | 'internal'; source_id: string | null; status: IngestionJob['status']; attempts: number; error_code: string | null; lease_expires_at: DbTimestamp | null; created_at: DbTimestamp; updated_at: DbTimestamp };
 type SupportingDocumentRow = { id: string; tenant_id: string; session_id: string; lead_id: string | null; file_name: string; mime_type: string; size_bytes: number; sha256: string; storage_key: string; status: SupportingDocument['status']; workflow_key: string; store_extracted_text: boolean; extracted_text: string | null; summary: string | null; error_code: string | null; consent_at: DbTimestamp; created_at: DbTimestamp; updated_at: DbTimestamp };
 type DocumentJobRow = { id: string; document_id: string; tenant_id: string; workflow_key: string; webhook_path: string; status: DocumentProcessingJob['status']; attempts: number; lease_expires_at: DbTimestamp | null; execution_reference: string | null; created_at: DbTimestamp; updated_at: DbTimestamp };
-type OutboxRow = { event_id: string; event_type: OutboxEvent['eventType']; stream: OutboxEvent['stream']; tenant_id: string; session_id: string | null; action_id: string | null; aggregate_id: string; aggregate_version: number; workflow_key: string | null; payload_ref: string; idempotency_key: string; correlation_id: string; payload: OutboxEvent['payload']; occurred_at: DbTimestamp; published_at: DbTimestamp | null; attempts: number; lease_expires_at: DbTimestamp | null; last_error: string | null };
+type OutboxRow = { event_id: string; event_type: OutboxEvent['eventType']; stream: OutboxEvent['stream']; tenant_id: string; session_id: string | null; action_id: string | null; aggregate_id: string; aggregate_version: number; workflow_key: string | null; payload_ref: string; idempotency_key: string; correlation_id: string; payload: OutboxEvent['payload']; occurred_at: DbTimestamp; published_at: DbTimestamp | null; attempts: number; lease_expires_at: DbTimestamp | null; last_error: string | null; dead_lettered_at?: DbTimestamp | null; dead_letter_published_at?: DbTimestamp | null; dead_letter_lease_expires_at?: DbTimestamp | null };
+type ActionExecutionRow = { id: string; action_id: string; tenant_id: string; workflow_key: string; catalog_version_id: string | null; provider_status: string; n8n_execution_ref: string | null; event_id: string | null; correlation_id: string | null; idempotency_key: string; attempt: number; deadline_at: DbTimestamp | null; outcome: ActionExecution['outcome']; created_at: DbTimestamp; updated_at: DbTimestamp };
 
 export class PostgresStore implements Store {
   constructor(private readonly pool: Pool) {}
@@ -107,8 +108,30 @@ export class PostgresStore implements Store {
     const result = await this.pool.query('SELECT s.*,c.id AS chunk_id,c.source_id AS chunk_source_id,c.tenant_id AS chunk_tenant_id,c.version_id AS chunk_version_id,c.ordinal,c.locator,c.content,c.content_hash AS chunk_content_hash,c.embedding::text AS embedding_text FROM knowledge_sources s JOIN source_chunks c ON c.source_id=s.id AND c.version_id=s.version_id WHERE s.tenant_id=$1 AND s.status=\'active\' AND (s.audience=\'public\' OR $2=\'internal\') ORDER BY c.ordinal', [tenantId, audience]);
     return result.rows.map((row) => ({ source: this.source(row), chunk: { id: row.chunk_id, sourceId: row.chunk_source_id, tenantId: row.chunk_tenant_id, versionId: row.chunk_version_id, ordinal: row.ordinal, locator: row.locator, content: row.content, contentHash: row.chunk_content_hash, embedding: String(row.embedding_text).replace(/[\[\]]/g, '').split(',').filter(Boolean).map(Number) } }));
   }
-  async searchSearchableChunks(tenantId: string, audience: 'public' | 'internal', queryEmbedding: number[], limit: number): Promise<Array<{ source: Source; chunk: Chunk }>> {
-    const result = await this.pool.query('SELECT s.*,c.id AS chunk_id,c.source_id AS chunk_source_id,c.tenant_id AS chunk_tenant_id,c.version_id AS chunk_version_id,c.ordinal,c.locator,c.content,c.content_hash AS chunk_content_hash,c.embedding::text AS embedding_text FROM knowledge_sources s JOIN source_chunks c ON c.source_id=s.id AND c.version_id=s.version_id WHERE s.tenant_id=$1 AND s.status=\'active\' AND (s.audience=\'public\' OR $2=\'internal\') ORDER BY c.embedding <=> $3::vector LIMIT $4', [tenantId, audience, vectorLiteral(queryEmbedding), limit]);
+  async searchSearchableChunks(tenantId: string, audience: 'public' | 'internal', queryEmbedding: number[], limit: number, queryText = ''): Promise<Array<{ source: Source; chunk: Chunk }>> {
+    const result = await this.pool.query(`WITH vector_candidates AS (
+      SELECT c.id AS chunk_id, row_number() OVER (ORDER BY c.embedding <=> $3::vector, c.id) AS rank
+      FROM knowledge_sources s JOIN source_chunks c ON c.source_id=s.id AND c.version_id=s.version_id
+      WHERE s.tenant_id=$1 AND s.status='active' AND (s.audience='public' OR $2='internal')
+      ORDER BY c.embedding <=> $3::vector, c.id
+      LIMIT $5 * 3
+    ), text_candidates AS (
+      SELECT c.id AS chunk_id, row_number() OVER (ORDER BY ts_rank_cd(c.search_vector, plainto_tsquery('simple', $4)) DESC, c.id) AS rank
+      FROM knowledge_sources s JOIN source_chunks c ON c.source_id=s.id AND c.version_id=s.version_id
+      WHERE s.tenant_id=$1 AND s.status='active' AND (s.audience='public' OR $2='internal')
+        AND $4 <> '' AND c.search_vector @@ plainto_tsquery('simple', $4)
+      ORDER BY ts_rank_cd(c.search_vector, plainto_tsquery('simple', $4)) DESC, c.id
+      LIMIT $5 * 3
+    )
+    SELECT s.*,c.id AS chunk_id,c.source_id AS chunk_source_id,c.tenant_id AS chunk_tenant_id,c.version_id AS chunk_version_id,c.ordinal,c.locator,c.content,c.content_hash AS chunk_content_hash,c.embedding::text AS embedding_text,
+      vector_candidates.rank AS vector_rank,text_candidates.rank AS text_rank
+    FROM knowledge_sources s JOIN source_chunks c ON c.source_id=s.id AND c.version_id=s.version_id
+    LEFT JOIN vector_candidates ON vector_candidates.chunk_id=c.id
+    LEFT JOIN text_candidates ON text_candidates.chunk_id=c.id
+    WHERE s.tenant_id=$1 AND s.status='active' AND (s.audience='public' OR $2='internal')
+      AND (vector_candidates.chunk_id IS NOT NULL OR text_candidates.chunk_id IS NOT NULL)
+    ORDER BY (COALESCE(1.0 / (60 + vector_candidates.rank), 0) + COALESCE(1.0 / (60 + text_candidates.rank), 0)) DESC, c.id
+    LIMIT $5`, [tenantId, audience, vectorLiteral(queryEmbedding), queryText.slice(0, 4_000), limit]);
     return result.rows.map((row) => ({ source: this.source(row), chunk: { id: row.chunk_id, sourceId: row.chunk_source_id, tenantId: row.chunk_tenant_id, versionId: row.chunk_version_id, ordinal: row.ordinal, locator: row.locator, content: row.content, contentHash: row.chunk_content_hash, embedding: String(row.embedding_text).replace(/[\[\]]/g, '').split(',').filter(Boolean).map(Number) } }));
   }
   async createSession(tenantId: string, personaVersionId: string | null = null): Promise<Session> { const id = randomUUID(); const state = newConversationState(); const result = await this.pool.query('INSERT INTO chat_sessions (id,tenant_id,persona_version_id,conversation_state) VALUES ($1,$2,$3,$4) RETURNING *', [id, tenantId, personaVersionId, JSON.stringify(state)]); return { id: result.rows[0].id, tenantId: result.rows[0].tenant_id, createdAt: iso(result.rows[0].created_at), lastActivityAt: iso(result.rows[0].last_activity_at), closedAt: result.rows[0].closed_at ? iso(result.rows[0].closed_at) : null, personaVersionId: result.rows[0].persona_version_id ?? null, tokenMap: new Map(), conversationState: result.rows[0].conversation_state ?? state, stateVersion: result.rows[0].state_version ?? 0 }; }
@@ -164,6 +187,102 @@ export class PostgresStore implements Store {
     const updated = await this.pool.query<ActionRow>('UPDATE action_requests SET state=$1,result=$2 WHERE id=$3 AND tenant_id=$4 AND state=$5 RETURNING *', [toState, result ? JSON.stringify(result) : null, actionId, tenantId, fromState]);
     return updated.rows[0] ? this.action(updated.rows[0]) : null;
   }
+  async transitionActionWithExecution(input: { actionId: string; tenantId: string; fromState: ActionRequest['state']; toState: ActionRequest['state']; result: ActionRequest['result']; providerStatus: string; n8nExecutionRef: string; eventId: string; correlationId: string; expectedAttempt: number; resolveReconciliation?: boolean; outcome?: ActionExecution['outcome'] }): Promise<{ action: ActionRequest; execution: ActionExecution } | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const actionResult = await client.query<ActionRow>('SELECT * FROM action_requests WHERE id=$1 AND tenant_id=$2 FOR UPDATE', [input.actionId, input.tenantId]);
+      const action = actionResult.rows[0];
+      const executionResult = await client.query<ActionExecutionRow>('SELECT * FROM action_executions WHERE action_id=$1 AND tenant_id=$2 ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE', [input.actionId, input.tenantId]);
+      const execution = executionResult.rows[0];
+      if (!action || !execution || execution.event_id !== input.eventId || execution.correlation_id !== input.correlationId || execution.attempt !== input.expectedAttempt || (execution.n8n_execution_ref && execution.n8n_execution_ref !== input.n8nExecutionRef)) { await client.query('ROLLBACK'); return null; }
+      if (action.state === input.toState && execution.provider_status === input.providerStatus) { await client.query('COMMIT'); return { action: this.action(action), execution: this.actionExecution(execution) }; }
+      if (action.state !== input.fromState || ['completed', 'failed'].includes(execution.provider_status) || (execution.provider_status === 'reconcile_required' && !(input.resolveReconciliation === true && input.providerStatus === 'completed'))) { await client.query('ROLLBACK'); return null; }
+      const updatedAction = await client.query<ActionRow>('UPDATE action_requests SET state=$1,result=$2 WHERE id=$3 AND tenant_id=$4 AND state=$5 RETURNING *', [input.toState, input.result ? JSON.stringify(input.result) : null, input.actionId, input.tenantId, input.fromState]);
+      if (!updatedAction.rows[0]) { await client.query('ROLLBACK'); return null; }
+      const updatedExecution = await client.query<ActionExecutionRow>(`UPDATE action_executions SET provider_status=$1,n8n_execution_ref=$2,outcome=COALESCE(outcome,'{}'::jsonb) || COALESCE($3::jsonb,'{}'::jsonb),updated_at=now()
+        WHERE id=$4 AND provider_status=$5 AND event_id=$6 AND correlation_id=$7 AND attempt=$8 RETURNING *`, [input.providerStatus, input.n8nExecutionRef, input.outcome ? JSON.stringify(input.outcome) : null, execution.id, execution.provider_status, input.eventId, input.correlationId, input.expectedAttempt]);
+      if (!updatedExecution.rows[0]) { await client.query('ROLLBACK'); return null; }
+      await client.query('COMMIT');
+      return { action: this.action(updatedAction.rows[0]), execution: this.actionExecution(updatedExecution.rows[0]) };
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+  }
+  async claimWorkflowActionsWithExecutions(input: { actionId?: string; tenantId?: string; n8nWorkflowId: string; executionReference: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      if (input.actionId) {
+        if (!input.tenantId || !input.eventId || !input.correlationId) throw new HttpError(422, 'WORKFLOW_CLAIM_CORRELATION_REQUIRED', 'Webhook claims require the server-issued tenant, event, correlation and attempt tuple.');
+        const actionResult = await client.query<ActionRow>('SELECT * FROM action_requests WHERE id=$1 FOR UPDATE', [input.actionId]);
+        const row = actionResult.rows[0];
+        if (!row || row.tenant_id !== input.tenantId) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the authorized tenant action.');
+        if (!['approved', 'processing'].includes(row.state) || (input.workflowKey && row.workflow_key !== input.workflowKey)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the active workflow action.');
+        const binding = await client.query<{ workflow_key: string }>(`SELECT binding.item->>'workflowKey' AS workflow_key
+          FROM intent_catalog_versions AS catalog
+          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(catalog.catalog_json->'workflowBindings', '[]'::jsonb)) AS binding(item)
+          WHERE catalog.id=$1 AND catalog.tenant_id=$2
+            AND binding.item->>'workflowKey' = $3
+            AND binding.item->>'n8nWorkflowId' = $4
+            AND binding.item->>'active' = 'true'
+            AND lower(binding.item->>'sideEffectClass') IN ('crm_write', 'crm', 'human_review')
+          LIMIT 1`, [row.catalog_version_id, row.tenant_id, row.workflow_key, input.n8nWorkflowId]);
+        if (!binding.rows[0]) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the published workflow binding.');
+        const executionResult = await client.query<ActionExecutionRow>('SELECT * FROM action_executions WHERE action_id=$1 AND tenant_id=$2 AND idempotency_key=$3 FOR UPDATE', [row.id, row.tenant_id, row.idempotency_key]);
+        const execution = executionResult.rows[0];
+        if (!execution || execution.event_id !== input.eventId || execution.correlation_id !== input.correlationId || execution.attempt !== input.attempt || ['completed', 'failed', 'reconcile_required'].includes(execution.provider_status)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the durable workflow execution.');
+        if (execution.n8n_execution_ref) {
+          if (execution.n8n_execution_ref === input.executionReference) { await client.query('COMMIT'); return []; }
+          throw new HttpError(409, 'WORKFLOW_CLAIM_CONFLICT', 'The workflow action is already owned by another n8n execution.');
+        }
+        if (!['dispatching', 'accepted', 'processing'].includes(execution.provider_status)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The durable workflow execution is not claimable.');
+        const ownedExecution = await client.query<ActionExecutionRow>(`UPDATE action_executions SET n8n_execution_ref=$1,updated_at=now()
+          WHERE id=$2 AND n8n_execution_ref IS NULL AND provider_status IN ('dispatching','accepted','processing') RETURNING *`, [input.executionReference, execution.id]);
+        if (!ownedExecution.rows[0]) { await client.query('ROLLBACK'); return []; }
+        const updatedAction = row.state === 'approved' ? await client.query<ActionRow>("UPDATE action_requests SET state='processing' WHERE id=$1 AND tenant_id=$2 AND state='approved' RETURNING *", [row.id, row.tenant_id]) : { rows: [row] };
+        if (!updatedAction.rows[0]) throw new HttpError(409, 'WORKFLOW_CLAIM_CONFLICT', 'The workflow action changed before the webhook claim was committed.');
+        await client.query('COMMIT');
+        return [{ action: this.action(updatedAction.rows[0]), execution: this.actionExecution(ownedExecution.rows[0]) }];
+      }
+      const candidates = await client.query<ActionRow>(`WITH candidate AS (
+        SELECT action.*
+        FROM action_requests AS action
+        JOIN intent_catalog_versions AS catalog
+          ON catalog.id = action.catalog_version_id
+         AND catalog.tenant_id = action.tenant_id
+        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(catalog.catalog_json->'workflowBindings', '[]'::jsonb)) AS binding(item)
+        WHERE action.state = 'approved'
+          AND ($1::uuid IS NULL OR action.id = $1)
+          AND ($2::text IS NULL OR action.workflow_key = $2)
+          AND binding.item->>'workflowKey' = action.workflow_key
+          AND binding.item->>'n8nWorkflowId' = $3
+          AND binding.item->>'active' = 'true'
+          AND lower(binding.item->>'sideEffectClass') IN ('crm_write', 'crm', 'human_review')
+          AND NOT EXISTS (SELECT 1 FROM action_executions AS existing WHERE existing.action_id = action.id AND existing.tenant_id = action.tenant_id)
+        ORDER BY action.created_at, action.id
+        FOR UPDATE OF action SKIP LOCKED
+        LIMIT $4
+      )
+      UPDATE action_requests AS action
+         SET state = 'processing'
+        FROM candidate
+       WHERE action.id = candidate.id
+      RETURNING action.*`, [input.actionId ?? null, input.workflowKey ?? null, input.n8nWorkflowId, input.limit]);
+      const claims: WorkflowActionClaim[] = [];
+      for (const row of candidates.rows) {
+        const eventId = input.actionId && input.eventId ? input.eventId : randomUUID();
+        const correlationId = input.actionId && input.correlationId ? input.correlationId : randomUUID();
+        const inserted = await client.query<ActionExecutionRow>(`INSERT INTO action_executions
+          (id,action_id,tenant_id,workflow_key,catalog_version_id,provider_status,n8n_execution_ref,event_id,correlation_id,idempotency_key,attempt,deadline_at,outcome,created_at,updated_at)
+          VALUES ($1,$2,$3,$4,$5,'dispatching',$6,$7,$8,$9,$10,$11,$12,now(),now())
+          ON CONFLICT (action_id,idempotency_key) DO NOTHING
+          RETURNING *`, [randomUUID(), row.id, row.tenant_id, row.workflow_key, row.catalog_version_id ?? null, input.executionReference, eventId, correlationId, row.idempotency_key, input.attempt, input.deadlineAt, JSON.stringify({ eventId, correlationId })]);
+        if (!inserted.rows[0]) throw new Error('Workflow action claim could not create its execution lease; transaction rolled back.');
+        claims.push({ action: this.action(row), execution: this.actionExecution(inserted.rows[0]) });
+      }
+      await client.query('COMMIT');
+      return claims;
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+  }
   async claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null> {
     const result = await this.pool.query<ActionRow>(`UPDATE action_requests SET state='processing' WHERE id=$1 AND workflow_key=$2 AND state='approved' RETURNING *`, [actionId, workflowKey]);
     return result.rows[0] ? this.action(result.rows[0]) : null;
@@ -194,12 +313,12 @@ export class PostgresStore implements Store {
     return result.rows.map((row) => this.action(row));
   }
   async listActions(tenantId: string): Promise<ActionRequest[]> { const result = await this.pool.query('SELECT * FROM action_requests WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId]); return result.rows.map((row) => this.action(row)); }
-  async createCrmLead(lead: CrmLead): Promise<CrmLead> { const result = await this.pool.query<CrmLeadRow>('INSERT INTO crm_leads (id,tenant_id,action_id,session_id,intent,secondary_intent_keys,intent_score,intent_confidence,catalog_version_id,score,validation_pass,lead_data,conversation_json,summary,summary_status,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16) RETURNING *', [lead.id, lead.tenantId, lead.actionId, lead.sessionId, lead.intent, JSON.stringify(lead.secondaryIntentKeys ?? []), lead.intentScore, lead.intentConfidence, lead.catalogVersionId, lead.score, lead.validationPass, JSON.stringify(lead.leadData), JSON.stringify(lead.conversation), lead.summary, lead.summaryStatus, lead.createdAt]); return this.crmLead(result.rows[0]!); }
+  async createCrmLead(lead: CrmLead): Promise<CrmLead> { const result = await this.pool.query<CrmLeadRow>('INSERT INTO crm_leads (id,tenant_id,action_id,session_id,intent,secondary_intent_keys,intent_score,intent_confidence,catalog_version_id,score,contact_completeness_score,validation_pass,lead_data,conversation_json,summary,summary_status,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17) RETURNING *', [lead.id, lead.tenantId, lead.actionId, lead.sessionId, lead.intent, JSON.stringify(lead.secondaryIntentKeys ?? []), lead.intentScore, lead.intentConfidence, lead.catalogVersionId, lead.score, lead.contactCompletenessScore ?? 0, lead.validationPass, JSON.stringify(lead.leadData), JSON.stringify(lead.conversation), lead.summary, lead.summaryStatus, lead.createdAt]); return this.crmLead(result.rows[0]!); }
   async upsertCrmLead(lead: CrmLead, dedupeKey: string): Promise<CrmLead> {
-    const result = await this.pool.query<CrmLeadRow>(`INSERT INTO crm_leads (id,tenant_id,action_id,session_id,intent,secondary_intent_keys,intent_score,intent_confidence,catalog_version_id,score,validation_pass,lead_data,conversation_json,summary,summary_status,created_at,updated_at,dedupe_key)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16,$17)
-      ON CONFLICT (tenant_id,dedupe_key) WHERE dedupe_key IS NOT NULL DO UPDATE SET action_id=EXCLUDED.action_id,session_id=EXCLUDED.session_id,intent=EXCLUDED.intent,secondary_intent_keys=EXCLUDED.secondary_intent_keys,intent_score=EXCLUDED.intent_score,intent_confidence=EXCLUDED.intent_confidence,catalog_version_id=EXCLUDED.catalog_version_id,score=GREATEST(crm_leads.score,EXCLUDED.score),validation_pass=EXCLUDED.validation_pass,lead_data=EXCLUDED.lead_data,conversation_json=EXCLUDED.conversation_json,summary=NULL,summary_status='pending',updated_at=now()
-      RETURNING *`, [lead.id, lead.tenantId, lead.actionId, lead.sessionId, lead.intent, JSON.stringify(lead.secondaryIntentKeys ?? []), lead.intentScore, lead.intentConfidence, lead.catalogVersionId, lead.score, lead.validationPass, JSON.stringify(lead.leadData), JSON.stringify(lead.conversation), lead.summary, lead.summaryStatus, lead.createdAt, dedupeKey]);
+    const result = await this.pool.query<CrmLeadRow>(`INSERT INTO crm_leads (id,tenant_id,action_id,session_id,intent,secondary_intent_keys,intent_score,intent_confidence,catalog_version_id,score,contact_completeness_score,validation_pass,lead_data,conversation_json,summary,summary_status,created_at,updated_at,dedupe_key)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17,$18)
+      ON CONFLICT (tenant_id,dedupe_key) WHERE dedupe_key IS NOT NULL DO UPDATE SET action_id=EXCLUDED.action_id,session_id=EXCLUDED.session_id,intent=EXCLUDED.intent,secondary_intent_keys=EXCLUDED.secondary_intent_keys,intent_score=EXCLUDED.intent_score,intent_confidence=EXCLUDED.intent_confidence,catalog_version_id=EXCLUDED.catalog_version_id,score=GREATEST(crm_leads.score,EXCLUDED.score),contact_completeness_score=GREATEST(crm_leads.contact_completeness_score,EXCLUDED.contact_completeness_score),validation_pass=EXCLUDED.validation_pass,lead_data=EXCLUDED.lead_data,conversation_json=EXCLUDED.conversation_json,summary=NULL,summary_status='pending',updated_at=now()
+      RETURNING *`, [lead.id, lead.tenantId, lead.actionId, lead.sessionId, lead.intent, JSON.stringify(lead.secondaryIntentKeys ?? []), lead.intentScore, lead.intentConfidence, lead.catalogVersionId, lead.score, lead.contactCompletenessScore ?? 0, lead.validationPass, JSON.stringify(lead.leadData), JSON.stringify(lead.conversation), lead.summary, lead.summaryStatus, lead.createdAt, dedupeKey]);
     return this.crmLead(result.rows[0]!);
   }
   async getCrmLeadByActionId(actionId: string, tenantId: string): Promise<CrmLead | null> { const result = await this.pool.query<CrmLeadRow>('SELECT * FROM crm_leads WHERE action_id=$1 AND tenant_id=$2', [actionId, tenantId]); return result.rows[0] ? this.crmLead(result.rows[0]) : null; }
@@ -221,10 +340,147 @@ export class PostgresStore implements Store {
   async updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob> { const result = await this.pool.query<DocumentJobRow>('UPDATE document_processing_jobs SET status=$1,attempts=$2,lease_expires_at=$3,execution_reference=$4,updated_at=$5 WHERE id=$6 AND tenant_id=$7 RETURNING *', [job.status, job.attempts, job.leaseExpiresAt, job.executionReference, job.updatedAt, job.id, job.tenantId]); return this.documentJob(result.rows[0]!); }
   async linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void> { await this.pool.query('UPDATE supporting_documents SET lead_id=$1,updated_at=now() WHERE session_id=$2 AND tenant_id=$3 AND lead_id IS NULL', [leadId, sessionId, tenantId]); }
   async enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent> { const client = await this.pool.connect(); try { await this.insertOutbox(client, event); return event; } finally { client.release(); } }
-  async claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]> { const result = await this.pool.query<OutboxRow>(`WITH candidate AS (SELECT event_id FROM event_outbox WHERE published_at IS NULL AND (lease_expires_at IS NULL OR lease_expires_at <= now()) ORDER BY occurred_at,event_id FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE event_outbox AS event SET attempts=event.attempts+1,lease_expires_at=now()+($2::text || ' milliseconds')::interval FROM candidate WHERE event.event_id=candidate.event_id RETURNING event.*`, [limit, leaseMs]); return result.rows.map((row) => this.outboxEvent(row)); }
+  async claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]> { const result = await this.pool.query<OutboxRow>(`WITH candidate AS (SELECT event_id FROM event_outbox WHERE published_at IS NULL AND dead_lettered_at IS NULL AND (lease_expires_at IS NULL OR lease_expires_at <= now()) ORDER BY occurred_at,event_id FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE event_outbox AS event SET attempts=event.attempts+1,lease_expires_at=now()+($2::text || ' milliseconds')::interval FROM candidate WHERE event.event_id=candidate.event_id RETURNING event.*`, [limit, leaseMs]); return result.rows.map((row) => this.outboxEvent(row)); }
   async markOutboxPublished(eventId: string, publishedAt = new Date().toISOString()): Promise<void> { await this.pool.query('UPDATE event_outbox SET published_at=$1,lease_expires_at=NULL,last_error=NULL WHERE event_id=$2', [publishedAt, eventId]); }
   async releaseOutboxEvent(eventId: string, error: string, retryAt: string): Promise<void> { await this.pool.query('UPDATE event_outbox SET lease_expires_at=$1,last_error=$2 WHERE event_id=$3', [retryAt, error.slice(0, 500), eventId]); }
-  async claimInboxEvent(consumer: string, eventId: string): Promise<boolean> { const result = await this.pool.query('INSERT INTO event_inbox (consumer,event_id) VALUES ($1,$2) ON CONFLICT (consumer,event_id) DO NOTHING', [consumer, eventId]); return (result.rowCount ?? 0) === 1; }
+  async deadLetterOutboxEvent(eventId: string, error: string): Promise<void> { await this.pool.query('UPDATE event_outbox SET dead_lettered_at=now(),dead_letter_published_at=NULL,dead_letter_lease_expires_at=NULL,lease_expires_at=NULL,last_error=$1 WHERE event_id=$2 AND published_at IS NULL', [error.slice(0, 500), eventId]); }
+  async claimDeadLetterOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]> {
+    const result = await this.pool.query<OutboxRow>(`WITH candidate AS (
+      SELECT event_id FROM event_outbox
+      WHERE dead_lettered_at IS NOT NULL AND dead_letter_published_at IS NULL
+        AND (dead_letter_lease_expires_at IS NULL OR dead_letter_lease_expires_at <= now())
+      ORDER BY dead_lettered_at,event_id
+      FOR UPDATE SKIP LOCKED LIMIT $1
+    )
+    UPDATE event_outbox AS event
+       SET dead_letter_lease_expires_at=now()+($2::text || ' milliseconds')::interval
+      FROM candidate
+     WHERE event.event_id=candidate.event_id
+    RETURNING event.*`, [limit, leaseMs]);
+    return result.rows.map((row) => this.outboxEvent(row));
+  }
+  async markOutboxDeadLetterPublished(eventId: string, publishedAt = new Date().toISOString()): Promise<void> { await this.pool.query('UPDATE event_outbox SET dead_letter_published_at=$1,dead_letter_lease_expires_at=NULL WHERE event_id=$2 AND dead_lettered_at IS NOT NULL', [publishedAt, eventId]); }
+  async claimInboxEvent(consumer: string, eventId: string, leaseMs = 30_000): Promise<EventInboxClaim> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const inserted = await client.query<{ state: EventInboxState; attempts: number }>('INSERT INTO event_inbox (consumer,event_id,state,attempts,processed_at,lease_expires_at,updated_at) VALUES ($1,$2,\'processing\',1,NULL,now()+($3::double precision * interval \'1 millisecond\'),now()) ON CONFLICT (consumer,event_id) DO NOTHING RETURNING state,attempts', [consumer, eventId, leaseMs]);
+      if (inserted.rows[0]) {
+        await client.query('COMMIT');
+        return { state: 'processing', attempts: Number(inserted.rows[0].attempts), claimed: true, dlqPublished: false };
+      }
+      const existing = await client.query<{ state: EventInboxState; attempts: number; lease_expires_at: DbTimestamp | null; retry_at: DbTimestamp | null; dlq_published_at: DbTimestamp | null }>('SELECT state,attempts,lease_expires_at,retry_at,dlq_published_at FROM event_inbox WHERE consumer=$1 AND event_id=$2 FOR UPDATE', [consumer, eventId]);
+      const row = existing.rows[0];
+      if (!row) throw new Error('Inbox row disappeared after conflict resolution.');
+      const terminal = ['completed', 'reconcile_required', 'dead_lettered'].includes(row.state);
+      const leased = row.state === 'processing' && row.lease_expires_at && new Date(row.lease_expires_at).getTime() > Date.now();
+      const waiting = row.state === 'retry_scheduled' && row.retry_at && new Date(row.retry_at).getTime() > Date.now();
+      if (terminal || leased || waiting) { await client.query('COMMIT'); return { state: row.state, attempts: row.attempts, claimed: false, dlqPublished: Boolean(row.dlq_published_at) }; }
+      const updated = await client.query<{ attempts: number }>('UPDATE event_inbox SET state=\'processing\',attempts=attempts+1,lease_expires_at=now()+($3::double precision * interval \'1 millisecond\'),retry_at=NULL,last_error=NULL,updated_at=now() WHERE consumer=$1 AND event_id=$2 RETURNING attempts', [consumer, eventId, leaseMs]);
+      await client.query('COMMIT');
+      return { state: 'processing', attempts: updated.rows[0]?.attempts ?? row.attempts + 1, claimed: true, dlqPublished: false };
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+  }
+  async completeInboxEvent(consumer: string, eventId: string): Promise<void> { await this.pool.query('UPDATE event_inbox SET state=\'completed\',processed_at=now(),lease_expires_at=NULL,retry_at=NULL,updated_at=now() WHERE consumer=$1 AND event_id=$2 AND state=\'processing\'', [consumer, eventId]); }
+  async scheduleInboxRetry(consumer: string, eventId: string, error: string, retryAt: string): Promise<void> { await this.pool.query('UPDATE event_inbox SET state=\'retry_scheduled\',lease_expires_at=NULL,retry_at=$3,last_error=$4,updated_at=now() WHERE consumer=$1 AND event_id=$2 AND state=\'processing\'', [consumer, eventId, retryAt, error.slice(0, 500)]); }
+  async markInboxReconcileRequired(consumer: string, eventId: string, error: string, event?: OutboxEvent): Promise<void> { await this.pool.query('UPDATE event_inbox SET state=\'reconcile_required\',lease_expires_at=NULL,retry_at=NULL,last_error=$3,dlq_reason=$3,dlq_event=COALESCE($4::jsonb,dlq_event),dlq_published_at=NULL,dlq_lease_expires_at=NULL,updated_at=now() WHERE consumer=$1 AND event_id=$2 AND state=\'processing\'', [consumer, eventId, error.slice(0, 500), event ? JSON.stringify(event) : null]); }
+  async markInboxDeadLettered(consumer: string, eventId: string, error: string, event?: OutboxEvent): Promise<void> { await this.pool.query('UPDATE event_inbox SET state=\'dead_lettered\',lease_expires_at=NULL,retry_at=NULL,last_error=$3,dlq_reason=$3,dlq_event=COALESCE($4::jsonb,dlq_event),dlq_published_at=NULL,dlq_lease_expires_at=NULL,updated_at=now() WHERE consumer=$1 AND event_id=$2 AND state=\'processing\'', [consumer, eventId, error.slice(0, 500), event ? JSON.stringify(event) : null]); }
+  async claimInboxDeadLetterProjections(limit: number, leaseMs: number): Promise<Array<{ consumer: string; eventId: string; event: OutboxEvent; reason: string }>> {
+    const result = await this.pool.query<{ consumer: string; event_id: string; dlq_event: OutboxEvent; dlq_reason: string | null }>(`WITH candidate AS (
+      SELECT consumer,event_id FROM event_inbox
+       WHERE state IN ('reconcile_required','dead_lettered') AND dlq_event IS NOT NULL AND dlq_published_at IS NULL
+         AND (dlq_lease_expires_at IS NULL OR dlq_lease_expires_at <= now())
+       ORDER BY updated_at,consumer,event_id FOR UPDATE SKIP LOCKED LIMIT $1
+    )
+    UPDATE event_inbox AS inbox SET dlq_lease_expires_at=now()+($2::text || ' milliseconds')::interval
+      FROM candidate WHERE inbox.consumer=candidate.consumer AND inbox.event_id=candidate.event_id
+      RETURNING inbox.consumer,inbox.event_id,inbox.dlq_event,inbox.dlq_reason`, [limit, leaseMs]);
+    return result.rows.map((row) => ({ consumer: row.consumer, eventId: row.event_id, event: row.dlq_event, reason: row.dlq_reason ?? 'event processing terminally failed' }));
+  }
+  async markInboxDeadLetterPublished(consumer: string, eventId: string, publishedAt = new Date().toISOString()): Promise<void> { await this.pool.query('UPDATE event_inbox SET dlq_published_at=$3,dlq_lease_expires_at=NULL WHERE consumer=$1 AND event_id=$2 AND state IN (\'reconcile_required\',\'dead_lettered\')', [consumer, eventId, publishedAt]); }
+  async releaseInboxDeadLetterProjection(consumer: string, eventId: string): Promise<void> { await this.pool.query('UPDATE event_inbox SET dlq_lease_expires_at=NULL WHERE consumer=$1 AND event_id=$2 AND dlq_published_at IS NULL', [consumer, eventId]); }
+  async claimActionExecution(execution: ActionExecution): Promise<{ execution: ActionExecution; claimed: boolean }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const inserted = await client.query<ActionExecutionRow>(`INSERT INTO action_executions
+        (id,action_id,tenant_id,workflow_key,catalog_version_id,provider_status,n8n_execution_ref,event_id,correlation_id,idempotency_key,attempt,deadline_at,outcome,created_at,updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
+        ON CONFLICT (action_id,idempotency_key) DO NOTHING RETURNING *`, [execution.id, execution.actionId, execution.tenantId, execution.workflowKey, execution.catalogVersionId, execution.providerStatus, execution.n8nExecutionRef, execution.eventId, execution.correlationId, execution.idempotencyKey, execution.attempt, execution.deadlineAt, execution.outcome ? JSON.stringify(execution.outcome) : null, execution.createdAt]);
+      if (inserted.rows[0]) { await client.query('COMMIT'); return { execution: this.actionExecution(inserted.rows[0]), claimed: true }; }
+      const existing = await client.query<ActionExecutionRow>('SELECT * FROM action_executions WHERE action_id=$1 AND idempotency_key=$2 FOR UPDATE', [execution.actionId, execution.idempotencyKey]);
+      const row = existing.rows[0];
+      if (!row) throw new Error('Action execution disappeared after conflict resolution.');
+      if (row.provider_status === 'dispatching' && row.attempt < execution.attempt) {
+        const reclaimed = await client.query<ActionExecutionRow>(`UPDATE action_executions SET provider_status='dispatching',attempt=$2,deadline_at=$3,event_id=COALESCE($4,event_id),correlation_id=COALESCE($5,correlation_id),updated_at=now() WHERE id=$1 AND provider_status='dispatching' RETURNING *`, [row.id, execution.attempt, execution.deadlineAt, execution.eventId, execution.correlationId]);
+        if (reclaimed.rows[0]) { await client.query('COMMIT'); return { execution: this.actionExecution(reclaimed.rows[0]), claimed: true }; }
+      }
+      await client.query('COMMIT');
+      return { execution: this.actionExecution(row), claimed: false };
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+  }
+  async getActionExecution(actionId: string, tenantId: string): Promise<ActionExecution | null> { const result = await this.pool.query<ActionExecutionRow>('SELECT * FROM action_executions WHERE action_id=$1 AND tenant_id=$2 ORDER BY created_at DESC,id DESC LIMIT 1', [actionId, tenantId]); return result.rows[0] ? this.actionExecution(result.rows[0]) : null; }
+  async recordActionExecution(execution: ActionExecution): Promise<ActionExecution> {
+    const result = await this.pool.query<ActionExecutionRow>(`INSERT INTO action_executions (id,action_id,tenant_id,workflow_key,catalog_version_id,provider_status,n8n_execution_ref,event_id,correlation_id,idempotency_key,attempt,deadline_at,outcome,created_at,updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
+      ON CONFLICT (action_id,idempotency_key) DO UPDATE SET provider_status=CASE WHEN action_executions.provider_status IN ('completed','failed','reconcile_required') OR (action_executions.provider_status IN ('accepted','processing') AND EXCLUDED.provider_status='dispatching') THEN action_executions.provider_status ELSE EXCLUDED.provider_status END,n8n_execution_ref=COALESCE(EXCLUDED.n8n_execution_ref,action_executions.n8n_execution_ref),event_id=COALESCE(EXCLUDED.event_id,action_executions.event_id),correlation_id=COALESCE(EXCLUDED.correlation_id,action_executions.correlation_id),attempt=GREATEST(action_executions.attempt,EXCLUDED.attempt),deadline_at=CASE WHEN action_executions.provider_status IN ('completed','failed','reconcile_required') OR (action_executions.provider_status IN ('accepted','processing') AND EXCLUDED.provider_status='dispatching') THEN action_executions.deadline_at ELSE EXCLUDED.deadline_at END,outcome=CASE WHEN action_executions.provider_status IN ('completed','failed','reconcile_required') OR (action_executions.provider_status IN ('accepted','processing') AND EXCLUDED.provider_status='dispatching') THEN action_executions.outcome ELSE COALESCE(EXCLUDED.outcome,action_executions.outcome) END,updated_at=now()
+      RETURNING *`, [execution.id, execution.actionId, execution.tenantId, execution.workflowKey, execution.catalogVersionId, execution.providerStatus, execution.n8nExecutionRef, execution.eventId, execution.correlationId, execution.idempotencyKey, execution.attempt, execution.deadlineAt, execution.outcome ? JSON.stringify(execution.outcome) : null, execution.createdAt]);
+    return this.actionExecution(result.rows[0]!);
+  }
+  async updateActionExecution(input: { actionId: string; tenantId: string; providerStatus: string; n8nExecutionRef?: string | null; outcome?: ActionExecution['outcome']; resolveReconciliation?: boolean; eventId?: string; correlationId?: string; expectedAttempt?: number }): Promise<ActionExecution | null> {
+    const result = await this.pool.query<ActionExecutionRow>(`WITH current_execution AS (
+      SELECT id FROM action_executions
+       WHERE action_id=$1 AND tenant_id=$2 AND (provider_status NOT IN ('completed','failed','reconcile_required') OR (provider_status='reconcile_required' AND $6::boolean AND $3='completed'))
+         AND ($7::uuid IS NULL OR event_id=$7)
+         AND ($8::uuid IS NULL OR correlation_id=$8)
+         AND ($9::integer IS NULL OR attempt=$9)
+         AND (n8n_execution_ref IS NULL OR $4::text IS NULL OR n8n_execution_ref=$4)
+       ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE
+    )
+    UPDATE action_executions AS execution
+       SET provider_status=$3,
+           n8n_execution_ref=COALESCE($4,execution.n8n_execution_ref),
+           outcome=COALESCE(execution.outcome,'{}'::jsonb) || COALESCE($5::jsonb,'{}'::jsonb),
+           updated_at=now()
+      FROM current_execution
+     WHERE execution.id=current_execution.id
+      RETURNING execution.*`, [input.actionId, input.tenantId, input.providerStatus, input.n8nExecutionRef ?? null, input.outcome ? JSON.stringify(input.outcome) : null, input.resolveReconciliation === true, input.eventId ?? null, input.correlationId ?? null, input.expectedAttempt ?? null]);
+    return result.rows[0] ? this.actionExecution(result.rows[0]) : null;
+  }
+  async reconcileExpiredActionExecutions(timestamp: string): Promise<ActionExecution[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const expired = await client.query<ActionExecutionRow & { session_id: string; intent_key: string | null; action_catalog_version_id: string | null }>(`SELECT execution.*,action.session_id,action.intent_key,action.catalog_version_id AS action_catalog_version_id
+        FROM action_executions AS execution JOIN action_requests AS action ON action.id=execution.action_id AND action.tenant_id=execution.tenant_id
+        WHERE execution.provider_status IN ('dispatching','accepted') AND execution.deadline_at IS NOT NULL AND execution.deadline_at <= $1
+          AND action.state IN ('approved','processing')
+        FOR UPDATE OF execution, action SKIP LOCKED`, [timestamp]);
+      const updated: ActionExecution[] = [];
+      for (const row of expired.rows) {
+        const actionResult = await client.query<{ state: string }>(`UPDATE action_requests SET state='reconcile_required',result=COALESCE(result,'{}'::jsonb) || jsonb_build_object('reason','completion_deadline_exceeded')
+            WHERE id=$1 AND tenant_id=$2 AND state IN ('approved','processing') RETURNING state`, [row.action_id, row.tenant_id]);
+        if (!actionResult.rows[0]) continue;
+        const result = await client.query<ActionExecutionRow>(`UPDATE action_executions
+          SET provider_status='reconcile_required',
+              outcome=COALESCE(outcome,'{}'::jsonb) || jsonb_build_object('reason','completion_deadline_exceeded'),
+              updated_at=now()
+          WHERE id=$1 AND provider_status IN ('dispatching','accepted')
+          RETURNING *`, [row.id]);
+        if (!result.rows[0]) { throw new Error('Action execution changed while reconciling an expired action.'); }
+        await client.query(`UPDATE chat_sessions
+              SET conversation_state=conversation_state || jsonb_build_object('workflowStatus','reconcile_required','phase','RECONCILE_REQUIRED','pendingPrompt',NULL),state_version=state_version+1,last_activity_at=now()
+              WHERE id=$1 AND tenant_id=$2
+                AND (conversation_state->>'selectedIntentKey' IS NULL OR conversation_state->>'selectedIntentKey'=$3)
+                AND ($4::uuid IS NULL OR conversation_state->>'catalogVersionId' IS NULL OR conversation_state->>'catalogVersionId'=$4::text)
+                AND conversation_state->>'workflowStatus' NOT IN ('succeeded','failed')`, [row.session_id, row.tenant_id, row.intent_key, row.action_catalog_version_id]);
+        await client.query('INSERT INTO audit_events (id,tenant_id,actor_id,event_name,metadata) VALUES ($1,$2,NULL,$3,$4)', [randomUUID(), row.tenant_id, 'workflow.reconcile_required', JSON.stringify({ actionId: row.action_id, executionId: row.id, reason: 'completion_deadline_exceeded', eventId: row.event_id, correlationId: row.correlation_id })]);
+        updated.push(this.actionExecution(result.rows[0]));
+      }
+      await client.query('COMMIT');
+      return updated;
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+  }
   async addAudit(event: AuditEvent): Promise<void> { await this.pool.query('INSERT INTO audit_events (id,tenant_id,actor_id,event_name,metadata) VALUES ($1,$2,$3,$4,$5)', [event.id, event.tenantId, event.actorId, event.eventName, JSON.stringify(event.metadata)]); }
   async listAudit(tenantId: string): Promise<AuditEvent[]> { const result = await this.pool.query('SELECT * FROM audit_events WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId]); return result.rows.map((row) => ({ id: row.id, tenantId: row.tenant_id, actorId: row.actor_id, eventName: row.event_name, metadata: row.metadata, createdAt: iso(row.created_at) })); }
   async getTenantStats(tenantId: string): Promise<TenantStats> {
@@ -240,6 +496,7 @@ export class PostgresStore implements Store {
   }
 
   private tenant(row: TenantRow): Tenant { return { id: row.id, name: row.name, slug: row.slug, status: row.status ?? 'active', publicChatEnabled: row.public_chat_enabled ?? true, publicOrigin: row.public_origin ?? null, catalogQueryNormalizationEnabled: row.catalog_query_normalization_enabled ?? false, createdAt: iso(row.created_at) }; }
+  private actionExecution(row: ActionExecutionRow): ActionExecution { return { id: row.id, actionId: row.action_id, tenantId: row.tenant_id, workflowKey: row.workflow_key, catalogVersionId: row.catalog_version_id, providerStatus: row.provider_status, n8nExecutionRef: row.n8n_execution_ref, eventId: row.event_id ?? null, correlationId: row.correlation_id ?? null, idempotencyKey: row.idempotency_key, attempt: row.attempt, deadlineAt: row.deadline_at ? iso(row.deadline_at) : null, outcome: row.outcome ?? null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }; }
   private channelCredential(row: ChannelCredentialRow): ChannelCredential { return { id: row.id, tenantId: row.tenant_id, channel: row.channel, authMode: row.auth_mode, keyId: row.key_id, secretCiphertext: row.secret_ciphertext, apiKeyHash: row.api_key_hash, active: row.active, createdAt: iso(row.created_at), revokedAt: row.revoked_at ? iso(row.revoked_at) : null }; }
   private domain(row: TenantDomainRow): TenantDomain { return { id: row.id, tenantId: row.tenant_id, hostname: row.hostname, createdAt: iso(row.created_at) }; }
   private user(row: UserRow): User { return { id: row.id, email: row.email, passwordHash: row.password_hash, role: row.role, tenantId: row.tenant_id, createdAt: iso(row.created_at) }; }
@@ -249,7 +506,7 @@ export class PostgresStore implements Store {
   private message(row: MessageRow): Message { return { id: row.id, sessionId: row.session_id, tenantId: row.tenant_id, role: row.role, maskedContent: row.masked_content, citations: row.citations, clientMessageId: row.client_message_id, response: row.response ?? null, createdAt: iso(row.created_at) }; }
   private intentCatalogVersion(row: Record<string, unknown>): IntentCatalogVersion { return { id: String(row.id), tenantId: String(row.tenant_id), version: Number(row.version), status: row.status as IntentCatalogVersion['status'], sourceFileName: String(row.source_file_name), sourceHash: String(row.source_hash), parserVersion: String(row.parser_version), catalog: row.catalog_json as IntentCatalogVersion['catalog'], createdAt: iso(row.created_at as DbTimestamp), publishedAt: row.published_at ? iso(row.published_at as DbTimestamp) : null }; }
   private action(row: ActionRow): ActionRequest { return { id: row.id, tenantId: row.tenant_id, sessionId: row.session_id, workflowKey: row.workflow_key, webhookPath: row.webhook_path ?? 'lead-capture', intentKey: row.intent_key ?? row.workflow_key, intentScore: Number(row.intent_score ?? 0), intentConfidence: Number(row.intent_confidence ?? 0), catalogVersionId: row.catalog_version_id ?? null, idempotencyKey: row.idempotency_key, state: row.state, opaqueReference: row.opaque_reference, payload: row.payload ?? {}, createdAt: iso(row.created_at), result: row.result?.externalReference ? { externalReference: row.result.externalReference } : row.result?.external_reference ? { externalReference: row.result.external_reference } : null }; }
-  private crmLead(row: CrmLeadRow): CrmLead { return { id: row.id, tenantId: row.tenant_id, actionId: row.action_id, sessionId: row.session_id, intent: row.intent, secondaryIntentKeys: row.secondary_intent_keys ?? [], intentScore: Number(row.intent_score ?? 0), intentConfidence: Number(row.intent_confidence ?? 0), catalogVersionId: row.catalog_version_id ?? null, score: row.score, validationPass: row.validation_pass, leadData: row.lead_data ?? {}, conversation: row.conversation_json ?? [], summary: row.summary ?? null, summaryStatus: row.summary_status, leadId: row.lead_id ?? null, remoteCrm: row.remote_crm ?? null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }; }
+  private crmLead(row: CrmLeadRow): CrmLead { return { id: row.id, tenantId: row.tenant_id, actionId: row.action_id, sessionId: row.session_id, intent: row.intent, secondaryIntentKeys: row.secondary_intent_keys ?? [], intentScore: Number(row.intent_score ?? 0), intentConfidence: Number(row.intent_confidence ?? 0), catalogVersionId: row.catalog_version_id ?? null, score: row.score, contactCompletenessScore: Number(row.contact_completeness_score ?? 0), validationPass: row.validation_pass, leadData: row.lead_data ?? {}, conversation: row.conversation_json ?? [], summary: row.summary ?? null, summaryStatus: row.summary_status, leadId: row.lead_id ?? null, remoteCrm: row.remote_crm ?? null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }; }
   private ingestionJob(row: IngestionJobRow): IngestionJob { return { id: row.id, tenantId: row.tenant_id, title: row.title, mimeType: row.mime_type, sourceUrl: row.source_url, audience: row.audience, sourceId: row.source_id, status: row.status, attempts: row.attempts, errorCode: row.error_code, leaseExpiresAt: row.lease_expires_at ? iso(row.lease_expires_at) : null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }; }
   private supportingDocument(row: SupportingDocumentRow): SupportingDocument { return { id: row.id, tenantId: row.tenant_id, sessionId: row.session_id, leadId: row.lead_id, fileName: row.file_name, mimeType: row.mime_type, sizeBytes: row.size_bytes, sha256: row.sha256, storageKey: row.storage_key, status: row.status, workflowKey: row.workflow_key, storeExtractedText: row.store_extracted_text, extractedText: row.extracted_text, summary: row.summary, errorCode: row.error_code, consentAt: iso(row.consent_at), createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }; }
   private documentJob(row: DocumentJobRow): DocumentProcessingJob { return { id: row.id, documentId: row.document_id, tenantId: row.tenant_id, workflowKey: row.workflow_key, webhookPath: row.webhook_path, status: row.status, attempts: row.attempts, leaseExpiresAt: row.lease_expires_at ? iso(row.lease_expires_at) : null, executionReference: row.execution_reference, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }; }
