@@ -3,17 +3,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const files = ['CRM01ContactLookup.json', 'CRM02ContactUpsert.json', 'CRM03SummarySync.json', 'DOC01DocumentProcessing.json', ...Array.from({ length: 13 }, (_, index) => `INTENTancfzint${String(index + 1).padStart(2, '0')}.json`)];
-const claimFiles = ['01-lead-capture-and-crm.json', '03-anc-lead-capture-wf-1.json', ...files];
+const claimFiles = ['01-lead-capture-and-crm.json', '03-anc-lead-capture-wf-1.json', ...files.filter((file) => file !== 'DOC01DocumentProcessing.json')];
 
 test('CRM v2 workflow exports are tenant-neutral and server-authenticated', async () => {
   for (const file of files) {
     const text = await readFile(new URL(`./${file}`, import.meta.url), 'utf8');
     const workflow = JSON.parse(text);
     assert.equal(workflow.active, false, `${file} must not be activated without approval`);
-    assert.ok(workflow.nodes.some((node) => node.name === 'Authenticate and Claim Event'));
+    if (file !== 'DOC01DocumentProcessing.json') assert.ok(workflow.nodes.some((node) => node.name === 'Authenticate and Claim Event'));
     assert.doesNotMatch(text, /N8N_WEBHOOK_SECRET|\\$env\\./);
     const internalRequests = workflow.nodes.filter((node) => node.type === 'n8n-nodes-base.httpRequest');
-    assert.ok(internalRequests.length >= 2, `${file} should have authenticated internal HTTP calls`);
+    assert.ok(internalRequests.length >= (file === 'DOC01DocumentProcessing.json' ? 1 : 2), `${file} should have authenticated internal HTTP calls`);
     for (const node of internalRequests) {
       assert.equal(node.parameters.authentication, 'genericCredentialType', `${file} ${node.name} requires managed authentication`);
       assert.equal(node.parameters.genericAuthType, 'httpHeaderAuth');

@@ -21,7 +21,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $json.body ?? $json;\nif (input.workflowKey !== \"anc.document.ocr.extract\" || input.contract !== \"anc-document-ocr-v1\") throw new Error('Workflow contract mismatch.');\nif (typeof input.tenantId !== 'string' || typeof input.sessionId !== 'string' || typeof input.actionId !== 'string' || typeof input.eventId !== 'string' || typeof input.correlationId !== 'string' || !Number.isInteger(input.attempt) || input.attempt < 1) throw new Error('Server-issued action, tenant, event, correlation and attempt references are required.');\nreturn [{ json: { ...input, workflowKey: \"anc.document.ocr.extract\", contract: \"anc-document-ocr-v1\" } }];"
+        "jsCode": "const input = $json.body ?? $json;\nif (input.workflowKey !== \"anc.document.ocr.extract\" || input.contract !== \"anc-document-ocr-v1\") throw new Error('Workflow contract mismatch.');\nif (typeof input.tenantId !== 'string' || typeof input.sessionId !== 'string' || typeof input.documentId !== 'string' || typeof input.jobId !== 'string' || typeof input.eventId !== 'string' || typeof input.correlationId !== 'string' || !Number.isInteger(input.attempt) || input.attempt < 1) throw new Error('Server-issued document, tenant, event, correlation and attempt references are required.');\nreturn [{ json: { ...input, workflowKey: \"anc.document.ocr.extract\", contract: \"anc-document-ocr-v1\" } }];"
       },
       "id": "DOC01DocumentProcessing-validate",
       "name": "Validate Server Event",
@@ -29,39 +29,6 @@
       "typeVersion": 2,
       "position": [
         240,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ \"http://api:4000/api/v1/internal/workflow-events/claim\" }}",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, eventId: $json.eventId, correlationId: $json.correlationId, attempt: $json.attempt, workflowKey: $json.workflowKey, n8nWorkflowId: $workflow.id, contract: $json.contract, limit: 1 }) }}",
-        "options": {},
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth"
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "id": "DOC01DocumentProcessing-claim",
-      "name": "Authenticate and Claim Event",
-      "position": [
-        480,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = Array.isArray($json.items) ? $json.items : [];\nreturn items.map((item) => ({ json: item }));"
-      },
-      "id": "DOC01DocumentProcessing-expand",
-      "name": "Expand Claimed Events",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        720,
         0
       ]
     },
@@ -99,28 +66,6 @@
       ]
     },
     "Validate Server Event": {
-      "main": [
-        [
-          {
-            "node": "Authenticate and Claim Event",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Authenticate and Claim Event": {
-      "main": [
-        [
-          {
-            "node": "Expand Claimed Events",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Expand Claimed Events": {
       "main": [
         [
           {
