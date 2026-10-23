@@ -10,12 +10,14 @@ import type { OutboxEvent } from './types.js';
 class PostgresTestBus implements StreamBus {
   readonly acknowledged: string[] = [];
   readonly deadLetters: OutboxEvent[] = [];
-  constructor(private message: StreamMessage) {}
+  private readonly messages: StreamMessage[];
+  constructor(message: StreamMessage | StreamMessage[]) { this.messages = Array.isArray(message) ? [...message] : [message]; }
+  enqueue(message: StreamMessage): void { this.messages.push(message); }
   async connect(): Promise<void> {}
   async close(): Promise<void> {}
   async ensureGroup(): Promise<void> {}
   async append(): Promise<string> { return '1-0'; }
-  async read(): Promise<StreamMessage[]> { const next = this.message; this.message = { id: '', event: createOutboxEvent({ eventId: randomUUID(), eventType: 'conversation.notification.requested.v1', tenantId: randomUUID(), aggregateId: randomUUID(), payloadRef: 'empty', idempotencyKey: randomUUID() }) }; return next.id ? [next] : []; }
+  async read(): Promise<StreamMessage[]> { const next = this.messages.shift(); return next ? [next] : []; }
   async reclaim(): Promise<StreamMessage[]> { return []; }
   async acknowledge(_stream: string, _group: string, id: string): Promise<void> { this.acknowledged.push(id); }
   async deadLetter(event: OutboxEvent): Promise<void> { this.deadLetters.push(event); }
@@ -165,6 +167,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       await store.recordActionExecution({ id: randomUUID(), actionId: completedAction.id, tenantId: tenant.id, workflowKey: completedAction.workflowKey, catalogVersionId: null, providerStatus: 'accepted', n8nExecutionRef: 'accepted-late', idempotencyKey: completedAction.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() - 1_000).toISOString(), outcome: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
       await store.reconcileExpiredActionExecutions(new Date().toISOString());
       expect((await store.getAction(completedAction.id))?.state).toBe('completed');
+      expect((await store.getActionExecution(completedAction.id, tenant.id))?.providerStatus).toBe('accepted');
       expect((await store.getSession(session.id))?.conversationState).toMatchObject({ workflowStatus: 'succeeded', phase: 'SUCCEEDED' });
       expect((await store.listAudit(tenant.id)).filter((event) => event.metadata.actionId === completedAction.id)).toHaveLength(0);
     } finally {
@@ -201,6 +204,42 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       };
       await run(500, 'pg-transient-terminal');
       await run(400, 'pg-permanent-terminal');
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      if (eventIds.length) await pool.query('DELETE FROM event_inbox WHERE consumer=$1 AND event_id = ANY($2::uuid[])', ['intent-workers', eventIds]);
+      await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
+      await pool.end();
+    }
+  }, 20_000);
+
+  it('reclaims a dispatching execution at a higher attempt and commits the eventual terminal pair', async () => {
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const store = new PostgresStore(pool);
+    const tenant = await store.createTenant({ name: 'Execution Retry Test', slug: `execution-retry-${randomUUID()}` });
+    let requests = 0;
+    const server = createServer((_request, response) => response.writeHead(requests++ === 0 ? 500 : 202).end());
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind to a TCP port.');
+    const eventIds: string[] = [];
+    try {
+      const session = await store.createSession(tenant.id);
+      const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'crm.lead.create', idempotencyKey: 'execution-retry', state: 'approved', opaqueReference: 'execution-retry', payload: {}, createdAt: new Date().toISOString(), result: null });
+      const event = createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: tenant.id, sessionId: session.id, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id } });
+      eventIds.push(event.eventId);
+      const bus = new PostgresTestBus({ id: 'retry-1', event });
+      const consumer = new EventConsumer(store, bus, new N8nEventBridge(store, `http://127.0.0.1:${address.port}`, 'secret'), 'pg-retry', 2);
+      await consumer.runOnce('rag:v2:actions', 'intent-workers', 0);
+      expect(await store.getActionExecution(action.id, tenant.id)).toMatchObject({ providerStatus: 'dispatching', attempt: 1 });
+      bus.enqueue({ id: 'retry-2', event });
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      await consumer.runOnce('rag:v2:actions', 'intent-workers', 0);
+      const accepted = await store.getActionExecution(action.id, tenant.id);
+      expect(accepted).toMatchObject({ providerStatus: 'accepted', attempt: 2, eventId: event.eventId, correlationId: event.correlationId });
+      const completed = await store.transitionActionWithExecution({ actionId: action.id, tenantId: tenant.id, fromState: 'approved', toState: 'completed', result: { externalReference: 'remote-retry' }, providerStatus: 'completed', n8nExecutionRef: 'execution-retry', eventId: event.eventId, correlationId: event.correlationId, expectedAttempt: 2, outcome: { externalReference: 'remote-retry' } });
+      expect(completed).toMatchObject({ action: { state: 'completed' }, execution: { providerStatus: 'completed', attempt: 2, n8nExecutionRef: 'execution-retry' } });
+      const inbox = await pool.query('SELECT state FROM event_inbox WHERE consumer=$1 AND event_id=$2', ['intent-workers', event.eventId]);
+      expect(inbox.rows[0]?.state).toBe('completed');
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
       if (eventIds.length) await pool.query('DELETE FROM event_inbox WHERE consumer=$1 AND event_id = ANY($2::uuid[])', ['intent-workers', eventIds]);

@@ -74,10 +74,17 @@ export const crmAdminSummarySchema = z.object({}).strict();
 export const crmQualificationSchema = z.object({ tenantId: z.string().uuid(), score: z.number().int().min(0).max(100), summary: z.string().trim().min(1).max(20_000) });
 export const crmRemoteSchema = z.object({ tenantId: z.string().uuid(), leadId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteCrm: z.string().trim().min(1).max(80).regex(/^[A-Za-z][A-Za-z0-9._:-]*$/u) });
 export const crmRemotePayloadSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid() });
-export const workflowClaimSchema = z.object({ actionId: z.string().uuid().optional(), workflowKey: z.string().trim().regex(/^[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)+$/i).optional(), n8nWorkflowId: z.string().trim().min(1).max(120), contract: z.string().trim().min(1).max(120).optional(), limit: z.number().int().min(1).max(50).default(10) });
+export const workflowClaimSchema = z.object({ actionId: z.string().uuid().optional(), workflowKey: z.string().trim().regex(/^[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)+$/i).optional(), n8nWorkflowId: z.string().trim().min(1).max(120), contract: z.string().trim().min(1).max(120).optional(), eventId: z.string().uuid().optional(), correlationId: z.string().uuid().optional(), attempt: z.number().int().min(1).max(100_000).optional(), limit: z.number().int().min(1).max(50).default(10) });
 const opaqueReference = z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u).optional();
 const workflowCorrelationFields = { eventId: z.string().uuid().optional(), correlationId: z.string().uuid().optional(), attempt: z.number().int().min(1).max(100_000).optional() };
-export const workflowCompletionSchema = z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review']), externalReference: opaqueReference, executionReference: opaqueReference, ...workflowCorrelationFields });
+export const workflowCompletionSchema = z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review']), externalReference: opaqueReference, executionReference: opaqueReference, ...workflowCorrelationFields }).superRefine((value, context) => {
+  if (value.state === 'completed' || value.state === 'failed') {
+    if (!value.executionReference) context.addIssue({ code: z.ZodIssueCode.custom, path: ['executionReference'], message: 'Provider terminal transitions require an execution reference.' });
+    if (!value.eventId) context.addIssue({ code: z.ZodIssueCode.custom, path: ['eventId'], message: 'Provider terminal transitions require an event id.' });
+    if (!value.correlationId) context.addIssue({ code: z.ZodIssueCode.custom, path: ['correlationId'], message: 'Provider terminal transitions require a correlation id.' });
+    if (value.attempt === undefined) context.addIssue({ code: z.ZodIssueCode.custom, path: ['attempt'], message: 'Provider terminal transitions require an attempt.' });
+  }
+});
 export const workflowTransitionSchema = z.object({ state: z.enum(['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review']), externalReference: opaqueReference, executionReference: opaqueReference, ...workflowCorrelationFields });
 export const crmQualitySchema = z.object({ tenantId: z.string().uuid(), score: z.number().int().min(0).max(100), qualityWorkflowKey: z.string().trim().min(1).max(80), catalogVersionId: z.string().uuid(), intentKey: z.string().trim().min(1).max(80) });
 export const documentUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.string().trim().min(1).max(160), contentBase64: z.string().min(1).max(MAX_DOCUMENT_BASE64_CHARS), processingConsent: z.literal(true), primaryIntentKey: z.string().trim().min(1).max(80).optional() });

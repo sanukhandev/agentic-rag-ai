@@ -9,7 +9,7 @@ import { MockWorkflowAdapter, signN8nPayload } from './actions.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import type { EmbeddingProvider } from './embedding.js';
 import type { ChatModel, ModelDraft, QueryNormalizationInput } from './model.js';
-import type { IntentCatalog } from './types.js';
+import type { ActionRequest, IntentCatalog, Store } from './types.js';
 import { TokenVault } from './privacy.js';
 
 class CapturingModel implements ChatModel {
@@ -68,6 +68,13 @@ class FailsOnceModel implements ChatModel {
     return evidence ? { answer: evidence.content, citationIds: [evidence.citation.chunkId], proposedIntent: null } : { answer: 'No approved evidence supports that answer.', citationIds: [], proposedIntent: null };
   }
 }
+
+const seedWorkflowExecution = async (store: Store, action: Pick<ActionRequest, 'id' | 'tenantId' | 'workflowKey' | 'catalogVersionId' | 'idempotencyKey'>, providerStatus: string = 'dispatching') => {
+  const eventId = randomUUID();
+  const correlationId = randomUUID();
+  await store.recordActionExecution({ id: randomUUID(), actionId: action.id, tenantId: action.tenantId, workflowKey: action.workflowKey, catalogVersionId: action.catalogVersionId ?? null, providerStatus, n8nExecutionRef: null, eventId, correlationId, idempotencyKey: action.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() + 60_000).toISOString(), outcome: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  return { eventId, correlationId, attempt: 1, executionReference: 'execution-1' };
+};
 
 describe('API vertical slice', () => {
   it('refuses production startup with local model, embedding, workflow or worker fallbacks', () => {
@@ -254,7 +261,9 @@ describe('API vertical slice', () => {
     expect((await api.get('/api/v1/admin/audit').set('Authorization', `Bearer ${adminBToken}`).expect(200)).body.items.some((event: { eventName: string }) => event.eventName === 'workflow.approved')).toBe(false);
     const callbackReply = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'Please contact me for a demo.', clientMessageId: 'callback-proposal' }).expect(200);
     const callbackActionId = callbackReply.body.actionProposal.id as string;
-    const callbackBody = { actionId: callbackActionId, tenantId: tenantA.body.tenant.id as string, state: 'completed', externalReference: 'n8n-callback-1' };
+    const callbackAction = await runtime.store.getAction(callbackActionId);
+    const callbackExecution = await seedWorkflowExecution(runtime.store, callbackAction!);
+    const callbackBody = { actionId: callbackActionId, tenantId: tenantA.body.tenant.id as string, state: 'completed', externalReference: 'n8n-callback-1', ...callbackExecution };
     const callbackTimestamp = Date.now();
     const callbackNonce = 'callback-nonce-1';
     await api.post('/api/v1/internal/n8n/callback').set('x-agentic-timestamp', String(callbackTimestamp)).set('x-agentic-nonce', callbackNonce).set('x-agentic-signature', 'bad').send(callbackBody).expect(401);
@@ -267,7 +276,7 @@ describe('API vertical slice', () => {
     const wrongTenantSignature = signN8nPayload('callback-secret', callbackTimestamp, 'callback-nonce-wrong-tenant', JSON.stringify(wrongTenantBody));
     await api.post('/api/v1/internal/n8n/callback').set('x-agentic-timestamp', String(callbackTimestamp)).set('x-agentic-nonce', 'callback-nonce-wrong-tenant').set('x-agentic-signature', wrongTenantSignature).send(wrongTenantBody).expect(404);
     await api.post('/api/v1/internal/n8n/callback').set('x-agentic-timestamp', String(callbackTimestamp)).set('x-agentic-nonce', callbackNonce).set('x-agentic-signature', callbackSignature).send(callbackBody).expect(409);
-    await runtime.store.updateAction({ ...(await runtime.store.getAction(callbackActionId))!, state: 'approved' });
+    await runtime.store.updateAction({ ...(await runtime.store.getAction(callbackActionId))!, state: 'processing' });
     const approvedCallbackNonce = 'callback-nonce-approved';
     const approvedCallbackSignature = signN8nPayload('callback-secret', callbackTimestamp, approvedCallbackNonce, JSON.stringify(callbackBody));
     await api.post('/api/v1/internal/n8n/callback').set('x-agentic-timestamp', String(callbackTimestamp)).set('x-agentic-nonce', approvedCallbackNonce).set('x-agentic-signature', approvedCallbackSignature).send(callbackBody).expect(200);
@@ -638,6 +647,7 @@ describe('API vertical slice', () => {
     const actionId = proposal.body.actionProposal.id as string;
     await api.post(`/api/v1/chat/actions/${actionId}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
     const action = await runtime.store.getAction(actionId);
+    const completionExecution = await seedWorkflowExecution(runtime.store, action!, 'accepted');
     const messages = await runtime.store.listMessages(session.body.sessionId, tenant.body.tenant.id);
     const stored = await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: action?.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })), completeAction: false }).expect(201);
     expect(stored.body.lead).toMatchObject({ intent: 'lead.capture', score: 70, validationPass: true, summaryStatus: 'pending' });
@@ -649,9 +659,9 @@ describe('API vertical slice', () => {
     const formatted = await api.post(`/api/v1/admin/crm/leads/${stored.body.lead.id}/summarize`).set('Authorization', `Bearer ${admin.body.token}`).send({}).expect(200);
     expect(formatted.body).toMatchObject({ aiGenerated: false, lead: { summaryStatus: 'completed' } });
     expect(formatted.body.lead.summary).toContain('CRM OPPORTUNITY SPECIFICATION');
-    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'crm-lead-remote-123' }).expect(200);
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'crm-lead-remote-123', ...completionExecution }).expect(200);
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'succeeded', phase: 'SUCCEEDED', pendingPrompt: null });
-    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'crm-lead-remote-123' }).expect(200);
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'crm-secret').send({ actionId, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'crm-lead-remote-123', ...completionExecution }).expect(200);
     const unconsented = await runtime.store.createAction({ ...action!, id: randomUUID(), idempotencyKey: 'crm-another-purpose', payload: { ...action!.payload, contactConsent: false }, state: 'approved' });
     await api.post('/api/v1/internal/crm/leads').set('x-agentic-internal-secret', 'crm-secret')
       .send({ actionId: unconsented.id, tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, leadData: unconsented.payload, intent: 'lead.capture', score: 70, validationPass: true, conversation: messages.map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt })) })
@@ -703,8 +713,9 @@ describe('API vertical slice', () => {
     };
     await runtime.store.updateSession(current!);
     const oldAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'lead.capture', intentKey: 'lead.capture', catalogVersionId: 'catalog-v1', idempotencyKey: 'stale-workflow-completion', state: 'approved', opaqueReference: 'stale-workflow-reference', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
+    const oldExecution = await seedWorkflowExecution(runtime.store, oldAction);
 
-    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: oldAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'old-completion' }).expect(200);
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: oldAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'old-completion', ...oldExecution }).expect(200);
 
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ catalogVersionId: 'catalog-v2', selectedIntentKey: 'company.setup', workflowStatus: 'queued', phase: 'QUEUED', pendingPrompt: { id: 'new-intent-prompt' } });
   });
@@ -723,6 +734,8 @@ describe('API vertical slice', () => {
       return { action, eventId, correlationId };
     };
     const internal = await createReconciledAction('internal-correlation');
+    const missingInternalCorrelation = { actionId: internal.action.id, tenantId: tenant.body.tenant.id, state: 'completed' as const, externalReference: 'remote-internal', executionReference: 'execution-2', correlationId: internal.correlationId, attempt: 2 };
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'correlation-secret').send(missingInternalCorrelation).expect(422);
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'correlation-secret').send({ actionId: internal.action.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'remote-internal', executionReference: 'execution-2', eventId: randomUUID(), correlationId: internal.correlationId, attempt: 2 }).expect(409);
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'correlation-secret').send({ actionId: internal.action.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'remote-internal', executionReference: 'execution-2', eventId: internal.eventId, correlationId: internal.correlationId, attempt: 2 }).expect(200);
     const signed = await createReconciledAction('signed-correlation');
@@ -742,11 +755,12 @@ describe('API vertical slice', () => {
     const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Review Status Tenant', slug: 'review-status-tenant', adminEmail: 'review-status-admin@example.test', adminPassword: 'TenantA1Password' }).expect(201);
     const reviewSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
     const reviewAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: reviewSession.body.sessionId, workflowKey: 'crm.support.review', intentKey: 'support.request', state: 'approved', opaqueReference: 'review-status-action', idempotencyKey: 'review-status-action', payload: {}, createdAt: new Date().toISOString(), result: null });
+    const reviewExecution = await seedWorkflowExecution(runtime.store, reviewAction);
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: reviewAction.id, tenantId: tenant.body.tenant.id, state: 'human_review', externalReference: 'review-task-1' }).expect(200);
     expect((await runtime.store.getAction(reviewAction.id))?.state).toBe('human_review');
     expect((await runtime.store.getAction(reviewAction.id))?.result).toEqual({ externalReference: 'review-task-1' });
     expect((await runtime.store.getSession(reviewSession.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'human_review', phase: 'HUMAN_REVIEW' });
-    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: reviewAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'review-completed-1' }).expect(200);
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: reviewAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'review-completed-1', ...reviewExecution }).expect(200);
     expect((await runtime.store.getAction(reviewAction.id))?.state).toBe('completed');
     expect((await runtime.store.getSession(reviewSession.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'succeeded', phase: 'SUCCEEDED' });
     const admin = await api.post('/api/v1/auth/login').send({ email: 'review-status-admin@example.test', password: 'TenantA1Password' }).expect(200);
@@ -756,17 +770,19 @@ describe('API vertical slice', () => {
     expect((await api.get('/api/v1/admin/audit').set('Authorization', `Bearer ${admin.body.token}`).expect(200)).body.items).toEqual(expect.arrayContaining([expect.objectContaining({ eventName: 'workflow.transition.human_review.completed', actorId: admin.body.user.id })]));
     const partialSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
     const partialAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: partialSession.body.sessionId, workflowKey: 'crm.lead.create', intentKey: 'lead.capture', state: 'approved', opaqueReference: 'partial-status-action', idempotencyKey: 'partial-status-action', payload: {}, createdAt: new Date().toISOString(), result: null });
+    const partialExecution = await seedWorkflowExecution(runtime.store, partialAction);
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: partialAction.id, tenantId: tenant.body.tenant.id, state: 'awaiting_customer', externalReference: 'missing-fields-1' }).expect(200);
     expect((await runtime.store.getAction(partialAction.id))?.state).toBe('awaiting_customer');
     expect((await runtime.store.getAction(partialAction.id))?.result).toEqual({ externalReference: 'missing-fields-1' });
     expect((await runtime.store.getSession(partialSession.body.sessionId))?.conversationState).toMatchObject({ workflowStatus: 'awaiting_customer', phase: 'SLOT_COLLECTION' });
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: partialAction.id, tenantId: tenant.body.tenant.id, state: 'processing', externalReference: 'resume-1' }).expect(200);
     expect((await runtime.store.getAction(partialAction.id))?.state).toBe('processing');
-    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: partialAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'partial-completed-1' }).expect(200);
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: partialAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'partial-completed-1', ...partialExecution }).expect(200);
     expect((await runtime.store.getAction(partialAction.id))?.state).toBe('completed');
     const raceAction = await runtime.store.createAction({ ...partialAction, id: randomUUID(), idempotencyKey: 'transition-race-action', state: 'processing' });
+    const raceExecution = await seedWorkflowExecution(runtime.store, raceAction);
     const [raceCompleted, raceReconciled] = await Promise.all([
-      api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: raceAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'race-completed' }),
+      api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: raceAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'race-completed', ...raceExecution }),
       api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: raceAction.id, tenantId: tenant.body.tenant.id, state: 'reconcile_required', externalReference: 'race-reconcile' }),
     ]);
     expect([raceCompleted.status, raceReconciled.status].sort()).toEqual([200, 409]);

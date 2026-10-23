@@ -225,7 +225,7 @@
         "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ actionId: $('Lead Scoring and Summary').first().json.actionId, tenantId: $('Lead Scoring and Summary').first().json.tenantId, state: 'completed', externalReference: 'crm-lead-' + $('Lead Scoring and Summary').first().json.leadId }) }}",
+        "jsonBody": "={{ JSON.stringify({ actionId: $('Lead Scoring and Summary').first().json.actionId, tenantId: $('Lead Scoring and Summary').first().json.tenantId, state: 'completed', externalReference: 'crm-lead-' + $('Lead Scoring and Summary').first().json.leadId, executionReference: $execution.id, eventId: $('Lead Scoring and Summary').first().json.eventId, correlationId: $('Lead Scoring and Summary').first().json.correlationId, attempt: $('Lead Scoring and Summary').first().json.attempt }) }}",
         "options": {}
       },
       "id": "anc-wf1-complete",
@@ -243,7 +243,7 @@
         "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ actionId: $('Prepare Remote CRM Decision').first().json.actionId, tenantId: $('Prepare Remote CRM Decision').first().json.tenantId, state: 'completed', externalReference: 'crm-lead-' + $('Prepare Remote CRM Decision').first().json.leadId }) }}",
+        "jsonBody": "={{ JSON.stringify({ actionId: $('Prepare Remote CRM Decision').first().json.actionId, tenantId: $('Prepare Remote CRM Decision').first().json.tenantId, state: 'completed', externalReference: 'crm-lead-' + $('Prepare Remote CRM Decision').first().json.leadId, executionReference: $execution.id, eventId: $('Prepare Remote CRM Decision').first().json.eventId, correlationId: $('Prepare Remote CRM Decision').first().json.correlationId, attempt: $('Prepare Remote CRM Decision').first().json.attempt }) }}",
         "options": {}
       },
       "id": "anc-wf1-complete-internal",

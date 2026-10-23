@@ -26,6 +26,10 @@ test('CRM v2 workflow exports are tenant-neutral and server-authenticated', asyn
       assert.ok(verify && terminal, `${file} must explicitly complete or fail a claimed CRM action`);
       assert.match(verify.parameters.jsCode, /remoteVerified \? 'completed' : 'failed'/);
       assert.match(terminal.parameters.url, /workflow-events\/complete/);
+      assert.match(terminal.parameters.jsonBody, /executionReference:\s*\$execution\.id/);
+      assert.match(terminal.parameters.jsonBody, /eventId:/);
+      assert.match(terminal.parameters.jsonBody, /correlationId:/);
+      assert.match(terminal.parameters.jsonBody, /attempt:/);
       assert.ok(workflow.connections['Verify Remote CRM Completion'].main[0].some((item) => item.node === 'Finalize Claimed Action'));
       assert.match(workflow.notes, /INACTIVE TEMPLATE/);
     }
@@ -40,6 +44,16 @@ test('every checked-in workflow claim includes its own n8n identity and stays si
     for (const node of claimNodes) {
       assert.match(node.parameters.jsonBody ?? '', /n8nWorkflowId:\s*\$workflow\.id/);
       assert.match(node.parameters.jsonBody ?? '', /limit:\s*1/);
+    }
+    if (file === '03-anc-lead-capture-wf-1.json') {
+      for (const name of ['Complete Async Registration', 'Complete Internal Registration']) {
+        const node = workflow.nodes.find((candidate) => candidate.name === name);
+        assert.ok(node, `${file} must contain ${name}`);
+        assert.match(node.parameters.jsonBody, /executionReference:\s*\$execution\.id/);
+        assert.match(node.parameters.jsonBody, /eventId:/);
+        assert.match(node.parameters.jsonBody, /correlationId:/);
+        assert.match(node.parameters.jsonBody, /attempt:/);
+      }
     }
   }
 });

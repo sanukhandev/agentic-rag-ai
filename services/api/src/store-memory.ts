@@ -286,6 +286,18 @@ export class MemoryStore implements Store {
     this.actions.set(actionId, updated);
     return updated;
   }
+  async transitionActionWithExecution(input: { actionId: string; tenantId: string; fromState: ActionRequest['state']; toState: ActionRequest['state']; result: ActionRequest['result']; providerStatus: string; n8nExecutionRef: string; eventId: string; correlationId: string; expectedAttempt: number; resolveReconciliation?: boolean; outcome?: ActionExecution['outcome'] }): Promise<{ action: ActionRequest; execution: ActionExecution } | null> {
+    const action = this.actions.get(input.actionId);
+    const execution = await this.getActionExecution(input.actionId, input.tenantId);
+    if (!action || action.tenantId !== input.tenantId || !execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.expectedAttempt || (execution.n8nExecutionRef && execution.n8nExecutionRef !== input.n8nExecutionRef)) return null;
+    if (action.state === input.toState && execution.providerStatus === input.providerStatus) return { action, execution };
+    if (action.state !== input.fromState || ['completed', 'failed'].includes(execution.providerStatus) || (execution.providerStatus === 'reconcile_required' && !(input.resolveReconciliation === true && input.providerStatus === 'completed'))) return null;
+    const updatedAction = { ...action, state: input.toState, result: input.result };
+    const updatedExecution = { ...execution, providerStatus: input.providerStatus, n8nExecutionRef: input.n8nExecutionRef, outcome: { ...(execution.outcome ?? {}), ...(input.outcome ?? {}) }, updatedAt: now() };
+    this.actions.set(action.id, updatedAction);
+    this.actionExecutions.set(execution.id, updatedExecution);
+    return { action: updatedAction, execution: updatedExecution };
+  }
   async claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null> {
     const action = this.actions.get(actionId);
     if (!action || action.workflowKey !== workflowKey || action.state !== 'approved') return null;
@@ -433,18 +445,17 @@ export class MemoryStore implements Store {
     const cutoff = Date.parse(timestamp);
     const expired = [...this.actionExecutions.values()].filter((item) => item.providerStatus === 'accepted' && item.deadlineAt && Date.parse(item.deadlineAt) <= cutoff);
     for (const execution of expired) {
+      const action = this.actions.get(execution.actionId);
+      if (!action || action.tenantId !== execution.tenantId || !['approved', 'processing'].includes(action.state)) continue;
       const updated = { ...execution, providerStatus: 'reconcile_required', outcome: { ...(execution.outcome ?? {}), reason: 'completion_deadline_exceeded' }, updatedAt: now() };
       this.actionExecutions.set(updated.id, updated);
-      const action = this.actions.get(execution.actionId);
-      if (action && action.tenantId === execution.tenantId && ['approved', 'processing'].includes(action.state)) {
-        this.actions.set(action.id, { ...action, state: 'reconcile_required' });
-        const session = this.sessions.get(action.sessionId);
-        const current = session?.conversationState;
-        if (session && (!current?.selectedIntentKey || current.selectedIntentKey === action.intentKey) && (!current?.catalogVersionId || current.catalogVersionId === action.catalogVersionId)) {
-          this.sessions.set(session.id, { ...session, lastActivityAt: now(), stateVersion: (session.stateVersion ?? 0) + 1, conversationState: { ...(current ?? newConversationState()), workflowStatus: 'reconcile_required', phase: 'RECONCILE_REQUIRED', pendingPrompt: null } });
-        }
-        this.audits.push({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: 'workflow.reconcile_required', metadata: { actionId: action.id, executionId: execution.id, reason: 'completion_deadline_exceeded', eventId: execution.eventId ?? null, correlationId: execution.correlationId ?? null }, createdAt: now() });
+      this.actions.set(action.id, { ...action, state: 'reconcile_required' });
+      const session = this.sessions.get(action.sessionId);
+      const current = session?.conversationState;
+      if (session && (!current?.selectedIntentKey || current.selectedIntentKey === action.intentKey) && (!current?.catalogVersionId || current.catalogVersionId === action.catalogVersionId)) {
+        this.sessions.set(session.id, { ...session, lastActivityAt: now(), stateVersion: (session.stateVersion ?? 0) + 1, conversationState: { ...(current ?? newConversationState()), workflowStatus: 'reconcile_required', phase: 'RECONCILE_REQUIRED', pendingPrompt: null } });
       }
+      this.audits.push({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: 'workflow.reconcile_required', metadata: { actionId: action.id, executionId: execution.id, reason: 'completion_deadline_exceeded', eventId: execution.eventId ?? null, correlationId: execution.correlationId ?? null }, createdAt: now() });
     }
     return expired.map((execution) => this.actionExecutions.get(execution.id)!).filter(Boolean);
   }

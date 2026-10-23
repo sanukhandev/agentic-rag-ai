@@ -114,7 +114,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, state: $json.state, externalReference: $json.externalReference }) }}",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, state: $json.state, externalReference: $json.externalReference, executionReference: $execution.id, eventId: $('Expand Claimed Events').first().json.eventId, correlationId: $('Expand Claimed Events').first().json.correlationId, attempt: $('Expand Claimed Events').first().json.attempt }) }}",
         "options": {}
       }
     }

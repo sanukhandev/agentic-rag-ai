@@ -187,6 +187,26 @@ export class PostgresStore implements Store {
     const updated = await this.pool.query<ActionRow>('UPDATE action_requests SET state=$1,result=$2 WHERE id=$3 AND tenant_id=$4 AND state=$5 RETURNING *', [toState, result ? JSON.stringify(result) : null, actionId, tenantId, fromState]);
     return updated.rows[0] ? this.action(updated.rows[0]) : null;
   }
+  async transitionActionWithExecution(input: { actionId: string; tenantId: string; fromState: ActionRequest['state']; toState: ActionRequest['state']; result: ActionRequest['result']; providerStatus: string; n8nExecutionRef: string; eventId: string; correlationId: string; expectedAttempt: number; resolveReconciliation?: boolean; outcome?: ActionExecution['outcome'] }): Promise<{ action: ActionRequest; execution: ActionExecution } | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const actionResult = await client.query<ActionRow>('SELECT * FROM action_requests WHERE id=$1 AND tenant_id=$2 FOR UPDATE', [input.actionId, input.tenantId]);
+      const action = actionResult.rows[0];
+      const executionResult = await client.query<ActionExecutionRow>('SELECT * FROM action_executions WHERE action_id=$1 AND tenant_id=$2 ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE', [input.actionId, input.tenantId]);
+      const execution = executionResult.rows[0];
+      if (!action || !execution || execution.event_id !== input.eventId || execution.correlation_id !== input.correlationId || execution.attempt !== input.expectedAttempt || (execution.n8n_execution_ref && execution.n8n_execution_ref !== input.n8nExecutionRef)) { await client.query('ROLLBACK'); return null; }
+      if (action.state === input.toState && execution.provider_status === input.providerStatus) { await client.query('COMMIT'); return { action: this.action(action), execution: this.actionExecution(execution) }; }
+      if (action.state !== input.fromState || ['completed', 'failed'].includes(execution.provider_status) || (execution.provider_status === 'reconcile_required' && !(input.resolveReconciliation === true && input.providerStatus === 'completed'))) { await client.query('ROLLBACK'); return null; }
+      const updatedAction = await client.query<ActionRow>('UPDATE action_requests SET state=$1,result=$2 WHERE id=$3 AND tenant_id=$4 AND state=$5 RETURNING *', [input.toState, input.result ? JSON.stringify(input.result) : null, input.actionId, input.tenantId, input.fromState]);
+      if (!updatedAction.rows[0]) { await client.query('ROLLBACK'); return null; }
+      const updatedExecution = await client.query<ActionExecutionRow>(`UPDATE action_executions SET provider_status=$1,n8n_execution_ref=$2,outcome=COALESCE(outcome,'{}'::jsonb) || COALESCE($3::jsonb,'{}'::jsonb),updated_at=now()
+        WHERE id=$4 AND provider_status=$5 AND event_id=$6 AND correlation_id=$7 AND attempt=$8 RETURNING *`, [input.providerStatus, input.n8nExecutionRef, input.outcome ? JSON.stringify(input.outcome) : null, execution.id, execution.provider_status, input.eventId, input.correlationId, input.expectedAttempt]);
+      if (!updatedExecution.rows[0]) { await client.query('ROLLBACK'); return null; }
+      await client.query('COMMIT');
+      return { action: this.action(updatedAction.rows[0]), execution: this.actionExecution(updatedExecution.rows[0]) };
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+  }
   async claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null> {
     const result = await this.pool.query<ActionRow>(`UPDATE action_requests SET state='processing' WHERE id=$1 AND workflow_key=$2 AND state='approved' RETURNING *`, [actionId, workflowKey]);
     return result.rows[0] ? this.action(result.rows[0]) : null;
@@ -316,7 +336,7 @@ export class PostgresStore implements Store {
       const row = existing.rows[0];
       if (!row) throw new Error('Action execution disappeared after conflict resolution.');
       if (row.provider_status === 'dispatching' && row.attempt < execution.attempt) {
-        const reclaimed = await client.query<ActionExecutionRow>(`UPDATE action_executions SET provider_status='dispatching',attempt=$3,deadline_at=$4,event_id=COALESCE($5,event_id),correlation_id=COALESCE($6,correlation_id),updated_at=now() WHERE id=$1 AND provider_status='dispatching' RETURNING *`, [row.id, execution.id, execution.attempt, execution.deadlineAt, execution.eventId, execution.correlationId]);
+        const reclaimed = await client.query<ActionExecutionRow>(`UPDATE action_executions SET provider_status='dispatching',attempt=$2,deadline_at=$3,event_id=COALESCE($4,event_id),correlation_id=COALESCE($5,correlation_id),updated_at=now() WHERE id=$1 AND provider_status='dispatching' RETURNING *`, [row.id, execution.attempt, execution.deadlineAt, execution.eventId, execution.correlationId]);
         if (reclaimed.rows[0]) { await client.query('COMMIT'); return { execution: this.actionExecution(reclaimed.rows[0]), claimed: true }; }
       }
       await client.query('COMMIT');
@@ -358,29 +378,28 @@ export class PostgresStore implements Store {
       const expired = await client.query<ActionExecutionRow & { session_id: string; intent_key: string | null; action_catalog_version_id: string | null }>(`SELECT execution.*,action.session_id,action.intent_key,action.catalog_version_id AS action_catalog_version_id
         FROM action_executions AS execution JOIN action_requests AS action ON action.id=execution.action_id AND action.tenant_id=execution.tenant_id
         WHERE execution.provider_status='accepted' AND execution.deadline_at IS NOT NULL AND execution.deadline_at <= $1
-        FOR UPDATE SKIP LOCKED`, [timestamp]);
+          AND action.state IN ('approved','processing')
+        FOR UPDATE OF execution, action SKIP LOCKED`, [timestamp]);
       const updated: ActionExecution[] = [];
       for (const row of expired.rows) {
+        const actionResult = await client.query<{ state: string }>(`UPDATE action_requests SET state='reconcile_required',result=COALESCE(result,'{}'::jsonb) || jsonb_build_object('reason','completion_deadline_exceeded')
+            WHERE id=$1 AND tenant_id=$2 AND state IN ('approved','processing') RETURNING state`, [row.action_id, row.tenant_id]);
+        if (!actionResult.rows[0]) continue;
         const result = await client.query<ActionExecutionRow>(`UPDATE action_executions
           SET provider_status='reconcile_required',
               outcome=COALESCE(outcome,'{}'::jsonb) || jsonb_build_object('reason','completion_deadline_exceeded'),
               updated_at=now()
           WHERE id=$1 AND provider_status='accepted'
           RETURNING *`, [row.id]);
-        if (result.rows[0]) {
-          const actionResult = await client.query<{ state: string }>(`UPDATE action_requests SET state='reconcile_required',result=COALESCE(result,'{}'::jsonb) || jsonb_build_object('reason','completion_deadline_exceeded')
-            WHERE id=$1 AND tenant_id=$2 AND state IN ('approved','processing') RETURNING state`, [row.action_id, row.tenant_id]);
-          if (actionResult.rows[0]) {
-            await client.query(`UPDATE chat_sessions
+        if (!result.rows[0]) { throw new Error('Action execution changed while reconciling an expired action.'); }
+        await client.query(`UPDATE chat_sessions
               SET conversation_state=conversation_state || jsonb_build_object('workflowStatus','reconcile_required','phase','RECONCILE_REQUIRED','pendingPrompt',NULL),state_version=state_version+1,last_activity_at=now()
               WHERE id=$1 AND tenant_id=$2
                 AND (conversation_state->>'selectedIntentKey' IS NULL OR conversation_state->>'selectedIntentKey'=$3)
                 AND ($4::uuid IS NULL OR conversation_state->>'catalogVersionId' IS NULL OR conversation_state->>'catalogVersionId'=$4::text)
                 AND conversation_state->>'workflowStatus' NOT IN ('succeeded','failed')`, [row.session_id, row.tenant_id, row.intent_key, row.action_catalog_version_id]);
-            await client.query('INSERT INTO audit_events (id,tenant_id,actor_id,event_name,metadata) VALUES ($1,$2,NULL,$3,$4)', [randomUUID(), row.tenant_id, 'workflow.reconcile_required', JSON.stringify({ actionId: row.action_id, executionId: row.id, reason: 'completion_deadline_exceeded', eventId: row.event_id, correlationId: row.correlation_id })]);
-          }
-          updated.push(this.actionExecution(result.rows[0]));
-        }
+        await client.query('INSERT INTO audit_events (id,tenant_id,actor_id,event_name,metadata) VALUES ($1,$2,NULL,$3,$4)', [randomUUID(), row.tenant_id, 'workflow.reconcile_required', JSON.stringify({ actionId: row.action_id, executionId: row.id, reason: 'completion_deadline_exceeded', eventId: row.event_id, correlationId: row.correlation_id })]);
+        updated.push(this.actionExecution(result.rows[0]));
       }
       await client.query('COMMIT');
       return updated;
