@@ -2,7 +2,7 @@
 
 ## Verified baseline
 
-- Base: `origin/main` at `9f7960a49697deedd4dcb7e65be06cf4c06d2bec`.
+- Base: `origin/main` at `cf07f0320d07c8c321a444eb25e2384cb4e1fcd9` (`chore(deploy): harden Docker VM deployment`).
 - Branch: `feat/rag-v2-reliability-conversation-intelligence`.
 - Existing architecture is API-led: Express/TypeScript owns conversation state, privacy, intent policy and action authorization; PostgreSQL is authoritative; Redis Streams relay events; workers bridge allowlisted n8n workflows; Angular and Next.js consume the API.
 - Existing migrations through `031-catalog-normalization-rollout.sql` are additive and already contain an outbox, a basic inbox, action execution records, catalog bindings, conversation state, CRM records and document jobs.
