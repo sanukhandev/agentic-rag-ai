@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../services/auth.service';
@@ -100,33 +100,32 @@ import { IconComponent } from '../shared/icon.component';
                   <button
                     type="button"
                     (click)="showPassword = !showPassword"
-                    class="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
-                    title="Toggle password visibility"
+                    class="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 transition-colors"
+                    aria-label="Toggle password visibility"
                   >
                     <app-icon [name]="showPassword ? 'eye' : 'lock'" classNames="w-3.5 h-3.5"></app-icon>
                   </button>
                 </div>
               </div>
 
-              <button
-                type="submit"
-                [disabled]="isLoading || !email || !password"
-                class="mt-2 w-full flex items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-50 transition-all button-press"
-              >
-                <span *ngIf="isLoading" class="animate-spin h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full"></span>
-                <span>{{ isLoading ? 'Verifying Credentials...' : 'Sign In to Workspace' }}</span>
-              </button>
+              <div class="pt-2">
+                <button
+                  type="submit"
+                  [disabled]="isLoading || !email || !password"
+                  class="w-full flex items-center justify-center gap-2 rounded-lg bg-neutral-900 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all button-press"
+                >
+                  <span *ngIf="isLoading" class="animate-spin h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full"></span>
+                  <span>{{ isLoading ? 'Authenticating...' : 'Sign In to Operations' }}</span>
+                </button>
+              </div>
             </form>
 
           </div>
 
-          <!-- Trust & Security Policy Note -->
-          <div class="rounded-xl border border-neutral-200/60 bg-neutral-100/50 p-4 text-[11px] text-neutral-500 space-y-1.5">
-            <div class="flex items-center gap-2 font-semibold text-neutral-700">
-              <app-icon name="lock" classNames="w-3.5 h-3.5"></app-icon>
-              <span>Security Baseline & Invariants</span>
-            </div>
-            <p class="leading-relaxed">
+          <!-- Bottom Security Context Note -->
+          <div class="rounded-xl border border-neutral-200/80 bg-neutral-50/70 p-4 text-center">
+            <span class="text-[11px] font-semibold text-neutral-900">Protected Architecture</span>
+            <p class="mt-1 text-[11px] text-neutral-500 leading-relaxed">
               Customer PII remains sealed within the Node API & secured PostgreSQL boundary. Azure AI Foundry receives minimal, approved masked source excerpts.
             </p>
           </div>
@@ -153,31 +152,26 @@ import { IconComponent } from '../shared/icon.component';
 })
 export class LoginPageComponent {
   private readonly auth = inject(AuthService);
-  private readonly cdr = inject(ChangeDetectorRef);
 
   email = 'admin@techcarrot.ae';
   password = '';
   showPassword = false;
-  isLoading = false;
   errorMessage = '';
+
+  get isLoading(): boolean {
+    return this.auth.isAuthenticating();
+  }
 
   handleLogin(): void {
     if (!this.email || !this.password) return;
-    this.isLoading = true;
     this.errorMessage = '';
-    this.cdr.markForCheck();
 
     this.auth.loginWithCredentials(
       this.email,
       this.password,
-      () => {
-        this.isLoading = false;
-        this.cdr.markForCheck();
-      },
+      () => {},
       (err) => {
-        this.isLoading = false;
         this.errorMessage = err;
-        this.cdr.markForCheck();
       }
     );
   }

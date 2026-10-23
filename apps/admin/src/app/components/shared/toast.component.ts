@@ -43,10 +43,10 @@ import { IconComponent } from './icon.component';
 export class ToastComponent {
   private readonly toastService = inject(ToastService);
 
-  toasts: ToastMessage[] = [];
+  readonly toastsSignal = this.toastService.toasts;
 
-  constructor() {
-    this.toastService.toasts$.subscribe((t) => (this.toasts = t));
+  get toasts(): ToastMessage[] {
+    return this.toastService.toasts();
   }
 
   dismiss(id: string): void {
@@ -59,6 +59,7 @@ export class ToastComponent {
         return 'check-circle';
       case 'warning':
       case 'error':
+      case 'alert':
         return 'alert-circle';
       case 'info':
       default:

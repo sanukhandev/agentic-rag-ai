@@ -1,7 +1,8 @@
-import { Component, Input, OnInit, OnDestroy, inject, ElementRef, ViewChild } from '@angular/core';
+import { Component, Input, OnInit, OnChanges, OnDestroy, SimpleChanges, DestroyRef, inject, ElementRef, ViewChild, effect, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
+import { Subscription } from 'rxjs';
 import { DomSanitizer } from '@angular/platform-browser';
 import { IconComponent } from '../shared/icon.component';
 import { BadgeComponent } from '../shared/badge.component';
@@ -82,7 +83,7 @@ interface TenantChatConfig {
           <!-- Reset Conversation Button -->
           <button
             type="button"
-            (click)="resetConversation()"
+            (click)="newConversation()"
             [disabled]="messages.length === 0 && !sessionId"
             class="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 hover:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors button-press shadow-subtle"
             aria-label="Start new conversation"
@@ -349,23 +350,23 @@ interface TenantChatConfig {
               (keydown)="onTextareaKeyDown($event)"
               (input)="adjustTextareaHeight($event)"
               rows="1"
-              placeholder="Ask a question about our verified products or services..."
-              [disabled]="isBusy"
-              class="min-h-[38px] max-h-32 w-full resize-none bg-transparent px-2 py-1.5 text-xs sm:text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none leading-relaxed"
+              [placeholder]="isRestoringSession ? 'Restoring verified conversation session...' : 'Ask a question about our verified products or services...'"
+              [disabled]="isBusy || isRestoringSession"
+              class="min-h-[38px] max-h-32 w-full resize-none bg-transparent px-2 py-1.5 text-xs sm:text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none leading-relaxed disabled:opacity-40"
               aria-label="Your message"
             ></textarea>
 
             <!-- Minimal Send Button -->
             <button
               type="submit"
-              [disabled]="isBusy || !currentInput.trim()"
+              [disabled]="isBusy || isRestoringSession || !currentInput.trim()"
               class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white shadow-subtle transition-all hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed button-press"
               aria-label="Send message"
               title="Send message"
             >
               <app-icon
-                [name]="isBusy ? 'refresh' : 'send'"
-                [classNames]="isBusy ? 'w-4 h-4 animate-spin text-white' : 'w-4 h-4 text-white'"
+                [name]="(isBusy || isRestoringSession) ? 'refresh' : 'send'"
+                [classNames]="(isBusy || isRestoringSession) ? 'w-4 h-4 animate-spin text-white' : 'w-4 h-4 text-white'"
               ></app-icon>
             </button>
           </div>
@@ -406,7 +407,8 @@ interface TenantChatConfig {
     }
   `]
 })
-export class CustomerChatComponent implements OnInit, OnDestroy {
+export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
+  private readonly destroyRef = inject(DestroyRef);
   @Input() initialTenantSlug?: string;
   @Input() standalone = false;
 
@@ -432,56 +434,83 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
   messages: CustomerChatMessage[] = [];
   currentInput = '';
   isBusy = false;
+  isRestoringSession = false;
   errorMessage = '';
   canRetry = false;
   lastFailedMessage = '';
 
   // Mode: Administrative Testing vs Clean Customer Interface
   isAdminTestingMode = false;
-  canAccessAdminTesting = false;
+  get canAccessAdminTesting(): boolean { return this.state.isAuthenticated(); }
 
   private readonly apiBase = inject(API_BASE_URL);
+  private currentGeneration = 0;
+  private readonly pendingHttpSubscriptions = new Set<Subscription>();
+
+  constructor() {
+    effect(() => {
+      const selectedSlug = this.state.selectedTenant()?.slug;
+      if (!this.initialTenantSlug && selectedSlug && selectedSlug !== this.tenantSlug) {
+        untracked(() => this.resolveAndLoad(selectedSlug));
+      }
+    });
+  }
 
   ngOnInit(): void {
-    // 1. Resolve tenant context without customer manual slug input (Requirement 3)
-    this.tenantSlug = this.initialTenantSlug ?? resolveTenantSlug();
+    const initial = this.initialTenantSlug || resolveTenantSlug() || (this.state.selectedTenant()?.slug ?? '');
+    this.resolveAndLoad(initial);
 
-    // Check if user is authenticated admin
-    this.state.isAuthenticated$.subscribe((auth) => {
-      this.canAccessAdminTesting = auth;
-    });
-
-    // Check if URL specifies debug mode
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('debug') === '1' || params.get('adminMode') === 'true') {
         this.isAdminTestingMode = true;
       }
     }
+  }
 
-    this.loadTenantConfig();
-    this.restoreOrInitSession();
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['initialTenantSlug'] && !changes['initialTenantSlug'].isFirstChange()) {
+      const nextSlug = changes['initialTenantSlug'].currentValue;
+      if (nextSlug && nextSlug !== this.tenantSlug) {
+        this.resolveAndLoad(nextSlug);
+      }
+    }
+  }
+
+  private resolveAndLoad(slug: string): void {
+    const generation = ++this.currentGeneration;
+    const targetSlug = (slug || (this.state.selectedTenant()?.slug ?? '')).trim();
+    this.tenantSlug = targetSlug;
+    this.resetInMemoryConversation();
+    if (!targetSlug) return;
+    this.loadTenantConfig(targetSlug, generation);
+    this.restoreOrInitSession(targetSlug, generation);
   }
 
   ngOnDestroy(): void {
     for (const timer of this.actionPollTimers) clearTimeout(timer);
     this.actionPollTimers.clear();
+    for (const sub of this.pendingHttpSubscriptions) sub.unsubscribe();
+    this.pendingHttpSubscriptions.clear();
   }
 
   toggleAdminTestingMode(): void {
     this.isAdminTestingMode = !this.isAdminTestingMode;
   }
 
-  loadTenantConfig(): void {
-    if (!isValidTenantSlug(this.tenantSlug)) {
+  loadTenantConfig(targetSlug = this.tenantSlug, generation = this.currentGeneration): void {
+    if (!isValidTenantSlug(targetSlug)) {
       this.isLoadingConfig = false;
       this.errorMessage = 'Open chat with a tenant-specific URL after an organization is created.';
       return;
     }
     this.isLoadingConfig = true;
-    this.http.get<TenantChatConfig>(`${this.apiBase}/api/v1/chat/config?tenantSlug=${encodeURIComponent(this.tenantSlug)}`)
+    let sub: Subscription | undefined;
+    sub = this.http.get<TenantChatConfig>(`${this.apiBase}/api/v1/chat/config?tenantSlug=${encodeURIComponent(targetSlug)}`)
       .subscribe({
         next: (config) => {
+          if (sub) this.pendingHttpSubscriptions.delete(sub);
+          if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) return;
           this.isLoadingConfig = false;
           if (config?.tenant) {
             this.tenantName = config.tenant.name;
@@ -494,43 +523,60 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
           }
         },
         error: () => {
+          if (sub) this.pendingHttpSubscriptions.delete(sub);
+          if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) return;
           this.isLoadingConfig = false;
           this.errorMessage = 'Tenant chat configuration is unavailable.';
         }
       });
+    if (sub && !sub.closed) this.pendingHttpSubscriptions.add(sub);
   }
 
-  restoreOrInitSession(): void {
-    if (typeof window === 'undefined' || !isValidTenantSlug(this.tenantSlug)) return;
-    const storageKey = `agentic-rag-session:${this.tenantSlug}`;
+  restoreOrInitSession(targetSlug = this.tenantSlug, generation = this.currentGeneration): void {
+    if (typeof window === 'undefined' || !isValidTenantSlug(targetSlug)) return;
+    const storageKey = `agentic-rag-session:${targetSlug}`;
     const saved = window.localStorage.getItem(storageKey);
 
     if (saved) {
-      this.http.get<{ sessionId: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean; createdAt: string }> }>(`${this.apiBase}/api/v1/chat/sessions/${saved}`)
+      this.isRestoringSession = true;
+      let sub: Subscription | undefined;
+      sub = this.http.get<{ sessionId: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean; createdAt: string }> }>(`${this.apiBase}/api/v1/chat/sessions/${saved}`)
         .subscribe({
           next: (res) => {
+            if (sub) this.pendingHttpSubscriptions.delete(sub);
+            if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) {
+              this.isRestoringSession = false;
+              return;
+            }
+            this.isRestoringSession = false;
             this.sessionId = res.sessionId;
             this.messages = res.messages.map((m) => this.mapHistoryMessage(m));
             this.scrollToBottom();
           },
           error: () => {
+            if (sub) this.pendingHttpSubscriptions.delete(sub);
+            if (this.currentGeneration !== generation || this.tenantSlug !== targetSlug) {
+              this.isRestoringSession = false;
+              return;
+            }
+            this.isRestoringSession = false;
             window.localStorage.removeItem(storageKey);
             this.sessionId = null;
             this.messages = [];
           }
         });
+      if (sub && !sub.closed) this.pendingHttpSubscriptions.add(sub);
     }
   }
 
   sendMessage(): void {
     const text = this.currentInput.trim();
-    if (!text || this.isBusy) return;
+    if (!text || this.isBusy || this.isRestoringSession) return;
 
     this.errorMessage = '';
     this.canRetry = false;
     this.lastFailedMessage = text;
 
-    // Add user message to UI immediately
     const userMsg: CustomerChatMessage = {
       id: `usr-${Date.now()}`,
       role: 'user',
@@ -545,33 +591,41 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
     this.scrollToBottom();
 
     this.isBusy = true;
+    const currentTenant = this.tenantSlug;
+    const generation = this.currentGeneration;
 
-    // Ensure session exists
     if (!this.sessionId) {
-      this.http.post<{ sessionId: string }>(`${this.apiBase}/api/v1/chat/sessions`, { tenantSlug: this.tenantSlug })
+      let sub: Subscription | undefined;
+      sub = this.http.post<{ sessionId: string }>(`${this.apiBase}/api/v1/chat/sessions`, { tenantSlug: currentTenant })
         .subscribe({
           next: (sessionRes) => {
+            if (sub) this.pendingHttpSubscriptions.delete(sub);
+            if (this.currentGeneration !== generation || this.tenantSlug !== currentTenant) return;
             this.sessionId = sessionRes.sessionId;
             if (typeof window !== 'undefined') {
-              window.localStorage.setItem(`agentic-rag-session:${this.tenantSlug}`, this.sessionId);
+              window.localStorage.setItem(`agentic-rag-session:${currentTenant}`, this.sessionId);
             }
-            this.postChatMessage(text);
+            this.postChatMessage(text, currentTenant, this.sessionId, generation);
           },
           error: (err) => {
+            if (sub) this.pendingHttpSubscriptions.delete(sub);
+            if (this.currentGeneration !== generation || this.tenantSlug !== currentTenant) return;
             this.isBusy = false;
             this.errorMessage = err?.error?.message ?? 'Could not establish a secure conversation session.';
             this.canRetry = true;
           }
         });
+      if (sub && !sub.closed) this.pendingHttpSubscriptions.add(sub);
     } else {
-      this.postChatMessage(text);
+      this.postChatMessage(text, currentTenant, this.sessionId, generation);
     }
   }
 
-  private postChatMessage(message: string): void {
+  private postChatMessage(message: string, tenantSlug: string, sessionId: string, generation: number): void {
     const clientMessageId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `msg-${Date.now()}`;
 
-    this.http.post<{
+    let sub: Subscription | undefined;
+    sub = this.http.post<{
       messageId: string;
       answer: string;
       grounded: boolean;
@@ -580,14 +634,15 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
       actionProposal?: ChatActionProposal | null;
       requestId: string;
     }>(`${this.apiBase}/api/v1/chat/messages`, {
-      sessionId: this.sessionId,
+      sessionId,
       message,
       clientMessageId
     }).subscribe({
       next: (res) => {
+        if (sub) this.pendingHttpSubscriptions.delete(sub);
+        if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
         this.isBusy = false;
 
-        // Apply natural language formatting to technical abstentions (Requirement 9)
         const naturalText = formatNaturalAbstention(res.answer);
         const safeHtml = this.sanitizer.bypassSecurityTrustHtml(renderMarkdown(naturalText));
 
@@ -615,22 +670,31 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
         this.scrollToBottom();
       },
       error: (err) => {
+        if (sub) this.pendingHttpSubscriptions.delete(sub);
+        if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
         this.isBusy = false;
         this.errorMessage = err?.error?.message ?? 'The assistant was unable to respond. Please try again.';
         this.canRetry = true;
       }
     });
+    if (sub && !sub.closed) this.pendingHttpSubscriptions.add(sub);
   }
 
   confirmAction(proposalId: string): void {
     if (!this.sessionId) return;
     this.isBusy = true;
+    const currentTenant = this.tenantSlug;
+    const currentSession = this.sessionId;
+    const generation = this.currentGeneration;
 
-    this.http.post<{ action?: { state: ChatActionState }; message?: string; error?: { message?: string } }>(
+    let sub: Subscription | undefined;
+    sub = this.http.post<{ action?: { state: ChatActionState }; message?: string; error?: { message?: string } }>(
       `${this.apiBase}/api/v1/chat/actions/${proposalId}/confirm`,
-      { sessionId: this.sessionId, confirmed: true }
+      { sessionId: currentSession, confirmed: true }
     ).subscribe({
       next: (res) => {
+        if (sub) this.pendingHttpSubscriptions.delete(sub);
+        if (this.currentGeneration !== generation || this.tenantSlug !== currentTenant || this.sessionId !== currentSession) return;
         this.isBusy = false;
         const state = res.action?.state ?? 'completed';
         const target = this.messages.find((m) => m.actionProposal?.id === proposalId);
@@ -638,23 +702,32 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
           target.actionState = state;
           target.actionOutcome = res.message ?? 'Your request is registered and will continue processing asynchronously.';
         }
-        if (state === 'approved' || state === 'processing') this.pollActionStatus(proposalId);
+        if (state === 'approved' || state === 'processing') {
+          this.pollActionStatus(proposalId, 0, currentTenant, currentSession, generation);
+        }
       },
       error: () => {
+        if (sub) this.pendingHttpSubscriptions.delete(sub);
+        if (this.currentGeneration !== generation || this.tenantSlug !== currentTenant || this.sessionId !== currentSession) return;
         this.isBusy = false;
         this.errorMessage = 'The workflow action could not be confirmed.';
       }
     });
+    if (sub && !sub.closed) this.pendingHttpSubscriptions.add(sub);
   }
 
-  private pollActionStatus(proposalId: string, attempt = 0): void {
-    if (!this.sessionId || attempt >= 90) return;
+  private pollActionStatus(proposalId: string, attempt = 0, tenantSlug = this.tenantSlug, sessionId = this.sessionId ?? '', generation = this.currentGeneration): void {
+    if (!sessionId || attempt >= 90) return;
     const timer = setTimeout(() => {
       this.actionPollTimers.delete(timer);
-      this.http.get<{ action?: { state?: ChatActionState } }>(`${this.apiBase}/api/v1/chat/actions/${proposalId}?sessionId=${encodeURIComponent(this.sessionId ?? '')}`).subscribe({
+      if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
+      let sub: Subscription | undefined;
+      sub = this.http.get<{ action?: { state?: ChatActionState } }>(`${this.apiBase}/api/v1/chat/actions/${proposalId}?sessionId=${encodeURIComponent(sessionId)}`).subscribe({
         next: (response) => {
+          if (sub) this.pendingHttpSubscriptions.delete(sub);
+          if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
           const state = response.action?.state;
-          if (!state) { this.pollActionStatus(proposalId, attempt + 1); return; }
+          if (!state) { this.pollActionStatus(proposalId, attempt + 1, tenantSlug, sessionId, generation); return; }
           const target = this.messages.find((message) => message.actionProposal?.id === proposalId);
           if (target) {
             target.actionState = state;
@@ -670,10 +743,17 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
                   ? 'Your request is registered and queued for team review.'
                   : target.actionOutcome;
           }
-          if (state !== 'completed' && state !== 'failed' && state !== 'reconcile_required' && state !== 'awaiting_customer' && state !== 'human_review') this.pollActionStatus(proposalId, attempt + 1);
+          if (state !== 'completed' && state !== 'failed' && state !== 'reconcile_required' && state !== 'awaiting_customer' && state !== 'human_review') {
+            this.pollActionStatus(proposalId, attempt + 1, tenantSlug, sessionId, generation);
+          }
         },
-        error: () => this.pollActionStatus(proposalId, attempt + 1)
+        error: () => {
+          if (sub) this.pendingHttpSubscriptions.delete(sub);
+          if (this.currentGeneration !== generation || this.tenantSlug !== tenantSlug || this.sessionId !== sessionId) return;
+          this.pollActionStatus(proposalId, attempt + 1, tenantSlug, sessionId, generation);
+        }
       });
+      if (sub && !sub.closed) this.pendingHttpSubscriptions.add(sub);
     }, 1000);
     this.actionPollTimers.add(timer);
   }
@@ -685,15 +765,32 @@ export class CustomerChatComponent implements OnInit, OnDestroy {
     }
   }
 
-  resetConversation(): void {
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(`agentic-rag-session:${this.tenantSlug}`);
-    }
+  resetInMemoryConversation(): void {
     this.sessionId = null;
     this.messages = [];
     this.errorMessage = '';
     this.currentInput = '';
+    this.isBusy = false;
+    this.isRestoringSession = false;
+    this.canRetry = false;
+    this.lastFailedMessage = '';
+    for (const timer of this.actionPollTimers) clearTimeout(timer);
+    this.actionPollTimers.clear();
+    for (const sub of this.pendingHttpSubscriptions) sub.unsubscribe();
+    this.pendingHttpSubscriptions.clear();
     this.resetTextareaHeight();
+  }
+
+  newConversation(): void {
+    ++this.currentGeneration;
+    if (typeof window !== 'undefined' && isValidTenantSlug(this.tenantSlug)) {
+      window.localStorage.removeItem(`agentic-rag-session:${this.tenantSlug}`);
+    }
+    this.resetInMemoryConversation();
+  }
+
+  resetConversation(): void {
+    this.newConversation();
   }
 
   copyMessage(msg: CustomerChatMessage): void {
