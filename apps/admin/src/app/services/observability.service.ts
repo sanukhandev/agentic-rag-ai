@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
 import { Health, Metrics, WorkflowRun, AuditEvent } from '../types/admin.types';
@@ -44,6 +44,20 @@ export class ObservabilityService {
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
 
+  // Angular Signals (Primary reactive state)
+  private readonly _health = signal<Health>(EMPTY_HEALTH);
+  private readonly _metrics = signal<Metrics>(EMPTY_METRICS);
+  private readonly _workflowRuns = signal<WorkflowRun[]>([]);
+  private readonly _auditEvents = signal<AuditEvent[]>([]);
+  private readonly _isLoading = signal<boolean>(false);
+
+  readonly health = this._health.asReadonly();
+  readonly metrics = this._metrics.asReadonly();
+  readonly workflowRuns = this._workflowRuns.asReadonly();
+  readonly auditEvents = this._auditEvents.asReadonly();
+  readonly isLoading = this._isLoading.asReadonly();
+
+  // Observable streams for backwards compatibility
   private readonly healthSubject = new BehaviorSubject<Health>(EMPTY_HEALTH);
   private readonly metricsSubject = new BehaviorSubject<Metrics>(EMPTY_METRICS);
   private readonly workflowRunsSubject = new BehaviorSubject<WorkflowRun[]>([]);
@@ -56,27 +70,11 @@ export class ObservabilityService {
   readonly auditEvents$: Observable<AuditEvent[]> = this.auditEventsSubject.asObservable();
   readonly isLoading$: Observable<boolean> = this.isLoadingSubject.asObservable();
 
-  get health(): Health {
-    return this.healthSubject.value;
-  }
-
-  get metrics(): Metrics {
-    return this.metricsSubject.value;
-  }
-
-  get workflowRuns(): WorkflowRun[] {
-    return this.workflowRunsSubject.value;
-  }
-
-  get auditEvents(): AuditEvent[] {
-    return this.auditEventsSubject.value;
-  }
-
   loadHealth(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.get<Health>(`${this.apiBase}/api/v1/admin/services/health`).pipe(
       catchError(() => {
-        const current = this.healthSubject.value;
+        const current = this._health();
         if (current?.checkedAt && Object.keys(current.checks).length > 0) {
           return of(current);
         }
@@ -94,28 +92,43 @@ export class ObservabilityService {
           }
         } satisfies Health);
       })
-    ).subscribe((data) => this.healthSubject.next(data));
+    ).subscribe((data) => {
+      this._health.set(data);
+      this.healthSubject.next(data);
+    });
   }
 
   loadMetrics(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.get<{ metrics: Metrics }>(`${this.apiBase}/api/v1/admin/dashboard/overview`).pipe(
       catchError(() => of({ metrics: EMPTY_METRICS }))
-    ).subscribe((res) => this.metricsSubject.next(res.metrics));
+    ).subscribe((res) => {
+      const metrics = res.metrics ?? EMPTY_METRICS;
+      this._metrics.set(metrics);
+      this.metricsSubject.next(metrics);
+    });
   }
 
   loadWorkflowRuns(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.get<{ items: WorkflowRun[] }>(`${this.apiBase}/api/v1/admin/workflow-runs`).pipe(
       catchError(() => of({ items: [] }))
-    ).subscribe((res) => this.workflowRunsSubject.next(res.items ?? []));
+    ).subscribe((res) => {
+      const items = res.items ?? [];
+      this._workflowRuns.set(items);
+      this.workflowRunsSubject.next(items);
+    });
   }
 
   loadAudit(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.get<{ items: AuditEvent[] }>(`${this.apiBase}/api/v1/admin/audit`).pipe(
       catchError(() => of({ items: [] }))
-    ).subscribe((res) => this.auditEventsSubject.next(res.items ?? []));
+    ).subscribe((res) => {
+      const items = res.items ?? [];
+      this._auditEvents.set(items);
+      this.auditEventsSubject.next(items);
+    });
   }
 
   refreshTelemetry(): void {

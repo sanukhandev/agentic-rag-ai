@@ -1,5 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef, DestroyRef, inject } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, effect, untracked, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -346,7 +345,7 @@ export class AiStudioComponent implements OnInit, OnDestroy {
   persona: Persona = { name: '', greeting: '', personality: '', tone: '', speakingStyle: '', permittedLanguages: [], contextWindowMessages: 10, voiceName: '', voiceLanguage: 'en-US', voiceRate: 1, voicePitch: 1, voiceVolume: 1 };
 
   languagesInput = '';
-  versions: PersonaVersion[] = [];
+  get versions(): PersonaVersion[] { return this.state.personaVersions(); }
   availableVoices: SpeechSynthesisVoice[] = [];
   voiceSelection = '';
   private readonly updateVoices = (): void => {
@@ -361,14 +360,17 @@ export class AiStudioComponent implements OnInit, OnDestroy {
   testInput = '';
 
   constructor() {
-    this.state.persona$.subscribe((p) => {
-      if (!this.state.personaService.personaDraft) this.applyPersona(p);
-    });
-    const draft = this.state.personaService.personaDraft;
-    if (draft) this.applyPersona(draft);
-    this.state.personaVersions$.subscribe((v) => {
-      this.versions = v;
-      this.cdr.markForCheck();
+    const initialDraft = untracked(() => this.state.personaService.personaDraft());
+    if (initialDraft) {
+      this.applyPersona(initialDraft);
+    }
+
+    effect(() => {
+      const p = this.state.persona();
+      const currentDraft = untracked(() => this.state.personaService.personaDraft());
+      if (!currentDraft) {
+        untracked(() => this.applyPersona(p));
+      }
     });
   }
 

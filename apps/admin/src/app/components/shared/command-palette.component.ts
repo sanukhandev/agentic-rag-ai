@@ -1,19 +1,12 @@
-import { Component, HostListener, ChangeDetectorRef, DestroyRef, inject } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, HostListener, effect, untracked, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
-import { Tenant, Source, NavSection } from '../../types/admin.types';
+import { Tenant, Source } from '../../types/admin.types';
 import { IconComponent } from './icon.component';
+import { CommandItem, filterPermittedCommands } from './command-palette-utils';
 
-interface CommandItem {
-  id: string;
-  title: string;
-  category: 'Navigation' | 'Actions' | 'Tenants' | 'Sources';
-  icon: string;
-  shortcut?: string;
-  action: () => void;
-}
+export type { CommandItem };
 
 @Component({
   selector: 'app-command-palette',
@@ -88,31 +81,23 @@ interface CommandItem {
 })
 export class CommandPaletteComponent {
   private readonly state = inject(AdminStateService);
-  private readonly cdr = inject(ChangeDetectorRef);
 
-  isOpen = false;
+  get isOpen(): boolean { return this.state.commandPaletteOpen(); }
+  get tenants(): Tenant[] { return this.state.tenants(); }
+  get sources(): Source[] { return this.state.sources(); }
+
   query = '';
   selectedIndex = 0;
 
-  tenants: Tenant[] = [];
-  sources: Source[] = [];
-
   constructor() {
-    this.state.commandPaletteOpen$.subscribe((open) => {
-      this.isOpen = open;
+    effect(() => {
+      const open = this.state.commandPaletteOpen();
       if (open) {
-        this.query = '';
-        this.selectedIndex = 0;
+        untracked(() => {
+          this.query = '';
+          this.selectedIndex = 0;
+        });
       }
-      this.cdr.markForCheck();
-    });
-    this.state.tenants$.subscribe((t) => {
-      this.tenants = t;
-      this.cdr.markForCheck();
-    });
-    this.state.sources$.subscribe((s) => {
-      this.sources = s;
-      this.cdr.markForCheck();
     });
   }
 
@@ -157,142 +142,29 @@ export class CommandPaletteComponent {
   }
 
   get allItems(): CommandItem[] {
-    const list: CommandItem[] = [
-      {
-        id: 'nav-overview',
-        title: 'Go to Overview Dashboard',
-        category: 'Navigation',
-        icon: 'overview',
-        action: () => this.state.setSection('overview')
+    return filterPermittedCommands({
+      isPlatformAdmin: this.state.isPlatformAdmin(),
+      canAccessSection: (sec) => this.state.canAccessSection(sec),
+      tenants: this.tenants,
+      sources: this.sources,
+      onNavigate: (sec) => this.state.setSection(sec),
+      onSelectTenant: (t) => {
+        this.state.selectTenant(t);
+        this.state.setSection('organizations');
       },
-      {
-        id: 'nav-organizations',
-        title: 'Go to Organizations Directory',
-        category: 'Navigation',
-        icon: 'organizations',
-        action: () => this.state.setSection('organizations')
+      onOpenCreateOrg: () => {
+        this.state.setSection('organizations');
+        this.state.openCreateOrgDrawer();
       },
-      {
-        id: 'nav-knowledge',
-        title: 'Open Content',
-        category: 'Navigation',
-        icon: 'knowledge',
-        action: () => this.state.setSection('knowledge')
+      onOpenUpload: () => {
+        this.state.setSection('knowledge');
+        this.state.openUploadModal();
       },
-      {
-        id: 'nav-studio',
-        title: 'Open Assistant Settings',
-        category: 'Navigation',
-        icon: 'studio',
-        action: () => this.state.setSection('studio')
-      },
-      {
-        id: 'nav-chat',
-        title: 'Preview Customer Chat',
-        category: 'Navigation',
-        icon: 'chat',
-        action: () => this.state.setSection('chat')
-      },
-      {
-        id: 'nav-crm',
-        title: 'Review Leads',
-        category: 'Navigation',
-        icon: 'users',
-        action: () => this.state.setSection('crm')
-      },
-      {
-        id: 'nav-observability',
-        title: 'Go to Observability & Telemetry Matrix',
-        category: 'Navigation',
-        icon: 'observability',
-        action: () => this.state.setSection('observability')
-      },
-      {
-        id: 'nav-settings',
-        title: 'Open Workspace Settings',
-        category: 'Navigation',
-        icon: 'settings',
-        action: () => this.state.setSection('settings')
-      },
-      {
-        id: 'act-new-org',
-        title: 'Provision New Organization',
-        category: 'Actions',
-        icon: 'plus',
-        action: () => {
-          this.state.setSection('organizations');
-          this.state.openCreateOrgDrawer();
-        }
-      },
-      {
-        id: 'act-stage-source',
-        title: 'Add Content',
-        category: 'Actions',
-        icon: 'upload',
-        action: () => {
-          this.state.setSection('knowledge');
-          this.state.openUploadModal();
-        }
-      },
-      {
-        id: 'act-purge-sessions',
-        title: 'Execute 24h Expired Sessions Purge',
-        category: 'Actions',
-        icon: 'trash',
-        action: () => {
-          this.state.setSection('settings');
-          this.state.showToast('info', 'Retention Tool', 'Opening session retention purge panel.');
-        }
+      onPurgeSessions: () => {
+        this.state.setSection('settings');
+        this.state.showToast('info', 'Retention Tool', 'Opening session retention purge panel.');
       }
-    ];
-
-    const sectionByCommand: Record<string, NavSection> = {
-      'nav-overview': 'overview',
-      'nav-organizations': 'organizations',
-      'nav-knowledge': 'knowledge',
-      'nav-studio': 'studio',
-      'nav-chat': 'chat',
-      'nav-crm': 'crm',
-      'nav-observability': 'observability',
-      'nav-settings': 'settings',
-      'act-new-org': 'organizations',
-      'act-stage-source': 'knowledge',
-      'act-purge-sessions': 'settings'
-    };
-
-    const permittedList = list.filter((item) => {
-      const section = sectionByCommand[item.id];
-      return !section || this.state.canAccessSection(section);
     });
-
-    if (!this.state.isPlatformAdmin) return permittedList;
-
-    // Add tenants
-    for (const t of this.tenants) {
-      permittedList.push({
-        id: `tenant-${t.id}`,
-        title: `Tenant: ${t.name} (${t.slug})`,
-        category: 'Tenants',
-        icon: 'building',
-        action: () => {
-          this.state.selectTenant(t);
-          this.state.setSection('organizations');
-        }
-      });
-    }
-
-    // Add sources
-    for (const s of this.sources.slice(0, 5)) {
-      permittedList.push({
-        id: `source-${s.id}`,
-        title: `Source: ${s.title}`,
-        category: 'Sources',
-        icon: 'file-text',
-        action: () => this.state.setSection('knowledge')
-      });
-    }
-
-    return permittedList;
   }
 
   get filteredItems(): CommandItem[] {

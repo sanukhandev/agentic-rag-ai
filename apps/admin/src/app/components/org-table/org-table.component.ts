@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef, DestroyRef, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -240,7 +240,6 @@ import { BadgeComponent } from '../shared/badge.component';
 })
 export class OrgTableComponent implements OnInit {
   private readonly state = inject(AdminStateService);
-  private readonly cdr = inject(ChangeDetectorRef);
 
   searchQuery = '';
   selectedStatusFilter: 'all' | TenantStatus = 'all';
@@ -252,14 +251,7 @@ export class OrgTableComponent implements OnInit {
     { label: 'Archived', value: 'archived' }
   ];
 
-  tenants: Tenant[] = [];
-
-  constructor() {
-    this.state.tenants$.subscribe((t) => {
-      this.tenants = t;
-      this.cdr.markForCheck();
-    });
-  }
+  get tenants(): Tenant[] { return this.state.tenants(); }
 
   ngOnInit(): void {
     this.state.loadTenants();

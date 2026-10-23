@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
 import { Channel, ChannelAuthMode, ChannelCredential, TenantDomain, Member, MemberRole } from '../types/admin.types';
@@ -16,6 +16,23 @@ export class SettingsService {
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
 
+  // Angular Signals (Primary reactive state)
+  private readonly _channel = signal<Channel>({
+    publicOrigin: null,
+    publicChatEnabled: false
+  });
+  private readonly _domains = signal<TenantDomain[]>([]);
+  private readonly _members = signal<Member[]>([]);
+  private readonly _channelCredentials = signal<ChannelCredential[]>([]);
+  private readonly _isLoading = signal<boolean>(false);
+
+  readonly channel = this._channel.asReadonly();
+  readonly domains = this._domains.asReadonly();
+  readonly members = this._members.asReadonly();
+  readonly channelCredentials = this._channelCredentials.asReadonly();
+  readonly isLoading = this._isLoading.asReadonly();
+
+  // Observable streams for backwards compatibility
   private readonly channelSubject = new BehaviorSubject<Channel>({
     publicOrigin: null,
     publicChatEnabled: false
@@ -31,40 +48,30 @@ export class SettingsService {
   readonly channelCredentials$: Observable<ChannelCredential[]> = this.channelCredentialsSubject.asObservable();
   readonly isLoading$: Observable<boolean> = this.isLoadingSubject.asObservable();
 
-  get channel(): Channel {
-    return this.channelSubject.value;
-  }
-
-  get domains(): TenantDomain[] {
-    return this.domainsSubject.value;
-  }
-
-  get members(): Member[] {
-    return this.membersSubject.value;
-  }
-
-  get channelCredentials(): ChannelCredential[] {
-    return this.channelCredentialsSubject.value;
-  }
-
   loadChannel(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.get<Channel>(`${this.apiBase}/api/v1/admin/channel`).pipe(
       catchError(() => of({ publicOrigin: null, publicChatEnabled: false }))
-    ).subscribe((res) => this.channelSubject.next(res));
+    ).subscribe((res) => {
+      this._channel.set(res);
+      this.channelSubject.next(res);
+    });
   }
 
   saveChannel(channel: Channel): void {
-    if (!this.auth.token) return;
-    const previous = this.channelSubject.value;
+    if (!this.auth.token()) return;
+    const previous = this._channel();
+    this._channel.set(channel);
     this.channelSubject.next(channel);
 
     this.http.patch<Channel>(`${this.apiBase}/api/v1/admin/channel`, channel).subscribe({
       next: (res) => {
+        this._channel.set(res);
         this.channelSubject.next(res);
         this.toast.show('success', 'Policy Saved', 'Public chat channel origin updated.');
       },
       error: () => {
+        this._channel.set(previous);
         this.channelSubject.next(previous);
         this.toast.show('error', 'Save Failed', 'Could not save chat channel policy.');
       }
@@ -72,17 +79,20 @@ export class SettingsService {
   }
 
   loadDomains(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.get<{ items: TenantDomain[] }>(`${this.apiBase}/api/v1/admin/domains`).pipe(
       catchError(() => of({ items: [] }))
-    ).subscribe((res) => this.domainsSubject.next(res.items ?? []));
+    ).subscribe((res) => {
+      const items = res.items ?? [];
+      this._domains.set(items);
+      this.domainsSubject.next(items);
+    });
   }
 
   addDomain(hostname: string): void {
     const cleanHostname = hostname.trim().toLowerCase();
     if (!cleanHostname) return;
-
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/domains`, { hostname: cleanHostname }).subscribe({
       next: () => {
@@ -94,7 +104,7 @@ export class SettingsService {
   }
 
   removeDomain(domain: TenantDomain): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
 
     this.http.delete(`${this.apiBase}/api/v1/admin/domains/${domain.id}`).subscribe({
       next: () => {
@@ -106,15 +116,19 @@ export class SettingsService {
   }
 
   loadChannelCredentials(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.get<{ items: ChannelCredential[] }>(`${this.apiBase}/api/v1/admin/channels`).pipe(
       catchError(() => of({ items: [] }))
-    ).subscribe((res) => this.channelCredentialsSubject.next(res.items ?? []));
+    ).subscribe((res) => {
+      const items = res.items ?? [];
+      this._channelCredentials.set(items);
+      this.channelCredentialsSubject.next(items);
+    });
   }
 
   createChannelCredential(channel: string, authMode: ChannelAuthMode, onCreated?: (secret: string) => void): void {
     const cleanChannel = channel.trim().toLowerCase();
-    if (!cleanChannel || !this.auth.token) return;
+    if (!cleanChannel || !this.auth.token()) return;
 
     this.http.post<{ credential: ChannelCredential; secret: string }>(`${this.apiBase}/api/v1/admin/channels`, { channel: cleanChannel, authMode }).subscribe({
       next: (res) => {
@@ -127,7 +141,7 @@ export class SettingsService {
   }
 
   revokeChannelCredential(credential: ChannelCredential): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/channels/${credential.id}/revoke`, {}).subscribe({
       next: () => {
@@ -139,15 +153,19 @@ export class SettingsService {
   }
 
   loadMembers(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.get<{ items: Member[] }>(`${this.apiBase}/api/v1/admin/members`).pipe(
       catchError(() => of({ items: [] }))
-    ).subscribe((res) => this.membersSubject.next(res.items ?? []));
+    ).subscribe((res) => {
+      const items = res.items ?? [];
+      this._members.set(items);
+      this.membersSubject.next(items);
+    });
   }
 
   addMember(email: string, password: string, role: MemberRole): void {
     const cleanEmail = email.trim().toLowerCase();
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/members`, { email: cleanEmail, password, role }).subscribe({
       next: () => {
@@ -159,7 +177,7 @@ export class SettingsService {
   }
 
   purgeExpiredSessions(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
 
     const before = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     this.http.post(`${this.apiBase}/api/v1/admin/retention/purge-sessions`, { before }).subscribe({

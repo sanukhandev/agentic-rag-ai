@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
 import { Source, IngestionJob, SourceAudience } from '../types/admin.types';
@@ -15,6 +15,16 @@ export class KnowledgeService {
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
 
+  // Angular Signals (Primary reactive state)
+  private readonly _sources = signal<Source[]>([]);
+  private readonly _jobs = signal<IngestionJob[]>([]);
+  private readonly _isLoading = signal<boolean>(false);
+
+  readonly sources = this._sources.asReadonly();
+  readonly jobs = this._jobs.asReadonly();
+  readonly isLoading = this._isLoading.asReadonly();
+
+  // Observable streams for backwards compatibility
   private readonly sourcesSubject = new BehaviorSubject<Source[]>([]);
   private readonly jobsSubject = new BehaviorSubject<IngestionJob[]>([]);
   private readonly isLoadingSubject = new BehaviorSubject<boolean>(false);
@@ -23,30 +33,30 @@ export class KnowledgeService {
   readonly jobs$: Observable<IngestionJob[]> = this.jobsSubject.asObservable();
   readonly isLoading$: Observable<boolean> = this.isLoadingSubject.asObservable();
 
-  get sources(): Source[] {
-    return this.sourcesSubject.value;
-  }
-
-  get jobs(): IngestionJob[] {
-    return this.jobsSubject.value;
-  }
-
   loadSources(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.get<{ items: Source[] }>(`${this.apiBase}/api/v1/admin/sources`).pipe(
       catchError(() => of({ items: [] }))
-    ).subscribe((res) => this.sourcesSubject.next(res.items ?? []));
+    ).subscribe((res) => {
+      const items = res.items ?? [];
+      this._sources.set(items);
+      this.sourcesSubject.next(items);
+    });
   }
 
   loadJobs(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.get<{ items: IngestionJob[] }>(`${this.apiBase}/api/v1/admin/ingestion-jobs`).pipe(
       catchError(() => of({ items: [] }))
-    ).subscribe((res) => this.jobsSubject.next(res.items ?? []));
+    ).subscribe((res) => {
+      const items = res.items ?? [];
+      this._jobs.set(items);
+      this.jobsSubject.next(items);
+    });
   }
 
   stageSource(title: string, audience: SourceAudience, content: string, onComplete?: () => void): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/sources`, { title, mimeType: 'text/plain', audience, content }).subscribe({
       next: () => {
@@ -60,7 +70,7 @@ export class KnowledgeService {
   }
 
   publishSource(source: Source, onComplete?: () => void): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/sources/${source.id}/publish`, {}).subscribe({
       next: () => {
@@ -73,7 +83,7 @@ export class KnowledgeService {
   }
 
   revokeSource(source: Source, onComplete?: () => void): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/sources/${source.id}/revoke`, {}).subscribe({
       next: () => {
@@ -86,7 +96,7 @@ export class KnowledgeService {
   }
 
   purgeSource(source: Source, onComplete?: () => void): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
 
     this.http.delete(`${this.apiBase}/api/v1/admin/sources/${source.id}`).subscribe({
       next: () => {
@@ -99,7 +109,7 @@ export class KnowledgeService {
   }
 
   reindexSource(source: Source): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/sources/${source.id}/reindex`, {}).subscribe({
       next: () => {
@@ -112,7 +122,7 @@ export class KnowledgeService {
   }
 
   retryJob(job: IngestionJob): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
 
     this.http.post(`${this.apiBase}/api/v1/admin/ingestion-jobs/${job.id}/retry`, {}).subscribe({
       next: () => {
@@ -124,7 +134,7 @@ export class KnowledgeService {
   }
 
   queueFileUpload(title: string, fileName: string, mimeType: string, audience: SourceAudience, contentBase64: string, onComplete?: () => void): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.post<{ job: IngestionJob }>(`${this.apiBase}/api/v1/admin/sources/upload`, { title, fileName, mimeType, audience, contentBase64 }).subscribe({
       next: () => {
         this.loadSources();
@@ -137,7 +147,7 @@ export class KnowledgeService {
   }
 
   queueCrawl(title: string, url: string, onComplete?: () => void): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.post<{ job: IngestionJob }>(`${this.apiBase}/api/v1/admin/ingestion-jobs`, { title, sourceUrl: url, mimeType: 'text/html', audience: 'public' }).subscribe({
       next: () => {
         this.loadJobs();

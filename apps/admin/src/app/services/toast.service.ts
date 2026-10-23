@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 
 export interface ToastMessage {
@@ -13,6 +13,9 @@ export interface ToastMessage {
   providedIn: 'root'
 })
 export class ToastService {
+  private readonly _toasts = signal<ToastMessage[]>([]);
+  readonly toasts = this._toasts.asReadonly();
+
   private readonly toastsSubject = new BehaviorSubject<ToastMessage[]>([]);
   readonly toasts$: Observable<ToastMessage[]> = this.toastsSubject.asObservable();
 
@@ -24,15 +27,20 @@ export class ToastService {
       message,
       timestamp: Date.now()
     };
-    this.toastsSubject.next([toast, ...this.toastsSubject.value.slice(0, 4)]);
+    const nextVal = [toast, ...this._toasts().slice(0, 4)];
+    this._toasts.set(nextVal);
+    this.toastsSubject.next(nextVal);
     setTimeout(() => this.dismiss(toast.id), 5000);
   }
 
   dismiss(id: string): void {
-    this.toastsSubject.next(this.toastsSubject.value.filter((t) => t.id !== id));
+    const nextVal = this._toasts().filter((t) => t.id !== id);
+    this._toasts.set(nextVal);
+    this.toastsSubject.next(nextVal);
   }
 
   clearAll(): void {
+    this._toasts.set([]);
     this.toastsSubject.next([]);
   }
 }

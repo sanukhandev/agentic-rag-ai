@@ -12,8 +12,9 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   if (isApiRequest && !isPublicAuth) {
     let headers = req.headers;
-    if (auth.token && !headers.has('Authorization')) {
-      headers = headers.set('Authorization', `Bearer ${auth.token}`);
+    const token = auth.token();
+    if (token && !headers.has('Authorization')) {
+      headers = headers.set('Authorization', `Bearer ${token}`);
     }
     if (auth.selectedTenantId && !headers.has('X-Tenant-Id')) {
       headers = headers.set('X-Tenant-Id', auth.selectedTenantId);

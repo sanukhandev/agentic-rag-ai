@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { NavSection } from '../types/admin.types';
 
@@ -33,7 +33,21 @@ function readStoredSection(): NavSection {
   providedIn: 'root'
 })
 export class UiNavigationService {
-  private readonly currentSectionSubject = new BehaviorSubject<NavSection>(readStoredSection());
+  private readonly _currentSection = signal<NavSection>(readStoredSection());
+  private readonly _activeMegaMenu = signal<NavSection | null>(null);
+  private readonly _commandPaletteOpen = signal<boolean>(false);
+  private readonly _createOrgDrawerOpen = signal<boolean>(false);
+  private readonly _uploadSourceModalOpen = signal<boolean>(false);
+
+  // Angular Signals (Primary reactive state)
+  readonly currentSection = this._currentSection.asReadonly();
+  readonly activeMegaMenu = this._activeMegaMenu.asReadonly();
+  readonly commandPaletteOpen = this._commandPaletteOpen.asReadonly();
+  readonly createOrgDrawerOpen = this._createOrgDrawerOpen.asReadonly();
+  readonly uploadSourceModalOpen = this._uploadSourceModalOpen.asReadonly();
+
+  // Observable streams for backwards compatibility
+  private readonly currentSectionSubject = new BehaviorSubject<NavSection>(this._currentSection());
   private readonly activeMegaMenuSubject = new BehaviorSubject<NavSection | null>(null);
   private readonly commandPaletteOpenSubject = new BehaviorSubject<boolean>(false);
   private readonly createOrgDrawerOpenSubject = new BehaviorSubject<boolean>(false);
@@ -45,15 +59,8 @@ export class UiNavigationService {
   readonly createOrgDrawerOpen$: Observable<boolean> = this.createOrgDrawerOpenSubject.asObservable();
   readonly uploadSourceModalOpen$: Observable<boolean> = this.uploadSourceModalOpenSubject.asObservable();
 
-  get currentSection(): NavSection {
-    return this.currentSectionSubject.value;
-  }
-
-  get activeMegaMenu(): NavSection | null {
-    return this.activeMegaMenuSubject.value;
-  }
-
   setSection(section: NavSection): void {
+    this._currentSection.set(section);
     this.currentSectionSubject.next(section);
     if (typeof window !== 'undefined') {
       try {
@@ -66,35 +73,43 @@ export class UiNavigationService {
   }
 
   toggleMegaMenu(section: NavSection): void {
-    const current = this.activeMegaMenuSubject.value;
-    this.activeMegaMenuSubject.next(current === section ? null : section);
+    const next = this._activeMegaMenu() === section ? null : section;
+    this._activeMegaMenu.set(next);
+    this.activeMegaMenuSubject.next(next);
   }
 
   closeMegaMenu(): void {
+    this._activeMegaMenu.set(null);
     this.activeMegaMenuSubject.next(null);
   }
 
   openCommandPalette(): void {
+    this._commandPaletteOpen.set(true);
     this.commandPaletteOpenSubject.next(true);
   }
 
   closeCommandPalette(): void {
+    this._commandPaletteOpen.set(false);
     this.commandPaletteOpenSubject.next(false);
   }
 
   openCreateOrgDrawer(): void {
+    this._createOrgDrawerOpen.set(true);
     this.createOrgDrawerOpenSubject.next(true);
   }
 
   closeCreateOrgDrawer(): void {
+    this._createOrgDrawerOpen.set(false);
     this.createOrgDrawerOpenSubject.next(false);
   }
 
   openUploadModal(): void {
+    this._uploadSourceModalOpen.set(true);
     this.uploadSourceModalOpenSubject.next(true);
   }
 
   closeUploadModal(): void {
+    this._uploadSourceModalOpen.set(false);
     this.uploadSourceModalOpenSubject.next(false);
   }
 }

@@ -1,4 +1,4 @@
-import { Component, ElementRef, HostListener, ChangeDetectorRef, DestroyRef, inject } from '@angular/core';
+import { Component, ElementRef, HostListener, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -440,49 +440,18 @@ interface MegaMenuColumn {
 export class TopNavComponent {
   private readonly state = inject(AdminStateService);
   private readonly elementRef = inject(ElementRef);
-  private readonly cdr = inject(ChangeDetectorRef);
 
-  activeSection: NavSection = 'overview';
-  activeMegaMenu: NavSection | null = null;
-  tenants: Tenant[] = [];
-  selectedTenant: Tenant | null = null;
-  role = '';
-  userEmail = '';
+  get activeSection(): NavSection { return this.state.currentSection(); }
+  get activeMegaMenu(): NavSection | null { return this.state.activeMegaMenu(); }
+  get tenants(): Tenant[] { return this.state.tenants(); }
+  get selectedTenant(): Tenant | null { return this.state.selectedTenant(); }
+  get role(): string { return this.state.role(); }
+  get userEmail(): string { return this.state.userEmail(); }
+  get isPlatformAdmin(): boolean { return this.state.isPlatformAdmin(); }
 
   tenantDropdownOpen = false;
   userMenuOpen = false;
   mobileNavOpen = false;
-
-  constructor() {
-    this.state.currentSection$.subscribe((s) => {
-      this.activeSection = s;
-      this.cdr.markForCheck();
-    });
-    this.state.activeMegaMenu$.subscribe((m) => {
-      this.activeMegaMenu = m;
-      this.cdr.markForCheck();
-    });
-    this.state.tenants$.subscribe((t) => {
-      this.tenants = t;
-      this.cdr.markForCheck();
-    });
-    this.state.selectedTenant$.subscribe((st) => {
-      this.selectedTenant = st;
-      this.cdr.markForCheck();
-    });
-    this.state.role$.subscribe((r) => {
-      this.role = r;
-      this.cdr.markForCheck();
-    });
-    this.state.userEmail$.subscribe((e) => {
-      this.userEmail = e;
-      this.cdr.markForCheck();
-    });
-  }
-
-  get isPlatformAdmin(): boolean {
-    return this.role === 'platform_admin';
-  }
 
   canAccess(section: NavSection): boolean {
     return this.state.canAccessSection(section);

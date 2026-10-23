@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
 import { Tenant, PlatformOverview, TenantStatus } from '../types/admin.types';
@@ -29,6 +29,18 @@ export class TenantService {
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
 
+  // Angular Signals (Primary reactive state)
+  private readonly _tenants = signal<Tenant[]>([]);
+  private readonly _selectedTenant = signal<Tenant | null>(null);
+  private readonly _platformOverview = signal<PlatformOverview>(EMPTY_PLATFORM_OVERVIEW);
+  private readonly _isLoading = signal<boolean>(false);
+
+  readonly tenants = this._tenants.asReadonly();
+  readonly selectedTenant = this._selectedTenant.asReadonly();
+  readonly platformOverview = this._platformOverview.asReadonly();
+  readonly isLoading = this._isLoading.asReadonly();
+
+  // Observable streams for backwards compatibility
   private readonly tenantsSubject = new BehaviorSubject<Tenant[]>([]);
   private readonly selectedTenantSubject = new BehaviorSubject<Tenant | null>(null);
   private readonly platformOverviewSubject = new BehaviorSubject<PlatformOverview>(EMPTY_PLATFORM_OVERVIEW);
@@ -39,34 +51,31 @@ export class TenantService {
   readonly platformOverview$: Observable<PlatformOverview> = this.platformOverviewSubject.asObservable();
   readonly isLoading$: Observable<boolean> = this.isLoadingSubject.asObservable();
 
-  get tenants(): Tenant[] {
-    return this.tenantsSubject.value;
-  }
-
-  get selectedTenant(): Tenant | null {
-    return this.selectedTenantSubject.value;
-  }
-
   selectTenant(tenant: Tenant): void {
     this.auth.setSelectedTenantId(tenant?.id ?? null);
+    this._selectedTenant.set(tenant);
     this.selectedTenantSubject.next(tenant);
     this.toast.show('info', 'Switched Workspace', `Active context: ${tenant.name}`);
   }
 
   loadTenants(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
+    this._isLoading.set(true);
     this.isLoadingSubject.next(true);
 
-    if (!this.auth.isPlatformAdmin) {
+    if (!this.auth.isPlatformAdmin()) {
       this.http.get<{ tenant: Tenant | null }>(`${this.apiBase}/api/v1/admin/tenant`).pipe(
         catchError((error) => {
           this.toast.show('error', 'Workspace unavailable', apiErrorMessage(error, 'Could not load the current workspace.'));
           return of({ tenant: null });
         })
       ).subscribe((res) => {
+        this._isLoading.set(false);
         this.isLoadingSubject.next(false);
         if (res?.tenant) {
           this.auth.setSelectedTenantId(res.tenant.id);
+          this._tenants.set([res.tenant]);
+          this._selectedTenant.set(res.tenant);
           this.tenantsSubject.next([res.tenant]);
           this.selectedTenantSubject.next(res.tenant);
         }
@@ -80,34 +89,44 @@ export class TenantService {
         return of({ items: [] });
       })
     ).subscribe((res) => {
+      this._isLoading.set(false);
       this.isLoadingSubject.next(false);
       const items = res.items ?? [];
+      this._tenants.set(items);
       this.tenantsSubject.next(items);
-      const current = this.selectedTenantSubject.value;
+
+      const current = this._selectedTenant();
       const targetId = current?.id || this.auth.selectedTenantId;
       const matched = targetId ? items.find((t) => t.id === targetId) : null;
       const chosen = matched ?? items[0] ?? null;
+
       this.auth.setSelectedTenantId(chosen?.id ?? null);
+      this._selectedTenant.set(chosen);
       this.selectedTenantSubject.next(chosen);
     });
   }
 
   loadPlatformOverview(): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
     this.http.get<PlatformOverview>(`${this.apiBase}/api/v1/admin/platform/overview`).pipe(
       catchError(() => {
         this.toast.show('error', 'Load Failed', 'Could not load platform overview.');
         return of(EMPTY_PLATFORM_OVERVIEW);
       })
-    ).subscribe((data) => this.platformOverviewSubject.next(data));
+    ).subscribe((data) => {
+      this._platformOverview.set(data);
+      this.platformOverviewSubject.next(data);
+    });
   }
 
   createTenant(payload: CreateTenantPayload, onComplete?: (success: boolean, tenant?: Tenant) => void): void {
-    if (!this.auth.token) return onComplete?.(false);
+    if (!this.auth.token()) return onComplete?.(false);
+    this._isLoading.set(true);
     this.isLoadingSubject.next(true);
 
     this.http.post<{ tenant: Tenant }>(`${this.apiBase}/api/v1/admin/tenants`, payload).subscribe({
       next: (res) => {
+        this._isLoading.set(false);
         this.isLoadingSubject.next(false);
         this.loadTenants();
         this.loadPlatformOverview();
@@ -119,6 +138,7 @@ export class TenantService {
         if (onComplete) onComplete(true, res?.tenant);
       },
       error: (err) => {
+        this._isLoading.set(false);
         this.isLoadingSubject.next(false);
         const msg = err.error?.error?.message || 'Failed to create organization.';
         this.toast.show('error', 'Provisioning Error', msg);
@@ -128,7 +148,7 @@ export class TenantService {
   }
 
   updateTenantStatus(tenant: Tenant, status: TenantStatus): void {
-    if (!this.auth.token) return;
+    if (!this.auth.token()) return;
 
     this.http.patch<{ tenant: Tenant }>(`${this.apiBase}/api/v1/admin/tenants/${tenant.id}/status`, { status }).subscribe({
       next: () => {
