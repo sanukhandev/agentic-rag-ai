@@ -172,6 +172,7 @@ describe('Redis event orchestration primitives', () => {
       const consumer = new EventConsumer(store, bus, new N8nEventBridge(store, `http://127.0.0.1:${address.port}`, 'secret'), 'test-worker', 1);
       expect(await consumer.runOnce('rag:v2:actions', 'intent-workers', 0)).toBe(0);
       expect((await store.getAction(action.id))?.state).toBe('failed');
+      expect(await store.getActionExecution(action.id, tenantId)).toMatchObject({ providerStatus: 'failed', attempt: 1 });
       expect(bus.acknowledged).toEqual(['failed-1']);
       expect(bus.deadLetters).toHaveLength(1);
     } finally {

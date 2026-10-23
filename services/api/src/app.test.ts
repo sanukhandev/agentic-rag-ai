@@ -266,8 +266,12 @@ describe('API vertical slice', () => {
     const wrongTenantBody = { ...callbackBody, tenantId: tenantB.body.tenant.id as string };
     const wrongTenantSignature = signN8nPayload('callback-secret', callbackTimestamp, 'callback-nonce-wrong-tenant', JSON.stringify(wrongTenantBody));
     await api.post('/api/v1/internal/n8n/callback').set('x-agentic-timestamp', String(callbackTimestamp)).set('x-agentic-nonce', 'callback-nonce-wrong-tenant').set('x-agentic-signature', wrongTenantSignature).send(wrongTenantBody).expect(404);
-    await api.post('/api/v1/internal/n8n/callback').set('x-agentic-timestamp', String(callbackTimestamp)).set('x-agentic-nonce', callbackNonce).set('x-agentic-signature', callbackSignature).send(callbackBody).expect(200);
-    await api.post('/api/v1/internal/n8n/callback').set('x-agentic-timestamp', String(callbackTimestamp)).set('x-agentic-nonce', callbackNonce).set('x-agentic-signature', callbackSignature).send(callbackBody).expect(401);
+    await api.post('/api/v1/internal/n8n/callback').set('x-agentic-timestamp', String(callbackTimestamp)).set('x-agentic-nonce', callbackNonce).set('x-agentic-signature', callbackSignature).send(callbackBody).expect(409);
+    await runtime.store.updateAction({ ...(await runtime.store.getAction(callbackActionId))!, state: 'approved' });
+    const approvedCallbackNonce = 'callback-nonce-approved';
+    const approvedCallbackSignature = signN8nPayload('callback-secret', callbackTimestamp, approvedCallbackNonce, JSON.stringify(callbackBody));
+    await api.post('/api/v1/internal/n8n/callback').set('x-agentic-timestamp', String(callbackTimestamp)).set('x-agentic-nonce', approvedCallbackNonce).set('x-agentic-signature', approvedCallbackSignature).send(callbackBody).expect(200);
+    await api.post('/api/v1/internal/n8n/callback').set('x-agentic-timestamp', String(callbackTimestamp)).set('x-agentic-nonce', approvedCallbackNonce).set('x-agentic-signature', approvedCallbackSignature).send(callbackBody).expect(401);
     const internalAsPublic = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the internal escalation code?', clientMessageId: 'internal-1' }).expect(200);
     expect(internalAsPublic.body.grounded).toBe(false);
     const privateSession = await api.post('/api/v1/chat/sessions').set('Authorization', `Bearer ${adminToken}`).send({ tenantId: tenantA.body.tenant.id }).expect(201);
@@ -703,6 +707,32 @@ describe('API vertical slice', () => {
     await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'internal-secret').send({ actionId: oldAction.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'old-completion' }).expect(200);
 
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ catalogVersionId: 'catalog-v2', selectedIntentKey: 'company.setup', workflowStatus: 'queued', phase: 'QUEUED', pendingPrompt: { id: 'new-intent-prompt' } });
+  });
+
+  it('requires the matching execution claim to resolve reconciliation on both callback routes', async () => {
+    const runtime = createApp({ nodeEnv: 'test', n8nCallbackSecret: 'correlation-secret' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-correlation@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Correlation Tenant', slug: 'correlation-tenant', adminEmail: 'admin-correlation@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const session = await runtime.store.createSession(tenant.body.tenant.id);
+    const createReconciledAction = async (key: string) => {
+      const action = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.id, workflowKey: 'crm.lead.create', idempotencyKey: key, state: 'reconcile_required', opaqueReference: key, payload: {}, createdAt: new Date().toISOString(), result: null });
+      const eventId = randomUUID();
+      const correlationId = randomUUID();
+      await runtime.store.recordActionExecution({ id: randomUUID(), actionId: action.id, tenantId: tenant.body.tenant.id, workflowKey: action.workflowKey, catalogVersionId: null, providerStatus: 'reconcile_required', n8nExecutionRef: null, eventId, correlationId, idempotencyKey: action.idempotencyKey, attempt: 2, deadlineAt: null, outcome: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      return { action, eventId, correlationId };
+    };
+    const internal = await createReconciledAction('internal-correlation');
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'correlation-secret').send({ actionId: internal.action.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'remote-internal', executionReference: 'execution-2', eventId: randomUUID(), correlationId: internal.correlationId, attempt: 2 }).expect(409);
+    await api.post('/api/v1/internal/workflow-events/complete').set('x-agentic-internal-secret', 'correlation-secret').send({ actionId: internal.action.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'remote-internal', executionReference: 'execution-2', eventId: internal.eventId, correlationId: internal.correlationId, attempt: 2 }).expect(200);
+    const signed = await createReconciledAction('signed-correlation');
+    const callbackBody = { actionId: signed.action.id, tenantId: tenant.body.tenant.id, state: 'completed', externalReference: 'remote-signed', executionReference: 'execution-signed', eventId: signed.eventId, correlationId: randomUUID(), attempt: 2 };
+    const timestamp = Date.now();
+    const wrongNonce = 'correlation-wrong';
+    await api.post('/api/v1/internal/n8n/callback').set('x-agentic-timestamp', String(timestamp)).set('x-agentic-nonce', wrongNonce).set('x-agentic-signature', signN8nPayload('correlation-secret', timestamp, wrongNonce, JSON.stringify(callbackBody))).send(callbackBody).expect(409);
+    const validBody = { ...callbackBody, correlationId: signed.correlationId };
+    const validNonce = 'correlation-valid';
+    await api.post('/api/v1/internal/n8n/callback').set('x-agentic-timestamp', String(timestamp)).set('x-agentic-nonce', validNonce).set('x-agentic-signature', signN8nPayload('correlation-secret', timestamp, validNonce, JSON.stringify(validBody))).send(validBody).expect(200);
   });
 
   it('keeps routine review and missing-information outcomes distinct from reconciliation', async () => {

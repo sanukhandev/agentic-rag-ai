@@ -615,8 +615,9 @@ export interface Store {
   markInboxDeadLetterPublished(consumer: string, eventId: string, publishedAt?: string): Promise<void>;
   releaseInboxDeadLetterProjection(consumer: string, eventId: string): Promise<void>;
   claimActionExecution(execution: ActionExecution): Promise<{ execution: ActionExecution; claimed: boolean }>;
+  getActionExecution(actionId: string, tenantId: string): Promise<ActionExecution | null>;
   recordActionExecution(execution: ActionExecution): Promise<ActionExecution>;
-  updateActionExecution(input: { actionId: string; tenantId: string; providerStatus: string; n8nExecutionRef?: string | null; outcome?: ActionExecution['outcome']; resolveReconciliation?: boolean }): Promise<ActionExecution | null>;
+  updateActionExecution(input: { actionId: string; tenantId: string; providerStatus: string; n8nExecutionRef?: string | null; outcome?: ActionExecution['outcome']; resolveReconciliation?: boolean; eventId?: string; correlationId?: string; expectedAttempt?: number }): Promise<ActionExecution | null>;
   reconcileExpiredActionExecutions(now: string): Promise<ActionExecution[]>;
   addAudit(event: AuditEvent): Promise<void>;
   listAudit(tenantId: string): Promise<AuditEvent[]>;

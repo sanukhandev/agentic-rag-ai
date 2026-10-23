@@ -262,6 +262,7 @@ export class EventConsumer {
 
   private async markReconciliationRequired(event: OutboxEvent, reason: string): Promise<void> {
     if (event.actionId) {
+      await this.store.updateActionExecution({ actionId: event.actionId, tenantId: event.tenantId, providerStatus: 'reconcile_required', eventId: event.eventId, correlationId: event.correlationId, outcome: { eventId: event.eventId, correlationId: event.correlationId, reason: reason.slice(0, 500) } });
       const action = await this.store.getAction(event.actionId);
       if (action && action.tenantId === event.tenantId && !['completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review'].includes(action.state)) {
         const updated = await this.store.transitionAction(action.id, action.tenantId, action.state, 'reconcile_required', action.result);
@@ -274,6 +275,7 @@ export class EventConsumer {
 
   private async markFailed(event: OutboxEvent, reason: string): Promise<void> {
     if (event.actionId) {
+      await this.store.updateActionExecution({ actionId: event.actionId, tenantId: event.tenantId, providerStatus: 'failed', eventId: event.eventId, correlationId: event.correlationId, outcome: { eventId: event.eventId, correlationId: event.correlationId, reason: reason.slice(0, 500) } });
       const action = await this.store.getAction(event.actionId);
       if (action && action.tenantId === event.tenantId && !['completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review'].includes(action.state)) {
         const updated = await this.store.transitionAction(action.id, action.tenantId, action.state, 'failed', action.result);

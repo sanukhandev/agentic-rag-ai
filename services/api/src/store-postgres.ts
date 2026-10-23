@@ -323,6 +323,7 @@ export class PostgresStore implements Store {
       return { execution: this.actionExecution(row), claimed: false };
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
+  async getActionExecution(actionId: string, tenantId: string): Promise<ActionExecution | null> { const result = await this.pool.query<ActionExecutionRow>('SELECT * FROM action_executions WHERE action_id=$1 AND tenant_id=$2 ORDER BY created_at DESC,id DESC LIMIT 1', [actionId, tenantId]); return result.rows[0] ? this.actionExecution(result.rows[0]) : null; }
   async recordActionExecution(execution: ActionExecution): Promise<ActionExecution> {
     const result = await this.pool.query<ActionExecutionRow>(`INSERT INTO action_executions (id,action_id,tenant_id,workflow_key,catalog_version_id,provider_status,n8n_execution_ref,event_id,correlation_id,idempotency_key,attempt,deadline_at,outcome,created_at,updated_at)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
@@ -330,10 +331,14 @@ export class PostgresStore implements Store {
       RETURNING *`, [execution.id, execution.actionId, execution.tenantId, execution.workflowKey, execution.catalogVersionId, execution.providerStatus, execution.n8nExecutionRef, execution.eventId, execution.correlationId, execution.idempotencyKey, execution.attempt, execution.deadlineAt, execution.outcome ? JSON.stringify(execution.outcome) : null, execution.createdAt]);
     return this.actionExecution(result.rows[0]!);
   }
-  async updateActionExecution(input: { actionId: string; tenantId: string; providerStatus: string; n8nExecutionRef?: string | null; outcome?: ActionExecution['outcome']; resolveReconciliation?: boolean }): Promise<ActionExecution | null> {
+  async updateActionExecution(input: { actionId: string; tenantId: string; providerStatus: string; n8nExecutionRef?: string | null; outcome?: ActionExecution['outcome']; resolveReconciliation?: boolean; eventId?: string; correlationId?: string; expectedAttempt?: number }): Promise<ActionExecution | null> {
     const result = await this.pool.query<ActionExecutionRow>(`WITH current_execution AS (
       SELECT id FROM action_executions
        WHERE action_id=$1 AND tenant_id=$2 AND (provider_status NOT IN ('completed','failed','reconcile_required') OR (provider_status='reconcile_required' AND $6::boolean AND $3='completed'))
+         AND ($7::uuid IS NULL OR event_id=$7)
+         AND ($8::uuid IS NULL OR correlation_id=$8)
+         AND ($9::integer IS NULL OR attempt=$9)
+         AND (n8n_execution_ref IS NULL OR $4::text IS NULL OR n8n_execution_ref=$4)
        ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE
     )
     UPDATE action_executions AS execution
@@ -343,7 +348,7 @@ export class PostgresStore implements Store {
            updated_at=now()
       FROM current_execution
      WHERE execution.id=current_execution.id
-    RETURNING execution.*`, [input.actionId, input.tenantId, input.providerStatus, input.n8nExecutionRef ?? null, input.outcome ? JSON.stringify(input.outcome) : null, input.resolveReconciliation === true]);
+      RETURNING execution.*`, [input.actionId, input.tenantId, input.providerStatus, input.n8nExecutionRef ?? null, input.outcome ? JSON.stringify(input.outcome) : null, input.resolveReconciliation === true, input.eventId ?? null, input.correlationId ?? null, input.expectedAttempt ?? null]);
     return result.rows[0] ? this.actionExecution(result.rows[0]) : null;
   }
   async reconcileExpiredActionExecutions(timestamp: string): Promise<ActionExecution[]> {
@@ -365,13 +370,15 @@ export class PostgresStore implements Store {
         if (result.rows[0]) {
           const actionResult = await client.query<{ state: string }>(`UPDATE action_requests SET state='reconcile_required',result=COALESCE(result,'{}'::jsonb) || jsonb_build_object('reason','completion_deadline_exceeded')
             WHERE id=$1 AND tenant_id=$2 AND state IN ('approved','processing') RETURNING state`, [row.action_id, row.tenant_id]);
-          await client.query(`UPDATE chat_sessions
-            SET conversation_state=conversation_state || jsonb_build_object('workflowStatus','reconcile_required','phase','RECONCILE_REQUIRED','pendingPrompt',NULL),state_version=state_version+1,last_activity_at=now()
-            WHERE id=$1 AND tenant_id=$2
-              AND (conversation_state->>'selectedIntentKey' IS NULL OR conversation_state->>'selectedIntentKey'=$3)
-              AND ($4::uuid IS NULL OR conversation_state->>'catalogVersionId' IS NULL OR conversation_state->>'catalogVersionId'=$4::text)
-              AND conversation_state->>'workflowStatus' NOT IN ('succeeded','failed')`, [row.session_id, row.tenant_id, row.intent_key, row.action_catalog_version_id]);
-          if (actionResult.rows[0]) await client.query('INSERT INTO audit_events (id,tenant_id,actor_id,event_name,metadata) VALUES ($1,$2,NULL,$3,$4)', [randomUUID(), row.tenant_id, 'workflow.reconcile_required', JSON.stringify({ actionId: row.action_id, executionId: row.id, reason: 'completion_deadline_exceeded', eventId: row.event_id, correlationId: row.correlation_id })]);
+          if (actionResult.rows[0]) {
+            await client.query(`UPDATE chat_sessions
+              SET conversation_state=conversation_state || jsonb_build_object('workflowStatus','reconcile_required','phase','RECONCILE_REQUIRED','pendingPrompt',NULL),state_version=state_version+1,last_activity_at=now()
+              WHERE id=$1 AND tenant_id=$2
+                AND (conversation_state->>'selectedIntentKey' IS NULL OR conversation_state->>'selectedIntentKey'=$3)
+                AND ($4::uuid IS NULL OR conversation_state->>'catalogVersionId' IS NULL OR conversation_state->>'catalogVersionId'=$4::text)
+                AND conversation_state->>'workflowStatus' NOT IN ('succeeded','failed')`, [row.session_id, row.tenant_id, row.intent_key, row.action_catalog_version_id]);
+            await client.query('INSERT INTO audit_events (id,tenant_id,actor_id,event_name,metadata) VALUES ($1,$2,NULL,$3,$4)', [randomUUID(), row.tenant_id, 'workflow.reconcile_required', JSON.stringify({ actionId: row.action_id, executionId: row.id, reason: 'completion_deadline_exceeded', eventId: row.event_id, correlationId: row.correlation_id })]);
+          }
           updated.push(this.actionExecution(result.rows[0]));
         }
       }

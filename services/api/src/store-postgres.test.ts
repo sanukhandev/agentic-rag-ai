@@ -1,8 +1,25 @@
 import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
 import { Pool } from 'pg';
 import { describe, expect, it } from 'vitest';
 import { createOutboxEvent } from './events.js';
+import { EventConsumer, N8nEventBridge, type StreamBus, type StreamMessage } from './event-bus.js';
 import { PostgresStore } from './store-postgres.js';
+import type { OutboxEvent } from './types.js';
+
+class PostgresTestBus implements StreamBus {
+  readonly acknowledged: string[] = [];
+  readonly deadLetters: OutboxEvent[] = [];
+  constructor(private message: StreamMessage) {}
+  async connect(): Promise<void> {}
+  async close(): Promise<void> {}
+  async ensureGroup(): Promise<void> {}
+  async append(): Promise<string> { return '1-0'; }
+  async read(): Promise<StreamMessage[]> { const next = this.message; this.message = { id: '', event: createOutboxEvent({ eventId: randomUUID(), eventType: 'conversation.notification.requested.v1', tenantId: randomUUID(), aggregateId: randomUUID(), payloadRef: 'empty', idempotencyKey: randomUUID() }) }; return next.id ? [next] : []; }
+  async reclaim(): Promise<StreamMessage[]> { return []; }
+  async acknowledge(_stream: string, _group: string, id: string): Promise<void> { this.acknowledged.push(id); }
+  async deadLetter(event: OutboxEvent): Promise<void> { this.deadLetters.push(event); }
+}
 
 describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
   it('claims only bounded actions for the matching catalog workflow binding', async () => {
@@ -141,8 +158,52 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       expect(await store.claimInboxDeadLetterProjections(1, 60_000)).toHaveLength(1);
       await store.markInboxDeadLetterPublished('dlq-workers', dlqEvent.eventId);
       expect(await store.claimInboxDeadLetterProjections(1, 60_000)).toHaveLength(0);
+      const completedAction = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'crm.lead.create', idempotencyKey: 'completed-before-watchdog', state: 'completed', opaqueReference: 'completed-before-watchdog', payload: {}, createdAt: new Date().toISOString(), result: { externalReference: 'already-complete' } });
+      const completedSession = await store.getSession(session.id);
+      completedSession!.conversationState = { ...(completedSession!.conversationState!), workflowStatus: 'succeeded', phase: 'SUCCEEDED' };
+      await store.updateSession(completedSession!);
+      await store.recordActionExecution({ id: randomUUID(), actionId: completedAction.id, tenantId: tenant.id, workflowKey: completedAction.workflowKey, catalogVersionId: null, providerStatus: 'accepted', n8nExecutionRef: 'accepted-late', idempotencyKey: completedAction.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() - 1_000).toISOString(), outcome: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      await store.reconcileExpiredActionExecutions(new Date().toISOString());
+      expect((await store.getAction(completedAction.id))?.state).toBe('completed');
+      expect((await store.getSession(session.id))?.conversationState).toMatchObject({ workflowStatus: 'succeeded', phase: 'SUCCEEDED' });
+      expect((await store.listAudit(tenant.id)).filter((event) => event.metadata.actionId === completedAction.id)).toHaveLength(0);
     } finally {
       await pool.query('DELETE FROM event_inbox WHERE (consumer=$1 AND event_id=$2) OR consumer=$3', ['integration-workers', eventId, 'dlq-workers']);
+      await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
+      await pool.end();
+    }
+  }, 20_000);
+
+  it('closes PostgreSQL execution state on terminal transient and permanent dispatch failures', async () => {
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const store = new PostgresStore(pool);
+    const tenant = await store.createTenant({ name: 'Execution Failure Test', slug: `execution-failure-${randomUUID()}` });
+    let statusCode = 500;
+    const server = createServer((_request, response) => { response.writeHead(statusCode).end('workflow failure'); });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind to a TCP port.');
+    const eventIds: string[] = [];
+    try {
+      const session = await store.createSession(tenant.id);
+      const run = async (status: number, key: string) => {
+        statusCode = status;
+        const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'crm.lead.create', idempotencyKey: key, state: 'approved', opaqueReference: key, payload: {}, createdAt: new Date().toISOString(), result: null });
+        const event = createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: tenant.id, sessionId: session.id, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id } });
+        eventIds.push(event.eventId);
+        const bus = new PostgresTestBus({ id: `${eventIds.length}-0`, event });
+        const consumer = new EventConsumer(store, bus, new N8nEventBridge(store, `http://127.0.0.1:${address.port}`, 'secret'), `pg-failure-${key}`, 1);
+        await consumer.runOnce('rag:v2:actions', 'intent-workers', 0);
+        expect((await store.getAction(action.id))?.state).toBe('failed');
+        expect(await store.getActionExecution(action.id, tenant.id)).toMatchObject({ providerStatus: 'failed', attempt: 1 });
+        const inbox = await pool.query('SELECT state FROM event_inbox WHERE consumer=$1 AND event_id=$2', ['intent-workers', event.eventId]);
+        expect(inbox.rows[0]?.state).toBe('dead_lettered');
+      };
+      await run(500, 'pg-transient-terminal');
+      await run(400, 'pg-permanent-terminal');
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      if (eventIds.length) await pool.query('DELETE FROM event_inbox WHERE consumer=$1 AND event_id = ANY($2::uuid[])', ['intent-workers', eventIds]);
       await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
       await pool.end();
     }
