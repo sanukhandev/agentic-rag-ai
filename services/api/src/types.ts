@@ -78,7 +78,62 @@ export interface PendingPrompt {
   type: 'clarification' | 'slot' | 'consent' | 'confirmation' | 'document';
   intentKey: string | null;
   slotKey: string | null;
+  requirementKey?: string | null;
   issuedAt: string;
+}
+
+export type IntentCatalogRequirementType = 'slot' | 'document' | 'consent' | 'confirmation';
+export type IntentCatalogFulfillmentMode = 'conversation_ready' | 'external_confirmation_required';
+export type IntentCatalogActivationMode = 'offer' | 'automatic';
+
+export interface IntentCatalogJourneyRequirement {
+  intentKey: string;
+  requirementKey: string;
+  requirementType: IntentCatalogRequirementType;
+  required: boolean;
+  collectionOrder: number;
+  promptKey: string;
+  validationRule: string;
+  slotKey: string | null;
+  documentType: string | null;
+  fulfillmentMode: IntentCatalogFulfillmentMode;
+  sourceOfTruth: string;
+  visitorConfirmationText?: string;
+  notes: string;
+}
+
+export interface IntentCatalogJourneyTransition {
+  sourceIntentKey: string;
+  targetIntentKey: string;
+  activationMode: IntentCatalogActivationMode;
+  maxDepth: number;
+  triggerGroup: string;
+  promptKey: string;
+  notes: string;
+}
+
+export interface IntentProgressEntry {
+  intentKey: string;
+  status: 'active' | 'paused' | 'fulfilled';
+  completedRequirementKeys: string[];
+  currentRequirementKey: string | null;
+  revision: number;
+}
+
+export interface IntentProgressState {
+  version: 1;
+  activeIntentKey: string | null;
+  pausedIntentKeys: string[];
+  fulfilledIntentKeys: string[];
+  entries: Record<string, IntentProgressEntry>;
+  visitedIntentKeys: string[];
+  lastTransitionReason: string | null;
+  lastDeclinedTransition?: {
+    sourceIntentKey: string;
+    targetIntentKey: string;
+    catalogVersionId: string;
+  };
+  journeyRevision: number;
 }
 
 export interface ConversationState {
@@ -86,9 +141,12 @@ export interface ConversationState {
   catalogVersionId: string | null;
   candidateIntentKeys: string[];
   selectedIntentKey: string | null;
+  /** The catalog journey currently being collected after the primary opportunity was created. */
+  activeFollowUpIntentKey?: string | null;
   intentScore?: number;
   intentConfidence?: number;
   intentEvidence?: string[];
+  intentProgress?: IntentProgressState;
   slotValues: Record<string, string>;
   slotProvenance?: Record<string, { source: 'visitor'; messageSequence: number; capturedAt: string; corrected: boolean }>;
   pendingPrompt: PendingPrompt | null;
@@ -220,6 +278,8 @@ export interface IntentCatalog {
   relations: IntentCatalogRelation[];
   workflowBindings: IntentCatalogWorkflowBinding[];
   qualityRules?: IntentCatalogQualityRule[];
+  journeyRequirements?: IntentCatalogJourneyRequirement[];
+  journeyTransitions?: IntentCatalogJourneyTransition[];
   documentPolicies?: IntentCatalogDocumentPolicy[];
   documentSettings?: IntentCatalogDocumentSettings;
   documentRequirements?: IntentCatalogExtensionRow[];
@@ -348,6 +408,7 @@ export interface IngestionJob {
   status: IngestionJobStatus;
   attempts: number;
   errorCode: string | null;
+  errorDetail: string | null;
   leaseExpiresAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -445,10 +506,14 @@ export interface SupportingDocument {
   tenantId: string;
   sessionId: string;
   leadId: string | null;
+  intentKey?: string | null;
+  catalogVersionId?: string | null;
   fileName: string;
   mimeType: string;
   sizeBytes: number;
   sha256: string;
+  requirementKey?: string | null;
+  expectedDocumentType?: string | null;
   storageKey: string;
   status: SupportingDocumentStatus;
   workflowKey: string;
@@ -577,6 +642,7 @@ export interface Store {
   listMessages(sessionId: string, tenantId: string, limit?: number): Promise<Message[]>;
   createAction(action: ActionRequest): Promise<ActionRequest>;
   approveAction(action: ActionRequest): Promise<ActionRequest>;
+  approveActionAndSession(action: ActionRequest, session: Session): Promise<ActionRequest>;
   getAction(id: string): Promise<ActionRequest | null>;
   getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null>;
   updateAction(action: ActionRequest): Promise<ActionRequest>;
@@ -586,6 +652,7 @@ export interface Store {
   claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null>;
   claimActionsForWorkflow(n8nWorkflowId: string, workflowKey: string | undefined, limit: number): Promise<ActionRequest[]>;
   listActions(tenantId: string): Promise<ActionRequest[]>;
+  listActionsBySession(sessionId: string, tenantId: string): Promise<ActionRequest[]>;
   createCrmLead(lead: CrmLead): Promise<CrmLead>;
   upsertCrmLead(lead: CrmLead, dedupeKey: string): Promise<CrmLead>;
   getCrmLeadByActionId(actionId: string, tenantId: string): Promise<CrmLead | null>;
@@ -597,6 +664,7 @@ export interface Store {
   updateCrmLeadRemote(input: { id: string; tenantId: string; leadId: string; remoteCrm: string }): Promise<CrmLead | null>;
   createSupportingDocument(document: SupportingDocument): Promise<SupportingDocument>;
   createSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<void>;
+  requeueSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
   getSupportingDocument(id: string, tenantId: string): Promise<SupportingDocument | null>;
   listSupportingDocuments(tenantId: string, sessionId?: string, leadId?: string): Promise<SupportingDocument[]>;
   updateSupportingDocument(document: SupportingDocument): Promise<SupportingDocument>;

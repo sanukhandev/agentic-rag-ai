@@ -65,7 +65,12 @@ export const getVoiceStateMeta = (
 export const normalizeVoiceTranscript = (parts: readonly string[]): string =>
   parts.map((part) => part.trim()).filter(Boolean).join(' ');
 
-export type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean };
+export const formatAgentGreeting = (greeting: string | undefined, fallback: string): string => {
+  const normalized = greeting?.replace(/\s+/gu, ' ').replace(/([.!؟?])(?=\p{L})/gu, '$1 ').trim() ?? '';
+  return normalized || fallback;
+};
+
+export type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean; pendingRequirementKey?: string | null };
 export type ChatActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'awaiting_customer' | 'human_review' | 'unknown';
 export type ChatActionProposal = { id: string; intent: string; confirmation: string; consentRequired?: boolean; expiresAt?: string };
 export type ChatReply = {
@@ -73,6 +78,7 @@ export type ChatReply = {
   grounded: boolean;
   conversational?: boolean;
   citations: ChatCitation[];
+  pendingRequirementKey?: string | null;
   actionProposal?: ChatActionProposal | null;
   actionState?: ChatActionState;
   copied?: boolean;
@@ -87,6 +93,7 @@ export interface DisplayMessage {
   grounded: boolean;
   conversational?: boolean;
   citations: ChatCitation[];
+  pendingRequirementKey?: string | null;
   actionProposal?: ChatActionProposal | null;
   actionState?: ChatActionState;
   createdAt: string;
@@ -117,13 +124,11 @@ export const actionOutcomeText = (state: ChatActionState): string | null =>
       : state === 'failed'
         ? 'I could not submit your contact request. Please try again or contact Sanu directly.'
         : state === 'reconcile_required'
-          ? 'Your request is registered, but the external confirmation needs review before I can mark it complete.'
+          ? null
         : state === 'awaiting_customer'
           ? 'Your request is saved. I still need a few details from you before it can proceed.'
         : state === 'human_review'
           ? 'Your request is registered and has been sent for team review.'
-      : state === 'approved' || state === 'processing'
-        ? 'Your request is registered. We’ll continue processing it asynchronously.'
       : null;
 
 export const applyActionState = (replies: readonly ChatReply[], proposalId: string, state: ChatActionState): ChatReply[] =>

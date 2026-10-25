@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { catalogIntentClarification, catalogSlotQuestion, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
+import { catalogIntentClarification, catalogNextFollowUpRequirement, catalogNextJourneyRequirement, catalogRequirementLabel, catalogSlotQuestion, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
+import { reduceIntentJourney } from './intent-journey.js';
 import type { IntentCatalogVersion } from './types.js';
 
 const version: IntentCatalogVersion = {
@@ -48,6 +49,16 @@ describe('intent catalog', () => {
     expect(resolveIntent(variant, 'I want to set up a CCTV company').intentKey).toBe('lead.capture');
   });
 
+  it('tolerates a single visitor spelling error while matching a published phrase', () => {
+    const variant = { ...version, catalog: { ...version.catalog, signals: [...version.catalog.signals, { intentKey: 'lead.capture', signalId: 'lead-typo', signalType: 'phrase' as const, value: 'I would like to set up a fashion boutique', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' }] } };
+    expect(resolveIntent(variant, 'I would like to set up a fashion botique').intentKey).toBe('lead.capture');
+  });
+
+  it('accepts natural omitted stop words in a published phrase', () => {
+    const variant = { ...version, catalog: { ...version.catalog, signals: [...version.catalog.signals, { intentKey: 'lead.capture', signalId: 'lead-omitted-stop-word', signalType: 'phrase' as const, value: 'I want to start a fashion store', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' }] } };
+    expect(resolveIntent(variant, 'I want start a fashion store').intentKey).toBe('lead.capture');
+  });
+
   it('collects slots after a score-qualified intent without bypassing the confidence action gate', () => {
     const variant = { ...version, catalog: { ...version.catalog, signals: [...version.catalog.signals, { intentKey: 'lead.capture', signalId: 'lead-5', signalType: 'phrase' as const, value: 'I want to start a company', language: 'en', matchMode: 'exact_phrase' as const, weight: 75, relationGroup: null, notes: '' }] } };
     const resolution = resolveIntent(variant, 'I want to start a company');
@@ -61,6 +72,7 @@ describe('intent catalog', () => {
     expect(resolution.missingSlots).toEqual(['email']);
     expect(resolution.actionAllowed).toBe(false);
     expect(catalogSlotQuestion(version, 'lead.capture', 'email')).toContain('email address');
+    expect(catalogSlotQuestion(version, 'lead.capture', 'phone', { email: '[EMAIL_1]' })).toContain('phone number');
   });
 
   it('builds clarification from the published intent signals', () => {
@@ -125,5 +137,108 @@ describe('intent catalog', () => {
     expect(result.catalog?.documentPolicies).toHaveLength(16);
     expect(result.catalog?.documentSettings?.workflowKey).toBe('anc.document.ocr.extract');
     expect(result.catalog?.workflowBindings.find((binding) => binding.workflowKey === 'anc.document.ocr.extract')?.active).toBe(false);
+  });
+
+  it('validates typed journey requirements and transitions without changing legacy catalogs', () => {
+    const result = validateIntentCatalog({
+      ...version.catalog,
+      journeyRequirements: [{ intentKey: 'lead.capture', requirementKey: 'lead.name', requirementType: 'slot', required: true, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', slotKey: 'name', documentType: null, fulfillmentMode: 'conversation_ready', sourceOfTruth: 'tenant_catalog', notes: '' }],
+      journeyTransitions: [{ sourceIntentKey: 'lead.capture', targetIntentKey: 'appointment.request', activationMode: 'offer', maxDepth: 2, triggerGroup: 'related', promptKey: 'journey.offer_appointment', notes: '' }],
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.catalog?.journeyRequirements?.[0]?.slotKey).toBe('name');
+    expect(validateIntentCatalog({ ...version.catalog }).catalog?.journeyRequirements).toBeUndefined();
+  });
+
+  it('never exposes catalog notes as visitor confirmation copy', () => {
+    expect(catalogRequirementLabel({ intentKey: 'lead.capture', requirementKey: 'lead.contact-consent', requirementType: 'consent', required: true, collectionOrder: 1, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', slotKey: null, documentType: null, fulfillmentMode: 'conversation_ready', sourceOfTruth: 'tenant_catalog', notes: 'Internal review note.' })).toBe('explicit consent for this request');
+    expect(catalogRequirementLabel({ intentKey: 'lead.capture', requirementKey: 'lead.contact-consent', requirementType: 'consent', required: true, collectionOrder: 1, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', slotKey: null, documentType: null, fulfillmentMode: 'conversation_ready', sourceOfTruth: 'tenant_catalog', visitorConfirmationText: 'I consent to contact for this enquiry.', notes: 'Internal review note.' })).toBe('I consent to contact for this enquiry.');
+  });
+
+  it('rejects automatic journey cycles', () => {
+    const result = validateIntentCatalog({
+      ...version.catalog,
+      journeyTransitions: [
+        { sourceIntentKey: 'lead.capture', targetIntentKey: 'appointment.request', activationMode: 'automatic', maxDepth: 2, triggerGroup: 'related', promptKey: 'journey.a', notes: '' },
+        { sourceIntentKey: 'appointment.request', targetIntentKey: 'lead.capture', activationMode: 'automatic', maxDepth: 2, triggerGroup: 'related', promptKey: 'journey.b', notes: '' },
+      ],
+    });
+    expect(result.catalog).toBeNull();
+    expect(result.errors.join(' ')).toContain('automatic activation cycle');
+  });
+
+  it('reduces requirements, preserves a knowledge pause, and does not activate an offered intent', () => {
+    const journeyVersion = { ...version, catalog: { ...version.catalog, journeyRequirements: [{ intentKey: 'lead.capture', requirementKey: 'lead.name', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', slotKey: 'name', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' }], journeyTransitions: [{ sourceIntentKey: 'lead.capture', targetIntentKey: 'appointment.request', activationMode: 'offer' as const, maxDepth: 2, triggerGroup: 'related', promptKey: 'journey.offer_appointment', notes: '' }] } };
+    expect(catalogNextJourneyRequirement(journeyVersion, 'lead.capture', {} )?.requirementKey).toBe('lead.name');
+    const first = reduceIntentJourney(journeyVersion, undefined, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: {} });
+    expect(first.decision).toBe('collect_requirement');
+    const paused = reduceIntentJourney(journeyVersion, first.progress, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: {}, knowledgeQuestion: true });
+    expect(paused.decision).toBe('retrieve_knowledge');
+    const fulfilled = reduceIntentJourney(journeyVersion, paused.progress, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: { name: '[NAME_1]' } });
+    expect(fulfilled.progress.fulfilledIntentKeys).toContain('lead.capture');
+    expect(fulfilled.decision).toBe('continue');
+  });
+
+  it('offers a configured related intent and activates it only after approval', () => {
+    const journeyVersion = {
+      ...version,
+      catalog: {
+        ...version.catalog,
+        intents: version.catalog.intents.map((intent) => intent.intentKey === 'appointment.request' ? { ...intent, active: true } : intent),
+        journeyRequirements: [{ intentKey: 'lead.capture', requirementKey: 'lead.name', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', slotKey: 'name', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' }],
+        journeyTransitions: [{ sourceIntentKey: 'lead.capture', targetIntentKey: 'appointment.request', activationMode: 'offer' as const, maxDepth: 2, triggerGroup: 'related', promptKey: 'journey.offer_appointment', notes: '' }],
+      },
+    };
+    const first = reduceIntentJourney(journeyVersion, undefined, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: {} });
+    const completed = reduceIntentJourney(journeyVersion, first.progress, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: { name: '[NAME_1]' } });
+    const offered = reduceIntentJourney(journeyVersion, completed.progress, { currentIntentKey: 'appointment.request', selectedIntentKey: 'appointment.request', slotValues: { name: '[NAME_1]' } });
+    expect(offered.decision).toBe('offer_next_intent');
+    expect(offered.activeIntentKey).toBe('lead.capture');
+    expect(offered.offeredIntentKey).toBe('appointment.request');
+    const accepted = reduceIntentJourney(journeyVersion, offered.progress, { currentIntentKey: 'appointment.request', selectedIntentKey: 'appointment.request', transitionApproval: true, slotValues: { name: '[NAME_1]' } });
+    expect(accepted.activeIntentKey).toBe('appointment.request');
+    const declined = reduceIntentJourney(journeyVersion, offered.progress, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', declinedTransition: { sourceIntentKey: 'lead.capture', targetIntentKey: 'appointment.request' }, slotValues: { name: '[NAME_1]' } });
+    expect(declined.decision).toBe('continue');
+    expect(declined.activeIntentKey).toBe('lead.capture');
+    expect(declined.progress.lastDeclinedTransition).toEqual({ sourceIntentKey: 'lead.capture', targetIntentKey: 'appointment.request', catalogVersionId: journeyVersion.id });
+  });
+
+  it('derives optional post-registration questions from catalog slots', () => {
+    const enriched = {
+      ...version,
+      catalog: {
+        ...version.catalog,
+        slots: [...version.catalog.slots, { intentKey: 'lead.capture', slotKey: 'budget_aed', dataType: 'number', required: false, alternativeGroup: null, collectionOrder: 10, promptKey: 'lead.ask_budget', validationRule: 'number:positive', retentionClass: 'business' }],
+      },
+    };
+    expect(catalogNextFollowUpRequirement(enriched, 'lead.capture', { name: '[NAME_1]', email: '[EMAIL_1]' })?.slotKey).toBe('budget_aed');
+  });
+
+  it('does not treat invalid typed journey values as fulfilled', () => {
+    const typed = {
+      ...version,
+      catalog: {
+        ...version.catalog,
+        journeyRequirements: [
+          { intentKey: 'lead.capture', requirementKey: 'lead.visas', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'lead.ask_visas', validationRule: 'integer:0-10', slotKey: 'visa_count', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
+        ],
+      },
+    };
+    expect(catalogNextJourneyRequirement(typed, 'lead.capture', { visa_count: '-1' })?.requirementKey).toBe('lead.visas');
+    expect(catalogNextJourneyRequirement(typed, 'lead.capture', { visa_count: '3' })).toBeNull();
+  });
+
+  it('does not let a document from another typed journey fulfill the current requirement', () => {
+    const requirement = { intentKey: 'company.setup', requirementKey: 'company.passport', requirementType: 'document' as const, required: true, collectionOrder: 1, promptKey: 'company.ask_passport', validationRule: 'document:passport', slotKey: null, documentType: 'passport', fulfillmentMode: 'external_confirmation_required' as const, sourceOfTruth: 'tenant_catalog', notes: '' };
+    expect(journeyDocumentMatchesRequirement(requirement, { intentKey: 'other.intent', catalogVersionId: version.id, requirementKey: 'other.passport', expectedDocumentType: 'passport', status: 'completed' }, version.id)).toBe(false);
+    expect(journeyDocumentMatchesRequirement(requirement, { intentKey: 'company.setup', catalogVersionId: version.id, requirementKey: 'company.passport', expectedDocumentType: 'passport', status: 'completed' }, version.id)).toBe(true);
+    expect(journeyDocumentMatchesRequirement(requirement, { intentKey: 'company.setup', catalogVersionId: 'old-version', requirementKey: 'company.passport', expectedDocumentType: 'passport', status: 'completed' }, version.id)).toBe(false);
+  });
+
+  it('switches the active journey when a new intent is explicitly selected', () => {
+    const journeyVersion = { ...version, catalog: { ...version.catalog, intents: version.catalog.intents.map((intent) => intent.intentKey === 'appointment.request' ? { ...intent, active: true } : intent), journeyRequirements: [{ intentKey: 'lead.capture', requirementKey: 'lead.name', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', slotKey: 'name', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' }] } };
+    const first = reduceIntentJourney(journeyVersion, undefined, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: {} });
+    const switched = reduceIntentJourney(journeyVersion, first.progress, { currentIntentKey: 'appointment.request', selectedIntentKey: 'appointment.request', slotValues: {} });
+    expect(switched.progress.activeIntentKey).toBe('appointment.request');
   });
 });

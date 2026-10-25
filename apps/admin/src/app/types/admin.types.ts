@@ -72,6 +72,7 @@ export interface IngestionJob {
   status: IngestionJobStatus;
   attempts: number;
   errorCode: string | null;
+  errorDetail: string | null;
   updatedAt: string;
   mimeType?: string;
   durationMs?: number;

@@ -5,6 +5,7 @@ import { AdminStateService } from '../../services/admin-state.service';
 import { IntentCatalogService } from '../../services/intent-catalog.service';
 import { IntentCatalogVersion, IngestionJob, Tenant } from '../../types/admin.types';
 import { BadgeComponent } from '../shared/badge.component';
+import { apiErrorMessage } from '../../services/api-error';
 
 @Component({
   selector: 'app-intent-catalog',
@@ -18,15 +19,20 @@ import { BadgeComponent } from '../shared/badge.component';
           <h2 class="mt-1 text-xl font-bold tracking-tight text-neutral-900">Intent Catalog</h2>
           <p class="mt-1 max-w-2xl text-sm text-neutral-500">Upload the approved Excel contract, review the server-validated draft, then publish one tenant-scoped version for chat and workflow decisions.</p>
         </div>
-        <label class="cursor-pointer rounded-lg bg-neutral-900 px-4 py-2 text-xs font-semibold text-white hover:bg-neutral-800">
-          Replace with latest Excel
-          <input class="sr-only" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" (change)="upload($event)" />
-        </label>
+        <div class="flex flex-wrap gap-2">
+          <button *ngIf="canManagePersona && publishedVersion" type="button" (click)="exportPublished()" [disabled]="isExporting" class="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:cursor-wait disabled:opacity-60">
+            {{ isExporting ? 'Preparing Excel...' : 'Export published Excel' }}
+          </button>
+          <label class="cursor-pointer rounded-lg bg-neutral-900 px-4 py-2 text-xs font-semibold text-white hover:bg-neutral-800">
+            Replace with latest Excel
+            <input class="sr-only" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" (change)="upload($event)" />
+          </label>
+        </div>
       </div>
       <div *ngIf="catalogJob as job" class="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <p class="font-semibold">Catalog {{ job.status }}</p>
         <p *ngIf="job.status === 'queued' || job.status === 'processing'" class="mt-1 text-blue-700">The ingestion worker is validating the workbook. The catalog list will update automatically when processing completes.</p>
-        <p *ngIf="job.status === 'failed'" class="mt-1 text-red-700">Import failed: {{ job.errorCode || 'unknown error' }}. Upload the workbook again after fixing the reported issue.</p>
+        <p *ngIf="job.status === 'failed'" class="mt-1 text-red-700">Import failed: {{ job.errorCode || 'unknown error' }}{{ job.errorDetail ? ' — ' + job.errorDetail : '' }}. Upload the workbook again after fixing the reported issue.</p>
       </div>
       <div *ngIf="catalogError as error" class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900" role="alert">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -79,10 +85,12 @@ export class IntentCatalogComponent {
   get catalogJob(): IngestionJob | null { return this.service.catalogJob(); }
   get catalogError(): string | null { return this.service.catalogError(); }
   get versions(): IntentCatalogVersion[] { return this.service.versions(); }
+  get publishedVersion(): IntentCatalogVersion | null { return this.versions.find((version) => version.status === 'published') ?? null; }
 
   editingVersionId: string | null = null;
   editJson = '';
   editError = '';
+  isExporting = false;
   private lastLoadedTenantId: string | null = null;
 
   constructor() {
@@ -139,5 +147,27 @@ export class IntentCatalogComponent {
 
   publish(version: IntentCatalogVersion): void {
     this.service.publish(version);
+  }
+
+  exportPublished(): void {
+    const version = this.publishedVersion;
+    if (!version || this.isExporting) return;
+    this.isExporting = true;
+    this.service.exportPublished().subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `${this.selectedTenant?.slug ?? 'tenant'}-intent-catalog-v${version.version}.xlsx`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+        this.isExporting = false;
+        this.state.showToast('success', 'Catalog exported', `Published intent catalog v${version.version} downloaded.`);
+      },
+      error: (error) => {
+        this.isExporting = false;
+        this.state.showToast('error', 'Export failed', apiErrorMessage(error, 'Could not export the published catalog.'));
+      }
+    });
   }
 }

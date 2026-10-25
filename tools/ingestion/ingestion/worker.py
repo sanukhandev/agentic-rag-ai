@@ -39,6 +39,7 @@ def result_payload(source: IngestedSource) -> dict[str, Any]:
         "contentHash": source.content_hash,
         "parserVersion": source.parser_version,
         "chunks": [{"ordinal": chunk.ordinal, "locator": chunk.locator, "content": chunk.content, "contentHash": chunk.content_hash} for chunk in source.chunks],
+        "warnings": source.warnings,
     }
 
 
@@ -103,12 +104,12 @@ def submit_catalog_result(api_base: str, job_id: str, worker_secret: str, result
     return body
 
 
-def submit_failure(api_base: str, job_id: str, worker_secret: str, error_code: str = "INGESTION_FAILED", session: requests.Session | None = None) -> dict[str, Any]:
+def submit_failure(api_base: str, job_id: str, worker_secret: str, error_code: str = "INGESTION_FAILED", error_detail: str | None = None, session: requests.Session | None = None) -> dict[str, Any]:
     client = session or requests.Session()
     response = client.post(
         f"{api_base.rstrip('/')}/api/v1/internal/ingestion-jobs/{job_id}/failure",
         headers={"x-ingestion-worker-secret": worker_secret},
-        json={"errorCode": error_code},
+        json={"errorCode": error_code, **({"errorDetail": error_detail[:2_000]} if error_detail else {})},
         timeout=15,
     )
     raise_for_api_status(response)
@@ -242,10 +243,10 @@ def process_job(
             finally:
                 staging.purge(staged)
         return submit_result(api_base, job_id, worker_secret, ingested, client, claim=False)
-    except Exception:
+    except Exception as error:
         if claimed:
             try:
-                submit_failure(api_base, job_id, worker_secret, session=client)
+                submit_failure(api_base, job_id, worker_secret, error_detail=str(error), session=client)
             except Exception:
                 pass
         raise

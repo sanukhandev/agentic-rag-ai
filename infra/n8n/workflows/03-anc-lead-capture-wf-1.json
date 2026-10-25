@@ -172,7 +172,7 @@
         ] },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ Name: $('Fetch Authorized Remote CRM Payload').first().json.name, Company: $('Fetch Authorized Remote CRM Payload').first().json.company || $('Fetch Authorized Remote CRM Payload').first().json.companyName || '', Phone: $('Fetch Authorized Remote CRM Payload').first().json.phone, Email: $('Fetch Authorized Remote CRM Payload').first().json.email, Description: $('Fetch Authorized Remote CRM Payload').first().json.description }) }}",
+    "jsonBody": "={{ JSON.stringify({ Name: $('Fetch Authorized Remote CRM Payload').first().json.name, Company: $('Fetch Authorized Remote CRM Payload').first().json.company || $('Fetch Authorized Remote CRM Payload').first().json.companyName || 'Individual', Phone: $('Fetch Authorized Remote CRM Payload').first().json.phone, Email: $('Fetch Authorized Remote CRM Payload').first().json.email, Description: $('Fetch Authorized Remote CRM Payload').first().json.description }) }}",
         "options": {}
       },
       "id": "anc-wf1-remote",
@@ -261,7 +261,7 @@
         "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, state: 'human_review', externalReference: 'crm-review-' + $json.actionId }) }}",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, state: 'human_review', externalReference: 'crm-review-' + $json.actionId, executionReference: $json.executionReference, eventId: $json.eventId, correlationId: $json.correlationId, attempt: $json.attempt }) }}",
         "options": {}
       },
       "id": "anc-wf1-complete-support-review",
@@ -279,7 +279,7 @@
         "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, state: 'awaiting_customer', externalReference: 'crm-partial-' + $json.actionId }) }}",
+        "jsonBody": "={{ JSON.stringify({ actionId: $json.actionId, tenantId: $json.tenantId, state: 'awaiting_customer', externalReference: 'crm-partial-' + $json.actionId, executionReference: $json.executionReference, eventId: $json.eventId, correlationId: $json.correlationId, attempt: $json.attempt }) }}",
         "options": {}
       },
       "id": "anc-wf1-complete-partial-review",
@@ -297,7 +297,7 @@
         "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ actionId: $('Expand Claimed Events').first().json.actionId, tenantId: $('Expand Claimed Events').first().json.tenantId, state: 'reconcile_required', externalReference: 'crm-reconcile-' + $('Expand Claimed Events').first().json.actionId }) }}",
+        "jsonBody": "={{ JSON.stringify({ actionId: $('Expand Claimed Events').first().json.actionId, tenantId: $('Expand Claimed Events').first().json.tenantId, state: 'reconcile_required', externalReference: 'crm-reconcile-' + $('Expand Claimed Events').first().json.actionId, executionReference: $('Expand Claimed Events').first().json.executionReference, eventId: $('Expand Claimed Events').first().json.eventId, correlationId: $('Expand Claimed Events').first().json.correlationId, attempt: $('Expand Claimed Events').first().json.attempt }) }}",
         "options": {}
       },
       "id": "anc-wf1-complete-reconciliation",

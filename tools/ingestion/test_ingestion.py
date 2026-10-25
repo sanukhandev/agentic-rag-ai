@@ -31,6 +31,18 @@ class IngestionTests(unittest.TestCase):
                 sheet = workbook.create_sheet(name)
                 sheet.append(headers)
                 sheet.append(row)
+            policies = workbook.create_sheet("DocumentPolicies")
+            policies.append(["intent_key", "enabled", "workflow_key", "request_mode", "required", "request_prompt_key", "allowed_document_types", "allow_user_initiated", "consent_required", "preserve_primary_intent", "store_extracted_text", "summary_target", "auto_create_lead", "auto_index_in_rag", "notes"])
+            policies.append(["lead.capture", True, "document.intake", "conditional_offer", False, "document.ask_passport", '["passport"]', True, True, True, False, "crm_leads.summary", False, False, ""])
+            settings = workbook.create_sheet("DocumentSettings")
+            settings.append(["schema_version", "enabled", "storage_backend", "processing_provider", "workflow_key", "require_upload_consent", "max_file_bytes", "max_files_per_request", "max_pdf_pages", "ocr_languages", "allowed_mime_types", "retention_policy", "allow_public_document_urls", "allow_automatic_knowledge_ingestion", "allow_personal_identity_documents_by_default", "summary_rendering", "notes"])
+            settings.append(["document-v1", True, "private", "tesseract", "document.intake", True, 10000000, 1, 10, '["eng"]', '["image/jpeg"]', "tenant_configured", False, False, False, "redacted", ""])
+            journey = workbook.create_sheet("JourneyRequirements")
+            journey.append(["intent_key", "requirement_key", "requirement_type", "required", "collection_order", "prompt_key", "validation_rule", "slot_key", "document_type", "fulfillment_mode", "source_of_truth", "notes"])
+            journey.append(["lead.capture", "lead.name", "slot", True, 1, "lead.ask_name", "token:NAME", "name", None, "conversation_ready", "tenant_catalog", ""])
+            transitions = workbook.create_sheet("JourneyTransitions")
+            transitions.append(["source_intent_key", "target_intent_key", "activation_mode", "max_depth", "trigger_group", "prompt_key", "notes"])
+            transitions.append(["lead.capture", "lead.capture", "offer", 2, "related", "journey.next", ""])
             workbook.save(path)
             first = parse_intent_catalog(path)
             second = parse_intent_catalog(path)
@@ -39,6 +51,10 @@ class IngestionTests(unittest.TestCase):
             self.assertEqual(first["catalog"]["tenantScope"], "demo")
             self.assertEqual(first["catalog"]["qualityRules"], [])
             self.assertEqual(first["catalog"]["catalogManifest"], [])
+            self.assertEqual(first["catalog"]["documentPolicies"][0]["allowedDocumentTypes"], ["passport"])
+            self.assertEqual(first["catalog"]["documentSettings"]["ocrLanguages"], ["eng"])
+            self.assertEqual(first["catalog"]["journeyRequirements"][0]["requirementKey"], "lead.name")
+            self.assertEqual(first["catalog"]["journeyTransitions"][0]["maxDepth"], 2)
     def test_masks_pii_and_secrets_before_chunking(self) -> None:
         result = sanitize("Email alice@example.com, call +971 50 123 4567, api_key=secret-value")
         self.assertNotIn("alice@example.com", result)
@@ -165,19 +181,29 @@ class IngestionTests(unittest.TestCase):
             self.assertTrue(any(chunk.locator.startswith("bundle/training/professional-profile.md") for chunk in source.chunks))
             self.assertTrue(any(chunk.locator.startswith("bundle/training/career-timeline.txt") for chunk in source.chunks))
 
-    def test_zip_rejects_unsupported_nested_and_unsafe_members(self) -> None:
+    def test_zip_skips_unaccepted_members_and_reports_warnings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             unsupported = Path(directory) / "unsupported.zip"
             with zipfile.ZipFile(unsupported, "w") as archive:
                 archive.writestr("payload.exe", "not supported")
-            with self.assertRaisesRegex(ValueError, "unsupported file type"):
-                ingest_file(unsupported)
+                archive.writestr("faq.txt", "Approved FAQ")
+            source = ingest_file(unsupported)
+            self.assertIn("Approved FAQ", source.normalized_content)
+            self.assertNotIn("payload.exe", source.normalized_content)
+            self.assertTrue(any("payload.exe" in warning and "unsupported file type" in warning for warning in source.warnings))
 
             nested = Path(directory) / "nested.zip"
             with zipfile.ZipFile(nested, "w") as archive:
                 archive.writestr("nested.zip", "PK\\x05\\x06")
-            with self.assertRaisesRegex(ValueError, "Nested ZIP"):
-                ingest_file(nested)
+                archive.writestr("faq.txt", "Approved FAQ")
+            nested_source = ingest_file(nested)
+            self.assertTrue(any("nested.zip" in warning and "nested ZIP" in warning for warning in nested_source.warnings))
+
+            only_unsupported = Path(directory) / "only-unsupported.zip"
+            with zipfile.ZipFile(only_unsupported, "w") as archive:
+                archive.writestr("payload.exe", "not supported")
+            with self.assertRaisesRegex(ValueError, "no supported files.*payload.exe"):
+                ingest_file(only_unsupported)
 
             unsafe = Path(directory) / "unsafe.zip"
             with zipfile.ZipFile(unsafe, "w") as archive:
@@ -195,6 +221,23 @@ class IngestionTests(unittest.TestCase):
             source = ingest_file(path)
 
             self.assertGreater(len(source.normalized_content), 200_000)
+
+    def test_zip_accepts_content_over_one_million_characters(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "large-training.zip"
+            content = ("Approved training paragraph.\n\n" * 60_000)
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("training/large.txt", content)
+
+            source = ingest_file(path)
+
+            self.assertGreater(len(source.normalized_content), 1_000_000)
+            self.assertGreater(len(source.chunks), 2_000)
+
+    def test_normalized_output_budget_fails_without_truncating_content(self) -> None:
+        with patch("ingestion.pipeline.MAX_NORMALIZED_BYTES", 32):
+            with self.assertRaisesRegex(ValueError, "output budget"):
+                ingest_text("large", "A" * 64, "text/plain")
 
     def test_pdf_locators_and_ocr_only_rejection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -288,6 +331,7 @@ class IngestionTests(unittest.TestCase):
         source = ingest_text("FAQ", "Email alice@example.com.\n\nPricing is 42 credits.", "text/plain")
         payload = result_payload(source)
         self.assertNotIn("alice@example.com", payload["normalizedContent"])
+        self.assertEqual(payload["warnings"], [])
         self.assertEqual(payload["chunks"][0]["contentHash"], source.chunks[0].content_hash)
         self.assertNotIn("content_hash", payload["chunks"][0])
         session = Mock()
@@ -345,9 +389,9 @@ class IngestionTests(unittest.TestCase):
         response = Mock()
         response.json.return_value = {"job": {"status": "failed"}}
         session.post.return_value = response
-        output = submit_failure("http://localhost:4000", "job-1", "worker-secret", session=session)
+        output = submit_failure("http://localhost:4000", "job-1", "worker-secret", error_detail="ZIP archive contains no supported files: payload.exe", session=session)
         self.assertEqual(output["job"]["status"], "failed")
-        self.assertEqual(session.post.call_args.kwargs["json"], {"errorCode": "INGESTION_FAILED"})
+        self.assertEqual(session.post.call_args.kwargs["json"], {"errorCode": "INGESTION_FAILED", "errorDetail": "ZIP archive contains no supported files: payload.exe"})
 
     def test_worker_preserves_safe_api_error_code(self) -> None:
         source = ingest_text("FAQ", "Approved content", "text/plain")

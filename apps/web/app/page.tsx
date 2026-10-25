@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   formatNaturalAbstention,
+  formatAgentGreeting,
   actionOutcomeText,
   isChatActionState,
   isTerminalChatActionState,
@@ -11,6 +12,7 @@ import {
   renderMarkdown,
   resolveTenantSlug,
   type ChatActionState,
+  type ChatCitation,
   type ChatHistoryMessage,
   type ChatReply,
   type DisplayMessage,
@@ -44,6 +46,7 @@ const api = configuredApi && configuredApi !== '/' ? configuredApi.replace(/\/$/
 export default function Home() {
   const [tenantSlug, setTenantSlug] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [pendingRequirementKey, setPendingRequirementKey] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [busy, setBusy] = useState(false);
@@ -114,6 +117,30 @@ export default function Home() {
     }]);
   };
 
+  const appendActionFollowUp = async (activeSessionId: string, proposalId: string): Promise<void> => {
+    try {
+      const response = await fetch(`${api}/api/v1/chat/actions/${proposalId}/follow-up?sessionId=${encodeURIComponent(activeSessionId)}`, { method: 'POST' });
+      const body = (await response.json()) as { message?: { id?: string; answer?: string; grounded?: boolean; conversational?: boolean; citations?: ChatCitation[]; createdAt?: string }; error?: { message?: string } };
+      if (!response.ok || !body.message?.answer) {
+        setError(body.error?.message ?? 'The assistant could not prepare the next conversation step.');
+        return;
+      }
+      const message = body.message;
+      setMessages((prev) => prev.some((item) => item.id === `action-follow-up-${proposalId}`) ? prev : [...prev, {
+        id: `action-follow-up-${proposalId}`,
+        role: 'assistant',
+        content: message.answer!,
+        grounded: message.grounded === true,
+        conversational: message.conversational !== false,
+        citations: message.citations ?? [],
+        actionState: 'reconcile_required',
+        createdAt: message.createdAt ?? new Date().toISOString()
+      }]);
+    } catch {
+      setError('The assistant could not prepare the next conversation step.');
+    }
+  };
+
   useEffect(() => {
     const supported = Boolean(getSpeechRecognitionConstructor()) &&
       typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
@@ -146,6 +173,7 @@ export default function Home() {
     if (!isValidTenantSlug(tenantSlug)) {
       setConfig(null);
       setSessionId(null);
+      setPendingRequirementKey(null);
       setMessages([]);
       setDocuments([]);
       return;
@@ -161,6 +189,7 @@ export default function Home() {
     const savedSession = window.localStorage.getItem(`agentic-rag-session:${tenantSlug}`);
     if (!savedSession) {
       setSessionId(null);
+      setPendingRequirementKey(null);
       setMessages([]);
       setDocuments([]);
       return;
@@ -171,6 +200,7 @@ export default function Home() {
         if (!response.ok) throw new Error('Saved session is unavailable.');
         const body = (await response.json()) as { messages: ChatHistoryMessage[] };
         setSessionId(savedSession);
+        setPendingRequirementKey([...body.messages].reverse().find((message) => message.role === 'assistant' && message.pendingRequirementKey)?.pendingRequirementKey ?? null);
         void refreshDocuments(savedSession).catch(() => setDocuments([]));
         const restored: DisplayMessage[] = body.messages.map((m, idx) => ({
           id: `restored-${idx}`,
@@ -179,6 +209,7 @@ export default function Home() {
           grounded: m.citations.length > 0,
           conversational: m.conversational,
           citations: m.citations,
+          pendingRequirementKey: m.pendingRequirementKey,
           createdAt: new Date().toISOString()
         }));
         setMessages(restored);
@@ -186,6 +217,7 @@ export default function Home() {
       .catch(() => {
         window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
         setSessionId(null);
+        setPendingRequirementKey(null);
         setMessages([]);
         setDocuments([]);
       });
@@ -202,7 +234,7 @@ export default function Home() {
 
   const tenantName = config?.tenant?.name ?? 'Tenant workspace';
   const agentName = config?.persona?.name ?? 'AI assistant';
-  const agentGreeting = config?.persona?.greeting ?? 'Create a tenant and configure its assistant to begin.';
+  const agentGreeting = formatAgentGreeting(config?.persona?.greeting, 'Create a tenant and configure its assistant to begin.');
   const agentTone = config?.persona?.tone ?? 'Not configured';
   const agentStyle = config?.persona?.speakingStyle ?? 'Not configured';
   const permittedLanguages = config?.persona?.permittedLanguages ?? [];
@@ -468,10 +500,12 @@ export default function Home() {
         grounded: body.grounded,
         conversational: body.conversational,
         citations: body.citations || [],
+        pendingRequirementKey: body.pendingRequirementKey ?? null,
         actionProposal: body.actionProposal,
         actionState: body.actionProposal ? 'awaiting_confirmation' : undefined,
         createdAt: new Date().toISOString()
       };
+      setPendingRequirementKey(body.pendingRequirementKey ?? null);
       setMessages((prev) => [...prev, assistantMsg]);
 
       if (isFromVoice && voiceModeActiveRef.current) {
@@ -500,7 +534,7 @@ export default function Home() {
         setSessionId(activeSession); window.localStorage.setItem(`agentic-rag-session:${tenantSlug}`, activeSession);
       }
       const base64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] ?? ''); reader.onerror = () => reject(new Error('The document could not be read.')); reader.readAsDataURL(selectedFile); });
-      const response = await fetch(`${api}/api/v1/chat/sessions/${activeSession}/documents`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fileName: selectedFile.name, mimeType: selectedFile.type, contentBase64: base64, processingConsent: true }) });
+      const response = await fetch(`${api}/api/v1/chat/sessions/${activeSession}/documents`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fileName: selectedFile.name, mimeType: selectedFile.type, contentBase64: base64, processingConsent: true, ...(pendingRequirementKey ? { requirementKey: pendingRequirementKey } : {}) }) });
       const body = (await response.json()) as { document?: ChatDocument; error?: { message?: string } };
       if (!response.ok) throw new Error(body.error?.message ?? 'The document could not be registered.');
       setDocumentStatus('Registered. Document verification is starting…');
@@ -559,7 +593,8 @@ export default function Home() {
       );
       if (state === 'approved' || state === 'processing') appendActionOutcome(proposalId, state);
       if (isTerminalChatActionState(state)) {
-        appendActionOutcome(proposalId, state);
+        if (state === 'reconcile_required') await appendActionFollowUp(activeSessionId, proposalId);
+        else appendActionOutcome(proposalId, state);
         return;
       }
       for (let attempt = 0; attempt < 90; attempt += 1) {
@@ -575,7 +610,8 @@ export default function Home() {
           actionProposal: isTerminalChatActionState(nextState) ? null : m.actionProposal
         }));
         if (isTerminalChatActionState(nextState)) {
-          appendActionOutcome(proposalId, nextState);
+          if (nextState === 'reconcile_required') await appendActionFollowUp(activeSessionId, proposalId);
+          else appendActionOutcome(proposalId, nextState);
           return;
         }
       }
@@ -587,6 +623,7 @@ export default function Home() {
   const reset = () => {
     window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
     setSessionId(null);
+    setPendingRequirementKey(null);
     setMessages([]);
     setMessage('');
     setError('');

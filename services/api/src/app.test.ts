@@ -30,6 +30,22 @@ class CapturingModel implements ChatModel {
   }
 }
 
+class ContinuityModel extends CapturingModel {
+  async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
+    const draft = await super.draft(input);
+    return input.followUpContext?.continuityTurn
+      ? { answer: 'Thanks, I’ve noted that. Would you like to include visa services?', citationIds: [], proposedIntent: null }
+      : draft;
+  }
+}
+
+class ReconcileFollowUpModel extends CapturingModel {
+  async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
+    if (input.followUpContext?.responseMode === 'reconcile_follow_up') return { answer: 'I’ll keep the conversation open while this is reviewed. What would you like to go over next?', citationIds: [], proposedIntent: null };
+    return super.draft(input);
+  }
+}
+
 class ContextNormalizingModel extends CapturingModel {
   public readonly normalizationInputs: QueryNormalizationInput[] = [];
   async normalizeQuery(input: QueryNormalizationInput): Promise<string | null> { this.normalizationInputs.push(input); return input.maskedMessage; }
@@ -198,7 +214,7 @@ describe('API vertical slice', () => {
     const identitySession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
     const identity = await api.post('/api/v1/chat/messages').send({ sessionId: identitySession.body.sessionId, message: "what's your name?", clientMessageId: 'identity-with-knowledge-1' }).expect(200);
     expect(identity.body).toMatchObject({ grounded: false, conversational: true, citations: [] });
-    expect(identity.body.answer).toContain('Tenant A’s AI assistant and associate');
+    expect(identity.body.answer).toContain('configured assistant for Tenant A');
     expect(model.prompts).toHaveLength(promptCountBeforeGreeting + 1);
     const farewellSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
     const farewell = await api.post('/api/v1/chat/messages').send({ sessionId: farewellSession.body.sessionId, message: 'That’s all, bye', clientMessageId: 'farewell-1' }).expect(200);
@@ -259,9 +275,9 @@ describe('API vertical slice', () => {
     expect(tenantAAudit.body.items.some((event: { eventName: string }) => event.eventName === 'workflow.approved')).toBe(true);
     expect((await api.get('/api/v1/admin/workflow-runs').set('Authorization', `Bearer ${adminBToken}`).expect(200)).body.items).toHaveLength(0);
     expect((await api.get('/api/v1/admin/audit').set('Authorization', `Bearer ${adminBToken}`).expect(200)).body.items.some((event: { eventName: string }) => event.eventName === 'workflow.approved')).toBe(false);
-    const callbackReply = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'Please contact me for a demo.', clientMessageId: 'callback-proposal' }).expect(200);
-    const callbackActionId = callbackReply.body.actionProposal.id as string;
-    const callbackAction = await runtime.store.getAction(callbackActionId);
+    const callbackSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
+    const callbackAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenantA.body.tenant.id, sessionId: callbackSession.body.sessionId, workflowKey: 'lead.capture', intentKey: 'lead.capture', intentScore: 80, intentConfidence: 0.9, catalogVersionId: null, idempotencyKey: 'callback-proposal', state: 'awaiting_confirmation', opaqueReference: 'callback-proposal', payload: { name: '[NAME_2]', email: '[EMAIL_2]', phone: '[PHONE_2]', contactConsent: true }, createdAt: new Date().toISOString(), result: null });
+    const callbackActionId = callbackAction.id;
     const callbackExecution = await seedWorkflowExecution(runtime.store, callbackAction!);
     const callbackBody = { actionId: callbackActionId, tenantId: tenantA.body.tenant.id as string, state: 'completed', externalReference: 'n8n-callback-1', ...callbackExecution };
     const callbackTimestamp = Date.now();
@@ -480,9 +496,9 @@ describe('API vertical slice', () => {
     await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/claim`).expect(401);
     const claimed = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/claim`).set('x-ingestion-worker-secret', 'worker-secret').expect(200);
     expect(claimed.body.job.status).toBe('processing');
-    const result = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/result`).set('x-ingestion-worker-secret', 'worker-secret').send({ normalizedContent, contentHash: contentHash(normalizedContent), parserVersion: 'test-parser', chunks: [{ ordinal: 0, locator: 'page 2', content: chunkContent, contentHash: contentHash(chunkContent) }] }).expect(201);
+    const result = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/result`).set('x-ingestion-worker-secret', 'worker-secret').send({ normalizedContent, contentHash: contentHash(normalizedContent), parserVersion: 'test-parser', chunks: [{ ordinal: 0, locator: 'page 2', content: chunkContent, contentHash: contentHash(chunkContent) }], warnings: ['Skipped legacy.exe: unsupported file type .exe.'] }).expect(201);
     expect(result.body.source).toMatchObject({ tenantId: tenant.body.tenant.id, title: 'Worker FAQ', status: 'awaiting_review' });
-    expect((await api.get(`/api/v1/admin/ingestion-jobs/${job.body.job.id}`).set('Authorization', `Bearer ${admin.body.token}`).expect(200)).body.job).toMatchObject({ status: 'completed', sourceId: result.body.source.id, attempts: 1 });
+    expect((await api.get(`/api/v1/admin/ingestion-jobs/${job.body.job.id}`).set('Authorization', `Bearer ${admin.body.token}`).expect(200)).body.job).toMatchObject({ status: 'completed', sourceId: result.body.source.id, attempts: 1, errorDetail: 'Skipped legacy.exe: unsupported file type .exe.' });
     await api.post(`/api/v1/admin/sources/${result.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     const reindexed = await api.post(`/api/v1/admin/sources/${result.body.source.id}/reindex`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     expect(reindexed.body.source).toMatchObject({ id: result.body.source.id, status: 'awaiting_review' });
@@ -497,7 +513,8 @@ describe('API vertical slice', () => {
     const nextJob = await api.post('/api/v1/admin/ingestion-jobs').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Worker Queue FAQ', mimeType: 'text/plain', audience: 'public' }).expect(202);
     const nextClaim = await api.post('/api/v1/internal/ingestion-jobs/claim-next').set('x-ingestion-worker-secret', 'worker-secret').expect(200);
     expect(nextClaim.body.job).toMatchObject({ id: nextJob.body.job.id, status: 'processing', attempts: 1 });
-    await api.post(`/api/v1/internal/ingestion-jobs/${nextJob.body.job.id}/failure`).set('x-ingestion-worker-secret', 'worker-secret').send({ errorCode: 'INGESTION_FAILED' }).expect(200);
+    const failed = await api.post(`/api/v1/internal/ingestion-jobs/${nextJob.body.job.id}/failure`).set('x-ingestion-worker-secret', 'worker-secret').send({ errorCode: 'INGESTION_FAILED', errorDetail: 'ZIP archive contains no supported files: payload.exe' }).expect(200);
+    expect(failed.body.job).toMatchObject({ status: 'failed', errorCode: 'INGESTION_FAILED', errorDetail: 'ZIP archive contains no supported files: payload.exe' });
   });
 
   it('queues a bounded private file upload for the Python worker and purges it after success', async () => {
@@ -586,17 +603,16 @@ describe('API vertical slice', () => {
     await api.options('/api/v1/chat/sessions').set('Origin', 'https://unknown.example').set('Access-Control-Request-Method', 'POST').expect(403);
   });
 
-  it('allows only failed tenant ingestion jobs to be retried', async () => {
+  it('does not retry a failed upload after its private input was purged', async () => {
     const runtime = createApp({ nodeEnv: 'test' });
     const api = request(runtime.app);
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-retry@example.test', password: 'Platform1Password' }).expect(201);
-    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Retry Tenant', slug: 'retry-tenant', adminEmail: 'admin-retry@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Retry Tenant', slug: 'retry-tenant', adminEmail: 'admin-retry@example.test', adminPassword: 'TenantA1Password' }).expect(201);
     const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-retry@example.test', password: 'TenantA1Password' }).expect(200);
     const created = await api.post('/api/v1/admin/ingestion-jobs').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Retry FAQ', mimeType: 'text/plain', audience: 'public' }).expect(202);
     const failed = await runtime.store.updateIngestionJob({ ...created.body.job, status: 'failed', errorCode: 'INGESTION_FAILED', updatedAt: new Date().toISOString() });
-    const retried = await api.post(`/api/v1/admin/ingestion-jobs/${failed.id}/retry`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
-    expect(retried.body.job).toMatchObject({ id: failed.id, tenantId: tenant.body.tenant.id, status: 'queued', errorCode: null });
-    await api.post(`/api/v1/admin/ingestion-jobs/${failed.id}/retry`).set('Authorization', `Bearer ${admin.body.token}`).expect(409);
+    const retried = await api.post(`/api/v1/admin/ingestion-jobs/${failed.id}/retry`).set('Authorization', `Bearer ${admin.body.token}`).expect(409);
+    expect(retried.body.error).toMatchObject({ code: 'INGESTION_INPUT_NOT_FOUND', message: 'The original upload is no longer available. Upload the file again to retry.' });
   });
 
   it('persists assistant responses with masked PII and rehydrates only at the API boundary', async () => {
@@ -653,7 +669,7 @@ describe('API vertical slice', () => {
     expect(stored.body.lead).toMatchObject({ intent: 'lead.capture', score: 70, validationPass: true, summaryStatus: 'pending' });
     await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/summary`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, summary: 'Customer [NAME_1] requested a demo via [PHONE_1].', status: 'completed' }).expect(200);
     const remotePayload = await api.post(`/api/v1/internal/crm/leads/${stored.body.lead.id}/remote-payload`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, actionId }).expect(200);
-    expect(remotePayload.body).toMatchObject({ name: 'Alice', phone: '+971500000000', email: 'alice@example.com' });
+    expect(remotePayload.body).toMatchObject({ name: 'Alice', company: 'Individual', phone: '+971500000000', email: 'alice@example.com' });
     const linked = await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/remote`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, leadId: 'remote-123', remoteCrm: 'remote-crm-test' }).expect(200);
     expect(linked.body.lead).toMatchObject({ leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
     const formatted = await api.post(`/api/v1/admin/crm/leads/${stored.body.lead.id}/summarize`).set('Authorization', `Bearer ${admin.body.token}`).send({}).expect(200);
@@ -887,13 +903,15 @@ describe('API vertical slice', () => {
     expect(enquiry.body.actionProposal).toBeNull();
     const interest = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to get a service', clientMessageId: 'browser-lead-4' }).expect(200);
     expect(interest.body.answer).toContain('What name');
-    const name = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'My name is Alice', clientMessageId: 'browser-lead-5' }).expect(200);
+    const name = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I am Alice', clientMessageId: 'browser-lead-5' }).expect(200);
     expect(name.body.answer).toContain('email address');
+    expect(name.body.answer).not.toContain('Nice to meet you');
     const contact = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'alice@example.com and +971500000000', clientMessageId: 'browser-lead-6' }).expect(200);
     expect(contact.body.actionProposal).toMatchObject({ intent: 'lead.capture' });
 
     const confirmed = await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
     expect(confirmed.body.action.state).toBe('approved');
+    expect(confirmed.body.message).toBeNull();
     expect(workflow.calls).toHaveLength(0);
     const followUp = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What packages and setup steps are available?', clientMessageId: 'browser-lead-follow-up-1' }).expect(200);
     expect(followUp.body.grounded).toBe(true);
@@ -916,5 +934,357 @@ describe('API vertical slice', () => {
     expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', email: 'alice@example.com' }, intent: 'lead.capture', score: 80, quality: 'warm', validationPass: true, summaryStatus: 'completed' });
     expect(crm.body.items[0].summary).toContain('Quality: warm');
     expect(crm.body.items[0].conversation).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'user' }), expect.objectContaining({ role: 'assistant' })]));
+  });
+
+  it('keeps a registered lead conversational and prevents a second action on follow-up turns', async () => {
+    const model = new ContinuityModel();
+    const runtime = createApp({ nodeEnv: 'test', model, workflow: new MockWorkflowAdapter() });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-continuity@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Continuity Tenant', slug: 'continuity-tenant', adminEmail: 'admin-continuity@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-continuity@example.test', password: 'TenantA1Password' }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Continuity setup guide', mimeType: 'text/plain', audience: 'public', content: 'The approved setup guide explains company packages, setup steps and available timelines.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to get a service', clientMessageId: 'continuity-interest' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'My name is Nina', clientMessageId: 'continuity-name' }).expect(200);
+    const contact = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'nina@example.com and +971500000001', clientMessageId: 'continuity-contact' }).expect(200);
+    expect(contact.body.actionProposal).not.toBeNull();
+    const interrupted = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Thanks, I will review that.', clientMessageId: 'continuity-interruption' }).expect(200);
+    expect(interrupted.body.actionProposal).toMatchObject({ id: contact.body.actionProposal.id });
+    await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
+    const afterApproval = await runtime.store.getSession(session.body.sessionId);
+    const consentCapturedAt = afterApproval?.conversationState?.consentCapturedAt;
+    expect(consentCapturedAt).toEqual(expect.any(String));
+
+    const contextual = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'yes 2 weeks', clientMessageId: 'continuity-timeline' }).expect(200);
+    expect(contextual.body).toMatchObject({ grounded: false, conversational: true, citations: [], actionProposal: null });
+    expect(contextual.body.answer).not.toContain('verified information');
+    expect(model.followUpContexts.at(-1)).toMatchObject({ leadCaptured: true, continuityTurn: true, capturedSlots: expect.any(Object) });
+
+    const knowledge = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What packages and setup steps are available?', clientMessageId: 'continuity-knowledge' }).expect(200);
+    expect(knowledge.body.grounded).toBe(true);
+    expect(knowledge.body.citations).not.toHaveLength(0);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.consentCapturedAt).toBe(consentCapturedAt);
+
+    const repeatedRequest = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to request a demo', clientMessageId: 'continuity-repeat' }).expect(200);
+    expect(repeatedRequest.body.actionProposal).toBeNull();
+    expect((await runtime.store.listActions(tenant.body.tenant.id)).filter((action) => action.sessionId === session.body.sessionId)).toHaveLength(1);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.selectedIntentKey).toBeNull();
+  });
+
+  it('generates and persists an AI reconciliation follow-up instead of a hardcoded status message', async () => {
+    const runtime = createApp({ nodeEnv: 'test', model: new ReconcileFollowUpModel() });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-reconcile-follow-up@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Reconcile Follow-up Tenant', slug: 'reconcile-follow-up-tenant', adminEmail: 'admin-reconcile-follow-up@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to request a service', clientMessageId: 'reconcile-follow-up-interest' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'My name is Lina', clientMessageId: 'reconcile-follow-up-name' }).expect(200);
+    const contact = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'lina@example.com and +971500000002', clientMessageId: 'reconcile-follow-up-contact' }).expect(200);
+    const action = await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
+    expect(action.body.action.state).toBe('approved');
+    const storedAction = await runtime.store.getAction(contact.body.actionProposal.id);
+    await runtime.store.updateAction({ ...storedAction!, state: 'reconcile_required' });
+
+    const first = await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/follow-up?sessionId=${session.body.sessionId}`).expect(200);
+    const second = await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/follow-up?sessionId=${session.body.sessionId}`).expect(200);
+    expect(first.body.message.answer).toContain('?');
+    expect(first.body.message.answer).not.toContain('external confirmation needs review');
+    expect(second.body.message.id).toBe(first.body.message.id);
+    expect((await runtime.store.listMessages(session.body.sessionId, tenant.body.tenant.id)).filter((message) => message.clientMessageId === `action-follow-up:${contact.body.actionProposal.id}`)).toHaveLength(1);
+  });
+
+  it('uses typed journey requirements to capture custom slot answers and advance one step at a time', async () => {
+    const runtime = createApp({ nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-journey-contract@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Journey Contract Tenant', slug: 'journey-contract-tenant', adminEmail: 'admin-journey-contract@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [{ intentKey: 'company.setup', displayName: 'Set up a company', description: 'Company setup', category: 'service', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' }],
+      signals: [{ intentKey: 'company.setup', signalId: 'company-start', signalType: 'phrase' as const, value: 'start a business', language: 'en', matchMode: 'contains', weight: 80, relationGroup: 'company_formation', notes: '' }],
+      slots: [
+        { intentKey: 'company.setup', slotKey: 'business_activity', dataType: 'text', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'company.ask_activity', validationRule: 'text:business_activity', retentionClass: 'business' },
+        { intentKey: 'company.setup', slotKey: 'company_structure', dataType: 'enum', required: true, alternativeGroup: null, collectionOrder: 2, promptKey: 'company.ask_structure', validationRule: 'enum:catalog_value', retentionClass: 'business' },
+        { intentKey: 'company.setup', slotKey: 'visa_count', dataType: 'integer', required: true, alternativeGroup: null, collectionOrder: 3, promptKey: 'company.ask_visas', validationRule: 'integer:0-10', retentionClass: 'business' },
+      ],
+      relations: [],
+      workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'journey-contract', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
+      journeyRequirements: [
+        { intentKey: 'company.setup', requirementKey: 'company.activity', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'company.ask_activity', validationRule: 'text:business_activity', slotKey: 'business_activity', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
+        { intentKey: 'company.setup', requirementKey: 'company.structure', requirementType: 'slot' as const, required: true, collectionOrder: 2, promptKey: 'company.ask_structure', validationRule: 'enum:catalog_value', slotKey: 'company_structure', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
+        { intentKey: 'company.setup', requirementKey: 'company.visas', requirementType: 'slot' as const, required: true, collectionOrder: 3, promptKey: 'company.ask_visas', validationRule: 'integer:0-10', slotKey: 'visa_count', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
+      ],
+    } satisfies IntentCatalog;
+    const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'journey.xlsx', sourceHash: 'j'.repeat(64), parserVersion: 'test', catalog });
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const first = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I want to start a business', clientMessageId: 'journey-contract-1' }).expect(200);
+    expect(first.body.pendingPromptId).toEqual(expect.any(String));
+    expect(first.body.pendingRequirementKey).toBe('company.activity');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ catalogVersionId: version.id, selectedIntentKey: 'company.setup', pendingPrompt: { requirementKey: 'company.activity', slotKey: 'business_activity' }, intentProgress: { activeIntentKey: 'company.setup' } });
+    const clarification = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'why', clientMessageId: 'journey-contract-clarification' }).expect(200);
+    expect(clarification.body.conversational).toBe(true);
+    expect(clarification.body.answer).toContain('clarify');
+    expect(clarification.body.pendingRequirementKey).toBe('company.activity');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues).not.toHaveProperty('business_activity');
+    const activity = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'CCTV installation and monitoring', clientMessageId: 'journey-contract-2' }).expect(200);
+    expect(activity.body.answer).toContain('company structure');
+    expect(activity.body.pendingRequirementKey).toBe('company.structure');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ slotValues: { business_activity: 'CCTV installation and monitoring' }, pendingPrompt: { requirementKey: 'company.structure', slotKey: 'company_structure' }, intentProgress: { entries: { 'company.setup': { completedRequirementKeys: ['company.activity'] } } } });
+    const structure = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'FZC with two partners', clientMessageId: 'journey-contract-3' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.company_structure).toBe('FZC with two partners');
+    expect(structure.body.pendingRequirementKey).toBe('company.visas');
+    const visas = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: '3 visas', clientMessageId: 'journey-contract-4' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.visa_count).toBe('3');
+    expect(visas.body.answer).not.toContain('company visas');
+  });
+
+  it('keeps transition offers in the chat API scoped, declines once, and activates only after approval', async () => {
+    const runtime = createApp({ nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-transition-api@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Transition API Tenant', slug: 'transition-api-tenant', adminEmail: 'admin-transition-api@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [
+        { intentKey: 'alpha.request', displayName: 'Alpha request', description: 'Alpha request', category: 'service', workflowKey: 'alpha.workflow', minimumScore: 50, confidenceThreshold: 0.5, confirmationRequired: false, active: true, priority: 100, versionNote: '' },
+        { intentKey: 'beta.request', displayName: 'Beta request', description: 'Beta request', category: 'service', workflowKey: 'beta.workflow', minimumScore: 50, confidenceThreshold: 0.5, confirmationRequired: false, active: true, priority: 90, versionNote: '' },
+      ],
+      signals: [
+        { intentKey: 'alpha.request', signalId: 'alpha', signalType: 'phrase' as const, value: 'start alpha', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' },
+        { intentKey: 'beta.request', signalId: 'beta', signalType: 'phrase' as const, value: 'need beta', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' },
+      ],
+      slots: [
+        { intentKey: 'alpha.request', slotKey: 'alpha_details', dataType: 'text', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'alpha.ask_details', validationRule: 'text:nonempty', retentionClass: 'business' },
+        { intentKey: 'beta.request', slotKey: 'beta_details', dataType: 'text', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'beta.ask_details', validationRule: 'text:nonempty', retentionClass: 'business' },
+      ],
+      relations: [],
+      workflowBindings: [
+        { workflowKey: 'alpha.workflow', n8nWorkflowId: 'alpha', webhookPath: 'alpha', payloadContract: 'alpha-v1', sideEffectClass: 'human_review', active: true },
+        { workflowKey: 'beta.workflow', n8nWorkflowId: 'beta', webhookPath: 'beta', payloadContract: 'beta-v1', sideEffectClass: 'human_review', active: true },
+      ],
+      journeyRequirements: [
+        { intentKey: 'alpha.request', requirementKey: 'alpha.details', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'alpha.ask_details', validationRule: 'text:nonempty', slotKey: 'alpha_details', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
+        { intentKey: 'beta.request', requirementKey: 'beta.details', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'beta.ask_details', validationRule: 'text:nonempty', slotKey: 'beta_details', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
+      ],
+      journeyTransitions: [{ sourceIntentKey: 'alpha.request', targetIntentKey: 'beta.request', activationMode: 'offer' as const, maxDepth: 2, triggerGroup: 'related', promptKey: 'journey.offer_beta', notes: 'Internal transition note.' }],
+    } satisfies IntentCatalog;
+    const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'transition-api.json', sourceHash: 'x'.repeat(64), parserVersion: 'test', catalog });
+    const protectedSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const protectedStored = await runtime.store.getSession(protectedSession.body.sessionId);
+    protectedStored!.conversationState = {
+      ...protectedStored!.conversationState!, catalogVersionId: version.id, selectedIntentKey: 'alpha.request', slotValues: { alpha_details: 'Alpha details', contact_consent: 'true' }, contactConsent: 'granted', workflowStatus: 'succeeded', phase: 'SUCCEEDED', pendingPrompt: null,
+      intentProgress: { version: 1, activeIntentKey: 'alpha.request', pausedIntentKeys: [], fulfilledIntentKeys: ['alpha.request'], entries: { 'alpha.request': { intentKey: 'alpha.request', status: 'fulfilled', completedRequirementKeys: ['alpha.details'], currentRequirementKey: null, revision: 1 } }, visitedIntentKeys: ['alpha.request'], lastTransitionReason: 'intent_fulfilled', journeyRevision: 1 },
+    };
+    await runtime.store.updateSession(protectedStored!);
+    await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: protectedSession.body.sessionId, workflowKey: 'alpha.workflow', intentKey: 'alpha.request', catalogVersionId: version.id, idempotencyKey: 'transition-protected-action', state: 'approved', opaqueReference: 'transition-protected-reference', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
+    const protectedOffer = await api.post('/api/v1/chat/messages').send({ sessionId: protectedSession.body.sessionId, message: 'I need beta', clientMessageId: 'transition-protected-offer' }).expect(200);
+    expect(protectedOffer.body.pendingPromptId).toEqual(expect.any(String));
+    expect((await runtime.store.getSession(protectedSession.body.sessionId))?.conversationState?.contactConsent).toBe('granted');
+    const protectedDecline = await api.post('/api/v1/chat/messages').send({ sessionId: protectedSession.body.sessionId, message: 'No', replyToPromptId: protectedOffer.body.pendingPromptId, clientMessageId: 'transition-protected-decline' }).expect(200);
+    expect(protectedDecline.body.pendingPromptId).toBeNull();
+    expect((await runtime.store.getSession(protectedSession.body.sessionId))?.conversationState?.contactConsent).toBe('granted');
+    const protectedOfferAgain = await api.post('/api/v1/chat/messages').send({ sessionId: protectedSession.body.sessionId, message: 'I need beta', clientMessageId: 'transition-protected-offer-again' }).expect(200);
+    const protectedAccepted = await api.post('/api/v1/chat/messages').send({ sessionId: protectedSession.body.sessionId, message: 'Yes', replyToPromptId: protectedOfferAgain.body.pendingPromptId, clientMessageId: 'transition-protected-accept' }).expect(200);
+    expect(protectedAccepted.body.pendingRequirementKey).toBe('beta.details');
+    expect((await runtime.store.getSession(protectedSession.body.sessionId))?.conversationState?.contactConsent).toBe('unknown');
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const start = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I want to start alpha', clientMessageId: 'transition-api-start' }).expect(200);
+    const alpha = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Alpha details', replyToPromptId: start.body.pendingPromptId, clientMessageId: 'transition-api-alpha' }).expect(200);
+    expect(alpha.body.pendingRequirementKey).toBeNull();
+    const offer = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need beta', clientMessageId: 'transition-api-offer' }).expect(200);
+    expect(offer.body.answer).toContain('Beta request');
+    expect(offer.body.pendingPromptId).toEqual(expect.any(String));
+    const declined = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'No', replyToPromptId: offer.body.pendingPromptId, clientMessageId: 'transition-api-decline' }).expect(200);
+    expect(declined.body.pendingPromptId).toBeNull();
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ selectedIntentKey: 'alpha.request', intentProgress: { activeIntentKey: 'alpha.request', lastTransitionReason: 'declined_transition', lastDeclinedTransition: { sourceIntentKey: 'alpha.request', targetIntentKey: 'beta.request', catalogVersionId: version.id } } });
+    const continueAlpha = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Can you continue with alpha?', clientMessageId: 'transition-api-continue' }).expect(200);
+    expect(continueAlpha.body.pendingPromptId).toBeNull();
+    const explicitOffer = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need beta', clientMessageId: 'transition-api-explicit-offer' }).expect(200);
+    const accepted = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Yes', replyToPromptId: explicitOffer.body.pendingPromptId, clientMessageId: 'transition-api-accept' }).expect(200);
+    expect(accepted.body.pendingRequirementKey).toBe('beta.details');
+  });
+
+  it('requires explicit consent for a typed-only consent requirement before proposing a CRM action', async () => {
+    const runtime = createApp({ nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-typed-consent@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Typed Consent Tenant', slug: 'typed-consent-tenant', adminEmail: 'admin-typed-consent@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [{ intentKey: 'company.setup', displayName: 'Set up a company', description: 'Company setup', category: 'service', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' }],
+      signals: [{ intentKey: 'company.setup', signalId: 'company-start', signalType: 'phrase' as const, value: 'start a business', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' }],
+      slots: [
+        { intentKey: 'company.setup', slotKey: 'name', dataType: 'person_name', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'email', dataType: 'email', required: true, alternativeGroup: 'contact', collectionOrder: 2, promptKey: 'lead.ask_contact', validationRule: 'token:EMAIL', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'phone', dataType: 'phone', required: true, alternativeGroup: 'contact', collectionOrder: 2, promptKey: 'lead.ask_phone', validationRule: 'token:PHONE', retentionClass: 'pii' },
+      ],
+      relations: [],
+      workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'typed-consent-workflow', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
+      journeyRequirements: [{ intentKey: 'company.setup', requirementKey: 'company.contact_consent', requirementType: 'consent' as const, required: true, collectionOrder: 3, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', slotKey: null, documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' }],
+    } satisfies IntentCatalog;
+    await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'typed-consent.json', sourceHash: 't'.repeat(64), parserVersion: 'test', catalog });
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I want to start a business', clientMessageId: 'typed-consent-interest' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'My name is Noor', clientMessageId: 'typed-consent-name' }).expect(200);
+    const contact = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'noor@example.com and +971500000003', clientMessageId: 'typed-consent-contact' }).expect(200);
+    expect(contact.body.actionProposal).toMatchObject({ consentRequired: true });
+    expect(contact.body.pendingRequirementKey).toBe('company.contact_consent');
+    expect((await runtime.store.listActions(tenant.body.tenant.id)).filter((action) => action.sessionId === session.body.sessionId)).toHaveLength(1);
+    const denied = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'No', replyToPromptId: contact.body.pendingPromptId, clientMessageId: 'typed-consent-denied' }).expect(200);
+    expect(denied.body.actionProposal).toBeNull();
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.contactConsent).toBe('denied');
+
+    const approvedSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: approvedSession.body.sessionId, message: 'I want to start a business', clientMessageId: 'typed-consent-yes-interest' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: approvedSession.body.sessionId, message: 'My name is Lina', clientMessageId: 'typed-consent-yes-name' }).expect(200);
+    const approvedContact = await api.post('/api/v1/chat/messages').send({ sessionId: approvedSession.body.sessionId, message: 'lina@example.com and +971500000004', clientMessageId: 'typed-consent-yes-contact' }).expect(200);
+    const typedYes = await api.post('/api/v1/chat/messages').send({ sessionId: approvedSession.body.sessionId, message: 'Yes', replyToPromptId: approvedContact.body.pendingPromptId, clientMessageId: 'typed-consent-yes-text' }).expect(200);
+    expect(typedYes.body.actionProposal).toMatchObject({ consentRequired: true });
+    expect(typedYes.body.pendingPromptId).toBe(approvedContact.body.pendingPromptId);
+    expect((await runtime.store.getSession(approvedSession.body.sessionId))?.conversationState?.contactConsent).toBe('unknown');
+    const confirmed = await api.post(`/api/v1/chat/actions/${typedYes.body.actionProposal.id}/confirm`).send({ sessionId: approvedSession.body.sessionId, confirmed: true }).expect(200);
+    expect(['approved', 'processing', 'completed']).toContain(confirmed.body.action.state);
+    expect((await runtime.store.getSession(approvedSession.body.sessionId))?.conversationState?.contactConsent).toBe('granted');
+  });
+
+  it('keeps legacy slot-backed consent pending until the scoped action button is confirmed', async () => {
+    const runtime = createApp({ nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-legacy-consent@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Legacy Consent Tenant', slug: 'legacy-consent-tenant', adminEmail: 'admin-legacy-consent@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [{ intentKey: 'company.setup', displayName: 'Set up a company', description: 'Company setup', category: 'service', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' }],
+      signals: [{ intentKey: 'company.setup', signalId: 'company-start', signalType: 'phrase' as const, value: 'start a business', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' }],
+      slots: [
+        { intentKey: 'company.setup', slotKey: 'name', dataType: 'person_name', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'email', dataType: 'email', required: true, alternativeGroup: 'contact', collectionOrder: 2, promptKey: 'lead.ask_contact', validationRule: 'token:EMAIL', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'phone', dataType: 'phone', required: true, alternativeGroup: 'contact', collectionOrder: 2, promptKey: 'lead.ask_phone', validationRule: 'token:PHONE', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'contact_consent', dataType: 'boolean', required: true, alternativeGroup: null, collectionOrder: 3, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', retentionClass: 'consent' },
+      ],
+      relations: [],
+      workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'legacy-consent-workflow', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
+    } satisfies IntentCatalog;
+    await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'legacy-consent.json', sourceHash: 'l'.repeat(64), parserVersion: 'test', catalog });
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I want to start a business', clientMessageId: 'legacy-consent-interest' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'My name is Noor', clientMessageId: 'legacy-consent-name' }).expect(200);
+    const contact = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'noor@example.com and +971500000003', clientMessageId: 'legacy-consent-contact' }).expect(200);
+    expect(contact.body.actionProposal).toMatchObject({ consentRequired: true });
+    const typedYes = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Yes', replyToPromptId: contact.body.pendingPromptId, clientMessageId: 'legacy-consent-yes' }).expect(200);
+    expect(typedYes.body.actionProposal).toMatchObject({ consentRequired: true });
+    expect(typedYes.body.pendingPromptId).toBe(contact.body.pendingPromptId);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.contactConsent).toBe('unknown');
+    const confirmed = await api.post(`/api/v1/chat/actions/${typedYes.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
+    expect(['approved', 'processing', 'completed']).toContain(confirmed.body.action.state);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.contactConsent).toBe('granted');
+  });
+
+  it('continues an approved lead with the next optional catalog slot', async () => {
+    const model = new CapturingModel();
+    const runtime = createApp({ nodeEnv: 'test', model });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-followup@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Follow-up Tenant', slug: 'follow-up-tenant', adminEmail: 'admin-followup@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [{ intentKey: 'company.setup', displayName: 'Set up a company', description: 'Company setup', category: 'service', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' }],
+      signals: [{ intentKey: 'company.setup', signalId: 'company-start', signalType: 'phrase' as const, value: 'start a business', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' }],
+      slots: [
+        { intentKey: 'company.setup', slotKey: 'name', dataType: 'person_name', required: true, alternativeGroup: null, collectionOrder: 80, promptKey: 'lead.ask_name', validationRule: 'token:NAME', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'email', dataType: 'email', required: true, alternativeGroup: null, collectionOrder: 82, promptKey: 'lead.ask_contact', validationRule: 'token:EMAIL', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'phone', dataType: 'phone', required: true, alternativeGroup: null, collectionOrder: 82, promptKey: 'lead.ask_phone', validationRule: 'token:PHONE', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'contact_consent', dataType: 'boolean', required: true, alternativeGroup: null, collectionOrder: 83, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', retentionClass: 'consent' },
+        { intentKey: 'company.setup', slotKey: 'business_activity', dataType: 'string', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'lead.ask_interest', validationRule: 'text:nonempty', retentionClass: 'business' },
+        { intentKey: 'company.setup', slotKey: 'company_structure', dataType: 'string', required: false, alternativeGroup: null, collectionOrder: 5, promptKey: 'lead.ask_structure', validationRule: 'text:nonempty', retentionClass: 'business' },
+        { intentKey: 'company.setup', slotKey: 'timeline', dataType: 'string', required: false, alternativeGroup: null, collectionOrder: 9, promptKey: 'lead.ask_timeline', validationRule: 'text:nonempty', retentionClass: 'business' },
+        { intentKey: 'company.setup', slotKey: 'budget_aed', dataType: 'number', required: false, alternativeGroup: null, collectionOrder: 10, promptKey: 'lead.ask_budget', validationRule: 'number:positive', retentionClass: 'business' },
+      ],
+      relations: [],
+      workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'follow-up-workflow', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
+    } satisfies IntentCatalog;
+    const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'follow-up.json', sourceHash: 'f'.repeat(64), parserVersion: 'test', catalog });
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const storedSession = await runtime.store.getSession(session.body.sessionId);
+    storedSession!.conversationState = {
+      ...storedSession!.conversationState!,
+      catalogVersionId: version.id,
+      selectedIntentKey: 'company.setup',
+      slotValues: { name: '[NAME_1]', email: '[EMAIL_1]', phone: '[PHONE_1]', business_activity: 'fashion boutique' },
+      contactConsent: 'granted',
+      workflowStatus: 'queued',
+      phase: 'QUEUED',
+      pendingPrompt: null,
+    };
+    await runtime.store.updateSession(storedSession!);
+    await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'crm.lead.create', intentKey: 'company.setup', catalogVersionId: version.id, idempotencyKey: 'follow-up-action', state: 'approved', opaqueReference: 'follow-up-reference', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
+
+    const followUp = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'yes', clientMessageId: 'follow-up-yes' }).expect(200);
+    expect(followUp.body.pendingRequirementKey).toBe('followup:company.setup:company_structure');
+    expect(followUp.body.pendingPromptId).toEqual(expect.any(String));
+    expect(followUp.body.answer.toLowerCase()).toContain('company structure');
+    expect(followUp.body.answer).not.toContain('What would you like to explore next?');
+    const correction = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I told you already', clientMessageId: 'follow-up-correction' }).expect(200);
+    expect(correction.body.answer).toContain('noted');
+    expect(correction.body.answer).not.toContain('company structure');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues).not.toHaveProperty('company_structure');
+    const structure = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'FZC with two partners', clientMessageId: 'follow-up-structure' }).expect(200);
+    expect(structure.body.pendingRequirementKey).toBe('followup:company.setup:timeline');
+    const combined = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'A shared workspace and a 10000 AED budget works', clientMessageId: 'follow-up-combined' }).expect(200);
+    expect(combined.body.pendingRequirementKey).toBe('followup:company.setup:timeline');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.budget_aed).toBe('10000');
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'We want to start within two weeks', clientMessageId: 'follow-up-timeline' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.timeline).toBe('We want to start within two weeks');
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'A 10000 AED budget works', clientMessageId: 'follow-up-budget' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.budget_aed).toBe('10000');
+  });
+
+  it('answers a knowledge question inside an active intent journey without losing the next requirement', async () => {
+    const model = new ContextNormalizingModel();
+    const runtime = createApp({ nodeEnv: 'test', model, catalogQueryNormalizationEnabled: true });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-mixed-turn@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Mixed Turn Tenant', slug: 'mixed-turn-tenant', adminEmail: 'admin-mixed-turn@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-mixed-turn@example.test', password: 'TenantA1Password' }).expect(200);
+    await api.patch('/api/v1/admin/features').set('Authorization', `Bearer ${admin.body.token}`).send({ catalogQueryNormalizationEnabled: true }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Company setup procedure', mimeType: 'text/plain', audience: 'public', content: 'The approved company setup procedure includes an application review and document checks before licensing.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [{ intentKey: 'company.setup', displayName: 'Set up a company', description: 'Company setup', category: 'service', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' }],
+      signals: [{ intentKey: 'company.setup', signalId: 'company-start', signalType: 'phrase' as const, value: 'start a business', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' }],
+      slots: [
+        { intentKey: 'company.setup', slotKey: 'name', dataType: 'person_name', required: true, alternativeGroup: null, collectionOrder: 80, promptKey: 'lead.ask_name', validationRule: 'token:NAME', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'email', dataType: 'email', required: true, alternativeGroup: null, collectionOrder: 82, promptKey: 'lead.ask_contact', validationRule: 'token:EMAIL', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'phone', dataType: 'phone', required: true, alternativeGroup: null, collectionOrder: 82, promptKey: 'lead.ask_phone', validationRule: 'token:PHONE', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'contact_consent', dataType: 'boolean', required: true, alternativeGroup: null, collectionOrder: 83, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', retentionClass: 'consent' },
+        { intentKey: 'company.setup', slotKey: 'interest_summary', dataType: 'string', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'lead.ask_interest', validationRule: 'text:nonempty', retentionClass: 'business' },
+      ],
+      relations: [],
+      workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'mixed-turn-workflow', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
+    } satisfies IntentCatalog;
+    const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'mixed-turn.json', sourceHash: 'm'.repeat(64), parserVersion: 'test', catalog });
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const storedSession = await runtime.store.getSession(session.body.sessionId);
+    storedSession!.conversationState = {
+      ...storedSession!.conversationState!,
+      catalogVersionId: version.id,
+      selectedIntentKey: 'company.setup',
+      slotValues: { interest_summary: 'fashion store' },
+      rollingSummary: 'The visitor wants to set up a fashion store.',
+      pendingPrompt: { id: 'pending-interest', type: 'clarification', intentKey: 'company.setup', slotKey: null, issuedAt: new Date().toISOString() },
+    };
+    await runtime.store.updateSession(storedSession!);
+
+    const response = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'We are two partners and need two employees. What is the setup procedure?', clientMessageId: 'mixed-turn-knowledge' }).expect(200);
+    expect(response.body.grounded).toBe(true);
+    expect(response.body.citations).not.toHaveLength(0);
+    expect(response.body.pendingPromptId).toEqual(expect.any(String));
+    expect(model.normalizationInputs).toHaveLength(0);
+    expect(response.body.pendingRequirementKey).toBe('slot:name');
+    expect(model.followUpContexts.at(-1)).toMatchObject({ responseMode: 'mixed', primaryIntentKey: 'company.setup', conversationSummary: 'The visitor wants to set up a fashion store.' });
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ selectedIntentKey: 'company.setup', pendingPrompt: { type: 'slot', slotKey: 'name' } });
   });
 });

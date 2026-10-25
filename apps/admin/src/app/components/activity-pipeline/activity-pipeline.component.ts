@@ -86,8 +86,9 @@ import { BadgeComponent } from '../shared/badge.component';
               </div>
 
               <!-- Error message banner if failed -->
-              <div *ngIf="job.errorCode" class="mt-2 rounded-lg bg-rose-50/70 border border-rose-200/60 p-2 text-[11px] text-rose-700 font-mono break-words">
-                {{ job.errorCode }}
+              <div *ngIf="job.errorCode || job.errorDetail" class="mt-2 rounded-lg bg-rose-50/70 border border-rose-200/60 p-2 text-[11px] text-rose-700 break-words">
+                <span *ngIf="job.errorCode" class="font-mono">{{ job.errorCode }}</span>
+                <span *ngIf="job.errorDetail" [class.block]="!!job.errorCode" class="mt-1">{{ job.errorDetail }}</span>
               </div>
             </div>
           </div>

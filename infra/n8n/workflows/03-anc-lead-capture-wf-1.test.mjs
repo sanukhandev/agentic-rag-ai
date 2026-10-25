@@ -11,7 +11,11 @@ test('binds remote CRM OAuth to the n8n credential store', async () => {
   assert.equal(webhook?.parameters.path, 'anc-lead-capture-wf-1');
   assert.equal(webhook?.parameters.responseMode, 'onReceived');
   assert.equal(webhook?.parameters.responseCode, 202);
-  assert.match(workflow.nodes.find((node) => node.name === 'Authenticate and Claim Event')?.parameters.jsonBody ?? '', /n8nWorkflowId: \$workflow\.id/);
+  const claimBody = workflow.nodes.find((node) => node.name === 'Authenticate and Claim Event')?.parameters.jsonBody ?? '';
+  assert.match(claimBody, /n8nWorkflowId: \$workflow\.id/);
+  assert.doesNotMatch(claimBody, /(?:\$json\.body \?\? \$json)\.n8nWorkflowId/);
+  assert.match(workflow.nodes.find((node) => node.name === 'Authenticate and Claim Event')?.parameters.jsonBody ?? '', /executionReference: \$execution\.id[,}]/);
+  assert.doesNotMatch(workflow.nodes.find((node) => node.name === 'Authenticate and Claim Event')?.parameters.jsonBody ?? '', /event-.*unknown/);
   assert.match(workflow.nodes.find((node) => node.name === 'Authenticate and Claim Event')?.parameters.jsonBody ?? '', /limit: 1/);
   assert.doesNotMatch(workflow.nodes.find((node) => node.name === 'Authenticate and Claim Event')?.parameters.jsonBody ?? '', /anc\.crm\.lead\.capture/);
   assert.match(workflow.nodes.find((node) => node.name === 'Authenticate and Claim Event')?.parameters.jsonBody, /anc-lead-capture-v1/);
@@ -34,6 +38,14 @@ test('binds remote CRM OAuth to the n8n credential store', async () => {
   for (const name of ['Internal CRM Upsert', 'Persist Score and Summary', 'Fetch Authorized Remote CRM Payload', 'Remote CRM Create Lead', 'Validate Remote CRM Lead ID', 'Internal CRM Remote ID Callback', 'Complete Support Review', 'Complete Partial Review']) {
     assert.equal(workflow.nodes.find((node) => node.name === name)?.onError, 'continueErrorOutput');
     assert.equal(workflow.connections[name].main[1][0].node, 'Complete CRM Reconciliation');
+  }
+  for (const name of ['Complete Async Registration', 'Complete Internal Registration', 'Complete Support Review', 'Complete Partial Review', 'Complete CRM Reconciliation']) {
+    const body = workflow.nodes.find((node) => node.name === name)?.parameters.jsonBody ?? '';
+    assert.match(body, /executionReference/);
+    assert.doesNotMatch(body, /event-.*unknown/);
+    assert.match(body, /eventId/);
+    assert.match(body, /correlationId/);
+    assert.match(body, /attempt/);
   }
   assert.equal(workflow.connections['Complete CRM Reconciliation'].main[0][0].node, 'Return CRM Reconciliation');
   assert.match(workflow.nodes.find((node) => node.name === 'Complete Support Review')?.parameters.jsonBody ?? '', /human_review/);

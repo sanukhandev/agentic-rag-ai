@@ -7,16 +7,21 @@ from typing import Any
 
 from openpyxl import load_workbook
 
-PARSER_VERSION = "intent-catalog-xlsx-1.2.0"
+PARSER_VERSION = "intent-catalog-xlsx-1.4.0"
 SHEETS = ("README", "Intents", "Signals", "Slots", "Relations", "WorkflowBindings")
 OPTIONAL_SHEETS = {
     "QualityRules": "qualityRules",
+    "JourneyRequirements": "journeyRequirements",
+    "JourneyTransitions": "journeyTransitions",
+    "DocumentPolicies": "documentPolicies",
     "DocumentRequirements": "documentRequirements",
     "CRMFieldMappings": "crmFieldMappings",
     "ChannelCapabilities": "channelCapabilities",
     "TestUtterances": "testUtterances",
     "CatalogManifest": "catalogManifest",
 }
+
+JSON_LIST_FIELDS = {"allowedDocumentTypes", "ocrLanguages", "allowedMimeTypes", "nextIntentKeys"}
 
 
 def _text(value: Any) -> str:
@@ -36,6 +41,28 @@ def _rows(sheet: Any) -> list[dict[str, Any]]:
     if any(not header for header in headers) or len(set(headers)) != len(headers):
         raise ValueError(f"Sheet {sheet.title} has invalid or duplicate headers.")
     return [dict(zip(headers, row, strict=False)) for row in values[1:] if any(value is not None and _text(value) for value in row)]
+
+
+def _decode_json_lists(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    for row in rows:
+        for field in JSON_LIST_FIELDS:
+            value = row.get(field)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            try:
+                decoded = json.loads(value)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(decoded, list):
+                row[field] = decoded
+    return rows
+
+
+def _settings(sheet: Any) -> dict[str, Any]:
+    rows = _decode_json_lists(_rows(sheet))
+    if len(rows) > 1:
+        raise ValueError("DocumentSettings must contain at most one data row.")
+    return rows[0] if rows else {}
 
 
 def _readme_metadata(sheet: Any) -> dict[str, str]:
@@ -67,6 +94,8 @@ def parse_intent_catalog(path: Path) -> dict[str, Any]:
         if missing:
             raise ValueError(f"Workbook is missing required sheets: {', '.join(missing)}")
         tenant_scope = _readme_metadata(workbook["README"]).get("tenantScope")
+        optional = {key: _decode_json_lists(_rows(workbook[sheet])) if sheet in workbook.sheetnames else [] for sheet, key in OPTIONAL_SHEETS.items()}
+        optional["documentSettings"] = _settings(workbook["DocumentSettings"]) if "DocumentSettings" in workbook.sheetnames else {}
         return {
             "sourceHash": hashlib.sha256(content).hexdigest(),
             "parserVersion": PARSER_VERSION,
@@ -77,7 +106,7 @@ def parse_intent_catalog(path: Path) -> dict[str, Any]:
                 "slots": _rows(workbook["Slots"]),
                 "relations": _rows(workbook["Relations"]),
                 "workflowBindings": _rows(workbook["WorkflowBindings"]),
-                **{key: _rows(workbook[sheet]) if sheet in workbook.sheetnames else [] for sheet, key in OPTIONAL_SHEETS.items()},
+                **optional,
             },
         }
     finally:

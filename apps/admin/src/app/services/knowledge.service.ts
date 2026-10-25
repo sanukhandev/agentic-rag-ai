@@ -129,7 +129,7 @@ export class KnowledgeService {
         this.loadJobs();
         this.toast.show('info', 'Job Retried', `Retry triggered for ${job.title}`);
       },
-      error: () => this.toast.show('error', 'Retry Failed', 'Only failed jobs can be retried.')
+      error: (err) => this.toast.show('error', 'Retry Failed', err.error?.error?.message || 'Only failed jobs can be retried.')
     });
   }
 

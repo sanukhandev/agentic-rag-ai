@@ -4,13 +4,13 @@ This is the connector-facing API for the existing tenant chat gateway. A connect
 
 ## Base URL from the VM
 
-Inside the VM, the local API is normally:
+Inside the Docker deployment, the API is reached through Docker Nginx:
 
 ```bash
-export CHAT_API_BASE='http://127.0.0.1:4000'
+export CHAT_API_BASE='http://127.0.0.1:3000'
 ```
 
-For a connector running outside the VM, use the HTTPS reverse-proxy URL configured for the API. The local Compose binding is intentionally not an external public API contract. Do not expose the API with a raw HTTP port when TLS is available.
+For a connector running outside the VM, use the HTTPS reverse-proxy URL configured for the API. The API, n8n, database and Redis have no host port bindings; do not expose a raw internal service port when TLS is available.
 
 ## Read public chat configuration
 

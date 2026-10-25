@@ -7,8 +7,8 @@ info:
     remain authoritative; live identity, Azure and n8n integrations are not
     implied by this document.
 servers:
-  - url: http://localhost:4000
-    description: Local development
+  - url: http://localhost:3000
+    description: Local Docker Nginx reverse proxy
 tags:
   - name: Health
   - name: Auth

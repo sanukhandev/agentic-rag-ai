@@ -30,6 +30,12 @@ describe('supporting document API', () => {
       expect(upload.body.document.leadId).toBe(lead.id);
       const duplicate = await api.post(`/api/v1/chat/sessions/${sessionId}/documents`).send({ fileName: 'license-copy.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(202);
       expect(duplicate.body.idempotent).toBe(true);
+      const scopedSession = await store.getSession(sessionId);
+      scopedSession!.conversationState = { ...(scopedSession!.conversationState!), candidateIntentKeys: [...(scopedSession!.conversationState?.candidateIntentKeys ?? []), 'other.intent'] };
+      await store.updateSession(scopedSession!);
+      const otherScope = await api.post(`/api/v1/chat/sessions/${sessionId}/documents`).send({ fileName: 'license-other-intent.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true, primaryIntentKey: 'other.intent' }).expect(202);
+      expect(otherScope.body.idempotent).not.toBe(true);
+      expect((await store.listSupportingDocuments(tenant.id, sessionId))).toHaveLength(2);
       const claimed = await api.post('/api/v1/internal/document-jobs/claim-next').set('x-ingestion-worker-secret', 'document-worker-secret').expect(200);
       expect(claimed.body.job.id).toBe(upload.body.jobId);
       await api.post(`/api/v1/internal/document-jobs/${upload.body.jobId}/renew`).set('x-ingestion-worker-secret', 'document-worker-secret').send({ tenantId: tenant.id, jobId: upload.body.jobId }).expect(200);
@@ -37,15 +43,31 @@ describe('supporting document API', () => {
       const input = await api.get(`/api/v1/internal/document-jobs/${upload.body.jobId}/input`).set('x-ingestion-worker-secret', 'document-worker-secret').set('x-tenant-id', tenant.id).expect(200);
       expect(input.body.documentId).toBe(documentId);
       await api.post(`/api/v1/internal/document-jobs/${upload.body.jobId}/result`).set('x-ingestion-worker-secret', 'document-worker-secret').send({ tenantId: tenant.id, jobId: upload.body.jobId, extractedText: 'Business requirements', summary: 'OCR completed' }).expect(200);
-      expect((await api.get(`/api/v1/chat/sessions/${sessionId}/documents`)).body.items[0].status).toBe('completed');
       const persisted = await store.getSupportingDocument(documentId, tenant.id);
+      expect((await api.get(`/api/v1/chat/sessions/${sessionId}/documents`)).body.items.find((item: { id: string }) => item.id === documentId).status).toBe('completed');
       expect(persisted?.storeExtractedText).toBe(false);
       expect(persisted?.extractedText).toBeNull();
       const updatedLead = await store.getCrmLead(lead.id, tenant.id);
       expect(updatedLead?.summary).toContain('Existing conversation summary');
       expect(updatedLead?.summary).toContain('OCR completed');
 
+      const retrySession = await store.createSession(tenant.id);
+      retrySession.conversationState = { ...(retrySession.conversationState!), selectedIntentKey: 'anc.document.supporting_upload', candidateIntentKeys: ['anc.document.supporting_upload'] };
+      await store.updateSession(retrySession);
+      const retryUpload = await api.post(`/api/v1/chat/sessions/${retrySession.id}/documents`).send({ fileName: 'retry.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(202);
+      const retryDocument = await store.getSupportingDocument(retryUpload.body.document.id, tenant.id);
+      const retryJob = await store.getDocumentProcessingJob(retryUpload.body.jobId, tenant.id);
+      await store.updateSupportingDocument({ ...retryDocument!, status: 'failed', errorCode: 'DOCUMENT_OCR_FAILED', updatedAt: new Date().toISOString() });
+      await store.updateDocumentProcessingJob({ ...retryJob!, status: 'failed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+      const retried = await api.post(`/api/v1/chat/sessions/${retrySession.id}/documents`).send({ fileName: 'retry-again.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(202);
+      expect(retried.body.retried).toBe(true);
+      expect(retried.body.document.id).toBe(retryUpload.body.document.id);
+      expect((await store.getSupportingDocument(retryUpload.body.document.id, tenant.id))?.status).toBe('queued');
+      expect((await store.getDocumentProcessingJob(retried.body.jobId, tenant.id))?.status).toBe('queued');
+
       const expiredSession = await store.createSession(tenant.id);
+      expiredSession.conversationState = { ...(expiredSession.conversationState!), selectedIntentKey: 'anc.document.supporting_upload', candidateIntentKeys: ['anc.document.supporting_upload'] };
+      await store.updateSession(expiredSession);
       const expiredUpload = await api.post(`/api/v1/chat/sessions/${expiredSession.id}/documents`).send({ fileName: 'expired.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(202);
       const expiredDocument = await store.getSupportingDocument(expiredUpload.body.document.id, tenant.id);
       expect(expiredDocument).not.toBeNull();

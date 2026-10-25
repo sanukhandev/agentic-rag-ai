@@ -44,6 +44,8 @@ export const groundedResponseSchema = z.object({
     confirmation: z.string().min(1),
     expiresAt: z.string().datetime(),
   }).nullable(),
+  pendingPromptId: z.string().uuid().nullable().optional(),
+  pendingRequirementKey: z.string().min(1).nullable().optional(),
   requestId: z.string().uuid(),
 });
 export type GroundedResponse = z.infer<typeof groundedResponseSchema>;

@@ -69,15 +69,22 @@ describe('published intent catalog runtime', () => {
     expect(nameTurn.body.answer).toContain('email address');
     expect((await runtime.store.listMessages(multiTurn.body.sessionId, tenant.body.tenant.id)).find((message) => message.clientMessageId === 'catalog-multi-3')?.maskedContent).toBe('[NAME_1]');
     const contactTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'alice@example.com +971500000000', clientMessageId: 'catalog-multi-4' }).expect(200);
-    expect(contactTurn.body.actionProposal).toBeNull();
-    expect(contactTurn.body.answer).toContain('interest summary');
-    const interestTurn = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'I need help setting up the requested service.', clientMessageId: 'catalog-multi-5' }).expect(200);
-    expect(interestTurn.body.actionProposal).toMatchObject({ intent: 'crm.lead.create', consentRequired: true });
-    expect(interestTurn.body.answer).toContain('consent action');
+    expect(contactTurn.body.actionProposal).toMatchObject({ intent: 'crm.lead.create', consentRequired: true });
+    expect(contactTurn.body.answer).toContain('consent action');
+    const interestTurn = contactTurn;
     const declined = await api.post('/api/v1/chat/messages').send({ sessionId: multiTurn.body.sessionId, message: 'no', clientMessageId: 'catalog-multi-refuse' }).expect(200);
     expect(declined.body.actionProposal).toBeNull();
     expect(declined.body.answer).toContain('will not register');
     await api.post(`/api/v1/chat/actions/${interestTurn.body.actionProposal.id}/confirm`).send({ sessionId: multiTurn.body.sessionId, confirmed: true }).expect(422);
+
+    const knowledgeBeforeConsent = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'catalog-tenant' }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: knowledgeBeforeConsent.body.sessionId, message: 'I need a demo', clientMessageId: 'catalog-knowledge-lead-1' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: knowledgeBeforeConsent.body.sessionId, message: 'Knowledge Visitor', clientMessageId: 'catalog-knowledge-lead-2' }).expect(200);
+    const knowledgeProposal = await api.post('/api/v1/chat/messages').send({ sessionId: knowledgeBeforeConsent.body.sessionId, message: 'knowledge@example.com +971500000099', clientMessageId: 'catalog-knowledge-lead-3' }).expect(200);
+    const knowledgeQuestion = await api.post('/api/v1/chat/messages').send({ sessionId: knowledgeBeforeConsent.body.sessionId, message: 'What documents are needed?', clientMessageId: 'catalog-knowledge-question' }).expect(200);
+    expect(knowledgeQuestion.body.actionProposal).toMatchObject({ id: knowledgeProposal.body.actionProposal.id, consentRequired: true });
+    expect(knowledgeQuestion.body.pendingPromptId).toBeTruthy();
+    await api.post(`/api/v1/chat/actions/${knowledgeProposal.body.actionProposal.id}/confirm`).send({ sessionId: knowledgeBeforeConsent.body.sessionId, confirmed: true }).expect(200);
 
     const demoSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'catalog-tenant' }).expect(201);
     const demoTurn = await api.post('/api/v1/chat/messages').send({ sessionId: demoSession.body.sessionId, message: 'Can I book a demo?', clientMessageId: 'catalog-demo-1' }).expect(200);
@@ -87,7 +94,7 @@ describe('published intent catalog runtime', () => {
     const clarificationSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'catalog-tenant' }).expect(201);
     const clarificationTurn = await api.post('/api/v1/chat/messages').send({ sessionId: clarificationSession.body.sessionId, message: 'I was looking for a developer who can build an ERP solution for my company', clientMessageId: 'catalog-clarification-1' }).expect(200);
     expect(clarificationTurn.body.actionProposal).toBeNull();
-    expect(clarificationTurn.body.answer).toContain('To make sure I route this correctly');
+    expect(clarificationTurn.body.answer).toContain('What name');
 
     const documentSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'catalog-tenant' }).expect(201);
     const documentTurn = await api.post('/api/v1/chat/messages').send({ sessionId: documentSession.body.sessionId, message: 'I have supporting documents to share', clientMessageId: 'catalog-document-1' }).expect(200);
@@ -96,10 +103,10 @@ describe('published intent catalog runtime', () => {
 
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'catalog-tenant' }).expect(201);
     const proposalStart = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need a demo. My name is Alice, my email is alice@example.com and my phone is +971500000000.', clientMessageId: 'catalog-lead-1' }).expect(200);
-    expect(proposalStart.body.actionProposal).toBeNull();
-    expect(proposalStart.body.answer).toContain('interest summary');
-    const proposal = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Please arrange the requested demo for our ERP project.', clientMessageId: 'catalog-lead-2' }).expect(200);
-    expect(proposal.body.actionProposal).toMatchObject({ intent: 'crm.lead.create', consentRequired: true });
+    expect(proposalStart.body.actionProposal).toMatchObject({ intent: 'crm.lead.create', consentRequired: true });
+    expect(proposalStart.body.answer).toContain('consent action');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.interest_summary).toContain('I need a demo');
+    const proposal = proposalStart;
     const confirmed = await api.post(`/api/v1/chat/actions/${proposal.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
     expect(confirmed.body.action.state).toBe('approved');
     expect(confirmed.body.action.payload.contactConsent).toBe(true);
@@ -107,6 +114,7 @@ describe('published intent catalog runtime', () => {
 
     const secondProposal = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need a separate project', clientMessageId: 'catalog-second-intent-1' }).expect(200);
     expect(secondProposal.body.actionProposal).toMatchObject({ intent: 'crm.consulting.create', consentRequired: true });
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingPrompt?.intentKey).toBe('consulting.request');
     const secondConfirmed = await api.post(`/api/v1/chat/actions/${secondProposal.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
     expect(secondConfirmed.body.action.state).toBe('approved');
     expect((await runtime.store.listActions(tenant.body.tenant.id)).filter((action) => action.sessionId === session.body.sessionId)).toHaveLength(2);

@@ -1,4 +1,4 @@
-import type { IntentCatalog, IntentCatalogDocumentPolicy, IntentCatalogDocumentSettings, IntentCatalogExtensionRow, IntentCatalogIntent, IntentCatalogQualityRule, IntentCatalogSlot, IntentCatalogVersion, IntentCatalogWorkflowBinding } from './types.js';
+import type { IntentCatalog, IntentCatalogActivationMode, IntentCatalogDocumentPolicy, IntentCatalogDocumentSettings, IntentCatalogExtensionRow, IntentCatalogIntent, IntentCatalogJourneyRequirement, IntentCatalogJourneyTransition, IntentCatalogQualityRule, IntentCatalogRequirementType, IntentCatalogSlot, IntentCatalogVersion, IntentCatalogWorkflowBinding } from './types.js';
 
 export interface IntentResolution {
   intentKey: string | null;
@@ -45,6 +45,21 @@ const normalizeCatalogPhrase = (value: string): string => normalize(value)
   .replace(/\bset[\s-]?up\b/g, 'start')
   .replace(/\b(?:establish|establishing|launch|launching|open|opening|create|creating|register|registering)\b/g, 'start');
 const phraseTokens = (value: string): string[] => normalizeCatalogPhrase(value).match(/[\p{L}\p{N}]+/gu) ?? [];
+const optionalPhraseTokens = new Set(['a', 'an', 'for', 'in', 'of', 'on', 'the', 'to']);
+const tokenDistance = (left: string, right: string): number => {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 0; leftIndex < left.length; leftIndex += 1) {
+    const current = [leftIndex + 1];
+    for (let rightIndex = 0; rightIndex < right.length; rightIndex += 1) {
+      current.push(left[leftIndex] === right[rightIndex]
+        ? previous[rightIndex] ?? 0
+        : 1 + Math.min(previous[rightIndex] ?? 0, current[rightIndex] ?? 0, previous[rightIndex + 1] ?? 0));
+    }
+    for (let index = 0; index < current.length; index += 1) previous[index] = current[index] ?? previous[index] ?? 0;
+  }
+  return previous[right.length] ?? Number.MAX_SAFE_INTEGER;
+};
+const matchesCatalogToken = (input: string, signal: string): boolean => input === signal || (signal.length >= 5 && input.length >= 5 && tokenDistance(input, signal) <= 1);
 const matchesCatalogPhrase = (input: string, signal: string): boolean => {
   const inputTokens = phraseTokens(input);
   const signalTokens = phraseTokens(signal);
@@ -52,7 +67,8 @@ const matchesCatalogPhrase = (input: string, signal: string): boolean => {
   let cursor = 0;
   let insertedTokens = 0;
   for (const token of signalTokens) {
-    const matchIndex = inputTokens.indexOf(token, cursor);
+    const matchIndex = inputTokens.findIndex((candidate, index) => index >= cursor && matchesCatalogToken(candidate, token));
+    if (matchIndex < 0 && optionalPhraseTokens.has(token)) continue;
     if (matchIndex < 0) return false;
     insertedTokens += matchIndex - cursor;
     if (insertedTokens > 3) return false;
@@ -61,6 +77,8 @@ const matchesCatalogPhrase = (input: string, signal: string): boolean => {
   return true;
 };
 const keyPattern = /^[a-z][a-z0-9._-]{1,79}$/;
+const promptKeyPattern = /^[a-z][a-z0-9._-]{1,119}$/;
+const requirementKeyPattern = /^[a-z][a-z0-9._:-]{1,119}$/;
 export const isCrmWriteBinding = (binding: Pick<IntentCatalogWorkflowBinding, 'sideEffectClass'> | null | undefined): boolean => ['crm_write', 'crm'].includes(text(binding?.sideEffectClass).toLocaleLowerCase('en-US'));
 export const isWorkflowClaimableBinding = (binding: Pick<IntentCatalogWorkflowBinding, 'sideEffectClass'> | null | undefined): boolean => isCrmWriteBinding(binding) || text(binding?.sideEffectClass).toLocaleLowerCase('en-US') === 'human_review';
 const safePath = (value: string): boolean => /^\/[A-Za-z0-9._/-]{1,120}$/.test(value) && !value.includes('..');
@@ -144,6 +162,69 @@ export const validateIntentCatalog = (input: unknown): CatalogValidationResult =
     if (![rule.hotThreshold, rule.warmThreshold, rule.nurtureThreshold].every((threshold) => Number.isFinite(threshold) && threshold >= 0 && threshold <= 100) || rule.hotThreshold < rule.warmThreshold || rule.warmThreshold < rule.nurtureThreshold) errors.push(`QualityRules row ${index + 2} thresholds must be ordered between 0 and 100.`);
     return rule;
   });
+  const documentPoliciesInput = Array.isArray(value.documentPolicies) ? value.documentPolicies : [];
+  const journeyRequirementsInput = Array.isArray(value.journeyRequirements) ? value.journeyRequirements : [];
+  const journeyRequirementKeys = new Set<string>();
+  const parsedJourneyRequirements: IntentCatalogJourneyRequirement[] = journeyRequirementsInput.map((item, index) => {
+    const row = record(item);
+    const requirement: IntentCatalogJourneyRequirement = {
+      intentKey: text(row.intentKey),
+      requirementKey: text(row.requirementKey),
+      requirementType: text(row.requirementType) as IntentCatalogRequirementType,
+      required: bool(row.required),
+      collectionOrder: finite(row.collectionOrder),
+      promptKey: text(row.promptKey),
+      validationRule: text(row.validationRule),
+      slotKey: text(row.slotKey) || null,
+      documentType: text(row.documentType) || null,
+      fulfillmentMode: text(row.fulfillmentMode) as IntentCatalogJourneyRequirement['fulfillmentMode'],
+      sourceOfTruth: text(row.sourceOfTruth),
+      ...(text(row.visitorConfirmationText) ? { visitorConfirmationText: text(row.visitorConfirmationText) } : {}),
+      notes: text(row.notes),
+    };
+    const duplicateKey = `${requirement.intentKey}:${requirement.requirementKey}`;
+    if (journeyRequirementKeys.has(duplicateKey)) errors.push(`JourneyRequirements row ${index + 2} contains a duplicate requirement key.`);
+    journeyRequirementKeys.add(duplicateKey);
+    if (!intentSet.has(requirement.intentKey) || !requirementKeyPattern.test(requirement.requirementKey) || !['slot', 'document', 'consent', 'confirmation'].includes(requirement.requirementType) || !Number.isInteger(requirement.collectionOrder) || requirement.collectionOrder < 0 || requirement.collectionOrder > 1_000 || !promptKeyPattern.test(requirement.promptKey) || !['conversation_ready', 'external_confirmation_required'].includes(requirement.fulfillmentMode)) {
+      errors.push(`JourneyRequirements row ${index + 2} has invalid references or required fields.`);
+    }
+    if (requirement.requirementType === 'slot') {
+      const slot = slots.find((candidate) => text(record(candidate).intentKey) === requirement.intentKey && text(record(candidate).slotKey) === requirement.slotKey);
+      if (!slot || !requirement.slotKey) errors.push(`JourneyRequirements row ${index + 2} must reference a catalog slot.`);
+    }
+    if (requirement.requirementType === 'document') {
+      const policy = documentPoliciesInput.map(record).find((candidate) => text(candidate.intentKey) === requirement.intentKey && Array.isArray(candidate.allowedDocumentTypes) && candidate.allowedDocumentTypes.map(text).includes(requirement.documentType ?? ''));
+      if (!requirement.documentType || !policy) errors.push(`JourneyRequirements row ${index + 2} must reference an allowed document type.`);
+    }
+    return requirement;
+  });
+  const journeyTransitionsInput = Array.isArray(value.journeyTransitions) ? value.journeyTransitions : [];
+  const transitionKeys = new Set<string>();
+  const parsedJourneyTransitions: IntentCatalogJourneyTransition[] = journeyTransitionsInput.map((item, index) => {
+    const row = record(item);
+    const transition: IntentCatalogJourneyTransition = {
+      sourceIntentKey: text(row.sourceIntentKey),
+      targetIntentKey: text(row.targetIntentKey),
+      activationMode: text(row.activationMode) as IntentCatalogActivationMode,
+      maxDepth: finite(row.maxDepth),
+      triggerGroup: text(row.triggerGroup),
+      promptKey: text(row.promptKey),
+      notes: text(row.notes),
+    };
+    const transitionKey = `${transition.sourceIntentKey}:${transition.targetIntentKey}`;
+    if (transitionKeys.has(transitionKey)) errors.push(`JourneyTransitions row ${index + 2} contains a duplicate transition.`);
+    transitionKeys.add(transitionKey);
+    if (!intentSet.has(transition.sourceIntentKey) || !intentSet.has(transition.targetIntentKey) || transition.sourceIntentKey === transition.targetIntentKey || !['offer', 'automatic'].includes(transition.activationMode) || !Number.isInteger(transition.maxDepth) || transition.maxDepth < 1 || transition.maxDepth > 8 || !promptKeyPattern.test(transition.promptKey)) errors.push(`JourneyTransitions row ${index + 2} has invalid references or required fields.`);
+    return transition;
+  });
+  const automaticTransitions = new Map<string, string[]>();
+  for (const transition of parsedJourneyTransitions.filter((candidate) => candidate.activationMode === 'automatic')) automaticTransitions.set(transition.sourceIntentKey, [...(automaticTransitions.get(transition.sourceIntentKey) ?? []), transition.targetIntentKey]);
+  const hasAutomaticCycle = (key: string, path: Set<string>): boolean => {
+    if (path.has(key)) return true;
+    const nextPath = new Set(path).add(key);
+    return (automaticTransitions.get(key) ?? []).some((next) => hasAutomaticCycle(next, nextPath));
+  };
+  if ([...automaticTransitions.keys()].some((key) => hasAutomaticCycle(key, new Set()))) errors.push('JourneyTransitions cannot contain an automatic activation cycle.');
   const documentSettingsInput = record(value.documentSettings);
   let documentSettings: IntentCatalogDocumentSettings | undefined;
   if (Object.keys(documentSettingsInput).length > 0) {
@@ -155,14 +236,13 @@ export const validateIntentCatalog = (input: unknown): CatalogValidationResult =
     if (!documentSettings.schemaVersion || !documentSettings.workflowKey || documentSettings.maxFileBytes <= 0 || documentSettings.maxFileBytes > 50 * 1024 * 1024 || documentSettings.maxFilesPerRequest < 1 || documentSettings.maxFilesPerRequest > 10 || documentSettings.maxPdfPages < 1 || documentSettings.maxPdfPages > 100 || !allowedMimeTypes.length || !ocrLanguages.length) errors.push('documentSettings has invalid limits or allowed types.');
     if (!workflowSet.has(documentSettings.workflowKey)) errors.push('documentSettings references an unknown workflow binding.');
   }
-  const documentPoliciesInput = Array.isArray(value.documentPolicies) ? value.documentPolicies : [];
   const parsedDocumentPolicies: IntentCatalogDocumentPolicy[] = documentPoliciesInput.map((item, index) => {
     const row = record(item);
     const policy: IntentCatalogDocumentPolicy = { intentKey: text(row.intentKey), enabled: bool(row.enabled), workflowKey: text(row.workflowKey), requestMode: text(row.requestMode) as IntentCatalogDocumentPolicy['requestMode'], required: bool(row.required), requestPromptKey: text(row.requestPromptKey), allowedDocumentTypes: Array.isArray(row.allowedDocumentTypes) ? row.allowedDocumentTypes.map(text).filter(Boolean) : [], allowUserInitiated: bool(row.allowUserInitiated), consentRequired: bool(row.consentRequired), preservePrimaryIntent: bool(row.preservePrimaryIntent), storeExtractedText: bool(row.storeExtractedText), summaryTarget: text(row.summaryTarget), autoCreateLead: bool(row.autoCreateLead), autoIndexInRag: bool(row.autoIndexInRag), notes: text(row.notes) };
     if (!intentSet.has(policy.intentKey) || !workflowSet.has(policy.workflowKey) || !['conditional_offer', 'user_offer_only', 'explicit_upload'].includes(policy.requestMode) || !policy.allowedDocumentTypes.length || !policy.requestPromptKey) errors.push(`DocumentPolicies row ${index + 2} has invalid references or required fields.`);
     return policy;
   });
-  const catalog: IntentCatalog = { tenantScope: text(value.tenantScope) || null, intents: parsedIntents, signals: parsedSignals, slots: parsedSlots, relations: parsedRelations, workflowBindings: parsedBindings, qualityRules: parsedQualityRules, ...(documentSettings ? { documentSettings } : {}), ...(documentPoliciesInput.length ? { documentPolicies: parsedDocumentPolicies } : {}), ...(extensionRows(value, 'documentRequirements').length ? { documentRequirements: extensionRows(value, 'documentRequirements') } : {}), ...(extensionRows(value, 'crmFieldMappings').length ? { crmFieldMappings: extensionRows(value, 'crmFieldMappings') } : {}), ...(extensionRows(value, 'channelCapabilities').length ? { channelCapabilities: extensionRows(value, 'channelCapabilities') } : {}), ...(extensionRows(value, 'testUtterances').length ? { testUtterances: extensionRows(value, 'testUtterances') } : {}), ...(extensionRows(value, 'catalogManifest').length ? { catalogManifest: extensionRows(value, 'catalogManifest') } : {}) };
+  const catalog: IntentCatalog = { tenantScope: text(value.tenantScope) || null, intents: parsedIntents, signals: parsedSignals, slots: parsedSlots, relations: parsedRelations, workflowBindings: parsedBindings, qualityRules: parsedQualityRules, ...(parsedJourneyRequirements.length ? { journeyRequirements: parsedJourneyRequirements } : {}), ...(parsedJourneyTransitions.length ? { journeyTransitions: parsedJourneyTransitions } : {}), ...(documentSettings ? { documentSettings } : {}), ...(documentPoliciesInput.length ? { documentPolicies: parsedDocumentPolicies } : {}), ...(extensionRows(value, 'documentRequirements').length ? { documentRequirements: extensionRows(value, 'documentRequirements') } : {}), ...(extensionRows(value, 'crmFieldMappings').length ? { crmFieldMappings: extensionRows(value, 'crmFieldMappings') } : {}), ...(extensionRows(value, 'channelCapabilities').length ? { channelCapabilities: extensionRows(value, 'channelCapabilities') } : {}), ...(extensionRows(value, 'testUtterances').length ? { testUtterances: extensionRows(value, 'testUtterances') } : {}), ...(extensionRows(value, 'catalogManifest').length ? { catalogManifest: extensionRows(value, 'catalogManifest') } : {}) };
   if (catalog.intents.length === 0) errors.push('Catalog must contain at least one intent.');
   if (catalog.workflowBindings.length === 0) errors.push('Catalog must contain at least one workflow binding.');
   return { errors: [...new Set(errors)], catalog: errors.length ? null : catalog };
@@ -194,17 +274,98 @@ const missingSlotKeys = (intentKey: string, slots: IntentCatalogSlot[], values: 
   return rows.filter((slot) => missing.includes(slot.slotKey)).map((slot) => slot.slotKey);
 };
 
+type JourneyDocumentStatus = { intentKey?: string | null; catalogVersionId?: string | null; requirementKey?: string | null; expectedDocumentType?: string | null; status: string };
+
+export const catalogJourneyRequirements = (version: IntentCatalogVersion, intentKey: string): IntentCatalogJourneyRequirement[] => {
+  if (version.catalog.journeyRequirements?.length) return version.catalog.journeyRequirements.filter((requirement) => requirement.intentKey === intentKey).sort((left, right) => left.collectionOrder - right.collectionOrder || left.requirementKey.localeCompare(right.requirementKey));
+  return version.catalog.slots.filter((slot) => slot.intentKey === intentKey && slot.required).sort((left, right) => left.collectionOrder - right.collectionOrder).map((slot) => ({ intentKey, requirementKey: `slot:${slot.slotKey}`, requirementType: slot.validationRule === 'boolean:explicit_opt_in' ? 'consent' : 'slot', required: true, collectionOrder: slot.collectionOrder, promptKey: slot.promptKey, validationRule: slot.validationRule, slotKey: slot.slotKey, documentType: null, fulfillmentMode: 'conversation_ready', sourceOfTruth: 'catalog.slots', notes: '' }));
+};
+
+const isContactSlot = (slot: IntentCatalogSlot): boolean =>
+  ['name', 'email', 'phone', 'contact_consent', 'document_consent'].includes(slot.slotKey)
+  || slot.validationRule === 'boolean:explicit_opt_in'
+  || slot.dataType === 'person_name'
+  || slot.dataType === 'email'
+  || slot.dataType === 'phone'
+  || /(?:^|_)pii(?:$|_)/iu.test(slot.retentionClass)
+  || /(?:contact|crm_contact)/iu.test(slot.retentionClass);
+
+/** Optional catalog slots become one-at-a-time enrichment questions after the lead is registered. */
+export const catalogFollowUpRequirements = (version: IntentCatalogVersion, intentKey: string): IntentCatalogJourneyRequirement[] => {
+  const explicit = (version.catalog.journeyRequirements ?? []).filter((requirement) => requirement.intentKey === intentKey && !requirement.required && requirement.requirementType !== 'consent' && requirement.requirementType !== 'document');
+  const representedSlots = new Set((version.catalog.journeyRequirements ?? []).filter((requirement) => requirement.intentKey === intentKey).map((requirement) => requirement.slotKey).filter((slotKey): slotKey is string => Boolean(slotKey)));
+  const fallback = version.catalog.slots
+    .filter((slot) => slot.intentKey === intentKey && !slot.required && !representedSlots.has(slot.slotKey) && !isContactSlot(slot))
+    .sort((left, right) => left.collectionOrder - right.collectionOrder || left.slotKey.localeCompare(right.slotKey))
+    .map((slot) => ({ intentKey, requirementKey: `followup:${intentKey}:${slot.slotKey}`, requirementType: 'slot' as const, required: true, collectionOrder: slot.collectionOrder, promptKey: slot.promptKey, validationRule: slot.validationRule, slotKey: slot.slotKey, documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'catalog.slots', notes: 'Optional post-registration enrichment.' }));
+  return [...explicit, ...fallback].sort((left, right) => left.collectionOrder - right.collectionOrder || left.requirementKey.localeCompare(right.requirementKey));
+};
+
+export const journeyDocumentMatchesRequirement = (requirement: IntentCatalogJourneyRequirement, document: JourneyDocumentStatus, catalogVersionId?: string): boolean => {
+  if (document.intentKey && document.intentKey !== requirement.intentKey) return false;
+  if (requirement.sourceOfTruth !== 'catalog.slots' && document.intentKey !== requirement.intentKey) return false;
+  if (catalogVersionId && requirement.sourceOfTruth !== 'catalog.slots' && document.catalogVersionId !== catalogVersionId) return false;
+  if (document.requirementKey) return document.requirementKey === requirement.requirementKey;
+  return requirement.sourceOfTruth === 'catalog.slots' && Boolean(document.expectedDocumentType && document.expectedDocumentType === requirement.documentType);
+};
+
+export const journeyRequirementFulfilled = (requirement: IntentCatalogJourneyRequirement, values: Record<string, string>, completedRequirementKeys: Set<string> = new Set(), documents: JourneyDocumentStatus[] = [], catalogVersionId?: string): boolean => {
+  if (requirement.requirementType === 'document') return documents.some((document) => document.status === 'completed' && journeyDocumentMatchesRequirement(requirement, document, catalogVersionId));
+  if (requirement.requirementType === 'confirmation') return completedRequirementKeys.has(requirement.requirementKey) || values[requirement.requirementKey] === 'true';
+  const slotKey = requirement.slotKey ?? (requirement.requirementType === 'consent' ? 'contact_consent' : null);
+  if (!slotKey || !values[slotKey]) return false;
+  const value = values[slotKey];
+  if (requirement.validationRule === 'boolean:explicit_opt_in') return value === 'true';
+  if (/^(?:token:)?(?:NAME|EMAIL|PHONE)$/iu.test(requirement.validationRule)) {
+    const tokenType = requirement.validationRule.split(':').pop()?.toUpperCase();
+    return tokenType ? new RegExp(`^\\[${tokenType}_\\d+\\]$`, 'u').test(value) : false;
+  }
+  const integerRule = requirement.validationRule.match(/^integer:(positive|nonnegative|(\d+)-(\d+))$/iu);
+  if (integerRule) {
+    const numericValue = Number(value);
+    const mode = integerRule[1] ?? '';
+    if (!Number.isInteger(numericValue)) return false;
+    if (mode.toLowerCase() === 'positive') return numericValue > 0;
+    if (mode.toLowerCase() === 'nonnegative') return numericValue >= 0;
+    return numericValue >= Number(integerRule[2] ?? NaN) && numericValue <= Number(integerRule[3] ?? NaN);
+  }
+  if (requirement.validationRule === 'number:positive') return Number.isFinite(Number(value)) && Number(value) > 0;
+  if (requirement.validationRule === 'number:nonnegative') return Number.isFinite(Number(value)) && Number(value) >= 0;
+  if (requirement.validationRule === 'money:nonnegative') return /\d/u.test(value) && !/^\s*-/u.test(value);
+  return value.trim().length > 0;
+};
+
+export const catalogNextJourneyRequirement = (version: IntentCatalogVersion, intentKey: string, values: Record<string, string>, completedRequirementKeys: string[] = [], documents: JourneyDocumentStatus[] = []): IntentCatalogJourneyRequirement | null => {
+  const completed = new Set(completedRequirementKeys);
+  return catalogJourneyRequirements(version, intentKey).find((requirement) => requirement.required && !journeyRequirementFulfilled(requirement, values, completed, documents, version.id)) ?? null;
+};
+
+export const catalogNextFollowUpRequirement = (version: IntentCatalogVersion, intentKey: string, values: Record<string, string>, completedRequirementKeys: string[] = [], documents: JourneyDocumentStatus[] = []): IntentCatalogJourneyRequirement | null => {
+  const completed = new Set(completedRequirementKeys);
+  return catalogFollowUpRequirements(version, intentKey).find((requirement) => !journeyRequirementFulfilled(requirement, values, completed, documents, version.id)) ?? null;
+};
+
 const slotLabel = (slot: IntentCatalogSlot): string => {
   if (slot.dataType === 'person_name' || slot.slotKey === 'name') return 'name';
   if (slot.dataType === 'email' || slot.dataType === 'phone' || slot.alternativeGroup === 'contact') return 'email address or phone number';
   return slot.slotKey.replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim() || 'this information';
 };
 
-export const catalogSlotQuestion = (version: IntentCatalogVersion, intentKey: string, slotKey: string): string => {
+export const catalogSlotLabel = (version: IntentCatalogVersion, intentKey: string, slotKey: string, values: Record<string, string> = {}): string => {
+  const slot = version.catalog.slots.find((candidate) => candidate.intentKey === intentKey && candidate.slotKey === slotKey);
+  if (!slot) return slotKey.replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim() || 'this information';
+  if (slot.alternativeGroup === 'contact') {
+    const alternate = version.catalog.slots.find((candidate) => candidate.intentKey === intentKey && candidate.alternativeGroup === 'contact' && candidate.slotKey !== slotKey);
+    if (alternate && values[alternate.slotKey]) return slot.slotKey === 'email' ? 'email address' : 'phone number';
+  }
+  return slotLabel(slot);
+};
+
+export const catalogSlotQuestion = (version: IntentCatalogVersion, intentKey: string, slotKey: string, values: Record<string, string> = {}): string => {
   const slot = version.catalog.slots.find((candidate) => candidate.intentKey === intentKey && candidate.slotKey === slotKey);
   if (!slot) return 'To continue, could you provide the requested information?';
   if (slot.promptKey === 'lead.ask_name') return 'What name should I use?';
-  if (slot.promptKey === 'lead.ask_contact') return slot.alternativeGroup === 'contact' ? 'What’s the best email address or phone number to reach you on?' : slot.slotKey === 'email' ? 'What email address should I use?' : 'What phone number, including country code, should I use?';
+  if (slot.promptKey === 'lead.ask_contact') return slot.alternativeGroup === 'contact' && !catalogSlotLabel(version, intentKey, slotKey, values).includes('phone number') && !catalogSlotLabel(version, intentKey, slotKey, values).includes('email address') ? 'What’s the best email address or phone number to reach you on?' : slot.slotKey === 'email' ? 'What email address should I use?' : 'What phone number, including country code, should I use?';
   if (slot.promptKey === 'lead.ask_phone') return 'What phone number, including country code, should I use?';
   return `To continue, could you share your ${slotLabel(slot)}?`;
 };
@@ -220,6 +381,20 @@ export const catalogIntentClarification = (version: IntentCatalogVersion, intent
   return examples.length
     ? `To make sure I route this correctly, are you looking to ${intent.displayName.toLocaleLowerCase('en-US')}? For example: ${examples.map((example) => `“${example}”`).join(', ')}.`
     : `To make sure I route this correctly, are you looking to ${intent.displayName.toLocaleLowerCase('en-US')}?`;
+};
+
+const readableCatalogText = (value: string): string => value.replace(/[._:-]+/gu, ' ').replace(/\s+/gu, ' ').trim() || 'this requirement';
+
+export const catalogIntentLabel = (version: IntentCatalogVersion, intentKey: string | null | undefined): string => {
+  if (!intentKey) return 'the related request';
+  return version.catalog.intents.find((intent) => intent.intentKey === intentKey)?.displayName?.trim() || readableCatalogText(intentKey);
+};
+
+export const catalogRequirementLabel = (requirement: IntentCatalogJourneyRequirement): string => {
+  if (requirement.visitorConfirmationText?.trim()) return requirement.visitorConfirmationText.trim();
+  if (requirement.requirementType === 'consent') return 'explicit consent for this request';
+  if (requirement.requirementType === 'document') return `the requested ${readableCatalogText(requirement.documentType || requirement.requirementKey)} document`;
+  return readableCatalogText(requirement.slotKey || requirement.requirementKey);
 };
 
 type RankedIntent = { intent: IntentCatalogVersion['catalog']['intents'][number]; score: number; confidence: number; matchedCount: number; strongPhraseMatched: boolean; missing: string[] };

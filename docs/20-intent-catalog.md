@@ -5,7 +5,7 @@ The intent catalog is an internal, tenant-scoped reference for deterministic int
 ## Flow
 
 1. A tenant administrator uploads the reviewed `.xlsx` workbook through `POST /api/v1/admin/intent-catalog/upload`.
-2. The private Python worker parses the required `README`, `Intents`, `Signals`, `Slots`, `Relations`, and `WorkflowBindings` sheets plus the optional `QualityRules` sheet. Formulas, external links, unsupported files and malformed rows are rejected.
+2. The private Python worker parses the required `README`, `Intents`, `Signals`, `Slots`, `Relations`, and `WorkflowBindings` sheets plus the optional `QualityRules`, `JourneyRequirements` and `JourneyTransitions` sheets. Formulas, external links, unsupported files and malformed rows are rejected.
 3. The API validates the normalized result, checks tenant scope, stores a draft version and records an audit event. Re-uploading the same source hash is idempotent.
 4. A tenant administrator publishes one version through `POST /api/v1/admin/intent-catalog/versions/:id/publish`. Only the published version is used at chat time.
 5. Node scores the masked conversation against the published catalog. A signal candidate below its score/confidence threshold gets a catalog-derived clarification question before PII slot collection; once the intent qualifies, required slots are requested in collection order. An `alternative_group` requires one value from that group. Only after the threshold/confidence, active allowlisted binding and required slots pass does Node create a confirmation-gated action. The model never authorizes the action.
@@ -21,6 +21,14 @@ The model may explain packages, requirements, steps or timelines only when the a
 
 The deterministic catalog prompts and action-status messages remain control-plane messages for slot collection, consent and workflow state. They are not used for post-capture business answers; those answers are generated from retrieved evidence and validated citations.
 
+## Intent journey contract
+
+`JourneyRequirements` is a typed, optional sheet. Each row belongs to one catalog intent and declares one bounded requirement: `slot`, `document`, `consent` or `confirmation`. Slot requirements must reference a slot in `Slots`; document requirements must reference a document type allowed by that intent's `DocumentPolicies` row. `fulfillment_mode` distinguishes conversational completion from a requirement that must wait for a verified external result, such as OCR.
+
+`JourneyTransitions` is also typed and optional. A transition may `offer` a related intent or `automatically` activate it. Automatic transitions require a bounded `max_depth`, and the API rejects cycles. The backend keeps bounded per-session progress in `conversation_state.intentProgress`, including active, paused and fulfilled intents, completed requirement keys, the current requirement and a journey revision. Catalogs without these sheets continue using the existing slot-only behavior.
+
+The model can phrase the next requirement, but it cannot mark it fulfilled or activate a transition. Node validates slot values, document completion, consent purpose, catalog version and workflow state before advancing the journey. A knowledge question temporarily pauses the active requirement and resumes it afterward; farewell is the only normal session-closing transition.
+
 ## Query normalization rollout
 
 Deterministic query cleanup is always available. LLM-assisted catalog normalization is disabled by default and requires both the global `CATALOG_QUERY_NORMALIZATION_ENABLED=true` kill-switch and the tenant feature `catalogQueryNormalizationEnabled=true`, managed through `/api/v1/admin/features`.
@@ -35,7 +43,7 @@ CRM actions require a valid name, email and phone, plus the normal catalog, cons
 
 The current sample workbook is [crm-lead-capture-intent-catalog.xlsx](../examples/crm-lead-capture-intent-catalog.xlsx). It enables `crm.lead.create` and `crm.lead.quality.score`; `QualityRules` defines a 60% intent, 20% confidence and 20% contact-completeness score with hot/warm/nurture thresholds. The appointment binding remains inactive until its consent, slot validation and calendar destination are reviewed.
 
-The admin Intent Catalog view displays the loaded version's intents, thresholds, signals and workflow bindings. Uploading another `.xlsx` creates a new draft; publishing that draft replaces the active catalog. Tenant admins and platform admins with a selected tenant can use **Edit catalog** to change the JSON contract; `POST /api/v1/admin/intent-catalog/versions/:id/drafts` validates the complete catalog and creates a new draft without mutating the published version. Load and ingestion failures are shown inline with the API error and a retry action.
+The admin Intent Catalog view displays the loaded version's intents, thresholds, signals and workflow bindings. Uploading another `.xlsx` creates a new draft; publishing that draft replaces the active catalog. Tenant admins and platform admins with a selected tenant can use **Edit catalog** to change the JSON contract; `POST /api/v1/admin/intent-catalog/versions/:id/drafts` validates the complete catalog and creates a new draft without mutating the published version. The **Export published Excel** action downloads the selected tenant's currently published version through `GET /api/v1/admin/intent-catalog/published/export`; the server enforces tenant scope, published status and admin authorization, and records an audit event. Load and ingestion failures are shown inline with the API error and a retry action.
 
 `QualityRules` is the only source for lead-quality weights and thresholds. Code validates that the selected quality workflow is active and catalog-bound, but does not select or invoke a workflow.
 
