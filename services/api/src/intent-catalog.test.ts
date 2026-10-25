@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { catalogIntentClarification, catalogNextFollowUpRequirement, catalogNextJourneyRequirement, catalogSlotQuestion, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
+import { catalogIntentClarification, catalogNextFollowUpRequirement, catalogNextJourneyRequirement, catalogSlotQuestion, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
 import { reduceIntentJourney } from './intent-journey.js';
 import type { IntentCatalogVersion } from './types.js';
 
@@ -197,6 +197,13 @@ describe('intent catalog', () => {
     };
     expect(catalogNextJourneyRequirement(typed, 'lead.capture', { visa_count: '-1' })?.requirementKey).toBe('lead.visas');
     expect(catalogNextJourneyRequirement(typed, 'lead.capture', { visa_count: '3' })).toBeNull();
+  });
+
+  it('does not let a document from another typed journey fulfill the current requirement', () => {
+    const requirement = { intentKey: 'company.setup', requirementKey: 'company.passport', requirementType: 'document' as const, required: true, collectionOrder: 1, promptKey: 'company.ask_passport', validationRule: 'document:passport', slotKey: null, documentType: 'passport', fulfillmentMode: 'external_confirmation_required' as const, sourceOfTruth: 'tenant_catalog', notes: '' };
+    expect(journeyDocumentMatchesRequirement(requirement, { intentKey: 'other.intent', catalogVersionId: version.id, requirementKey: 'other.passport', expectedDocumentType: 'passport', status: 'completed' }, version.id)).toBe(false);
+    expect(journeyDocumentMatchesRequirement(requirement, { intentKey: 'company.setup', catalogVersionId: version.id, requirementKey: 'company.passport', expectedDocumentType: 'passport', status: 'completed' }, version.id)).toBe(true);
+    expect(journeyDocumentMatchesRequirement(requirement, { intentKey: 'company.setup', catalogVersionId: 'old-version', requirementKey: 'company.passport', expectedDocumentType: 'passport', status: 'completed' }, version.id)).toBe(false);
   });
 
   it('switches the active journey when a new intent is explicitly selected', () => {

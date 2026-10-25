@@ -10,7 +10,7 @@ export interface JourneyReducerInput {
   currentIntentKey: string | null;
   selectedIntentKey: string | null;
   slotValues: Record<string, string>;
-  documents?: Array<{ requirementKey?: string | null; expectedDocumentType?: string | null; status: string }>;
+  documents?: Array<{ intentKey?: string | null; catalogVersionId?: string | null; requirementKey?: string | null; expectedDocumentType?: string | null; status: string }>;
   knowledgeQuestion?: boolean;
   farewell?: boolean;
   followUp?: boolean;
@@ -42,11 +42,11 @@ const markRequirements = (version: IntentCatalogVersion, progress: IntentProgres
   const current = ensureEntry(progress, intentKey);
   const completed = new Set(current.completedRequirementKeys);
   for (const key of input.completedRequirementKeys ?? []) completed.add(key);
-  for (const requirement of catalogJourneyRequirements(version, intentKey)) if (journeyRequirementFulfilled(requirement, input.slotValues, completed, input.documents ?? [])) completed.add(requirement.requirementKey);
+  for (const requirement of catalogJourneyRequirements(version, intentKey)) if (journeyRequirementFulfilled(requirement, input.slotValues, completed, input.documents ?? [], version.id)) completed.add(requirement.requirementKey);
   current.completedRequirementKeys = [...completed].slice(0, MAX_REQUIREMENTS);
   current.currentRequirementKey = catalogNextJourneyRequirement(version, intentKey, input.slotValues, current.completedRequirementKeys, input.documents ?? [])?.requirementKey ?? null;
   if (input.followUp && !current.currentRequirementKey) {
-    for (const requirement of catalogFollowUpRequirements(version, intentKey)) if (journeyRequirementFulfilled(requirement, input.slotValues, completed, input.documents ?? [])) completed.add(requirement.requirementKey);
+    for (const requirement of catalogFollowUpRequirements(version, intentKey)) if (journeyRequirementFulfilled(requirement, input.slotValues, completed, input.documents ?? [], version.id)) completed.add(requirement.requirementKey);
     current.completedRequirementKeys = [...completed].slice(0, MAX_REQUIREMENTS);
     current.currentRequirementKey = catalogNextFollowUpRequirement(version, intentKey, input.slotValues, current.completedRequirementKeys, input.documents ?? [])?.requirementKey ?? null;
   }

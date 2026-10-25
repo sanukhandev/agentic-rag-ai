@@ -349,6 +349,9 @@ export const isGuidedResponse = (answer: string, mode: 'slot_collection' | 'inte
   const normalized = answer.normalize('NFKC').toLocaleLowerCase('en-US');
   if (!normalized || normalized.length > 1_200) return false;
   if (/\b(?:verified information|knowledge base|what would you like to explore)\b/u.test(normalized)) return false;
+  const guidedSentences = normalized.split(/(?<=[.!?])\s+/u).filter(Boolean);
+  const unsupportedFact = /(?:\b(?:aed|usd|eur|gbp|dirham|dollars?)\s*[\d,.]+|\b[\d,.]+\s*(?:aed|usd|eur|gbp|dirham|dollars?)\b|\b(?:we|our|ancfz|the (?:company|tenant))\b.{0,120}\b(?:charge|cost|fee|price|offer|provide|support|include|require|located|based|is|are)\b|\b(?:headquarters|located|based)\b.{0,80}\b(?:in|at)\b)/u;
+  if (['slot_collection', 'intent_clarification', 'consent', 'confirmation', 'document_collection', 'document_processing'].includes(mode) && guidedSentences.some((sentence) => !sentence.endsWith('?') && unsupportedFact.test(sentence))) return false;
   if (mode === 'consent') return /\b(?:consent|approve|approval|permission|register|submit|proceed|shall i|may i)\b/u.test(normalized)
     && !/(?:\b(?:document|passport|emirates|visa|office|budget|package|cost|price|timeline|require(?:d|s)?|include(?:d|s)?|usually|typically)\b|\baed\b|\b\d+(?:[.,]\d+)?\b)/u.test(normalized);
   if (mode === 'confirmation') return /\?|\b(?:confirm|confirmation|yes|no|approve|accept|proceed)\b/u.test(normalized)

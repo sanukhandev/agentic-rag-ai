@@ -1040,6 +1040,37 @@ describe('API vertical slice', () => {
     expect(visas.body.answer).not.toContain('company visas');
   });
 
+  it('requires explicit consent for a typed-only consent requirement before proposing a CRM action', async () => {
+    const runtime = createApp({ nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-typed-consent@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Typed Consent Tenant', slug: 'typed-consent-tenant', adminEmail: 'admin-typed-consent@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [{ intentKey: 'company.setup', displayName: 'Set up a company', description: 'Company setup', category: 'service', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' }],
+      signals: [{ intentKey: 'company.setup', signalId: 'company-start', signalType: 'phrase' as const, value: 'start a business', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' }],
+      slots: [
+        { intentKey: 'company.setup', slotKey: 'name', dataType: 'person_name', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'email', dataType: 'email', required: true, alternativeGroup: 'contact', collectionOrder: 2, promptKey: 'lead.ask_contact', validationRule: 'token:EMAIL', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'phone', dataType: 'phone', required: true, alternativeGroup: 'contact', collectionOrder: 2, promptKey: 'lead.ask_phone', validationRule: 'token:PHONE', retentionClass: 'pii' },
+      ],
+      relations: [],
+      workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'typed-consent-workflow', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
+      journeyRequirements: [{ intentKey: 'company.setup', requirementKey: 'company.contact_consent', requirementType: 'consent' as const, required: true, collectionOrder: 3, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', slotKey: null, documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' }],
+    } satisfies IntentCatalog;
+    await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'typed-consent.json', sourceHash: 't'.repeat(64), parserVersion: 'test', catalog });
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I want to start a business', clientMessageId: 'typed-consent-interest' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'My name is Noor', clientMessageId: 'typed-consent-name' }).expect(200);
+    const contact = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'noor@example.com and +971500000003', clientMessageId: 'typed-consent-contact' }).expect(200);
+    expect(contact.body.actionProposal).toMatchObject({ consentRequired: true });
+    expect(contact.body.pendingRequirementKey).toBe('company.contact_consent');
+    expect((await runtime.store.listActions(tenant.body.tenant.id)).filter((action) => action.sessionId === session.body.sessionId)).toHaveLength(1);
+    const denied = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'No', replyToPromptId: contact.body.pendingPromptId, clientMessageId: 'typed-consent-denied' }).expect(200);
+    expect(denied.body.actionProposal).toBeNull();
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.contactConsent).toBe('denied');
+  });
+
   it('continues an approved lead with the next optional catalog slot', async () => {
     const model = new CapturingModel();
     const runtime = createApp({ nodeEnv: 'test', model });
