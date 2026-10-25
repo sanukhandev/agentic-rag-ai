@@ -46,7 +46,7 @@ Unanswered/unsupported business questions are answered with a transparent knowle
 - [Delivery sequence](docs/12-delivery-roadmap.md)
 
 ## Existing Docker Compose
-The root `docker-compose.yml` runs the full Docker stack behind one host Nginx listener on port `3000`; PostgreSQL, Redis, n8n, API, web and admin ports bind to loopback only, and local `data/` mounts persist state across rebuilds. It is still **not a production-ready platform** without TLS, identity, n8n hardening and operational controls. See [security hardening](docs/06-security-and-privacy.md) before controlled exposure.
+The root `docker-compose.yml` runs the full Docker stack behind one Docker Nginx listener on port `3000`; PostgreSQL, Redis, n8n, API, web and admin stay on the private Compose network, and local `data/` mounts persist state across rebuilds. It is still **not a production-ready platform** without TLS, identity, n8n hardening and operational controls. See [security hardening](docs/06-security-and-privacy.md) before controlled exposure.
 
 ## Local development
 
@@ -74,7 +74,7 @@ npm run dev:admin
 
 For the PostgreSQL/pgvector adapter, run `npm run db:migrate`, set `STORE=postgres` and `DATABASE_URL` from `.env.example`, then start the API. The API loads an ignored local `.env` when present; keep real credentials there, never in Git. The Python worker is under `tools/ingestion`; it supports TXT, Markdown, CSV, JSON, DOCX, XLSX, text PDF, bounded ZIP bundles containing those formats, and allowlisted HTTPS snapshots, and must run in a project venv. ZIP bundles are extracted with path, size, duplicate-name, nested-archive, macro and unsupported-file checks before sanitization, chunking and embedding. No real customer data or credentials belong in the repository.
 
-The root `docker-compose.yml` is the single deployment shape for PostgreSQL/pgvector, Redis, n8n, API, web and admin, with host Nginx routing the apps through port `3000`. Docker service ports are loopback-only by default; `.env` remains untracked and holds VM-specific connection settings. It is not a production deployment without the security controls documented above.
+The root `docker-compose.yml` is the single deployment shape for PostgreSQL/pgvector, Redis, n8n, API, web, admin and Docker Nginx, with the reverse proxy routing everything through port `3000`. Only Docker Nginx publishes a host port; `.env` remains untracked and holds VM-specific connection settings. It is not a production deployment without the security controls documented above.
 
 ## Current verification and limitations
 

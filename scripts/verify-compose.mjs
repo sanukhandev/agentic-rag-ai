@@ -1,5 +1,4 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,18 +20,18 @@ if (result.status !== 0) process.exit(result.status ?? 1);
 const config = JSON.parse(result.stdout);
 const services = config.services ?? {};
 const hostPorts = Object.entries(services).flatMap(([name, serviceConfig]) => (serviceConfig.ports ?? []).map((entry) => ({ name, entry })));
-if (hostPorts.some(({ entry }) => entry.host_ip !== '127.0.0.1')) throw new Error('All Docker service ports must bind to localhost; host Nginx owns the public listener.');
-const expectedPorts = { postgres: ['54329', '5432'], redis: ['6379', '6379'], n8n: ['5678', '5678'], api: ['4000', '4000'], web: ['3001', '3000'], admin: ['4200', '80'] };
-for (const [serviceName, [published, target]] of Object.entries(expectedPorts)) {
-  const port = services[serviceName]?.ports?.[0];
-  if (!port || String(port.published) !== published || String(port.target) !== target) throw new Error(`${serviceName} must use loopback port ${published}:${target}.`);
+if (hostPorts.length !== 1 || hostPorts[0].name !== 'nginx') throw new Error('Only the Docker Nginx service may publish a host port.');
+if (String(hostPorts[0].entry.published) !== '3000' || String(hostPorts[0].entry.target) !== '80') throw new Error('Docker Nginx must publish host port 3000 to container port 80.');
+for (const serviceName of ['postgres', 'redis', 'n8n', 'api', 'web', 'admin']) if (services[serviceName]?.ports?.length) throw new Error(`${serviceName} must not publish a host port.`);
+const expectedExposedPorts = { postgres: '5432', redis: '6379', n8n: '5678', api: '4000', web: '3000', admin: '80' };
+for (const [serviceName, target] of Object.entries(expectedExposedPorts)) {
+  if (!services[serviceName]?.expose?.includes(target)) throw new Error(`${serviceName} must expose its internal port ${target} to the Compose network.`);
 }
-const publicNginx = readFileSync(resolve(root, 'infra/nginx/vm-public.conf'), 'utf8');
-if (!/listen 3000(?: default_server)?;/.test(publicNginx) || !publicNginx.includes('proxy_pass http://127.0.0.1:3001;')) throw new Error('Host Nginx must listen on 3000 and route web traffic to loopback port 3001.');
+if (typeof services.nginx?.image !== 'string' || !services.nginx.image.includes('@sha256:')) throw new Error('Nginx image must be digest-pinned.');
 if (typeof services.n8n?.image !== 'string' || !services.n8n.image.includes('@sha256:')) throw new Error('n8n image must be digest-pinned.');
 for (const serviceName of ['api', 'event-relay', 'event-worker', 'web', 'admin', 'ingestion']) if (!services[serviceName]?.build?.target) throw new Error(`${serviceName} must use a named multi-stage Docker build target.`);
 for (const serviceName of ['postgres', 'redis', 'n8n']) if (!services[serviceName]?.volumes?.length) throw new Error(`${serviceName} must persist data in a local volume.`);
 if (!services.api?.healthcheck) throw new Error('API must define a healthcheck.');
 if (services.web?.build?.args?.NEXT_PUBLIC_API_URL !== '/' || services.admin?.build?.args?.ADMIN_BASE_HREF !== '/admin/') throw new Error('Web and Angular admin must build for same-origin reverse-proxy paths.');
 
-console.log('Compose deployment defaults passed: host Nginx on 3000, loopback-only Docker services, persistent local volumes, digest-pinned images and all app build targets.');
+console.log('Compose deployment defaults passed: Docker Nginx on 3000, internal-only application services, persistent local volumes, digest-pinned images and all app build targets.');

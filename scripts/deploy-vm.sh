@@ -22,9 +22,5 @@ docker compose --env-file .env config --quiet
 docker compose --env-file .env build --pull --no-cache
 docker compose --env-file .env up --detach --force-recreate --remove-orphans --wait
 
-sudo install -m 0644 infra/nginx/vm-public.conf /etc/nginx/sites-enabled/agentic-rag-ai
-sudo nginx -t
-sudo systemctl reload nginx
-
 printf 'DEPLOYED_COMMIT=%s\n' "$(git rev-parse HEAD)"
 docker compose --env-file .env ps

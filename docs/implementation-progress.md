@@ -106,7 +106,7 @@ This section is updated after verification. No scenario is marked passing from s
 | Reproducible install dry run | `npm ci --dry-run` | pass locally |
 | Repeatable local verification | `npm run verify:local` | pass locally on Windows with PostgreSQL: lint, typecheck, compose security defaults, high-confidence repository secret scan, Admin 2 + Web 3 + API 53 + Contracts 3, clean-room tenant A/B and five-source acceptance, builds, 0 audit vulnerabilities and Python 16 |
 | API/ER documentation | `docs/openapi.yaml`, `docs/19-data-model.md` | present for the implemented local route and persistence surface; runtime schemas/migrations remain authoritative |
-| n8n compose security defaults | `npm run verify:compose` / `docker compose config` | pass: digest-pinned image and default `127.0.0.1:5678`; public bind requires explicit overrides |
+| Docker reverse-proxy security defaults | `npm run verify:compose` / `docker compose config` | pass: digest-pinned Nginx/n8n images and only Docker Nginx publishes host port `3000` |
 
 ## Blockers and risks
 

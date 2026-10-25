@@ -12,13 +12,13 @@ Configure the API origin once in the connector:
 export CHAT_API_BASE='https://api.example.com'
 ```
 
-For a connector running on the VM, the local binding is normally:
+For a connector running alongside the Docker deployment, use Docker Nginx:
 
 ```bash
-export CHAT_API_BASE='http://127.0.0.1:4000'
+export CHAT_API_BASE='http://127.0.0.1:3000'
 ```
 
-Use the HTTPS reverse-proxy URI for any connector outside the VM. Do not publish the raw port `4000` over HTTP.
+Use the HTTPS reverse-proxy URI for any connector outside the VM. Do not publish the raw API port `4000` over HTTP.
 
 Health check:
 

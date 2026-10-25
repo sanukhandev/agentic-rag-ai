@@ -1,7 +1,7 @@
 # Developer environment and deployment
 
 ## Repository baseline
-The root `docker-compose.yml` is the single stack: PostgreSQL/pgvector, Redis, n8n, the API, Next web, Angular admin and ingestion. Host-level Nginx is the reverse proxy on port `3000`; Docker service ports bind to loopback only, so they are not externally reachable. Persistent data stays under `data/` and is not removed by rebuilds.
+The root `docker-compose.yml` is the single stack: PostgreSQL/pgvector, Redis, n8n, the API, Next web, Angular admin, ingestion and Docker Nginx. Docker Nginx is the only published listener on port `3000`; the other services are reachable only on the private Compose network. Persistent data stays under `data/` and is not removed by rebuilds.
 
 ## Intended workstation prerequisites
 Git, Docker Engine/Compose, Node.js 22+, npm, Python 3.x with venv, a PostgreSQL client and optional Azure credentials with an approved model deployment.
@@ -13,7 +13,7 @@ docker compose --env-file .env up -d --build
 docker compose ps
 docker compose logs --tail=100 api web admin redis postgres
 ```
-**Security:** `.env` is gitignored and is the only place for VM connection settings and secrets. Docker service ports stay on `127.0.0.1`; host Nginx owns public port `3000`. For the known VM, set the public origins and n8n URLs in the VM-only `.env`; keep SSH access restricted by the VM firewall and verified `known_hosts`. TLS, secure cookies, n8n authentication and operational controls are still required before real-customer traffic.
+**Security:** `.env` is gitignored and is the only place for VM connection settings and secrets. Docker Nginx owns the only published port, `3000`; application and data services have no host port bindings. For the known VM, set the public origins and n8n URLs in the VM-only `.env`; keep SSH access restricted by the VM firewall and verified `known_hosts`. TLS, secure cookies, n8n authentication and operational controls are still required before real-customer traffic.
 
 ## VM deployment
 
@@ -23,7 +23,7 @@ From the checked-out repository on the VM:
 bash scripts/deploy-vm.sh
 ```
 
-The script refuses a dirty checkout, switches to `main`, fast-forwards from `origin/main`, validates the rendered Compose file, force-rebuilds every Dockerfile target with fresh base images and no cache, recreates the services without deleting local volumes, then installs and reloads the host Nginx config. Do not use `docker compose down -v`; that removes persisted data.
+The script refuses a dirty checkout, switches to `main`, fast-forwards from `origin/main`, validates the rendered Compose file, force-rebuilds every Dockerfile target with fresh base images and no cache, and recreates the services without deleting local volumes. Docker Nginx publishes port `3000`; no host Nginx installation is required. Do not use `docker compose down -v`; that removes persisted data.
 
 ## Python venv convention
 ```sh
@@ -38,21 +38,21 @@ The pinned requirements are in `tools/ingestion/requirements.txt`; `.venv` is ig
 To submit a parsed file to a queued API job, run the worker from the ingestion directory after the tenant admin creates a job:
 
 ```powershell
-\.venv\Scripts\python.exe -m ingestion.worker --path .\faq.docx --staging-root .\private-staging --api-base http://localhost:4000 --job-id <job-id> --worker-secret <local-worker-secret>
+\.venv\Scripts\python.exe -m ingestion.worker --path .\faq.docx --staging-root .\private-staging --api-base http://localhost:3000 --job-id <job-id> --worker-secret <local-worker-secret>
 ```
 
 For an approved HTTPS snapshot, create a queued `text/html` job and run:
 
 ```powershell
-\.venv\Scripts\python.exe -m ingestion.worker --url https://approved.example/faq --title "Approved FAQ" --allowed-host approved.example --api-base http://localhost:4000 --job-id <job-id> --worker-secret <local-worker-secret>
+\.venv\Scripts\python.exe -m ingestion.worker --url https://approved.example/faq --title "Approved FAQ" --allowed-host approved.example --api-base http://localhost:3000 --job-id <job-id> --worker-secret <local-worker-secret>
 ```
 
 The worker claims path/URL jobs before fetching or extracting, copies file inputs into the private staging root for the attempt, extracts from the staged copy, and purges it before sending only sanitized normalized content, chunk hashes and locators. The API revalidates hashes, re-sanitizes chunks and performs embedding before staging the source for approval. Keep the staging directory private and outside any web-served path.
 
-The Angular tenant-admin panel can also queue a TXT, Markdown, CSV, JSON, JSONL, PDF, DOCX, XLSX or ZIP upload. A ZIP bundle may contain those supported file types and is indexed as one tenant source with file-name locators on its chunks. The API validates the archive signature and stores it in `INGESTION_STAGING_ROOT` (default `data/ingestion-staging`) with a generated job key, mode `0600`, and a 20 MiB compressed limit. The Python worker applies bounded extraction, rejects unsafe paths, duplicates, nested archives, macros, unsupported members and oversized contents, then sanitizes and embeds each extracted file. The aggregate normalized content limit is 1,000,000 characters. Run the worker without `--path` or `--url` to retrieve that private input after claiming the job:
+The Angular tenant-admin panel can also queue a TXT, Markdown, CSV, JSON, JSONL, PDF, DOCX, XLSX or ZIP upload. A ZIP bundle may contain those supported file types and is indexed as one tenant source with file-name locators on its chunks. The API validates the archive signature and stores it in `INGESTION_STAGING_ROOT` (default `data/ingestion-staging`) with a generated job key, mode `0600`, and a 20 MiB compressed limit. The Python worker extracts supported archive members sequentially, skips unsupported or empty members with bounded warnings, and rejects unsafe paths, duplicates, nested archives and oversized contents. The result is chunked and vectorized one chunk at a time; there is no aggregate normalized-content character cap. Run the worker without `--path` or `--url` to retrieve that private input after claiming the job:
 
 ```powershell
-\.venv\Scripts\python.exe -m ingestion.worker --staging-root .\private-staging --api-base http://localhost:4000 --job-id <job-id> --worker-secret <local-worker-secret>
+\.venv\Scripts\python.exe -m ingestion.worker --staging-root .\private-staging --api-base http://localhost:3000 --job-id <job-id> --worker-secret <local-worker-secret>
 ```
 
 The API deletes the Node-side staged bytes after a successful or idempotent result. Failed jobs remain available for retry; configure a scheduled private-staging retention/purge policy before production.
@@ -108,7 +108,7 @@ No real IPs, tenant IDs, credentials, encryption keys or webhook secrets in docs
 
 ## Deployment topology
 
-Host Nginx on port `3000` routes `/` to Next web, `/admin/` to Angular, `/api/` to Node and `/n8n/` to n8n through loopback-bound Docker ports. Node/worker privately connect to PostgreSQL and Redis; the local data mounts retain database, workflow, upload and ingestion state. Provide backups, rotation, audit retention, health checks, tested restore and separated dev/staging/prod.
+Docker Nginx on port `3000` routes `/` to Next web, `/admin/` to Angular, `/api/` to Node and `/n8n/` to n8n over the private Compose network. Node/worker privately connect to PostgreSQL and Redis; the local data mounts retain database, workflow, upload and ingestion state. Provide backups, rotation, audit retention, health checks, tested restore and separated dev/staging/prod.
 
 ## Deployment readiness gate
 No real customer traffic until TLS everywhere relevant, protected n8n access, identity/authorization, PII isolation, model deployment data-region approval, backup restore, dependency vulnerability checks, logging redaction and adversarial AI tests pass.
