@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { catalogIntentClarification, catalogNextFollowUpRequirement, catalogNextJourneyRequirement, catalogSlotQuestion, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
+import { catalogIntentClarification, catalogNextFollowUpRequirement, catalogNextJourneyRequirement, catalogRequirementLabel, catalogSlotQuestion, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
 import { reduceIntentJourney } from './intent-journey.js';
 import type { IntentCatalogVersion } from './types.js';
 
@@ -150,6 +150,11 @@ describe('intent catalog', () => {
     expect(validateIntentCatalog({ ...version.catalog }).catalog?.journeyRequirements).toBeUndefined();
   });
 
+  it('never exposes catalog notes as visitor confirmation copy', () => {
+    expect(catalogRequirementLabel({ intentKey: 'lead.capture', requirementKey: 'lead.contact-consent', requirementType: 'consent', required: true, collectionOrder: 1, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', slotKey: null, documentType: null, fulfillmentMode: 'conversation_ready', sourceOfTruth: 'tenant_catalog', notes: 'Internal review note.' })).toBe('explicit consent for this request');
+    expect(catalogRequirementLabel({ intentKey: 'lead.capture', requirementKey: 'lead.contact-consent', requirementType: 'consent', required: true, collectionOrder: 1, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', slotKey: null, documentType: null, fulfillmentMode: 'conversation_ready', sourceOfTruth: 'tenant_catalog', visitorConfirmationText: 'I consent to contact for this enquiry.', notes: 'Internal review note.' })).toBe('I consent to contact for this enquiry.');
+  });
+
   it('rejects automatic journey cycles', () => {
     const result = validateIntentCatalog({
       ...version.catalog,
@@ -192,6 +197,10 @@ describe('intent catalog', () => {
     expect(offered.offeredIntentKey).toBe('appointment.request');
     const accepted = reduceIntentJourney(journeyVersion, offered.progress, { currentIntentKey: 'appointment.request', selectedIntentKey: 'appointment.request', transitionApproval: true, slotValues: { name: '[NAME_1]' } });
     expect(accepted.activeIntentKey).toBe('appointment.request');
+    const declined = reduceIntentJourney(journeyVersion, offered.progress, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', declinedTransition: { sourceIntentKey: 'lead.capture', targetIntentKey: 'appointment.request' }, slotValues: { name: '[NAME_1]' } });
+    expect(declined.decision).toBe('continue');
+    expect(declined.activeIntentKey).toBe('lead.capture');
+    expect(declined.progress.lastDeclinedTransition).toEqual({ sourceIntentKey: 'lead.capture', targetIntentKey: 'appointment.request', catalogVersionId: journeyVersion.id });
   });
 
   it('derives optional post-registration questions from catalog slots', () => {

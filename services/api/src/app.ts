@@ -1010,12 +1010,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const pendingConsentValue = state.pendingPrompt?.type === 'consent' && !pendingSlot && !knowledgeQuestion
         ? pendingCatalogSlotValue('boolean:explicit_opt_in', inputText, masked.masked, session, tokenVault)
         : null;
+      const awaitingConsentAction = pendingCatalogIntent && publishedCatalog
+        ? sessionActions.find((action) => action.state === 'awaiting_confirmation' && action.catalogVersionId === publishedCatalog.id && action.intentKey === pendingCatalogIntent && action.payload.contactConsent === false) ?? null
+        : null;
+      // A typed yes is only an acknowledgement; the scoped consent button still approves the action.
+      const textConsentApproval = Boolean(awaitingConsentAction && pendingConsentValue === 'true');
       const maskedMessage = pendingSlot?.slotKey === 'name' && pendingValue && masked.masked.trim() === inputText.trim() ? pendingValue : masked.masked;
       if (maskedMessage !== userMessage.maskedContent) {
         userMessage = await store.updateMessage({ ...userMessage, maskedContent: maskedMessage });
       }
       const pendingValueData = pendingSlot?.slotKey === 'name' && pendingValue ? { name: pendingValue } : pendingContactKind === 'EMAIL' && pendingValue ? { email: pendingValue } : pendingContactKind === 'PHONE' && pendingValue ? { phone: pendingValue } : pendingSlot?.slotKey === 'email' && pendingValue ? { email: pendingValue } : pendingSlot?.slotKey === 'phone' && pendingValue ? { phone: pendingValue } : {};
-      const pendingCatalogValueData = pendingConsentValue
+      const pendingCatalogValueData = pendingConsentValue && !textConsentApproval
         ? { contact_consent: pendingConsentValue }
         : pendingSlot && pendingValue ? { [pendingContactKind?.toLocaleLowerCase('en-US') ?? pendingSlot.slotKey]: pendingValue } : {};
       const baseCatalogSlotValues: Record<string, string> = { ...pendingCatalogValues, ...(extractLeadData(maskedMessage) as Record<string, string>), ...pendingCatalogValueData };
@@ -1025,13 +1030,20 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const inferredCatalogValueData = (Boolean(state.selectedIntentKey) || !publishedCatalog?.catalog.journeyRequirements?.length) && !knowledgeQuestion && !conversational && inferredCatalogIntentKey && !pendingValue
         ? (() => {
           const inferred: Record<string, string> = {};
+          const isIntentPhrase = publishedCatalog?.catalog.signals.some((signal) => {
+            if (signal.intentKey !== inferredCatalogIntentKey || signal.signalType !== 'phrase' || !signal.value) return false;
+            const phrase = normalizeConversationQuery(signal.value).toLocaleLowerCase('en-US');
+            const message = deterministicMessage.toLocaleLowerCase('en-US');
+            return message.includes(phrase) && message.length <= phrase.length + 16;
+          }) ?? false;
           for (const slot of publishedCatalog?.catalog.slots.filter((candidate) => candidate.intentKey === inferredCatalogIntentKey && candidate.slotKey !== pendingSlot?.slotKey && !candidate.validationRule.startsWith('token:') && candidate.validationRule !== 'boolean:explicit_opt_in') ?? []) {
+            if (isIntentPhrase && slot.validationRule.startsWith('text:')) continue;
             if (!messageMentionsCatalogSlot(slot, inputText)) continue;
             const value = pendingCatalogSlotValue(slot.validationRule, inputText, maskedMessage, session, tokenVault);
             if (value) inferred[slot.slotKey] = value;
           }
           const interestSlot = publishedCatalog?.catalog.slots.find((slot) => slot.intentKey === inferredCatalogIntentKey && slot.validationRule.startsWith('text:') && slot.required && !pendingCatalogValues[slot.slotKey]);
-          if (interestSlot && interestSlot.slotKey !== pendingSlot?.slotKey && maskedMessage.trim().length >= 12) inferred[interestSlot.slotKey] = maskedMessage.trim();
+          if (interestSlot && interestSlot.slotKey !== pendingSlot?.slotKey && !isIntentPhrase && maskedMessage.trim().length >= 12) inferred[interestSlot.slotKey] = maskedMessage.trim();
           return inferred;
         })()
         : {};
@@ -1085,11 +1097,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const intentContextQuery = [normalizedMessage, ...intentContext].join('\n');
       const leadData = mergeLeadData(pendingCatalogValues as LeadData, ...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), currentLeadData);
       const catalogSlotValues: Record<string, string> = { ...pendingCatalogValues, ...Object.fromEntries(recentMessages.filter((message) => message.role === 'user').flatMap((message) => Object.entries(extractLeadData(message.maskedContent)))), ...(extractLeadData(maskedMessage) as Record<string, string>), ...inferredCatalogValueData, ...pendingCatalogValueData };
-      const intentContinuity = publishedCatalog ? resolveIntentContinuity(publishedCatalog, { currentText: normalizedMessage, contextText: intentContextQuery, slotValues: catalogSlotValues, selectedIntentKey: state.activeFollowUpIntentKey ?? state.selectedIntentKey, pendingPromptType: state.pendingPrompt?.type ?? null }) : null;
-      let catalogResolution = intentContinuity?.primary ?? null;
       const pendingTransitionPrompt = state.pendingPrompt?.type === 'confirmation' && state.pendingPrompt.requirementKey?.startsWith('transition:') ? state.pendingPrompt : null;
       const transitionApproval = Boolean(pendingTransitionPrompt?.intentKey && !knowledgeQuestion && /^(?:yes|yeah|yep|sure|okay|ok|confirm|confirmed|approve|approved|proceed|go ahead)\b/iu.test(maskedMessage));
       const transitionDenied = Boolean(pendingTransitionPrompt && !knowledgeQuestion && /^(?:no|nope|not now|later|decline|reject|stop)\b/iu.test(maskedMessage));
+      const intentContinuity = publishedCatalog ? resolveIntentContinuity(publishedCatalog, { currentText: normalizedMessage, contextText: intentContextQuery, slotValues: catalogSlotValues, selectedIntentKey: transitionDenied ? state.selectedIntentKey : state.activeFollowUpIntentKey ?? state.selectedIntentKey, pendingPromptType: state.pendingPrompt?.type ?? null }) : null;
+      let catalogResolution = intentContinuity?.primary ?? null;
       const pendingJourneyConfirmation = state.pendingPrompt?.type === 'confirmation' && !pendingTransitionPrompt && state.pendingPrompt.requirementKey && state.pendingPrompt.intentKey
         ? publishedCatalog?.catalog.journeyRequirements?.some((requirement) => requirement.intentKey === state.pendingPrompt?.intentKey && requirement.requirementKey === state.pendingPrompt?.requirementKey && requirement.requirementType === 'confirmation') ?? false
         : false;
@@ -1120,8 +1132,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const journeyResult = journeyCatalogEnabled && publishedCatalog
         ? reduceIntentJourney(publishedCatalog, state.intentProgress, {
           currentIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyCurrentIntentKey : journeyCurrentIntentKey,
-          selectedIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? catalogResolution?.intentKey ?? null : catalogResolution?.intentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? null,
+          selectedIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? catalogResolution?.intentKey ?? null : transitionDenied ? state.selectedIntentKey ?? state.intentProgress?.activeIntentKey ?? null : catalogResolution?.intentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? null,
           transitionApproval,
+          ...(transitionDenied && pendingTransitionPrompt?.intentKey && (state.selectedIntentKey ?? state.intentProgress?.activeIntentKey) ? { declinedTransition: { sourceIntentKey: state.selectedIntentKey ?? state.intentProgress!.activeIntentKey!, targetIntentKey: pendingTransitionPrompt.intentKey } } : {}),
           slotValues: catalogSlotValues,
           documents: journeyDocuments.map((document) => ({ intentKey: document.intentKey ?? null, catalogVersionId: document.catalogVersionId ?? null, requirementKey: document.requirementKey ?? null, expectedDocumentType: document.expectedDocumentType ?? null, status: document.status })),
           knowledgeQuestion: knowledgeOnlyTurn,
@@ -1135,6 +1148,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const journeyRequirement = journeyResult?.nextRequirement ?? null;
       const journeyOfferPending = journeyResult?.decision === 'offer_next_intent' && Boolean(journeyResult.offeredIntentKey);
       const journeyOfferLabel = journeyOfferPending && publishedCatalog ? catalogIntentLabel(publishedCatalog, journeyResult?.offeredIntentKey) : null;
+      const declinedTransitionHold = Boolean(state.intentProgress?.lastDeclinedTransition && catalogResolution?.intentKey === state.intentProgress.lastDeclinedTransition.sourceIntentKey && catalogResolution.intentKey !== state.intentProgress.lastDeclinedTransition.targetIntentKey);
       const journeyConfirmationLabel = journeyRequirement?.requirementType === 'confirmation' ? catalogRequirementLabel(journeyRequirement) : journeyOfferLabel;
       const journeyTransitionRequirementKey = journeyOfferPending ? `transition:${journeyResult?.activeIntentKey}:${journeyResult?.offeredIntentKey}` : null;
       const journeyDocumentAwaiting = Boolean(journeyRequirement?.required && journeyRequirement.requirementType === 'document' && journeyDocuments.some((document) => ['uploaded', 'queued', 'processing', 'reconciliation'].includes(document.status) && journeyDocumentMatchesRequirement(journeyRequirement, { intentKey: document.intentKey ?? null, catalogVersionId: document.catalogVersionId ?? null, requirementKey: document.requirementKey ?? null, expectedDocumentType: document.expectedDocumentType ?? null, status: document.status }, publishedCatalog?.id)));
@@ -1279,10 +1293,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const nextMissingSlot = crmContactMissing ?? journeySlotKey ?? catalogResolution?.missingSlots[0] ?? null;
       const endedConversation = conversational && intent === 'farewell';
       const preserveConsentPrompt = knowledgeQuestion && state.pendingPrompt?.type === 'consent';
+      const preserveTypedConsentPrompt = textConsentApproval && state.pendingPrompt?.type === 'consent';
       const preserveTransitionOfferPrompt = Boolean(pendingTransitionPrompt && !transitionApproval && !transitionDenied);
-      const preservePendingPrompt = (knowledgeQuestion && state.pendingPrompt && ['slot', 'consent', 'document', 'confirmation'].includes(state.pendingPrompt.type)) || preserveTransitionOfferPrompt;
+      const preservePendingPrompt = (knowledgeQuestion && state.pendingPrompt && ['slot', 'consent', 'document', 'confirmation'].includes(state.pendingPrompt.type)) || preserveTransitionOfferPrompt || preserveTypedConsentPrompt;
       const preserveDocumentProcessingPrompt = journeyDocumentAwaiting && state.pendingPrompt?.type === 'document' && state.pendingPrompt.requirementKey === journeyRequirement?.requirementKey;
-      const nextPrompt = preservePendingPrompt || preserveConsentPrompt ? state.pendingPrompt : endedConversation ? null : consentDenied ? null : journeyOfferPending
+      const nextPrompt = preservePendingPrompt || preserveConsentPrompt ? state.pendingPrompt : endedConversation ? null : consentDenied || transitionDenied ? null : journeyOfferPending
          ? prompt('confirmation', journeyResult?.offeredIntentKey ?? catalogResolution?.intentKey ?? state.selectedIntentKey, null, journeyTransitionRequirementKey)
         : (postCaptureFollowUp && !journeyDocumentPending && !journeyRequirement) ? null : journeyDocumentPending
          ? prompt('document', journeyResult?.activeIntentKey ?? catalogResolution?.intentKey ?? state.selectedIntentKey, null, journeyRequirement?.requirementKey ?? null)
@@ -1294,7 +1309,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : nextMissingSlot
           ? prompt(consentActionReady ? 'consent' : 'slot', journeyResult?.activeIntentKey ?? catalogResolution?.intentKey ?? pendingCatalogIntent ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey, nextMissingSlot, journeyRequirement?.requirementKey ?? null)
           : consentActionReady ? prompt('consent', catalogResolution?.intentKey ?? journeyResult?.activeIntentKey ?? state.selectedIntentKey, null, journeyRequirement?.requirementKey ?? null)
-            : catalogResolution?.actionAllowed && !consentDenied && !journeyOfferPending ? prompt('confirmation', catalogResolution.intentKey, null) : null;
+            : catalogResolution?.actionAllowed && !consentDenied && !journeyOfferPending && !declinedTransitionHold ? prompt('confirmation', catalogResolution.intentKey, null) : null;
       state.catalogVersionId = catalogResolution?.catalogVersionId ?? state.catalogVersionId;
       if (journeyResult) state.intentProgress = journeyResult.progress;
       state.selectedIntentKey = transitionApproval ? journeyResult?.activeIntentKey ?? pendingTransitionPrompt?.intentKey ?? state.selectedIntentKey : postCaptureFollowUp || knowledgeOnlyTurn || journeyOfferPending ? state.selectedIntentKey : catalogResolution?.intentKey ?? state.selectedIntentKey;
@@ -1341,7 +1356,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       const intentActionAlreadySubmitted = Boolean(catalogResolution?.intentKey && sessionActions.some((candidate) => (candidate.intentKey ?? candidate.workflowKey) === catalogResolution.intentKey && ['awaiting_confirmation', 'awaiting_customer', 'approved', 'processing', 'completed'].includes(candidate.state)));
       const sameWorkflowOpportunityExists = Boolean(catalogResolution?.workflowKey && sessionActions.some((candidate) => candidate.workflowKey === catalogResolution?.workflowKey && ['awaiting_confirmation', 'awaiting_customer', 'approved', 'processing', 'completed'].includes(candidate.state)));
-      const shouldProposeAction = !resumedAction && !sameWorkflowOpportunityExists && !postCaptureFollowUp && !knowledgeQuestion && !journeyOfferPending && (catalogResolution ? catalogSlotsReady && !intentActionAlreadySubmitted && !actionAlreadySubmitted && !consentDenied && !crmContactMissing && (catalogResolution.actionAllowed || consentActionReady) : draft.proposedIntent === 'lead.capture' && leadIntent && validatedLeadReady);
+      const shouldProposeAction = !resumedAction && !sameWorkflowOpportunityExists && !postCaptureFollowUp && !knowledgeQuestion && !journeyOfferPending && !transitionDenied && !declinedTransitionHold && (catalogResolution ? catalogSlotsReady && !intentActionAlreadySubmitted && !actionAlreadySubmitted && !consentDenied && !crmContactMissing && (catalogResolution.actionAllowed || consentActionReady) : draft.proposedIntent === 'lead.capture' && leadIntent && validatedLeadReady);
       const action = resumedAction ?? (shouldProposeAction ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, actionLeadData, catalogResolution ? { workflowKey: catalogResolution.workflowKey ?? 'lead.capture', intentKey: catalogResolution.intentKey ?? 'lead.capture', intentScore: catalogResolution.score, intentConfidence: catalogResolution.confidence, catalogVersionId: catalogResolution.catalogVersionId, webhookPath: publishedCatalog?.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution.workflowKey)?.webhookPath ?? 'lead-capture' } : undefined) : null);
       const awaitingConfirmationAction = sessionActions.find((candidate) => candidate.state === 'awaiting_confirmation'
         && candidate.payload.contactConsent !== true
@@ -1651,7 +1666,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (content.length === 0 || content.length > maxBytes) throw new HttpError(413, 'DOCUMENT_TOO_LARGE', 'The document exceeds the published size limit.');
       if (!hasSupportingDocumentSignature(input.mimeType, content)) throw new HttpError(422, 'DOCUMENT_SIGNATURE_INVALID', 'The document content does not match its declared type.');
       const sha256 = documentSha256(content);
-      const duplicate = (await store.listSupportingDocuments(session.tenantId, session.id)).find((candidate) => candidate.sha256 === sha256);
+      const duplicate = (await store.listSupportingDocuments(session.tenantId, session.id)).find((candidate) => candidate.sha256 === sha256
+        && candidate.intentKey === requestedIntentKey
+        && (candidate.catalogVersionId ?? null) === (version?.id ?? null)
+        && (candidate.requirementKey ?? null) === (journeyRequirement?.requirementKey ?? input.requirementKey ?? null));
       if (duplicate) { res.status(202).json({ accepted: true, idempotent: true, document: publicDocument(duplicate) }); return; }
       const documentId = randomUUID();
       const storageKey = documentStorage.key(session.tenantId, documentId, input.mimeType);

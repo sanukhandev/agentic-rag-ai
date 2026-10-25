@@ -98,6 +98,7 @@ export interface IntentCatalogJourneyRequirement {
   documentType: string | null;
   fulfillmentMode: IntentCatalogFulfillmentMode;
   sourceOfTruth: string;
+  visitorConfirmationText?: string;
   notes: string;
 }
 
@@ -127,6 +128,11 @@ export interface IntentProgressState {
   entries: Record<string, IntentProgressEntry>;
   visitedIntentKeys: string[];
   lastTransitionReason: string | null;
+  lastDeclinedTransition?: {
+    sourceIntentKey: string;
+    targetIntentKey: string;
+    catalogVersionId: string;
+  };
   journeyRevision: number;
 }
 

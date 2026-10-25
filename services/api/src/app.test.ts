@@ -1040,6 +1040,54 @@ describe('API vertical slice', () => {
     expect(visas.body.answer).not.toContain('company visas');
   });
 
+  it('keeps transition offers in the chat API scoped, declines once, and activates only after approval', async () => {
+    const runtime = createApp({ nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-transition-api@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Transition API Tenant', slug: 'transition-api-tenant', adminEmail: 'admin-transition-api@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [
+        { intentKey: 'alpha.request', displayName: 'Alpha request', description: 'Alpha request', category: 'service', workflowKey: 'alpha.workflow', minimumScore: 50, confidenceThreshold: 0.5, confirmationRequired: false, active: true, priority: 100, versionNote: '' },
+        { intentKey: 'beta.request', displayName: 'Beta request', description: 'Beta request', category: 'service', workflowKey: 'beta.workflow', minimumScore: 50, confidenceThreshold: 0.5, confirmationRequired: false, active: true, priority: 90, versionNote: '' },
+      ],
+      signals: [
+        { intentKey: 'alpha.request', signalId: 'alpha', signalType: 'phrase' as const, value: 'start alpha', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' },
+        { intentKey: 'beta.request', signalId: 'beta', signalType: 'phrase' as const, value: 'need beta', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' },
+      ],
+      slots: [
+        { intentKey: 'alpha.request', slotKey: 'alpha_details', dataType: 'text', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'alpha.ask_details', validationRule: 'text:nonempty', retentionClass: 'business' },
+        { intentKey: 'beta.request', slotKey: 'beta_details', dataType: 'text', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'beta.ask_details', validationRule: 'text:nonempty', retentionClass: 'business' },
+      ],
+      relations: [],
+      workflowBindings: [
+        { workflowKey: 'alpha.workflow', n8nWorkflowId: 'alpha', webhookPath: 'alpha', payloadContract: 'alpha-v1', sideEffectClass: 'human_review', active: true },
+        { workflowKey: 'beta.workflow', n8nWorkflowId: 'beta', webhookPath: 'beta', payloadContract: 'beta-v1', sideEffectClass: 'human_review', active: true },
+      ],
+      journeyRequirements: [
+        { intentKey: 'alpha.request', requirementKey: 'alpha.details', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'alpha.ask_details', validationRule: 'text:nonempty', slotKey: 'alpha_details', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
+        { intentKey: 'beta.request', requirementKey: 'beta.details', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'beta.ask_details', validationRule: 'text:nonempty', slotKey: 'beta_details', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
+      ],
+      journeyTransitions: [{ sourceIntentKey: 'alpha.request', targetIntentKey: 'beta.request', activationMode: 'offer' as const, maxDepth: 2, triggerGroup: 'related', promptKey: 'journey.offer_beta', notes: 'Internal transition note.' }],
+    } satisfies IntentCatalog;
+    const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'transition-api.json', sourceHash: 'x'.repeat(64), parserVersion: 'test', catalog });
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const start = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I want to start alpha', clientMessageId: 'transition-api-start' }).expect(200);
+    const alpha = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Alpha details', replyToPromptId: start.body.pendingPromptId, clientMessageId: 'transition-api-alpha' }).expect(200);
+    expect(alpha.body.pendingRequirementKey).toBeNull();
+    const offer = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need beta', clientMessageId: 'transition-api-offer' }).expect(200);
+    expect(offer.body.answer).toContain('Beta request');
+    expect(offer.body.pendingPromptId).toEqual(expect.any(String));
+    const declined = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'No', replyToPromptId: offer.body.pendingPromptId, clientMessageId: 'transition-api-decline' }).expect(200);
+    expect(declined.body.pendingPromptId).toBeNull();
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ selectedIntentKey: 'alpha.request', intentProgress: { activeIntentKey: 'alpha.request', lastTransitionReason: 'declined_transition', lastDeclinedTransition: { sourceIntentKey: 'alpha.request', targetIntentKey: 'beta.request', catalogVersionId: version.id } } });
+    const continueAlpha = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Can you continue with alpha?', clientMessageId: 'transition-api-continue' }).expect(200);
+    expect(continueAlpha.body.pendingPromptId).toBeNull();
+    const explicitOffer = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need beta', clientMessageId: 'transition-api-explicit-offer' }).expect(200);
+    const accepted = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Yes', replyToPromptId: explicitOffer.body.pendingPromptId, clientMessageId: 'transition-api-accept' }).expect(200);
+    expect(accepted.body.pendingRequirementKey).toBe('beta.details');
+  });
+
   it('requires explicit consent for a typed-only consent requirement before proposing a CRM action', async () => {
     const runtime = createApp({ nodeEnv: 'test' });
     const api = request(runtime.app);
@@ -1069,6 +1117,18 @@ describe('API vertical slice', () => {
     const denied = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'No', replyToPromptId: contact.body.pendingPromptId, clientMessageId: 'typed-consent-denied' }).expect(200);
     expect(denied.body.actionProposal).toBeNull();
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.contactConsent).toBe('denied');
+
+    const approvedSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: approvedSession.body.sessionId, message: 'I want to start a business', clientMessageId: 'typed-consent-yes-interest' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: approvedSession.body.sessionId, message: 'My name is Lina', clientMessageId: 'typed-consent-yes-name' }).expect(200);
+    const approvedContact = await api.post('/api/v1/chat/messages').send({ sessionId: approvedSession.body.sessionId, message: 'lina@example.com and +971500000004', clientMessageId: 'typed-consent-yes-contact' }).expect(200);
+    const typedYes = await api.post('/api/v1/chat/messages').send({ sessionId: approvedSession.body.sessionId, message: 'Yes', replyToPromptId: approvedContact.body.pendingPromptId, clientMessageId: 'typed-consent-yes-text' }).expect(200);
+    expect(typedYes.body.actionProposal).toMatchObject({ consentRequired: true });
+    expect(typedYes.body.pendingPromptId).toBe(approvedContact.body.pendingPromptId);
+    expect((await runtime.store.getSession(approvedSession.body.sessionId))?.conversationState?.contactConsent).toBe('unknown');
+    const confirmed = await api.post(`/api/v1/chat/actions/${typedYes.body.actionProposal.id}/confirm`).send({ sessionId: approvedSession.body.sessionId, confirmed: true }).expect(200);
+    expect(['approved', 'processing', 'completed']).toContain(confirmed.body.action.state);
+    expect((await runtime.store.getSession(approvedSession.body.sessionId))?.conversationState?.contactConsent).toBe('granted');
   });
 
   it('continues an approved lead with the next optional catalog slot', async () => {

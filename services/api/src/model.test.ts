@@ -110,6 +110,8 @@ describe('Azure Foundry model adapter', () => {
     expect(isGuidedResponse('ANCFZ supports startups with competitive packages. What do you need?', 'intent_clarification')).toBe(false);
     expect(isGuidedResponse('Our headquarters is in XYZ. What is your budget?', 'slot_collection', 'budget')).toBe(false);
     expect(isGuidedResponse('ANCFZ charges AED 6000. What is your phone number?', 'slot_collection', 'phone')).toBe(false);
+    expect(isGuidedResponse('The licence is issued in 24 hours. What is your phone number?', 'slot_collection', 'phone')).toBe(false);
+    expect(isGuidedResponse('A two-visa package is available. What is your phone number?', 'slot_collection', 'phone')).toBe(false);
     expect(isGuidedResponse('Could you confirm the number of visas you need?', 'confirmation')).toBe(true);
     expect(isGuidedResponse('What type of licence would suit your activity?', 'slot_collection', 'business_activity')).toBe(true);
     expect(isGuidedResponse('What is your company name?', 'slot_collection', 'name')).toBe(false);

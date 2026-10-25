@@ -10,6 +10,7 @@ export interface JourneyReducerInput {
   currentIntentKey: string | null;
   selectedIntentKey: string | null;
   transitionApproval?: boolean;
+  declinedTransition?: { sourceIntentKey: string; targetIntentKey: string };
   slotValues: Record<string, string>;
   documents?: Array<{ intentKey?: string | null; catalogVersionId?: string | null; requirementKey?: string | null; expectedDocumentType?: string | null; status: string }>;
   knowledgeQuestion?: boolean;
@@ -68,6 +69,18 @@ export const reduceIntentJourney = (version: IntentCatalogVersion, previous: Int
   const requestedIntentKey = selectedIntentKey ?? currentIntentKey;
   const requestedIntent = requestedIntentKey;
   const existingActiveIntentKey = progress.activeIntentKey && catalogIntentExists(version, progress.activeIntentKey) ? progress.activeIntentKey : null;
+  if (input.declinedTransition && catalogIntentExists(version, input.declinedTransition.sourceIntentKey) && catalogIntentExists(version, input.declinedTransition.targetIntentKey)) {
+    const activeIntent = input.declinedTransition.sourceIntentKey;
+    const activeEntry = markRequirements(version, progress, activeIntent, input);
+    progress.activeIntentKey = activeIntent;
+    progress.visitedIntentKeys = [...new Set([...progress.visitedIntentKeys, activeIntent])].slice(-MAX_INTENTS);
+    progress.lastDeclinedTransition = { ...input.declinedTransition, catalogVersionId: version.id };
+    progress.lastTransitionReason = 'declined_transition';
+    progress.journeyRevision += 1;
+    const nextRequirement = catalogNextJourneyRequirement(version, activeIntent, input.slotValues, activeEntry.completedRequirementKeys, input.documents ?? [])
+      ?? (input.followUp ? catalogNextFollowUpRequirement(version, activeIntent, input.slotValues, activeEntry.completedRequirementKeys, input.documents ?? []) : null);
+    return { progress, decision: nextRequirement ? (nextRequirement.fulfillmentMode === 'external_confirmation_required' && nextRequirement.requirementType === 'document' ? 'await_external_completion' : 'collect_requirement') : 'continue', activeIntentKey: activeIntent, nextRequirement };
+  }
   const candidateTransition = existingActiveIntentKey && requestedIntentKey && requestedIntentKey !== existingActiveIntentKey
     ? transitionFor(version, existingActiveIntentKey, requestedIntentKey)
     : null;
@@ -132,7 +145,7 @@ export const reduceIntentJourney = (version: IntentCatalogVersion, previous: Int
     if (transition?.activationMode === 'offer') {
       progress.lastTransitionReason = 'offer_related_intent';
       progress.journeyRevision += 1;
-      return { progress, decision: 'offer_next_intent', activeIntentKey, nextRequirement: null };
+      return { progress, decision: 'offer_next_intent', activeIntentKey, nextRequirement: null, offeredIntentKey: currentIntentKey, transitionPromptKey: transition.promptKey };
     }
   }
   progress.lastTransitionReason = 'intent_fulfilled';

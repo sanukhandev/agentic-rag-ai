@@ -179,6 +179,7 @@ export const validateIntentCatalog = (input: unknown): CatalogValidationResult =
       documentType: text(row.documentType) || null,
       fulfillmentMode: text(row.fulfillmentMode) as IntentCatalogJourneyRequirement['fulfillmentMode'],
       sourceOfTruth: text(row.sourceOfTruth),
+      ...(text(row.visitorConfirmationText) ? { visitorConfirmationText: text(row.visitorConfirmationText) } : {}),
       notes: text(row.notes),
     };
     const duplicateKey = `${requirement.intentKey}:${requirement.requirementKey}`;
@@ -390,8 +391,10 @@ export const catalogIntentLabel = (version: IntentCatalogVersion, intentKey: str
 };
 
 export const catalogRequirementLabel = (requirement: IntentCatalogJourneyRequirement): string => {
-  const notes = requirement.notes.trim();
-  return notes || readableCatalogText(requirement.requirementKey);
+  if (requirement.visitorConfirmationText?.trim()) return requirement.visitorConfirmationText.trim();
+  if (requirement.requirementType === 'consent') return 'explicit consent for this request';
+  if (requirement.requirementType === 'document') return `the requested ${readableCatalogText(requirement.documentType || requirement.requirementKey)} document`;
+  return readableCatalogText(requirement.slotKey || requirement.requirementKey);
 };
 
 type RankedIntent = { intent: IntentCatalogVersion['catalog']['intents'][number]; score: number; confidence: number; matchedCount: number; strongPhraseMatched: boolean; missing: string[] };
