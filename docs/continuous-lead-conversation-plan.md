@@ -28,6 +28,131 @@ The repository contains bounded lead, summary and OCR n8n workflows. The failure
 | RAG content | The current source corpus is active and searchable, but answer quality depends on exact normalized query terms and current embeddings. | Reuse the existing hybrid PostgreSQL/pgvector search. Re-ingestion is a data operation after the catalog/content review; it is not a substitute for state continuity. |
 | n8n | Existing workflows are bounded and action-gated. | Keep them unchanged for this fix; verify that one logical lead remains linked to the session and callbacks update the existing state. |
 
+## Plan amendment — catalog-guided intent journeys
+
+This amendment turns the published intent catalog into a bounded conversation strategy without moving orchestration authority into the LLM or n8n. The catalog decides which visitor-supplied requirements, documents and consent gates are needed; Node validates and persists progress; the model only writes the natural-language response from that approved decision.
+
+### Required semantics
+
+The following terms are deliberately separate:
+
+- **Detected intent** — a scored proposal from the current message and masked conversation context.
+- **Active intent** — the one intent currently being completed. Only this intent owns the next requirement question.
+- **Paused intent** — an intent detected and retained for later continuation, but not currently collecting requirements.
+- **Fulfilled intent** — all catalog-required conversational requirements, documents and consent gates for that intent have passed validation.
+- **External completion** — a separate provider result such as Salesforce or OCR completion. It is never assumed from intent fulfillment or workflow acceptance.
+- **Farewell** — the only normal transition that closes the session.
+
+An intent with no required requirements is fulfilled only after its catalog-defined confidence and authorization gates pass. A provider workflow reaching `completed` may enrich the journey but must not close it.
+
+### Catalog contract to add
+
+Add a typed, backward-compatible requirement and journey section to the catalog. Do not encode tenant names, business terms or question text in TypeScript. Existing catalogs without this section must continue to use the current slot-only behavior.
+
+The contract must validate, at minimum:
+
+- `intentKey` references an active catalog intent.
+- Each requirement has a unique key within its intent.
+- Requirement kind is one of `slot`, `document`, `consent` or `confirmation`.
+- Collection order is a non-negative bounded integer.
+- Slot requirements reference a catalog slot; document requirements reference an allowed document type/policy.
+- Prompt keys are semantic catalog keys, not visitor-facing text.
+- Required and optional requirements are explicit.
+- Fulfillment mode is `conversation_ready` or `external_confirmation_required`.
+- Follow-up references point to known intents and have a bounded depth.
+
+The catalog must also define whether a completed intent automatically activates a related intent or offers it to the visitor. The safe default is `offer`; automatic activation requires an explicit catalog setting and cycle protection.
+
+Do not reuse the current primitive-only `documentRequirements` extension rows for nested journey rules. Either introduce typed rows or reject unsupported shapes during catalog validation rather than silently dropping them.
+
+### Conversation state contract
+
+Keep the existing `chat_sessions.conversation_state` JSON and optimistic state-version update. Do not add a new table unless measured state growth requires it. Add a bounded, versioned `intentProgress` structure containing:
+
+- pinned catalog version;
+- active intent key;
+- paused and fulfilled intent keys;
+- per-intent completed requirement keys;
+- current requirement key;
+- requirement provenance and validation status;
+- visited intent keys and transition reason;
+- per-intent consent purpose/status;
+- journey revision.
+
+`activeFollowUpIntentKey` and `candidateIntentKeys` remain readable for backward compatibility, but new logic must not treat them as a fulfillment queue. Old state is migrated in memory with empty progress and written back through the existing compare-and-swap path.
+
+Use a bounded maximum for active, paused and fulfilled intent entries and requirement keys. Reject or defer catalog journeys that exceed the bound so prompts, summaries and database rows cannot grow without limit.
+
+### Deterministic journey reducer
+
+Implement the journey decisions as a small pure policy module called by `app.ts`. It must handle:
+
+1. current-message intent evidence;
+2. pending requirement answers and corrections;
+3. factual knowledge questions that temporarily suspend collection;
+4. explicit intent switches;
+5. related-intent detection and pause/resume;
+6. requirement fulfillment;
+7. next-intent offer or activation;
+8. farewell and session closure.
+
+The reducer returns a typed decision such as `answer`, `collect_requirement`, `retrieve_knowledge`, `offer_next_intent`, `confirm_consent`, `queue_action`, `await_external_completion` or `close_session`. It never calls the model, n8n, Salesforce or the database.
+
+The reducer must reject cycles, repeated answered requirements, stale catalog versions and transitions from a denied or revoked consent state. It must ask at most one question or present one document action per turn.
+
+### Document and OCR rules
+
+Document requirements must be tied to a specific active intent and requirement key. `PendingPrompt` and the upload request must identify the requirement being satisfied; `primaryIntentKey` alone is not sufficient when one intent requires multiple documents. Upload authorization may use the existing document endpoint, but the request must identify the requirement being satisfied. An upload is not fulfillment: the requirement becomes complete only after the authenticated OCR result passes document type, confidence, authorization and idempotency checks.
+
+OCR failure, timeout, missing input and low confidence leave the requirement pending and produce a safe retry/review state. A late callback cannot mark a newer corrected document as complete. Existing private storage, document policies and workflow bindings remain authoritative.
+
+### Consent and side-effect rules
+
+Consent is scoped to the exact purpose, intent, catalog version and action class. Consent for initial CRM lead creation must not authorize a later document transfer, CRM enrichment or unrelated intent. A new side-effect purpose requires a new explicit consent decision even when the visitor's email or phone is already known.
+
+Node remains the only authority for action authorization. Intent fulfillment may prepare an action, but it cannot create or approve one without the existing validation, consent, idempotency and workflow-binding gates.
+
+### RAG and model boundary
+
+For each turn, build retrieval context from the current masked message, active intent, current requirement, validated masked slots, bounded summary and limited recent turns. Apply tenant, audience, publication and source-status filters before vector or full-text retrieval.
+
+The backend provides the model with a typed response envelope containing the approved mode, active intent, next requirement, masked context, verified action state and authorized evidence. The model returns wording and citation IDs only. It cannot select the next intent, mark a requirement complete, grant consent, select a workflow or claim provider success.
+
+Existing safe hardcoded responses remain allowed only for security, unavailable dependency, unsupported-content, consent-denial and session-closure boundaries. Normal visitor replies must be model-composed from the approved decision and evidence.
+
+### Implementation order and validation gates
+
+1. Define and validate the catalog contract with backward-compatible defaults.
+2. Add the bounded `intentProgress` state and merge/CAS rules.
+3. Implement and unit-test the pure journey reducer.
+4. Connect slot, document, consent, OCR and action gates to the reducer.
+5. Update model context modes without allowing model authority over state.
+6. Add admin read visibility for active intent, pending requirement and fulfillment status.
+7. Run API, persistence, privacy, tenant-isolation, RAG, document, workflow and browser tests.
+8. Review the complete diff, catalog fixtures and migration compatibility before committing.
+
+No n8n workflow is created for conversation strategy. Existing CRM/OCR workflows remain bounded side-effect adapters and receive only backend-authorized events.
+
+### Blind-spot checklist
+
+Before implementation is marked complete, explicitly verify:
+
+- catalog publish during an active session does not change the pinned journey;
+- a summary or model suggestion cannot promote an intent or requirement to fulfilled;
+- a multi-intent message creates one active journey plus bounded paused candidates, not multiple leads;
+- a relation graph cannot cause an activation loop;
+- a visitor can correct a slot or replace a document without stale data winning;
+- consent denial, revocation and purpose changes win over concurrent or delayed writes;
+- knowledge questions preserve the exact pending requirement and resume it afterward;
+- OCR/provider callbacks are tenant-scoped, action-scoped, replay-safe and version-aware;
+- Redis, n8n, Azure, OCR and embedding outages leave durable observable states;
+- no raw PII enters model context, retrieval telemetry, Redis events, n8n payloads or summaries;
+- old sessions and catalogs remain readable;
+- admin views do not expose another tenant's journey, document or CRM reference;
+- journey state and prompts have bounded size and latency;
+- farewell is not inferred from silence, provider completion or intent fulfillment;
+- tests prove both the positive journey and safe abstention/deferral paths.
+
 ## Implementation phases
 
 ### Phase 0 — baseline and safety — complete
@@ -59,15 +184,23 @@ The repository contains bounded lead, summary and OCR n8n workflows. The failure
 
 ### Phase 4 — catalog/content verification
 
+- [ ] Add and validate the typed catalog journey/requirement contract with backward-compatible defaults.
 - [ ] Review the published tenant catalog's company-formation, visa, workspace and document policies.
 - [ ] Publish reviewed business-activity and company-formation paraphrases (including `start a business`, FZC/partner wording and spelling variants) through the catalog editor/import path, not source-code keywords. A local validation-only catalog version added the fashion-boutique examples; it is not treated as a deployable catalog migration.
 - [ ] Verify content catalog sources are active, public-for-chat and re-ingested with the configured production embedding deployment.
+- [ ] Pin the catalog version for each active journey and preserve old sessions when a newer catalog is published.
+- [ ] Add bounded per-intent progress, pause/resume, completion and cycle protection using the existing session CAS path.
+- [ ] Link document requirements to pending prompts and mark them complete only after verified OCR completion.
+- [ ] Scope consent by intent, catalog version and side-effect purpose.
 - [ ] Verify existing lead-capture, summary-sync and OCR workflow bindings; do not create duplicate workflows.
 
 ### Phase 5 — acceptance and rollout
 
 - [x] Run API/unit tests for intent continuity, PII masking, tenant isolation, consent, duplicate actions and grounded abstention: 21 files passed, 154 tests passed; 2 integration files with 8 environment-gated tests skipped.
 - [x] Run a local browser conversation from greeting through typo-tolerant commercial intent and follow-up knowledge questions; requirements and visa-package answers returned approved-source citations while the pending journey remained active.
+- [ ] Test one active intent to fulfillment, a paused related intent, explicit intent switching, resume, cycle protection and farewell.
+- [ ] Test slot correction, document replacement, OCR failure/retry, consent denial/revocation and catalog republish during a session.
+- [ ] Test concurrent messages and delayed callbacks against journey revision and pinned catalog version.
 - [ ] Inspect the same session in Admin CRM, including the single lead, summary, workflow status and transcript.
 - [ ] Record unavailable live provider checks separately; do not claim Salesforce/n8n success from mocks.
 
