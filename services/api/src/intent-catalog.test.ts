@@ -174,6 +174,26 @@ describe('intent catalog', () => {
     expect(fulfilled.decision).toBe('continue');
   });
 
+  it('offers a configured related intent and activates it only after approval', () => {
+    const journeyVersion = {
+      ...version,
+      catalog: {
+        ...version.catalog,
+        intents: version.catalog.intents.map((intent) => intent.intentKey === 'appointment.request' ? { ...intent, active: true } : intent),
+        journeyRequirements: [{ intentKey: 'lead.capture', requirementKey: 'lead.name', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', slotKey: 'name', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' }],
+        journeyTransitions: [{ sourceIntentKey: 'lead.capture', targetIntentKey: 'appointment.request', activationMode: 'offer' as const, maxDepth: 2, triggerGroup: 'related', promptKey: 'journey.offer_appointment', notes: '' }],
+      },
+    };
+    const first = reduceIntentJourney(journeyVersion, undefined, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: {} });
+    const completed = reduceIntentJourney(journeyVersion, first.progress, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: { name: '[NAME_1]' } });
+    const offered = reduceIntentJourney(journeyVersion, completed.progress, { currentIntentKey: 'appointment.request', selectedIntentKey: 'appointment.request', slotValues: { name: '[NAME_1]' } });
+    expect(offered.decision).toBe('offer_next_intent');
+    expect(offered.activeIntentKey).toBe('lead.capture');
+    expect(offered.offeredIntentKey).toBe('appointment.request');
+    const accepted = reduceIntentJourney(journeyVersion, offered.progress, { currentIntentKey: 'appointment.request', selectedIntentKey: 'appointment.request', transitionApproval: true, slotValues: { name: '[NAME_1]' } });
+    expect(accepted.activeIntentKey).toBe('appointment.request');
+  });
+
   it('derives optional post-registration questions from catalog slots', () => {
     const enriched = {
       ...version,

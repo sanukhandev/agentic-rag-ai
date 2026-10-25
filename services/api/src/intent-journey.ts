@@ -9,6 +9,7 @@ export type JourneyDecision = 'collect_requirement' | 'retrieve_knowledge' | 'of
 export interface JourneyReducerInput {
   currentIntentKey: string | null;
   selectedIntentKey: string | null;
+  transitionApproval?: boolean;
   slotValues: Record<string, string>;
   documents?: Array<{ intentKey?: string | null; catalogVersionId?: string | null; requirementKey?: string | null; expectedDocumentType?: string | null; status: string }>;
   knowledgeQuestion?: boolean;
@@ -22,6 +23,8 @@ export interface JourneyReducerResult {
   decision: JourneyDecision;
   activeIntentKey: string | null;
   nextRequirement: ReturnType<typeof catalogNextJourneyRequirement>;
+  offeredIntentKey?: string | null;
+  transitionPromptKey?: string | null;
 }
 
 const entry = (intentKey: string, status: IntentProgressEntry['status'] = 'active'): IntentProgressEntry => ({ intentKey, status, completedRequirementKeys: [], currentRequirementKey: null, revision: 0 });
@@ -62,11 +65,39 @@ export const reduceIntentJourney = (version: IntentCatalogVersion, previous: Int
   if (input.farewell) return { progress: { ...progress, activeIntentKey: null, lastTransitionReason: 'farewell', journeyRevision: progress.journeyRevision + 1 }, decision: 'close_session', activeIntentKey: null, nextRequirement: null };
   const currentIntentKey = catalogIntentExists(version, input.currentIntentKey) ? input.currentIntentKey : null;
   const selectedIntentKey = catalogIntentExists(version, input.selectedIntentKey) ? input.selectedIntentKey : null;
-  const activeIntentKey = selectedIntentKey && selectedIntentKey !== progress.activeIntentKey
-    ? selectedIntentKey
-    : progress.activeIntentKey && catalogIntentExists(version, progress.activeIntentKey)
-      ? progress.activeIntentKey
-      : selectedIntentKey ?? currentIntentKey;
+  const requestedIntentKey = selectedIntentKey ?? currentIntentKey;
+  const requestedIntent = requestedIntentKey;
+  const existingActiveIntentKey = progress.activeIntentKey && catalogIntentExists(version, progress.activeIntentKey) ? progress.activeIntentKey : null;
+  const candidateTransition = existingActiveIntentKey && requestedIntentKey && requestedIntentKey !== existingActiveIntentKey
+    ? transitionFor(version, existingActiveIntentKey, requestedIntentKey)
+    : null;
+  if (candidateTransition && requestedIntent !== null && existingActiveIntentKey !== null && !input.transitionApproval) {
+    const activeIntent = existingActiveIntentKey;
+    const activeEntry = markRequirements(version, progress, activeIntent, input);
+    progress.activeIntentKey = activeIntent;
+    progress.visitedIntentKeys = [...new Set([...progress.visitedIntentKeys, activeIntent])].slice(-MAX_INTENTS);
+    const activeRequirement = catalogNextJourneyRequirement(version, activeIntent, input.slotValues, activeEntry.completedRequirementKeys, input.documents ?? [])
+      ?? (input.followUp ? catalogNextFollowUpRequirement(version, activeIntent, input.slotValues, activeEntry.completedRequirementKeys, input.documents ?? []) : null);
+    if (activeRequirement) {
+      activeEntry.currentRequirementKey = activeRequirement.requirementKey;
+      progress.lastTransitionReason = 'requirement_pending';
+      progress.journeyRevision += 1;
+      return { progress, decision: activeRequirement.fulfillmentMode === 'external_confirmation_required' && activeRequirement.requirementType === 'document' ? 'await_external_completion' : 'collect_requirement', activeIntentKey: activeIntent, nextRequirement: activeRequirement };
+    }
+    if (candidateTransition.activationMode === 'offer' && !progress.visitedIntentKeys.includes(requestedIntent) && progress.visitedIntentKeys.length < candidateTransition.maxDepth) {
+      activeEntry.status = 'fulfilled';
+      progress.lastTransitionReason = 'offer_related_intent';
+      progress.journeyRevision += 1;
+      return { progress, decision: 'offer_next_intent', activeIntentKey: activeIntent, nextRequirement: null, offeredIntentKey: requestedIntent, transitionPromptKey: candidateTransition.promptKey };
+    }
+  }
+  const activeIntentKey = input.transitionApproval && requestedIntentKey
+    ? requestedIntentKey
+    : candidateTransition
+      ? existingActiveIntentKey ?? requestedIntentKey
+      : selectedIntentKey && selectedIntentKey !== existingActiveIntentKey
+        ? selectedIntentKey
+        : existingActiveIntentKey ?? requestedIntentKey;
   if (!activeIntentKey) return { progress, decision: input.knowledgeQuestion ? 'retrieve_knowledge' : 'continue', activeIntentKey: null, nextRequirement: null };
   const activeEntry = markRequirements(version, progress, activeIntentKey, input);
   progress.activeIntentKey = activeIntentKey;

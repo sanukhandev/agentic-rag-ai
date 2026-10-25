@@ -382,6 +382,18 @@ export const catalogIntentClarification = (version: IntentCatalogVersion, intent
     : `To make sure I route this correctly, are you looking to ${intent.displayName.toLocaleLowerCase('en-US')}?`;
 };
 
+const readableCatalogText = (value: string): string => value.replace(/[._:-]+/gu, ' ').replace(/\s+/gu, ' ').trim() || 'this requirement';
+
+export const catalogIntentLabel = (version: IntentCatalogVersion, intentKey: string | null | undefined): string => {
+  if (!intentKey) return 'the related request';
+  return version.catalog.intents.find((intent) => intent.intentKey === intentKey)?.displayName?.trim() || readableCatalogText(intentKey);
+};
+
+export const catalogRequirementLabel = (requirement: IntentCatalogJourneyRequirement): string => {
+  const notes = requirement.notes.trim();
+  return notes || readableCatalogText(requirement.requirementKey);
+};
+
 type RankedIntent = { intent: IntentCatalogVersion['catalog']['intents'][number]; score: number; confidence: number; matchedCount: number; strongPhraseMatched: boolean; missing: string[] };
 
 const rankIntentCandidates = (version: IntentCatalogVersion, inputText: string, slotValuesByKey: Record<string, string>): RankedIntent[] => {

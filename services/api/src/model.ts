@@ -29,7 +29,7 @@ export interface ModelFollowUpContext {
   continuityTurn?: boolean;
   responseMode?: 'slot_collection' | 'intent_clarification' | 'consent' | 'confirmation' | 'document_collection' | 'document_processing' | 'knowledge' | 'mixed' | 'follow_up' | 'queued' | 'reconcile_follow_up';
   nextSlotLabel?: string | null;
-  nextRequirement?: { requirementKey: string; requirementType: string; promptKey: string; documentType?: string | null } | null;
+  nextRequirement?: { requirementKey: string; requirementType: string; promptKey: string; documentType?: string | null; label?: string | null } | null;
   documentPolicies?: Array<{
     intentKey: string;
     requestMode: string;
@@ -146,7 +146,7 @@ const responseSystemPrompt = (input: {
           : input.followUpContext?.responseMode === 'document_processing'
             ? 'The visitor has already supplied the requested document and it is being verified. Acknowledge that briefly and keep the conversation open with one natural, relevant follow-up. Do not ask for the same upload again or claim completion.'
             : input.followUpContext?.responseMode === 'confirmation'
-              ? 'The backend requires one concise confirmation for the current journey requirement. Ask the visitor to confirm only that requirement; do not claim it is complete until they explicitly confirm.'
+              ? `The backend requires one concise confirmation for the current journey requirement${input.followUpContext.nextRequirement?.label ? ` (${input.followUpContext.nextRequirement.label})` : ''}. Ask the visitor to confirm only that named requirement; do not claim it is complete until they explicitly confirm.`
           : input.followUpContext?.responseMode === 'mixed'
             ? 'Answer the latest approved knowledge question first using only the supplied evidence. Acknowledge the visitor facts already captured, then ask only the one next catalog requirement question supplied by the backend. Do not expose routing or internal state.'
             : input.followUpContext?.responseMode === 'knowledge'
@@ -345,7 +345,7 @@ export const isSafeContinuityAnswer = (answer: string, citations: Citation[]): b
   if (/\b(?:we offer|we provide|our package|our packages|starts at|costs?|prices?|requires?|includes\b|available|guarantee|will be|is located|officially)\b/u.test(normalized)) return false;
   return normalized.includes('?') || /^(?:thanks?|thank you|great|okay|noted|understood|got it|sure|i(?:'ve| have) noted)\b/u.test(normalized);
 };
-export const isGuidedResponse = (answer: string, mode: 'slot_collection' | 'intent_clarification' | 'consent' | 'confirmation' | 'document_collection' | 'document_processing' | 'queued' | 'follow_up', slotKey: string | null = null): boolean => {
+export const isGuidedResponse = (answer: string, mode: 'slot_collection' | 'intent_clarification' | 'consent' | 'confirmation' | 'document_collection' | 'document_processing' | 'queued' | 'follow_up', slotKey: string | null = null, scopeLabel: string | null = null): boolean => {
   const normalized = answer.normalize('NFKC').toLocaleLowerCase('en-US');
   if (!normalized || normalized.length > 1_200) return false;
   if (/\b(?:verified information|knowledge base|what would you like to explore)\b/u.test(normalized)) return false;
@@ -354,8 +354,12 @@ export const isGuidedResponse = (answer: string, mode: 'slot_collection' | 'inte
   if (['slot_collection', 'intent_clarification', 'consent', 'confirmation', 'document_collection', 'document_processing'].includes(mode) && guidedSentences.some((sentence) => !sentence.endsWith('?') && unsupportedFact.test(sentence))) return false;
   if (mode === 'consent') return /\b(?:consent|approve|approval|permission|register|submit|proceed|shall i|may i)\b/u.test(normalized)
     && !/(?:\b(?:document|passport|emirates|visa|office|budget|package|cost|price|timeline|require(?:d|s)?|include(?:d|s)?|usually|typically)\b|\baed\b|\b\d+(?:[.,]\d+)?\b)/u.test(normalized);
-  if (mode === 'confirmation') return /\?|\b(?:confirm|confirmation|yes|no|approve|accept|proceed)\b/u.test(normalized)
-    && !/\b(?:we\s+(?:offer|provide|support)|supports?|is feasible|are feasible|typically|normally|usually|starts? at|costs?|prices?|includes?|requires?|available|you can|will be|competitive|fast[- ]track|packages?|headquarters|located|based)\b/u.test(normalized);
+  if (mode === 'confirmation') {
+    const scopeTerms = (scopeLabel ?? '').toLocaleLowerCase('en-US').match(/[\p{L}\p{N}]{4,}/gu) ?? [];
+    const scoped = !scopeTerms.length || scopeTerms.some((term) => normalized.includes(term));
+    return scoped && /\?|\b(?:confirm|confirmation|yes|no|approve|accept|proceed)\b/u.test(normalized)
+      && !/\b(?:we\s+(?:offer|provide|support)|supports?|is feasible|are feasible|typically|normally|usually|starts? at|costs?|prices?|includes?|requires?|available|you can|will be|competitive|fast[- ]track|packages?|headquarters|located|based)\b/u.test(normalized);
+  }
   if (mode === 'document_processing') return !/\b(?:upload|attach|send)\b.{0,60}\b(?:again|another|the same)\b/u.test(normalized)
     && !/\b(?:we\s+(?:offer|provide)|supports?|starts? at|costs?|prices?|includes?|requires?|available|headquarters|located|based)\b/u.test(normalized);
   if ((mode === 'slot_collection' || mode === 'intent_clarification' || mode === 'document_collection') && /\b(?:we\s+(?:offer|provide|support)|supports?|well[- ]suited|is feasible|are feasible|typically|normally|usually|starts? at|costs?|prices?|includes?|requires?|available|you can|will be|competitive|fast[- ]track|packages?)\b/u.test(normalized)) return false;
