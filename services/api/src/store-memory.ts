@@ -429,6 +429,13 @@ export class MemoryStore implements Store {
     this.documentJobs.set(job.id, job);
     await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'document.extraction.requested.v1', tenantId: document.tenantId, sessionId: document.sessionId, aggregateId: document.id, workflowKey: job.workflowKey, payloadRef: job.id, idempotencyKey: `document:${job.id}`, payload: { documentId: document.id, jobId: job.id, sessionId: document.sessionId, workflowKey: job.workflowKey, webhookPath: job.webhookPath } }));
   }
+  async requeueSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<DocumentProcessingJob> {
+    this.supportingDocuments.set(document.id, document);
+    for (const [id, existing] of this.documentJobs) if (existing.documentId === document.id) this.documentJobs.delete(id);
+    this.documentJobs.set(job.id, job);
+    await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'document.extraction.requested.v1', tenantId: document.tenantId, sessionId: document.sessionId, aggregateId: document.id, workflowKey: job.workflowKey, payloadRef: job.id, idempotencyKey: `document:${job.id}`, payload: { documentId: document.id, jobId: job.id, sessionId: document.sessionId, workflowKey: job.workflowKey, webhookPath: job.webhookPath } }));
+    return job;
+  }
   async getSupportingDocument(id: string, tenantId: string): Promise<SupportingDocument | null> { const document = this.supportingDocuments.get(id); return document?.tenantId === tenantId ? document : null; }
   async listSupportingDocuments(tenantId: string, sessionId?: string, leadId?: string): Promise<SupportingDocument[]> { return [...this.supportingDocuments.values()].filter((document) => document.tenantId === tenantId && (!sessionId || document.sessionId === sessionId) && (!leadId || document.leadId === leadId)).sort((left, right) => right.createdAt.localeCompare(left.createdAt)); }
   async updateSupportingDocument(document: SupportingDocument): Promise<SupportingDocument> { this.supportingDocuments.set(document.id, document); return document; }

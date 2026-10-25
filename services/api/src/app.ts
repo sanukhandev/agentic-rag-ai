@@ -1001,13 +1001,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         ?? lastCatalogAssistant?.response?.catalogSlotKey;
       const pendingSlotIntent = pendingCatalogIntent ?? (postCaptureFollowUp ? activeCatalogIntent : null);
       const pendingSlot = publishedCatalog && pendingSlotIntent && typeof pendingSlotKey === 'string' ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === pendingSlotIntent && slot.slotKey === pendingSlotKey) : null;
+      const pendingConsentSlot = pendingSlot?.validationRule === 'boolean:explicit_opt_in' || pendingSlot?.slotKey === 'contact_consent';
       const pendingNameIsIntentPhrase = pendingSlot?.slotKey === 'name' && publishedCatalog
         ? publishedCatalog.catalog.signals.some((signal) => signal.intentKey === pendingSlotIntent && signal.signalType === 'phrase' && signal.value && masked.masked.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').includes(signal.value.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim()))
         : false;
       const pendingContactKind = pendingSlot?.alternativeGroup === 'contact' ? masked.masked.match(/\[(EMAIL|PHONE)_\d+\]/u)?.[1] ?? null : null;
       const pendingTextRedirected = Boolean(pendingSlot && publishedCatalog && /^text:/u.test(pendingSlot.validationRule) && publishedCatalog.catalog.slots.some((slot) => slot.intentKey === pendingSlotIntent && slot.slotKey !== pendingSlot.slotKey && messageMentionsCatalogSlot(slot, inputText)));
-      const pendingValue = pendingSlot && !knowledgeQuestion && !pendingNameIsIntentPhrase && !pendingTextRedirected ? pendingCatalogSlotValue(pendingContactKind ? `token:${pendingContactKind}` : pendingSlot.validationRule, inputText, masked.masked, session, tokenVault) : null;
-      const pendingConsentValue = state.pendingPrompt?.type === 'consent' && !pendingSlot && !knowledgeQuestion
+      const pendingValue = pendingSlot && !pendingConsentSlot && !knowledgeQuestion && !pendingNameIsIntentPhrase && !pendingTextRedirected ? pendingCatalogSlotValue(pendingContactKind ? `token:${pendingContactKind}` : pendingSlot.validationRule, inputText, masked.masked, session, tokenVault) : null;
+      const pendingConsentValue = state.pendingPrompt?.type === 'consent' && (!pendingSlot || pendingConsentSlot) && !knowledgeQuestion
         ? pendingCatalogSlotValue('boolean:explicit_opt_in', inputText, masked.masked, session, tokenVault)
         : null;
       const awaitingConsentAction = pendingCatalogIntent && publishedCatalog
@@ -1115,24 +1116,34 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const distinctIntent = Boolean(distinctIntentKey && (!pendingValue || explicitIntentSwitch));
       const sameOpportunityWorkflow = Boolean(catalogResolution?.workflowKey && sessionActions.some((action) => action.workflowKey === catalogResolution?.workflowKey));
       if (distinctIntent && publishedCatalog) {
-        state.activeFollowUpIntentKey = distinctIntentKey;
-        if (!hasRegisteredAction || !sameOpportunityWorkflow) {
-          delete catalogSlotValues.contact_consent;
-          state.contactConsent = 'unknown';
-          state.consentCapturedAt = null;
-          state.consentVersion = null;
-          catalogResolution = resolveIntent(publishedCatalog, normalizedMessage, catalogSlotValues);
-        }
         // A new catalog journey may collect slots after the first CRM lead,
         // while action creation remains blocked by the existing opportunity.
+        // Keep the candidate local until an offer is accepted.
         postCaptureFollowUp = hasRegisteredAction && sameOpportunityWorkflow;
+      }
+      const sourceIntentKey = state.selectedIntentKey ?? state.intentProgress?.activeIntentKey ?? null;
+      const transitionTargetIntentKey = transitionApproval ? pendingTransitionPrompt?.intentKey ?? null : distinctIntentKey;
+      const transitionCandidate = sourceIntentKey && transitionTargetIntentKey && publishedCatalog
+        ? publishedCatalog.catalog.journeyTransitions?.find((transition) => transition.sourceIntentKey === sourceIntentKey && transition.targetIntentKey === transitionTargetIntentKey) ?? null
+        : null;
+      const transitionIsOnlyBeingOffered = transitionCandidate?.activationMode === 'offer' && !transitionApproval;
+      const sourceWorkflowKey = sourceIntentKey && publishedCatalog ? publishedCatalog.catalog.intents.find((intent) => intent.intentKey === sourceIntentKey)?.workflowKey ?? null : null;
+      const targetWorkflowKey = transitionTargetIntentKey && publishedCatalog ? publishedCatalog.catalog.intents.find((intent) => intent.intentKey === transitionTargetIntentKey)?.workflowKey ?? null : null;
+      if (transitionTargetIntentKey && sourceIntentKey && transitionTargetIntentKey !== sourceIntentKey && !transitionIsOnlyBeingOffered && sourceWorkflowKey !== targetWorkflowKey) {
+        delete catalogSlotValues.contact_consent;
+        state.contactConsent = 'unknown';
+        state.consentCapturedAt = null;
+        state.consentVersion = null;
       }
       if (catalogResolution?.intentKey && state.selectedIntentKey === catalogResolution.intentKey && state.activeFollowUpIntentKey && state.activeFollowUpIntentKey !== catalogResolution.intentKey) state.activeFollowUpIntentKey = null;
       const journeyCurrentIntentKey = intentContinuity && ['matched', 'missing_slots'].includes(intentContinuity.current.reason) ? intentContinuity.current.intentKey : null;
+      const journeyResolvedIntentKey = catalogResolution && ['matched', 'missing_slots'].includes(catalogResolution.reason)
+        ? catalogResolution.intentKey
+        : null;
       const journeyResult = journeyCatalogEnabled && publishedCatalog
         ? reduceIntentJourney(publishedCatalog, state.intentProgress, {
           currentIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyCurrentIntentKey : journeyCurrentIntentKey,
-          selectedIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? catalogResolution?.intentKey ?? null : transitionDenied ? state.selectedIntentKey ?? state.intentProgress?.activeIntentKey ?? null : catalogResolution?.intentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? null,
+          selectedIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyResolvedIntentKey ?? null : transitionDenied ? state.selectedIntentKey ?? state.intentProgress?.activeIntentKey ?? null : journeyResolvedIntentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? null,
           transitionApproval,
           ...(transitionDenied && pendingTransitionPrompt?.intentKey && (state.selectedIntentKey ?? state.intentProgress?.activeIntentKey) ? { declinedTransition: { sourceIntentKey: state.selectedIntentKey ?? state.intentProgress!.activeIntentKey!, targetIntentKey: pendingTransitionPrompt.intentKey } } : {}),
           slotValues: catalogSlotValues,
@@ -1275,7 +1286,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           else throw new HttpError(503, 'MODEL_UNAVAILABLE', 'The assistant is currently unable to verify an answer.');
         }
       }
-      if (!knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog && !isGuidedResponse(draft.answer, 'slot_collection', journeySlotKey)) draft = { answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null };
+      if (!knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog && !consentDenied && !catalogSlotNonAnswer && !isGuidedResponse(draft.answer, 'slot_collection', journeySlotKey)) draft = { answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null };
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       const citations = validateCitations(draft, evidence);
       const casualFallback = conversational && (evidence.length === 0 || intent === 'identity');
@@ -1670,6 +1681,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         && candidate.intentKey === requestedIntentKey
         && (candidate.catalogVersionId ?? null) === (version?.id ?? null)
         && (candidate.requirementKey ?? null) === (journeyRequirement?.requirementKey ?? input.requirementKey ?? null));
+      if (duplicate?.status === 'failed') {
+        const retryAt = new Date().toISOString();
+        await documentStorage.replace(duplicate.storageKey, content);
+        const queuedDocument: SupportingDocument = { ...duplicate, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, status: 'queued', extractedText: null, summary: null, errorCode: null, updatedAt: retryAt };
+        const retryJob: DocumentProcessingJob = { id: randomUUID(), documentId: duplicate.id, tenantId: session.tenantId, workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, status: 'queued', attempts: 0, leaseExpiresAt: null, executionReference: null, createdAt: retryAt, updatedAt: retryAt };
+        const queuedJob = await store.requeueSupportingDocumentWithJob(queuedDocument, retryJob);
+        await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'document.retry_queued', metadata: { documentId: duplicate.id, jobId: queuedJob.id, workflowKey: queuedJob.workflowKey }, createdAt: retryAt });
+        res.status(202).json({ accepted: true, idempotent: true, retried: true, document: publicDocument(queuedDocument), jobId: queuedJob.id });
+        return;
+      }
       if (duplicate) { res.status(202).json({ accepted: true, idempotent: true, document: publicDocument(duplicate) }); return; }
       const documentId = randomUUID();
       const storageKey = documentStorage.key(session.tenantId, documentId, input.mimeType);
@@ -1677,7 +1698,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const createdAt = new Date().toISOString();
       const document: SupportingDocument = { id: documentId, tenantId: session.tenantId, sessionId: session.id, leadId: existingLead?.id ?? null, intentKey: requestedIntentKey, catalogVersionId: version?.id ?? null, requirementKey: journeyRequirement?.requirementKey ?? input.requirementKey ?? null, expectedDocumentType: journeyRequirement?.documentType ?? null, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, sha256, storageKey, status: 'queued', workflowKey: binding.workflowKey, storeExtractedText: policy.storeExtractedText, extractedText: null, summary: null, errorCode: null, consentAt: createdAt, createdAt, updatedAt: createdAt };
       const job: DocumentProcessingJob = { id: randomUUID(), documentId, tenantId: session.tenantId, workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, status: 'queued', attempts: 0, leaseExpiresAt: null, executionReference: null, createdAt, updatedAt: createdAt };
-      try { await store.createSupportingDocumentWithJob(document, job); } catch (error) { await documentStorage.purge(storageKey); throw error; }
+      try { await store.createSupportingDocumentWithJob(document, job); } catch (error) {
+        await documentStorage.purge(storageKey);
+        const concurrent = (error as { code?: unknown }).code === '23505'
+          ? (await store.listSupportingDocuments(session.tenantId, session.id)).find((candidate) => candidate.sha256 === sha256
+            && candidate.intentKey === requestedIntentKey
+            && (candidate.catalogVersionId ?? null) === (version?.id ?? null)
+            && (candidate.requirementKey ?? null) === (journeyRequirement?.requirementKey ?? input.requirementKey ?? null))
+          : null;
+        if (concurrent) { res.status(202).json({ accepted: true, idempotent: true, document: publicDocument(concurrent) }); return; }
+        throw error;
+      }
       await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'document.uploaded', metadata: { documentId, jobId: job.id, workflowKey: job.workflowKey, bytes: content.length }, createdAt });
       res.status(202).json({ accepted: true, document: publicDocument(document), jobId: job.id });
     } catch (error) { next(error); }

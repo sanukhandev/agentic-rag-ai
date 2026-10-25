@@ -664,6 +664,7 @@ export interface Store {
   updateCrmLeadRemote(input: { id: string; tenantId: string; leadId: string; remoteCrm: string }): Promise<CrmLead | null>;
   createSupportingDocument(document: SupportingDocument): Promise<SupportingDocument>;
   createSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<void>;
+  requeueSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
   getSupportingDocument(id: string, tenantId: string): Promise<SupportingDocument | null>;
   listSupportingDocuments(tenantId: string, sessionId?: string, leadId?: string): Promise<SupportingDocument[]>;
   updateSupportingDocument(document: SupportingDocument): Promise<SupportingDocument>;

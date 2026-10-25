@@ -51,6 +51,20 @@ describe('supporting document API', () => {
       expect(updatedLead?.summary).toContain('Existing conversation summary');
       expect(updatedLead?.summary).toContain('OCR completed');
 
+      const retrySession = await store.createSession(tenant.id);
+      retrySession.conversationState = { ...(retrySession.conversationState!), selectedIntentKey: 'anc.document.supporting_upload', candidateIntentKeys: ['anc.document.supporting_upload'] };
+      await store.updateSession(retrySession);
+      const retryUpload = await api.post(`/api/v1/chat/sessions/${retrySession.id}/documents`).send({ fileName: 'retry.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(202);
+      const retryDocument = await store.getSupportingDocument(retryUpload.body.document.id, tenant.id);
+      const retryJob = await store.getDocumentProcessingJob(retryUpload.body.jobId, tenant.id);
+      await store.updateSupportingDocument({ ...retryDocument!, status: 'failed', errorCode: 'DOCUMENT_OCR_FAILED', updatedAt: new Date().toISOString() });
+      await store.updateDocumentProcessingJob({ ...retryJob!, status: 'failed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+      const retried = await api.post(`/api/v1/chat/sessions/${retrySession.id}/documents`).send({ fileName: 'retry-again.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(202);
+      expect(retried.body.retried).toBe(true);
+      expect(retried.body.document.id).toBe(retryUpload.body.document.id);
+      expect((await store.getSupportingDocument(retryUpload.body.document.id, tenant.id))?.status).toBe('queued');
+      expect((await store.getDocumentProcessingJob(retried.body.jobId, tenant.id))?.status).toBe('queued');
+
       const expiredSession = await store.createSession(tenant.id);
       expiredSession.conversationState = { ...(expiredSession.conversationState!), selectedIntentKey: 'anc.document.supporting_upload', candidateIntentKeys: ['anc.document.supporting_upload'] };
       await store.updateSession(expiredSession);

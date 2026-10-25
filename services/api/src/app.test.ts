@@ -1071,6 +1071,24 @@ describe('API vertical slice', () => {
       journeyTransitions: [{ sourceIntentKey: 'alpha.request', targetIntentKey: 'beta.request', activationMode: 'offer' as const, maxDepth: 2, triggerGroup: 'related', promptKey: 'journey.offer_beta', notes: 'Internal transition note.' }],
     } satisfies IntentCatalog;
     const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'transition-api.json', sourceHash: 'x'.repeat(64), parserVersion: 'test', catalog });
+    const protectedSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const protectedStored = await runtime.store.getSession(protectedSession.body.sessionId);
+    protectedStored!.conversationState = {
+      ...protectedStored!.conversationState!, catalogVersionId: version.id, selectedIntentKey: 'alpha.request', slotValues: { alpha_details: 'Alpha details', contact_consent: 'true' }, contactConsent: 'granted', workflowStatus: 'succeeded', phase: 'SUCCEEDED', pendingPrompt: null,
+      intentProgress: { version: 1, activeIntentKey: 'alpha.request', pausedIntentKeys: [], fulfilledIntentKeys: ['alpha.request'], entries: { 'alpha.request': { intentKey: 'alpha.request', status: 'fulfilled', completedRequirementKeys: ['alpha.details'], currentRequirementKey: null, revision: 1 } }, visitedIntentKeys: ['alpha.request'], lastTransitionReason: 'intent_fulfilled', journeyRevision: 1 },
+    };
+    await runtime.store.updateSession(protectedStored!);
+    await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: protectedSession.body.sessionId, workflowKey: 'alpha.workflow', intentKey: 'alpha.request', catalogVersionId: version.id, idempotencyKey: 'transition-protected-action', state: 'approved', opaqueReference: 'transition-protected-reference', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
+    const protectedOffer = await api.post('/api/v1/chat/messages').send({ sessionId: protectedSession.body.sessionId, message: 'I need beta', clientMessageId: 'transition-protected-offer' }).expect(200);
+    expect(protectedOffer.body.pendingPromptId).toEqual(expect.any(String));
+    expect((await runtime.store.getSession(protectedSession.body.sessionId))?.conversationState?.contactConsent).toBe('granted');
+    const protectedDecline = await api.post('/api/v1/chat/messages').send({ sessionId: protectedSession.body.sessionId, message: 'No', replyToPromptId: protectedOffer.body.pendingPromptId, clientMessageId: 'transition-protected-decline' }).expect(200);
+    expect(protectedDecline.body.pendingPromptId).toBeNull();
+    expect((await runtime.store.getSession(protectedSession.body.sessionId))?.conversationState?.contactConsent).toBe('granted');
+    const protectedOfferAgain = await api.post('/api/v1/chat/messages').send({ sessionId: protectedSession.body.sessionId, message: 'I need beta', clientMessageId: 'transition-protected-offer-again' }).expect(200);
+    const protectedAccepted = await api.post('/api/v1/chat/messages').send({ sessionId: protectedSession.body.sessionId, message: 'Yes', replyToPromptId: protectedOfferAgain.body.pendingPromptId, clientMessageId: 'transition-protected-accept' }).expect(200);
+    expect(protectedAccepted.body.pendingRequirementKey).toBe('beta.details');
+    expect((await runtime.store.getSession(protectedSession.body.sessionId))?.conversationState?.contactConsent).toBe('unknown');
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
     const start = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I want to start alpha', clientMessageId: 'transition-api-start' }).expect(200);
     const alpha = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Alpha details', replyToPromptId: start.body.pendingPromptId, clientMessageId: 'transition-api-alpha' }).expect(200);
@@ -1129,6 +1147,39 @@ describe('API vertical slice', () => {
     const confirmed = await api.post(`/api/v1/chat/actions/${typedYes.body.actionProposal.id}/confirm`).send({ sessionId: approvedSession.body.sessionId, confirmed: true }).expect(200);
     expect(['approved', 'processing', 'completed']).toContain(confirmed.body.action.state);
     expect((await runtime.store.getSession(approvedSession.body.sessionId))?.conversationState?.contactConsent).toBe('granted');
+  });
+
+  it('keeps legacy slot-backed consent pending until the scoped action button is confirmed', async () => {
+    const runtime = createApp({ nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-legacy-consent@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Legacy Consent Tenant', slug: 'legacy-consent-tenant', adminEmail: 'admin-legacy-consent@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [{ intentKey: 'company.setup', displayName: 'Set up a company', description: 'Company setup', category: 'service', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' }],
+      signals: [{ intentKey: 'company.setup', signalId: 'company-start', signalType: 'phrase' as const, value: 'start a business', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' }],
+      slots: [
+        { intentKey: 'company.setup', slotKey: 'name', dataType: 'person_name', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'email', dataType: 'email', required: true, alternativeGroup: 'contact', collectionOrder: 2, promptKey: 'lead.ask_contact', validationRule: 'token:EMAIL', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'phone', dataType: 'phone', required: true, alternativeGroup: 'contact', collectionOrder: 2, promptKey: 'lead.ask_phone', validationRule: 'token:PHONE', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'contact_consent', dataType: 'boolean', required: true, alternativeGroup: null, collectionOrder: 3, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', retentionClass: 'consent' },
+      ],
+      relations: [],
+      workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'legacy-consent-workflow', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
+    } satisfies IntentCatalog;
+    await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'legacy-consent.json', sourceHash: 'l'.repeat(64), parserVersion: 'test', catalog });
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I want to start a business', clientMessageId: 'legacy-consent-interest' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'My name is Noor', clientMessageId: 'legacy-consent-name' }).expect(200);
+    const contact = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'noor@example.com and +971500000003', clientMessageId: 'legacy-consent-contact' }).expect(200);
+    expect(contact.body.actionProposal).toMatchObject({ consentRequired: true });
+    const typedYes = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Yes', replyToPromptId: contact.body.pendingPromptId, clientMessageId: 'legacy-consent-yes' }).expect(200);
+    expect(typedYes.body.actionProposal).toMatchObject({ consentRequired: true });
+    expect(typedYes.body.pendingPromptId).toBe(contact.body.pendingPromptId);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.contactConsent).toBe('unknown');
+    const confirmed = await api.post(`/api/v1/chat/actions/${typedYes.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
+    expect(['approved', 'processing', 'completed']).toContain(confirmed.body.action.state);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.contactConsent).toBe('granted');
   });
 
   it('continues an approved lead with the next optional catalog slot', async () => {

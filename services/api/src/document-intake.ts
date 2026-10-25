@@ -47,6 +47,12 @@ export class PrivateDocumentStorage {
     await mkdir(join(target, '..'), { recursive: true, mode: 0o700 });
     await writeFile(target, content, { flag: 'wx', mode: 0o600 });
   }
+  async replace(key: string, content: Buffer): Promise<void> {
+    if (key.includes('..') || key.startsWith('/') || key.includes('\\')) throw new Error('Invalid private document key.');
+    const target = join(this.root, ...key.split('/'));
+    await mkdir(join(target, '..'), { recursive: true, mode: 0o700 });
+    await writeFile(target, content, { flag: 'w', mode: 0o600 });
+  }
 
   async read(key: string): Promise<Buffer | null> {
     try { return await readFile(join(this.root, ...key.split('/'))); }
