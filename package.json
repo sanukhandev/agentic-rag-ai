@@ -21,8 +21,8 @@
     "dev:api": "npm --workspace services/api run dev",
     "dev:web": "npm --workspace apps/web run dev",
     "dev:admin": "npm --workspace apps/admin run start",
-    "db:up": "docker compose up -d postgres",
-    "db:down": "docker compose stop postgres",
+    "db:up": "docker compose -f docker-compose.yml -f docker-compose.local-db.yml up -d postgres",
+    "db:down": "docker compose -f docker-compose.yml -f docker-compose.local-db.yml stop postgres",
     "db:migrate": "node scripts/migrate-local.mjs"
   },
   "devDependencies": {

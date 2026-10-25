@@ -185,6 +185,20 @@ describe('intent catalog', () => {
     expect(catalogNextFollowUpRequirement(enriched, 'lead.capture', { name: '[NAME_1]', email: '[EMAIL_1]' })?.slotKey).toBe('budget_aed');
   });
 
+  it('does not treat invalid typed journey values as fulfilled', () => {
+    const typed = {
+      ...version,
+      catalog: {
+        ...version.catalog,
+        journeyRequirements: [
+          { intentKey: 'lead.capture', requirementKey: 'lead.visas', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'lead.ask_visas', validationRule: 'integer:0-10', slotKey: 'visa_count', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
+        ],
+      },
+    };
+    expect(catalogNextJourneyRequirement(typed, 'lead.capture', { visa_count: '-1' })?.requirementKey).toBe('lead.visas');
+    expect(catalogNextJourneyRequirement(typed, 'lead.capture', { visa_count: '3' })).toBeNull();
+  });
+
   it('switches the active journey when a new intent is explicitly selected', () => {
     const journeyVersion = { ...version, catalog: { ...version.catalog, intents: version.catalog.intents.map((intent) => intent.intentKey === 'appointment.request' ? { ...intent, active: true } : intent), journeyRequirements: [{ intentKey: 'lead.capture', requirementKey: 'lead.name', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', slotKey: 'name', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' }] } };
     const first = reduceIntentJourney(journeyVersion, undefined, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: {} });

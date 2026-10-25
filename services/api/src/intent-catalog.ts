@@ -301,11 +301,29 @@ export const catalogFollowUpRequirements = (version: IntentCatalogVersion, inten
 };
 
 export const journeyRequirementFulfilled = (requirement: IntentCatalogJourneyRequirement, values: Record<string, string>, completedRequirementKeys: Set<string> = new Set(), documents: JourneyDocumentStatus[] = []): boolean => {
-  if (completedRequirementKeys.has(requirement.requirementKey)) return true;
   if (requirement.requirementType === 'document') return documents.some((document) => document.status === 'completed' && ((document.requirementKey && document.requirementKey === requirement.requirementKey) || (document.expectedDocumentType && document.expectedDocumentType === requirement.documentType)));
+  if (requirement.requirementType === 'confirmation') return completedRequirementKeys.has(requirement.requirementKey) || values[requirement.requirementKey] === 'true';
   const slotKey = requirement.slotKey ?? (requirement.requirementType === 'consent' ? 'contact_consent' : null);
   if (!slotKey || !values[slotKey]) return false;
-  return requirement.validationRule !== 'boolean:explicit_opt_in' || values[slotKey] === 'true';
+  const value = values[slotKey];
+  if (requirement.validationRule === 'boolean:explicit_opt_in') return value === 'true';
+  if (/^(?:token:)?(?:NAME|EMAIL|PHONE)$/iu.test(requirement.validationRule)) {
+    const tokenType = requirement.validationRule.split(':').pop()?.toUpperCase();
+    return tokenType ? new RegExp(`^\\[${tokenType}_\\d+\\]$`, 'u').test(value) : false;
+  }
+  const integerRule = requirement.validationRule.match(/^integer:(positive|nonnegative|(\d+)-(\d+))$/iu);
+  if (integerRule) {
+    const numericValue = Number(value);
+    const mode = integerRule[1] ?? '';
+    if (!Number.isInteger(numericValue)) return false;
+    if (mode.toLowerCase() === 'positive') return numericValue > 0;
+    if (mode.toLowerCase() === 'nonnegative') return numericValue >= 0;
+    return numericValue >= Number(integerRule[2] ?? NaN) && numericValue <= Number(integerRule[3] ?? NaN);
+  }
+  if (requirement.validationRule === 'number:positive') return Number.isFinite(Number(value)) && Number(value) > 0;
+  if (requirement.validationRule === 'number:nonnegative') return Number.isFinite(Number(value)) && Number(value) >= 0;
+  if (requirement.validationRule === 'money:nonnegative') return /\d/u.test(value) && !/^\s*-/u.test(value);
+  return value.trim().length > 0;
 };
 
 export const catalogNextJourneyRequirement = (version: IntentCatalogVersion, intentKey: string, values: Record<string, string>, completedRequirementKeys: string[] = [], documents: JourneyDocumentStatus[] = []): IntentCatalogJourneyRequirement | null => {

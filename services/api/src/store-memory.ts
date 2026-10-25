@@ -278,7 +278,6 @@ export class MemoryStore implements Store {
     const current = this.actions.get(action.id);
     if (!current || current.tenantId !== action.tenantId) throw new Error('Action not found.');
     if (current.state === 'approved' || current.state === 'processing' || current.state === 'completed') {
-      await this.updateSession(session);
       return current;
     }
     await this.updateSession(session);

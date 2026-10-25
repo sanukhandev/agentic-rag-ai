@@ -94,7 +94,8 @@ export class ActionGateway {
     const action = await this.store.getAction(actionId);
     if (!action || action.tenantId !== tenantId) throw new Error('Action not found.');
     if (action.state === 'completed' || action.state === 'approved' || action.state === 'processing') {
-      if (session) await this.store.approveActionAndSession(action, session);
+      // A replay is read-only. Updating the caller's session here can restore stale
+      // consent or clear a newer pending prompt from a different opportunity.
       return action;
     }
     if (action.state !== 'awaiting_confirmation' && action.state !== 'unknown') throw new Error('Action is not confirmable.');

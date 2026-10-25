@@ -4,6 +4,8 @@ import { MAX_DOCUMENT_BYTES } from '../document-intake.js';
 
 export const DEFAULT_CONTEXT_WINDOW_MESSAGES = 10;
 const MAX_KNOWLEDGE_CONTENT_CHARS = 1_000_000;
+const MAX_INGESTION_RESULT_BYTES = 25 * 1024 * 1024;
+const MAX_INGESTION_RESULT_CHUNKS = 100_000;
 const MAX_INGESTION_BASE64_CHARS = Math.ceil(MAX_INGESTION_FILE_BYTES / 3) * 4;
 const MAX_DOCUMENT_BASE64_CHARS = Math.ceil(MAX_DOCUMENT_BYTES / 3) * 4;
 
@@ -40,10 +42,10 @@ export const intentCatalogEditSchema = z.object({ catalog: z.unknown() });
 export const intentCatalogResultSchema = z.object({ sourceHash: z.string().regex(/^[a-f0-9]{64}$/), parserVersion: z.string().trim().min(1).max(120), catalog: z.unknown() });
 export const ingestionRequestSchema = sourceSchema.omit({ content: true });
 export const ingestionResultSchema = z.object({
-  normalizedContent: z.string().min(1),
+  normalizedContent: z.string().min(1).refine((value) => Buffer.byteLength(value, 'utf8') <= MAX_INGESTION_RESULT_BYTES, 'Normalized ingestion output exceeds the configured byte budget; split the source into smaller files.'),
   contentHash: z.string().regex(/^[a-f0-9]{64}$/),
   parserVersion: z.string().trim().min(1).max(120),
-  chunks: z.array(z.object({ ordinal: z.number().int().nonnegative(), locator: z.string().trim().min(1).max(200), content: z.string().trim().min(1).max(20_000), contentHash: z.string().regex(/^[a-f0-9]{64}$/) })).min(1),
+  chunks: z.array(z.object({ ordinal: z.number().int().nonnegative(), locator: z.string().trim().min(1).max(200), content: z.string().trim().min(1).max(20_000), contentHash: z.string().regex(/^[a-f0-9]{64}$/) })).min(1).max(MAX_INGESTION_RESULT_CHUNKS),
   warnings: z.array(z.string().trim().min(1).max(500)).max(100).default([]),
 });
 export const ingestionFailureSchema = z.object({ errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('INGESTION_FAILED'), errorDetail: z.string().trim().min(1).max(2_000).optional() });

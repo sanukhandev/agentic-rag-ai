@@ -16,6 +16,8 @@ from urllib.parse import urlparse
 MAX_BYTES = 20 * 1024 * 1024
 MAX_CONTAINER_ENTRIES = 2_000
 MAX_CONTAINER_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
+MAX_NORMALIZED_BYTES = 25 * 1024 * 1024
+MAX_RESULT_CHUNKS = 100_000
 PARSER_VERSION = "python-ingestion-0.4.0"
 ARCHIVE_SUPPORTED_SUFFIXES = {".txt", ".md", ".pdf", ".docx", ".xlsx", ".csv", ".json", ".jsonl"}
 
@@ -277,6 +279,8 @@ def _ingest_archive(path: Path) -> IngestedSource:
             content = f"File: {display_name}\n{chunk.content}"
             chunks.append(_chunk(content, len(chunks), f"{display_name} · {chunk.locator}"))
     normalized_content = normalize("\n\n".join(sections))
+    if len(normalized_content.encode("utf-8")) > MAX_NORMALIZED_BYTES or len(chunks) > MAX_RESULT_CHUNKS:
+        raise ValueError("Normalized ZIP ingestion result exceeds the configured output budget; split the archive into smaller files.")
     return IngestedSource(
         title=path.stem,
         mime_type="application/zip",
@@ -326,6 +330,8 @@ def fetch_authorized_https(url: str, allowed_hosts: set[str]) -> tuple[str, str]
 def ingest_text(title: str, text: str, mime_type: str, source_url: str | None = None) -> IngestedSource:
     cleaned = sanitize(normalize(text))
     chunks = chunk_text(cleaned)
+    if len(cleaned.encode("utf-8")) > MAX_NORMALIZED_BYTES or len(chunks) > MAX_RESULT_CHUNKS:
+        raise ValueError("Normalized ingestion result exceeds the configured output budget; split the source into smaller files.")
     return IngestedSource(title=title, mime_type=mime_type, source_url=source_url, normalized_content=cleaned, content_hash=hashlib.sha256(cleaned.encode()).hexdigest(), parser_version=PARSER_VERSION, chunks=chunks)
 
 

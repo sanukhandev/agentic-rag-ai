@@ -72,6 +72,8 @@ tools/ingestion/.venv/Scripts/python.exe -m pip install -r tools/ingestion/requi
 npm run verify:local
 ```
 
+`db:up` applies the opt-in `docker-compose.local-db.yml` override and exposes PostgreSQL only on `127.0.0.1:54329` for host-run migrations and tests. The normal `docker compose up` stack keeps PostgreSQL internal to the Compose network and does not publish a host database port.
+
 `verify:local` requires the local venv, defaults `DATABASE_URL` to the private development database when it is not already set, runs lint/typecheck, the compose security-default and high-confidence repository secret checks, the PostgreSQL-backed workspace tests, production builds, the dependency audit, the clean-room acceptance journey and all Python ingestion tests. It does not start or deploy any VM service. The secret audit scans tracked and unignored files for private-key headers, common provider-token formats and populated local secret assignments; it is not a substitute for a production secret manager or provider-side scanning.
 
 To run the clean-room synthetic tenant A/B journey, use `npm run acceptance:seed`; it starts and stops a disposable local API, publishes isolated FAQ sources and personas, checks cited and unsupported answers, verifies a cross-tenant refusal, and confirms the mock workflow twice with one completed result. Against an already-running API, `npm run seed:local` performs the same checks; set `SEED_API_URL` or the `SEED_*` credential variables to override local defaults and never use real credentials.

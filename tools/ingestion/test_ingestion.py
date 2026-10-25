@@ -234,6 +234,11 @@ class IngestionTests(unittest.TestCase):
             self.assertGreater(len(source.normalized_content), 1_000_000)
             self.assertGreater(len(source.chunks), 2_000)
 
+    def test_normalized_output_budget_fails_without_truncating_content(self) -> None:
+        with patch("ingestion.pipeline.MAX_NORMALIZED_BYTES", 32):
+            with self.assertRaisesRegex(ValueError, "output budget"):
+                ingest_text("large", "A" * 64, "text/plain")
+
     def test_pdf_locators_and_ocr_only_rejection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "faq.pdf"

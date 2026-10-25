@@ -71,6 +71,24 @@ describe('action gateway', () => {
     expect(attempts).toBe(0);
   });
 
+  it('does not mutate a newer session state when an old approved action is replayed', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'Replay Tenant', slug: `replay-${Date.now()}` });
+    const session = await store.createSession(tenant.id);
+    session.conversationState = {
+      ...session.conversationState!,
+      selectedIntentKey: 'new.intent',
+      pendingPrompt: { id: 'new-prompt', type: 'slot', intentKey: 'new.intent', slotKey: 'business_activity', issuedAt: new Date().toISOString() },
+      contactConsent: 'unknown',
+    };
+    await store.updateSession(session);
+    const action = await store.createAction({ id: 'old-action', tenantId: tenant.id, sessionId: session.id, workflowKey: 'old.workflow', intentKey: 'old.intent', catalogVersionId: 'old-catalog', idempotencyKey: 'old-action', state: 'approved', opaqueReference: 'old-action', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
+    const gateway = new ActionGateway(store);
+
+    await expect(gateway.confirm(action.id, tenant.id, session)).resolves.toMatchObject({ id: action.id, state: 'approved' });
+    expect((await store.getSession(session.id))?.conversationState).toMatchObject({ selectedIntentKey: 'new.intent', contactConsent: 'unknown', pendingPrompt: { id: 'new-prompt', slotKey: 'business_activity' } });
+  });
+
   it('does not execute an expired confirmation', async () => {
     const store = new MemoryStore();
     const workflow = new MockWorkflowAdapter();

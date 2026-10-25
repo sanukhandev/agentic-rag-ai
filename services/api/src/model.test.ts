@@ -108,6 +108,8 @@ describe('Azure Foundry model adapter', () => {
     expect(isGuidedResponse('With AED 12,000, starting within three weeks is feasible. What licence do you prefer?', 'slot_collection', 'business_activity')).toBe(false);
     expect(isGuidedResponse(naturalAbstention(), 'slot_collection', 'visa_count')).toBe(false);
     expect(isGuidedResponse('ANCFZ supports startups with competitive packages. What do you need?', 'intent_clarification')).toBe(false);
+    expect(isGuidedResponse('Our headquarters is in XYZ. What is your budget?', 'slot_collection', 'budget')).toBe(false);
+    expect(isGuidedResponse('Could you confirm the number of visas you need?', 'confirmation')).toBe(true);
     expect(isGuidedResponse('What type of licence would suit your activity?', 'slot_collection', 'business_activity')).toBe(true);
     expect(isGuidedResponse('What is your company name?', 'slot_collection', 'name')).toBe(false);
   });

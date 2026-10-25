@@ -194,8 +194,7 @@ export class PostgresStore implements Store {
         await client.query('COMMIT');
         return this.action(updated.rows[0]!);
       }
-      await this.updateSessionOnClient(client, session);
-      await client.query('COMMIT');
+      await client.query('ROLLBACK');
       return this.action(current.rows[0]);
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
