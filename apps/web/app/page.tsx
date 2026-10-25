@@ -1055,7 +1055,7 @@ export default function Home() {
                         <input ref={documentInputRef} type="file" accept={config.documents.allowedMimeTypes.join(',')} onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} className="max-w-full text-[11px]" aria-label="Choose a supporting document" />
                         <button type="button" onClick={() => void uploadDocument()} disabled={!selectedFile || !uploadConsent || uploading} className="rounded-lg bg-neutral-900 px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40">{uploading ? 'Registering…' : 'Register attachment'}</button>
                       </div>
-                      <label className="mt-2 flex items-start gap-2 text-[11px] text-neutral-600"><input type="checkbox" checked={uploadConsent} onChange={(event) => setUploadConsent(event.target.checked)} />I consent to ANCFZ processing this business document for this enquiry.</label>
+                      <label className="mt-2 flex items-start gap-2 text-[11px] text-neutral-600"><input type="checkbox" checked={uploadConsent} onChange={(event) => setUploadConsent(event.target.checked)} />I consent to {config?.tenant.name ?? 'this tenant'} processing this business document for this enquiry.</label>
                       {selectedFile && <p className="mt-1 text-[10px] text-neutral-500">Selected: {selectedFile.name}</p>}
                       {documentStatus && <p className="mt-1 text-[10px] text-emerald-700">{documentStatus}</p>}
                       {documents.length > 0 && <div className="mt-2 space-y-1">{documents.map((document) => <p key={document.id} className="text-[10px] text-neutral-500">{document.fileName} · {document.status}{document.errorCode ? ` · ${document.errorCode}` : ''}</p>)}</div>}

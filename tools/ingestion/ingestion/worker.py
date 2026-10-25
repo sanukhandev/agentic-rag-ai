@@ -125,12 +125,16 @@ def claim_next_document_job(api_base: str, worker_secret: str, session: requests
     raise_for_api_status(response)
     body = response.json()
     job = body.get("job") if isinstance(body, dict) else None
-    return job if isinstance(job, dict) else None
+    if job is None:
+        return None
+    if not isinstance(job, dict) or not isinstance(job.get("id"), str) or not isinstance(job.get("processingToken"), str):
+        raise ValueError("The document API returned an invalid claimed job.")
+    return job
 
 
-def renew_document_job(api_base: str, job_id: str, tenant_id: str, worker_secret: str, lease_ms: int = 120_000, session: requests.Session | None = None) -> dict[str, Any]:
+def renew_document_job(api_base: str, job_id: str, tenant_id: str, processing_token: str, worker_secret: str, lease_ms: int = 120_000, session: requests.Session | None = None) -> dict[str, Any]:
     client = session or requests.Session()
-    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/{job_id}/renew", headers={"x-ingestion-worker-secret": worker_secret}, json={"tenantId": tenant_id, "jobId": job_id, "leaseMs": lease_ms}, timeout=15)
+    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/{job_id}/renew", headers={"x-ingestion-worker-secret": worker_secret}, json={"tenantId": tenant_id, "jobId": job_id, "processingToken": processing_token, "leaseMs": lease_ms}, timeout=15)
     raise_for_api_status(response)
     body = response.json()
     if not isinstance(body, dict) or not isinstance(body.get("job"), dict):
@@ -138,9 +142,9 @@ def renew_document_job(api_base: str, job_id: str, tenant_id: str, worker_secret
     return body["job"]
 
 
-def fetch_document_input(api_base: str, job_id: str, tenant_id: str, worker_secret: str, session: requests.Session | None = None) -> tuple[str, str, bytes]:
+def fetch_document_input(api_base: str, job_id: str, tenant_id: str, processing_token: str, worker_secret: str, session: requests.Session | None = None) -> tuple[str, str, bytes]:
     client = session or requests.Session()
-    response = client.get(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/{job_id}/input", headers={"x-ingestion-worker-secret": worker_secret, "x-tenant-id": tenant_id}, timeout=30)
+    response = client.get(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/{job_id}/input", headers={"x-ingestion-worker-secret": worker_secret, "x-tenant-id": tenant_id, "x-processing-token": processing_token}, timeout=30)
     raise_for_api_status(response)
     body = response.json()
     if not isinstance(body, dict) or not isinstance(body.get("fileName"), str) or not isinstance(body.get("mimeType"), str) or not isinstance(body.get("contentBase64"), str):
@@ -154,9 +158,9 @@ def fetch_document_input(api_base: str, job_id: str, tenant_id: str, worker_secr
     return body["fileName"], body["mimeType"], content
 
 
-def submit_document_result(api_base: str, job_id: str, tenant_id: str, worker_secret: str, extracted_text: str, summary: str, session: requests.Session | None = None) -> dict[str, Any]:
+def submit_document_result(api_base: str, job_id: str, tenant_id: str, processing_token: str, worker_secret: str, extracted_text: str, summary: str, session: requests.Session | None = None) -> dict[str, Any]:
     client = session or requests.Session()
-    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/{job_id}/result", headers={"x-ingestion-worker-secret": worker_secret}, json={"tenantId": tenant_id, "jobId": job_id, "extractedText": extracted_text, "summary": summary, "executionReference": f"ocr-{job_id}"}, timeout=30)
+    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/{job_id}/result", headers={"x-ingestion-worker-secret": worker_secret}, json={"tenantId": tenant_id, "jobId": job_id, "processingToken": processing_token, "extractedText": extracted_text, "summary": summary, "executionReference": f"ocr-{job_id}"}, timeout=30)
     raise_for_api_status(response)
     body = response.json()
     if not isinstance(body, dict):
@@ -164,9 +168,9 @@ def submit_document_result(api_base: str, job_id: str, tenant_id: str, worker_se
     return body
 
 
-def submit_document_failure(api_base: str, job_id: str, tenant_id: str, worker_secret: str, error_code: str = "DOCUMENT_OCR_FAILED", session: requests.Session | None = None) -> dict[str, Any]:
+def submit_document_failure(api_base: str, job_id: str, tenant_id: str, processing_token: str, worker_secret: str, error_code: str = "DOCUMENT_OCR_FAILED", session: requests.Session | None = None) -> dict[str, Any]:
     client = session or requests.Session()
-    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/{job_id}/failure", headers={"x-ingestion-worker-secret": worker_secret}, json={"tenantId": tenant_id, "jobId": job_id, "errorCode": error_code}, timeout=15)
+    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/document-jobs/{job_id}/failure", headers={"x-ingestion-worker-secret": worker_secret}, json={"tenantId": tenant_id, "jobId": job_id, "processingToken": processing_token, "errorCode": error_code}, timeout=15)
     raise_for_api_status(response)
     body = response.json()
     if not isinstance(body, dict):
@@ -178,23 +182,26 @@ def process_document_job(api_base: str, job: dict[str, Any], worker_secret: str,
     client = session or requests.Session()
     job_id = str(job["id"])
     tenant_id = str(job.get("tenant_id") or job.get("tenantId"))
+    processing_token = str(job.get("processingToken") or job.get("processing_token") or "")
+    if not processing_token:
+        raise ValueError("The document API returned a job without an attempt token.")
     stop_heartbeat = threading.Event()
 
     def heartbeat() -> None:
         while not stop_heartbeat.wait(20):
             try:
-                renew_document_job(api_base, job_id, tenant_id, worker_secret)
+                renew_document_job(api_base, job_id, tenant_id, processing_token, worker_secret)
             except requests.RequestException:
                 pass
 
     heartbeat_thread = threading.Thread(target=heartbeat, name=f"document-lease-{job_id}", daemon=True)
     heartbeat_thread.start()
     try:
-        file_name, mime_type, content = fetch_document_input(api_base, job_id, tenant_id, worker_secret, client)
+        file_name, mime_type, content = fetch_document_input(api_base, job_id, tenant_id, processing_token, worker_secret, client)
         text = extract_document_text(file_name, mime_type, content)
-        return submit_document_result(api_base, job_id, tenant_id, worker_secret, text, document_summary(text, file_name), client)
+        return submit_document_result(api_base, job_id, tenant_id, processing_token, worker_secret, text, document_summary(text, file_name), client)
     except Exception:
-        submit_document_failure(api_base, job_id, tenant_id, worker_secret, session=client)
+        submit_document_failure(api_base, job_id, tenant_id, processing_token, worker_secret, session=client)
         raise
     finally:
         stop_heartbeat.set()

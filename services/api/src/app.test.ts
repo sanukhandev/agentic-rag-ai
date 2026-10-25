@@ -1140,6 +1140,7 @@ describe('API vertical slice', () => {
     await api.post('/api/v1/chat/messages').send({ sessionId: approvedSession.body.sessionId, message: 'I want to start a business', clientMessageId: 'typed-consent-yes-interest' }).expect(200);
     await api.post('/api/v1/chat/messages').send({ sessionId: approvedSession.body.sessionId, message: 'My name is Lina', clientMessageId: 'typed-consent-yes-name' }).expect(200);
     const approvedContact = await api.post('/api/v1/chat/messages').send({ sessionId: approvedSession.body.sessionId, message: 'lina@example.com and +971500000004', clientMessageId: 'typed-consent-yes-contact' }).expect(200);
+    expect(approvedContact.body.actionProposal.confirmation).toContain('Typed Consent Tenant');
     const typedYes = await api.post('/api/v1/chat/messages').send({ sessionId: approvedSession.body.sessionId, message: 'Yes', replyToPromptId: approvedContact.body.pendingPromptId, clientMessageId: 'typed-consent-yes-text' }).expect(200);
     expect(typedYes.body.actionProposal).toMatchObject({ consentRequired: true });
     expect(typedYes.body.pendingPromptId).toBe(approvedContact.body.pendingPromptId);
@@ -1147,6 +1148,34 @@ describe('API vertical slice', () => {
     const confirmed = await api.post(`/api/v1/chat/actions/${typedYes.body.actionProposal.id}/confirm`).send({ sessionId: approvedSession.body.sessionId, confirmed: true }).expect(200);
     expect(['approved', 'processing', 'completed']).toContain(confirmed.body.action.state);
     expect((await runtime.store.getSession(approvedSession.body.sessionId))?.conversationState?.contactConsent).toBe('granted');
+  });
+
+  it('keeps document consent separate from contact consent', async () => {
+    const runtime = createApp({ nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-document-consent@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Document Consent Tenant', slug: 'document-consent-tenant', adminEmail: 'admin-document-consent@example.test', adminPassword: 'Tenant1Password' }).expect(201);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [{ intentKey: 'document.intake', displayName: 'Upload a document', description: 'Document intake', category: 'support', workflowKey: 'document.intake', minimumScore: 0, confidenceThreshold: 0, confirmationRequired: false, active: true, priority: 100, versionNote: '' }],
+      signals: [{ intentKey: 'document.intake', signalId: 'document-upload', signalType: 'phrase' as const, value: 'upload a document', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' }],
+      slots: [{ intentKey: 'document.intake', slotKey: 'document_consent', dataType: 'boolean', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'document.ask_consent', validationRule: 'boolean:explicit_opt_in', retentionClass: 'consent' }],
+      relations: [],
+      workflowBindings: [{ workflowKey: 'document.intake', n8nWorkflowId: 'document-consent-workflow', webhookPath: 'document-intake', payloadContract: 'document-v1', sideEffectClass: 'document_processing', active: true }],
+      journeyRequirements: [{ intentKey: 'document.intake', requirementKey: 'document.processing-consent', requirementType: 'consent' as const, required: true, collectionOrder: 1, promptKey: 'document.ask_consent', validationRule: 'boolean:explicit_opt_in', slotKey: 'document_consent', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' }],
+    } satisfies IntentCatalog;
+    await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'document-consent.json', sourceHash: 'd'.repeat(64), parserVersion: 'test', catalog });
+    const yesSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const promptResponse = await api.post('/api/v1/chat/messages').send({ sessionId: yesSession.body.sessionId, message: 'I want to upload a document', clientMessageId: 'document-consent-prompt' }).expect(200);
+    expect(promptResponse.body.pendingRequirementKey).toBe('document.processing-consent');
+    expect(promptResponse.body.pendingPromptId).toEqual(expect.any(String));
+    await api.post('/api/v1/chat/messages').send({ sessionId: yesSession.body.sessionId, message: 'Yes', replyToPromptId: promptResponse.body.pendingPromptId, clientMessageId: 'document-consent-yes' }).expect(200);
+    expect((await runtime.store.getSession(yesSession.body.sessionId))?.conversationState).toMatchObject({ slotValues: { document_consent: 'true' }, contactConsent: 'unknown' });
+
+    const noSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const noPrompt = await api.post('/api/v1/chat/messages').send({ sessionId: noSession.body.sessionId, message: 'I want to upload a document', clientMessageId: 'document-consent-no-prompt' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: noSession.body.sessionId, message: 'No', replyToPromptId: noPrompt.body.pendingPromptId, clientMessageId: 'document-consent-no' }).expect(200);
+    expect((await runtime.store.getSession(noSession.body.sessionId))?.conversationState).toMatchObject({ slotValues: { document_consent: 'false' }, contactConsent: 'unknown' });
   });
 
   it('keeps legacy slot-backed consent pending until the scoped action button is confirmed', async () => {

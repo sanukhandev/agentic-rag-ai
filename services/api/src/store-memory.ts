@@ -427,13 +427,13 @@ export class MemoryStore implements Store {
   async createSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<void> {
     this.supportingDocuments.set(document.id, document);
     this.documentJobs.set(job.id, job);
-    await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'document.extraction.requested.v1', tenantId: document.tenantId, sessionId: document.sessionId, aggregateId: document.id, workflowKey: job.workflowKey, payloadRef: job.id, idempotencyKey: `document:${job.id}`, payload: { documentId: document.id, jobId: job.id, sessionId: document.sessionId, workflowKey: job.workflowKey, webhookPath: job.webhookPath } }));
+    await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'document.extraction.requested.v1', tenantId: document.tenantId, sessionId: document.sessionId, aggregateId: document.id, workflowKey: job.workflowKey, payloadRef: job.id, idempotencyKey: `document:${job.id}:${job.processingToken}`, payload: { documentId: document.id, jobId: job.id, sessionId: document.sessionId, workflowKey: job.workflowKey, webhookPath: job.webhookPath } }));
   }
   async requeueSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<DocumentProcessingJob> {
     this.supportingDocuments.set(document.id, document);
     for (const [id, existing] of this.documentJobs) if (existing.documentId === document.id) this.documentJobs.delete(id);
     this.documentJobs.set(job.id, job);
-    await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'document.extraction.requested.v1', tenantId: document.tenantId, sessionId: document.sessionId, aggregateId: document.id, workflowKey: job.workflowKey, payloadRef: job.id, idempotencyKey: `document:${job.id}`, payload: { documentId: document.id, jobId: job.id, sessionId: document.sessionId, workflowKey: job.workflowKey, webhookPath: job.webhookPath } }));
+    await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'document.extraction.requested.v1', tenantId: document.tenantId, sessionId: document.sessionId, aggregateId: document.id, workflowKey: job.workflowKey, payloadRef: job.id, idempotencyKey: `document:${job.id}:${job.processingToken}`, payload: { documentId: document.id, jobId: job.id, sessionId: document.sessionId, workflowKey: job.workflowKey, webhookPath: job.webhookPath } }));
     return job;
   }
   async getSupportingDocument(id: string, tenantId: string): Promise<SupportingDocument | null> { const document = this.supportingDocuments.get(id); return document?.tenantId === tenantId ? document : null; }
@@ -444,12 +444,12 @@ export class MemoryStore implements Store {
   async claimNextDocumentProcessingJob(leaseMs: number): Promise<DocumentProcessingJob | null> {
     const candidate = [...this.documentJobs.values()].find((job) => job.status === 'queued' || (job.status === 'processing' && job.leaseExpiresAt && Date.parse(job.leaseExpiresAt) <= Date.now()));
     if (!candidate) return null;
-    const claimed = { ...candidate, status: 'processing' as const, attempts: candidate.attempts + 1, leaseExpiresAt: new Date(Date.now() + leaseMs).toISOString(), updatedAt: now() };
+    const claimed = { ...candidate, status: 'processing' as const, attempts: candidate.attempts + 1, processingToken: randomUUID(), leaseExpiresAt: new Date(Date.now() + leaseMs).toISOString(), updatedAt: now() };
     this.documentJobs.set(candidate.id, claimed); return claimed;
   }
-  async renewDocumentProcessingJob(id: string, tenantId: string, leaseMs: number): Promise<DocumentProcessingJob | null> {
+  async renewDocumentProcessingJob(id: string, tenantId: string, processingToken: string, leaseMs: number): Promise<DocumentProcessingJob | null> {
     const job = await this.getDocumentProcessingJob(id, tenantId);
-    if (!job || job.status !== 'processing' || !job.leaseExpiresAt || Date.parse(job.leaseExpiresAt) <= Date.now()) return null;
+    if (!job || job.processingToken !== processingToken || job.status !== 'processing' || !job.leaseExpiresAt || Date.parse(job.leaseExpiresAt) <= Date.now()) return null;
     const renewed = { ...job, leaseExpiresAt: new Date(Date.now() + leaseMs).toISOString(), updatedAt: now() };
     this.documentJobs.set(id, renewed);
     return renewed;

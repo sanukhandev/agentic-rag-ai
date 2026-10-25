@@ -115,6 +115,8 @@ describe('Azure Foundry model adapter', () => {
     expect(isGuidedResponse('Permits arrive tomorrow. What is your phone number?', 'slot_collection', 'phone')).toBe(false);
     expect(isGuidedResponse('Approval takes only a day. What is your phone number?', 'slot_collection', 'phone')).toBe(false);
     expect(isGuidedResponse('Great, permits arrive tomorrow. What is your phone number?', 'slot_collection', 'phone')).toBe(false);
+    expect(isGuidedResponse('Do you know that permits are guaranteed by tomorrow? What is your phone number?', 'slot_collection', 'phone')).toBe(false);
+    expect(isGuidedResponse('Can I confirm that approval only takes a day? What is your phone number?', 'confirmation', null)).toBe(false);
     expect(isGuidedResponse('Thanks for sharing that. Could you share your phone number?', 'slot_collection', 'phone')).toBe(true);
     expect(isGuidedResponse('Could you confirm the number of visas you need?', 'confirmation')).toBe(true);
     expect(isGuidedResponse('What type of licence would suit your activity?', 'slot_collection', 'business_activity')).toBe(true);

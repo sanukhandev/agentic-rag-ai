@@ -7,7 +7,7 @@ import { createApp } from './app.js';
 import { createOutboxEvent } from './events.js';
 import { EventConsumer, N8nEventBridge, type StreamBus, type StreamMessage } from './event-bus.js';
 import { PostgresStore } from './store-postgres.js';
-import type { OutboxEvent } from './types.js';
+import type { DocumentProcessingJob, OutboxEvent, SupportingDocument } from './types.js';
 
 class PostgresTestBus implements StreamBus {
   readonly acknowledged: string[] = [];
@@ -26,6 +26,46 @@ class PostgresTestBus implements StreamBus {
 }
 
 describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
+  it('fences late OCR callbacks and emits a distinct retry event', async () => {
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const store = new PostgresStore(pool);
+    const api = request(createApp({ store, nodeEnv: 'test', ingestionWorkerSecret: 'document-fencing-secret' }).app);
+    const tenant = await store.createTenant({ name: 'Document Fencing Test', slug: `document-fencing-${randomUUID()}` });
+    try {
+      const session = await store.createSession(tenant.id);
+      const documentId = randomUUID();
+      const createdAt = new Date().toISOString();
+      const document: SupportingDocument = { id: documentId, tenantId: tenant.id, sessionId: session.id, leadId: null, intentKey: 'document.intake', catalogVersionId: null, requirementKey: null, expectedDocumentType: null, fileName: 'identity.pdf', mimeType: 'application/pdf', sizeBytes: 20, sha256: 'a'.repeat(64), storageKey: `${tenant.id}/${documentId}.pdf`, status: 'queued', workflowKey: 'document.intake', storeExtractedText: false, extractedText: null, summary: null, errorCode: null, consentAt: createdAt, createdAt, updatedAt: createdAt };
+      const firstJob: DocumentProcessingJob = { id: randomUUID(), documentId, tenantId: tenant.id, workflowKey: 'document.intake', webhookPath: 'document-intake', status: 'queued', attempts: 0, processingToken: randomUUID(), leaseExpiresAt: null, executionReference: null, createdAt, updatedAt: createdAt };
+      await store.createSupportingDocumentWithJob(document, firstJob);
+      const firstClaim = await store.claimNextDocumentProcessingJob(60_000);
+      expect(firstClaim?.processingToken).not.toBe(firstJob.processingToken);
+      await store.updateSupportingDocument({ ...document, status: 'failed', errorCode: 'DOCUMENT_OCR_FAILED', updatedAt: new Date().toISOString() });
+      await store.updateDocumentProcessingJob({ ...firstClaim!, status: 'failed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+
+      const retryJob: DocumentProcessingJob = { ...firstJob, id: randomUUID(), processingToken: randomUUID(), status: 'queued', attempts: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const queuedRetry = await store.requeueSupportingDocumentWithJob({ ...document, status: 'queued', errorCode: null, updatedAt: retryJob.updatedAt }, retryJob);
+      expect(queuedRetry.id).toBe(firstJob.id);
+      expect(queuedRetry.processingToken).toBe(retryJob.processingToken);
+      const secondClaim = await store.claimNextDocumentProcessingJob(60_000);
+      expect(secondClaim?.id).toBe(firstJob.id);
+      expect(secondClaim?.processingToken).not.toBe(firstClaim?.processingToken);
+      expect(secondClaim?.processingToken).not.toBe(retryJob.processingToken);
+
+      const stale = await api.post(`/api/v1/internal/document-jobs/${firstJob.id}/result`).set('x-ingestion-worker-secret', 'document-fencing-secret').send({ tenantId: tenant.id, jobId: firstJob.id, processingToken: firstClaim!.processingToken, extractedText: '', summary: '' });
+      expect(stale.status).toBe(409);
+      expect(stale.body.error.code).toBe('DOCUMENT_JOB_STALE_ATTEMPT');
+      await api.post(`/api/v1/internal/document-jobs/${firstJob.id}/result`).set('x-ingestion-worker-secret', 'document-fencing-secret').send({ tenantId: tenant.id, jobId: firstJob.id, processingToken: secondClaim!.processingToken, extractedText: '', summary: '' }).expect(200);
+
+      const events = await pool.query<{ idempotency_key: string }>('SELECT idempotency_key FROM event_outbox WHERE tenant_id=$1 AND event_type=$2 ORDER BY occurred_at', [tenant.id, 'document.extraction.requested.v1']);
+      expect(events.rows).toHaveLength(2);
+      expect(events.rows[0]?.idempotency_key).not.toBe(events.rows[1]?.idempotency_key);
+    } finally {
+      await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
+      await pool.end();
+    }
+  }, 20_000);
+
   it('claims only bounded actions for the matching catalog workflow binding', async () => {
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     const store = new PostgresStore(pool);

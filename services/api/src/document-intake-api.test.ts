@@ -38,11 +38,14 @@ describe('supporting document API', () => {
       expect((await store.listSupportingDocuments(tenant.id, sessionId))).toHaveLength(2);
       const claimed = await api.post('/api/v1/internal/document-jobs/claim-next').set('x-ingestion-worker-secret', 'document-worker-secret').expect(200);
       expect(claimed.body.job.id).toBe(upload.body.jobId);
-      await api.post(`/api/v1/internal/document-jobs/${upload.body.jobId}/renew`).set('x-ingestion-worker-secret', 'document-worker-secret').send({ tenantId: tenant.id, jobId: upload.body.jobId }).expect(200);
+      const processingToken = claimed.body.job.processingToken as string;
+      await api.post(`/api/v1/internal/document-jobs/${upload.body.jobId}/renew`).set('x-ingestion-worker-secret', 'document-worker-secret').send({ tenantId: tenant.id, jobId: upload.body.jobId, processingToken }).expect(200);
       const documentId = upload.body.document.id as string;
-      const input = await api.get(`/api/v1/internal/document-jobs/${upload.body.jobId}/input`).set('x-ingestion-worker-secret', 'document-worker-secret').set('x-tenant-id', tenant.id).expect(200);
+      const input = await api.get(`/api/v1/internal/document-jobs/${upload.body.jobId}/input`).set('x-ingestion-worker-secret', 'document-worker-secret').set('x-tenant-id', tenant.id).set('x-processing-token', processingToken).expect(200);
       expect(input.body.documentId).toBe(documentId);
-      await api.post(`/api/v1/internal/document-jobs/${upload.body.jobId}/result`).set('x-ingestion-worker-secret', 'document-worker-secret').send({ tenantId: tenant.id, jobId: upload.body.jobId, extractedText: 'Business requirements', summary: 'OCR completed' }).expect(200);
+      await api.post(`/api/v1/internal/document-jobs/${upload.body.jobId}/result`).set('x-ingestion-worker-secret', 'document-worker-secret').send({ tenantId: tenant.id, jobId: upload.body.jobId, processingToken: randomUUID(), extractedText: '', summary: '' }).expect(409);
+      expect((await store.listAudit(tenant.id)).some((event) => event.eventName === 'document.stale_attempt_rejected')).toBe(true);
+      await api.post(`/api/v1/internal/document-jobs/${upload.body.jobId}/result`).set('x-ingestion-worker-secret', 'document-worker-secret').send({ tenantId: tenant.id, jobId: upload.body.jobId, processingToken, extractedText: 'Business requirements', summary: 'OCR completed' }).expect(200);
       const persisted = await store.getSupportingDocument(documentId, tenant.id);
       expect((await api.get(`/api/v1/chat/sessions/${sessionId}/documents`)).body.items.find((item: { id: string }) => item.id === documentId).status).toBe('completed');
       expect(persisted?.storeExtractedText).toBe(false);

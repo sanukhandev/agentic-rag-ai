@@ -534,6 +534,7 @@ export interface DocumentProcessingJob {
   webhookPath: string;
   status: DocumentJobStatus;
   attempts: number;
+  processingToken: string;
   leaseExpiresAt: string | null;
   executionReference: string | null;
   createdAt: string;
@@ -671,7 +672,7 @@ export interface Store {
   createDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
   getDocumentProcessingJob(id: string, tenantId: string): Promise<DocumentProcessingJob | null>;
   claimNextDocumentProcessingJob(leaseMs: number): Promise<DocumentProcessingJob | null>;
-  renewDocumentProcessingJob(id: string, tenantId: string, leaseMs: number): Promise<DocumentProcessingJob | null>;
+  renewDocumentProcessingJob(id: string, tenantId: string, processingToken: string, leaseMs: number): Promise<DocumentProcessingJob | null>;
   updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
   linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void>;
   enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent>;

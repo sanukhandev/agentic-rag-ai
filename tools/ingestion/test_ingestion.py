@@ -370,9 +370,9 @@ class IngestionTests(unittest.TestCase):
         response = Mock()
         response.json.return_value = {"job": {"id": "job-1", "status": "processing"}}
         session.post.return_value = response
-        renewed = renew_document_job("http://localhost:4000", "job-1", "tenant-1", "worker-secret", session=session)
+        renewed = renew_document_job("http://localhost:4000", "job-1", "tenant-1", "11111111-1111-4111-8111-111111111111", "worker-secret", session=session)
         self.assertEqual(renewed["status"], "processing")
-        self.assertEqual(session.post.call_args.kwargs["json"], {"tenantId": "tenant-1", "jobId": "job-1", "leaseMs": 120_000})
+        self.assertEqual(session.post.call_args.kwargs["json"], {"tenantId": "tenant-1", "jobId": "job-1", "processingToken": "11111111-1111-4111-8111-111111111111", "leaseMs": 120_000})
 
     def test_worker_submits_without_reclaiming_an_already_claimed_upload(self) -> None:
         source = ingest_text("FAQ", "Approved content", "text/plain")

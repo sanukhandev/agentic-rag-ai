@@ -173,6 +173,12 @@ const pendingCatalogSlotValue = (validationRule: string, rawInput: string, maske
   return null;
 };
 
+const consentDisclosure = (tenantName: string, purpose: 'contact' | 'document', configuredCopy?: string): string => {
+  const controller = tenantName.replace(/[\r\n\t]+/gu, ' ').replace(/\s{2,}/gu, ' ').trim().slice(0, 120) || 'This tenant';
+  const copy = configuredCopy?.trim() || (purpose === 'document' ? 'I consent to processing this document for this enquiry.' : 'I consent to using my contact details for this enquiry and follow-up.');
+  return `For ${controller}, ${copy}`;
+};
+
 const catalogSlotTerms = (slot: IntentCatalogSlot): string[] => slot.slotKey.split(/[._-]+/u).filter((term) => term.length >= 4);
 
 const messageMentionsCatalogSlot = (slot: IntentCatalogSlot, message: string): boolean => catalogSlotTerms(slot).some((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&')}\\b`, 'iu').test(message));
@@ -854,7 +860,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     try {
       const input = parse(documentRenewSchema, req.body);
       if (input.jobId !== routeParam(req, 'id')) throw new HttpError(400, 'DOCUMENT_JOB_MISMATCH', 'The job ID does not match the route.');
-      const job = await store.renewDocumentProcessingJob(input.jobId, input.tenantId, input.leaseMs ?? 120_000);
+      const job = await store.renewDocumentProcessingJob(input.jobId, input.tenantId, input.processingToken, input.leaseMs ?? 120_000);
       if (!job) throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
       res.json({ job });
     } catch (error) { next(error); }
@@ -863,8 +869,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     try {
       const jobId = routeParam(req, 'id');
       const tenantId = req.header('x-tenant-id') ?? '';
+      const processingToken = req.header('x-processing-token') ?? '';
       const actualJob = await store.getDocumentProcessingJob(jobId, tenantId);
-      if (!actualJob || actualJob.status !== 'processing' || !actualJob.leaseExpiresAt || Date.parse(actualJob.leaseExpiresAt) <= Date.now()) throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
+      if (actualJob && actualJob.processingToken !== processingToken) {
+        await store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'document.stale_attempt_rejected', metadata: { jobId }, createdAt: new Date().toISOString() });
+        throw new HttpError(409, 'DOCUMENT_JOB_STALE_ATTEMPT', 'The document job attempt is no longer current.');
+      }
+      if (!actualJob) throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
+      if (actualJob.status !== 'processing' || !actualJob.leaseExpiresAt || Date.parse(actualJob.leaseExpiresAt) <= Date.now()) throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
       const document = await store.getSupportingDocument(actualJob.documentId, actualJob.tenantId);
       if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'Document not found.');
       const content = await documentStorage.read(document.storageKey);
@@ -876,7 +888,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     try {
       const input = parse(documentResultSchema, req.body);
       const job = await store.getDocumentProcessingJob(input.jobId, input.tenantId);
-      if (!job || job.id !== routeParam(req, 'id') || job.status !== 'processing' || !job.leaseExpiresAt || Date.parse(job.leaseExpiresAt) <= Date.now()) throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
+      if (job && job.id === routeParam(req, 'id') && job.processingToken !== input.processingToken) {
+        await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'document.stale_attempt_rejected', metadata: { jobId: input.jobId }, createdAt: new Date().toISOString() });
+        throw new HttpError(409, 'DOCUMENT_JOB_STALE_ATTEMPT', 'The document job attempt is no longer current.');
+      }
+      if (!job || job.id !== routeParam(req, 'id')) throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
+      if (job.status !== 'processing' || !job.leaseExpiresAt || Date.parse(job.leaseExpiresAt) <= Date.now()) throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
       const document = await store.getSupportingDocument(job.documentId, input.tenantId);
       if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'Document not found.');
       const session = await store.getSession(document.sessionId);
@@ -894,7 +911,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     try {
       const input = parse(documentFailureSchema, req.body);
       const job = await store.getDocumentProcessingJob(input.jobId, input.tenantId);
-      if (!job || job.id !== routeParam(req, 'id') || job.status !== 'processing') throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
+      if (job && job.id === routeParam(req, 'id') && job.processingToken !== input.processingToken) {
+        await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'document.stale_attempt_rejected', metadata: { jobId: input.jobId }, createdAt: new Date().toISOString() });
+        throw new HttpError(409, 'DOCUMENT_JOB_STALE_ATTEMPT', 'The document job attempt is no longer current.');
+      }
+      if (!job || job.id !== routeParam(req, 'id')) throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
+      if (job.status !== 'processing') throw new HttpError(409, 'DOCUMENT_JOB_NOT_CLAIMED', 'The document job is not actively leased.');
       const document = await store.getSupportingDocument(job.documentId, input.tenantId);
       if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'Document not found.');
       const errorCodeValue = input.errorCode ?? 'DOCUMENT_OCR_FAILED';
@@ -1002,27 +1024,30 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const pendingSlotIntent = pendingCatalogIntent ?? (postCaptureFollowUp ? activeCatalogIntent : null);
       const pendingSlot = publishedCatalog && pendingSlotIntent && typeof pendingSlotKey === 'string' ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === pendingSlotIntent && slot.slotKey === pendingSlotKey) : null;
       const pendingConsentSlot = pendingSlot?.validationRule === 'boolean:explicit_opt_in' || pendingSlot?.slotKey === 'contact_consent';
+      const pendingConsentSlotKey = state.pendingPrompt?.type === 'consent'
+        ? pendingSlot?.slotKey ?? state.pendingPrompt.slotKey ?? 'contact_consent'
+        : null;
       const pendingNameIsIntentPhrase = pendingSlot?.slotKey === 'name' && publishedCatalog
         ? publishedCatalog.catalog.signals.some((signal) => signal.intentKey === pendingSlotIntent && signal.signalType === 'phrase' && signal.value && masked.masked.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').includes(signal.value.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim()))
         : false;
       const pendingContactKind = pendingSlot?.alternativeGroup === 'contact' ? masked.masked.match(/\[(EMAIL|PHONE)_\d+\]/u)?.[1] ?? null : null;
       const pendingTextRedirected = Boolean(pendingSlot && publishedCatalog && /^text:/u.test(pendingSlot.validationRule) && publishedCatalog.catalog.slots.some((slot) => slot.intentKey === pendingSlotIntent && slot.slotKey !== pendingSlot.slotKey && messageMentionsCatalogSlot(slot, inputText)));
       const pendingValue = pendingSlot && !pendingConsentSlot && !knowledgeQuestion && !pendingNameIsIntentPhrase && !pendingTextRedirected ? pendingCatalogSlotValue(pendingContactKind ? `token:${pendingContactKind}` : pendingSlot.validationRule, inputText, masked.masked, session, tokenVault) : null;
-      const pendingConsentValue = state.pendingPrompt?.type === 'consent' && (!pendingSlot || pendingConsentSlot) && !knowledgeQuestion
+      const pendingConsentValue = pendingConsentSlotKey && (!pendingSlot || pendingConsentSlot) && !knowledgeQuestion
         ? pendingCatalogSlotValue('boolean:explicit_opt_in', inputText, masked.masked, session, tokenVault)
         : null;
       const awaitingConsentAction = pendingCatalogIntent && publishedCatalog
         ? sessionActions.find((action) => action.state === 'awaiting_confirmation' && action.catalogVersionId === publishedCatalog.id && action.intentKey === pendingCatalogIntent && action.payload.contactConsent === false) ?? null
         : null;
       // A typed yes is only an acknowledgement; the scoped consent button still approves the action.
-      const textConsentApproval = Boolean(awaitingConsentAction && pendingConsentValue === 'true');
+      const textConsentApproval = Boolean(awaitingConsentAction && pendingConsentSlotKey === 'contact_consent' && pendingConsentValue === 'true');
       const maskedMessage = pendingSlot?.slotKey === 'name' && pendingValue && masked.masked.trim() === inputText.trim() ? pendingValue : masked.masked;
       if (maskedMessage !== userMessage.maskedContent) {
         userMessage = await store.updateMessage({ ...userMessage, maskedContent: maskedMessage });
       }
       const pendingValueData = pendingSlot?.slotKey === 'name' && pendingValue ? { name: pendingValue } : pendingContactKind === 'EMAIL' && pendingValue ? { email: pendingValue } : pendingContactKind === 'PHONE' && pendingValue ? { phone: pendingValue } : pendingSlot?.slotKey === 'email' && pendingValue ? { email: pendingValue } : pendingSlot?.slotKey === 'phone' && pendingValue ? { phone: pendingValue } : {};
-      const pendingCatalogValueData = pendingConsentValue && !textConsentApproval
-        ? { contact_consent: pendingConsentValue }
+      const pendingCatalogValueData = pendingConsentValue && !textConsentApproval && pendingConsentSlotKey
+        ? { [pendingConsentSlotKey]: pendingConsentValue }
         : pendingSlot && pendingValue ? { [pendingContactKind?.toLocaleLowerCase('en-US') ?? pendingSlot.slotKey]: pendingValue } : {};
       const baseCatalogSlotValues: Record<string, string> = { ...pendingCatalogValues, ...(extractLeadData(maskedMessage) as Record<string, string>), ...pendingCatalogValueData };
       const deterministicMessage = normalizeConversationQuery(maskedMessage);
@@ -1160,7 +1185,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const journeyOfferPending = journeyResult?.decision === 'offer_next_intent' && Boolean(journeyResult.offeredIntentKey);
       const journeyOfferLabel = journeyOfferPending && publishedCatalog ? catalogIntentLabel(publishedCatalog, journeyResult?.offeredIntentKey) : null;
       const declinedTransitionHold = Boolean(state.intentProgress?.lastDeclinedTransition && catalogResolution?.intentKey === state.intentProgress.lastDeclinedTransition.sourceIntentKey && catalogResolution.intentKey !== state.intentProgress.lastDeclinedTransition.targetIntentKey);
-      const journeyConfirmationLabel = journeyRequirement?.requirementType === 'confirmation' ? catalogRequirementLabel(journeyRequirement) : journeyOfferLabel;
+      const journeyConfirmationLabel = journeyRequirement?.requirementType === 'confirmation' ? catalogRequirementLabel(journeyRequirement)
+        : journeyRequirement?.requirementType === 'consent' ? consentDisclosure(tenant.name, journeyRequirement.slotKey === 'document_consent' ? 'document' : 'contact', journeyRequirement.visitorConfirmationText)
+        : journeyOfferLabel;
       const journeyTransitionRequirementKey = journeyOfferPending ? `transition:${journeyResult?.activeIntentKey}:${journeyResult?.offeredIntentKey}` : null;
       const journeyDocumentAwaiting = Boolean(journeyRequirement?.required && journeyRequirement.requirementType === 'document' && journeyDocuments.some((document) => ['uploaded', 'queued', 'processing', 'reconciliation'].includes(document.status) && journeyDocumentMatchesRequirement(journeyRequirement, { intentKey: document.intentKey ?? null, catalogVersionId: document.catalogVersionId ?? null, requirementKey: document.requirementKey ?? null, expectedDocumentType: document.expectedDocumentType ?? null, status: document.status }, publishedCatalog?.id)));
       const journeyDocumentPending = Boolean(journeyRequirement?.required && journeyRequirement.requirementType === 'document' && !journeyDocumentAwaiting);
@@ -1181,7 +1208,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const consentSlot = publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length === 1
         ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === catalogResolution.intentKey && slot.slotKey === catalogResolution.missingSlots[0])
         : null;
-      const consentDenied = catalogSlotValues.contact_consent === 'false';
+      const consentSlotKey = consentSlot?.slotKey ?? (journeyRequirement?.requirementType === 'consent' ? journeyRequirement.slotKey ?? 'contact_consent' : null);
+      const consentDenied = consentSlotKey === 'contact_consent' && catalogSlotValues.contact_consent === 'false';
       const rehydrateLeadValue = (value: string | undefined): string => value ? rehydrateForSession(session, value, tokenVault, 'admin_crm') : '';
       const validLeadName = Boolean(leadData.name && isValidLeadName(rehydrateLeadValue(leadData.name)));
       const validLeadEmail = Boolean(leadData.email && isValidLeadEmail(rehydrateLeadValue(leadData.email)));
@@ -1192,7 +1220,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const crmContactMissing = !postCaptureFollowUp && !knowledgeOnlyTurn && !knowledgeQuestion && catalogResolution?.intentKey && isContactWorkflow && !validatedLeadReady && !journeyOwnsNonContactRequirement
         ? invalidLeadField : null;
       const consentRequirementPending = consentSlot?.validationRule === 'boolean:explicit_opt_in' || journeyRequirement?.required === true && journeyRequirement.requirementType === 'consent';
-      const consentActionReady = !postCaptureFollowUp && !knowledgeOnlyTurn && !knowledgeQuestion && consentRequirementPending && catalogSlotValues.contact_consent !== 'true' && !consentDenied && !crmContactMissing && (catalogResolution?.reason === 'missing_slots' || catalogResolution?.actionAllowed === true) && (!journeyRequirement?.required || journeyRequirement.requirementType === 'consent');
+      const consentActionReady = !postCaptureFollowUp && !knowledgeOnlyTurn && !knowledgeQuestion && consentSlotKey === 'contact_consent' && consentRequirementPending && catalogSlotValues.contact_consent !== 'true' && !consentDenied && !crmContactMissing && (catalogResolution?.reason === 'missing_slots' || catalogResolution?.actionAllowed === true) && (!journeyRequirement?.required || journeyRequirement.requirementType === 'consent');
       const legacyLeadIntent = leadRequestedNow || recentMessages.some((message) => message.role === 'user' && hasLeadIntent(message.maskedContent));
       const activeLeadFlow = leadRequestedNow || Boolean(catalogResolution?.intentKey && !['no_signal', 'below_threshold', 'ambiguous', 'intent_inactive', 'workflow_inactive'].includes(catalogResolution.reason)) || Boolean(pendingCatalogIntent && state.workflowStatus !== 'queued');
       const leadIntent = !postCaptureFollowUp && !knowledgeOnlyTurn && !knowledgeQuestion && languageAllowed && (publishedCatalog ? activeLeadFlow && Boolean(catalogResolution?.intentKey) : legacyLeadIntent);
@@ -1247,6 +1275,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         else if (!knowledgeQuestion && journeyDocumentAwaiting) draft = await composeGuidedDraft({ answer: 'I’ve received the requested document and it is being reviewed. While that is checked, what else would you like to clarify about your setup?', citationIds: [], proposedIntent: null }, 'document_processing');
         else if (!knowledgeQuestion && journeyOfferPending) draft = await composeGuidedDraft({ answer: `Would you like to continue with ${journeyOfferLabel ?? 'the related request'} as well?`, citationIds: [], proposedIntent: null }, 'confirmation');
         else if (!knowledgeQuestion && journeyConfirmationPending) draft = await composeGuidedDraft({ answer: `Before I continue, could you confirm ${journeyConfirmationLabel ?? 'this requirement'}?`, citationIds: [], proposedIntent: null }, 'confirmation');
+        else if (!knowledgeQuestion && journeyRequirement?.requirementType === 'consent' && journeySlotKey) draft = await composeGuidedDraft({ answer: `Before I continue, please confirm: ${journeyConfirmationLabel ?? 'I need your explicit consent for this request.'}`, citationIds: [], proposedIntent: null }, 'consent', journeySlotKey);
         else if (!knowledgeQuestion && journeyDocumentPending) draft = await composeGuidedDraft({ answer: 'To continue, could you share the requested document?', citationIds: [], proposedIntent: null }, 'document_collection');
         else if (postCaptureFollowUp && catalogSlotNonAnswer) draft = await composeGuidedDraft({ answer: 'Thanks, I’ve noted that from earlier. If anything has changed, tell me what to update; otherwise we can continue with the remaining details?', citationIds: [], proposedIntent: null }, 'follow_up', journeySlotKey);
         else if (!knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog) draft = await composeGuidedDraft({ answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null }, 'slot_collection', journeySlotKey);
@@ -1286,7 +1315,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           else throw new HttpError(503, 'MODEL_UNAVAILABLE', 'The assistant is currently unable to verify an answer.');
         }
       }
-      if (!knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog && !consentDenied && !catalogSlotNonAnswer && !isGuidedResponse(draft.answer, 'slot_collection', journeySlotKey)) draft = { answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null };
+      if (!knowledgeQuestion && journeyRequirement?.requirementType === 'slot' && journeySlotKey && publishedCatalog && !consentDenied && !catalogSlotNonAnswer && !isGuidedResponse(draft.answer, 'slot_collection', journeySlotKey)) draft = { answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null };
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       const citations = validateCitations(draft, evidence);
       const casualFallback = conversational && (evidence.length === 0 || intent === 'identity');
@@ -1318,7 +1347,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : catalogResolution?.ambiguous || (catalogResolution?.reason === 'below_threshold')
         ? prompt('clarification', catalogResolution.intentKey, null)
         : nextMissingSlot
-          ? prompt(consentActionReady ? 'consent' : 'slot', journeyResult?.activeIntentKey ?? catalogResolution?.intentKey ?? pendingCatalogIntent ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey, nextMissingSlot, journeyRequirement?.requirementKey ?? null)
+          ? prompt(consentActionReady || journeyRequirement?.requirementType === 'consent' ? 'consent' : 'slot', journeyResult?.activeIntentKey ?? catalogResolution?.intentKey ?? pendingCatalogIntent ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey, nextMissingSlot, journeyRequirement?.requirementKey ?? null)
           : consentActionReady ? prompt('consent', catalogResolution?.intentKey ?? journeyResult?.activeIntentKey ?? state.selectedIntentKey, null, journeyRequirement?.requirementKey ?? null)
             : catalogResolution?.actionAllowed && !consentDenied && !journeyOfferPending && !declinedTransitionHold ? prompt('confirmation', catalogResolution.intentKey, null) : null;
       state.catalogVersionId = catalogResolution?.catalogVersionId ?? state.catalogVersionId;
@@ -1379,7 +1408,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const finalAnswer = resumedAction ? 'Thanks — I have the remaining details and your request is back in processing.' : safeAnswer;
       const finalMaskedAnswer = resumedAction ? maskPiiForSession(session, finalAnswer, tokenVault) : maskedAnswer;
        const pendingCatalogState = publishedCatalog && (catalogResolution?.intentKey || journeyResult?.activeIntentKey) && (catalogResolution?.missingSlots.length || nextPrompt || journeyDocumentPending) ? { catalogIntentKey: catalogResolution?.intentKey ?? journeyResult?.activeIntentKey ?? null, catalogVersionId: catalogResolution?.catalogVersionId ?? publishedCatalog.id, catalogSlotKey: nextPrompt && (nextPrompt.type === 'slot' || nextPrompt.type === 'consent') ? nextMissingSlot : null, catalogRequirementKey: nextPrompt?.requirementKey ?? journeyRequirement?.requirementKey ?? null, catalogSlotValues, pendingPromptId: nextPrompt?.id ?? null } : null;
-      const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, finalMaskedAnswer, tokenVault), grounded: safeGrounded, conversational: casualFallback || leadCollection || catalogClarification || continuityAnswer || continuityTurn || endedConversation, citations: safeCitations, actionProposal: actionForResponse && !resumedAction ? { id: actionForResponse.id, intent: actionForResponse.workflowKey, consentRequired: actionForResponse.payload.contactConsent !== true, confirmation: actionForResponse.payload.contactConsent !== true ? 'I consent to the use of my contact details to register this request.' : 'Your contact request is ready to submit.', expiresAt: new Date(Date.parse(actionForResponse.createdAt) + 15 * 60_000).toISOString() } : null, pendingPromptId: nextPrompt?.id ?? null, pendingRequirementKey: nextPrompt?.requirementKey ?? null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
+      const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, finalMaskedAnswer, tokenVault), grounded: safeGrounded, conversational: casualFallback || leadCollection || catalogClarification || continuityAnswer || continuityTurn || endedConversation, citations: safeCitations, actionProposal: actionForResponse && !resumedAction ? { id: actionForResponse.id, intent: actionForResponse.workflowKey, consentRequired: actionForResponse.payload.contactConsent !== true, confirmation: actionForResponse.payload.contactConsent !== true ? consentDisclosure(tenant.name, 'contact') : 'Your contact request is ready to submit.', expiresAt: new Date(Date.parse(actionForResponse.createdAt) + 15 * 60_000).toISOString() } : null, pendingPromptId: nextPrompt?.id ?? null, pendingRequirementKey: nextPrompt?.requirementKey ?? null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
       const persistedResponse = { ...response, answer: finalMaskedAnswer };
       const estimatedInputTokens = estimateTokens([maskedMessage, ...evidence.map((item) => item.content), persona?.name ?? '', persona?.personality ?? '', persona?.tone ?? '', persona?.speakingStyle ?? ''].join('\n'));
       const estimatedOutputTokens = estimateTokens(finalMaskedAnswer);
@@ -1685,7 +1714,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const retryAt = new Date().toISOString();
         await documentStorage.replace(duplicate.storageKey, content);
         const queuedDocument: SupportingDocument = { ...duplicate, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, status: 'queued', extractedText: null, summary: null, errorCode: null, updatedAt: retryAt };
-        const retryJob: DocumentProcessingJob = { id: randomUUID(), documentId: duplicate.id, tenantId: session.tenantId, workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, status: 'queued', attempts: 0, leaseExpiresAt: null, executionReference: null, createdAt: retryAt, updatedAt: retryAt };
+      const retryJob: DocumentProcessingJob = { id: randomUUID(), documentId: duplicate.id, tenantId: session.tenantId, workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, status: 'queued', attempts: 0, processingToken: randomUUID(), leaseExpiresAt: null, executionReference: null, createdAt: retryAt, updatedAt: retryAt };
         const queuedJob = await store.requeueSupportingDocumentWithJob(queuedDocument, retryJob);
         await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'document.retry_queued', metadata: { documentId: duplicate.id, jobId: queuedJob.id, workflowKey: queuedJob.workflowKey }, createdAt: retryAt });
         res.status(202).json({ accepted: true, idempotent: true, retried: true, document: publicDocument(queuedDocument), jobId: queuedJob.id });
@@ -1697,7 +1726,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       await documentStorage.write(storageKey, content);
       const createdAt = new Date().toISOString();
       const document: SupportingDocument = { id: documentId, tenantId: session.tenantId, sessionId: session.id, leadId: existingLead?.id ?? null, intentKey: requestedIntentKey, catalogVersionId: version?.id ?? null, requirementKey: journeyRequirement?.requirementKey ?? input.requirementKey ?? null, expectedDocumentType: journeyRequirement?.documentType ?? null, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, sha256, storageKey, status: 'queued', workflowKey: binding.workflowKey, storeExtractedText: policy.storeExtractedText, extractedText: null, summary: null, errorCode: null, consentAt: createdAt, createdAt, updatedAt: createdAt };
-      const job: DocumentProcessingJob = { id: randomUUID(), documentId, tenantId: session.tenantId, workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, status: 'queued', attempts: 0, leaseExpiresAt: null, executionReference: null, createdAt, updatedAt: createdAt };
+      const job: DocumentProcessingJob = { id: randomUUID(), documentId, tenantId: session.tenantId, workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, status: 'queued', attempts: 0, processingToken: randomUUID(), leaseExpiresAt: null, executionReference: null, createdAt, updatedAt: createdAt };
       try { await store.createSupportingDocumentWithJob(document, job); } catch (error) {
         await documentStorage.purge(storageKey);
         const concurrent = (error as { code?: unknown }).code === '23505'
