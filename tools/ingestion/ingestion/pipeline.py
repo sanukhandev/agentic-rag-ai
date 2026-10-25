@@ -8,7 +8,7 @@ import re
 import socket
 import tempfile
 import zipfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from pathlib import PurePosixPath
 from urllib.parse import urlparse
@@ -16,8 +16,7 @@ from urllib.parse import urlparse
 MAX_BYTES = 20 * 1024 * 1024
 MAX_CONTAINER_ENTRIES = 2_000
 MAX_CONTAINER_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
-MAX_NORMALIZED_CONTENT_CHARS = 1_000_000
-PARSER_VERSION = "python-ingestion-0.3.0"
+PARSER_VERSION = "python-ingestion-0.4.0"
 ARCHIVE_SUPPORTED_SUFFIXES = {".txt", ".md", ".pdf", ".docx", ".xlsx", ".csv", ".json", ".jsonl"}
 
 
@@ -38,6 +37,7 @@ class IngestedSource:
     content_hash: str
     parser_version: str
     chunks: list[Chunk]
+    warnings: list[str] = field(default_factory=list)
 
 
 def normalize(text: str) -> str:
@@ -193,7 +193,11 @@ def _is_symlink(entry: zipfile.ZipInfo) -> bool:
     return ((entry.external_attr >> 16) & 0o170000) == 0o120000
 
 
-def _extract_archive(path: Path) -> list[tuple[str, str, str]]:
+def _archive_member_label(name: str) -> str:
+    return name.replace("\r", " ").replace("\n", " ")[:200]
+
+
+def _extract_archive(path: Path) -> tuple[list[tuple[str, str, str]], list[str]]:
     if not zipfile.is_zipfile(path):
         raise ValueError("File signature does not match ZIP archive.")
     with zipfile.ZipFile(path) as archive:
@@ -226,6 +230,7 @@ def _extract_archive(path: Path) -> list[tuple[str, str, str]]:
         if not entries:
             raise ValueError("ZIP archive contains no ingestible files.")
         extracted: list[tuple[str, str, str]] = []
+        warnings: list[str] = []
         with tempfile.TemporaryDirectory(prefix="agentic-zip-") as directory:
             root = Path(directory)
             for index, entry in enumerate(entries):
@@ -233,26 +238,35 @@ def _extract_archive(path: Path) -> list[tuple[str, str, str]]:
                 relative = PurePosixPath(name)
                 suffix = Path(name).suffix.lower()
                 if suffix == ".zip":
-                    raise ValueError("Nested ZIP archives are unsupported.")
+                    warnings.append(f"Skipped {_archive_member_label(name)}: nested ZIP archives are unsupported.")
+                    continue
                 if suffix not in ARCHIVE_SUPPORTED_SUFFIXES:
-                    raise ValueError(f"ZIP archive contains unsupported file type: {suffix or '[none]'}")
+                    warnings.append(f"Skipped {_archive_member_label(name)}: unsupported file type {suffix or '[none]'}.")
+                    continue
                 if entry.flag_bits & 0x1 or entry.file_size > MAX_BYTES:
                     raise ValueError("ZIP archive contains an encrypted or oversized file.")
-                with archive.open(entry) as source:
-                    content = source.read(MAX_BYTES + 1)
-                if len(content) != entry.file_size or len(content) > MAX_BYTES:
-                    raise ValueError("ZIP archive contains an oversized or truncated file.")
-                member = root / f"{index:04d}-{relative.name}"
-                member.write_bytes(content)
-                text, mime_type = extract_file(member)
-                if not normalize(text):
-                    raise ValueError(f"ZIP archive contains an empty file: {name}")
+                try:
+                    with archive.open(entry) as source:
+                        content = source.read(MAX_BYTES + 1)
+                    if len(content) != entry.file_size or len(content) > MAX_BYTES:
+                        raise ValueError("oversized or truncated file")
+                    member = root / f"{index:04d}-{relative.name}"
+                    member.write_bytes(content)
+                    text, mime_type = extract_file(member)
+                    if not normalize(text):
+                        raise ValueError("empty file")
+                except ValueError as error:
+                    warnings.append(f"Skipped {_archive_member_label(name)}: {error}.")
+                    continue
                 extracted.append((name, mime_type, text))
-        return extracted
+        if not extracted:
+            detail = " ".join(warnings[:10])
+            raise ValueError(f"ZIP archive contains no supported files.{f' {detail}' if detail else ''}")
+        return extracted, warnings
 
 
 def _ingest_archive(path: Path) -> IngestedSource:
-    files = _extract_archive(path)
+    files, warnings = _extract_archive(path)
     sections: list[str] = []
     chunks: list[Chunk] = []
     for name, mime_type, text in files:
@@ -263,8 +277,6 @@ def _ingest_archive(path: Path) -> IngestedSource:
             content = f"File: {display_name}\n{chunk.content}"
             chunks.append(_chunk(content, len(chunks), f"{display_name} · {chunk.locator}"))
     normalized_content = normalize("\n\n".join(sections))
-    if len(normalized_content) > MAX_NORMALIZED_CONTENT_CHARS:
-        raise ValueError("ZIP archive produces more than the 1,000,000 character ingestion limit.")
     return IngestedSource(
         title=path.stem,
         mime_type="application/zip",
@@ -273,6 +285,7 @@ def _ingest_archive(path: Path) -> IngestedSource:
         content_hash=hashlib.sha256(normalized_content.encode()).hexdigest(),
         parser_version=PARSER_VERSION,
         chunks=chunks,
+        warnings=warnings,
     )
 
 

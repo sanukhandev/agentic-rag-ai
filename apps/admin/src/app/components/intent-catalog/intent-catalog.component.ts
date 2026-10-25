@@ -26,7 +26,7 @@ import { BadgeComponent } from '../shared/badge.component';
       <div *ngIf="catalogJob as job" class="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <p class="font-semibold">Catalog {{ job.status }}</p>
         <p *ngIf="job.status === 'queued' || job.status === 'processing'" class="mt-1 text-blue-700">The ingestion worker is validating the workbook. The catalog list will update automatically when processing completes.</p>
-        <p *ngIf="job.status === 'failed'" class="mt-1 text-red-700">Import failed: {{ job.errorCode || 'unknown error' }}. Upload the workbook again after fixing the reported issue.</p>
+        <p *ngIf="job.status === 'failed'" class="mt-1 text-red-700">Import failed: {{ job.errorCode || 'unknown error' }}{{ job.errorDetail ? ' — ' + job.errorDetail : '' }}. Upload the workbook again after fixing the reported issue.</p>
       </div>
       <div *ngIf="catalogError as error" class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900" role="alert">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

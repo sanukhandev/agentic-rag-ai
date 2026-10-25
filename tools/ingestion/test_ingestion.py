@@ -165,19 +165,29 @@ class IngestionTests(unittest.TestCase):
             self.assertTrue(any(chunk.locator.startswith("bundle/training/professional-profile.md") for chunk in source.chunks))
             self.assertTrue(any(chunk.locator.startswith("bundle/training/career-timeline.txt") for chunk in source.chunks))
 
-    def test_zip_rejects_unsupported_nested_and_unsafe_members(self) -> None:
+    def test_zip_skips_unaccepted_members_and_reports_warnings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             unsupported = Path(directory) / "unsupported.zip"
             with zipfile.ZipFile(unsupported, "w") as archive:
                 archive.writestr("payload.exe", "not supported")
-            with self.assertRaisesRegex(ValueError, "unsupported file type"):
-                ingest_file(unsupported)
+                archive.writestr("faq.txt", "Approved FAQ")
+            source = ingest_file(unsupported)
+            self.assertIn("Approved FAQ", source.normalized_content)
+            self.assertNotIn("payload.exe", source.normalized_content)
+            self.assertTrue(any("payload.exe" in warning and "unsupported file type" in warning for warning in source.warnings))
 
             nested = Path(directory) / "nested.zip"
             with zipfile.ZipFile(nested, "w") as archive:
                 archive.writestr("nested.zip", "PK\\x05\\x06")
-            with self.assertRaisesRegex(ValueError, "Nested ZIP"):
-                ingest_file(nested)
+                archive.writestr("faq.txt", "Approved FAQ")
+            nested_source = ingest_file(nested)
+            self.assertTrue(any("nested.zip" in warning and "nested ZIP" in warning for warning in nested_source.warnings))
+
+            only_unsupported = Path(directory) / "only-unsupported.zip"
+            with zipfile.ZipFile(only_unsupported, "w") as archive:
+                archive.writestr("payload.exe", "not supported")
+            with self.assertRaisesRegex(ValueError, "no supported files.*payload.exe"):
+                ingest_file(only_unsupported)
 
             unsafe = Path(directory) / "unsafe.zip"
             with zipfile.ZipFile(unsafe, "w") as archive:
@@ -195,6 +205,18 @@ class IngestionTests(unittest.TestCase):
             source = ingest_file(path)
 
             self.assertGreater(len(source.normalized_content), 200_000)
+
+    def test_zip_accepts_content_over_one_million_characters(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "large-training.zip"
+            content = ("Approved training paragraph.\n\n" * 60_000)
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("training/large.txt", content)
+
+            source = ingest_file(path)
+
+            self.assertGreater(len(source.normalized_content), 1_000_000)
+            self.assertGreater(len(source.chunks), 2_000)
 
     def test_pdf_locators_and_ocr_only_rejection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -288,6 +310,7 @@ class IngestionTests(unittest.TestCase):
         source = ingest_text("FAQ", "Email alice@example.com.\n\nPricing is 42 credits.", "text/plain")
         payload = result_payload(source)
         self.assertNotIn("alice@example.com", payload["normalizedContent"])
+        self.assertEqual(payload["warnings"], [])
         self.assertEqual(payload["chunks"][0]["contentHash"], source.chunks[0].content_hash)
         self.assertNotIn("content_hash", payload["chunks"][0])
         session = Mock()
@@ -345,9 +368,9 @@ class IngestionTests(unittest.TestCase):
         response = Mock()
         response.json.return_value = {"job": {"status": "failed"}}
         session.post.return_value = response
-        output = submit_failure("http://localhost:4000", "job-1", "worker-secret", session=session)
+        output = submit_failure("http://localhost:4000", "job-1", "worker-secret", error_detail="ZIP archive contains no supported files: payload.exe", session=session)
         self.assertEqual(output["job"]["status"], "failed")
-        self.assertEqual(session.post.call_args.kwargs["json"], {"errorCode": "INGESTION_FAILED"})
+        self.assertEqual(session.post.call_args.kwargs["json"], {"errorCode": "INGESTION_FAILED", "errorDetail": "ZIP archive contains no supported files: payload.exe"})
 
     def test_worker_preserves_safe_api_error_code(self) -> None:
         source = ingest_text("FAQ", "Approved content", "text/plain")

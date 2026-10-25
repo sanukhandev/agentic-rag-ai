@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS ingestion_jobs (
   status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'processing', 'completed', 'failed')),
   attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
   error_code text,
+  error_detail text,
   lease_expires_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -21,3 +22,4 @@ ALTER TABLE ingestion_jobs ADD COLUMN IF NOT EXISTS title text;
 ALTER TABLE ingestion_jobs ADD COLUMN IF NOT EXISTS mime_type text;
 ALTER TABLE ingestion_jobs ADD COLUMN IF NOT EXISTS source_url text;
 ALTER TABLE ingestion_jobs ADD COLUMN IF NOT EXISTS audience text;
+ALTER TABLE ingestion_jobs ADD COLUMN IF NOT EXISTS error_detail text;

@@ -40,12 +40,13 @@ export const intentCatalogEditSchema = z.object({ catalog: z.unknown() });
 export const intentCatalogResultSchema = z.object({ sourceHash: z.string().regex(/^[a-f0-9]{64}$/), parserVersion: z.string().trim().min(1).max(120), catalog: z.unknown() });
 export const ingestionRequestSchema = sourceSchema.omit({ content: true });
 export const ingestionResultSchema = z.object({
-  normalizedContent: z.string().min(1).max(MAX_KNOWLEDGE_CONTENT_CHARS),
+  normalizedContent: z.string().min(1),
   contentHash: z.string().regex(/^[a-f0-9]{64}$/),
   parserVersion: z.string().trim().min(1).max(120),
-  chunks: z.array(z.object({ ordinal: z.number().int().nonnegative(), locator: z.string().trim().min(1).max(200), content: z.string().trim().min(1).max(20_000), contentHash: z.string().regex(/^[a-f0-9]{64}$/) })).min(1).max(2_000),
+  chunks: z.array(z.object({ ordinal: z.number().int().nonnegative(), locator: z.string().trim().min(1).max(200), content: z.string().trim().min(1).max(20_000), contentHash: z.string().regex(/^[a-f0-9]{64}$/) })).min(1),
+  warnings: z.array(z.string().trim().min(1).max(500)).max(100).default([]),
 });
-export const ingestionFailureSchema = z.object({ errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('INGESTION_FAILED') });
+export const ingestionFailureSchema = z.object({ errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('INGESTION_FAILED'), errorDetail: z.string().trim().min(1).max(2_000).optional() });
 export const sessionSchema = z.object({ tenantId: z.string().uuid().optional(), tenantSlug: z.string().regex(/^[a-z0-9-]+$/).optional() });
 export const messageSchema = z.object({ sessionId: z.string().uuid(), type: z.enum(['text', 'postback', 'attachment']).default('text'), message: z.string().trim().max(4000).default(''), postbackValue: z.string().trim().max(4000).optional(), replyToPromptId: z.string().uuid().optional(), clientMessageId: z.string().trim().min(1).max(128) }).superRefine((value, context) => {
   if (value.type === 'postback' && !value.postbackValue && !value.message) context.addIssue({ code: z.ZodIssueCode.custom, path: ['postbackValue'], message: 'A postback value is required.' });

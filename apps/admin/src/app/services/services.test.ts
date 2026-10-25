@@ -278,6 +278,7 @@ describe('SOLID Services and Architecture Contracts', () => {
       status: 'processing',
       attempts: 1,
       errorCode: null,
+      errorDetail: null,
       updatedAt: '2026-01-01T00:01:00Z'
     };
 
@@ -289,6 +290,7 @@ describe('SOLID Services and Architecture Contracts', () => {
       status: 'processing',
       attempts: 1,
       errorCode: null,
+      errorDetail: null,
       updatedAt: '2026-01-01T00:01:00Z'
     };
 
