@@ -7,10 +7,12 @@ from typing import Any
 
 from openpyxl import load_workbook
 
-PARSER_VERSION = "intent-catalog-xlsx-1.3.0"
+PARSER_VERSION = "intent-catalog-xlsx-1.4.0"
 SHEETS = ("README", "Intents", "Signals", "Slots", "Relations", "WorkflowBindings")
 OPTIONAL_SHEETS = {
     "QualityRules": "qualityRules",
+    "JourneyRequirements": "journeyRequirements",
+    "JourneyTransitions": "journeyTransitions",
     "DocumentPolicies": "documentPolicies",
     "DocumentRequirements": "documentRequirements",
     "CRMFieldMappings": "crmFieldMappings",
@@ -19,7 +21,7 @@ OPTIONAL_SHEETS = {
     "CatalogManifest": "catalogManifest",
 }
 
-JSON_LIST_FIELDS = {"allowedDocumentTypes", "ocrLanguages", "allowedMimeTypes"}
+JSON_LIST_FIELDS = {"allowedDocumentTypes", "ocrLanguages", "allowedMimeTypes", "nextIntentKeys"}
 
 
 def _text(value: Any) -> str:

@@ -176,11 +176,12 @@ Response fields:
   "citations": [],
   "actionProposal": null,
   "pendingPromptId": "opaque-prompt-id",
+  "pendingRequirementKey": "company.shareholder.passport",
   "requestId": "correlation-id"
 }
 ```
 
-Render `answer`, then any approved citations or action prompt. Do not display raw model data or internal IDs.
+Render `answer`, then any approved citations or action prompt. `pendingRequirementKey` is an opaque catalog requirement identifier; connectors that support attachments should send it back as `requirementKey` when uploading the requested document. Do not display raw model data or internal IDs.
 
 ### 4.3 Read history
 
@@ -251,7 +252,7 @@ curl -sS -X POST "$CHAT_API_BASE/api/v1/chat/sessions/$SESSION_ID/documents" \
   -H "X-Agentic-Timestamp: $timestamp" \
   -H "X-Agentic-Nonce: $nonce" \
   -H "X-Agentic-Signature: $signature" \
-  --data '{"fileName":"requirements.pdf","mimeType":"application/pdf","contentBase64":"<base64 bytes>","processingConsent":true,"primaryIntentKey":"anc.erp.requirements"}'
+  --data '{"fileName":"requirements.pdf","mimeType":"application/pdf","contentBase64":"<base64 bytes>","processingConsent":true,"primaryIntentKey":"anc.erp.requirements","requirementKey":"company.shareholder.passport"}'
 ```
 
 Poll the sanitized status route:

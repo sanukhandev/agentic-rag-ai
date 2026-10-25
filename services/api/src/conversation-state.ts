@@ -1,11 +1,32 @@
 import { randomUUID } from 'node:crypto';
-import type { ConversationPhase, ConversationState, PendingPrompt } from './types.js';
+import type { ConversationPhase, ConversationState, IntentProgressState, PendingPrompt } from './types.js';
 
 const workflowStatusRank: Record<ConversationState['workflowStatus'], number> = { none: 0, awaiting_customer: 1, queued: 1, processing: 2, human_review: 3, reconcile_required: 3, failed: 3, succeeded: 4 };
 
 export const consentVersionForState = (state: Pick<ConversationState, 'catalogVersionId' | 'selectedIntentKey'>): string => `contact-v1:${state.catalogVersionId ?? 'legacy'}:${state.selectedIntentKey ?? 'legacy'}`;
 
 const hasScopedConsent = (state: ConversationState): boolean => state.contactConsent === 'granted' && state.consentVersion === consentVersionForState(state);
+
+export const newIntentProgress = (): IntentProgressState => ({ version: 1, activeIntentKey: null, pausedIntentKeys: [], fulfilledIntentKeys: [], entries: {}, visitedIntentKeys: [], lastTransitionReason: null, journeyRevision: 0 });
+
+const normalizeIntentProgress = (progress: IntentProgressState | undefined): IntentProgressState => {
+  if (!progress || progress.version !== 1) return newIntentProgress();
+  const entries = Object.fromEntries(Object.entries(progress.entries ?? {}).slice(0, 32).map(([key, entry]) => [key, { intentKey: entry.intentKey, status: entry.status, completedRequirementKeys: [...new Set((entry.completedRequirementKeys ?? []).slice(0, 64))], currentRequirementKey: entry.currentRequirementKey ?? null, revision: Math.max(0, Math.floor(entry.revision ?? 0)) }])) as IntentProgressState['entries'];
+  return { version: 1, activeIntentKey: progress.activeIntentKey ?? null, pausedIntentKeys: [...new Set((progress.pausedIntentKeys ?? []).slice(0, 16))], fulfilledIntentKeys: [...new Set((progress.fulfilledIntentKeys ?? []).slice(0, 16))], entries, visitedIntentKeys: [...new Set((progress.visitedIntentKeys ?? []).slice(0, 32))], lastTransitionReason: progress.lastTransitionReason ?? null, journeyRevision: Math.max(0, Math.floor(progress.journeyRevision ?? 0)) };
+};
+
+const mergeIntentProgress = (latest: ConversationState, candidate: ConversationState): IntentProgressState => {
+  const left = normalizeIntentProgress(latest.intentProgress);
+  const right = normalizeIntentProgress(candidate.intentProgress);
+  const winner = right.journeyRevision >= left.journeyRevision ? right : left;
+  const entries = { ...left.entries };
+  for (const [intentKey, entry] of Object.entries(right.entries)) {
+    const existing = entries[intentKey];
+    if (!existing || entry.revision >= existing.revision) entries[intentKey] = { ...entry, completedRequirementKeys: [...new Set(entry.completedRequirementKeys)] };
+    else entries[intentKey] = { ...existing, completedRequirementKeys: [...new Set([...existing.completedRequirementKeys, ...entry.completedRequirementKeys])] };
+  }
+  return { ...winner, entries, pausedIntentKeys: [...new Set([...left.pausedIntentKeys, ...right.pausedIntentKeys])].slice(0, 16), fulfilledIntentKeys: [...new Set([...left.fulfilledIntentKeys, ...right.fulfilledIntentKeys])].slice(0, 16), visitedIntentKeys: [...new Set([...left.visitedIntentKeys, ...right.visitedIntentKeys])].slice(0, 32), journeyRevision: Math.max(left.journeyRevision, right.journeyRevision) };
+};
 
 export const mergeConcurrentConversationState = (latest: ConversationState, candidate: ConversationState): ConversationState => {
   const latestWins = workflowStatusRank[latest.workflowStatus] > workflowStatusRank[candidate.workflowStatus];
@@ -45,6 +66,7 @@ export const mergeConcurrentConversationState = (latest: ConversationState, cand
     intentScore: workflowState.intentScore ?? latest.intentScore ?? candidate.intentScore ?? 0,
     intentConfidence: workflowState.intentConfidence ?? latest.intentConfidence ?? candidate.intentConfidence ?? 0,
     intentEvidence: [...new Set([...(latest.intentEvidence ?? []), ...(candidate.intentEvidence ?? [])])],
+    intentProgress: mergeIntentProgress(latest, candidate),
     activeFollowUpIntentKey: candidate.activeFollowUpIntentKey ?? latest.activeFollowUpIntentKey ?? null,
     summaryRevision: Math.max(latest.summaryRevision ?? 0, candidate.summaryRevision ?? 0),
     messageSequence: Math.max(latest.messageSequence ?? 0, candidate.messageSequence ?? 0),
@@ -67,6 +89,7 @@ export const mergeWorkflowCallbackState = (latest: ConversationState, candidate:
     phase: preserveVisitorPrompt ? latest.phase : workflowState.phase,
     pendingPrompt: preserveVisitorPrompt ? latest.pendingPrompt : workflowState.pendingPrompt,
     activeFollowUpIntentKey: latest.activeFollowUpIntentKey ?? candidate.activeFollowUpIntentKey ?? null,
+    intentProgress: mergeIntentProgress(latest, candidate),
   };
 };
 
@@ -79,6 +102,7 @@ export const newConversationState = (): ConversationState => ({
   intentScore: 0,
   intentConfidence: 0,
   intentEvidence: [],
+  intentProgress: newIntentProgress(),
   slotValues: {},
   slotProvenance: {},
   pendingPrompt: null,
@@ -103,7 +127,7 @@ export const composeConversationSummary = (state: ConversationState, latestVisit
   ].filter(Boolean).join(' ');
 };
 
-export const prompt = (type: PendingPrompt['type'], intentKey: string | null, slotKey: string | null): PendingPrompt => ({ id: randomUUID(), type, intentKey, slotKey, issuedAt: new Date().toISOString() });
+export const prompt = (type: PendingPrompt['type'], intentKey: string | null, slotKey: string | null, requirementKey: string | null = null): PendingPrompt => ({ id: randomUUID(), type, intentKey, slotKey, requirementKey, issuedAt: new Date().toISOString() });
 
 export const phaseFor = (input: { intentKey: string | null; missingSlot: string | null; consentPending: boolean; actionPending: boolean }): ConversationPhase => {
   if (input.actionPending) return 'ACTION_CONFIRMATION';

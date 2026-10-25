@@ -963,4 +963,39 @@ describe('API vertical slice', () => {
     expect((await runtime.store.listActions(tenant.body.tenant.id)).filter((action) => action.sessionId === session.body.sessionId)).toHaveLength(1);
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.selectedIntentKey).toBeNull();
   });
+
+  it('uses typed journey requirements to capture custom slot answers and advance one step at a time', async () => {
+    const runtime = createApp({ nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-journey-contract@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Journey Contract Tenant', slug: 'journey-contract-tenant', adminEmail: 'admin-journey-contract@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [{ intentKey: 'company.setup', displayName: 'Set up a company', description: 'Company setup', category: 'service', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' }],
+      signals: [{ intentKey: 'company.setup', signalId: 'company-start', signalType: 'phrase' as const, value: 'start a business', language: 'en', matchMode: 'contains', weight: 80, relationGroup: 'company_formation', notes: '' }],
+      slots: [
+        { intentKey: 'company.setup', slotKey: 'business_activity', dataType: 'text', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'company.ask_activity', validationRule: 'text:business_activity', retentionClass: 'business' },
+        { intentKey: 'company.setup', slotKey: 'company_structure', dataType: 'enum', required: true, alternativeGroup: null, collectionOrder: 2, promptKey: 'company.ask_structure', validationRule: 'enum:catalog_value', retentionClass: 'business' },
+      ],
+      relations: [],
+      workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'journey-contract', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
+      journeyRequirements: [
+        { intentKey: 'company.setup', requirementKey: 'company.activity', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'company.ask_activity', validationRule: 'text:business_activity', slotKey: 'business_activity', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
+        { intentKey: 'company.setup', requirementKey: 'company.structure', requirementType: 'slot' as const, required: true, collectionOrder: 2, promptKey: 'company.ask_structure', validationRule: 'enum:catalog_value', slotKey: 'company_structure', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
+      ],
+    } satisfies IntentCatalog;
+    const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'journey.xlsx', sourceHash: 'j'.repeat(64), parserVersion: 'test', catalog });
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const first = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I want to start a business', clientMessageId: 'journey-contract-1' }).expect(200);
+    expect(first.body.pendingPromptId).toEqual(expect.any(String));
+    expect(first.body.pendingRequirementKey).toBe('company.activity');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ catalogVersionId: version.id, selectedIntentKey: 'company.setup', pendingPrompt: { requirementKey: 'company.activity', slotKey: 'business_activity' }, intentProgress: { activeIntentKey: 'company.setup' } });
+    const activity = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'CCTV installation and monitoring', clientMessageId: 'journey-contract-2' }).expect(200);
+    expect(activity.body.answer).toContain('company structure');
+    expect(activity.body.pendingRequirementKey).toBe('company.structure');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ slotValues: { business_activity: 'CCTV installation and monitoring' }, pendingPrompt: { requirementKey: 'company.structure', slotKey: 'company_structure' }, intentProgress: { entries: { 'company.setup': { completedRequirementKeys: ['company.activity'] } } } });
+    const structure = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'FZC with two partners', clientMessageId: 'journey-contract-3' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.company_structure).toBe('FZC with two partners');
+    expect(structure.body.pendingPromptId).toEqual(expect.any(String));
+  });
 });

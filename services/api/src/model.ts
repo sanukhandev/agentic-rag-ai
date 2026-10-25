@@ -27,8 +27,9 @@ export interface ModelFollowUpContext {
   conversationSummary?: string;
   detectedSecondaryIntentKey?: string | null;
   continuityTurn?: boolean;
-  responseMode?: 'slot_collection' | 'intent_clarification' | 'consent' | 'follow_up' | 'queued';
+  responseMode?: 'slot_collection' | 'intent_clarification' | 'consent' | 'document_collection' | 'follow_up' | 'queued';
   nextSlotLabel?: string | null;
+  nextRequirement?: { requirementKey: string; requirementType: string; promptKey: string; documentType?: string | null } | null;
   documentPolicies?: Array<{
     intentKey: string;
     requestMode: string;
@@ -139,6 +140,8 @@ const responseSystemPrompt = (input: {
       ? 'The backend needs one concise clarification of the visitor’s current request. Ask one natural question and do not expose internal routing details.'
       : input.followUpContext?.responseMode === 'consent'
         ? 'The backend has collected the required details. Ask the visitor to approve the displayed consent action, without claiming anything has been registered yet.'
+        : input.followUpContext?.responseMode === 'document_collection'
+          ? `The backend requires the next catalog document step${input.followUpContext.nextRequirement?.documentType ? ` (${input.followUpContext.nextRequirement.documentType})` : ''}. Ask one natural question or offer one upload action. Do not claim that a document was received or approved.`
         : input.followUpContext?.responseMode === 'queued'
           ? 'The backend has accepted the request for asynchronous processing. Acknowledge the latest contribution and explain only that processing will continue; do not claim completion.'
           : '';
@@ -320,12 +323,12 @@ export const isSafeContinuityAnswer = (answer: string, citations: Citation[]): b
   if (/\b(?:we offer|we provide|our package|our packages|starts at|costs?|prices?|requires?|includes\b|available|guarantee|will be|is located|officially)\b/u.test(normalized)) return false;
   return normalized.includes('?') || /^(?:thanks?|thank you|great|okay|noted|understood|got it|sure|i(?:'ve| have) noted)\b/u.test(normalized);
 };
-export const isGuidedResponse = (answer: string, mode: 'slot_collection' | 'intent_clarification' | 'consent' | 'queued', slotKey: string | null = null): boolean => {
+export const isGuidedResponse = (answer: string, mode: 'slot_collection' | 'intent_clarification' | 'consent' | 'document_collection' | 'queued', slotKey: string | null = null): boolean => {
   const normalized = answer.normalize('NFKC').toLocaleLowerCase('en-US');
   if (!normalized || normalized.length > 1_200) return false;
   if (mode === 'consent') return /\b(?:consent|approve|approval|permission|register|submit|proceed|shall i|may i)\b/u.test(normalized)
     && !/(?:\b(?:document|passport|emirates|visa|office|budget|package|cost|price|timeline|require(?:d|s)?|include(?:d|s)?|usually|typically)\b|\baed\b|\b\d+(?:[.,]\d+)?\b)/u.test(normalized);
-  if ((mode === 'slot_collection' || mode === 'intent_clarification') && /\b(?:we\s+(?:offer|provide|support)|supports?|well[- ]suited|is feasible|are feasible|typically|normally|usually|starts? at|costs?|prices?|includes?|requires?|available|you can|will be|competitive|fast[- ]track|packages?)\b/u.test(normalized)) return false;
+  if ((mode === 'slot_collection' || mode === 'intent_clarification' || mode === 'document_collection') && /\b(?:we\s+(?:offer|provide|support)|supports?|well[- ]suited|is feasible|are feasible|typically|normally|usually|starts? at|costs?|prices?|includes?|requires?|available|you can|will be|competitive|fast[- ]track|packages?)\b/u.test(normalized)) return false;
   if (mode === 'slot_collection' && slotKey === 'phone') return /\b(?:phone|mobile|telephone|number)\b/u.test(normalized) && !/\bemail\b/u.test(normalized);
   if (mode === 'slot_collection' && slotKey === 'email') return /\bemail\b/u.test(normalized) && !/\b(?:phone|mobile|telephone)\b/u.test(normalized);
   return true;

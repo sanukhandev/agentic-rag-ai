@@ -44,6 +44,7 @@ const api = configuredApi && configuredApi !== '/' ? configuredApi.replace(/\/$/
 export default function Home() {
   const [tenantSlug, setTenantSlug] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [pendingRequirementKey, setPendingRequirementKey] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [busy, setBusy] = useState(false);
@@ -146,6 +147,7 @@ export default function Home() {
     if (!isValidTenantSlug(tenantSlug)) {
       setConfig(null);
       setSessionId(null);
+      setPendingRequirementKey(null);
       setMessages([]);
       setDocuments([]);
       return;
@@ -161,6 +163,7 @@ export default function Home() {
     const savedSession = window.localStorage.getItem(`agentic-rag-session:${tenantSlug}`);
     if (!savedSession) {
       setSessionId(null);
+      setPendingRequirementKey(null);
       setMessages([]);
       setDocuments([]);
       return;
@@ -171,6 +174,7 @@ export default function Home() {
         if (!response.ok) throw new Error('Saved session is unavailable.');
         const body = (await response.json()) as { messages: ChatHistoryMessage[] };
         setSessionId(savedSession);
+        setPendingRequirementKey([...body.messages].reverse().find((message) => message.role === 'assistant' && message.pendingRequirementKey)?.pendingRequirementKey ?? null);
         void refreshDocuments(savedSession).catch(() => setDocuments([]));
         const restored: DisplayMessage[] = body.messages.map((m, idx) => ({
           id: `restored-${idx}`,
@@ -179,6 +183,7 @@ export default function Home() {
           grounded: m.citations.length > 0,
           conversational: m.conversational,
           citations: m.citations,
+          pendingRequirementKey: m.pendingRequirementKey,
           createdAt: new Date().toISOString()
         }));
         setMessages(restored);
@@ -186,6 +191,7 @@ export default function Home() {
       .catch(() => {
         window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
         setSessionId(null);
+        setPendingRequirementKey(null);
         setMessages([]);
         setDocuments([]);
       });
@@ -468,10 +474,12 @@ export default function Home() {
         grounded: body.grounded,
         conversational: body.conversational,
         citations: body.citations || [],
+        pendingRequirementKey: body.pendingRequirementKey ?? null,
         actionProposal: body.actionProposal,
         actionState: body.actionProposal ? 'awaiting_confirmation' : undefined,
         createdAt: new Date().toISOString()
       };
+      setPendingRequirementKey(body.pendingRequirementKey ?? null);
       setMessages((prev) => [...prev, assistantMsg]);
 
       if (isFromVoice && voiceModeActiveRef.current) {
@@ -500,7 +508,7 @@ export default function Home() {
         setSessionId(activeSession); window.localStorage.setItem(`agentic-rag-session:${tenantSlug}`, activeSession);
       }
       const base64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] ?? ''); reader.onerror = () => reject(new Error('The document could not be read.')); reader.readAsDataURL(selectedFile); });
-      const response = await fetch(`${api}/api/v1/chat/sessions/${activeSession}/documents`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fileName: selectedFile.name, mimeType: selectedFile.type, contentBase64: base64, processingConsent: true }) });
+      const response = await fetch(`${api}/api/v1/chat/sessions/${activeSession}/documents`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fileName: selectedFile.name, mimeType: selectedFile.type, contentBase64: base64, processingConsent: true, ...(pendingRequirementKey ? { requirementKey: pendingRequirementKey } : {}) }) });
       const body = (await response.json()) as { document?: ChatDocument; error?: { message?: string } };
       if (!response.ok) throw new Error(body.error?.message ?? 'The document could not be registered.');
       setDocumentStatus('Registered. Document verification is starting…');
@@ -587,6 +595,7 @@ export default function Home() {
   const reset = () => {
     window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
     setSessionId(null);
+    setPendingRequirementKey(null);
     setMessages([]);
     setMessage('');
     setError('');

@@ -65,7 +65,7 @@ export const getVoiceStateMeta = (
 export const normalizeVoiceTranscript = (parts: readonly string[]): string =>
   parts.map((part) => part.trim()).filter(Boolean).join(' ');
 
-export type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean };
+export type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean; pendingRequirementKey?: string | null };
 export type ChatActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'awaiting_customer' | 'human_review' | 'unknown';
 export type ChatActionProposal = { id: string; intent: string; confirmation: string; consentRequired?: boolean; expiresAt?: string };
 export type ChatReply = {
@@ -73,6 +73,7 @@ export type ChatReply = {
   grounded: boolean;
   conversational?: boolean;
   citations: ChatCitation[];
+  pendingRequirementKey?: string | null;
   actionProposal?: ChatActionProposal | null;
   actionState?: ChatActionState;
   copied?: boolean;
@@ -87,6 +88,7 @@ export interface DisplayMessage {
   grounded: boolean;
   conversational?: boolean;
   citations: ChatCitation[];
+  pendingRequirementKey?: string | null;
   actionProposal?: ChatActionProposal | null;
   actionState?: ChatActionState;
   createdAt: string;

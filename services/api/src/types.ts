@@ -78,7 +78,56 @@ export interface PendingPrompt {
   type: 'clarification' | 'slot' | 'consent' | 'confirmation' | 'document';
   intentKey: string | null;
   slotKey: string | null;
+  requirementKey?: string | null;
   issuedAt: string;
+}
+
+export type IntentCatalogRequirementType = 'slot' | 'document' | 'consent' | 'confirmation';
+export type IntentCatalogFulfillmentMode = 'conversation_ready' | 'external_confirmation_required';
+export type IntentCatalogActivationMode = 'offer' | 'automatic';
+
+export interface IntentCatalogJourneyRequirement {
+  intentKey: string;
+  requirementKey: string;
+  requirementType: IntentCatalogRequirementType;
+  required: boolean;
+  collectionOrder: number;
+  promptKey: string;
+  validationRule: string;
+  slotKey: string | null;
+  documentType: string | null;
+  fulfillmentMode: IntentCatalogFulfillmentMode;
+  sourceOfTruth: string;
+  notes: string;
+}
+
+export interface IntentCatalogJourneyTransition {
+  sourceIntentKey: string;
+  targetIntentKey: string;
+  activationMode: IntentCatalogActivationMode;
+  maxDepth: number;
+  triggerGroup: string;
+  promptKey: string;
+  notes: string;
+}
+
+export interface IntentProgressEntry {
+  intentKey: string;
+  status: 'active' | 'paused' | 'fulfilled';
+  completedRequirementKeys: string[];
+  currentRequirementKey: string | null;
+  revision: number;
+}
+
+export interface IntentProgressState {
+  version: 1;
+  activeIntentKey: string | null;
+  pausedIntentKeys: string[];
+  fulfilledIntentKeys: string[];
+  entries: Record<string, IntentProgressEntry>;
+  visitedIntentKeys: string[];
+  lastTransitionReason: string | null;
+  journeyRevision: number;
 }
 
 export interface ConversationState {
@@ -91,6 +140,7 @@ export interface ConversationState {
   intentScore?: number;
   intentConfidence?: number;
   intentEvidence?: string[];
+  intentProgress?: IntentProgressState;
   slotValues: Record<string, string>;
   slotProvenance?: Record<string, { source: 'visitor'; messageSequence: number; capturedAt: string; corrected: boolean }>;
   pendingPrompt: PendingPrompt | null;
@@ -222,6 +272,8 @@ export interface IntentCatalog {
   relations: IntentCatalogRelation[];
   workflowBindings: IntentCatalogWorkflowBinding[];
   qualityRules?: IntentCatalogQualityRule[];
+  journeyRequirements?: IntentCatalogJourneyRequirement[];
+  journeyTransitions?: IntentCatalogJourneyTransition[];
   documentPolicies?: IntentCatalogDocumentPolicy[];
   documentSettings?: IntentCatalogDocumentSettings;
   documentRequirements?: IntentCatalogExtensionRow[];
@@ -452,6 +504,8 @@ export interface SupportingDocument {
   mimeType: string;
   sizeBytes: number;
   sha256: string;
+  requirementKey?: string | null;
+  expectedDocumentType?: string | null;
   storageKey: string;
   status: SupportingDocumentStatus;
   workflowKey: string;

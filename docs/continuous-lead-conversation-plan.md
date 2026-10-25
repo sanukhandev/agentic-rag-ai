@@ -184,13 +184,13 @@ Before implementation is marked complete, explicitly verify:
 
 ### Phase 4 — catalog/content verification
 
-- [ ] Add and validate the typed catalog journey/requirement contract with backward-compatible defaults.
+- [x] Add and validate the typed catalog journey/requirement contract with backward-compatible defaults.
 - [ ] Review the published tenant catalog's company-formation, visa, workspace and document policies.
 - [ ] Publish reviewed business-activity and company-formation paraphrases (including `start a business`, FZC/partner wording and spelling variants) through the catalog editor/import path, not source-code keywords. A local validation-only catalog version added the fashion-boutique examples; it is not treated as a deployable catalog migration.
 - [ ] Verify content catalog sources are active, public-for-chat and re-ingested with the configured production embedding deployment.
 - [ ] Pin the catalog version for each active journey and preserve old sessions when a newer catalog is published.
-- [ ] Add bounded per-intent progress, pause/resume, completion and cycle protection using the existing session CAS path.
-- [ ] Link document requirements to pending prompts and mark them complete only after verified OCR completion.
+- [x] Add bounded per-intent progress, pause/resume, completion and cycle protection using the existing session CAS path.
+- [x] Link typed document requirements to pending prompts and persist the requirement identity on uploads; verified OCR completion is the fulfillment signal.
 - [ ] Scope consent by intent, catalog version and side-effect purpose.
 - [ ] Verify existing lead-capture, summary-sync and OCR workflow bindings; do not create duplicate workflows.
 

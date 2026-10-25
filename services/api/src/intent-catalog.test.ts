@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { catalogIntentClarification, catalogSlotQuestion, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
+import { catalogIntentClarification, catalogNextJourneyRequirement, catalogSlotQuestion, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
+import { reduceIntentJourney } from './intent-journey.js';
 import type { IntentCatalogVersion } from './types.js';
 
 const version: IntentCatalogVersion = {
@@ -136,5 +137,40 @@ describe('intent catalog', () => {
     expect(result.catalog?.documentPolicies).toHaveLength(16);
     expect(result.catalog?.documentSettings?.workflowKey).toBe('anc.document.ocr.extract');
     expect(result.catalog?.workflowBindings.find((binding) => binding.workflowKey === 'anc.document.ocr.extract')?.active).toBe(false);
+  });
+
+  it('validates typed journey requirements and transitions without changing legacy catalogs', () => {
+    const result = validateIntentCatalog({
+      ...version.catalog,
+      journeyRequirements: [{ intentKey: 'lead.capture', requirementKey: 'lead.name', requirementType: 'slot', required: true, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', slotKey: 'name', documentType: null, fulfillmentMode: 'conversation_ready', sourceOfTruth: 'tenant_catalog', notes: '' }],
+      journeyTransitions: [{ sourceIntentKey: 'lead.capture', targetIntentKey: 'appointment.request', activationMode: 'offer', maxDepth: 2, triggerGroup: 'related', promptKey: 'journey.offer_appointment', notes: '' }],
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.catalog?.journeyRequirements?.[0]?.slotKey).toBe('name');
+    expect(validateIntentCatalog({ ...version.catalog }).catalog?.journeyRequirements).toBeUndefined();
+  });
+
+  it('rejects automatic journey cycles', () => {
+    const result = validateIntentCatalog({
+      ...version.catalog,
+      journeyTransitions: [
+        { sourceIntentKey: 'lead.capture', targetIntentKey: 'appointment.request', activationMode: 'automatic', maxDepth: 2, triggerGroup: 'related', promptKey: 'journey.a', notes: '' },
+        { sourceIntentKey: 'appointment.request', targetIntentKey: 'lead.capture', activationMode: 'automatic', maxDepth: 2, triggerGroup: 'related', promptKey: 'journey.b', notes: '' },
+      ],
+    });
+    expect(result.catalog).toBeNull();
+    expect(result.errors.join(' ')).toContain('automatic activation cycle');
+  });
+
+  it('reduces requirements, preserves a knowledge pause, and does not activate an offered intent', () => {
+    const journeyVersion = { ...version, catalog: { ...version.catalog, journeyRequirements: [{ intentKey: 'lead.capture', requirementKey: 'lead.name', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', slotKey: 'name', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' }], journeyTransitions: [{ sourceIntentKey: 'lead.capture', targetIntentKey: 'appointment.request', activationMode: 'offer' as const, maxDepth: 2, triggerGroup: 'related', promptKey: 'journey.offer_appointment', notes: '' }] } };
+    expect(catalogNextJourneyRequirement(journeyVersion, 'lead.capture', {} )?.requirementKey).toBe('lead.name');
+    const first = reduceIntentJourney(journeyVersion, undefined, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: {} });
+    expect(first.decision).toBe('collect_requirement');
+    const paused = reduceIntentJourney(journeyVersion, first.progress, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: {}, knowledgeQuestion: true });
+    expect(paused.decision).toBe('retrieve_knowledge');
+    const fulfilled = reduceIntentJourney(journeyVersion, paused.progress, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: { name: '[NAME_1]' } });
+    expect(fulfilled.progress.fulfilledIntentKeys).toContain('lead.capture');
+    expect(fulfilled.decision).toBe('continue');
   });
 });
