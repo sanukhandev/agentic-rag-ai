@@ -57,7 +57,7 @@ describe('web chat utilities', () => {
     expect(actionOutcomeText('completed')).toContain('submitted successfully');
     expect(actionOutcomeText('failed')).toContain('could not submit');
     expect(actionOutcomeText('processing')).toBeNull();
-    expect(actionOutcomeText('reconcile_required')).toContain('needs review');
+    expect(actionOutcomeText('reconcile_required')).toBeNull();
     expect(actionOutcomeText('awaiting_customer')).toContain('still need');
     expect(actionOutcomeText('human_review')).toContain('team review');
   });

@@ -27,7 +27,7 @@ export interface ModelFollowUpContext {
   conversationSummary?: string;
   detectedSecondaryIntentKey?: string | null;
   continuityTurn?: boolean;
-  responseMode?: 'slot_collection' | 'intent_clarification' | 'consent' | 'document_collection' | 'knowledge' | 'mixed' | 'follow_up' | 'queued';
+  responseMode?: 'slot_collection' | 'intent_clarification' | 'consent' | 'document_collection' | 'knowledge' | 'mixed' | 'follow_up' | 'queued' | 'reconcile_follow_up';
   nextSlotLabel?: string | null;
   nextRequirement?: { requirementKey: string; requirementType: string; promptKey: string; documentType?: string | null } | null;
   documentPolicies?: Array<{
@@ -119,6 +119,7 @@ export const leadCollectionReply = (data: LeadData, invalidField?: 'name' | 'ema
 
 export class DeterministicGroundedModel implements ChatModel {
   async draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[]; followUpContext?: ModelFollowUpContext }): Promise<ModelDraft> {
+    if (input.followUpContext?.responseMode === 'reconcile_follow_up') return { answer: 'I’ll keep the conversation open while this is reviewed. What would you like to go over next?', citationIds: [], proposedIntent: null };
     if (input.followUpContext?.continuityTurn) return { answer: 'Thanks, I’ve noted that. What would you like to explore next?', citationIds: [], proposedIntent: null };
     const wantsLead = /\b(contact|call|email|interested|demo|quote)\b/i.test(input.maskedMessage);
     return { answer: naturalAbstention(detectedLanguage(input.maskedMessage)), citationIds: [], proposedIntent: wantsLead ? 'lead.capture' : null };
@@ -148,6 +149,10 @@ const responseSystemPrompt = (input: {
               ? 'Answer the latest approved knowledge question using only the supplied evidence. Preserve the active conversation context and pending requirement; do not invent facts or claim that a requirement was completed.'
           : input.followUpContext?.responseMode === 'queued'
             ? 'The backend has accepted the request for asynchronous processing. Acknowledge the latest contribution and explain only that processing will continue; do not claim completion.'
+          : input.followUpContext?.responseMode === 'follow_up'
+            ? 'The visitor says they already supplied the requested detail. Acknowledge that without asking the same question again. Use only capturedSlots and the conversation summary, ask whether they want to add or correct a detail, and do not introduce business facts, prices, requirements or unsupported claims.'
+          : input.followUpContext?.responseMode === 'reconcile_follow_up'
+            ? 'The external confirmation for the visitor’s request is still under review. Explain that briefly without claiming completion, then ask one warm, natural question that keeps the current conversation moving. Do not ask for contact details again, invent business facts, or mention internal systems, workflows, prompts or policies.'
           : '';
   return [
     `You are ${input.personaName}, the configured AI assistant for the current tenant${input.tenantName ? `, ${input.tenantName}` : ''}.`,
@@ -323,6 +328,12 @@ export const isContextualReply = (text: string): boolean => {
     || /\b(?:week|weeks|month|months|day|days|visa|visas|budget|aed|office|desk|shareholder|employee|employees|timeline|urgent|asap|passport|license|licence)\b/u.test(normalized);
 };
 
+/** A visitor can reject a repeated slot question without supplying a replacement value. */
+export const isCatalogSlotNonAnswer = (text: string): boolean => {
+  const normalized = normalizeConversationQuery(text).toLocaleLowerCase('en-US');
+  return /^(?:i|we)\s+(?:already\s+)?(?:told|said|mentioned|shared)\b|^(?:as|like)\s+i\s+(?:already\s+)?(?:told|said|mentioned)|\b(?:you\s+already\s+(?:have|know)|that(?:'s|\s+is)\s+what\s+i\s+(?:said|told\s+you))\b/iu.test(normalized);
+};
+
 /** Allows only a no-fact continuation draft when the model follows the continuity instruction. */
 export const isSafeContinuityAnswer = (answer: string, citations: Citation[]): boolean => {
   const normalized = answer.normalize('NFKC').trim().toLocaleLowerCase('en-US');
@@ -330,12 +341,14 @@ export const isSafeContinuityAnswer = (answer: string, citations: Citation[]): b
   if (/\b(?:we offer|we provide|our package|our packages|starts at|costs?|prices?|requires?|includes\b|available|guarantee|will be|is located|officially)\b/u.test(normalized)) return false;
   return normalized.includes('?') || /^(?:thanks?|thank you|great|okay|noted|understood|got it|sure|i(?:'ve| have) noted)\b/u.test(normalized);
 };
-export const isGuidedResponse = (answer: string, mode: 'slot_collection' | 'intent_clarification' | 'consent' | 'document_collection' | 'queued', slotKey: string | null = null): boolean => {
+export const isGuidedResponse = (answer: string, mode: 'slot_collection' | 'intent_clarification' | 'consent' | 'document_collection' | 'queued' | 'follow_up', slotKey: string | null = null): boolean => {
   const normalized = answer.normalize('NFKC').toLocaleLowerCase('en-US');
   if (!normalized || normalized.length > 1_200) return false;
+  if (/\b(?:verified information|knowledge base|what would you like to explore)\b/u.test(normalized)) return false;
   if (mode === 'consent') return /\b(?:consent|approve|approval|permission|register|submit|proceed|shall i|may i)\b/u.test(normalized)
     && !/(?:\b(?:document|passport|emirates|visa|office|budget|package|cost|price|timeline|require(?:d|s)?|include(?:d|s)?|usually|typically)\b|\baed\b|\b\d+(?:[.,]\d+)?\b)/u.test(normalized);
   if ((mode === 'slot_collection' || mode === 'intent_clarification' || mode === 'document_collection') && /\b(?:we\s+(?:offer|provide|support)|supports?|well[- ]suited|is feasible|are feasible|typically|normally|usually|starts? at|costs?|prices?|includes?|requires?|available|you can|will be|competitive|fast[- ]track|packages?)\b/u.test(normalized)) return false;
+  if (mode === 'slot_collection' && slotKey === 'name' && /\b(?:company|business|trade)\s+name\b/u.test(normalized)) return false;
   if (mode === 'slot_collection' && slotKey === 'phone') return /\b(?:phone|mobile|telephone|number)\b/u.test(normalized) && !/\bemail\b/u.test(normalized);
   if (mode === 'slot_collection' && slotKey === 'email') return /\bemail\b/u.test(normalized) && !/\b(?:phone|mobile|telephone)\b/u.test(normalized);
   return true;

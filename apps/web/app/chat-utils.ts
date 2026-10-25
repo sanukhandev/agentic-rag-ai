@@ -124,7 +124,7 @@ export const actionOutcomeText = (state: ChatActionState): string | null =>
       : state === 'failed'
         ? 'I could not submit your contact request. Please try again or contact Sanu directly.'
         : state === 'reconcile_required'
-          ? 'Your request is registered, but the external confirmation needs review before I can mark it complete.'
+          ? null
         : state === 'awaiting_customer'
           ? 'Your request is saved. I still need a few details from you before it can proceed.'
         : state === 'human_review'

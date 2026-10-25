@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isContextualReply, isGuidedResponse, isGreeting, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, preservesNormalizationFacts, validateCitations } from './model.js';
+import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isGuidedResponse, isGreeting, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, preservesNormalizationFacts, validateCitations } from './model.js';
 
 describe('Azure Foundry model adapter', () => {
   it('uses the complete configured greeting', () => {
@@ -76,6 +76,14 @@ describe('Azure Foundry model adapter', () => {
     expect(naturalAbstention()).not.toContain('I don’t have that detail');
     expect(naturalAbstention('ar')).toContain('لا أملك معلومات موثقة');
   });
+
+  it('creates a conversational reconciliation follow-up without business claims', async () => {
+    const model = new DeterministicGroundedModel();
+    const draft = await model.draft({ maskedMessage: 'Continue after review', personaName: 'Sara', evidence: [], followUpContext: { leadCaptured: true, primaryIntentKey: 'lead.capture', responseMode: 'reconcile_follow_up', workflowStatus: 'reconcile_required' } });
+    expect(draft.answer).toContain('?');
+    expect(isSafeContinuityAnswer(draft.answer, [])).toBe(true);
+    expect(draft.citationIds).toEqual([]);
+  });
   it('recognizes contextual answers without treating factual questions as answers', () => {
     expect(isContextualReply('yes 2 weeks')).toBe(true);
     expect(isContextualReply('shared office')).toBe(true);
@@ -86,6 +94,11 @@ describe('Azure Foundry model adapter', () => {
     expect(isSafeContinuityAnswer('Our packages start at AED 4,888.', [])).toBe(false);
     expect(isSafeContinuityAnswer('I have noted that.', [{ sourceId: 'source', versionId: 'version', chunkId: 'chunk', title: 'FAQ', locator: 'section 1' }])).toBe(false);
   });
+  it('recognizes a correction request without treating it as a text slot value', () => {
+    expect(isCatalogSlotNonAnswer('I told you already')).toBe(true);
+    expect(isCatalogSlotNonAnswer('As I mentioned earlier')).toBe(true);
+    expect(isCatalogSlotNonAnswer('I am opening a fashion store')).toBe(false);
+  });
   it('validates guided model output against the backend-required stage', () => {
     expect(isGuidedResponse('Could you share your phone number?', 'slot_collection', 'phone')).toBe(true);
     expect(isGuidedResponse('Could you share your email or phone number?', 'slot_collection', 'phone')).toBe(false);
@@ -93,8 +106,10 @@ describe('Azure Foundry model adapter', () => {
     expect(isGuidedResponse('Please approve the consent request below.', 'consent')).toBe(true);
     expect(isGuidedResponse('For your setup, you usually need a passport and two visas. Do you approve?', 'consent')).toBe(false);
     expect(isGuidedResponse('With AED 12,000, starting within three weeks is feasible. What licence do you prefer?', 'slot_collection', 'business_activity')).toBe(false);
+    expect(isGuidedResponse(naturalAbstention(), 'slot_collection', 'visa_count')).toBe(false);
     expect(isGuidedResponse('ANCFZ supports startups with competitive packages. What do you need?', 'intent_clarification')).toBe(false);
     expect(isGuidedResponse('What type of licence would suit your activity?', 'slot_collection', 'business_activity')).toBe(true);
+    expect(isGuidedResponse('What is your company name?', 'slot_collection', 'name')).toBe(false);
   });
   it('sends a masked grounded prompt and validates strict JSON output', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: 'Approved answer', citationIds: ['chunk-1'], proposedIntent: null }) } }] }), { status: 200 }));

@@ -12,6 +12,7 @@ import {
   renderMarkdown,
   resolveTenantSlug,
   type ChatActionState,
+  type ChatCitation,
   type ChatHistoryMessage,
   type ChatReply,
   type DisplayMessage,
@@ -114,6 +115,30 @@ export default function Home() {
       actionState: state,
       createdAt: new Date().toISOString()
     }]);
+  };
+
+  const appendActionFollowUp = async (activeSessionId: string, proposalId: string): Promise<void> => {
+    try {
+      const response = await fetch(`${api}/api/v1/chat/actions/${proposalId}/follow-up?sessionId=${encodeURIComponent(activeSessionId)}`, { method: 'POST' });
+      const body = (await response.json()) as { message?: { id?: string; answer?: string; grounded?: boolean; conversational?: boolean; citations?: ChatCitation[]; createdAt?: string }; error?: { message?: string } };
+      if (!response.ok || !body.message?.answer) {
+        setError(body.error?.message ?? 'The assistant could not prepare the next conversation step.');
+        return;
+      }
+      const message = body.message;
+      setMessages((prev) => prev.some((item) => item.id === `action-follow-up-${proposalId}`) ? prev : [...prev, {
+        id: `action-follow-up-${proposalId}`,
+        role: 'assistant',
+        content: message.answer!,
+        grounded: message.grounded === true,
+        conversational: message.conversational !== false,
+        citations: message.citations ?? [],
+        actionState: 'reconcile_required',
+        createdAt: message.createdAt ?? new Date().toISOString()
+      }]);
+    } catch {
+      setError('The assistant could not prepare the next conversation step.');
+    }
   };
 
   useEffect(() => {
@@ -568,7 +593,8 @@ export default function Home() {
       );
       if (state === 'approved' || state === 'processing') appendActionOutcome(proposalId, state);
       if (isTerminalChatActionState(state)) {
-        appendActionOutcome(proposalId, state);
+        if (state === 'reconcile_required') await appendActionFollowUp(activeSessionId, proposalId);
+        else appendActionOutcome(proposalId, state);
         return;
       }
       for (let attempt = 0; attempt < 90; attempt += 1) {
@@ -584,7 +610,8 @@ export default function Home() {
           actionProposal: isTerminalChatActionState(nextState) ? null : m.actionProposal
         }));
         if (isTerminalChatActionState(nextState)) {
-          appendActionOutcome(proposalId, nextState);
+          if (nextState === 'reconcile_required') await appendActionFollowUp(activeSessionId, proposalId);
+          else appendActionOutcome(proposalId, nextState);
           return;
         }
       }

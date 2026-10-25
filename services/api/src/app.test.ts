@@ -39,6 +39,13 @@ class ContinuityModel extends CapturingModel {
   }
 }
 
+class ReconcileFollowUpModel extends CapturingModel {
+  async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
+    if (input.followUpContext?.responseMode === 'reconcile_follow_up') return { answer: 'I’ll keep the conversation open while this is reviewed. What would you like to go over next?', citationIds: [], proposedIntent: null };
+    return super.draft(input);
+  }
+}
+
 class ContextNormalizingModel extends CapturingModel {
   public readonly normalizationInputs: QueryNormalizationInput[] = [];
   async normalizeQuery(input: QueryNormalizationInput): Promise<string | null> { this.normalizationInputs.push(input); return input.maskedMessage; }
@@ -896,8 +903,9 @@ describe('API vertical slice', () => {
     expect(enquiry.body.actionProposal).toBeNull();
     const interest = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to get a service', clientMessageId: 'browser-lead-4' }).expect(200);
     expect(interest.body.answer).toContain('What name');
-    const name = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'My name is Alice', clientMessageId: 'browser-lead-5' }).expect(200);
+    const name = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I am Alice', clientMessageId: 'browser-lead-5' }).expect(200);
     expect(name.body.answer).toContain('email address');
+    expect(name.body.answer).not.toContain('Nice to meet you');
     const contact = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'alice@example.com and +971500000000', clientMessageId: 'browser-lead-6' }).expect(200);
     expect(contact.body.actionProposal).toMatchObject({ intent: 'lead.capture' });
 
@@ -965,6 +973,28 @@ describe('API vertical slice', () => {
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.selectedIntentKey).toBeNull();
   });
 
+  it('generates and persists an AI reconciliation follow-up instead of a hardcoded status message', async () => {
+    const runtime = createApp({ nodeEnv: 'test', model: new ReconcileFollowUpModel() });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-reconcile-follow-up@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Reconcile Follow-up Tenant', slug: 'reconcile-follow-up-tenant', adminEmail: 'admin-reconcile-follow-up@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to request a service', clientMessageId: 'reconcile-follow-up-interest' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'My name is Lina', clientMessageId: 'reconcile-follow-up-name' }).expect(200);
+    const contact = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'lina@example.com and +971500000002', clientMessageId: 'reconcile-follow-up-contact' }).expect(200);
+    const action = await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
+    expect(action.body.action.state).toBe('approved');
+    const storedAction = await runtime.store.getAction(contact.body.actionProposal.id);
+    await runtime.store.updateAction({ ...storedAction!, state: 'reconcile_required' });
+
+    const first = await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/follow-up?sessionId=${session.body.sessionId}`).expect(200);
+    const second = await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/follow-up?sessionId=${session.body.sessionId}`).expect(200);
+    expect(first.body.message.answer).toContain('?');
+    expect(first.body.message.answer).not.toContain('external confirmation needs review');
+    expect(second.body.message.id).toBe(first.body.message.id);
+    expect((await runtime.store.listMessages(session.body.sessionId, tenant.body.tenant.id)).filter((message) => message.clientMessageId === `action-follow-up:${contact.body.actionProposal.id}`)).toHaveLength(1);
+  });
+
   it('uses typed journey requirements to capture custom slot answers and advance one step at a time', async () => {
     const runtime = createApp({ nodeEnv: 'test' });
     const api = request(runtime.app);
@@ -977,12 +1007,14 @@ describe('API vertical slice', () => {
       slots: [
         { intentKey: 'company.setup', slotKey: 'business_activity', dataType: 'text', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'company.ask_activity', validationRule: 'text:business_activity', retentionClass: 'business' },
         { intentKey: 'company.setup', slotKey: 'company_structure', dataType: 'enum', required: true, alternativeGroup: null, collectionOrder: 2, promptKey: 'company.ask_structure', validationRule: 'enum:catalog_value', retentionClass: 'business' },
+        { intentKey: 'company.setup', slotKey: 'visa_count', dataType: 'integer', required: true, alternativeGroup: null, collectionOrder: 3, promptKey: 'company.ask_visas', validationRule: 'integer:0-10', retentionClass: 'business' },
       ],
       relations: [],
       workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'journey-contract', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
       journeyRequirements: [
         { intentKey: 'company.setup', requirementKey: 'company.activity', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'company.ask_activity', validationRule: 'text:business_activity', slotKey: 'business_activity', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
         { intentKey: 'company.setup', requirementKey: 'company.structure', requirementType: 'slot' as const, required: true, collectionOrder: 2, promptKey: 'company.ask_structure', validationRule: 'enum:catalog_value', slotKey: 'company_structure', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
+        { intentKey: 'company.setup', requirementKey: 'company.visas', requirementType: 'slot' as const, required: true, collectionOrder: 3, promptKey: 'company.ask_visas', validationRule: 'integer:0-10', slotKey: 'visa_count', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
       ],
     } satisfies IntentCatalog;
     const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'journey.xlsx', sourceHash: 'j'.repeat(64), parserVersion: 'test', catalog });
@@ -1002,7 +1034,10 @@ describe('API vertical slice', () => {
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ slotValues: { business_activity: 'CCTV installation and monitoring' }, pendingPrompt: { requirementKey: 'company.structure', slotKey: 'company_structure' }, intentProgress: { entries: { 'company.setup': { completedRequirementKeys: ['company.activity'] } } } });
     const structure = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'FZC with two partners', clientMessageId: 'journey-contract-3' }).expect(200);
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.company_structure).toBe('FZC with two partners');
-    expect(structure.body.pendingPromptId).toEqual(expect.any(String));
+    expect(structure.body.pendingRequirementKey).toBe('company.visas');
+    const visas = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: '3 visas', clientMessageId: 'journey-contract-4' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.visa_count).toBe('3');
+    expect(visas.body.answer).not.toContain('company visas');
   });
 
   it('continues an approved lead with the next optional catalog slot', async () => {
@@ -1021,6 +1056,8 @@ describe('API vertical slice', () => {
         { intentKey: 'company.setup', slotKey: 'phone', dataType: 'phone', required: true, alternativeGroup: null, collectionOrder: 82, promptKey: 'lead.ask_phone', validationRule: 'token:PHONE', retentionClass: 'pii' },
         { intentKey: 'company.setup', slotKey: 'contact_consent', dataType: 'boolean', required: true, alternativeGroup: null, collectionOrder: 83, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', retentionClass: 'consent' },
         { intentKey: 'company.setup', slotKey: 'business_activity', dataType: 'string', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'lead.ask_interest', validationRule: 'text:nonempty', retentionClass: 'business' },
+        { intentKey: 'company.setup', slotKey: 'company_structure', dataType: 'string', required: false, alternativeGroup: null, collectionOrder: 5, promptKey: 'lead.ask_structure', validationRule: 'text:nonempty', retentionClass: 'business' },
+        { intentKey: 'company.setup', slotKey: 'timeline', dataType: 'string', required: false, alternativeGroup: null, collectionOrder: 9, promptKey: 'lead.ask_timeline', validationRule: 'text:nonempty', retentionClass: 'business' },
         { intentKey: 'company.setup', slotKey: 'budget_aed', dataType: 'number', required: false, alternativeGroup: null, collectionOrder: 10, promptKey: 'lead.ask_budget', validationRule: 'number:positive', retentionClass: 'business' },
       ],
       relations: [],
@@ -1043,10 +1080,23 @@ describe('API vertical slice', () => {
     await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'crm.lead.create', intentKey: 'company.setup', catalogVersionId: version.id, idempotencyKey: 'follow-up-action', state: 'approved', opaqueReference: 'follow-up-reference', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
 
     const followUp = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'yes', clientMessageId: 'follow-up-yes' }).expect(200);
-    expect(followUp.body.pendingRequirementKey).toBe('followup:company.setup:budget_aed');
+    expect(followUp.body.pendingRequirementKey).toBe('followup:company.setup:company_structure');
     expect(followUp.body.pendingPromptId).toEqual(expect.any(String));
-    expect(followUp.body.answer.toLowerCase()).toContain('budget');
+    expect(followUp.body.answer.toLowerCase()).toContain('company structure');
     expect(followUp.body.answer).not.toContain('What would you like to explore next?');
+    const correction = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I told you already', clientMessageId: 'follow-up-correction' }).expect(200);
+    expect(correction.body.answer).toContain('noted');
+    expect(correction.body.answer).not.toContain('company structure');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues).not.toHaveProperty('company_structure');
+    const structure = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'FZC with two partners', clientMessageId: 'follow-up-structure' }).expect(200);
+    expect(structure.body.pendingRequirementKey).toBe('followup:company.setup:timeline');
+    const combined = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'A shared workspace and a 10000 AED budget works', clientMessageId: 'follow-up-combined' }).expect(200);
+    expect(combined.body.pendingRequirementKey).toBe('followup:company.setup:timeline');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.budget_aed).toBe('10000');
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'We want to start within two weeks', clientMessageId: 'follow-up-timeline' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.timeline).toBe('We want to start within two weeks');
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'A 10000 AED budget works', clientMessageId: 'follow-up-budget' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.budget_aed).toBe('10000');
   });
 
   it('answers a knowledge question inside an active intent journey without losing the next requirement', async () => {
