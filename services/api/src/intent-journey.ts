@@ -1,5 +1,5 @@
 import type { IntentCatalogVersion, IntentProgressEntry, IntentProgressState } from './types.js';
-import { catalogJourneyRequirements, catalogNextJourneyRequirement, journeyRequirementFulfilled } from './intent-catalog.js';
+import { catalogFollowUpRequirements, catalogJourneyRequirements, catalogNextFollowUpRequirement, catalogNextJourneyRequirement, journeyRequirementFulfilled } from './intent-catalog.js';
 
 const MAX_INTENTS = 16;
 const MAX_REQUIREMENTS = 64;
@@ -13,6 +13,7 @@ export interface JourneyReducerInput {
   documents?: Array<{ requirementKey?: string | null; expectedDocumentType?: string | null; status: string }>;
   knowledgeQuestion?: boolean;
   farewell?: boolean;
+  followUp?: boolean;
   completedRequirementKeys?: string[];
 }
 
@@ -44,6 +45,11 @@ const markRequirements = (version: IntentCatalogVersion, progress: IntentProgres
   for (const requirement of catalogJourneyRequirements(version, intentKey)) if (journeyRequirementFulfilled(requirement, input.slotValues, completed, input.documents ?? [])) completed.add(requirement.requirementKey);
   current.completedRequirementKeys = [...completed].slice(0, MAX_REQUIREMENTS);
   current.currentRequirementKey = catalogNextJourneyRequirement(version, intentKey, input.slotValues, current.completedRequirementKeys, input.documents ?? [])?.requirementKey ?? null;
+  if (input.followUp && !current.currentRequirementKey) {
+    for (const requirement of catalogFollowUpRequirements(version, intentKey)) if (journeyRequirementFulfilled(requirement, input.slotValues, completed, input.documents ?? [])) completed.add(requirement.requirementKey);
+    current.completedRequirementKeys = [...completed].slice(0, MAX_REQUIREMENTS);
+    current.currentRequirementKey = catalogNextFollowUpRequirement(version, intentKey, input.slotValues, current.completedRequirementKeys, input.documents ?? [])?.requirementKey ?? null;
+  }
   current.status = current.currentRequirementKey ? 'active' : 'fulfilled';
   current.revision += 1;
   return current;
@@ -67,7 +73,8 @@ export const reduceIntentJourney = (version: IntentCatalogVersion, previous: Int
     progress.journeyRevision += 1;
     return { progress, decision: 'retrieve_knowledge', activeIntentKey, nextRequirement: null };
   }
-  const nextRequirement = catalogNextJourneyRequirement(version, activeIntentKey, input.slotValues, activeEntry.completedRequirementKeys, input.documents ?? []);
+  const nextRequirement = catalogNextJourneyRequirement(version, activeIntentKey, input.slotValues, activeEntry.completedRequirementKeys, input.documents ?? [])
+    ?? (input.followUp ? catalogNextFollowUpRequirement(version, activeIntentKey, input.slotValues, activeEntry.completedRequirementKeys, input.documents ?? []) : null);
   if (nextRequirement) {
     activeEntry.currentRequirementKey = nextRequirement.requirementKey;
     progress.lastTransitionReason = 'requirement_pending';

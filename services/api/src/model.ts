@@ -27,7 +27,7 @@ export interface ModelFollowUpContext {
   conversationSummary?: string;
   detectedSecondaryIntentKey?: string | null;
   continuityTurn?: boolean;
-  responseMode?: 'slot_collection' | 'intent_clarification' | 'consent' | 'document_collection' | 'follow_up' | 'queued';
+  responseMode?: 'slot_collection' | 'intent_clarification' | 'consent' | 'document_collection' | 'knowledge' | 'mixed' | 'follow_up' | 'queued';
   nextSlotLabel?: string | null;
   nextRequirement?: { requirementKey: string; requirementType: string; promptKey: string; documentType?: string | null } | null;
   documentPolicies?: Array<{
@@ -142,8 +142,12 @@ const responseSystemPrompt = (input: {
         ? 'The backend has collected the required details. Ask the visitor to approve the displayed consent action, without claiming anything has been registered yet.'
         : input.followUpContext?.responseMode === 'document_collection'
           ? `The backend requires the next catalog document step${input.followUpContext.nextRequirement?.documentType ? ` (${input.followUpContext.nextRequirement.documentType})` : ''}. Ask one natural question or offer one upload action. Do not claim that a document was received or approved.`
-        : input.followUpContext?.responseMode === 'queued'
-          ? 'The backend has accepted the request for asynchronous processing. Acknowledge the latest contribution and explain only that processing will continue; do not claim completion.'
+          : input.followUpContext?.responseMode === 'mixed'
+            ? 'Answer the latest approved knowledge question first using only the supplied evidence. Acknowledge the visitor facts already captured, then ask only the one next catalog requirement question supplied by the backend. Do not expose routing or internal state.'
+            : input.followUpContext?.responseMode === 'knowledge'
+              ? 'Answer the latest approved knowledge question using only the supplied evidence. Preserve the active conversation context and pending requirement; do not invent facts or claim that a requirement was completed.'
+          : input.followUpContext?.responseMode === 'queued'
+            ? 'The backend has accepted the request for asynchronous processing. Acknowledge the latest contribution and explain only that processing will continue; do not claim completion.'
           : '';
   return [
     `You are ${input.personaName}, the configured AI assistant for the current tenant${input.tenantName ? `, ${input.tenantName}` : ''}.`,
@@ -275,7 +279,7 @@ export class AzureFoundryModel implements ChatModel {
 
 export const detectedLanguage = (text: string): string => /[\u0600-\u06ff]/u.test(text) ? 'ar' : 'en';
 export const isPermittedLanguage = (text: string, permittedLanguages: string[]): boolean => permittedLanguages.some((language) => language.toLowerCase().split('-')[0] === detectedLanguage(text));
-export type ConversationalIntent = 'greeting' | 'wellbeing' | 'identity' | 'thanks' | 'farewell' | 'acknowledgement';
+export type ConversationalIntent = 'greeting' | 'wellbeing' | 'identity' | 'introduction' | 'clarification' | 'thanks' | 'farewell' | 'acknowledgement';
 
 export const conversationalIntent = (text: string): ConversationalIntent | null => {
   const normalized = text.toLowerCase().replace(/[\u064b-\u065f]/gu, '').replace(/[؟،؛]/gu, ' ').replace(/[أإآ]/gu, 'ا').replace(/ى/gu, 'ي').replace(/[^a-z0-9\u0600-\u06ff]+/gu, ' ').trim();
@@ -286,6 +290,9 @@ export const conversationalIntent = (text: string): ConversationalIntent | null 
   if (/^(?:كيف حالك|كيف حالكم|كيف امورك|كيف انت|انا بخير|انا جيد|تمام)$/u.test(normalized)) return 'wellbeing';
   if (/^(?:who|what) are you$|^(?:what can you|how can you) (?:do|help)$|^(?:so )?what(?: (?:is|s))? your name$|^tell me your name$/u.test(normalized)) return 'identity';
   if (/^(?:من انت|ما اسمك|ماذا تستطيع|كيف تساعد)$/u.test(normalized)) return 'identity';
+  const introduction = normalized.match(/^(?:i m|im|i am|my name is|this is) (.+)$/u)?.[1];
+  if (introduction && introduction.split(' ').length <= 4 && !/\b(?:looking|interested|trying|here|asking|calling|working|planning|starting|setting|going|from|based)\b/u.test(introduction)) return 'introduction';
+  if (/^(?:what|huh|sorry|pardon|come again)[!?.,\s]*$/u.test(normalized)) return 'clarification';
   if (/^(?:thanks|thank you)(?: very much| so much)?|^(?:much )?appreciate it$/u.test(normalized)) return 'thanks';
   if (/^(?:شكرا|مشكور|مشكورة|جزاك الله خيرا)$/u.test(normalized)) return 'thanks';
   if (/^(?:bye|goodbye|see you|talk to you later|have a good (?:day|one)|that (?:is|s) all(?: for now| bye)?|i (?:am|m) done|nothing (?:more|else)(?: i need)?(?: for now)?|no more (?:questions|help)(?: needed)?|i (?:do not|don't) need anything (?:else|more))(?: thank you| thanks?)?$/u.test(normalized)) return 'farewell';
@@ -338,28 +345,26 @@ export const conversationalReply = (intent: ConversationalIntent, personaName: s
     if (intent === 'greeting') return 'مرحبًا! أنا هنا لمساعدتك. ماذا تود أن تستكشف اليوم؟';
     if (intent === 'wellbeing') return 'أنا بخير، شكرًا لسؤالك! كيف يمكنني مساعدتك؟';
     if (intent === 'thanks') return 'على الرحب والسعة! هل هناك شيء آخر تود استكشافه؟';
+    if (intent === 'introduction') return `تشرفت بلقائك! أنا ${personaName}. كيف يمكنني مساعدتك اليوم؟`;
+    if (intent === 'clarification') return 'أنا معك. ما الجزء الذي تود أن أوضحه لك؟';
     if (intent === 'farewell') return 'سعدت بالدردشة معك. أغلقت هذه المحادثة الآن؛ يمكنك بدء محادثة جديدة متى احتجت.';
     if (intent === 'acknowledgement') return 'رائع، لنكمل. ما الذي تود معرفته بعد ذلك؟';
     return `أنا ${personaName}، المساعد المخصص لـ ${tenantName}. يمكنني مساعدتك في المنتجات والخدمات والمشاريع والمعلومات العامة الموثقة هنا.`;
   }
   if (intent === 'greeting') return `Hi! I’m ${personaName}. What would you like to explore today?`;
   if (intent === 'wellbeing') return 'I’m doing great—thanks for asking! What can I help you discover?';
+  if (intent === 'introduction') return `Nice to meet you! I’m ${personaName}. How can I help you today?`;
+  if (intent === 'clarification') return 'I’m with you. What would you like me to clarify?';
   if (intent === 'thanks') return 'You’re very welcome! Is there anything else you’d like to explore?';
   if (intent === 'farewell') return 'It was lovely chatting with you. This conversation is now closed; start a new session whenever you’re ready.';
   if (intent === 'acknowledgement') return 'Great—let’s keep going. What would you like to look at next?';
   return `I’m ${personaName}, the configured assistant for ${tenantName}. I can help with the products, services, projects, and public information documented here.`;
 };
 
-/** Keep a configured opening greeting welcoming without forcing a question on the first turn. */
+/** Use the tenant's configured greeting while normalizing accidental spacing between sentences. */
 export const openingGreeting = (greeting: string | undefined, personaName: string): string => {
-  const normalized = greeting?.replace(/\s+/gu, ' ').trim() ?? '';
-  if (!normalized) return `Hi! I’m ${personaName}.`;
-  const questionIndex = normalized.search(/[?؟]/u);
-  if (questionIndex < 0) return normalized;
-  const beforeQuestion = normalized.slice(0, questionIndex);
-  const sentenceEnd = Math.max(beforeQuestion.lastIndexOf('.'), beforeQuestion.lastIndexOf('!'), beforeQuestion.lastIndexOf('؟'));
-  const opening = beforeQuestion.slice(0, sentenceEnd + 1).trim();
-  return opening || `Hi! I’m ${personaName}.`;
+  const normalized = greeting?.replace(/\s+/gu, ' ').replace(/([.!؟?])(?=\p{L})/gu, '$1 ').trim() ?? '';
+  return normalized || `Hi! I’m ${personaName}.`;
 };
 export const hasSufficientEvidence = (answer: string, evidence: ModelEvidence[], citations: Citation[]): boolean => {
   if (citations.length === 0) return false;

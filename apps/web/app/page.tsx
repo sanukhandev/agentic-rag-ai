@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   formatNaturalAbstention,
+  formatAgentGreeting,
   actionOutcomeText,
   isChatActionState,
   isTerminalChatActionState,
@@ -208,7 +209,7 @@ export default function Home() {
 
   const tenantName = config?.tenant?.name ?? 'Tenant workspace';
   const agentName = config?.persona?.name ?? 'AI assistant';
-  const agentGreeting = config?.persona?.greeting ?? 'Create a tenant and configure its assistant to begin.';
+  const agentGreeting = formatAgentGreeting(config?.persona?.greeting, 'Create a tenant and configure its assistant to begin.');
   const agentTone = config?.persona?.tone ?? 'Not configured';
   const agentStyle = config?.persona?.speakingStyle ?? 'Not configured';
   const permittedLanguages = config?.persona?.permittedLanguages ?? [];

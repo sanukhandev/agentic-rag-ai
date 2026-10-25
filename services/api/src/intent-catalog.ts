@@ -280,6 +280,26 @@ export const catalogJourneyRequirements = (version: IntentCatalogVersion, intent
   return version.catalog.slots.filter((slot) => slot.intentKey === intentKey && slot.required).sort((left, right) => left.collectionOrder - right.collectionOrder).map((slot) => ({ intentKey, requirementKey: `slot:${slot.slotKey}`, requirementType: slot.validationRule === 'boolean:explicit_opt_in' ? 'consent' : 'slot', required: true, collectionOrder: slot.collectionOrder, promptKey: slot.promptKey, validationRule: slot.validationRule, slotKey: slot.slotKey, documentType: null, fulfillmentMode: 'conversation_ready', sourceOfTruth: 'catalog.slots', notes: '' }));
 };
 
+const isContactSlot = (slot: IntentCatalogSlot): boolean =>
+  ['name', 'email', 'phone', 'contact_consent', 'document_consent'].includes(slot.slotKey)
+  || slot.validationRule === 'boolean:explicit_opt_in'
+  || slot.dataType === 'person_name'
+  || slot.dataType === 'email'
+  || slot.dataType === 'phone'
+  || /(?:^|_)pii(?:$|_)/iu.test(slot.retentionClass)
+  || /(?:contact|crm_contact)/iu.test(slot.retentionClass);
+
+/** Optional catalog slots become one-at-a-time enrichment questions after the lead is registered. */
+export const catalogFollowUpRequirements = (version: IntentCatalogVersion, intentKey: string): IntentCatalogJourneyRequirement[] => {
+  const explicit = (version.catalog.journeyRequirements ?? []).filter((requirement) => requirement.intentKey === intentKey && !requirement.required && requirement.requirementType !== 'consent' && requirement.requirementType !== 'document');
+  const representedSlots = new Set((version.catalog.journeyRequirements ?? []).filter((requirement) => requirement.intentKey === intentKey).map((requirement) => requirement.slotKey).filter((slotKey): slotKey is string => Boolean(slotKey)));
+  const fallback = version.catalog.slots
+    .filter((slot) => slot.intentKey === intentKey && !slot.required && !representedSlots.has(slot.slotKey) && !isContactSlot(slot))
+    .sort((left, right) => left.collectionOrder - right.collectionOrder || left.slotKey.localeCompare(right.slotKey))
+    .map((slot) => ({ intentKey, requirementKey: `followup:${intentKey}:${slot.slotKey}`, requirementType: 'slot' as const, required: true, collectionOrder: slot.collectionOrder, promptKey: slot.promptKey, validationRule: slot.validationRule, slotKey: slot.slotKey, documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'catalog.slots', notes: 'Optional post-registration enrichment.' }));
+  return [...explicit, ...fallback].sort((left, right) => left.collectionOrder - right.collectionOrder || left.requirementKey.localeCompare(right.requirementKey));
+};
+
 export const journeyRequirementFulfilled = (requirement: IntentCatalogJourneyRequirement, values: Record<string, string>, completedRequirementKeys: Set<string> = new Set(), documents: JourneyDocumentStatus[] = []): boolean => {
   if (completedRequirementKeys.has(requirement.requirementKey)) return true;
   if (requirement.requirementType === 'document') return documents.some((document) => document.status === 'completed' && ((document.requirementKey && document.requirementKey === requirement.requirementKey) || (document.expectedDocumentType && document.expectedDocumentType === requirement.documentType)));
@@ -291,6 +311,11 @@ export const journeyRequirementFulfilled = (requirement: IntentCatalogJourneyReq
 export const catalogNextJourneyRequirement = (version: IntentCatalogVersion, intentKey: string, values: Record<string, string>, completedRequirementKeys: string[] = [], documents: JourneyDocumentStatus[] = []): IntentCatalogJourneyRequirement | null => {
   const completed = new Set(completedRequirementKeys);
   return catalogJourneyRequirements(version, intentKey).find((requirement) => requirement.required && !journeyRequirementFulfilled(requirement, values, completed, documents)) ?? null;
+};
+
+export const catalogNextFollowUpRequirement = (version: IntentCatalogVersion, intentKey: string, values: Record<string, string>, completedRequirementKeys: string[] = [], documents: JourneyDocumentStatus[] = []): IntentCatalogJourneyRequirement | null => {
+  const completed = new Set(completedRequirementKeys);
+  return catalogFollowUpRequirements(version, intentKey).find((requirement) => !journeyRequirementFulfilled(requirement, values, completed, documents)) ?? null;
 };
 
 const slotLabel = (slot: IntentCatalogSlot): string => {

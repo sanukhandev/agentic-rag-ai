@@ -3,6 +3,7 @@ import {
   applyActionState,
   actionOutcomeText,
   escapeHtml,
+  formatAgentGreeting,
   formatNaturalAbstention,
   formatVoiceCountdownText,
   getVoiceStateMeta,
@@ -32,6 +33,11 @@ describe('web chat utilities', () => {
     expect(normalizeVoiceTranscript(['  hello', 'there  ', '', 'Nova'])).toBe('hello there Nova');
   });
 
+  it('keeps the configured greeting and repairs sentence spacing', () => {
+    expect(formatAgentGreeting("Hi! I'm Sara, your assistant.Are you ready?", 'Fallback')).toBe("Hi! I'm Sara, your assistant. Are you ready?");
+    expect(formatAgentGreeting(undefined, 'Fallback')).toBe('Fallback');
+  });
+
   it('restores only assistant replies from masked history', () => {
     expect(historyToReplies([
       { role: 'user', content: 'Question', citations: [] },
@@ -50,7 +56,7 @@ describe('web chat utilities', () => {
     expect(applyActionState(replies, 'action-1', 'unknown')[0]).toMatchObject({ actionState: 'unknown', actionProposal: { id: 'action-1' } });
     expect(actionOutcomeText('completed')).toContain('submitted successfully');
     expect(actionOutcomeText('failed')).toContain('could not submit');
-    expect(actionOutcomeText('processing')).toContain('registered');
+    expect(actionOutcomeText('processing')).toBeNull();
     expect(actionOutcomeText('reconcile_required')).toContain('needs review');
     expect(actionOutcomeText('awaiting_customer')).toContain('still need');
     expect(actionOutcomeText('human_review')).toContain('team review');

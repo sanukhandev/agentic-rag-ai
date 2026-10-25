@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isContextualReply, isGuidedResponse, isGreeting, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, preservesNormalizationFacts, validateCitations } from './model.js';
 
 describe('Azure Foundry model adapter', () => {
-  it('keeps the first configured greeting from becoming a direct question', () => {
-    expect(openingGreeting("Hi! I'm Sara, your assistant. What would you like to explore?", 'Sara')).toBe("Hi! I'm Sara, your assistant.");
+  it('uses the complete configured greeting', () => {
+    expect(openingGreeting("Hi! I'm Sara, your assistant. What would you like to explore?", 'Sara')).toBe("Hi! I'm Sara, your assistant. What would you like to explore?");
     expect(openingGreeting('Welcome.', 'Sara')).toBe('Welcome.');
     expect(openingGreeting(undefined, 'Sara')).toBe('Hi! I’m Sara.');
   });
@@ -37,6 +37,9 @@ describe('Azure Foundry model adapter', () => {
   });
   it('handles common small-talk and identity questions without RAG abstention', () => {
     expect(conversationalIntent('I m good')).toBe('wellbeing');
+    expect(conversationalIntent('i m sanu')).toBe('introduction');
+    expect(conversationalIntent('what ?')).toBe('clarification');
+    expect(conversationalIntent('i am looking for a company')).toBeNull();
     expect(conversationalIntent('who are you')).toBe('identity');
     expect(conversationalIntent('so what your name?')).toBe('identity');
     expect(conversationalIntent("what's your name?")).toBe('identity');
@@ -64,6 +67,8 @@ describe('Azure Foundry model adapter', () => {
     expect(conversationalReply('greeting', 'Nova', 'ar')).not.toContain('What would you');
     expect(conversationalReply('identity', 'Nova', 'en', 'Tenant One')).toContain('configured assistant for Tenant One');
     expect(conversationalReply('identity', 'Nova')).toContain('public information');
+    expect(conversationalReply('introduction', 'Nova')).toContain('Nice to meet you');
+    expect(conversationalReply('clarification', 'Nova')).toContain('clarify');
     expect(conversationalReply('farewell', 'Nova')).toContain('lovely chatting');
     expect(naturalAbstention()).toContain('verified information');
     expect(naturalAbstention()).toContain('knowledge base');

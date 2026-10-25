@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { catalogIntentClarification, catalogNextJourneyRequirement, catalogSlotQuestion, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
+import { catalogIntentClarification, catalogNextFollowUpRequirement, catalogNextJourneyRequirement, catalogSlotQuestion, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
 import { reduceIntentJourney } from './intent-journey.js';
 import type { IntentCatalogVersion } from './types.js';
 
@@ -172,5 +172,16 @@ describe('intent catalog', () => {
     const fulfilled = reduceIntentJourney(journeyVersion, paused.progress, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: { name: '[NAME_1]' } });
     expect(fulfilled.progress.fulfilledIntentKeys).toContain('lead.capture');
     expect(fulfilled.decision).toBe('continue');
+  });
+
+  it('derives optional post-registration questions from catalog slots', () => {
+    const enriched = {
+      ...version,
+      catalog: {
+        ...version.catalog,
+        slots: [...version.catalog.slots, { intentKey: 'lead.capture', slotKey: 'budget_aed', dataType: 'number', required: false, alternativeGroup: null, collectionOrder: 10, promptKey: 'lead.ask_budget', validationRule: 'number:positive', retentionClass: 'business' }],
+      },
+    };
+    expect(catalogNextFollowUpRequirement(enriched, 'lead.capture', { name: '[NAME_1]', email: '[EMAIL_1]' })?.slotKey).toBe('budget_aed');
   });
 });

@@ -700,7 +700,7 @@ export class CustomerChatComponent implements OnInit, OnChanges, OnDestroy {
         const target = this.messages.find((m) => m.actionProposal?.id === proposalId);
         if (target) {
           target.actionState = state;
-          target.actionOutcome = res.message ?? 'Your request is registered and will continue processing asynchronously.';
+          target.actionOutcome = res.message ?? undefined;
         }
         if (state === 'approved' || state === 'processing') {
           this.pollActionStatus(proposalId, 0, currentTenant, currentSession, generation);

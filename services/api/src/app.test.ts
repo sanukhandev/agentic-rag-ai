@@ -903,6 +903,7 @@ describe('API vertical slice', () => {
 
     const confirmed = await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
     expect(confirmed.body.action.state).toBe('approved');
+    expect(confirmed.body.message).toBeNull();
     expect(workflow.calls).toHaveLength(0);
     const followUp = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What packages and setup steps are available?', clientMessageId: 'browser-lead-follow-up-1' }).expect(200);
     expect(followUp.body.grounded).toBe(true);
@@ -997,5 +998,96 @@ describe('API vertical slice', () => {
     const structure = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'FZC with two partners', clientMessageId: 'journey-contract-3' }).expect(200);
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.company_structure).toBe('FZC with two partners');
     expect(structure.body.pendingPromptId).toEqual(expect.any(String));
+  });
+
+  it('continues an approved lead with the next optional catalog slot', async () => {
+    const model = new CapturingModel();
+    const runtime = createApp({ nodeEnv: 'test', model });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-followup@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Follow-up Tenant', slug: 'follow-up-tenant', adminEmail: 'admin-followup@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [{ intentKey: 'company.setup', displayName: 'Set up a company', description: 'Company setup', category: 'service', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' }],
+      signals: [{ intentKey: 'company.setup', signalId: 'company-start', signalType: 'phrase' as const, value: 'start a business', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' }],
+      slots: [
+        { intentKey: 'company.setup', slotKey: 'name', dataType: 'person_name', required: true, alternativeGroup: null, collectionOrder: 80, promptKey: 'lead.ask_name', validationRule: 'token:NAME', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'email', dataType: 'email', required: true, alternativeGroup: null, collectionOrder: 82, promptKey: 'lead.ask_contact', validationRule: 'token:EMAIL', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'phone', dataType: 'phone', required: true, alternativeGroup: null, collectionOrder: 82, promptKey: 'lead.ask_phone', validationRule: 'token:PHONE', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'contact_consent', dataType: 'boolean', required: true, alternativeGroup: null, collectionOrder: 83, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', retentionClass: 'consent' },
+        { intentKey: 'company.setup', slotKey: 'business_activity', dataType: 'string', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'lead.ask_interest', validationRule: 'text:nonempty', retentionClass: 'business' },
+        { intentKey: 'company.setup', slotKey: 'budget_aed', dataType: 'number', required: false, alternativeGroup: null, collectionOrder: 10, promptKey: 'lead.ask_budget', validationRule: 'number:positive', retentionClass: 'business' },
+      ],
+      relations: [],
+      workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'follow-up-workflow', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
+    } satisfies IntentCatalog;
+    const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'follow-up.json', sourceHash: 'f'.repeat(64), parserVersion: 'test', catalog });
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const storedSession = await runtime.store.getSession(session.body.sessionId);
+    storedSession!.conversationState = {
+      ...storedSession!.conversationState!,
+      catalogVersionId: version.id,
+      selectedIntentKey: 'company.setup',
+      slotValues: { name: '[NAME_1]', email: '[EMAIL_1]', phone: '[PHONE_1]', business_activity: 'fashion boutique' },
+      contactConsent: 'granted',
+      workflowStatus: 'queued',
+      phase: 'QUEUED',
+      pendingPrompt: null,
+    };
+    await runtime.store.updateSession(storedSession!);
+    await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'crm.lead.create', intentKey: 'company.setup', catalogVersionId: version.id, idempotencyKey: 'follow-up-action', state: 'approved', opaqueReference: 'follow-up-reference', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
+
+    const followUp = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'yes', clientMessageId: 'follow-up-yes' }).expect(200);
+    expect(followUp.body.pendingRequirementKey).toBe('followup:company.setup:budget_aed');
+    expect(followUp.body.pendingPromptId).toEqual(expect.any(String));
+    expect(followUp.body.answer.toLowerCase()).toContain('budget');
+    expect(followUp.body.answer).not.toContain('What would you like to explore next?');
+  });
+
+  it('answers a knowledge question inside an active intent journey without losing the next requirement', async () => {
+    const model = new ContextNormalizingModel();
+    const runtime = createApp({ nodeEnv: 'test', model, catalogQueryNormalizationEnabled: true });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-mixed-turn@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Mixed Turn Tenant', slug: 'mixed-turn-tenant', adminEmail: 'admin-mixed-turn@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-mixed-turn@example.test', password: 'TenantA1Password' }).expect(200);
+    await api.patch('/api/v1/admin/features').set('Authorization', `Bearer ${admin.body.token}`).send({ catalogQueryNormalizationEnabled: true }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Company setup procedure', mimeType: 'text/plain', audience: 'public', content: 'The approved company setup procedure includes an application review and document checks before licensing.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [{ intentKey: 'company.setup', displayName: 'Set up a company', description: 'Company setup', category: 'service', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' }],
+      signals: [{ intentKey: 'company.setup', signalId: 'company-start', signalType: 'phrase' as const, value: 'start a business', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' }],
+      slots: [
+        { intentKey: 'company.setup', slotKey: 'name', dataType: 'person_name', required: true, alternativeGroup: null, collectionOrder: 80, promptKey: 'lead.ask_name', validationRule: 'token:NAME', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'email', dataType: 'email', required: true, alternativeGroup: null, collectionOrder: 82, promptKey: 'lead.ask_contact', validationRule: 'token:EMAIL', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'phone', dataType: 'phone', required: true, alternativeGroup: null, collectionOrder: 82, promptKey: 'lead.ask_phone', validationRule: 'token:PHONE', retentionClass: 'pii' },
+        { intentKey: 'company.setup', slotKey: 'contact_consent', dataType: 'boolean', required: true, alternativeGroup: null, collectionOrder: 83, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', retentionClass: 'consent' },
+        { intentKey: 'company.setup', slotKey: 'interest_summary', dataType: 'string', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'lead.ask_interest', validationRule: 'text:nonempty', retentionClass: 'business' },
+      ],
+      relations: [],
+      workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'mixed-turn-workflow', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
+    } satisfies IntentCatalog;
+    const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'mixed-turn.json', sourceHash: 'm'.repeat(64), parserVersion: 'test', catalog });
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const storedSession = await runtime.store.getSession(session.body.sessionId);
+    storedSession!.conversationState = {
+      ...storedSession!.conversationState!,
+      catalogVersionId: version.id,
+      selectedIntentKey: 'company.setup',
+      slotValues: { interest_summary: 'fashion store' },
+      rollingSummary: 'The visitor wants to set up a fashion store.',
+      pendingPrompt: { id: 'pending-interest', type: 'clarification', intentKey: 'company.setup', slotKey: null, issuedAt: new Date().toISOString() },
+    };
+    await runtime.store.updateSession(storedSession!);
+
+    const response = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'We are two partners and need two employees. What is the setup procedure?', clientMessageId: 'mixed-turn-knowledge' }).expect(200);
+    expect(response.body.grounded).toBe(true);
+    expect(response.body.citations).not.toHaveLength(0);
+    expect(response.body.pendingPromptId).toEqual(expect.any(String));
+    expect(model.normalizationInputs).toHaveLength(0);
+    expect(response.body.pendingRequirementKey).toBe('slot:name');
+    expect(model.followUpContexts.at(-1)).toMatchObject({ responseMode: 'mixed', primaryIntentKey: 'company.setup', conversationSummary: 'The visitor wants to set up a fashion store.' });
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ selectedIntentKey: 'company.setup', pendingPrompt: { type: 'slot', slotKey: 'name' } });
   });
 });
