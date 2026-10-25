@@ -143,7 +143,8 @@ export const maskPiiForSession = (session: Session, input: string, vault: TokenV
 
 export const rehydrateForSession = (session: Session, text: string, vault: TokenVault = defaultVault, purpose: RehydrationPurpose = 'assistant_response'): string => {
   let result = text;
-  for (const placeholder of session.tokenMap.keys()) {
+  const placeholders = new Set(text.match(/\[(?:EMAIL|PHONE|NAME|ID)_\d+\]/g) ?? []);
+  for (const placeholder of placeholders) {
     const value = vault.resolve(session, placeholder, purpose);
     if (value) result = result.replaceAll(placeholder, value);
   }

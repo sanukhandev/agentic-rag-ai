@@ -30,6 +30,15 @@ class CapturingModel implements ChatModel {
   }
 }
 
+class ContinuityModel extends CapturingModel {
+  async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
+    const draft = await super.draft(input);
+    return input.followUpContext?.continuityTurn
+      ? { answer: 'Thanks, I’ve noted that. Would you like to include visa services?', citationIds: [], proposedIntent: null }
+      : draft;
+  }
+}
+
 class ContextNormalizingModel extends CapturingModel {
   public readonly normalizationInputs: QueryNormalizationInput[] = [];
   async normalizeQuery(input: QueryNormalizationInput): Promise<string | null> { this.normalizationInputs.push(input); return input.maskedMessage; }
@@ -198,7 +207,7 @@ describe('API vertical slice', () => {
     const identitySession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
     const identity = await api.post('/api/v1/chat/messages').send({ sessionId: identitySession.body.sessionId, message: "what's your name?", clientMessageId: 'identity-with-knowledge-1' }).expect(200);
     expect(identity.body).toMatchObject({ grounded: false, conversational: true, citations: [] });
-    expect(identity.body.answer).toContain('Tenant A’s AI assistant and associate');
+    expect(identity.body.answer).toContain('configured assistant for Tenant A');
     expect(model.prompts).toHaveLength(promptCountBeforeGreeting + 1);
     const farewellSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
     const farewell = await api.post('/api/v1/chat/messages').send({ sessionId: farewellSession.body.sessionId, message: 'That’s all, bye', clientMessageId: 'farewell-1' }).expect(200);
@@ -259,9 +268,9 @@ describe('API vertical slice', () => {
     expect(tenantAAudit.body.items.some((event: { eventName: string }) => event.eventName === 'workflow.approved')).toBe(true);
     expect((await api.get('/api/v1/admin/workflow-runs').set('Authorization', `Bearer ${adminBToken}`).expect(200)).body.items).toHaveLength(0);
     expect((await api.get('/api/v1/admin/audit').set('Authorization', `Bearer ${adminBToken}`).expect(200)).body.items.some((event: { eventName: string }) => event.eventName === 'workflow.approved')).toBe(false);
-    const callbackReply = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'Please contact me for a demo.', clientMessageId: 'callback-proposal' }).expect(200);
-    const callbackActionId = callbackReply.body.actionProposal.id as string;
-    const callbackAction = await runtime.store.getAction(callbackActionId);
+    const callbackSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
+    const callbackAction = await runtime.store.createAction({ id: randomUUID(), tenantId: tenantA.body.tenant.id, sessionId: callbackSession.body.sessionId, workflowKey: 'lead.capture', intentKey: 'lead.capture', intentScore: 80, intentConfidence: 0.9, catalogVersionId: null, idempotencyKey: 'callback-proposal', state: 'awaiting_confirmation', opaqueReference: 'callback-proposal', payload: { name: '[NAME_2]', email: '[EMAIL_2]', phone: '[PHONE_2]', contactConsent: true }, createdAt: new Date().toISOString(), result: null });
+    const callbackActionId = callbackAction.id;
     const callbackExecution = await seedWorkflowExecution(runtime.store, callbackAction!);
     const callbackBody = { actionId: callbackActionId, tenantId: tenantA.body.tenant.id as string, state: 'completed', externalReference: 'n8n-callback-1', ...callbackExecution };
     const callbackTimestamp = Date.now();
@@ -480,9 +489,9 @@ describe('API vertical slice', () => {
     await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/claim`).expect(401);
     const claimed = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/claim`).set('x-ingestion-worker-secret', 'worker-secret').expect(200);
     expect(claimed.body.job.status).toBe('processing');
-    const result = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/result`).set('x-ingestion-worker-secret', 'worker-secret').send({ normalizedContent, contentHash: contentHash(normalizedContent), parserVersion: 'test-parser', chunks: [{ ordinal: 0, locator: 'page 2', content: chunkContent, contentHash: contentHash(chunkContent) }] }).expect(201);
+    const result = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/result`).set('x-ingestion-worker-secret', 'worker-secret').send({ normalizedContent, contentHash: contentHash(normalizedContent), parserVersion: 'test-parser', chunks: [{ ordinal: 0, locator: 'page 2', content: chunkContent, contentHash: contentHash(chunkContent) }], warnings: ['Skipped legacy.exe: unsupported file type .exe.'] }).expect(201);
     expect(result.body.source).toMatchObject({ tenantId: tenant.body.tenant.id, title: 'Worker FAQ', status: 'awaiting_review' });
-    expect((await api.get(`/api/v1/admin/ingestion-jobs/${job.body.job.id}`).set('Authorization', `Bearer ${admin.body.token}`).expect(200)).body.job).toMatchObject({ status: 'completed', sourceId: result.body.source.id, attempts: 1 });
+    expect((await api.get(`/api/v1/admin/ingestion-jobs/${job.body.job.id}`).set('Authorization', `Bearer ${admin.body.token}`).expect(200)).body.job).toMatchObject({ status: 'completed', sourceId: result.body.source.id, attempts: 1, errorDetail: 'Skipped legacy.exe: unsupported file type .exe.' });
     await api.post(`/api/v1/admin/sources/${result.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     const reindexed = await api.post(`/api/v1/admin/sources/${result.body.source.id}/reindex`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     expect(reindexed.body.source).toMatchObject({ id: result.body.source.id, status: 'awaiting_review' });
@@ -497,7 +506,8 @@ describe('API vertical slice', () => {
     const nextJob = await api.post('/api/v1/admin/ingestion-jobs').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Worker Queue FAQ', mimeType: 'text/plain', audience: 'public' }).expect(202);
     const nextClaim = await api.post('/api/v1/internal/ingestion-jobs/claim-next').set('x-ingestion-worker-secret', 'worker-secret').expect(200);
     expect(nextClaim.body.job).toMatchObject({ id: nextJob.body.job.id, status: 'processing', attempts: 1 });
-    await api.post(`/api/v1/internal/ingestion-jobs/${nextJob.body.job.id}/failure`).set('x-ingestion-worker-secret', 'worker-secret').send({ errorCode: 'INGESTION_FAILED' }).expect(200);
+    const failed = await api.post(`/api/v1/internal/ingestion-jobs/${nextJob.body.job.id}/failure`).set('x-ingestion-worker-secret', 'worker-secret').send({ errorCode: 'INGESTION_FAILED', errorDetail: 'ZIP archive contains no supported files: payload.exe' }).expect(200);
+    expect(failed.body.job).toMatchObject({ status: 'failed', errorCode: 'INGESTION_FAILED', errorDetail: 'ZIP archive contains no supported files: payload.exe' });
   });
 
   it('queues a bounded private file upload for the Python worker and purges it after success', async () => {
@@ -586,17 +596,16 @@ describe('API vertical slice', () => {
     await api.options('/api/v1/chat/sessions').set('Origin', 'https://unknown.example').set('Access-Control-Request-Method', 'POST').expect(403);
   });
 
-  it('allows only failed tenant ingestion jobs to be retried', async () => {
+  it('does not retry a failed upload after its private input was purged', async () => {
     const runtime = createApp({ nodeEnv: 'test' });
     const api = request(runtime.app);
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-retry@example.test', password: 'Platform1Password' }).expect(201);
-    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Retry Tenant', slug: 'retry-tenant', adminEmail: 'admin-retry@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Retry Tenant', slug: 'retry-tenant', adminEmail: 'admin-retry@example.test', adminPassword: 'TenantA1Password' }).expect(201);
     const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-retry@example.test', password: 'TenantA1Password' }).expect(200);
     const created = await api.post('/api/v1/admin/ingestion-jobs').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Retry FAQ', mimeType: 'text/plain', audience: 'public' }).expect(202);
     const failed = await runtime.store.updateIngestionJob({ ...created.body.job, status: 'failed', errorCode: 'INGESTION_FAILED', updatedAt: new Date().toISOString() });
-    const retried = await api.post(`/api/v1/admin/ingestion-jobs/${failed.id}/retry`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
-    expect(retried.body.job).toMatchObject({ id: failed.id, tenantId: tenant.body.tenant.id, status: 'queued', errorCode: null });
-    await api.post(`/api/v1/admin/ingestion-jobs/${failed.id}/retry`).set('Authorization', `Bearer ${admin.body.token}`).expect(409);
+    const retried = await api.post(`/api/v1/admin/ingestion-jobs/${failed.id}/retry`).set('Authorization', `Bearer ${admin.body.token}`).expect(409);
+    expect(retried.body.error).toMatchObject({ code: 'INGESTION_INPUT_NOT_FOUND', message: 'The original upload is no longer available. Upload the file again to retry.' });
   });
 
   it('persists assistant responses with masked PII and rehydrates only at the API boundary', async () => {
@@ -653,7 +662,7 @@ describe('API vertical slice', () => {
     expect(stored.body.lead).toMatchObject({ intent: 'lead.capture', score: 70, validationPass: true, summaryStatus: 'pending' });
     await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/summary`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, summary: 'Customer [NAME_1] requested a demo via [PHONE_1].', status: 'completed' }).expect(200);
     const remotePayload = await api.post(`/api/v1/internal/crm/leads/${stored.body.lead.id}/remote-payload`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, actionId }).expect(200);
-    expect(remotePayload.body).toMatchObject({ name: 'Alice', phone: '+971500000000', email: 'alice@example.com' });
+    expect(remotePayload.body).toMatchObject({ name: 'Alice', company: 'Individual', phone: '+971500000000', email: 'alice@example.com' });
     const linked = await api.put(`/api/v1/internal/crm/leads/${stored.body.lead.id}/remote`).set('x-agentic-internal-secret', 'crm-secret').send({ tenantId: tenant.body.tenant.id, leadId: 'remote-123', remoteCrm: 'remote-crm-test' }).expect(200);
     expect(linked.body.lead).toMatchObject({ leadId: 'remote-123', remoteCrm: 'remote-crm-test' });
     const formatted = await api.post(`/api/v1/admin/crm/leads/${stored.body.lead.id}/summarize`).set('Authorization', `Bearer ${admin.body.token}`).send({}).expect(200);
@@ -916,5 +925,42 @@ describe('API vertical slice', () => {
     expect(crm.body.items[0]).toMatchObject({ leadData: { name: 'Alice', email: 'alice@example.com' }, intent: 'lead.capture', score: 80, quality: 'warm', validationPass: true, summaryStatus: 'completed' });
     expect(crm.body.items[0].summary).toContain('Quality: warm');
     expect(crm.body.items[0].conversation).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'user' }), expect.objectContaining({ role: 'assistant' })]));
+  });
+
+  it('keeps a registered lead conversational and prevents a second action on follow-up turns', async () => {
+    const model = new ContinuityModel();
+    const runtime = createApp({ nodeEnv: 'test', model, workflow: new MockWorkflowAdapter() });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-continuity@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Continuity Tenant', slug: 'continuity-tenant', adminEmail: 'admin-continuity@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-continuity@example.test', password: 'TenantA1Password' }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Continuity setup guide', mimeType: 'text/plain', audience: 'public', content: 'The approved setup guide explains company packages, setup steps and available timelines.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to get a service', clientMessageId: 'continuity-interest' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'My name is Nina', clientMessageId: 'continuity-name' }).expect(200);
+    const contact = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'nina@example.com and +971500000001', clientMessageId: 'continuity-contact' }).expect(200);
+    expect(contact.body.actionProposal).not.toBeNull();
+    const interrupted = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Thanks, I will review that.', clientMessageId: 'continuity-interruption' }).expect(200);
+    expect(interrupted.body.actionProposal).toMatchObject({ id: contact.body.actionProposal.id });
+    await api.post(`/api/v1/chat/actions/${contact.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
+    const afterApproval = await runtime.store.getSession(session.body.sessionId);
+    const consentCapturedAt = afterApproval?.conversationState?.consentCapturedAt;
+    expect(consentCapturedAt).toEqual(expect.any(String));
+
+    const contextual = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'yes 2 weeks', clientMessageId: 'continuity-timeline' }).expect(200);
+    expect(contextual.body).toMatchObject({ grounded: false, conversational: true, citations: [], actionProposal: null });
+    expect(contextual.body.answer).not.toContain('verified information');
+    expect(model.followUpContexts.at(-1)).toMatchObject({ leadCaptured: true, continuityTurn: true, capturedSlots: expect.any(Object) });
+
+    const knowledge = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What packages and setup steps are available?', clientMessageId: 'continuity-knowledge' }).expect(200);
+    expect(knowledge.body.grounded).toBe(true);
+    expect(knowledge.body.citations).not.toHaveLength(0);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.consentCapturedAt).toBe(consentCapturedAt);
+
+    const repeatedRequest = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to request a demo', clientMessageId: 'continuity-repeat' }).expect(200);
+    expect(repeatedRequest.body.actionProposal).toBeNull();
+    expect((await runtime.store.listActions(tenant.body.tenant.id)).filter((action) => action.sessionId === session.body.sessionId)).toHaveLength(1);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.selectedIntentKey).toBeNull();
   });
 });
