@@ -39,6 +39,7 @@ describe('Azure Foundry model adapter', () => {
     expect(conversationalIntent('I m good')).toBe('wellbeing');
     expect(conversationalIntent('i m sanu')).toBe('introduction');
     expect(conversationalIntent('what ?')).toBe('clarification');
+    expect(conversationalIntent('why')).toBe('clarification');
     expect(conversationalIntent('i am looking for a company')).toBeNull();
     expect(conversationalIntent('who are you')).toBe('identity');
     expect(conversationalIntent('so what your name?')).toBe('identity');

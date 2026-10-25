@@ -292,7 +292,7 @@ export const conversationalIntent = (text: string): ConversationalIntent | null 
   if (/^(?:من انت|ما اسمك|ماذا تستطيع|كيف تساعد)$/u.test(normalized)) return 'identity';
   const introduction = normalized.match(/^(?:i m|im|i am|my name is|this is) (.+)$/u)?.[1];
   if (introduction && introduction.split(' ').length <= 4 && !/\b(?:looking|interested|trying|here|asking|calling|working|planning|starting|setting|going|from|based)\b/u.test(introduction)) return 'introduction';
-  if (/^(?:what|huh|sorry|pardon|come again)[!?.,\s]*$/u.test(normalized)) return 'clarification';
+  if (/^(?:what|why|huh|sorry|pardon|come again)[!?.,\s]*$/u.test(normalized)) return 'clarification';
   if (/^(?:thanks|thank you)(?: very much| so much)?|^(?:much )?appreciate it$/u.test(normalized)) return 'thanks';
   if (/^(?:شكرا|مشكور|مشكورة|جزاك الله خيرا)$/u.test(normalized)) return 'thanks';
   if (/^(?:bye|goodbye|see you|talk to you later|have a good (?:day|one)|that (?:is|s) all(?: for now| bye)?|i (?:am|m) done|nothing (?:more|else)(?: i need)?(?: for now)?|no more (?:questions|help)(?: needed)?|i (?:do not|don't) need anything (?:else|more))(?: thank you| thanks?)?$/u.test(normalized)) return 'farewell';

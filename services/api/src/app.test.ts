@@ -991,6 +991,11 @@ describe('API vertical slice', () => {
     expect(first.body.pendingPromptId).toEqual(expect.any(String));
     expect(first.body.pendingRequirementKey).toBe('company.activity');
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ catalogVersionId: version.id, selectedIntentKey: 'company.setup', pendingPrompt: { requirementKey: 'company.activity', slotKey: 'business_activity' }, intentProgress: { activeIntentKey: 'company.setup' } });
+    const clarification = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'why', clientMessageId: 'journey-contract-clarification' }).expect(200);
+    expect(clarification.body.conversational).toBe(true);
+    expect(clarification.body.answer).toContain('clarify');
+    expect(clarification.body.pendingRequirementKey).toBe('company.activity');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues).not.toHaveProperty('business_activity');
     const activity = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'CCTV installation and monitoring', clientMessageId: 'journey-contract-2' }).expect(200);
     expect(activity.body.answer).toContain('company structure');
     expect(activity.body.pendingRequirementKey).toBe('company.structure');
