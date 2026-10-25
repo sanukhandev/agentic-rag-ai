@@ -936,7 +936,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const baseCatalogSlotValues: Record<string, string> = { ...pendingCatalogValues, ...(extractLeadData(maskedMessage) as Record<string, string>), ...pendingCatalogValueData };
       const deterministicMessage = normalizeConversationQuery(maskedMessage);
       const currentCatalogResolution = publishedCatalog ? resolveIntent(publishedCatalog, deterministicMessage, baseCatalogSlotValues) : null;
-      const inferredCatalogValueData = (Boolean(state.selectedIntentKey) || !journeyCatalogEnabled) && !knowledgeOnlyTurn && !conversational && currentCatalogResolution?.intentKey && currentCatalogResolution.reason !== 'no_signal' && !pendingValue
+      const inferredCatalogValueData = (Boolean(state.selectedIntentKey) || !publishedCatalog?.catalog.journeyRequirements?.length) && !knowledgeOnlyTurn && !conversational && currentCatalogResolution?.intentKey && currentCatalogResolution.reason !== 'no_signal' && !pendingValue
         ? (() => {
            const interestSlot = publishedCatalog?.catalog.slots.find((slot) => slot.intentKey === currentCatalogResolution.intentKey && slot.validationRule.startsWith('text:') && slot.required && !pendingCatalogValues[slot.slotKey]);
           return interestSlot && interestSlot.slotKey !== pendingSlot?.slotKey && maskedMessage.trim().length >= 12 ? { [interestSlot.slotKey]: maskedMessage.trim() } : {};
@@ -965,10 +965,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : [];
       const useStructuredRetrievalContext = postCaptureFollowUp || Boolean(state.selectedIntentKey) || needsConversationContext(maskedMessage);
       const knowledgeQueryHints = knowledgeQuestion ? [
-        /\brequirements?\b/i.test(maskedMessage) ? 'documents application process' : '',
+        /\b(?:documents?|requirements?)\b/i.test(maskedMessage) ? 'documents requirements application process' : '',
         /\b(?:steps?|process|procedure|how)\b/i.test(maskedMessage) ? 'setup procedure steps' : '',
         /\b(?:package|packages|price|prices|cost|costs|fee|fees)\b/i.test(maskedMessage) ? 'package pricing fees' : '',
       ].filter(Boolean) : [];
+      const knowledgeSlotContext = knowledgeQuestion && publishedCatalog && state.selectedIntentKey
+        ? publishedCatalog.catalog.slots
+          .filter((slot) => slot.intentKey === state.selectedIntentKey && !/(?:pii|contact|consent)/iu.test(slot.retentionClass) && !/(?:^|[._-])(?:name|email|phone|mobile|contact)(?:$|[._-])/iu.test(slot.slotKey))
+          .map((slot) => currentCatalogSlotValues[slot.slotKey] ? `${slot.slotKey}=${currentCatalogSlotValues[slot.slotKey]}` : '')
+          .filter(Boolean)
+          .slice(0, 8)
+        : [];
       const structuredRetrievalContext = useStructuredRetrievalContext ? [
          state.rollingSummary.slice(-2_000),
         state.selectedIntentKey ? `Primary intent: ${state.selectedIntentKey}` : '',
@@ -978,7 +985,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const retrievalQuery = [normalizedMessage, ...knowledgeQueryHints, ...structuredRetrievalContext, ...retrievalContext].join('\n').slice(0, 6_000);
       const knowledgeIntentLabel = publishedCatalog && state.selectedIntentKey ? publishedCatalog.catalog.intents.find((candidate) => candidate.intentKey === state.selectedIntentKey)?.displayName ?? '' : '';
       const knowledgeRetrievalQuery = knowledgeQuestion
-        ? [normalizedMessage, ...knowledgeQueryHints, knowledgeIntentLabel].filter(Boolean).join('\n').slice(0, 2_000)
+        ? [normalizedMessage, ...knowledgeQueryHints, knowledgeIntentLabel, ...knowledgeSlotContext].filter(Boolean).join('\n').slice(0, 2_000)
         : retrievalQuery;
       const textSearchTerms = [knowledgeRetrievalQuery, ...knowledgeQueryHints].join(' ').toLocaleLowerCase('en-US').match(/[\p{L}\p{N}]{4,}/gu) ?? [];
       const retrievalTextQuery = [...new Set(textSearchTerms.filter((term) => !['about', 'all', 'are', 'does', 'have', 'how', 'please', 'tell', 'that', 'the', 'this', 'what', 'which', 'with', 'your'].includes(term)))].slice(0, 40).join(' | ');
@@ -1007,11 +1014,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         // while action creation remains blocked by the existing opportunity.
         postCaptureFollowUp = hasRegisteredAction && sameOpportunityWorkflow;
       }
+      if (catalogResolution?.intentKey && state.selectedIntentKey === catalogResolution.intentKey && state.activeFollowUpIntentKey && state.activeFollowUpIntentKey !== catalogResolution.intentKey) state.activeFollowUpIntentKey = null;
       const journeyCurrentIntentKey = intentContinuity && ['matched', 'missing_slots'].includes(intentContinuity.current.reason) ? intentContinuity.current.intentKey : null;
       const journeyResult = journeyCatalogEnabled && publishedCatalog
         ? reduceIntentJourney(publishedCatalog, state.intentProgress, {
           currentIntentKey: journeyCurrentIntentKey,
-          selectedIntentKey: state.intentProgress?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? catalogResolution?.intentKey ?? null,
+          selectedIntentKey: catalogResolution?.intentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? null,
           slotValues: catalogSlotValues,
           documents: journeyDocuments.map((document) => ({ requirementKey: document.requirementKey ?? null, expectedDocumentType: document.expectedDocumentType ?? null, status: document.status })),
           knowledgeQuestion: knowledgeOnlyTurn,
@@ -1144,7 +1152,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (intent === 'farewell') session.closedAt = new Date().toISOString();
       const nextMissingSlot = crmContactMissing ?? journeySlotKey ?? catalogResolution?.missingSlots[0] ?? null;
       const endedConversation = conversational && intent === 'farewell';
-      const nextPrompt = knowledgeOnlyTurn ? state.pendingPrompt : endedConversation ? null : consentDenied ? null : (postCaptureFollowUp && !journeyDocumentPending && !journeyRequirement) ? null : journeyDocumentPending
+      const preserveConsentPrompt = knowledgeQuestion && state.pendingPrompt?.type === 'consent';
+      const nextPrompt = knowledgeOnlyTurn || preserveConsentPrompt ? state.pendingPrompt : endedConversation ? null : consentDenied ? null : (postCaptureFollowUp && !journeyDocumentPending && !journeyRequirement) ? null : journeyDocumentPending
         ? prompt('document', journeyResult?.activeIntentKey ?? catalogResolution?.intentKey ?? state.selectedIntentKey, null, journeyRequirement?.requirementKey ?? null)
         : catalogResolution?.ambiguous || (catalogResolution?.reason === 'below_threshold')
         ? prompt('clarification', catalogResolution.intentKey, null)

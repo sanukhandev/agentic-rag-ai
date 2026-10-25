@@ -62,7 +62,11 @@ export const reduceIntentJourney = (version: IntentCatalogVersion, previous: Int
   if (input.farewell) return { progress: { ...progress, activeIntentKey: null, lastTransitionReason: 'farewell', journeyRevision: progress.journeyRevision + 1 }, decision: 'close_session', activeIntentKey: null, nextRequirement: null };
   const currentIntentKey = catalogIntentExists(version, input.currentIntentKey) ? input.currentIntentKey : null;
   const selectedIntentKey = catalogIntentExists(version, input.selectedIntentKey) ? input.selectedIntentKey : null;
-  const activeIntentKey = progress.activeIntentKey && catalogIntentExists(version, progress.activeIntentKey) ? progress.activeIntentKey : selectedIntentKey ?? currentIntentKey;
+  const activeIntentKey = selectedIntentKey && selectedIntentKey !== progress.activeIntentKey
+    ? selectedIntentKey
+    : progress.activeIntentKey && catalogIntentExists(version, progress.activeIntentKey)
+      ? progress.activeIntentKey
+      : selectedIntentKey ?? currentIntentKey;
   if (!activeIntentKey) return { progress, decision: input.knowledgeQuestion ? 'retrieve_knowledge' : 'continue', activeIntentKey: null, nextRequirement: null };
   const activeEntry = markRequirements(version, progress, activeIntentKey, input);
   progress.activeIntentKey = activeIntentKey;

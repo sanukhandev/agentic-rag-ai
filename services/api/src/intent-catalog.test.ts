@@ -184,4 +184,11 @@ describe('intent catalog', () => {
     };
     expect(catalogNextFollowUpRequirement(enriched, 'lead.capture', { name: '[NAME_1]', email: '[EMAIL_1]' })?.slotKey).toBe('budget_aed');
   });
+
+  it('switches the active journey when a new intent is explicitly selected', () => {
+    const journeyVersion = { ...version, catalog: { ...version.catalog, intents: version.catalog.intents.map((intent) => intent.intentKey === 'appointment.request' ? { ...intent, active: true } : intent), journeyRequirements: [{ intentKey: 'lead.capture', requirementKey: 'lead.name', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', slotKey: 'name', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' }] } };
+    const first = reduceIntentJourney(journeyVersion, undefined, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: {} });
+    const switched = reduceIntentJourney(journeyVersion, first.progress, { currentIntentKey: 'appointment.request', selectedIntentKey: 'appointment.request', slotValues: {} });
+    expect(switched.progress.activeIntentKey).toBe('appointment.request');
+  });
 });

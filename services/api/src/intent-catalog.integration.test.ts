@@ -114,6 +114,7 @@ describe('published intent catalog runtime', () => {
 
     const secondProposal = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I need a separate project', clientMessageId: 'catalog-second-intent-1' }).expect(200);
     expect(secondProposal.body.actionProposal).toMatchObject({ intent: 'crm.consulting.create', consentRequired: true });
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingPrompt?.intentKey).toBe('consulting.request');
     const secondConfirmed = await api.post(`/api/v1/chat/actions/${secondProposal.body.actionProposal.id}/confirm`).send({ sessionId: session.body.sessionId, confirmed: true }).expect(200);
     expect(secondConfirmed.body.action.state).toBe('approved');
     expect((await runtime.store.listActions(tenant.body.tenant.id)).filter((action) => action.sessionId === session.body.sessionId)).toHaveLength(2);
