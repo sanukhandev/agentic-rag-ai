@@ -180,7 +180,7 @@ export class MemoryStore implements Store {
   }
   async createIngestionJob(input: { id: string; tenantId: string; title: string; mimeType: string; sourceUrl: string | null; audience: 'public' | 'internal' }): Promise<IngestionJob> {
     const timestamp = now();
-    const job: IngestionJob = { id: input.id, tenantId: input.tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl, audience: input.audience, sourceId: null, status: 'queued', attempts: 0, errorCode: null, leaseExpiresAt: null, createdAt: timestamp, updatedAt: timestamp };
+    const job: IngestionJob = { id: input.id, tenantId: input.tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl, audience: input.audience, sourceId: null, status: 'queued', attempts: 0, errorCode: null, errorDetail: null, leaseExpiresAt: null, createdAt: timestamp, updatedAt: timestamp };
     this.ingestionJobs.set(job.id, job);
     return job;
   }
@@ -270,6 +270,18 @@ export class MemoryStore implements Store {
     const current = this.actions.get(action.id);
     if (!current || current.tenantId !== action.tenantId) throw new Error('Action not found.');
     if (current.state === 'approved' || current.state === 'processing' || current.state === 'completed') return current;
+    this.actions.set(action.id, action);
+    if (isUuid(action.tenantId) && isUuid(action.sessionId) && isUuid(action.id)) await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: action.tenantId, sessionId: action.sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId: action.sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? null, catalogVersionId: action.catalogVersionId ?? null } }));
+    return action;
+  }
+  async approveActionAndSession(action: ActionRequest, session: Session): Promise<ActionRequest> {
+    const current = this.actions.get(action.id);
+    if (!current || current.tenantId !== action.tenantId) throw new Error('Action not found.');
+    if (current.state === 'approved' || current.state === 'processing' || current.state === 'completed') {
+      await this.updateSession(session);
+      return current;
+    }
+    await this.updateSession(session);
     this.actions.set(action.id, action);
     if (isUuid(action.tenantId) && isUuid(action.sessionId) && isUuid(action.id)) await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: action.tenantId, sessionId: action.sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId: action.sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? null, catalogVersionId: action.catalogVersionId ?? null } }));
     return action;
@@ -372,6 +384,7 @@ export class MemoryStore implements Store {
     return claimed;
   }
   async listActions(tenantId: string): Promise<ActionRequest[]> { return [...this.actions.values()].filter((action) => action.tenantId === tenantId); }
+  async listActionsBySession(sessionId: string, tenantId: string): Promise<ActionRequest[]> { return [...this.actions.values()].filter((action) => action.sessionId === sessionId && action.tenantId === tenantId); }
   async createCrmLead(lead: CrmLead): Promise<CrmLead> { this.crmLeads.set(lead.id, lead); return lead; }
   async upsertCrmLead(lead: CrmLead, dedupeKey: string): Promise<CrmLead> {
     const key = `${lead.tenantId}:${dedupeKey}`;

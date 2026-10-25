@@ -45,6 +45,21 @@ const normalizeCatalogPhrase = (value: string): string => normalize(value)
   .replace(/\bset[\s-]?up\b/g, 'start')
   .replace(/\b(?:establish|establishing|launch|launching|open|opening|create|creating|register|registering)\b/g, 'start');
 const phraseTokens = (value: string): string[] => normalizeCatalogPhrase(value).match(/[\p{L}\p{N}]+/gu) ?? [];
+const optionalPhraseTokens = new Set(['a', 'an', 'for', 'in', 'of', 'on', 'the', 'to']);
+const tokenDistance = (left: string, right: string): number => {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 0; leftIndex < left.length; leftIndex += 1) {
+    const current = [leftIndex + 1];
+    for (let rightIndex = 0; rightIndex < right.length; rightIndex += 1) {
+      current.push(left[leftIndex] === right[rightIndex]
+        ? previous[rightIndex] ?? 0
+        : 1 + Math.min(previous[rightIndex] ?? 0, current[rightIndex] ?? 0, previous[rightIndex + 1] ?? 0));
+    }
+    for (let index = 0; index < current.length; index += 1) previous[index] = current[index] ?? previous[index] ?? 0;
+  }
+  return previous[right.length] ?? Number.MAX_SAFE_INTEGER;
+};
+const matchesCatalogToken = (input: string, signal: string): boolean => input === signal || (signal.length >= 5 && input.length >= 5 && tokenDistance(input, signal) <= 1);
 const matchesCatalogPhrase = (input: string, signal: string): boolean => {
   const inputTokens = phraseTokens(input);
   const signalTokens = phraseTokens(signal);
@@ -52,7 +67,8 @@ const matchesCatalogPhrase = (input: string, signal: string): boolean => {
   let cursor = 0;
   let insertedTokens = 0;
   for (const token of signalTokens) {
-    const matchIndex = inputTokens.indexOf(token, cursor);
+    const matchIndex = inputTokens.findIndex((candidate, index) => index >= cursor && matchesCatalogToken(candidate, token));
+    if (matchIndex < 0 && optionalPhraseTokens.has(token)) continue;
     if (matchIndex < 0) return false;
     insertedTokens += matchIndex - cursor;
     if (insertedTokens > 3) return false;
@@ -200,11 +216,21 @@ const slotLabel = (slot: IntentCatalogSlot): string => {
   return slot.slotKey.replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim() || 'this information';
 };
 
-export const catalogSlotQuestion = (version: IntentCatalogVersion, intentKey: string, slotKey: string): string => {
+export const catalogSlotLabel = (version: IntentCatalogVersion, intentKey: string, slotKey: string, values: Record<string, string> = {}): string => {
+  const slot = version.catalog.slots.find((candidate) => candidate.intentKey === intentKey && candidate.slotKey === slotKey);
+  if (!slot) return slotKey.replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim() || 'this information';
+  if (slot.alternativeGroup === 'contact') {
+    const alternate = version.catalog.slots.find((candidate) => candidate.intentKey === intentKey && candidate.alternativeGroup === 'contact' && candidate.slotKey !== slotKey);
+    if (alternate && values[alternate.slotKey]) return slot.slotKey === 'email' ? 'email address' : 'phone number';
+  }
+  return slotLabel(slot);
+};
+
+export const catalogSlotQuestion = (version: IntentCatalogVersion, intentKey: string, slotKey: string, values: Record<string, string> = {}): string => {
   const slot = version.catalog.slots.find((candidate) => candidate.intentKey === intentKey && candidate.slotKey === slotKey);
   if (!slot) return 'To continue, could you provide the requested information?';
   if (slot.promptKey === 'lead.ask_name') return 'What name should I use?';
-  if (slot.promptKey === 'lead.ask_contact') return slot.alternativeGroup === 'contact' ? 'What’s the best email address or phone number to reach you on?' : slot.slotKey === 'email' ? 'What email address should I use?' : 'What phone number, including country code, should I use?';
+  if (slot.promptKey === 'lead.ask_contact') return slot.alternativeGroup === 'contact' && !catalogSlotLabel(version, intentKey, slotKey, values).includes('phone number') && !catalogSlotLabel(version, intentKey, slotKey, values).includes('email address') ? 'What’s the best email address or phone number to reach you on?' : slot.slotKey === 'email' ? 'What email address should I use?' : 'What phone number, including country code, should I use?';
   if (slot.promptKey === 'lead.ask_phone') return 'What phone number, including country code, should I use?';
   return `To continue, could you share your ${slotLabel(slot)}?`;
 };

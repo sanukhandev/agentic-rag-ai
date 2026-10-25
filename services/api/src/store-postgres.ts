@@ -21,7 +21,7 @@ type SourceVersionRow = { source_id: string; tenant_id: string; version_id: stri
 type MessageRow = { id: string; session_id: string; tenant_id: string; role: Message['role']; masked_content: string; citations: Citation[]; client_message_id: string | null; response?: Record<string, unknown> | null; created_at: DbTimestamp };
 type ActionRow = { id: string; tenant_id: string; session_id: string; workflow_key: ActionRequest['workflowKey']; webhook_path?: string | null; intent_key?: string | null; intent_score?: number | null; intent_confidence?: number | null; catalog_version_id?: string | null; idempotency_key: string; state: ActionRequest['state']; opaque_reference: string; payload?: ActionPayload | null; result?: { external_reference?: string; externalReference?: string } | null; created_at: DbTimestamp };
 type CrmLeadRow = { id: string; tenant_id: string; action_id: string; session_id: string; intent: string; secondary_intent_keys?: string[]; intent_score?: number | null; intent_confidence?: number | null; catalog_version_id?: string | null; score: number; contact_completeness_score?: number | null; validation_pass: boolean; lead_data: LeadData; conversation_json: CrmLead['conversation']; summary: string | null; summary_status: CrmLead['summaryStatus']; lead_id?: string | null; remote_crm?: string | null; created_at: DbTimestamp; updated_at: DbTimestamp };
-type IngestionJobRow = { id: string; tenant_id: string; title: string; mime_type: string; source_url: string | null; audience: 'public' | 'internal'; source_id: string | null; status: IngestionJob['status']; attempts: number; error_code: string | null; lease_expires_at: DbTimestamp | null; created_at: DbTimestamp; updated_at: DbTimestamp };
+type IngestionJobRow = { id: string; tenant_id: string; title: string; mime_type: string; source_url: string | null; audience: 'public' | 'internal'; source_id: string | null; status: IngestionJob['status']; attempts: number; error_code: string | null; error_detail: string | null; lease_expires_at: DbTimestamp | null; created_at: DbTimestamp; updated_at: DbTimestamp };
 type SupportingDocumentRow = { id: string; tenant_id: string; session_id: string; lead_id: string | null; file_name: string; mime_type: string; size_bytes: number; sha256: string; storage_key: string; status: SupportingDocument['status']; workflow_key: string; store_extracted_text: boolean; extracted_text: string | null; summary: string | null; error_code: string | null; consent_at: DbTimestamp; created_at: DbTimestamp; updated_at: DbTimestamp };
 type DocumentJobRow = { id: string; document_id: string; tenant_id: string; workflow_key: string; webhook_path: string; status: DocumentProcessingJob['status']; attempts: number; lease_expires_at: DbTimestamp | null; execution_reference: string | null; created_at: DbTimestamp; updated_at: DbTimestamp };
 type OutboxRow = { event_id: string; event_type: OutboxEvent['eventType']; stream: OutboxEvent['stream']; tenant_id: string; session_id: string | null; action_id: string | null; aggregate_id: string; aggregate_version: number; workflow_key: string | null; payload_ref: string; idempotency_key: string; correlation_id: string; payload: OutboxEvent['payload']; occurred_at: DbTimestamp; published_at: DbTimestamp | null; attempts: number; lease_expires_at: DbTimestamp | null; last_error: string | null; dead_lettered_at?: DbTimestamp | null; dead_letter_published_at?: DbTimestamp | null; dead_letter_lease_expires_at?: DbTimestamp | null };
@@ -103,7 +103,7 @@ export class PostgresStore implements Store {
     const result = await this.pool.query('WITH next_job AS (SELECT id FROM ingestion_jobs WHERE status=\'queued\' OR (status=\'processing\' AND lease_expires_at <= now()) ORDER BY created_at ASC FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE ingestion_jobs AS job SET status=\'processing\', attempts=job.attempts+1, lease_expires_at=now() + ($1::double precision * interval \'1 millisecond\'), updated_at=now() FROM next_job WHERE job.id=next_job.id RETURNING job.*', [leaseMs]);
     return result.rows[0] ? this.ingestionJob(result.rows[0]) : null;
   }
-  async updateIngestionJob(job: IngestionJob): Promise<IngestionJob> { const result = await this.pool.query('UPDATE ingestion_jobs SET source_id=$2,status=$3,attempts=$4,error_code=$5,lease_expires_at=$6,updated_at=$7 WHERE id=$1 RETURNING *', [job.id, job.sourceId, job.status, job.attempts, job.errorCode, job.leaseExpiresAt, job.updatedAt]); return this.ingestionJob(result.rows[0]); }
+  async updateIngestionJob(job: IngestionJob): Promise<IngestionJob> { const result = await this.pool.query('UPDATE ingestion_jobs SET source_id=$2,status=$3,attempts=$4,error_code=$5,error_detail=$6,lease_expires_at=$7,updated_at=$8 WHERE id=$1 RETURNING *', [job.id, job.sourceId, job.status, job.attempts, job.errorCode, job.errorDetail, job.leaseExpiresAt, job.updatedAt]); return this.ingestionJob(result.rows[0]); }
   async listSearchableChunks(tenantId: string, audience: 'public' | 'internal'): Promise<Array<{ source: Source; chunk: Chunk }>> {
     const result = await this.pool.query('SELECT s.*,c.id AS chunk_id,c.source_id AS chunk_source_id,c.tenant_id AS chunk_tenant_id,c.version_id AS chunk_version_id,c.ordinal,c.locator,c.content,c.content_hash AS chunk_content_hash,c.embedding::text AS embedding_text FROM knowledge_sources s JOIN source_chunks c ON c.source_id=s.id AND c.version_id=s.version_id WHERE s.tenant_id=$1 AND s.status=\'active\' AND (s.audience=\'public\' OR $2=\'internal\') ORDER BY c.ordinal', [tenantId, audience]);
     return result.rows.map((row) => ({ source: this.source(row), chunk: { id: row.chunk_id, sourceId: row.chunk_source_id, tenantId: row.chunk_tenant_id, versionId: row.chunk_version_id, ordinal: row.ordinal, locator: row.locator, content: row.content, contentHash: row.chunk_content_hash, embedding: String(row.embedding_text).replace(/[\[\]]/g, '').split(',').filter(Boolean).map(Number) } }));
@@ -116,11 +116,11 @@ export class PostgresStore implements Store {
       ORDER BY c.embedding <=> $3::vector, c.id
       LIMIT $5 * 3
     ), text_candidates AS (
-      SELECT c.id AS chunk_id, row_number() OVER (ORDER BY ts_rank_cd(c.search_vector, plainto_tsquery('simple', $4)) DESC, c.id) AS rank
+      SELECT c.id AS chunk_id, row_number() OVER (ORDER BY ts_rank_cd(c.search_vector, to_tsquery('simple', $4)) DESC, c.id) AS rank
       FROM knowledge_sources s JOIN source_chunks c ON c.source_id=s.id AND c.version_id=s.version_id
       WHERE s.tenant_id=$1 AND s.status='active' AND (s.audience='public' OR $2='internal')
-        AND $4 <> '' AND c.search_vector @@ plainto_tsquery('simple', $4)
-      ORDER BY ts_rank_cd(c.search_vector, plainto_tsquery('simple', $4)) DESC, c.id
+        AND $4 <> '' AND c.search_vector @@ to_tsquery('simple', $4)
+      ORDER BY ts_rank_cd(c.search_vector, to_tsquery('simple', $4)) DESC, c.id
       LIMIT $5 * 3
     )
     SELECT s.*,c.id AS chunk_id,c.source_id AS chunk_source_id,c.tenant_id AS chunk_tenant_id,c.version_id AS chunk_version_id,c.ordinal,c.locator,c.content,c.content_hash AS chunk_content_hash,c.embedding::text AS embedding_text,
@@ -138,22 +138,22 @@ export class PostgresStore implements Store {
   async getSession(id: string): Promise<Session | null> { const result = await this.pool.query('SELECT * FROM chat_sessions WHERE id=$1', [id]); if (!result.rows[0]) return null; const tokens = await this.pool.query<{ token: string; ciphertext: string }>('SELECT token,ciphertext FROM session_tokens WHERE session_id=$1', [id]); return { id: result.rows[0].id, tenantId: result.rows[0].tenant_id, createdAt: iso(result.rows[0].created_at), lastActivityAt: iso(result.rows[0].last_activity_at), closedAt: result.rows[0].closed_at ? iso(result.rows[0].closed_at) : null, personaVersionId: result.rows[0].persona_version_id ?? null, tokenMap: new Map(tokens.rows.map((row) => [row.token, row.ciphertext])), conversationState: result.rows[0].conversation_state ?? newConversationState(), stateVersion: result.rows[0].state_version ?? 0 }; }
   async listExpiredSupportingDocuments(tenantId: string, before: string): Promise<SupportingDocument[]> { const result = await this.pool.query<SupportingDocumentRow>('SELECT document.* FROM supporting_documents AS document JOIN chat_sessions AS session ON session.id=document.session_id WHERE document.tenant_id=$1 AND session.last_activity_at < $2 AND NOT EXISTS (SELECT 1 FROM crm_leads AS lead WHERE lead.session_id=session.id)', [tenantId, before]); return result.rows.map((row) => this.supportingDocument(row)); }
   async purgeExpiredSessions(tenantId: string, before: string): Promise<number> { const result = await this.pool.query('DELETE FROM chat_sessions WHERE tenant_id=$1 AND last_activity_at < $2 AND id NOT IN (SELECT session_id FROM crm_leads)', [tenantId, before]); return result.rowCount ?? 0; }
-  async updateSession(session: Session): Promise<Session> {
+  private async updateSessionOnClient(client: import('pg').PoolClient, session: Session): Promise<Session> {
     const expectedVersion = session.stateVersion ?? 0;
+    const updated = await client.query(
+      'UPDATE chat_sessions SET last_activity_at=$2,closed_at=$3,conversation_state=$4,state_version=state_version+1 WHERE id=$1 AND tenant_id=$5 AND state_version=$6 RETURNING state_version',
+      [session.id, session.lastActivityAt, session.closedAt, JSON.stringify(session.conversationState ?? newConversationState()), session.tenantId, expectedVersion],
+    );
+    if (updated.rowCount !== 1) throw new HttpError(409, 'SESSION_STATE_CONFLICT', 'Another message changed this conversation. Retry with the latest prompt.');
+    await client.query('DELETE FROM session_tokens WHERE session_id=$1', [session.id]);
+    for (const [token, ciphertext] of session.tokenMap) await client.query('INSERT INTO session_tokens (session_id,token,ciphertext) VALUES ($1,$2,$3)', [session.id, token, ciphertext]);
+    session.stateVersion = Number(updated.rows[0].state_version);
+    return session;
+  }
+  async updateSession(session: Session): Promise<Session> {
     const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      const updated = await client.query(
-        'UPDATE chat_sessions SET last_activity_at=$2,closed_at=$3,conversation_state=$4,state_version=state_version+1 WHERE id=$1 AND tenant_id=$5 AND state_version=$6 RETURNING state_version',
-        [session.id, session.lastActivityAt, session.closedAt, JSON.stringify(session.conversationState ?? newConversationState()), session.tenantId, expectedVersion],
-      );
-      if (updated.rowCount !== 1) throw new HttpError(409, 'SESSION_STATE_CONFLICT', 'Another message changed this conversation. Retry with the latest prompt.');
-      await client.query('DELETE FROM session_tokens WHERE session_id=$1', [session.id]);
-      for (const [token, ciphertext] of session.tokenMap) await client.query('INSERT INTO session_tokens (session_id,token,ciphertext) VALUES ($1,$2,$3)', [session.id, token, ciphertext]);
-      await client.query('COMMIT');
-      session.stateVersion = Number(updated.rows[0].state_version);
-      return session;
-    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+    try { await client.query('BEGIN'); const updated = await this.updateSessionOnClient(client, session); await client.query('COMMIT'); return updated; }
+    catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
   async addMessage(message: Message): Promise<Message> { await this.pool.query('INSERT INTO chat_messages (id,session_id,tenant_id,role,masked_content,citations,client_message_id,response) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [message.id, message.sessionId, message.tenantId, message.role, message.maskedContent, JSON.stringify(message.citations), message.clientMessageId, message.response ? JSON.stringify(message.response) : null]); return message; }
   async updateMessage(message: Message): Promise<Message> { await this.pool.query('UPDATE chat_messages SET response=$1 WHERE id=$2 AND tenant_id=$3', [message.response ? JSON.stringify(message.response) : null, message.id, message.tenantId]); return message; }
@@ -178,6 +178,25 @@ export class PostgresStore implements Store {
       await this.insertOutbox(client, event);
       await client.query('COMMIT');
       return this.action(updated.rows[0]!);
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+  }
+  async approveActionAndSession(action: ActionRequest, session: Session): Promise<ActionRequest> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const current = await client.query<ActionRow>('SELECT * FROM action_requests WHERE id=$1 AND tenant_id=$2 FOR UPDATE', [action.id, action.tenantId]);
+      if (!current.rows[0]) throw new Error('Action not found.');
+      if (!['approved', 'processing', 'completed'].includes(current.rows[0].state)) {
+        const updated = await client.query<ActionRow>('UPDATE action_requests SET state=$1,result=$2,payload=$3 WHERE id=$4 AND tenant_id=$5 RETURNING *', [action.state, action.result ? JSON.stringify(action.result) : null, JSON.stringify(action.payload), action.id, action.tenantId]);
+        const event = createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: action.tenantId, sessionId: action.sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId: action.sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? null, catalogVersionId: action.catalogVersionId ?? null } });
+        await this.insertOutbox(client, event);
+        await this.updateSessionOnClient(client, session);
+        await client.query('COMMIT');
+        return this.action(updated.rows[0]!);
+      }
+      await this.updateSessionOnClient(client, session);
+      await client.query('COMMIT');
+      return this.action(current.rows[0]);
     } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
   async getAction(id: string): Promise<ActionRequest | null> { const result = await this.pool.query('SELECT * FROM action_requests WHERE id=$1', [id]); return result.rows[0] ? this.action(result.rows[0]) : null; }
@@ -313,6 +332,7 @@ export class PostgresStore implements Store {
     return result.rows.map((row) => this.action(row));
   }
   async listActions(tenantId: string): Promise<ActionRequest[]> { const result = await this.pool.query('SELECT * FROM action_requests WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId]); return result.rows.map((row) => this.action(row)); }
+  async listActionsBySession(sessionId: string, tenantId: string): Promise<ActionRequest[]> { const result = await this.pool.query('SELECT * FROM action_requests WHERE session_id=$1 AND tenant_id=$2 ORDER BY created_at DESC', [sessionId, tenantId]); return result.rows.map((row) => this.action(row)); }
   async createCrmLead(lead: CrmLead): Promise<CrmLead> { const result = await this.pool.query<CrmLeadRow>('INSERT INTO crm_leads (id,tenant_id,action_id,session_id,intent,secondary_intent_keys,intent_score,intent_confidence,catalog_version_id,score,contact_completeness_score,validation_pass,lead_data,conversation_json,summary,summary_status,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17) RETURNING *', [lead.id, lead.tenantId, lead.actionId, lead.sessionId, lead.intent, JSON.stringify(lead.secondaryIntentKeys ?? []), lead.intentScore, lead.intentConfidence, lead.catalogVersionId, lead.score, lead.contactCompletenessScore ?? 0, lead.validationPass, JSON.stringify(lead.leadData), JSON.stringify(lead.conversation), lead.summary, lead.summaryStatus, lead.createdAt]); return this.crmLead(result.rows[0]!); }
   async upsertCrmLead(lead: CrmLead, dedupeKey: string): Promise<CrmLead> {
     const result = await this.pool.query<CrmLeadRow>(`INSERT INTO crm_leads (id,tenant_id,action_id,session_id,intent,secondary_intent_keys,intent_score,intent_confidence,catalog_version_id,score,contact_completeness_score,validation_pass,lead_data,conversation_json,summary,summary_status,created_at,updated_at,dedupe_key)
@@ -507,7 +527,7 @@ export class PostgresStore implements Store {
   private intentCatalogVersion(row: Record<string, unknown>): IntentCatalogVersion { return { id: String(row.id), tenantId: String(row.tenant_id), version: Number(row.version), status: row.status as IntentCatalogVersion['status'], sourceFileName: String(row.source_file_name), sourceHash: String(row.source_hash), parserVersion: String(row.parser_version), catalog: row.catalog_json as IntentCatalogVersion['catalog'], createdAt: iso(row.created_at as DbTimestamp), publishedAt: row.published_at ? iso(row.published_at as DbTimestamp) : null }; }
   private action(row: ActionRow): ActionRequest { return { id: row.id, tenantId: row.tenant_id, sessionId: row.session_id, workflowKey: row.workflow_key, webhookPath: row.webhook_path ?? 'lead-capture', intentKey: row.intent_key ?? row.workflow_key, intentScore: Number(row.intent_score ?? 0), intentConfidence: Number(row.intent_confidence ?? 0), catalogVersionId: row.catalog_version_id ?? null, idempotencyKey: row.idempotency_key, state: row.state, opaqueReference: row.opaque_reference, payload: row.payload ?? {}, createdAt: iso(row.created_at), result: row.result?.externalReference ? { externalReference: row.result.externalReference } : row.result?.external_reference ? { externalReference: row.result.external_reference } : null }; }
   private crmLead(row: CrmLeadRow): CrmLead { return { id: row.id, tenantId: row.tenant_id, actionId: row.action_id, sessionId: row.session_id, intent: row.intent, secondaryIntentKeys: row.secondary_intent_keys ?? [], intentScore: Number(row.intent_score ?? 0), intentConfidence: Number(row.intent_confidence ?? 0), catalogVersionId: row.catalog_version_id ?? null, score: row.score, contactCompletenessScore: Number(row.contact_completeness_score ?? 0), validationPass: row.validation_pass, leadData: row.lead_data ?? {}, conversation: row.conversation_json ?? [], summary: row.summary ?? null, summaryStatus: row.summary_status, leadId: row.lead_id ?? null, remoteCrm: row.remote_crm ?? null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }; }
-  private ingestionJob(row: IngestionJobRow): IngestionJob { return { id: row.id, tenantId: row.tenant_id, title: row.title, mimeType: row.mime_type, sourceUrl: row.source_url, audience: row.audience, sourceId: row.source_id, status: row.status, attempts: row.attempts, errorCode: row.error_code, leaseExpiresAt: row.lease_expires_at ? iso(row.lease_expires_at) : null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }; }
+  private ingestionJob(row: IngestionJobRow): IngestionJob { return { id: row.id, tenantId: row.tenant_id, title: row.title, mimeType: row.mime_type, sourceUrl: row.source_url, audience: row.audience, sourceId: row.source_id, status: row.status, attempts: row.attempts, errorCode: row.error_code, errorDetail: row.error_detail, leaseExpiresAt: row.lease_expires_at ? iso(row.lease_expires_at) : null, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }; }
   private supportingDocument(row: SupportingDocumentRow): SupportingDocument { return { id: row.id, tenantId: row.tenant_id, sessionId: row.session_id, leadId: row.lead_id, fileName: row.file_name, mimeType: row.mime_type, sizeBytes: row.size_bytes, sha256: row.sha256, storageKey: row.storage_key, status: row.status, workflowKey: row.workflow_key, storeExtractedText: row.store_extracted_text, extractedText: row.extracted_text, summary: row.summary, errorCode: row.error_code, consentAt: iso(row.consent_at), createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }; }
   private documentJob(row: DocumentJobRow): DocumentProcessingJob { return { id: row.id, documentId: row.document_id, tenantId: row.tenant_id, workflowKey: row.workflow_key, webhookPath: row.webhook_path, status: row.status, attempts: row.attempts, leaseExpiresAt: row.lease_expires_at ? iso(row.lease_expires_at) : null, executionReference: row.execution_reference, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }; }
   private outboxEvent(row: OutboxRow): OutboxEvent { return { eventId: row.event_id, eventType: row.event_type, stream: row.stream, tenantId: row.tenant_id, sessionId: row.session_id, actionId: row.action_id, aggregateId: row.aggregate_id, aggregateVersion: Number(row.aggregate_version), workflowKey: row.workflow_key, payloadRef: row.payload_ref, idempotencyKey: row.idempotency_key, correlationId: row.correlation_id, payload: row.payload ?? {}, occurredAt: iso(row.occurred_at), publishedAt: row.published_at ? iso(row.published_at) : null, attempts: Number(row.attempts), leaseExpiresAt: row.lease_expires_at ? iso(row.lease_expires_at) : null, lastError: row.last_error }; }

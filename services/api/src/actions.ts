@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { ActionPayload, ActionRequest, LeadConversationMessage, LeadData, Store } from './types.js';
+import type { ActionPayload, ActionRequest, LeadConversationMessage, LeadData, Session, Store } from './types.js';
 import { opaqueReference } from './privacy.js';
 import { assertExternalEndpoint } from './runtime-security.js';
 
@@ -81,19 +81,22 @@ export class ActionGateway {
     }
   }
 
-  async confirm(actionId: string, tenantId: string): Promise<ActionRequest> {
+  async confirm(actionId: string, tenantId: string, session?: Session): Promise<ActionRequest> {
     const key = `${tenantId}:${actionId}`;
     const pending = this.confirmations.get(key);
     if (pending) return pending;
-    const confirmation = this.confirmInternal(actionId, tenantId);
+    const confirmation = this.confirmInternal(actionId, tenantId, session);
     this.confirmations.set(key, confirmation);
     try { return await confirmation; } finally { this.confirmations.delete(key); }
   }
 
-  private async confirmInternal(actionId: string, tenantId: string): Promise<ActionRequest> {
+  private async confirmInternal(actionId: string, tenantId: string, session?: Session): Promise<ActionRequest> {
     const action = await this.store.getAction(actionId);
     if (!action || action.tenantId !== tenantId) throw new Error('Action not found.');
-    if (action.state === 'completed' || action.state === 'approved' || action.state === 'processing') return action;
+    if (action.state === 'completed' || action.state === 'approved' || action.state === 'processing') {
+      if (session) await this.store.approveActionAndSession(action, session);
+      return action;
+    }
     if (action.state !== 'awaiting_confirmation' && action.state !== 'unknown') throw new Error('Action is not confirmable.');
     if (!Number.isFinite(Date.parse(action.createdAt)) || Date.now() - Date.parse(action.createdAt) > 15 * 60_000) {
       const expired = { ...action, state: 'failed' as const };
@@ -103,7 +106,8 @@ export class ActionGateway {
     }
     const consentGranted = action.payload.contactConsent === false;
     const approved = { ...action, state: 'approved' as const, result: null, payload: consentGranted ? { ...action.payload, contactConsent: true } : action.payload };
-    await this.store.approveAction(approved);
+    if (session) await this.store.approveActionAndSession(approved, session);
+    else await this.store.approveAction(approved);
     if (consentGranted) await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.consent_granted', metadata: { actionId }, createdAt: new Date().toISOString() });
     await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.approved', metadata: { actionId, workflowKey: action.workflowKey }, createdAt: new Date().toISOString() });
     return approved;

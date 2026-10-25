@@ -47,6 +47,15 @@ describe('privacy boundary', () => {
     expect(rehydrateForSession(session, output, vault)).toContain('bob@example.com');
   });
 
+  it('keeps assistant persona names separate from a later visitor name', () => {
+    const session = { id: 'session-persona-name', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
+    const vault = new TokenVault('persona-name-vault-secret-2026');
+    const greeting = maskPiiForSession(session, "Hi! I'm Sara, your assistant.", vault);
+    const visitor = maskPiiForSession(session, 'My name is Alice Karim.', vault);
+    expect(rehydrateForSession(session, greeting, vault)).toContain('Sara');
+    expect(rehydrateForSession(session, visitor, vault)).toContain('Alice Karim');
+  });
+
   it('masks international names without treating ordinary lower-case speech as a name', () => {
     const result = maskPii("My name is Élodie Müller and I'm interested in a demo.");
     expect(result.masked).toContain('[NAME_1]');

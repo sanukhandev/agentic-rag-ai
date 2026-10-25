@@ -46,6 +46,8 @@ describe('supporting document API', () => {
       expect(updatedLead?.summary).toContain('OCR completed');
 
       const expiredSession = await store.createSession(tenant.id);
+      expiredSession.conversationState = { ...(expiredSession.conversationState!), selectedIntentKey: 'anc.document.supporting_upload', candidateIntentKeys: ['anc.document.supporting_upload'] };
+      await store.updateSession(expiredSession);
       const expiredUpload = await api.post(`/api/v1/chat/sessions/${expiredSession.id}/documents`).send({ fileName: 'expired.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(202);
       const expiredDocument = await store.getSupportingDocument(expiredUpload.body.document.id, tenant.id);
       expect(expiredDocument).not.toBeNull();

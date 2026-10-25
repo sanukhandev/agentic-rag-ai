@@ -48,6 +48,16 @@ describe('intent catalog', () => {
     expect(resolveIntent(variant, 'I want to set up a CCTV company').intentKey).toBe('lead.capture');
   });
 
+  it('tolerates a single visitor spelling error while matching a published phrase', () => {
+    const variant = { ...version, catalog: { ...version.catalog, signals: [...version.catalog.signals, { intentKey: 'lead.capture', signalId: 'lead-typo', signalType: 'phrase' as const, value: 'I would like to set up a fashion boutique', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' }] } };
+    expect(resolveIntent(variant, 'I would like to set up a fashion botique').intentKey).toBe('lead.capture');
+  });
+
+  it('accepts natural omitted stop words in a published phrase', () => {
+    const variant = { ...version, catalog: { ...version.catalog, signals: [...version.catalog.signals, { intentKey: 'lead.capture', signalId: 'lead-omitted-stop-word', signalType: 'phrase' as const, value: 'I want to start a fashion store', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' }] } };
+    expect(resolveIntent(variant, 'I want start a fashion store').intentKey).toBe('lead.capture');
+  });
+
   it('collects slots after a score-qualified intent without bypassing the confidence action gate', () => {
     const variant = { ...version, catalog: { ...version.catalog, signals: [...version.catalog.signals, { intentKey: 'lead.capture', signalId: 'lead-5', signalType: 'phrase' as const, value: 'I want to start a company', language: 'en', matchMode: 'exact_phrase' as const, weight: 75, relationGroup: null, notes: '' }] } };
     const resolution = resolveIntent(variant, 'I want to start a company');
@@ -61,6 +71,7 @@ describe('intent catalog', () => {
     expect(resolution.missingSlots).toEqual(['email']);
     expect(resolution.actionAllowed).toBe(false);
     expect(catalogSlotQuestion(version, 'lead.capture', 'email')).toContain('email address');
+    expect(catalogSlotQuestion(version, 'lead.capture', 'phone', { email: '[EMAIL_1]' })).toContain('phone number');
   });
 
   it('builds clarification from the published intent signals', () => {

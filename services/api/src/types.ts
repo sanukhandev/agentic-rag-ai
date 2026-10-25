@@ -86,6 +86,8 @@ export interface ConversationState {
   catalogVersionId: string | null;
   candidateIntentKeys: string[];
   selectedIntentKey: string | null;
+  /** The catalog journey currently being collected after the primary opportunity was created. */
+  activeFollowUpIntentKey?: string | null;
   intentScore?: number;
   intentConfidence?: number;
   intentEvidence?: string[];
@@ -348,6 +350,7 @@ export interface IngestionJob {
   status: IngestionJobStatus;
   attempts: number;
   errorCode: string | null;
+  errorDetail: string | null;
   leaseExpiresAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -577,6 +580,7 @@ export interface Store {
   listMessages(sessionId: string, tenantId: string, limit?: number): Promise<Message[]>;
   createAction(action: ActionRequest): Promise<ActionRequest>;
   approveAction(action: ActionRequest): Promise<ActionRequest>;
+  approveActionAndSession(action: ActionRequest, session: Session): Promise<ActionRequest>;
   getAction(id: string): Promise<ActionRequest | null>;
   getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null>;
   updateAction(action: ActionRequest): Promise<ActionRequest>;
@@ -586,6 +590,7 @@ export interface Store {
   claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null>;
   claimActionsForWorkflow(n8nWorkflowId: string, workflowKey: string | undefined, limit: number): Promise<ActionRequest[]>;
   listActions(tenantId: string): Promise<ActionRequest[]>;
+  listActionsBySession(sessionId: string, tenantId: string): Promise<ActionRequest[]>;
   createCrmLead(lead: CrmLead): Promise<CrmLead>;
   upsertCrmLead(lead: CrmLead, dedupeKey: string): Promise<CrmLead>;
   getCrmLeadByActionId(actionId: string, tenantId: string): Promise<CrmLead | null>;
