@@ -144,6 +144,10 @@ export class IntentCatalogService {
     });
   }
 
+  exportPublished(): Observable<Blob> {
+    return this.http.get(`${this.apiBase}/api/v1/admin/intent-catalog/published/export`, { responseType: 'blob' });
+  }
+
   saveDraft(version: IntentCatalogVersion, catalog: unknown, onSaved: () => void): void {
     if (!this.auth.token()) return;
     this.http.post<{ version: IntentCatalogVersion }>(`${this.apiBase}/api/v1/admin/intent-catalog/versions/${version.id}/drafts`, { catalog }).subscribe({

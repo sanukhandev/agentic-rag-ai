@@ -20,7 +20,7 @@ const sheets = [
       ['Catalog purpose', 'Reusable multi-tenant intent catalog template for guided conversation, lead capture, grounded knowledge and document requirements.'],
       ['Import status', 'Compatible with the current required-sheet importer. Journey fields are planning-template columns until the typed journey contract is implemented.'],
       ['Required sheets', 'README, Intents, Signals, Slots, Relations, WorkflowBindings'],
-      ['Optional sheets', 'QualityRules, DocumentRequirements, CRMFieldMappings, ChannelCapabilities, TestUtterances, CatalogManifest'],
+      ['Optional sheets', 'QualityRules, DocumentPolicies, DocumentSettings, DocumentRequirements, CRMFieldMappings, ChannelCapabilities, TestUtterances, CatalogManifest'],
       ['Tenant setup', 'Replace tenant scope only when the catalog is ready for a specific tenant. Keep workflow IDs inactive until verified.'],
       ['Consent policy', 'Use explicit, purpose-scoped consent. Never infer consent from an intent, a known contact value or a previous unrelated action.'],
       ['PII policy', 'Use validation rules and retention classes. Do not place real visitor names, emails, phones, secrets or tokens in this workbook.'],
@@ -114,6 +114,22 @@ const sheets = [
       ['service.enquiry', 'crm.lead.quality.score', 0.5, 0.2, 0.3, 85, 70, 40],
     ],
     widths: [24, 32, 18, 22, 18, 16, 16, 18],
+  },
+  {
+    name: 'DocumentPolicies',
+    headers: ['intent_key', 'enabled', 'workflow_key', 'request_mode', 'required', 'request_prompt_key', 'allowed_document_types', 'allow_user_initiated', 'consent_required', 'preserve_primary_intent', 'store_extracted_text', 'summary_target', 'auto_create_lead', 'auto_index_in_rag', 'notes'],
+    rows: [
+      ['company.setup', false, 'document.intake', 'conditional_offer', false, 'document.ask_passport', '["passport"]', true, true, true, false, 'crm_leads.summary', false, false, 'Enable only after tenant document policy and OCR workflow review.'],
+    ],
+    widths: [22, 12, 24, 24, 12, 28, 32, 22, 18, 24, 20, 26, 18, 20, 80],
+  },
+  {
+    name: 'DocumentSettings',
+    headers: ['schema_version', 'enabled', 'storage_backend', 'processing_provider', 'workflow_key', 'require_upload_consent', 'max_file_bytes', 'max_files_per_request', 'max_pdf_pages', 'ocr_languages', 'allowed_mime_types', 'retention_policy', 'allow_public_document_urls', 'allow_automatic_knowledge_ingestion', 'allow_personal_identity_documents_by_default', 'summary_rendering', 'notes'],
+    rows: [
+      ['document-v1', false, 'private_server_storage', 'python_tesseract', 'document.intake', true, 10000000, 1, 20, '["eng"]', '["application/pdf","image/jpeg","image/png"]', 'tenant_configured', false, false, false, 'conversation_plus_redacted_document_excerpts', 'Enable only after storage, consent, OCR and retention review.'],
+    ],
+    widths: [18, 12, 28, 24, 24, 22, 18, 24, 16, 18, 44, 22, 24, 32, 38, 46, 90],
   },
   {
     name: 'DocumentRequirements',
