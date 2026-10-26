@@ -84,7 +84,7 @@ import { IconComponent } from '../shared/icon.component';
                   <label for="login-password" class="block text-xs font-semibold text-neutral-800">
                     Password
                   </label>
-                  <span class="text-[11px] text-neutral-400">Strictly encrypted</span>
+                  <span class="text-[11px] text-neutral-500">Strictly encrypted</span>
                 </div>
                 <div class="mt-1.5 relative">
                   <input
@@ -100,7 +100,7 @@ import { IconComponent } from '../shared/icon.component';
                   <button
                     type="button"
                     (click)="showPassword = !showPassword"
-                    class="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 transition-colors"
+                    class="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-700 transition-colors"
                     aria-label="Toggle password visibility"
                   >
                     <app-icon [name]="showPassword ? 'eye' : 'lock'" classNames="w-3.5 h-3.5"></app-icon>
@@ -134,7 +134,7 @@ import { IconComponent } from '../shared/icon.component';
       </main>
 
       <!-- Editorial Footer -->
-      <footer class="w-full border-t border-neutral-200/80 bg-white py-4 text-center text-xs text-neutral-400">
+      <footer class="w-full border-t border-neutral-200/80 bg-white py-4 text-center text-xs text-neutral-500">
         <div class="mx-auto max-w-7xl px-6 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>Agentic RAG AI · Enterprise Knowledge Operations</span>
           <div class="flex items-center gap-4 text-[11px]">

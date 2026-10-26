@@ -162,7 +162,7 @@ interface TenantChatConfig {
                   {{ agentInitials }}
                 </div>
                 <span class="text-xs font-semibold text-neutral-900">{{ agentName }}</span>
-                <span class="text-[10px] text-neutral-400 font-mono">{{ msg.createdAt | date:'shortTime' }}</span>
+                <span class="text-[10px] text-neutral-500 font-mono">{{ msg.createdAt | date:'shortTime' }}</span>
               </div>
 
               <!-- Answer Body: Rendered Markdown or Natural Abstention -->
@@ -179,9 +179,9 @@ interface TenantChatConfig {
                   [attr.aria-expanded]="msg.expandedCitations"
                   class="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-[11px] font-medium text-neutral-600 hover:border-neutral-300 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
                 >
-                  <app-icon name="file-text" classNames="w-3 h-3 text-neutral-400"></app-icon>
+                  <app-icon name="file-text" classNames="w-3 h-3 text-neutral-500"></app-icon>
                   <span>{{ msg.citations.length }} Verified {{ msg.citations.length === 1 ? 'Source' : 'Sources' }}</span>
-                  <app-icon [name]="msg.expandedCitations ? 'chevron-up' : 'chevron-down'" classNames="w-2.5 h-2.5 text-neutral-400"></app-icon>
+                  <app-icon [name]="msg.expandedCitations ? 'chevron-up' : 'chevron-down'" classNames="w-2.5 h-2.5 text-neutral-500"></app-icon>
                 </button>
 
                 <!-- Expanded Citations List -->
@@ -235,7 +235,7 @@ interface TenantChatConfig {
               </div>
 
               <!-- Message Utility Toolbar: Copy & Feedback Controls -->
-              <div class="flex items-center gap-3 pt-1 text-neutral-400 text-xs">
+              <div class="flex items-center gap-3 pt-1 text-neutral-500 text-xs">
                 <!-- Copy Answer -->
                 <button
                   type="button"
@@ -272,7 +272,7 @@ interface TenantChatConfig {
                   <app-icon name="thumbs-down" classNames="w-3 h-3"></app-icon>
                 </button>
 
-                <span *ngIf="msg.feedback" class="text-[10px] text-neutral-400 animate-fade-in">
+                <span *ngIf="msg.feedback" class="text-[10px] text-neutral-500 animate-fade-in">
                   Thank you
                 </span>
               </div>
@@ -372,7 +372,7 @@ interface TenantChatConfig {
           </div>
 
           <!-- Bottom Shortcut Hint -->
-          <div class="mt-1.5 flex items-center justify-between px-1 text-[11px] text-neutral-400">
+          <div class="mt-1.5 flex items-center justify-between px-1 text-[11px] text-neutral-500">
             <span>Press <kbd class="font-mono text-[10px] text-neutral-500">Enter</kbd> to send · <kbd class="font-mono text-[10px] text-neutral-500">Shift + Enter</kbd> for new line</span>
             <span *ngIf="currentInput.length > 0" class="font-mono text-[10px]">
               {{ currentInput.length }} chars

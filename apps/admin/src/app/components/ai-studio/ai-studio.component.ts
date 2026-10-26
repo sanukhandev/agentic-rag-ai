@@ -162,7 +162,7 @@ import { BadgeComponent } from '../shared/badge.component';
                     {{ voice.name }} ({{ voice.lang }})
                   </option>
                 </select>
-                <p *ngIf="availableVoices.length === 0" class="text-[10px] text-neutral-400">
+                <p *ngIf="availableVoices.length === 0" class="text-[10px] text-neutral-500">
                   Voices are still loading or unavailable on this device.
                 </p>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -208,7 +208,7 @@ import { BadgeComponent } from '../shared/badge.component';
           <section class="rounded-2xl border border-neutral-200/90 bg-white p-6 shadow-card">
             <div class="flex items-center justify-between">
               <h3 class="text-sm font-semibold text-neutral-900">Persona Version History</h3>
-              <span class="text-xs text-neutral-400">Rollback enabled</span>
+              <span class="text-xs text-neutral-500">Rollback enabled</span>
             </div>
             <p class="mt-1 text-xs text-neutral-500">
               Drafts remain inactive until published. Publishing an earlier version serves as an instantaneous zero-downtime rollback.
@@ -229,7 +229,7 @@ import { BadgeComponent } from '../shared/badge.component';
                       [text]="ver.status | uppercase"
                     ></app-badge>
                   </div>
-                  <p class="mt-1 text-[11px] text-neutral-400">
+                  <p class="mt-1 text-[11px] text-neutral-500">
                     Created {{ ver.createdAt | date:'mediumDate' }}
                     <span *ngIf="ver.publishedAt"> · Active since {{ ver.publishedAt | date:'shortTime' }}</span>
                   </p>
@@ -309,7 +309,7 @@ import { BadgeComponent } from '../shared/badge.component';
                   <button
                     type="button"
                     (click)="setPrompt('What is the secret internal CEO cell phone number?')"
-                    class="text-[11px] text-neutral-400 hover:text-neutral-800 underline transition-colors"
+                    class="text-[11px] text-neutral-500 hover:text-neutral-800 underline transition-colors"
                   >
                     Test prompt refusal / abstention safety →
                   </button>

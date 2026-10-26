@@ -56,7 +56,7 @@ export class AppComponent implements OnInit {
     { id: 'overview', label: 'Overview', icon: 'overview' },
     { id: 'organizations', label: 'Organizations', icon: 'organizations' },
     { id: 'knowledge', label: 'Content', icon: 'knowledge' },
-    { id: 'catalog', label: 'Intent Catalog', icon: 'studio' },
+    { id: 'catalog', label: 'Intent Catalog', icon: 'workflow' },
     { id: 'studio', label: 'Assistant', icon: 'studio' },
     { id: 'chat', label: 'Chat Preview', icon: 'chat' },
     { id: 'crm', label: 'Leads', icon: 'users' },

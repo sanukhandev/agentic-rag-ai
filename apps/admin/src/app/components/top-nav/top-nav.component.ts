@@ -1,6 +1,7 @@
 import { Component, ElementRef, HostListener, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
 import { NavSection, Tenant } from '../../types/admin.types';
 import { IconComponent } from '../shared/icon.component';
@@ -22,7 +23,7 @@ interface MegaMenuColumn {
 @Component({
   selector: 'app-top-nav',
   standalone: true,
-  imports: [CommonModule, IconComponent, BadgeComponent],
+  imports: [CommonModule, FormsModule, IconComponent, BadgeComponent],
   template: `
     <header class="sticky top-0 z-40 w-full border-b border-neutral-200/80 bg-white/95 backdrop-blur-md">
       <!-- Main Top Bar: Compact 56px height, high visual hierarchy, spacious editorial feel -->
@@ -109,7 +110,29 @@ interface MegaMenuColumn {
               ></app-icon>
             </button>
 
-            <!-- 5. Observability (Mega Menu) -->
+            <!-- 5. Leads (Direct Link) -->
+            <button
+              *ngIf="canAccess('crm')"
+              type="button"
+              (click)="navigateTo('crm')"
+              class="relative px-2.5 py-1.5 text-[13px] font-medium rounded-md transition-all"
+              [ngClass]="activeSection === 'crm' && !activeMegaMenu ? 'text-neutral-950 bg-neutral-100 font-semibold' : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-50'"
+            >
+              Leads
+            </button>
+
+            <!-- 6. Chat Preview (Direct Link) -->
+            <button
+              *ngIf="canAccess('chat')"
+              type="button"
+              (click)="navigateTo('chat')"
+              class="relative px-2.5 py-1.5 text-[13px] font-medium rounded-md transition-all"
+              [ngClass]="activeSection === 'chat' && !activeMegaMenu ? 'text-neutral-950 bg-neutral-100 font-semibold' : 'text-neutral-600 hover:text-neutral-950 hover:bg-neutral-50'"
+            >
+              Chat Preview
+            </button>
+
+            <!-- 7. Observability (Mega Menu) -->
             <button
               *ngIf="canAccess('observability')"
               type="button"
@@ -154,9 +177,9 @@ interface MegaMenuColumn {
             class="flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200/90 bg-neutral-50/70 px-2 sm:px-2.5 text-xs text-neutral-500 hover:border-neutral-300 hover:bg-white hover:text-neutral-900 transition-all button-press"
             title="Search your workspace (⌘K)"
           >
-            <app-icon name="search" classNames="w-3.5 h-3.5 text-neutral-400"></app-icon>
+            <app-icon name="search" classNames="w-3.5 h-3.5 text-neutral-500"></app-icon>
             <span class="hidden 2xl:inline font-normal">Search...</span>
-            <kbd class="hidden sm:inline-block rounded border border-neutral-200/90 bg-white px-1.5 py-0.5 text-[10px] font-mono text-neutral-400">⌘K</kbd>
+            <kbd class="hidden sm:inline-block rounded border border-neutral-200/90 bg-white px-1.5 py-0.5 text-[10px] font-mono text-neutral-500">⌘K</kbd>
           </button>
 
           <!-- Tenant Switcher Dropdown (Refined Compact Pill) -->
@@ -171,8 +194,8 @@ interface MegaMenuColumn {
                 class="w-1.5 h-1.5 rounded-full"
                 [ngClass]="selectedTenant?.status === 'active' ? 'bg-emerald-500' : 'bg-neutral-400'"
               ></span>
-              <span class="max-w-[75px] sm:max-w-[105px] truncate text-xs">{{ selectedTenant?.name || 'All Tenants' }}</span>
-              <app-icon name="chevron-down" classNames="w-2.5 h-2.5 text-neutral-400"></app-icon>
+              <span class="max-w-[120px] sm:max-w-[180px] truncate text-xs font-medium">{{ selectedTenant?.name || 'All Tenants' }}</span>
+              <app-icon name="chevron-down" classNames="w-2.5 h-2.5 text-neutral-500"></app-icon>
             </button>
 
             <!-- Tenant Dropdown Menu -->
@@ -180,7 +203,7 @@ interface MegaMenuColumn {
               *ngIf="tenantDropdownOpen"
               class="absolute right-0 mt-1.5 w-60 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-dropdown animate-slide-down z-50"
             >
-              <div class="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+              <div class="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-neutral-500">
                 Active Tenant Scope
               </div>
               <div class="max-h-60 overflow-y-auto space-y-0.5">
@@ -195,7 +218,7 @@ interface MegaMenuColumn {
                     <span class="w-1.5 h-1.5 rounded-full" [ngClass]="t.status === 'active' ? 'bg-emerald-500' : t.status === 'suspended' ? 'bg-amber-500' : 'bg-neutral-300'"></span>
                     <span class="truncate">{{ t.name }}</span>
                   </div>
-                  <span class="font-mono text-[10px] text-neutral-400">{{ t.sourceCount || 0 }} src</span>
+                  <span class="font-mono text-[10px] text-neutral-500">{{ t.sourceCount || 0 }} src</span>
                 </button>
               </div>
             </div>
@@ -270,7 +293,7 @@ interface MegaMenuColumn {
         *ngIf="mobileNavOpen"
         class="lg:hidden border-t border-neutral-200/90 bg-white px-4 py-4 space-y-3 shadow-dropdown animate-slide-down"
       >
-        <div class="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+        <div class="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
           Navigation
         </div>
         <div class="grid grid-cols-2 gap-2">
@@ -317,6 +340,26 @@ interface MegaMenuColumn {
 
           <button
             type="button"
+            (click)="onMobileNavigate('catalog')"
+            class="flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium text-left transition-colors"
+            [ngClass]="activeSection === 'catalog' ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100'"
+          >
+            <app-icon name="workflow" classNames="w-3.5 h-3.5"></app-icon>
+            <span>Intent Catalog</span>
+          </button>
+
+          <button
+            type="button"
+            (click)="onMobileNavigate('chat')"
+            class="flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium text-left transition-colors"
+            [ngClass]="activeSection === 'chat' ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100'"
+          >
+            <app-icon name="chat" classNames="w-3.5 h-3.5"></app-icon>
+            <span>Chat Preview</span>
+          </button>
+
+          <button
+            type="button"
             (click)="onMobileNavigate('crm')"
             class="flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium text-left transition-colors"
             [ngClass]="activeSection === 'crm' ? 'bg-neutral-900 text-white' : 'bg-neutral-50 text-neutral-700 hover:bg-neutral-100'"
@@ -359,13 +402,13 @@ interface MegaMenuColumn {
         <div class="mx-auto max-w-[1536px] px-4 py-8 sm:px-6 lg:px-8">
           <div class="flex items-center justify-between border-b border-neutral-100 pb-4 mb-6">
             <div class="flex items-center gap-3">
-              <span class="text-xs font-bold uppercase tracking-wider text-neutral-400">Section Navigator</span>
+              <span class="text-xs font-bold uppercase tracking-wider text-neutral-500">Section Navigator</span>
               <span class="text-sm font-semibold text-neutral-900 capitalize">{{ activeMegaMenu }} Workspace</span>
             </div>
             <button
               type="button"
               (click)="closeMenu()"
-              class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 transition-colors"
+              class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 transition-colors"
             >
               <span>Close</span>
               <kbd class="font-mono text-[10px]">Esc</kbd>
@@ -375,7 +418,7 @@ interface MegaMenuColumn {
           <!-- Multi-column Layout -->
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             <div *ngFor="let col of currentColumns" class="space-y-4">
-              <h3 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-neutral-500">
                 {{ col.heading }}
               </h3>
               <div class="space-y-1">
@@ -450,6 +493,13 @@ export class TopNavComponent {
   get isPlatformAdmin(): boolean { return this.state.isPlatformAdmin(); }
 
   tenantDropdownOpen = false;
+  tenantFilterQuery = '';
+
+  get displayedTenants(): Tenant[] {
+    const q = this.tenantFilterQuery.trim().toLowerCase();
+    if (!q) return this.tenants;
+    return this.tenants.filter(t => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q));
+  }
   userMenuOpen = false;
   mobileNavOpen = false;
 
@@ -605,6 +655,13 @@ export class TopNavComponent {
                 icon: 'book-open',
                 badge: 'pgvector',
                 action: () => this.navigateTo('knowledge')
+              },
+              {
+                title: 'Intent Catalog',
+                desc: 'Server-validated Excel contracts, scoring signals, and routing rules',
+                icon: 'workflow',
+                badge: 'Workflow Rules',
+                action: () => this.navigateTo('catalog')
               },
               {
                 title: 'Upload Documents',

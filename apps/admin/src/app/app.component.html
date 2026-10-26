@@ -25,7 +25,7 @@
           <!-- Title & Editorial Description -->
           <div class="space-y-1.5">
             <div class="flex items-center gap-2.5">
-              <span class="text-[11px] font-bold uppercase tracking-[0.22em] text-neutral-400">
+              <span class="text-[11px] font-bold uppercase tracking-[0.22em] text-neutral-500">
                 Agentic RAG AI
               </span>
               <span class="text-neutral-300">/</span>
@@ -59,9 +59,9 @@
               (click)="openCommandPalette()"
               class="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-600 hover:border-neutral-300 hover:text-neutral-900 transition-colors button-press shadow-subtle"
             >
-              <app-icon name="command" classNames="w-3.5 h-3.5 text-neutral-400"></app-icon>
+              <app-icon name="command" classNames="w-3.5 h-3.5 text-neutral-500"></app-icon>
               <span>Command Palette</span>
-              <kbd class="font-mono text-[10px] text-neutral-400">⌘K</kbd>
+              <kbd class="font-mono text-[10px] text-neutral-500">⌘K</kbd>
             </button>
 
             <!-- Refresh Workspace -->
@@ -71,7 +71,7 @@
               class="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors button-press shadow-subtle"
               title="Refresh workspace data"
             >
-              <app-icon name="refresh" classNames="w-3.5 h-3.5 text-neutral-400"></app-icon>
+              <app-icon name="refresh" classNames="w-3.5 h-3.5 text-neutral-500"></app-icon>
               <span>Sync</span>
             </button>
 
@@ -88,22 +88,7 @@
 
         </div>
 
-        <!-- Contextual Sub-Navigation Pill Bar -->
-        <div class="mt-6 flex items-center gap-1.5 overflow-x-auto pb-1" role="tablist">
-          <button
-            *ngFor="let tab of visibleNavTabs"
-            type="button"
-            role="tab"
-            [attr.aria-selected]="currentSection === tab.id"
-            (click)="setSection(tab.id)"
-            class="flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-all"
-            [ngClass]="currentSection === tab.id ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'"
-          >
-            <app-icon [name]="tab.icon" classNames="w-3.5 h-3.5"></app-icon>
-            <span>{{ tab.label }}</span>
-          </button>
-        </div>
-      </section>
+</section>
 
       <!-- Section: Overview -->
       <ng-container *ngIf="currentSection === 'overview'">
@@ -121,7 +106,7 @@
         <ng-template #tenantOverview>
           <section class="space-y-5" aria-labelledby="workspace-summary-title">
             <div>
-              <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-400">At a glance</p>
+              <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-500">At a glance</p>
               <h2 id="workspace-summary-title" class="mt-1 text-xl font-bold tracking-tight text-neutral-900">Your customer workspace</h2>
               <p class="mt-1 text-sm text-neutral-500">The essentials for running your assistant day to day.</p>
             </div>
@@ -227,7 +212,7 @@
         <span>{{ role === 'platform_admin' ? 'Source-Grounded Autonomous Operations Platform' : 'Customer Assistant Workspace' }}</span>
       </div>
 
-      <div class="flex items-center gap-6 text-[11px] text-neutral-400 font-mono">
+      <div class="flex items-center gap-6 text-[11px] text-neutral-500 font-mono">
         <ng-container *ngIf="role === 'platform_admin'; else tenantFooter">
           <span>PostgreSQL pgvector</span>
           <span>Azure AI Foundry GPT-4.1-mini</span>

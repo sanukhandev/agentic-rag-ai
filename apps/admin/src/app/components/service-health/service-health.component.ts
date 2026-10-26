@@ -36,13 +36,13 @@ interface ServiceNode {
         </div>
 
         <div class="flex items-center gap-3 text-xs text-neutral-500">
-          <span class="font-mono text-[11px] text-neutral-400">Observed: {{ health?.checkedAt ? (health?.checkedAt | date:'mediumTime') : 'Just now' }}</span>
+          <span class="font-mono text-[11px] text-neutral-500">Observed: {{ health?.checkedAt ? (health?.checkedAt | date:'mediumTime') : 'Just now' }}</span>
           <button
             type="button"
             (click)="refresh()"
             class="rounded-lg border border-neutral-200 px-2.5 py-1 text-neutral-700 hover:bg-neutral-50 transition-colors flex items-center gap-1 button-press"
           >
-            <app-icon name="refresh" classNames="w-3 h-3 text-neutral-400"></app-icon>
+            <app-icon name="refresh" classNames="w-3 h-3 text-neutral-500"></app-icon>
             <span>Sync</span>
           </button>
         </div>
@@ -54,7 +54,7 @@ interface ServiceNode {
           <p class="text-[11px] font-medium text-neutral-500">Average Gateway Latency</p>
           <div class="mt-1 flex items-baseline gap-1.5">
             <span class="text-xl font-bold font-mono text-neutral-900">{{ health?.telemetry?.averageLatencyMs ?? 0 }}</span>
-            <span class="text-xs text-neutral-400 font-mono">ms</span>
+            <span class="text-xs text-neutral-500 font-mono">ms</span>
           </div>
         </div>
 
@@ -63,7 +63,7 @@ interface ServiceNode {
           <div class="mt-1 flex items-baseline gap-1.5">
             <span class="text-xl font-bold font-mono text-neutral-900">{{ (health?.telemetry?.requests ?? 0) | number }}</span>
           </div>
-          <p class="mt-2 text-[11px] text-neutral-400 font-mono">
+          <p class="mt-2 text-[11px] text-neutral-500 font-mono">
             {{ health?.telemetry?.lastRequestAt || '—' }}
           </p>
         </div>
@@ -74,7 +74,7 @@ interface ServiceNode {
             <span class="text-xl font-bold font-mono text-neutral-900">
               {{ errorRate | number:'1.2-2' }}%
             </span>
-            <span class="text-[11px] text-neutral-400 font-mono">({{ health?.telemetry?.serverErrors ?? 0 }} errs)</span>
+            <span class="text-[11px] text-neutral-500 font-mono">({{ health?.telemetry?.serverErrors ?? 0 }} errs)</span>
           </div>
         </div>
 
@@ -84,11 +84,11 @@ interface ServiceNode {
             <span class="text-xl font-bold font-mono text-emerald-700">
               {{ ((health?.telemetry?.groundingRate ?? 0) * 100) | number:'1.1-1' }}%
             </span>
-            <span class="text-[11px] text-neutral-400 font-mono">
+            <span class="text-[11px] text-neutral-500 font-mono">
               ({{ health?.telemetry?.abstentions ?? 0 }} abstentions)
             </span>
           </div>
-          <p class="mt-2 text-[11px] text-neutral-400 font-mono">
+          <p class="mt-2 text-[11px] text-neutral-500 font-mono">
             Est. Cost: <span class="text-neutral-900 font-medium">{{ health?.telemetry?.estimatedCostUsd ?? '—' }}</span>
           </p>
         </div>
@@ -107,7 +107,7 @@ interface ServiceNode {
               </div>
               <div>
                 <h4 class="text-xs font-semibold text-neutral-900">{{ s.name }}</h4>
-                <p class="text-[10px] text-neutral-400 font-mono">{{ s.role }}</p>
+                <p class="text-[10px] text-neutral-500 font-mono">{{ s.role }}</p>
               </div>
             </div>
             <app-badge [variant]="getBadgeVariant(s.key)" [showDot]="true" [text]="getStatusLabel(s.key)"></app-badge>
@@ -117,7 +117,7 @@ interface ServiceNode {
             {{ s.details }}
           </p>
 
-          <div class="mt-3 flex items-center justify-between border-t border-neutral-200/40 pt-2.5 text-[10px] text-neutral-400 font-mono">
+          <div class="mt-3 flex items-center justify-between border-t border-neutral-200/40 pt-2.5 text-[10px] text-neutral-500 font-mono">
             <span>Latency: {{ getLatency(s.key) }}</span>
             <span class="text-neutral-600">{{ getStatusLabel(s.key) }}</span>
           </div>

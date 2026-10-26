@@ -89,11 +89,11 @@ import { IconComponent } from '../shared/icon.component';
           <span class="text-3xl font-bold tracking-tight text-neutral-900 font-sans">
             {{ overview?.tenants?.archived ?? 0 }}
           </span>
-          <span class="text-xs text-neutral-400">Read-only</span>
+          <span class="text-xs text-neutral-500">Read-only</span>
         </div>
         <div class="mt-3 flex items-center justify-between border-t border-neutral-100 pt-3 text-[11px] text-neutral-500">
           <span>Vectors locked</span>
-          <span class="font-mono text-neutral-400">Vault sealed</span>
+          <span class="font-mono text-neutral-500">Vault sealed</span>
         </div>
       </div>
 
@@ -106,7 +106,7 @@ import { IconComponent } from '../shared/icon.component';
           <p class="text-[11px] font-medium text-neutral-500">Active Sources</p>
         <p class="mt-0.5 text-lg font-bold text-neutral-900 font-mono">{{ metrics?.sourceCounts?.['active'] ?? 0 }}</p>
         </div>
-        <div class="text-[10px] text-neutral-400 font-mono">pgvector</div>
+        <div class="text-[10px] text-neutral-500 font-mono">pgvector</div>
       </div>
 
       <div class="rounded-lg border border-neutral-200/60 bg-white/70 px-4 py-3 shadow-subtle flex items-center justify-between">
@@ -122,7 +122,7 @@ import { IconComponent } from '../shared/icon.component';
           <p class="text-[11px] font-medium text-neutral-500">Grounding Rate</p>
           <p class="mt-0.5 text-lg font-bold text-emerald-600 font-mono">{{ groundingRate }}</p>
         </div>
-        <span class="text-[10px] text-neutral-400 font-semibold font-mono">{{ groundingRateLabel }}</span>
+        <span class="text-[10px] text-neutral-500 font-semibold font-mono">{{ groundingRateLabel }}</span>
       </div>
 
       <div class="rounded-lg border border-neutral-200/60 bg-white/70 px-4 py-3 shadow-subtle flex items-center justify-between">
@@ -130,7 +130,7 @@ import { IconComponent } from '../shared/icon.component';
           <p class="text-[11px] font-medium text-neutral-500">Avg Gateway Latency</p>
           <p class="mt-0.5 text-lg font-bold text-neutral-900 font-mono">{{ gatewayLatency }}</p>
         </div>
-        <span class="text-[10px] text-neutral-400 font-mono">{{ latencyLabel }}</span>
+        <span class="text-[10px] text-neutral-500 font-mono">{{ latencyLabel }}</span>
       </div>
     </section>
   `

@@ -7,11 +7,12 @@ import { Tenant, TenantStatus } from '../../types/admin.types';
 import { openTenantChatWindow } from '../../services/tenant-chat-url';
 import { IconComponent } from '../shared/icon.component';
 import { BadgeComponent } from '../shared/badge.component';
+import { PaginationComponent } from '../shared/pagination.component';
 
 @Component({
   selector: 'app-org-table',
   standalone: true,
-  imports: [CommonModule, FormsModule, IconComponent, BadgeComponent],
+  imports: [CommonModule, FormsModule, IconComponent, BadgeComponent, PaginationComponent],
   template: `
     <section class="rounded-2xl border border-neutral-200/90 bg-white p-6 shadow-card" aria-labelledby="org-heading">
       <!-- Section Header & Toolbar -->
@@ -59,7 +60,7 @@ import { BadgeComponent } from '../shared/badge.component';
           <button
             *ngFor="let tab of statusTabs"
             type="button"
-            (click)="selectedStatusFilter = tab.value"
+            (click)="selectedStatusFilter = tab.value; currentPage = 1"
             class="px-2.5 py-1 rounded-md font-medium transition-all"
             [ngClass]="selectedStatusFilter === tab.value ? 'bg-white text-neutral-900 shadow-subtle' : 'text-neutral-500 hover:text-neutral-900'"
           >
@@ -69,9 +70,9 @@ import { BadgeComponent } from '../shared/badge.component';
 
         <!-- Search Input -->
         <div class="relative w-full sm:w-72">
-          <app-icon name="search" classNames="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2"></app-icon>
+          <app-icon name="search" classNames="w-3.5 h-3.5 text-neutral-500 absolute left-3 top-1/2 -translate-y-1/2"></app-icon>
           <input
-            [(ngModel)]="searchQuery"
+            [(ngModel)]="searchQuery" (ngModelChange)="currentPage = 1"
             type="text"
             placeholder="Search by name, slug, or domain..."
             class="w-full rounded-lg border border-neutral-200 bg-neutral-50/50 pl-9 pr-3 py-1.5 text-xs text-neutral-900 placeholder-neutral-400 focus:bg-white focus:border-neutral-900 focus:outline-none transition-all"
@@ -79,7 +80,7 @@ import { BadgeComponent } from '../shared/badge.component';
           <button
             *ngIf="searchQuery"
             (click)="searchQuery = ''"
-            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-700"
           >
             <app-icon name="x" classNames="w-3 h-3"></app-icon>
           </button>
@@ -102,7 +103,7 @@ import { BadgeComponent } from '../shared/badge.component';
           </thead>
           <tbody class="divide-y divide-neutral-100 bg-white font-normal">
             <tr
-              *ngFor="let tenant of filteredTenants"
+              *ngFor="let tenant of paginatedTenants"
               class="group hover:bg-neutral-50/70 transition-colors"
             >
               <!-- Name & Icon -->
@@ -115,7 +116,7 @@ import { BadgeComponent } from '../shared/badge.component';
                     <span class="font-semibold text-neutral-900 group-hover:text-black">
                       {{ tenant.name }}
                     </span>
-                    <p class="text-[11px] text-neutral-400 font-mono truncate max-w-[200px]">
+                    <p class="text-[11px] text-neutral-500 font-mono truncate max-w-[200px]">
                       {{ tenant.primaryContact || '—' }}
                     </p>
                   </div>
@@ -138,7 +139,7 @@ import { BadgeComponent } from '../shared/badge.component';
               <!-- Source Count -->
               <td class="px-3 py-3.5 font-mono text-neutral-700">
                 <div class="flex items-center gap-1.5">
-                  <app-icon name="book-open" classNames="w-3 h-3 text-neutral-400"></app-icon>
+                  <app-icon name="book-open" classNames="w-3 h-3 text-neutral-500"></app-icon>
                   <span class="font-semibold">{{ tenant.sourceCount || 0 }}</span>
                   <span class="text-neutral-400 text-[10px]">active</span>
                 </div>
@@ -226,15 +227,23 @@ import { BadgeComponent } from '../shared/badge.component';
 
             <!-- Empty State -->
             <tr *ngIf="filteredTenants.length === 0">
-              <td colspan="7" class="py-12 text-center text-neutral-400">
+              <td colspan="7" class="py-12 text-center text-neutral-500">
                 <app-icon name="building" classNames="mx-auto w-8 h-8 text-neutral-300"></app-icon>
                 <p class="mt-2 text-xs font-medium text-neutral-600">No organizations found matching criteria.</p>
-                <p class="text-[11px] text-neutral-400">Try adjusting your search query or status filter.</p>
+                <p class="text-[11px] text-neutral-500">Try adjusting your search query or status filter.</p>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
+
+        <app-pagination
+          [totalItems]="filteredTenants.length"
+          [pageSize]="pageSize"
+          [currentPage]="currentPage"
+          (pageChange)="currentPage = $event"
+          (pageSizeChange)="pageSize = $event; currentPage = 1"
+        ></app-pagination>
     </section>
   `
 })
@@ -243,6 +252,8 @@ export class OrgTableComponent implements OnInit {
 
   searchQuery = '';
   selectedStatusFilter: 'all' | TenantStatus = 'all';
+  currentPage = 1;
+  pageSize = 10;
 
   readonly statusTabs: Array<{ label: string; value: 'all' | TenantStatus }> = [
     { label: 'All', value: 'all' },
@@ -255,6 +266,27 @@ export class OrgTableComponent implements OnInit {
 
   ngOnInit(): void {
     this.state.loadTenants();
+  }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.filteredTenants.length / this.pageSize));
+  }
+
+  get safeCurrentPage(): number {
+    return Math.min(Math.max(1, this.currentPage), this.totalPages);
+  }
+
+  synchronizePagination(): void {
+    const max = this.totalPages;
+    if (this.currentPage > max) {
+      this.currentPage = max;
+    }
+  }
+
+  get paginatedTenants(): Tenant[] {
+    this.synchronizePagination();
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredTenants.slice(start, start + this.pageSize);
   }
 
   get filteredTenants(): Tenant[] {
