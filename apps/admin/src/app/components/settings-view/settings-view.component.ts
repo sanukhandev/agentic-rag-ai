@@ -43,15 +43,15 @@ import { BadgeComponent } from '../shared/badge.component';
 
         <div class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
           <div class="rounded-xl border border-neutral-100 bg-neutral-50/70 p-3">
-            <p class="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">API base URL</p>
+            <p class="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">API base URL</p>
             <p class="mt-1 break-all font-mono text-xs text-neutral-900">{{ apiBaseUrl }}</p>
           </div>
           <div class="rounded-xl border border-neutral-100 bg-neutral-50/70 p-3">
-            <p class="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Tenant scope</p>
+            <p class="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Tenant scope</p>
             <p class="mt-1 font-mono text-xs text-neutral-900">{{ selectedTenant?.slug || 'Select a tenant' }}</p>
           </div>
           <div class="rounded-xl border border-neutral-100 bg-neutral-50/70 p-3">
-            <p class="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Authentication</p>
+            <p class="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Authentication</p>
             <p class="mt-1 font-mono text-xs text-neutral-900">X-Agentic-Api-Key</p>
             <p class="mt-1 text-[10px] text-neutral-500">Database-backed and revocable per tenant</p>
           </div>
@@ -60,7 +60,7 @@ import { BadgeComponent } from '../shared/badge.component';
         <div class="mt-5 rounded-xl border border-neutral-100 bg-neutral-50/70 p-4">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
             <label class="flex-1">
-              <span class="block text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Connector name</span>
+              <span class="block text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Connector name</span>
               <input [(ngModel)]="newConnectorChannel" name="connectorChannel" placeholder="whatsapp" class="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-mono text-neutral-900 focus:border-neutral-900 focus:outline-none" />
             </label>
             <span class="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-700">Static API key</span>
@@ -78,7 +78,7 @@ import { BadgeComponent } from '../shared/badge.component';
           <div class="mt-3 space-y-2" *ngIf="connectorCredentials.length">
             <div *ngFor="let credential of connectorCredentials" class="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-3 text-xs sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p class="font-semibold text-neutral-900">{{ credential.channel }} <span class="font-mono text-[10px] text-neutral-400">{{ credential.authMode }}</span></p>
+                <p class="font-semibold text-neutral-900">{{ credential.channel }} <span class="font-mono text-[10px] text-neutral-500">{{ credential.authMode }}</span></p>
                 <p class="font-mono text-[10px] text-neutral-500">{{ credential.keyId }} · {{ credential.active ? 'active' : 'revoked' }}</p>
               </div>
               <button *ngIf="credential.active" type="button" (click)="revokeConnectorCredential(credential)" class="self-start rounded-md border border-rose-200 px-2.5 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-50 sm:self-auto">Revoke</button>
@@ -154,7 +154,7 @@ import { BadgeComponent } from '../shared/badge.component';
                 <h3 class="text-sm font-semibold text-neutral-900">Allowed Chat Domains</h3>
                 <p class="mt-1 text-xs text-neutral-500">CORS domain allowlist for embedded chat widget.</p>
               </div>
-              <span class="font-mono text-xs text-neutral-400">{{ domains.length }} domains</span>
+              <span class="font-mono text-xs text-neutral-500">{{ domains.length }} domains</span>
             </div>
 
             <!-- Add Domain Form -->
@@ -189,7 +189,7 @@ import { BadgeComponent } from '../shared/badge.component';
                 <button
                   type="button"
                   (click)="removeDomain(d)"
-                  class="text-[11px] text-neutral-400 hover:text-rose-600 transition-colors"
+                  class="text-[11px] text-neutral-500 hover:text-rose-600 transition-colors"
                 >
                   Remove
                 </button>
@@ -254,7 +254,7 @@ import { BadgeComponent } from '../shared/badge.component';
               >
                 <div>
                   <p class="font-medium text-neutral-900">{{ m.email }}</p>
-                  <p class="text-[10px] text-neutral-400 font-mono">{{ m.lastLoginAt || 'Recent' }}</p>
+                  <p class="text-[10px] text-neutral-500 font-mono">{{ m.lastLoginAt || 'Recent' }}</p>
                 </div>
                 <div class="flex items-center gap-2">
                   <span class="rounded bg-neutral-100 px-2 py-0.5 text-[10px] font-mono text-neutral-700">

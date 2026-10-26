@@ -69,7 +69,7 @@ import { BadgeComponent } from '../shared/badge.component';
 
         <!-- Search Input -->
         <div class="relative w-full sm:w-72">
-          <app-icon name="search" classNames="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2"></app-icon>
+          <app-icon name="search" classNames="w-3.5 h-3.5 text-neutral-500 absolute left-3 top-1/2 -translate-y-1/2"></app-icon>
           <input
             [(ngModel)]="searchQuery"
             type="text"
@@ -79,7 +79,7 @@ import { BadgeComponent } from '../shared/badge.component';
           <button
             *ngIf="searchQuery"
             (click)="searchQuery = ''"
-            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-700"
           >
             <app-icon name="x" classNames="w-3 h-3"></app-icon>
           </button>
@@ -115,7 +115,7 @@ import { BadgeComponent } from '../shared/badge.component';
                     <span class="font-semibold text-neutral-900 group-hover:text-black">
                       {{ tenant.name }}
                     </span>
-                    <p class="text-[11px] text-neutral-400 font-mono truncate max-w-[200px]">
+                    <p class="text-[11px] text-neutral-500 font-mono truncate max-w-[200px]">
                       {{ tenant.primaryContact || '—' }}
                     </p>
                   </div>
@@ -138,7 +138,7 @@ import { BadgeComponent } from '../shared/badge.component';
               <!-- Source Count -->
               <td class="px-3 py-3.5 font-mono text-neutral-700">
                 <div class="flex items-center gap-1.5">
-                  <app-icon name="book-open" classNames="w-3 h-3 text-neutral-400"></app-icon>
+                  <app-icon name="book-open" classNames="w-3 h-3 text-neutral-500"></app-icon>
                   <span class="font-semibold">{{ tenant.sourceCount || 0 }}</span>
                   <span class="text-neutral-400 text-[10px]">active</span>
                 </div>
@@ -226,10 +226,10 @@ import { BadgeComponent } from '../shared/badge.component';
 
             <!-- Empty State -->
             <tr *ngIf="filteredTenants.length === 0">
-              <td colspan="7" class="py-12 text-center text-neutral-400">
+              <td colspan="7" class="py-12 text-center text-neutral-500">
                 <app-icon name="building" classNames="mx-auto w-8 h-8 text-neutral-300"></app-icon>
                 <p class="mt-2 text-xs font-medium text-neutral-600">No organizations found matching criteria.</p>
-                <p class="text-[11px] text-neutral-400">Try adjusting your search query or status filter.</p>
+                <p class="text-[11px] text-neutral-500">Try adjusting your search query or status filter.</p>
               </td>
             </tr>
           </tbody>

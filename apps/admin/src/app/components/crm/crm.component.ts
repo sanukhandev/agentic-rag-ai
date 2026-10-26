@@ -17,7 +17,7 @@ import { IconComponent } from '../shared/icon.component';
       <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 border-b border-neutral-200/80 pb-5">
         <div>
           <div class="flex items-center gap-2">
-            <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-400">Customer Intelligence</p>
+            <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-500">Customer Intelligence</p>
             <app-badge variant="neutral" [showDot]="false" text="">
               {{ leads.length }} {{ leads.length === 1 ? 'Lead' : 'Leads' }}
             </app-badge>
@@ -51,19 +51,19 @@ import { IconComponent } from '../shared/icon.component';
       <!-- Quick Metrics Summary Strip -->
       <div *ngIf="leads.length > 0" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div class="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-subtle">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Total Leads</span>
+          <span class="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Total Leads</span>
           <p class="mt-1 text-xl font-bold text-neutral-900">{{ leads.length }}</p>
         </div>
         <div class="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-subtle">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Hot Leads</span>
+          <span class="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Hot Leads</span>
           <p class="mt-1 text-xl font-bold text-rose-700">{{ hotCount }}</p>
         </div>
         <div class="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-subtle">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Warm Leads</span>
+          <span class="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Warm Leads</span>
           <p class="mt-1 text-xl font-bold text-amber-700">{{ warmCount }}</p>
         </div>
         <div class="rounded-xl border border-neutral-200 bg-white p-3.5 shadow-subtle">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Validated</span>
+          <span class="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Validated</span>
           <p class="mt-1 text-xl font-bold text-emerald-700">{{ validatedCount }}</p>
         </div>
       </div>
@@ -71,7 +71,7 @@ import { IconComponent } from '../shared/icon.component';
       <!-- Search & Filter Controls -->
       <div *ngIf="leads.length > 0" class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div class="relative flex-1 max-w-md">
-          <app-icon name="search" classNames="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400"></app-icon>
+          <app-icon name="search" classNames="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-500"></app-icon>
           <input
             type="text"
             [(ngModel)]="searchQuery"
@@ -122,10 +122,10 @@ import { IconComponent } from '../shared/icon.component';
         class="rounded-2xl border border-neutral-200 bg-white p-12 text-center shadow-subtle animate-pulse space-y-3"
       >
         <div class="flex justify-center">
-          <app-icon name="refresh" classNames="w-6 h-6 text-neutral-400 animate-spin"></app-icon>
+          <app-icon name="refresh" classNames="w-6 h-6 text-neutral-500 animate-spin"></app-icon>
         </div>
         <p class="text-sm font-medium text-neutral-700">Loading validated CRM leads...</p>
-        <p class="text-xs text-neutral-400">Rehydrating customer contact details from secure vault.</p>
+        <p class="text-xs text-neutral-500">Rehydrating customer contact details from secure vault.</p>
       </div>
 
       <!-- Empty State -->
@@ -133,7 +133,7 @@ import { IconComponent } from '../shared/icon.component';
         *ngIf="!isLoading && leads.length === 0"
         class="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center shadow-subtle space-y-3"
       >
-        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-100 text-neutral-400">
+        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-100 text-neutral-500">
           <app-icon name="users" classNames="w-6 h-6"></app-icon>
         </div>
         <h3 class="text-base font-semibold text-neutral-900">No Validated Leads Captured Yet</h3>
@@ -232,7 +232,7 @@ import { IconComponent } from '../shared/icon.component';
                     </button>
                   </div>
 
-                  <span *ngIf="!lead.leadData.email && !lead.leadData.phone" class="text-xs italic text-neutral-400">
+                  <span *ngIf="!lead.leadData.email && !lead.leadData.phone" class="text-xs italic text-neutral-500">
                     No direct contact details provided in chat
                   </span>
                 </div>
@@ -267,7 +267,7 @@ import { IconComponent } from '../shared/icon.component';
             <div class="rounded-xl border border-neutral-100 bg-neutral-50/70 p-4 flex flex-col justify-between">
               <div>
                 <div class="flex items-center justify-between pb-2 mb-2 border-b border-neutral-200/60">
-                  <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">
+                  <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">
                     CRM Opportunity Specification
                   </span>
                   <div class="flex items-center gap-2">
@@ -287,7 +287,7 @@ import { IconComponent } from '../shared/icon.component';
                   <p class="text-xs sm:text-[13px] leading-relaxed text-neutral-500">{{ lead.summaryStatus === 'failed' ? 'Summary processing failed; retry the workflow.' : 'Summary is being prepared by the backend...' }}</p>
                 </ng-template>
                 <div *ngIf="lead.documents?.length" class="mt-4 border-t border-neutral-200/60 pt-3">
-                  <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">Supporting documents</span>
+                  <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">Supporting documents</span>
                   <div *ngFor="let document of lead.documents" class="mt-2 flex items-center justify-between gap-2 rounded-lg bg-white p-2 text-xs">
                     <span class="min-w-0 truncate" [title]="document.fileName">{{ document.fileName }}</span>
                     <span class="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase">{{ documentStatusLabel(document.status) }}</span>
@@ -296,7 +296,7 @@ import { IconComponent } from '../shared/icon.component';
                 </div>
               </div>
 
-              <div class="mt-4 pt-3 border-t border-neutral-200/60 flex items-center justify-between text-[11px] text-neutral-400">
+              <div class="mt-4 pt-3 border-t border-neutral-200/60 flex items-center justify-between text-[11px] text-neutral-500">
                 <span class="font-mono truncate max-w-[200px]" title="Session ID: {{ lead.sessionId }}">
                   Session: {{ lead.sessionId || 'N/A' }}
                 </span>
@@ -308,7 +308,7 @@ import { IconComponent } from '../shared/icon.component';
             <div class="rounded-xl border border-neutral-100 bg-neutral-50/70 p-4 flex flex-col justify-between">
               <div>
                 <div class="flex items-center justify-between pb-2 mb-3 border-b border-neutral-200/60">
-                  <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">Conversation history</span>
+                  <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">Conversation history</span>
                   <span class="text-[11px] text-neutral-500 font-mono">{{ lead.conversation.length }} turns</span>
                 </div>
                 <p class="text-xs leading-relaxed text-neutral-500">Open the protected transcript when you need the full customer context.</p>
@@ -321,7 +321,7 @@ import { IconComponent } from '../shared/icon.component';
           </div>
 
           <!-- Lead Card Footer -->
-          <div *ngIf="expandedLeadId === lead.id" class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-neutral-100 text-[11px] text-neutral-400">
+          <div *ngIf="expandedLeadId === lead.id" class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-neutral-100 text-[11px] text-neutral-500">
             <div class="flex items-center gap-3">
               <span>Captured: {{ lead.createdAt | date:'medium' }}</span>
               <span class="text-neutral-300">·</span>
@@ -335,7 +335,7 @@ import { IconComponent } from '../shared/icon.component';
                 Workflow action: {{ lead.actionId }}
               </span>
             </div>
-            <span class="font-mono text-[10px] text-neutral-400">Status: {{ summaryStatusLabel(lead.summaryStatus) }}</span>
+            <span class="font-mono text-[10px] text-neutral-500">Status: {{ summaryStatusLabel(lead.summaryStatus) }}</span>
           </div>
         </div>
       </div>
@@ -344,7 +344,7 @@ import { IconComponent } from '../shared/icon.component';
         <div class="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
           <div class="flex items-start justify-between gap-4 border-b border-neutral-200 px-5 py-4">
             <div>
-              <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">Conversation transcript</p>
+              <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">Conversation transcript</p>
               <h3 id="transcript-title" class="mt-1 text-lg font-bold text-neutral-900">{{ transcriptLead.leadData.name || 'Unnamed contact request' }}</h3>
               <p class="mt-1 text-xs text-neutral-500">{{ transcriptLead.leadData.email || transcriptLead.leadData.phone || 'No direct contact details' }} · {{ transcriptLead.conversation.length }} turns</p>
             </div>
@@ -358,7 +358,7 @@ import { IconComponent } from '../shared/icon.component';
               </div>
               <p class="whitespace-pre-wrap leading-relaxed">{{ msg.content }}</p>
             </div>
-            <p *ngIf="transcriptLead.conversation.length === 0" class="text-center text-sm italic text-neutral-400">No turns recorded in session.</p>
+            <p *ngIf="transcriptLead.conversation.length === 0" class="text-center text-sm italic text-neutral-500">No turns recorded in session.</p>
           </div>
         </div>
       </div>

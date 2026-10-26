@@ -86,7 +86,7 @@ import { BadgeComponent } from '../shared/badge.component';
             (click)="refresh()"
             class="flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 transition-colors"
           >
-            <app-icon name="refresh" classNames="w-3.5 h-3.5 text-neutral-400"></app-icon>
+            <app-icon name="refresh" classNames="w-3.5 h-3.5 text-neutral-500"></app-icon>
             <span>Refresh Sources</span>
           </button>
         </div>
@@ -279,7 +279,7 @@ import { BadgeComponent } from '../shared/badge.component';
           <!-- Drag and Drop Dropzone -->
           <div class="mt-2 flex justify-center rounded-xl border border-dashed border-neutral-300 px-6 py-8 hover:border-neutral-900 transition-colors">
             <div class="text-center">
-              <app-icon name="upload" classNames="mx-auto h-8 w-8 text-neutral-400"></app-icon>
+              <app-icon name="upload" classNames="mx-auto h-8 w-8 text-neutral-500"></app-icon>
               <div class="mt-3 flex text-xs leading-6 text-neutral-600 justify-center">
                 <label
                   for="file-upload"
@@ -297,7 +297,7 @@ import { BadgeComponent } from '../shared/badge.component';
                 </label>
                 <p class="pl-1">or drag and drop here</p>
               </div>
-              <p class="text-[11px] text-neutral-400 mt-1">PDF, DOCX, XLSX, TXT, MD, CSV, JSON, JSONL, ZIP up to 20 MiB</p>
+              <p class="text-[11px] text-neutral-500 mt-1">PDF, DOCX, XLSX, TXT, MD, CSV, JSON, JSONL, ZIP up to 20 MiB</p>
               <p *ngIf="selectedFile" class="mt-2 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded inline-block">
                 Selected: {{ selectedFile.name }} ({{ (selectedFile.size / 1024) | number:'1.0-0' }} KB)
               </p>

@@ -33,6 +33,13 @@ import { CommonModule } from '@angular/common';
         <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
       </ng-container>
 
+            <ng-container *ngIf="name === 'workflow' || name === 'catalog' || name === 'git-branch'">
+        <line x1="6" y1="3" x2="6" y2="15" />
+        <circle cx="18" cy="6" r="3" />
+        <circle cx="6" cy="18" r="3" />
+        <path d="M18 9a9 9 0 0 1-9 9" />
+      </ng-container>
+
       <ng-container *ngIf="name === 'bot' || name === 'studio' || name === 'ai'">
         <rect width="18" height="12" x="3" y="6" rx="2" />
         <path d="M9 12h.01M15 12h.01M12 2v4M2 12h1M21 12h1M6 18v2M18 18v2" />

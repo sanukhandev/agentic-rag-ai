@@ -15,7 +15,7 @@ import { apiErrorMessage } from '../../services/api-error';
     <section class="space-y-6">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-400">Controlled routing</p>
+          <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-500">Controlled routing</p>
           <h2 class="mt-1 text-xl font-bold tracking-tight text-neutral-900">Intent Catalog</h2>
           <p class="mt-1 max-w-2xl text-sm text-neutral-500">Upload the approved Excel contract, review the server-validated draft, then publish one tenant-scoped version for chat and workflow decisions.</p>
         </div>
@@ -48,7 +48,7 @@ import { apiErrorMessage } from '../../services/api-error';
             <div>
               <div class="flex items-center gap-2"><span class="font-mono text-sm font-bold">v{{ version.version }}</span><app-badge [variant]="version.status === 'published' ? 'black' : 'outline'" [showDot]="version.status === 'published'" [text]="version.status | uppercase"></app-badge></div>
               <p class="mt-1 text-xs text-neutral-500">{{ version.sourceFileName }} · {{ version.catalog.intents.length }} intents · {{ version.catalog.signals.length }} signals · {{ version.catalog.slots.length }} slots · {{ version.catalog.workflowBindings.length }} workflow bindings</p>
-              <p class="mt-1 text-[11px] text-neutral-400">Imported {{ version.createdAt | date:'medium' }}<span *ngIf="version.publishedAt"> · Published {{ version.publishedAt | date:'medium' }}</span></p>
+              <p class="mt-1 text-[11px] text-neutral-500">Imported {{ version.createdAt | date:'medium' }}<span *ngIf="version.publishedAt"> · Published {{ version.publishedAt | date:'medium' }}</span></p>
             </div>
             <div class="flex flex-wrap gap-2">
               <button *ngIf="canManagePersona" type="button" (click)="startEdit(version)" class="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50">Edit catalog</button>
@@ -65,7 +65,7 @@ import { apiErrorMessage } from '../../services/api-error';
             <div *ngFor="let intent of version.catalog.intents" class="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
               <div class="flex items-start justify-between gap-3"><div><p class="font-semibold text-neutral-900">{{ intent.displayName }}</p><p class="mt-1 font-mono text-[11px] text-neutral-500">{{ intent.intentKey }}</p></div><app-badge [variant]="intent.active ? 'success' : 'outline'" [text]="intent.active ? 'Active' : 'Inactive'"></app-badge></div>
               <p *ngIf="intent.description" class="mt-3 text-xs leading-relaxed text-neutral-600">{{ intent.description }}</p>
-              <dl class="mt-3 grid grid-cols-2 gap-2 text-[11px] text-neutral-500"><div><dt class="font-semibold uppercase tracking-wide text-neutral-400">Workflow</dt><dd class="mt-1 font-mono text-neutral-700">{{ intent.workflowKey }}</dd></div><div><dt class="font-semibold uppercase tracking-wide text-neutral-400">Threshold</dt><dd class="mt-1 text-neutral-700">{{ intent.minimumScore ?? '—' }} / {{ intent.confidenceThreshold ?? '—' }}</dd></div></dl>
+              <dl class="mt-3 grid grid-cols-2 gap-2 text-[11px] text-neutral-500"><div><dt class="font-semibold uppercase tracking-wide text-neutral-500">Workflow</dt><dd class="mt-1 font-mono text-neutral-700">{{ intent.workflowKey }}</dd></div><div><dt class="font-semibold uppercase tracking-wide text-neutral-500">Threshold</dt><dd class="mt-1 text-neutral-700">{{ intent.minimumScore ?? '—' }} / {{ intent.confidenceThreshold ?? '—' }}</dd></div></dl>
               <div class="mt-3 flex flex-wrap gap-1.5"><span *ngFor="let signal of signalsFor(version, intent.intentKey)" class="rounded-full bg-white px-2 py-1 text-[10px] text-neutral-600" [class.line-through]="signal.signalType === 'exclusion'">{{ signal.value }} · {{ signal.weight }}</span></div>
             </div>
           </div>

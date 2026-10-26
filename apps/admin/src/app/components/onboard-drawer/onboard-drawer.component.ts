@@ -43,7 +43,7 @@ import { IconComponent } from '../shared/icon.component';
             <button
               type="button"
               (click)="close()"
-              class="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 transition-colors"
+              class="rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 transition-colors"
             >
               <app-icon name="x" classNames="w-4 h-4"></app-icon>
             </button>
@@ -70,7 +70,7 @@ import { IconComponent } from '../shared/icon.component';
               placeholder="e.g. Acme Corporation Global"
               class="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2 text-xs text-neutral-900 placeholder-neutral-400 focus:border-neutral-900 focus:outline-none focus:ring-1 focus:ring-neutral-900"
             />
-            <p class="mt-1 text-[11px] text-neutral-400">Official tenant identifier shown across all customer experiences.</p>
+            <p class="mt-1 text-[11px] text-neutral-500">Official tenant identifier shown across all customer experiences.</p>
           </div>
 
           <!-- Unique Slug -->
@@ -79,7 +79,7 @@ import { IconComponent } from '../shared/icon.component';
               Unique URL Slug <span class="text-rose-500">*</span>
             </label>
             <div class="mt-1.5 flex rounded-lg border border-neutral-200 focus-within:border-neutral-900 focus-within:ring-1 focus-within:ring-neutral-900 overflow-hidden">
-              <span class="inline-flex items-center px-2.5 text-[11px] font-mono text-neutral-400 bg-neutral-50 border-r border-neutral-200">
+              <span class="inline-flex items-center px-2.5 text-[11px] font-mono text-neutral-500 bg-neutral-50 border-r border-neutral-200">
                 api.tenant/
               </span>
               <input
@@ -92,7 +92,7 @@ import { IconComponent } from '../shared/icon.component';
                 class="w-full px-3 py-2 text-xs font-mono text-neutral-900 focus:outline-none"
               />
             </div>
-            <p class="mt-1 text-[11px] text-neutral-400">Alphanumeric lowercase identifier used for cross-tenant API scoping.</p>
+            <p class="mt-1 text-[11px] text-neutral-500">Alphanumeric lowercase identifier used for cross-tenant API scoping.</p>
           </div>
 
           <!-- Admin Email -->
@@ -109,7 +109,7 @@ import { IconComponent } from '../shared/icon.component';
               placeholder="admin@acme-corp.com"
               class="mt-1.5 w-full rounded-lg border border-neutral-200 px-3 py-2 text-xs text-neutral-900 placeholder-neutral-400 focus:border-neutral-900 focus:outline-none focus:ring-1 focus:ring-neutral-900"
             />
-            <p class="mt-1 text-[11px] text-neutral-400">Primary contact who holds full tenant administrative authority.</p>
+            <p class="mt-1 text-[11px] text-neutral-500">Primary contact who holds full tenant administrative authority.</p>
           </div>
 
           <!-- Admin Password -->
@@ -130,7 +130,7 @@ import { IconComponent } from '../shared/icon.component';
               <button
                 type="button"
                 (click)="showPassword = !showPassword"
-                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-700"
               >
                 <app-icon [name]="showPassword ? 'eye' : 'lock'" classNames="w-3.5 h-3.5"></app-icon>
               </button>

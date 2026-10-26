@@ -26,7 +26,7 @@ export type { CommandItem };
       >
         <!-- Search Input Header -->
         <div class="relative border-b border-neutral-100 flex items-center px-4 py-3">
-          <app-icon name="search" classNames="w-4 h-4 text-neutral-400 mr-3"></app-icon>
+          <app-icon name="search" classNames="w-4 h-4 text-neutral-500 mr-3"></app-icon>
           <input
             #searchInput
             [(ngModel)]="query"
@@ -34,7 +34,7 @@ export type { CommandItem };
             placeholder="Type a command, section, or search term..."
             class="w-full text-xs sm:text-sm text-neutral-900 placeholder-neutral-400 focus:outline-none bg-transparent"
           />
-          <kbd class="rounded border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[10px] font-mono text-neutral-400">
+          <kbd class="rounded border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[10px] font-mono text-neutral-500">
             Esc
           </kbd>
         </div>
@@ -54,19 +54,19 @@ export type { CommandItem };
                 </div>
                 <span>{{ item.title }}</span>
               </div>
-              <span class="rounded bg-neutral-100/70 px-1.5 py-0.5 text-[10px] font-mono text-neutral-400">
+              <span class="rounded bg-neutral-100/70 px-1.5 py-0.5 text-[10px] font-mono text-neutral-500">
                 {{ item.category }}
               </span>
             </button>
           </div>
 
-          <div *ngIf="filteredItems.length === 0" class="py-8 text-center text-xs text-neutral-400">
+          <div *ngIf="filteredItems.length === 0" class="py-8 text-center text-xs text-neutral-500">
             No matching commands or entities found for "{{ query }}".
           </div>
         </div>
 
         <!-- Footer Help -->
-        <div class="border-t border-neutral-100 bg-neutral-50/70 px-4 py-2.5 flex items-center justify-between text-[11px] text-neutral-400">
+        <div class="border-t border-neutral-100 bg-neutral-50/70 px-4 py-2.5 flex items-center justify-between text-[11px] text-neutral-500">
           <div class="flex items-center gap-2">
             <span>Navigation:</span>
             <kbd class="font-mono text-[10px] bg-white border px-1 rounded">↑↓</kbd>

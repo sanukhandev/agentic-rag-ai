@@ -29,7 +29,7 @@ import { BadgeComponent } from '../shared/badge.component';
               (click)="refreshJobs()"
               class="rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors flex items-center gap-1 button-press"
             >
-              <app-icon name="refresh" classNames="w-3 h-3 text-neutral-400"></app-icon>
+              <app-icon name="refresh" classNames="w-3 h-3 text-neutral-500"></app-icon>
               <span>Sync</span>
             </button>
           </div>
@@ -40,7 +40,7 @@ import { BadgeComponent } from '../shared/badge.component';
           <!-- Jobs List (Scroll-constrained) -->
           <div *ngIf="jobs.length === 0" class="mt-4 rounded-xl border border-dashed border-neutral-200 p-8 text-center">
             <p class="text-xs font-medium text-neutral-500">No active or historical ingestion jobs</p>
-            <p class="mt-1 text-[11px] text-neutral-400">Stage or upload source files to trigger vector indexing.</p>
+            <p class="mt-1 text-[11px] text-neutral-500">Stage or upload source files to trigger vector indexing.</p>
           </div>
 
           <div *ngIf="jobs.length > 0" class="mt-3.5 max-h-[360px] overflow-y-auto pr-1 space-y-2">
@@ -57,7 +57,7 @@ import { BadgeComponent } from '../shared/badge.component';
                     <h4 class="text-xs font-semibold text-neutral-900 truncate">
                       {{ job.title }}
                     </h4>
-                    <div class="mt-0.5 flex items-center gap-2 text-[10px] text-neutral-400 font-mono">
+                    <div class="mt-0.5 flex items-center gap-2 text-[10px] text-neutral-500 font-mono">
                       <span>Attempts: {{ job.attempts }}</span>
                       <span>·</span>
                       <span>{{ job.updatedAt | date:'shortTime' }}</span>
@@ -94,7 +94,7 @@ import { BadgeComponent } from '../shared/badge.component';
           </div>
         </div>
 
-        <div class="mt-3 pt-2.5 border-t border-neutral-100 flex items-center justify-between text-[11px] text-neutral-400 font-mono">
+        <div class="mt-3 pt-2.5 border-t border-neutral-100 flex items-center justify-between text-[11px] text-neutral-500 font-mono">
           <span>Python Ingestion Worker</span>
           <span>Status: Active</span>
         </div>
@@ -118,7 +118,7 @@ import { BadgeComponent } from '../shared/badge.component';
               (click)="refreshAudit()"
               class="rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors flex items-center gap-1 button-press"
             >
-              <app-icon name="refresh" classNames="w-3 h-3 text-neutral-400"></app-icon>
+              <app-icon name="refresh" classNames="w-3 h-3 text-neutral-500"></app-icon>
               <span>Sync</span>
             </button>
           </div>
@@ -129,7 +129,7 @@ import { BadgeComponent } from '../shared/badge.component';
           <!-- Events List -->
           <div *ngIf="auditEvents.length === 0" class="mt-4 rounded-xl border border-dashed border-neutral-200 p-8 text-center">
             <p class="text-xs font-medium text-neutral-500">No audit events recorded yet</p>
-            <p class="mt-1 text-[11px] text-neutral-400">Tenant lifecycle, workflow runs, and source mutations appear here.</p>
+            <p class="mt-1 text-[11px] text-neutral-500">Tenant lifecycle, workflow runs, and source mutations appear here.</p>
           </div>
 
           <!-- Constrained Scroll List (prevents exceeding the window) -->
@@ -148,7 +148,7 @@ import { BadgeComponent } from '../shared/badge.component';
                     {{ event.eventName }}
                   </span>
                 </div>
-                <span class="text-[10px] text-neutral-400 font-mono shrink-0">
+                <span class="text-[10px] text-neutral-500 font-mono shrink-0">
                   {{ event.createdAt | date:'shortTime' }}
                 </span>
               </div>
@@ -162,7 +162,7 @@ import { BadgeComponent } from '../shared/badge.component';
 
               <!-- Collapsible Raw JSON Details (default collapsed to keep it minimal) -->
               <details *ngIf="hasMetadata(event)" class="pt-1 border-t border-neutral-200/50">
-                <summary class="cursor-pointer text-[10px] text-neutral-400 hover:text-neutral-700 transition-colors select-none font-mono">
+                <summary class="cursor-pointer text-[10px] text-neutral-500 hover:text-neutral-700 transition-colors select-none font-mono">
                   Inspect JSON
                 </summary>
                 <pre class="mt-1 rounded bg-neutral-950 p-2 text-[10px] text-neutral-300 font-mono overflow-x-auto whitespace-pre-wrap break-words leading-tight">{{ event.metadata | json }}</pre>
@@ -171,7 +171,7 @@ import { BadgeComponent } from '../shared/badge.component';
           </div>
         </div>
 
-        <div class="mt-3 pt-2.5 border-t border-neutral-100 flex items-center justify-between text-[11px] text-neutral-400 font-mono">
+        <div class="mt-3 pt-2.5 border-t border-neutral-100 flex items-center justify-between text-[11px] text-neutral-500 font-mono">
           <span>Audit Retention: 90 Days</span>
           <span>Tamper-Resistant Log</span>
         </div>
