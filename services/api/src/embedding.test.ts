@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AzureEmbeddingProvider } from './embedding.js';
+import { AzureEmbeddingProvider, DeterministicEmbeddingProvider } from './embedding.js';
 
 describe('Azure embedding adapter', () => {
   it('sends only the supplied text and validates the response dimension', async () => {
@@ -23,5 +23,12 @@ describe('Azure embedding adapter', () => {
     const provider = new AzureEmbeddingProvider('https://foundry.example', 'embed-v1', 'server-key', '2026-01-01', 2);
     await expect(provider.embedBatch?.(['first', 'second'])).resolves.toEqual([[0.1, 0.2], [0.3, 0.4]]);
     fetchMock.mockRestore();
+  });
+});
+
+describe('deterministic embedding adapter', () => {
+  it('supports the migrated PostgreSQL vector dimension for credential-free local runs', async () => {
+    const provider = new DeterministicEmbeddingProvider(1536);
+    await expect(provider.embed('local fallback')).resolves.toHaveLength(1536);
   });
 });

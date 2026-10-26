@@ -5,9 +5,9 @@ import type { EmbeddingProvider } from './embedding.js';
 
 export const EMBEDDING_MODEL = 'deterministic-demo-8d-v1';
 
-export const embedText = (text: string): number[] => {
+export const embedText = (text: string, dimension = 8): number[] => {
   const digest = createHash('sha256').update(text).digest();
-  const values = Array.from({ length: 8 }, (_, index) => (digest[index] ?? 0) / 255);
+  const values = Array.from({ length: dimension }, (_, index) => (digest[index % digest.length] ?? 0) / 255);
   const magnitude = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0)) || 1;
   return values.map((value) => value / magnitude);
 };

@@ -176,7 +176,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       expect((await store.getSession(session.id))?.tokenMap.get('[EMAIL_1]')).toBe('v1.ciphertext');
       const sourceId = randomUUID();
       const versionId = randomUUID();
-      const source = await store.createSource({ id: sourceId, tenantId: tenant.id, title: 'FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'awaiting_review', versionId, contentHash: 'hash', chunks: [{ id: randomUUID(), sourceId, tenantId: tenant.id, versionId, ordinal: 0, locator: 'section 1', content: 'Pricing is 100 credits.', contentHash: 'chunk-hash', embedding: postgresEmbedding }] });
+      const source = await store.createSource({ id: sourceId, tenantId: tenant.id, title: 'FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'awaiting_review', embeddingReady: true, versionId, contentHash: 'hash', chunks: [{ id: randomUUID(), sourceId, tenantId: tenant.id, versionId, ordinal: 0, locator: 'section 1', content: 'Pricing is 100 credits.', contentHash: 'chunk-hash', embedding: postgresEmbedding }] });
       const job = await store.createIngestionJob({ id: randomUUID(), tenantId: tenant.id, title: 'FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public' });
       const claimedJob = await store.claimIngestionJob(job.id, 60_000);
       expect(claimedJob).toMatchObject({ status: 'processing', attempts: 1 });

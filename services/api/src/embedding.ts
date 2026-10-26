@@ -8,11 +8,14 @@ export interface EmbeddingProvider {
 }
 
 export class DeterministicEmbeddingProvider implements EmbeddingProvider {
-  readonly model = 'deterministic-demo-8d-v1';
-  readonly dimension = 8;
+  readonly model: string;
+  constructor(readonly dimension = 8) {
+    if (!Number.isInteger(dimension) || dimension < 1) throw new Error('Deterministic embedding dimension must be a positive integer.');
+    this.model = `deterministic-demo-${dimension}d-v1`;
+  }
   async embed(text: string): Promise<number[]> {
     const { embedText } = await import('./knowledge.js');
-    return embedText(text);
+    return embedText(text, this.dimension);
   }
 }
 

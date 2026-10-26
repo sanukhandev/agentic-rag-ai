@@ -449,6 +449,21 @@ describe('API vertical slice', () => {
     expect(tenant.body.tenant.id).toBeTruthy();
   });
 
+  it('blocks publication until a migrated source has replacement embeddings', async () => {
+    const store = new MemoryStore();
+    const runtime = createApp({ store, nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-reindex-gate@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Reindex Gate Tenant', slug: 'reindex-gate-tenant', adminEmail: 'admin-reindex-gate@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-reindex-gate@example.test', password: 'TenantA1Password' }).expect(200);
+    const sourceId = randomUUID();
+    const versionId = randomUUID();
+    const content = 'Migrated source content.';
+    await store.createSource({ id: sourceId, tenantId: tenant.body.tenant.id, title: 'Migrated FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'awaiting_review', embeddingReady: false, versionId, contentHash: contentHash(content), chunks: [{ id: randomUUID(), sourceId, tenantId: tenant.body.tenant.id, versionId, ordinal: 0, locator: 'section 1', content, contentHash: contentHash(content), embedding: [0, 0, 0, 0, 0, 0, 0, 0] }] });
+    const response = await api.post(`/api/v1/admin/sources/${sourceId}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(409);
+    expect(response.body.error).toMatchObject({ code: 'SOURCE_REINDEX_REQUIRED' });
+  });
+
   it('keeps the active source version when reindexing fails', async () => {
     const store = new MemoryStore();
     const embedding: EmbeddingProvider = { model: 'failing-test', dimension: 8, embed: async () => { throw new Error('embedding unavailable'); } };
@@ -460,7 +475,7 @@ describe('API vertical slice', () => {
     const sourceId = randomUUID();
     const versionId = randomUUID();
     const content = 'The previously approved answer.';
-    await store.createSource({ id: sourceId, tenantId: tenant.body.tenant.id, title: 'Stable FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'awaiting_review', versionId, contentHash: contentHash(content), chunks: [{ id: randomUUID(), sourceId, tenantId: tenant.body.tenant.id, versionId, ordinal: 0, locator: 'section 1', content, contentHash: contentHash(content), embedding: [0, 0, 0, 0, 0, 0, 0, 0] }] });
+    await store.createSource({ id: sourceId, tenantId: tenant.body.tenant.id, title: 'Stable FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'awaiting_review', embeddingReady: true, versionId, contentHash: contentHash(content), chunks: [{ id: randomUUID(), sourceId, tenantId: tenant.body.tenant.id, versionId, ordinal: 0, locator: 'section 1', content, contentHash: contentHash(content), embedding: [0, 0, 0, 0, 0, 0, 0, 0] }] });
     await store.setSourceStatus(sourceId, tenant.body.tenant.id, 'active');
     await api.post(`/api/v1/admin/sources/${sourceId}/reindex`).set('Authorization', `Bearer ${admin.body.token}`).expect(500);
     expect((await store.getSource(sourceId))?.status).toBe('active');

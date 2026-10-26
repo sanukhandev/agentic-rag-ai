@@ -245,7 +245,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   if (!dependencies.tokenVault) assertPiiVaultSecret(process.env.PII_VAULT_KEY, nodeEnv);
   const tokenVault = dependencies.tokenVault ?? new TokenVault(vaultSecret);
   const channelVault = new ChannelSecretVault(channelCredentialKey);
-  const embedding = dependencies.embedding ?? new DeterministicEmbeddingProvider();
+  const fallbackEmbeddingDimension = process.env.STORE === 'postgres' ? Number(process.env.AZURE_AI_EMBEDDING_DIMENSION ?? 1536) : 8;
+  const embedding = dependencies.embedding ?? new DeterministicEmbeddingProvider(fallbackEmbeddingDimension);
   const n8nCallbackSecret = dependencies.n8nCallbackSecret ?? process.env.N8N_WEBHOOK_SECRET ?? '';
   const ingestionWorkerSecret = dependencies.ingestionWorkerSecret ?? process.env.INGESTION_WORKER_SECRET ?? '';
   const ingestionStaging = new IngestionStaging(dependencies.ingestionStagingRoot ?? process.env.INGESTION_STAGING_ROOT ?? join(process.cwd(), 'data', 'ingestion-staging'));
@@ -590,7 +591,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       try {
         const chunks = await buildChunksWithEmbeddings(sourceBase, safeContent, embedding);
-        const source = await store.createSource({ id: sourceId, tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl ?? null, audience: input.audience ?? 'public', status: 'awaiting_review', versionId, contentHash: safeContentHash, chunks });
+        const source = await store.createSource({ id: sourceId, tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl ?? null, audience: input.audience ?? 'public', status: 'awaiting_review', embeddingReady: true, versionId, contentHash: safeContentHash, chunks });
         const completed = await store.updateIngestionJob({ ...job, sourceId: source.id, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
         await publishIngestionProgress(store, completed, 'completed', chunks.length, chunks.length, 'completed');
         await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'source.staged', metadata: { sourceId, chunks: chunks.length, jobId }, createdAt: new Date().toISOString() });
@@ -700,7 +701,18 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     } catch (error) { next(error); }
   });
   const setSourceStatus = (status: SourceStatus) => async (req: Request, res: Response, next: NextFunction) => {
-    try { const tenantId = await tenantForRequest(store, req); await activeTenant(store, tenantId); const source = await store.setSourceStatus(routeParam(req, 'id'), tenantId, status); if (!source) throw new HttpError(404, 'SOURCE_NOT_FOUND', 'Source not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: `source.${status}`, metadata: { sourceId: source.id }, createdAt: new Date().toISOString() }); res.json({ source }); } catch (error) { next(error); }
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      await activeTenant(store, tenantId);
+      const sourceId = routeParam(req, 'id');
+      const current = await store.getSource(sourceId);
+      if (!current || current.tenantId !== tenantId) throw new HttpError(404, 'SOURCE_NOT_FOUND', 'Source not found.');
+      if (status === 'active' && current.embeddingReady === false) throw new HttpError(409, 'SOURCE_REINDEX_REQUIRED', 'Reindex this source before publishing it.');
+      const source = await store.setSourceStatus(sourceId, tenantId, status);
+      if (!source) throw new HttpError(409, status === 'active' ? 'SOURCE_REINDEX_REQUIRED' : 'SOURCE_STATUS_CONFLICT', 'The source status could not be changed.');
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: `source.${status}`, metadata: { sourceId: source.id }, createdAt: new Date().toISOString() });
+      res.json({ source });
+    } catch (error) { next(error); }
   };
   app.post('/api/v1/admin/sources/:id/publish', protectedApi, requireRoles('tenant_admin'), setSourceStatus('active'));
   app.post('/api/v1/admin/sources/:id/revoke', protectedApi, requireRoles('tenant_admin'), setSourceStatus('revoked'));
@@ -868,7 +880,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const versionId = randomUUID();
         await publishIngestionProgress(store, job, 'embedding', 0, safeChunks.length, 'processing');
         const embeddedChunks = await buildIngestionChunksWithEmbeddings({ id: sourceId, tenantId: job.tenantId, versionId }, safeChunks, embedding, async (processed, total) => publishIngestionProgress(store, job, 'embedding', processed, total, 'processing'));
-        const source = await store.createSource({ id: sourceId, tenantId: job.tenantId, title: job.title, mimeType: job.mimeType, sourceUrl: job.sourceUrl, audience: job.audience, status: 'awaiting_review', versionId, contentHash: input.contentHash, chunks: embeddedChunks });
+        const source = await store.createSource({ id: sourceId, tenantId: job.tenantId, title: job.title, mimeType: job.mimeType, sourceUrl: job.sourceUrl, audience: job.audience, status: 'awaiting_review', embeddingReady: true, versionId, contentHash: input.contentHash, chunks: embeddedChunks });
         const completed = await store.updateIngestionJob({ ...job, sourceId: source.id, status: 'completed', errorDetail: warnings.length ? ingestionErrorDetail(warnings.join(' | ')) : null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
         await ingestionStaging.purge(job.id, job.mimeType);
         await publishIngestionProgress(store, completed, 'completed', embeddedChunks.length, embeddedChunks.length, 'completed');

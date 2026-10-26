@@ -3,7 +3,21 @@ BEGIN;
 DO $$
 DECLARE
   embedding_type text;
+  embedding_ready_existed boolean;
 BEGIN
+  SELECT EXISTS (
+    SELECT 1
+      FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'knowledge_sources'
+       AND column_name = 'embedding_ready'
+  ) INTO embedding_ready_existed;
+
+  IF NOT embedding_ready_existed THEN
+    ALTER TABLE knowledge_sources
+      ADD COLUMN embedding_ready boolean NOT NULL DEFAULT true;
+  END IF;
+
   SELECT format_type(att.atttypid, att.atttypmod)
     INTO embedding_type
     FROM pg_attribute att
@@ -11,10 +25,15 @@ BEGIN
      AND att.attname = 'embedding'
      AND NOT att.attisdropped;
 
+  IF embedding_type = 'vector(8)' OR (embedding_type = 'vector(1536)' AND NOT embedding_ready_existed) THEN
+    UPDATE knowledge_sources
+       SET embedding_ready = false;
+  END IF;
+
   IF embedding_type = 'vector(8)' THEN
     UPDATE knowledge_sources
-       SET status = 'awaiting_review', approved_at = NULL
-     WHERE status = 'active';
+       SET status = CASE WHEN status = 'active' THEN 'awaiting_review' ELSE status END,
+           approved_at = CASE WHEN status = 'active' THEN NULL ELSE approved_at END;
 
     ALTER TABLE source_chunks DROP COLUMN embedding;
     ALTER TABLE source_chunks

@@ -357,6 +357,7 @@ export interface Source {
   status: SourceStatus;
   versionId: string;
   contentHash: string;
+  embeddingReady: boolean;
   createdAt: string;
   approvedAt: string | null;
 }
