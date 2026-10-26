@@ -7,11 +7,12 @@ import { Channel, ChannelCredential, TenantDomain, Member, MemberRole, Tenant } 
 import { API_BASE_URL } from '../../services/tokens';
 import { IconComponent } from '../shared/icon.component';
 import { BadgeComponent } from '../shared/badge.component';
+import { ConfirmDialogComponent } from '../shared/confirm-dialog.component';
 
 @Component({
   selector: 'app-settings-view',
   standalone: true,
-  imports: [CommonModule, FormsModule, IconComponent, BadgeComponent],
+  imports: [CommonModule, FormsModule, IconComponent, BadgeComponent, ConfirmDialogComponent],
   template: `
     <div class="space-y-6">
       
@@ -81,7 +82,7 @@ import { BadgeComponent } from '../shared/badge.component';
                 <p class="font-semibold text-neutral-900">{{ credential.channel }} <span class="font-mono text-[10px] text-neutral-500">{{ credential.authMode }}</span></p>
                 <p class="font-mono text-[10px] text-neutral-500">{{ credential.keyId }} · {{ credential.active ? 'active' : 'revoked' }}</p>
               </div>
-              <button *ngIf="credential.active" type="button" (click)="revokeConnectorCredential(credential)" class="self-start rounded-md border border-rose-200 px-2.5 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-50 sm:self-auto">Revoke</button>
+              <button *ngIf="credential.active" type="button" (click)="requestRevokeCredential(credential)" class="self-start rounded-md border border-rose-200 px-2.5 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-50 sm:self-auto">Revoke</button>
             </div>
           </div>
           <p class="mt-3 text-[10px] leading-relaxed text-neutral-500">Legacy VM fallback: <code>OMNI_CHANNEL_API_KEY</code>. Use it only until a database credential is created and distributed to the connector.</p>

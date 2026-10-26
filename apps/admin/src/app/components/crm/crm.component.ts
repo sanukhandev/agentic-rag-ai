@@ -6,11 +6,12 @@ import { AdminStateService } from '../../services/admin-state.service';
 import { CrmLead } from '../../types/admin.types';
 import { BadgeComponent } from '../shared/badge.component';
 import { IconComponent } from '../shared/icon.component';
+import { PaginationComponent } from '../shared/pagination.component';
 
 @Component({
   selector: 'app-crm',
   standalone: true,
-  imports: [CommonModule, FormsModule, BadgeComponent, IconComponent],
+  imports: [CommonModule, FormsModule, BadgeComponent, IconComponent, PaginationComponent],
   template: `
     <section class="space-y-6 animate-fade-in">
       <!-- Section Header -->
@@ -74,7 +75,7 @@ import { IconComponent } from '../shared/icon.component';
           <app-icon name="search" classNames="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-500"></app-icon>
           <input
             type="text"
-            [(ngModel)]="searchQuery"
+            [(ngModel)]="searchQuery" (ngModelChange)="currentPage = 1"
             placeholder="Search leads by name, email, phone, or intent..."
             class="w-full rounded-lg border border-neutral-200 bg-white pl-9 pr-3 py-1.5 text-xs text-neutral-800 placeholder-neutral-400 focus:border-neutral-400 focus:outline-none transition-colors"
           />
@@ -83,7 +84,7 @@ import { IconComponent } from '../shared/icon.component';
         <div class="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
           <button
             type="button"
-            (click)="qualityFilter = 'all'"
+            (click)="qualityFilter = 'all'; currentPage = 1"
             class="rounded-lg px-2.5 py-1 text-xs font-medium transition-colors"
             [ngClass]="qualityFilter === 'all' ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'"
           >
@@ -91,7 +92,7 @@ import { IconComponent } from '../shared/icon.component';
           </button>
           <button
             type="button"
-            (click)="qualityFilter = 'hot'"
+            (click)="qualityFilter = 'hot'; currentPage = 1"
             class="rounded-lg px-2.5 py-1 text-xs font-medium transition-colors"
             [ngClass]="qualityFilter === 'hot' ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'"
           >
@@ -99,7 +100,7 @@ import { IconComponent } from '../shared/icon.component';
           </button>
           <button
             type="button"
-            (click)="qualityFilter = 'warm'"
+            (click)="qualityFilter = 'warm'; currentPage = 1"
             class="rounded-lg px-2.5 py-1 text-xs font-medium transition-colors"
             [ngClass]="qualityFilter === 'warm' ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'"
           >
@@ -107,7 +108,7 @@ import { IconComponent } from '../shared/icon.component';
           </button>
           <button
             type="button"
-            (click)="qualityFilter = 'new'"
+            (click)="qualityFilter = 'new'; currentPage = 1"
             class="rounded-lg px-2.5 py-1 text-xs font-medium transition-colors"
             [ngClass]="qualityFilter === 'new' ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'"
           >
@@ -163,7 +164,7 @@ import { IconComponent } from '../shared/icon.component';
       <!-- Leads Grid / List -->
       <div *ngIf="filteredLeads.length > 0" class="space-y-3">
         <div
-          *ngFor="let lead of filteredLeads"
+          *ngFor="let lead of paginatedLeads"
           class="rounded-2xl border border-neutral-200/90 bg-white p-4 shadow-subtle transition-all hover:border-neutral-300 hover:shadow-card"
         >
           <!-- Lead Card Header with Unmasked PII & Outreach Actions -->
@@ -338,6 +339,14 @@ import { IconComponent } from '../shared/icon.component';
             <span class="font-mono text-[10px] text-neutral-500">Status: {{ summaryStatusLabel(lead.summaryStatus) }}</span>
           </div>
         </div>
+
+        <app-pagination
+          [totalItems]="filteredLeads.length"
+          [pageSize]="pageSize"
+          [currentPage]="currentPage"
+          (pageChange)="currentPage = $event"
+          (pageSizeChange)="pageSize = $event; currentPage = 1"
+        ></app-pagination>
       </div>
 
       <div *ngIf="transcriptLead" class="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="transcript-title">
@@ -373,6 +382,8 @@ export class CrmComponent implements OnInit, OnDestroy {
 
   searchQuery = '';
   qualityFilter: 'all' | 'hot' | 'warm' | 'new' = 'all';
+  currentPage = 1;
+  pageSize = 10;
   expandedLeadId: string | null = null;
   transcriptLead: CrmLead | null = null;
   summarizingLeadId: string | null = null;
@@ -436,6 +447,11 @@ export class CrmComponent implements OnInit, OnDestroy {
 
   get validatedCount(): number {
     return this.leads.filter((l) => l.validationPass).length;
+  }
+
+  get paginatedLeads(): CrmLead[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredLeads.slice(start, start + this.pageSize);
   }
 
   get filteredLeads(): CrmLead[] {
