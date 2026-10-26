@@ -1,4 +1,4 @@
-import type { Citation, IntentCatalog, LeadData } from './types.js';
+import type { Citation, FollowUpOfferOption, IntentCatalog, LeadData, PendingFollowUpOffer } from './types.js';
 import { z } from 'zod';
 import { assertExternalEndpoint } from './runtime-security.js';
 
@@ -9,7 +9,11 @@ export interface ModelDraft {
   answer: string;
   citationIds: string[];
   proposedIntent: string | null;
+  followUpOptions?: FollowUpOfferOption[] | null | undefined;
 }
+
+export type OfferReplyAction = 'accept' | 'reject' | 'select_option' | 'clarify' | 'new_request' | 'unknown';
+export interface ModelOfferReply { action: OfferReplyAction; optionKey?: string | null; confidence: number; }
 
 export interface QueryNormalizationInput {
   maskedMessage: string;
@@ -27,7 +31,9 @@ export interface ModelFollowUpContext {
   conversationSummary?: string;
   detectedSecondaryIntentKey?: string | null;
   continuityTurn?: boolean;
-  responseMode?: 'slot_collection' | 'intent_clarification' | 'consent' | 'confirmation' | 'document_collection' | 'document_processing' | 'knowledge' | 'mixed' | 'follow_up' | 'queued' | 'reconcile_follow_up';
+  responseMode?: 'slot_collection' | 'intent_clarification' | 'consent' | 'confirmation' | 'document_collection' | 'document_processing' | 'knowledge' | 'mixed' | 'follow_up' | 'queued' | 'reconcile_follow_up' | 'offer_clarification';
+  pendingOffer?: PendingFollowUpOffer | null;
+  resolvedOfferOption?: FollowUpOfferOption | null;
   nextSlotLabel?: string | null;
   nextRequirement?: { requirementKey: string; requirementType: string; promptKey: string; documentType?: string | null; label?: string | null } | null;
   documentPolicies?: Array<{
@@ -53,6 +59,7 @@ export interface ChatModel {
   draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[]; followUpContext?: ModelFollowUpContext }): Promise<ModelDraft>;
   compose?(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[]; followUpContext?: ModelFollowUpContext }): Promise<ModelDraft>;
   normalizeQuery?(input: QueryNormalizationInput): Promise<string | null>;
+  classifyOfferReply?(input: { maskedMessage: string; offer: PendingFollowUpOffer; conversation?: ConversationTurn[]; conversationSummary?: string; activeIntentKey?: string | null }): Promise<ModelOfferReply>;
   summarize?(input: CrmSummaryInput): Promise<string>;
 }
 
@@ -69,6 +76,43 @@ export const normalizeConversationQuery = (text: string): string => text
   .replace(/\s+/gu, ' ')
   .trim()
   .slice(0, 4_000);
+
+const offerReplyText = (text: string): string => normalizeConversationQuery(text).toLocaleLowerCase('en-US');
+const offerAffirmation = /^(?:yes|yeah|yep|sure|okay|ok|please do|go ahead|tell me more|please explain|that would help|i(?:'d| would) like that)(?:[\s,.]*(?:please|sure|yes|go ahead))*[.!]*$/iu;
+const offerRejection = /^(?:no|nope|not now|later|not yet|maybe later|decline|reject|stop|nothing else|i(?:'m| am) done)[.!]*$/iu;
+
+/** Resolves only against the currently persisted offer; it never chooses a business intent. */
+export const classifyOfferReplyDeterministically = (maskedMessage: string, offer: PendingFollowUpOffer): ModelOfferReply => {
+  const message = offerReplyText(maskedMessage);
+  if (offerRejection.test(message)) return { action: 'reject', confidence: 1 };
+  const matches = offer.options.filter((option) => [option.key, option.label, ...option.retrievalHints]
+    .map(offerReplyText)
+    .some((candidate) => candidate.length >= 3 && (message === candidate || message.includes(candidate))));
+  if (matches.length === 1) return { action: 'select_option', optionKey: matches[0]?.key ?? null, confidence: 1 };
+  if (matches.length > 1) return { action: 'clarify', confidence: 1 };
+  if (offerAffirmation.test(message)) return offer.options.length === 1
+    ? { action: 'accept', optionKey: offer.options[0]?.key ?? null, confidence: 1 }
+    : { action: 'clarify', confidence: 1 };
+  if (hasLeadIntent(message)) return { action: 'new_request', confidence: 1 };
+  const conversational = conversationalIntent(message);
+  if (conversational && conversational !== 'acknowledgement') return { action: 'new_request', confidence: 1 };
+  if (/^(?:what|how|where|which|why|when|who|can|could|would|tell me|please explain)\b/iu.test(message)) return { action: 'new_request', confidence: 1 };
+  return { action: 'unknown', confidence: 0 };
+};
+
+export const classifyOfferReply = async (model: ChatModel, input: { maskedMessage: string; offer: PendingFollowUpOffer; conversation?: ConversationTurn[]; conversationSummary?: string; activeIntentKey?: string | null }): Promise<ModelOfferReply> => {
+  const deterministic = classifyOfferReplyDeterministically(input.maskedMessage, input.offer);
+  if (deterministic.action !== 'unknown' || !model.classifyOfferReply) return deterministic;
+  try {
+    const result = await model.classifyOfferReply(input);
+    const validKey = result.optionKey && input.offer.options.some((option) => option.key === result.optionKey) ? result.optionKey : null;
+    const confidence = Number.isFinite(result.confidence) ? Math.min(Math.max(result.confidence, 0), 1) : 0;
+    if ((result.action === 'accept' || result.action === 'select_option') && !validKey) return { action: 'clarify', confidence };
+    return { action: result.action, optionKey: validKey, confidence };
+  } catch {
+    return deterministic;
+  }
+};
 
 const containsUnmaskedContact = (text: string): boolean => /(?:[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\+?\d[\d\s().-]{6,}\d)/u.test(text);
 const normalizationNumbers = (text: string): string[] => normalizeConversationQuery(text).match(/\b\d+(?:\.\d+)?\b/gu) ?? [];
@@ -137,7 +181,9 @@ const responseSystemPrompt = (input: {
     : '';
   const followUp = input.followUpContext?.responseMode === 'slot_collection'
     ? `The backend requires one natural question for the next field: ${input.followUpContext.nextSlotLabel ?? 'the requested information'}. Ask only that one question.`
-    : input.followUpContext?.responseMode === 'intent_clarification'
+    : input.followUpContext?.responseMode === 'offer_clarification'
+      ? `The visitor has not selected one of the currently offered paths. Ask which option they want, using only these labels: ${(input.followUpContext.pendingOffer?.options ?? []).map((option) => option.label).join(', ')}. Do not answer a different question or introduce new business facts.`
+      : input.followUpContext?.responseMode === 'intent_clarification'
       ? 'The backend needs one concise clarification of the visitor’s current request. Ask one natural question and do not expose internal routing details.'
       : input.followUpContext?.responseMode === 'consent'
         ? 'The backend has collected the required details. Ask the visitor to approve the displayed consent action, without claiming anything has been registered yet.'
@@ -149,8 +195,8 @@ const responseSystemPrompt = (input: {
               ? `The backend requires one concise confirmation for the current journey requirement${input.followUpContext.nextRequirement?.label ? ` (${input.followUpContext.nextRequirement.label})` : ''}. Ask the visitor to confirm only that named requirement; do not claim it is complete until they explicitly confirm.`
           : input.followUpContext?.responseMode === 'mixed'
             ? 'Answer the latest approved knowledge question first using only the supplied evidence. Acknowledge the visitor facts already captured, then ask only the one next catalog requirement question supplied by the backend. Do not expose routing or internal state.'
-            : input.followUpContext?.responseMode === 'knowledge'
-              ? 'Answer the latest approved knowledge question using only the supplied evidence. Preserve the active conversation context and pending requirement; do not invent facts or claim that a requirement was completed.'
+          : input.followUpContext?.responseMode === 'knowledge'
+              ? `Answer the latest approved knowledge question using only the supplied evidence. Preserve the active conversation context and pending requirement; do not invent facts or claim that a requirement was completed.${input.followUpContext.resolvedOfferOption ? ` The visitor selected this offered path: ${input.followUpContext.resolvedOfferOption.label}. Use its retrieval hints to answer the original offer, not the acknowledgement alone.` : ''}`
           : input.followUpContext?.responseMode === 'queued'
             ? 'The backend has accepted the request for asynchronous processing. Acknowledge the latest contribution and explain only that processing will continue; do not claim completion.'
           : input.followUpContext?.responseMode === 'follow_up'
@@ -168,7 +214,7 @@ const responseSystemPrompt = (input: {
     followUp,
     input.followUpContext?.leadCaptured ? 'The visitor already has a registered CRM lead. Treat the latest turn as a post-capture follow-up: answer it with supplied approved evidence, explain only source-backed packages, steps or timelines, and use published document policy only to offer the next document action. Do not repeat lead collection, invent requirements, promise completion or claim a document was received.' : '',
     input.followUpContext?.continuityTurn ? 'The latest turn is a short answer to the active conversation, not a factual question. Acknowledge only what the visitor supplied and ask one natural next question. Do not add business facts, prices, requirements, timelines, document claims or other unsupported assertions; return no citations.' : '',
-    'Return JSON only with answer, citationIds and proposedIntent. citationIds must use exact evidence citation.chunkId values; never use sourceId, title, locator, file name or a newly invented ID. proposedIntent may only be lead.capture when the visitor explicitly asks for contact, a call, an email, a demo, a quote or says they are interested.',
+    'Return JSON only with answer, citationIds, proposedIntent and followUpOptions. citationIds must use exact evidence citation.chunkId values; never use sourceId, title, locator, file name or a newly invented ID. proposedIntent may only be lead.capture when the visitor explicitly asks for contact, a call, an email, a demo, a quote or says they are interested. followUpOptions must be null unless the answer explicitly offers distinct next paths; when present return at most four objects with stable lowercase keys, human-readable labels, and short retrievalHints derived from the supplied evidence and current intent. These options are dialogue routing metadata, not authorization.',
   ].filter(Boolean).join(' ');
 };
 
@@ -212,6 +258,39 @@ export class AzureFoundryModel implements ChatModel {
     if (!result.success || containsUnmaskedContact(result.data.query)) return null;
     const normalized = normalizeConversationQuery(result.data.query);
     return preservesNormalizationFacts(input.maskedMessage, normalized) ? normalized : null;
+  }
+
+  async classifyOfferReply(input: { maskedMessage: string; offer: PendingFollowUpOffer; conversation?: ConversationTurn[]; conversationSummary?: string; activeIntentKey?: string | null }): Promise<ModelOfferReply> {
+    if (!this.endpoint || !this.deployment || !this.apiKey) return classifyOfferReplyDeterministically(input.maskedMessage, input.offer);
+    const endpoint = this.endpoint.replace(/\/$/u, '');
+    const v1 = /\/openai\/v1$/iu.test(endpoint);
+    const url = v1
+      ? `${endpoint}/chat/completions`
+      : `${endpoint}/openai/deployments/${encodeURIComponent(this.deployment)}/chat/completions?api-version=${encodeURIComponent(this.apiVersion)}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'api-key': this.apiKey },
+      signal: AbortSignal.timeout(3_000),
+      body: JSON.stringify({
+        ...(v1 ? { model: this.deployment } : {}),
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: 'Classify the latest masked visitor reply against the supplied pending conversational offer. Do not choose an intent, authorize an action, or answer the visitor. Use accept for an unambiguous affirmative to a single option, select_option when the visitor names exactly one option, reject for a clear decline, clarify when the visitor agrees but has not selected among multiple options, new_request when the visitor clearly asks a separate question, and unknown when uncertain. Return JSON only: {"action":"accept|reject|select_option|clarify|new_request|unknown","optionKey":null,"confidence":0}.' },
+          { role: 'user', content: JSON.stringify({ message: input.maskedMessage, offer: input.offer, conversation: input.conversation ?? [], conversationSummary: input.conversationSummary ?? '', activeIntentKey: input.activeIntentKey ?? null }) },
+        ],
+      }),
+    });
+    if (!response.ok) return classifyOfferReplyDeterministically(input.maskedMessage, input.offer);
+    let body: { choices?: Array<{ message?: { content?: unknown } }> };
+    try { body = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> }; } catch { return classifyOfferReplyDeterministically(input.maskedMessage, input.offer); }
+    const content = body.choices?.[0]?.message?.content;
+    if (typeof content !== 'string') return classifyOfferReplyDeterministically(input.maskedMessage, input.offer);
+    let parsed: unknown;
+    try { parsed = JSON.parse(content); } catch { return classifyOfferReplyDeterministically(input.maskedMessage, input.offer); }
+    const result = z.object({ action: z.enum(['accept', 'reject', 'select_option', 'clarify', 'new_request', 'unknown']), optionKey: z.string().min(1).max(80).nullable().optional(), confidence: z.number().min(0).max(1) }).strict().safeParse(parsed);
+    if (!result.success) return classifyOfferReplyDeterministically(input.maskedMessage, input.offer);
+    return { action: result.data.action, optionKey: result.data.optionKey ?? null, confidence: result.data.confidence };
   }
 
   async summarize(input: CrmSummaryInput): Promise<string> {
@@ -274,6 +353,7 @@ export class AzureFoundryModel implements ChatModel {
       citationIds: z.array(z.string().min(1)).max(8),
       // Azure may return a descriptive non-action intent such as "inform"; only an explicit lead action is actionable.
       proposedIntent: z.preprocess((value) => value === 'lead.capture' ? value : null, z.literal('lead.capture').nullable()),
+      followUpOptions: z.array(z.object({ key: z.string().regex(/^[a-z0-9][a-z0-9_.-]{0,79}$/u), label: z.string().trim().min(1).max(160), retrievalHints: z.array(z.string().trim().min(1).max(120)).max(6) }).strict()).max(4).nullable().optional(),
     }).strict();
     let parsed: unknown;
     try { parsed = JSON.parse(content); } catch { return safeFallback(); }
@@ -345,7 +425,7 @@ export const isSafeContinuityAnswer = (answer: string, citations: Citation[]): b
   if (/\b(?:we offer|we provide|our package|our packages|starts at|costs?|prices?|requires?|includes\b|available|guarantee|will be|is located|officially)\b/u.test(normalized)) return false;
   return normalized.includes('?') || /^(?:thanks?|thank you|great|okay|noted|understood|got it|sure|i(?:'ve| have) noted)\b/u.test(normalized);
 };
-export const isGuidedResponse = (answer: string, mode: 'slot_collection' | 'intent_clarification' | 'consent' | 'confirmation' | 'document_collection' | 'document_processing' | 'queued' | 'follow_up', slotKey: string | null = null, scopeLabel: string | null = null): boolean => {
+export const isGuidedResponse = (answer: string, mode: 'slot_collection' | 'intent_clarification' | 'consent' | 'confirmation' | 'document_collection' | 'document_processing' | 'queued' | 'follow_up' | 'offer_clarification', slotKey: string | null = null, scopeLabel: string | null = null): boolean => {
   const normalized = answer.normalize('NFKC').toLocaleLowerCase('en-US');
   if (!normalized || normalized.length > 1_200) return false;
   if (/\b(?:verified information|knowledge base|what would you like to explore)\b/u.test(normalized)) return false;

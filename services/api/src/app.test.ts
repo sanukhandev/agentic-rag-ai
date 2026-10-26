@@ -39,6 +39,18 @@ class ContinuityModel extends CapturingModel {
   }
 }
 
+class OfferModel extends CapturingModel {
+  async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
+    const base = await super.draft(input);
+    const evidence = input.evidence[0];
+    if (!evidence) return base;
+    if (input.followUpContext?.responseMode === 'knowledge' && !input.followUpContext.resolvedOfferOption) {
+      return { ...base, answer: 'The approved guide covers the setup procedure. Would you like the setup steps or the required documents?', citationIds: [evidence.citation.chunkId], followUpOptions: [{ key: 'setup_steps', label: 'the setup steps', retrievalHints: ['setup procedure steps'] }, { key: 'required_documents', label: 'the required documents', retrievalHints: ['document requirements'] }] };
+    }
+    return { ...base, answer: evidence.content, citationIds: [evidence.citation.chunkId], followUpOptions: null };
+  }
+}
+
 class ReconcileFollowUpModel extends CapturingModel {
   async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
     if (input.followUpContext?.responseMode === 'reconcile_follow_up') return { answer: 'I’ll keep the conversation open while this is reviewed. What would you like to go over next?', citationIds: [], proposedIntent: null };
@@ -988,6 +1000,27 @@ describe('API vertical slice', () => {
     expect(repeatedRequest.body.actionProposal).toBeNull();
     expect((await runtime.store.listActions(tenant.body.tenant.id)).filter((action) => action.sessionId === session.body.sessionId)).toHaveLength(1);
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.selectedIntentKey).toBeNull();
+  });
+
+  it('persists a grounded offer and resolves the next turn against its selected path', async () => {
+    const runtime = createApp({ nodeEnv: 'test', model: new OfferModel() });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-offer@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Offer Tenant', slug: 'offer-tenant', adminEmail: 'admin-offer@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-offer@example.test', password: 'TenantA1Password' }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Offer guide', mimeType: 'text/plain', audience: 'public', content: 'The approved guide covers the setup procedure and required documents.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const first = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is the setup procedure?', clientMessageId: 'offer-question' }).expect(200);
+    expect(first.body.grounded).toBe(true);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer?.options).toHaveLength(2);
+    const ambiguous = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'yes please', clientMessageId: 'offer-ambiguous' }).expect(200);
+    expect(ambiguous.body.answer).toContain('the setup steps');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer?.options).toHaveLength(2);
+    const selected = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'the setup steps', clientMessageId: 'offer-selection' }).expect(200);
+    expect(selected.body.grounded).toBe(true);
+    expect(selected.body.answer).toContain('approved guide');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer).toBeNull();
   });
 
   it('generates and persists an AI reconciliation follow-up instead of a hardcoded status message', async () => {

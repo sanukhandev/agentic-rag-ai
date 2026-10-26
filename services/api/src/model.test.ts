@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isGuidedResponse, isGreeting, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, preservesNormalizationFacts, validateCitations } from './model.js';
+import { AzureFoundryModel, classifyOfferReplyDeterministically, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isGuidedResponse, isGreeting, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, preservesNormalizationFacts, validateCitations } from './model.js';
 
 describe('Azure Foundry model adapter', () => {
   it('uses the complete configured greeting', () => {
@@ -13,6 +13,14 @@ describe('Azure Foundry model adapter', () => {
   });
   it('normalizes generic formatting without tenant-specific vocabulary', () => {
     expect(normalizeConversationQuery('  I need 10k  seats\u200b for two users  ')).toBe('I need 10 thousand seats for 2 users');
+  });
+
+  it('resolves short replies only against the active offer', () => {
+    const offer = { offerKey: 'offer-1', intentKey: 'company.setup', sourceMessageId: null, sourceQuery: 'setup procedure', options: [{ key: 'steps', label: 'the setup steps', retrievalHints: ['application procedure'] }], issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString() };
+    expect(classifyOfferReplyDeterministically('yes please', offer)).toMatchObject({ action: 'accept', optionKey: 'steps' });
+    expect(classifyOfferReplyDeterministically('please explain', { ...offer, options: [...offer.options, { key: 'documents', label: 'the required documents', retrievalHints: ['document requirements'] }] })).toMatchObject({ action: 'clarify' });
+    expect(classifyOfferReplyDeterministically('the documents', { ...offer, options: [...offer.options, { key: 'documents', label: 'the required documents', retrievalHints: ['document requirements'] }] })).toMatchObject({ action: 'select_option', optionKey: 'documents' });
+    expect(classifyOfferReplyDeterministically('not now', offer)).toMatchObject({ action: 'reject' });
   });
 
   it('does not echo raw evidence when the external generation model is unavailable', async () => {
