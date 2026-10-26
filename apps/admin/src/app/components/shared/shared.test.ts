@@ -32,20 +32,35 @@ describe('PaginationComponent', () => {
     expect(component.endIndex).toBe(10);
   });
 
-  it('emits pageChange on ngOnChanges when currentPage exceeds totalPages', () => {
+  it('emits pageChange on ngOnChanges when currentPage exceeds totalPages during shrinkage and does not re-emit when regrown', () => {
     const component = new PaginationComponent();
-    component.totalItems = 10;
+    component.totalItems = 11;
     component.pageSize = 10;
     component.currentPage = 2;
 
     const emitted: number[] = [];
     component.pageChange.subscribe((page) => emitted.push(page));
 
+    // Shrinkage: 11 -> 10 items
+    component.totalItems = 10;
     component.ngOnChanges({
-      totalItems: new SimpleChange(20, 10, false)
+      totalItems: new SimpleChange(11, 10, false)
     });
 
     expect(emitted).toEqual([1]);
+
+    // Parent component synchronizes currentPage to 1 based on pageChange event
+    component.currentPage = 1;
+
+    // Regrowth: 10 -> 11 items
+    component.totalItems = 11;
+    component.ngOnChanges({
+      totalItems: new SimpleChange(10, 11, false)
+    });
+
+    // Verify it stays at page 1 and does not emit page 2
+    expect(emitted).toEqual([1]);
+    expect(component.safeCurrentPage).toBe(1);
   });
 
   it('generates correct visible pages with ellipsis', () => {

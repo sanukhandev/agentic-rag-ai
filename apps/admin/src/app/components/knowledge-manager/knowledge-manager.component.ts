@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, effect, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -258,7 +258,7 @@ import { ConfirmDialogComponent } from '../shared/confirm-dialog.component';
         <app-pagination
           [totalItems]="filteredSources.length"
           [pageSize]="pageSize"
-          [currentPage]="safeCurrentPage"
+          [currentPage]="currentPage"
           (pageChange)="currentPage = $event"
           (pageSizeChange)="pageSize = $event; currentPage = 1"
         ></app-pagination>
@@ -474,6 +474,16 @@ import { ConfirmDialogComponent } from '../shared/confirm-dialog.component';
   `
 })
 export class KnowledgeManagerComponent implements OnInit {
+  constructor() {
+    try {
+      effect(() => {
+        this.state.sources();
+        this.synchronizePagination();
+      });
+    } catch {
+      // In isolated environments without active injection context
+    }
+  }
   private readonly state = inject(AdminStateService);
 
   activeTab: 'catalog' | 'stage' | 'upload' | 'crawl' = 'catalog';
@@ -561,9 +571,16 @@ export class KnowledgeManagerComponent implements OnInit {
     return Math.min(Math.max(1, this.currentPage), this.totalPages);
   }
 
+  synchronizePagination(): void {
+    const max = this.totalPages;
+    if (this.currentPage > max) {
+      this.currentPage = max;
+    }
+  }
+
   get paginatedSources(): Source[] {
-    const page = this.safeCurrentPage;
-    const start = (page - 1) * this.pageSize;
+    this.synchronizePagination();
+    const start = (this.currentPage - 1) * this.pageSize;
     return this.filteredSources.slice(start, start + this.pageSize);
   }
 

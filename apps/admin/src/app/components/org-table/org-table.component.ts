@@ -240,7 +240,7 @@ import { PaginationComponent } from '../shared/pagination.component';
         <app-pagination
           [totalItems]="filteredTenants.length"
           [pageSize]="pageSize"
-          [currentPage]="safeCurrentPage"
+          [currentPage]="currentPage"
           (pageChange)="currentPage = $event"
           (pageSizeChange)="pageSize = $event; currentPage = 1"
         ></app-pagination>
@@ -276,9 +276,16 @@ export class OrgTableComponent implements OnInit {
     return Math.min(Math.max(1, this.currentPage), this.totalPages);
   }
 
+  synchronizePagination(): void {
+    const max = this.totalPages;
+    if (this.currentPage > max) {
+      this.currentPage = max;
+    }
+  }
+
   get paginatedTenants(): Tenant[] {
-    const page = this.safeCurrentPage;
-    const start = (page - 1) * this.pageSize;
+    this.synchronizePagination();
+    const start = (this.currentPage - 1) * this.pageSize;
     return this.filteredTenants.slice(start, start + this.pageSize);
   }
 
