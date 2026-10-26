@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AzureFoundryModel, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isGuidedResponse, isGreeting, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, preservesNormalizationFacts, validateCitations } from './model.js';
+import { AzureFoundryModel, classifyOfferReply, classifyOfferReplyDeterministically, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isGuidedResponse, isGreeting, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, preservesNormalizationFacts, validateCitations } from './model.js';
 
 describe('Azure Foundry model adapter', () => {
   it('uses the complete configured greeting', () => {
@@ -13,6 +13,22 @@ describe('Azure Foundry model adapter', () => {
   });
   it('normalizes generic formatting without tenant-specific vocabulary', () => {
     expect(normalizeConversationQuery('  I need 10k  seats\u200b for two users  ')).toBe('I need 10 thousand seats for 2 users');
+  });
+
+  it('resolves short replies only against the active offer', async () => {
+    const offer = { offerKey: 'offer-1', intentKey: 'company.setup', sourceMessageId: null, sourceQuery: 'setup procedure', options: [{ key: 'steps', label: 'the setup steps', retrievalHints: ['application procedure'] }], issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString() };
+    expect(classifyOfferReplyDeterministically('yes please', offer)).toMatchObject({ action: 'accept', optionKey: 'steps' });
+    expect(classifyOfferReplyDeterministically('please explain', { ...offer, options: [...offer.options, { key: 'documents', label: 'the required documents', retrievalHints: ['document requirements'] }] })).toMatchObject({ action: 'clarify' });
+    expect(classifyOfferReplyDeterministically('the documents', { ...offer, options: [...offer.options, { key: 'documents', label: 'the required documents', retrievalHints: ['document requirements'] }] })).toMatchObject({ action: 'select_option', optionKey: 'documents' });
+    expect(classifyOfferReplyDeterministically("I don't want the setup steps", offer)).toMatchObject({ action: 'clarify' });
+    expect(classifyOfferReplyDeterministically('Is the package price inclusive?', offer)).toMatchObject({ action: 'new_request' });
+    expect(classifyOfferReplyDeterministically('not now', offer)).toMatchObject({ action: 'reject' });
+
+    const multiOffer = { ...offer, options: [...offer.options, { key: 'documents', label: 'the required documents', retrievalHints: ['document requirements'] }] };
+    await expect(classifyOfferReply({ draft: async () => ({ answer: '', citationIds: [], proposedIntent: null }), classifyOfferReply: async () => ({ action: 'accept', optionKey: 'steps', confidence: 1 }) }, { maskedMessage: 'maybe', offer: multiOffer })).resolves.toMatchObject({ action: 'clarify', optionKey: null });
+    await expect(classifyOfferReply({ draft: async () => ({ answer: '', citationIds: [], proposedIntent: null }), classifyOfferReply: async () => ({ action: 'select_option', optionKey: 'unknown', confidence: 1 }) }, { maskedMessage: 'maybe', offer })).resolves.toMatchObject({ action: 'clarify', optionKey: null });
+    await expect(classifyOfferReply({ draft: async () => ({ answer: '', citationIds: [], proposedIntent: null }), classifyOfferReply: async () => ({ action: 'accept', optionKey: 'steps', confidence: 0.2 }) }, { maskedMessage: 'maybe', offer })).resolves.toMatchObject({ action: 'unknown', optionKey: null });
+    await expect(classifyOfferReply({ draft: async () => ({ answer: '', citationIds: [], proposedIntent: null }), classifyOfferReply: async () => ({ action: 'accept', optionKey: 'steps', confidence: 1 }) }, { maskedMessage: 'yes', offer, activeIntentKey: 'different.intent' })).resolves.toMatchObject({ action: 'new_request', optionKey: null });
   });
 
   it('does not echo raw evidence when the external generation model is unavailable', async () => {
@@ -34,6 +50,7 @@ describe('Azure Foundry model adapter', () => {
     expect(conversationalIntent('شكراً')).toBe('thanks');
     expect(isGreeting('What is the price?')).toBe(false);
     expect(conversationalIntent('How are you?')).toBe('wellbeing');
+    expect(isKnowledgeQuestion('Is the package price inclusive?')).toBe(true);
   });
   it('handles common small-talk and identity questions without RAG abstention', () => {
     expect(conversationalIntent('I m good')).toBe('wellbeing');

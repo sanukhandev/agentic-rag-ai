@@ -56,6 +56,14 @@ describe('conversation state concurrency merge', () => {
     expect(merged.rollingSummary).toBe(latest.rollingSummary);
   });
 
+  it('keeps a newer chat offer when a workflow callback carries stale offer state', () => {
+    const offer = { offerKey: 'offer-1', intentKey: 'company.setup', sourceMessageId: 'assistant-1', sourceQuery: 'setup procedure', options: [{ key: 'steps', label: 'the setup steps', retrievalHints: ['setup procedure'] }], issuedAt: '2026-10-22T10:01:00.000Z', expiresAt: '2026-10-22T10:31:00.000Z' };
+    const latest = { ...newConversationState(), pendingFollowUpOffer: offer };
+    const candidate = { ...latest, pendingFollowUpOffer: null, workflowStatus: 'succeeded' as const, phase: 'SUCCEEDED' as const };
+
+    expect(mergeWorkflowCallbackState(latest, candidate).pendingFollowUpOffer).toEqual(offer);
+  });
+
   it('builds a deterministic masked summary from authoritative state', () => {
     const state = { ...newConversationState(), selectedIntentKey: 'company.setup', intentConfidence: 0.91, slotValues: { business_activity: 'fashion boutique', budget: '[PHONE_1]' }, contactConsent: 'unknown' as const, workflowStatus: 'awaiting_customer' as const, pendingPrompt: { id: 'p', type: 'slot' as const, intentKey: 'company.setup', slotKey: 'timeline', issuedAt: '2026-10-23T00:00:00.000Z' } };
     expect(composeConversationSummary(state, 'within two weeks')).toContain('Primary intent: company.setup (91% confidence).');

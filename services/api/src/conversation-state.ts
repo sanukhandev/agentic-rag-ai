@@ -61,6 +61,7 @@ export const mergeConcurrentConversationState = (latest: ConversationState, cand
     workflowStatus: workflowState.workflowStatus,
     phase: workflowState.phase,
     pendingPrompt: workflowState.pendingPrompt,
+    pendingFollowUpOffer: candidate.pendingFollowUpOffer !== undefined ? candidate.pendingFollowUpOffer : latest.pendingFollowUpOffer ?? null,
     slotValues,
     slotProvenance,
     intentScore: workflowState.intentScore ?? latest.intentScore ?? candidate.intentScore ?? 0,
@@ -88,6 +89,8 @@ export const mergeWorkflowCallbackState = (latest: ConversationState, candidate:
     workflowStatus: workflowState.workflowStatus,
     phase: preserveVisitorPrompt ? latest.phase : workflowState.phase,
     pendingPrompt: preserveVisitorPrompt ? latest.pendingPrompt : workflowState.pendingPrompt,
+    // Workflow callbacks do not own conversational offers; never let a stale callback erase a newer chat turn.
+    pendingFollowUpOffer: latest.pendingFollowUpOffer ?? null,
     activeFollowUpIntentKey: latest.activeFollowUpIntentKey ?? candidate.activeFollowUpIntentKey ?? null,
     intentProgress: mergeIntentProgress(latest, candidate),
   };
@@ -106,6 +109,7 @@ export const newConversationState = (): ConversationState => ({
   slotValues: {},
   slotProvenance: {},
   pendingPrompt: null,
+  pendingFollowUpOffer: null,
   rollingSummary: '',
   summaryRevision: 0,
   messageSequence: 0,
@@ -123,6 +127,7 @@ export const composeConversationSummary = (state: ConversationState, latestVisit
     slots ? `Visitor-provided requirements: ${slots}.` : 'Visitor-provided requirements: none captured yet.',
     `Consent: ${state.contactConsent}. Workflow: ${state.workflowStatus}.`,
     state.pendingPrompt ? `Next question: ${state.pendingPrompt.type}${state.pendingPrompt.slotKey ? `/${state.pendingPrompt.slotKey}` : ''}.` : 'Next question: none.',
+    state.pendingFollowUpOffer ? `Pending follow-up offer: ${state.pendingFollowUpOffer.options.map((option) => option.key).join(', ')}.` : '',
     latestVisitorMessage ? `Latest visitor message: ${latestVisitorMessage.slice(-500)}` : '',
   ].filter(Boolean).join(' ');
 };
