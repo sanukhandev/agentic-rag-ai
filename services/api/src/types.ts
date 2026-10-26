@@ -83,6 +83,22 @@ export interface PendingPrompt {
   issuedAt: string;
 }
 
+export interface FollowUpOfferOption {
+  key: string;
+  label: string;
+  retrievalHints: string[];
+}
+
+export interface PendingFollowUpOffer {
+  offerKey: string;
+  intentKey: string | null;
+  sourceMessageId: string | null;
+  sourceQuery: string;
+  options: FollowUpOfferOption[];
+  issuedAt: string;
+  expiresAt: string;
+}
+
 export type IntentCatalogRequirementType = 'slot' | 'document' | 'consent' | 'confirmation';
 export type IntentCatalogFulfillmentMode = 'conversation_ready' | 'external_confirmation_required';
 export type IntentCatalogActivationMode = 'offer' | 'automatic';
@@ -151,9 +167,11 @@ export interface ConversationState {
   slotValues: Record<string, string>;
   slotProvenance?: Record<string, { source: 'visitor'; messageSequence: number; capturedAt: string; corrected: boolean }>;
   pendingPrompt: PendingPrompt | null;
+  pendingFollowUpOffer?: PendingFollowUpOffer | null;
   rollingSummary: string;
   summaryRevision: number;
   messageSequence: number;
+  lastTurnAt?: string | null;
   workflowStatus: ConversationWorkflowStatus;
   contactConsent: 'unknown' | 'granted' | 'denied';
   consentVersion: string | null;

@@ -39,6 +39,22 @@ class ContinuityModel extends CapturingModel {
   }
 }
 
+class OfferModel extends CapturingModel {
+  async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
+    const base = await super.draft(input);
+    const evidence = input.evidence[0];
+    if (!evidence) return base;
+    if (input.maskedMessage.includes('unstructured')) return { ...base, answer: 'The approved guide covers setup. Would you like the setup steps or the required documents?', citationIds: [evidence.citation.chunkId], followUpOptions: null };
+    if (input.maskedMessage.includes('partial')) return { ...base, answer: 'The approved guide covers setup. Would you like the setup steps or the unsupported hidden path?', citationIds: [evidence.citation.chunkId], followUpOptions: [{ key: 'setup_steps', label: 'the setup steps', retrievalHints: ['setup procedure steps'] }, { key: 'hidden_path', label: 'the unsupported hidden path', retrievalHints: ['unsupported hidden path'] }] };
+    if (input.followUpContext?.responseMode === 'knowledge' && !input.followUpContext.resolvedOfferOption) {
+      if (input.maskedMessage.includes('hidden')) return { ...base, answer: evidence.content, citationIds: [evidence.citation.chunkId], followUpOptions: [{ key: 'hidden_option', label: 'an unsupported hidden option', retrievalHints: ['unrelated unsupported fact'] }] };
+      const options = input.maskedMessage.includes('single') ? [{ key: 'setup_steps', label: 'the setup steps', retrievalHints: ['setup procedure steps'] }] : [{ key: 'setup_steps', label: 'the setup steps', retrievalHints: ['setup procedure steps'] }, { key: 'required_documents', label: 'the required documents', retrievalHints: ['document requirements'] }];
+      return { ...base, answer: options.length === 1 ? 'The approved guide covers the setup procedure. Would you like the setup steps?' : 'The approved guide covers the setup procedure. Would you like the setup steps or the required documents?', citationIds: [evidence.citation.chunkId], followUpOptions: options };
+    }
+    return { ...base, answer: evidence.content, citationIds: [evidence.citation.chunkId], followUpOptions: null };
+  }
+}
+
 class ReconcileFollowUpModel extends CapturingModel {
   async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
     if (input.followUpContext?.responseMode === 'reconcile_follow_up') return { answer: 'I’ll keep the conversation open while this is reviewed. What would you like to go over next?', citationIds: [], proposedIntent: null };
@@ -990,6 +1006,84 @@ describe('API vertical slice', () => {
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.selectedIntentKey).toBeNull();
   });
 
+  it('persists a grounded offer and resolves the next turn against its selected path', async () => {
+    const runtime = createApp({ nodeEnv: 'test', model: new OfferModel() });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-offer@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Offer Tenant', slug: 'offer-tenant', adminEmail: 'admin-offer@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-offer@example.test', password: 'TenantA1Password' }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Offer guide', mimeType: 'text/plain', audience: 'public', content: 'The approved guide covers the setup procedure and required documents. The package price inclusivity is described in this guide.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const first = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is the setup procedure?', clientMessageId: 'offer-question' }).expect(200);
+    expect(first.body.grounded).toBe(true);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer?.options).toHaveLength(2);
+    const ambiguous = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'yes please', clientMessageId: 'offer-ambiguous' }).expect(200);
+    expect(ambiguous.body.answer).toContain('the setup steps');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer?.options).toHaveLength(2);
+    const repeatedAmbiguous = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'yes', clientMessageId: 'offer-repeated-ambiguous' }).expect(200);
+    expect(repeatedAmbiguous.body.answer).toContain('the setup steps');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer?.options).toHaveLength(2);
+    const knowledgeQuestion = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Is the package price inclusive?', clientMessageId: 'offer-knowledge-question' }).expect(200);
+    expect(knowledgeQuestion.body.grounded).toBe(true);
+    expect(knowledgeQuestion.body.answer).toContain('approved guide');
+    const selected = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'the setup steps', clientMessageId: 'offer-selection' }).expect(200);
+    expect(selected.body.grounded).toBe(true);
+    expect(selected.body.answer).toContain('approved guide');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer).toBeNull();
+    const singleSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: singleSession.body.sessionId, message: 'What is the single setup option?', clientMessageId: 'single-offer-question' }).expect(200);
+    const singleAccepted = await api.post('/api/v1/chat/messages').send({ sessionId: singleSession.body.sessionId, message: 'yes please', clientMessageId: 'single-offer-accept' }).expect(200);
+    expect(singleAccepted.body.answer).toContain('approved guide');
+    const newRequestSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: newRequestSession.body.sessionId, message: 'What is the single setup option?', clientMessageId: 'new-request-offer' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: newRequestSession.body.sessionId, message: 'I need a demo', clientMessageId: 'new-request-message' }).expect(200);
+    expect((await runtime.store.getSession(newRequestSession.body.sessionId))?.conversationState?.pendingFollowUpOffer).toBeNull();
+    const hiddenOptionSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const hiddenOption = await api.post('/api/v1/chat/messages').send({ sessionId: hiddenOptionSession.body.sessionId, message: 'What is the hidden setup information?', clientMessageId: 'hidden-option-offer' }).expect(200);
+    expect(hiddenOption.body.grounded).toBe(true);
+    expect((await runtime.store.getSession(hiddenOptionSession.body.sessionId))?.conversationState?.pendingFollowUpOffer).toBeNull();
+    const confirmationSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: confirmationSession.body.sessionId, message: 'What is the setup procedure?', clientMessageId: 'confirmation-offer-question' }).expect(200);
+    const confirmationState = await runtime.store.getSession(confirmationSession.body.sessionId);
+    confirmationState!.conversationState!.pendingPrompt = { id: 'journey-confirmation', type: 'confirmation', intentKey: 'company.setup', slotKey: null, requirementKey: 'confirm-next-step', issuedAt: new Date().toISOString() };
+    await runtime.store.updateSession(confirmationState!);
+    const ambiguousConfirmation = await api.post('/api/v1/chat/messages').send({ sessionId: confirmationSession.body.sessionId, message: 'yes please', clientMessageId: 'confirmation-offer-ambiguous' }).expect(200);
+    expect(ambiguousConfirmation.body.actionProposal).toBeNull();
+    expect(ambiguousConfirmation.body.pendingPromptId).toBe('journey-confirmation');
+    const unknownConfirmation = await api.post('/api/v1/chat/messages').send({ sessionId: confirmationSession.body.sessionId, message: 'maybe', clientMessageId: 'confirmation-offer-unknown' }).expect(200);
+    expect(unknownConfirmation.body.actionProposal).toBeNull();
+    expect(unknownConfirmation.body.pendingPromptId).toBe('journey-confirmation');
+  });
+
+  it('does not expose choices when the model omits persisted offer metadata', async () => {
+    const runtime = createApp({ nodeEnv: 'test', model: new OfferModel() });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-unstructured-offer@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Unstructured Offer Tenant', slug: 'unstructured-offer-tenant', adminEmail: 'admin-unstructured-offer@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-unstructured-offer@example.test', password: 'TenantA1Password' }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Company setup guide', mimeType: 'text/plain', audience: 'public', content: 'The approved guide covers setup steps and required documents.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const response = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is the unstructured setup information?', clientMessageId: 'unstructured-offer-question' }).expect(200);
+    expect(response.body.answer).not.toContain('the setup steps or the required documents');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer).toBeNull();
+  });
+
+  it('does not expose a partial choice set when one option fails validation', async () => {
+    const runtime = createApp({ nodeEnv: 'test', model: new OfferModel() });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-partial-offer@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Partial Offer Tenant', slug: 'partial-offer-tenant', adminEmail: 'admin-partial-offer@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-partial-offer@example.test', password: 'TenantA1Password' }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Company setup guide', mimeType: 'text/plain', audience: 'public', content: 'The approved guide covers setup steps and required documents.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const response = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is the partial setup information?', clientMessageId: 'partial-offer-question' }).expect(200);
+    expect(response.body.answer).not.toContain('unsupported hidden path');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer).toBeNull();
+  });
+
   it('generates and persists an AI reconciliation follow-up instead of a hardcoded status message', async () => {
     const runtime = createApp({ nodeEnv: 'test', model: new ReconcileFollowUpModel() });
     const api = request(runtime.app);
@@ -1247,8 +1341,12 @@ describe('API vertical slice', () => {
     expect(correction.body.answer).toContain('noted');
     expect(correction.body.answer).not.toContain('company structure');
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues).not.toHaveProperty('company_structure');
+    const pendingOfferSession = await runtime.store.getSession(session.body.sessionId);
+    pendingOfferSession!.conversationState!.pendingFollowUpOffer = { offerKey: randomUUID(), intentKey: 'company.setup', sourceMessageId: 'offer-source', sourceQuery: 'setup procedure', options: [{ key: 'setup_steps', label: 'the setup steps', retrievalHints: ['setup procedure'] }], issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString() };
+    await runtime.store.updateSession(pendingOfferSession!);
     const structure = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'FZC with two partners', clientMessageId: 'follow-up-structure' }).expect(200);
     expect(structure.body.pendingRequirementKey).toBe('followup:company.setup:timeline');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer).toBeNull();
     const combined = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'A shared workspace and a 10000 AED budget works', clientMessageId: 'follow-up-combined' }).expect(200);
     expect(combined.body.pendingRequirementKey).toBe('followup:company.setup:timeline');
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.budget_aed).toBe('10000');

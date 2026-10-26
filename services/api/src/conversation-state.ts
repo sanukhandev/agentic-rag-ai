@@ -1,7 +1,28 @@
 import { randomUUID } from 'node:crypto';
-import type { ConversationPhase, ConversationState, IntentProgressState, PendingPrompt } from './types.js';
+import type { ConversationPhase, ConversationState, IntentProgressState, PendingFollowUpOffer, PendingPrompt } from './types.js';
 
 const workflowStatusRank: Record<ConversationState['workflowStatus'], number> = { none: 0, awaiting_customer: 1, queued: 1, processing: 2, human_review: 3, reconcile_required: 3, failed: 3, succeeded: 4 };
+
+const turnOrder = (state: ConversationState): number => {
+  const timestamp = state.lastTurnAt ? Date.parse(state.lastTurnAt) : Number.NaN;
+  return Number.isFinite(timestamp) ? timestamp : state.messageSequence ?? 0;
+};
+
+const newerTurnWins = (latest: ConversationState, candidate: ConversationState): boolean => {
+  const latestOrder = turnOrder(latest);
+  const candidateOrder = turnOrder(candidate);
+  return candidateOrder > latestOrder || (candidateOrder === latestOrder && candidate.messageSequence > latest.messageSequence);
+};
+
+const mergePendingOffer = (latest: ConversationState, candidate: ConversationState): PendingFollowUpOffer | null => {
+  const latestOffer = latest.pendingFollowUpOffer ?? null;
+  const candidateOffer = candidate.pendingFollowUpOffer ?? null;
+  if (latestOffer?.offerKey && latestOffer.offerKey === candidateOffer?.offerKey) return candidateOffer;
+  if (!latestOffer && candidateOffer) return candidateOffer.issuedAt > (latest.lastTurnAt ?? '') ? candidateOffer : null;
+  if (latestOffer && !candidateOffer) return newerTurnWins(latest, candidate) ? null : latestOffer;
+  if (latestOffer && candidateOffer) return candidateOffer.issuedAt > latestOffer.issuedAt ? candidateOffer : latestOffer;
+  return null;
+};
 
 export const consentVersionForState = (state: Pick<ConversationState, 'catalogVersionId' | 'selectedIntentKey'>): string => `contact-v1:${state.catalogVersionId ?? 'legacy'}:${state.selectedIntentKey ?? 'legacy'}`;
 
@@ -55,12 +76,15 @@ export const mergeConcurrentConversationState = (latest: ConversationState, cand
   const summarySource = (candidate.summaryRevision ?? 0) > (latest.summaryRevision ?? 0)
     || ((candidate.summaryRevision ?? 0) === (latest.summaryRevision ?? 0) && (candidate.messageSequence ?? 0) > (latest.messageSequence ?? 0))
     ? candidate : latest;
+  const candidateTurnIsNewer = newerTurnWins(latest, candidate);
+  const workflowClearedPrompt = workflowStatusRank[latest.workflowStatus] > workflowStatusRank[candidate.workflowStatus] && latest.pendingPrompt === null;
   return {
     ...latest,
     ...candidate,
     workflowStatus: workflowState.workflowStatus,
     phase: workflowState.phase,
-    pendingPrompt: workflowState.pendingPrompt,
+    pendingPrompt: workflowClearedPrompt ? null : candidateTurnIsNewer ? candidate.pendingPrompt : latest.pendingPrompt,
+    pendingFollowUpOffer: mergePendingOffer(latest, candidate),
     slotValues,
     slotProvenance,
     intentScore: workflowState.intentScore ?? latest.intentScore ?? candidate.intentScore ?? 0,
@@ -70,6 +94,7 @@ export const mergeConcurrentConversationState = (latest: ConversationState, cand
     activeFollowUpIntentKey: candidate.activeFollowUpIntentKey ?? latest.activeFollowUpIntentKey ?? null,
     summaryRevision: Math.max(latest.summaryRevision ?? 0, candidate.summaryRevision ?? 0),
     messageSequence: Math.max(latest.messageSequence ?? 0, candidate.messageSequence ?? 0),
+    lastTurnAt: (latest.lastTurnAt ?? '') >= (candidate.lastTurnAt ?? '') ? latest.lastTurnAt ?? null : candidate.lastTurnAt ?? null,
     rollingSummary: summarySource.rollingSummary,
     candidateIntentKeys: [...new Set([...latest.candidateIntentKeys, ...candidate.candidateIntentKeys])],
     contactConsent,
@@ -88,6 +113,8 @@ export const mergeWorkflowCallbackState = (latest: ConversationState, candidate:
     workflowStatus: workflowState.workflowStatus,
     phase: preserveVisitorPrompt ? latest.phase : workflowState.phase,
     pendingPrompt: preserveVisitorPrompt ? latest.pendingPrompt : workflowState.pendingPrompt,
+    // Workflow callbacks do not own conversational offers; never let a stale callback erase a newer chat turn.
+    pendingFollowUpOffer: latest.pendingFollowUpOffer ?? null,
     activeFollowUpIntentKey: latest.activeFollowUpIntentKey ?? candidate.activeFollowUpIntentKey ?? null,
     intentProgress: mergeIntentProgress(latest, candidate),
   };
@@ -106,9 +133,11 @@ export const newConversationState = (): ConversationState => ({
   slotValues: {},
   slotProvenance: {},
   pendingPrompt: null,
+  pendingFollowUpOffer: null,
   rollingSummary: '',
   summaryRevision: 0,
   messageSequence: 0,
+  lastTurnAt: null,
   workflowStatus: 'none',
   contactConsent: 'unknown',
   consentVersion: null,
@@ -123,6 +152,7 @@ export const composeConversationSummary = (state: ConversationState, latestVisit
     slots ? `Visitor-provided requirements: ${slots}.` : 'Visitor-provided requirements: none captured yet.',
     `Consent: ${state.contactConsent}. Workflow: ${state.workflowStatus}.`,
     state.pendingPrompt ? `Next question: ${state.pendingPrompt.type}${state.pendingPrompt.slotKey ? `/${state.pendingPrompt.slotKey}` : ''}.` : 'Next question: none.',
+    state.pendingFollowUpOffer ? `Pending follow-up offer: ${state.pendingFollowUpOffer.options.map((option) => option.key).join(', ')}.` : '',
     latestVisitorMessage ? `Latest visitor message: ${latestVisitorMessage.slice(-500)}` : '',
   ].filter(Boolean).join(' ');
 };

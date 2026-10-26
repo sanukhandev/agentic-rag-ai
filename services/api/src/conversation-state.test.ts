@@ -56,6 +56,14 @@ describe('conversation state concurrency merge', () => {
     expect(merged.rollingSummary).toBe(latest.rollingSummary);
   });
 
+  it('keeps a newer chat offer when a workflow callback carries stale offer state', () => {
+    const offer = { offerKey: 'offer-1', intentKey: 'company.setup', sourceMessageId: 'assistant-1', sourceQuery: 'setup procedure', options: [{ key: 'steps', label: 'the setup steps', retrievalHints: ['setup procedure'] }], issuedAt: '2026-10-22T10:01:00.000Z', expiresAt: '2026-10-22T10:31:00.000Z' };
+    const latest = { ...newConversationState(), pendingFollowUpOffer: offer };
+    const candidate = { ...latest, pendingFollowUpOffer: null, workflowStatus: 'succeeded' as const, phase: 'SUCCEEDED' as const };
+
+    expect(mergeWorkflowCallbackState(latest, candidate).pendingFollowUpOffer).toEqual(offer);
+  });
+
   it('builds a deterministic masked summary from authoritative state', () => {
     const state = { ...newConversationState(), selectedIntentKey: 'company.setup', intentConfidence: 0.91, slotValues: { business_activity: 'fashion boutique', budget: '[PHONE_1]' }, contactConsent: 'unknown' as const, workflowStatus: 'awaiting_customer' as const, pendingPrompt: { id: 'p', type: 'slot' as const, intentKey: 'company.setup', slotKey: 'timeline', issuedAt: '2026-10-23T00:00:00.000Z' } };
     expect(composeConversationSummary(state, 'within two weeks')).toContain('Primary intent: company.setup (91% confidence).');
@@ -75,5 +83,23 @@ describe('conversation state concurrency merge', () => {
     expect(mergeConcurrentConversationState(latest, stale).slotValues.phone).toBe('[PHONE_1]');
     const correction = { ...stale, slotProvenance: { phone: { ...stale.slotProvenance.phone, capturedAt: latest.slotProvenance.phone.capturedAt, corrected: true } } };
     expect(mergeConcurrentConversationState(latest, correction).slotValues.phone).toBe('[PHONE_0]');
+  });
+
+  it('does not resurrect a cleared offer or prompt from an older concurrent turn', () => {
+    const offer = { offerKey: 'offer-old', intentKey: 'company.setup', sourceMessageId: 'assistant-old', sourceQuery: 'setup procedure', options: [{ key: 'steps', label: 'the setup steps', retrievalHints: ['setup procedure'] }], issuedAt: '2026-10-26T10:00:00.000Z', expiresAt: '2026-10-26T10:30:00.000Z' };
+    const latest = { ...newConversationState(), messageSequence: 3, lastTurnAt: '2026-10-26T10:01:00.000Z', pendingPrompt: null, pendingFollowUpOffer: null };
+    const stale = { ...newConversationState(), messageSequence: 3, lastTurnAt: '2026-10-26T10:00:30.000Z', pendingPrompt: { id: 'old-prompt', type: 'confirmation' as const, intentKey: 'company.setup', slotKey: null, issuedAt: '2026-10-26T10:00:30.000Z' }, pendingFollowUpOffer: offer };
+    const merged = mergeConcurrentConversationState(latest, stale);
+    expect(merged.pendingFollowUpOffer).toBeNull();
+    expect(merged.pendingPrompt).toBeNull();
+  });
+
+  it('does not restore a stale prompt after a newer workflow callback clears it', () => {
+    const latest = { ...newConversationState(), workflowStatus: 'succeeded' as const, phase: 'SUCCEEDED' as const, lastTurnAt: '2026-10-26T10:01:00.000Z', pendingPrompt: null };
+    const candidate = { ...newConversationState(), workflowStatus: 'awaiting_customer' as const, phase: 'SLOT_COLLECTION' as const, lastTurnAt: '2026-10-26T10:02:00.000Z', pendingPrompt: { id: 'stale-prompt', type: 'slot' as const, intentKey: 'company.setup', slotKey: 'business_activity', issuedAt: '2026-10-26T10:01:30.000Z' } };
+    const merged = mergeConcurrentConversationState(latest, candidate);
+    expect(merged.workflowStatus).toBe('succeeded');
+    expect(merged.phase).toBe('SUCCEEDED');
+    expect(merged.pendingPrompt).toBeNull();
   });
 });
