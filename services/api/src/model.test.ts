@@ -20,6 +20,7 @@ describe('Azure Foundry model adapter', () => {
     expect(classifyOfferReplyDeterministically('yes please', offer)).toMatchObject({ action: 'accept', optionKey: 'steps' });
     expect(classifyOfferReplyDeterministically('please explain', { ...offer, options: [...offer.options, { key: 'documents', label: 'the required documents', retrievalHints: ['document requirements'] }] })).toMatchObject({ action: 'clarify' });
     expect(classifyOfferReplyDeterministically('the documents', { ...offer, options: [...offer.options, { key: 'documents', label: 'the required documents', retrievalHints: ['document requirements'] }] })).toMatchObject({ action: 'select_option', optionKey: 'documents' });
+    expect(classifyOfferReplyDeterministically("I don't want the setup steps", offer)).toMatchObject({ action: 'clarify' });
     expect(classifyOfferReplyDeterministically('not now', offer)).toMatchObject({ action: 'reject' });
   });
 

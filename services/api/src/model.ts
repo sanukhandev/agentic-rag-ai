@@ -88,6 +88,7 @@ export const classifyOfferReplyDeterministically = (maskedMessage: string, offer
   const matches = offer.options.filter((option) => [option.key, option.label, ...option.retrievalHints]
     .map(offerReplyText)
     .some((candidate) => candidate.length >= 3 && (message === candidate || message.includes(candidate))));
+  if (matches.length > 0 && /\b(?:do not|don't|not|never|without|no)\b/iu.test(message)) return { action: 'clarify', confidence: 1 };
   if (matches.length === 1) return { action: 'select_option', optionKey: matches[0]?.key ?? null, confidence: 1 };
   if (matches.length > 1) return { action: 'clarify', confidence: 1 };
   if (offerAffirmation.test(message)) return offer.options.length === 1

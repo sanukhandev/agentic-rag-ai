@@ -45,7 +45,8 @@ class OfferModel extends CapturingModel {
     const evidence = input.evidence[0];
     if (!evidence) return base;
     if (input.followUpContext?.responseMode === 'knowledge' && !input.followUpContext.resolvedOfferOption) {
-      return { ...base, answer: 'The approved guide covers the setup procedure. Would you like the setup steps or the required documents?', citationIds: [evidence.citation.chunkId], followUpOptions: [{ key: 'setup_steps', label: 'the setup steps', retrievalHints: ['setup procedure steps'] }, { key: 'required_documents', label: 'the required documents', retrievalHints: ['document requirements'] }] };
+      const options = input.maskedMessage.includes('single') ? [{ key: 'setup_steps', label: 'the setup steps', retrievalHints: ['setup procedure steps'] }] : [{ key: 'setup_steps', label: 'the setup steps', retrievalHints: ['setup procedure steps'] }, { key: 'required_documents', label: 'the required documents', retrievalHints: ['document requirements'] }];
+      return { ...base, answer: options.length === 1 ? 'The approved guide covers the setup procedure. Would you like the setup steps?' : 'The approved guide covers the setup procedure. Would you like the setup steps or the required documents?', citationIds: [evidence.citation.chunkId], followUpOptions: options };
     }
     return { ...base, answer: evidence.content, citationIds: [evidence.citation.chunkId], followUpOptions: null };
   }
@@ -1021,6 +1022,14 @@ describe('API vertical slice', () => {
     expect(selected.body.grounded).toBe(true);
     expect(selected.body.answer).toContain('approved guide');
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer).toBeNull();
+    const singleSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: singleSession.body.sessionId, message: 'What is the single setup option?', clientMessageId: 'single-offer-question' }).expect(200);
+    const singleAccepted = await api.post('/api/v1/chat/messages').send({ sessionId: singleSession.body.sessionId, message: 'yes please', clientMessageId: 'single-offer-accept' }).expect(200);
+    expect(singleAccepted.body.answer).toContain('approved guide');
+    const newRequestSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    await api.post('/api/v1/chat/messages').send({ sessionId: newRequestSession.body.sessionId, message: 'What is the single setup option?', clientMessageId: 'new-request-offer' }).expect(200);
+    await api.post('/api/v1/chat/messages').send({ sessionId: newRequestSession.body.sessionId, message: 'I need a demo', clientMessageId: 'new-request-message' }).expect(200);
+    expect((await runtime.store.getSession(newRequestSession.body.sessionId))?.conversationState?.pendingFollowUpOffer).toBeNull();
   });
 
   it('generates and persists an AI reconciliation follow-up instead of a hardcoded status message', async () => {

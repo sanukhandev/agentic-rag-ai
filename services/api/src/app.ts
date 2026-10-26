@@ -1322,7 +1322,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
        else if (!postCaptureFollowUp && !knowledgeQuestion && publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'below_threshold') draft = await composeGuidedDraft({ answer: catalogIntentClarification(publishedCatalog, catalogResolution.intentKey), citationIds: [], proposedIntent: null }, 'intent_clarification');
        else if (!postCaptureFollowUp && !knowledgeQuestion && publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'intent_inactive') draft = { answer: 'I can note that request, but the matching workflow is not currently enabled.', citationIds: [], proposedIntent: null };
       else if (conversational && intent === 'farewell') draft = { answer: conversationalReply(intent, persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
-      else if (!postCaptureFollowUp && conversational && intent !== 'greeting' && !pendingValue) draft = { answer: conversationalReply(intent ?? 'acknowledgement', persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
+      else if (!postCaptureFollowUp && conversational && intent !== 'greeting' && !pendingValue && !acceptedOfferOption) draft = { answer: conversationalReply(intent ?? 'acknowledgement', persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
       else if (!postCaptureFollowUp && !knowledgeQuestion && consentDenied && isContactWorkflow) draft = { answer: 'Understood. I will not register or share your contact details without consent. I can still answer your questions.', citationIds: [], proposedIntent: null };
         else if (crmContactMissing) draft = await composeGuidedDraft({ answer: leadCollectionReply(leadData, crmContactMissing), citationIds: [], proposedIntent: null }, 'slot_collection', crmContactMissing);
         else if (consentActionReady) draft = await composeGuidedDraft({ answer: 'I have the details needed. Please approve the consent action below to register your request.', citationIds: [], proposedIntent: catalogResolution?.intentKey ?? null }, 'consent');
@@ -1435,7 +1435,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       state.pendingFollowUpOffer = safeGrounded && validFollowUpOptions.length > 0
         ? { offerKey: randomUUID(), intentKey: state.selectedIntentKey, sourceMessageId: userMessage.id, sourceQuery: knowledgeRetrievalQuery, options: validFollowUpOptions, issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() }
         : offerNeedsClarification ? activeFollowUpOffer
-          : offerReply?.action === 'reject' || acceptedOfferOption ? null : activeFollowUpOffer;
+          : offerReply?.action === 'reject' || offerReply?.action === 'new_request' || acceptedOfferOption ? null : activeFollowUpOffer;
       state.pendingPrompt = nextPrompt;
       const nextContactConsent = catalogSlotValues.contact_consent === 'true' ? 'granted' : catalogSlotValues.contact_consent === 'false' ? 'denied' : state.contactConsent;
       if (nextContactConsent !== state.contactConsent) state.consentCapturedAt = nextContactConsent === 'unknown' ? null : new Date().toISOString();
