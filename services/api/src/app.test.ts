@@ -449,6 +449,21 @@ describe('API vertical slice', () => {
     expect(tenant.body.tenant.id).toBeTruthy();
   });
 
+  it('blocks publication until a migrated source has replacement embeddings', async () => {
+    const store = new MemoryStore();
+    const runtime = createApp({ store, nodeEnv: 'test' });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-reindex-gate@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Reindex Gate Tenant', slug: 'reindex-gate-tenant', adminEmail: 'admin-reindex-gate@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-reindex-gate@example.test', password: 'TenantA1Password' }).expect(200);
+    const sourceId = randomUUID();
+    const versionId = randomUUID();
+    const content = 'Migrated source content.';
+    await store.createSource({ id: sourceId, tenantId: tenant.body.tenant.id, title: 'Migrated FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'awaiting_review', embeddingReady: false, versionId, contentHash: contentHash(content), chunks: [{ id: randomUUID(), sourceId, tenantId: tenant.body.tenant.id, versionId, ordinal: 0, locator: 'section 1', content, contentHash: contentHash(content), embedding: [0, 0, 0, 0, 0, 0, 0, 0] }] });
+    const response = await api.post(`/api/v1/admin/sources/${sourceId}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(409);
+    expect(response.body.error).toMatchObject({ code: 'SOURCE_REINDEX_REQUIRED' });
+  });
+
   it('keeps the active source version when reindexing fails', async () => {
     const store = new MemoryStore();
     const embedding: EmbeddingProvider = { model: 'failing-test', dimension: 8, embed: async () => { throw new Error('embedding unavailable'); } };
@@ -460,7 +475,7 @@ describe('API vertical slice', () => {
     const sourceId = randomUUID();
     const versionId = randomUUID();
     const content = 'The previously approved answer.';
-    await store.createSource({ id: sourceId, tenantId: tenant.body.tenant.id, title: 'Stable FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'awaiting_review', versionId, contentHash: contentHash(content), chunks: [{ id: randomUUID(), sourceId, tenantId: tenant.body.tenant.id, versionId, ordinal: 0, locator: 'section 1', content, contentHash: contentHash(content), embedding: [0, 0, 0, 0, 0, 0, 0, 0] }] });
+    await store.createSource({ id: sourceId, tenantId: tenant.body.tenant.id, title: 'Stable FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'awaiting_review', embeddingReady: true, versionId, contentHash: contentHash(content), chunks: [{ id: randomUUID(), sourceId, tenantId: tenant.body.tenant.id, versionId, ordinal: 0, locator: 'section 1', content, contentHash: contentHash(content), embedding: [0, 0, 0, 0, 0, 0, 0, 0] }] });
     await store.setSourceStatus(sourceId, tenant.body.tenant.id, 'active');
     await api.post(`/api/v1/admin/sources/${sourceId}/reindex`).set('Authorization', `Bearer ${admin.body.token}`).expect(500);
     expect((await store.getSource(sourceId))?.status).toBe('active');
@@ -496,6 +511,8 @@ describe('API vertical slice', () => {
     await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/claim`).expect(401);
     const claimed = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/claim`).set('x-ingestion-worker-secret', 'worker-secret').expect(200);
     expect(claimed.body.job.status).toBe('processing');
+    const renewed = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/renew`).set('x-ingestion-worker-secret', 'worker-secret').send({ jobId: job.body.job.id }).expect(200);
+    expect(renewed.body.job).toMatchObject({ id: job.body.job.id, status: 'processing' });
     const result = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/result`).set('x-ingestion-worker-secret', 'worker-secret').send({ normalizedContent, contentHash: contentHash(normalizedContent), parserVersion: 'test-parser', chunks: [{ ordinal: 0, locator: 'page 2', content: chunkContent, contentHash: contentHash(chunkContent) }], warnings: ['Skipped legacy.exe: unsupported file type .exe.'] }).expect(201);
     expect(result.body.source).toMatchObject({ tenantId: tenant.body.tenant.id, title: 'Worker FAQ', status: 'awaiting_review' });
     expect((await api.get(`/api/v1/admin/ingestion-jobs/${job.body.job.id}`).set('Authorization', `Bearer ${admin.body.token}`).expect(200)).body.job).toMatchObject({ status: 'completed', sourceId: result.body.source.id, attempts: 1, errorDetail: 'Skipped legacy.exe: unsupported file type .exe.' });

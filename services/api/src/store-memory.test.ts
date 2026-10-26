@@ -29,6 +29,7 @@ describe('MemoryStore tenant and lifecycle boundaries', () => {
       sourceUrl: null,
       audience: 'public',
       status: 'awaiting_review',
+      embeddingReady: true,
       versionId,
       contentHash: 'source-hash',
       chunks: [{ id: chunkId, sourceId, tenantId: tenantA.id, versionId, ordinal: 0, locator: 'section 1', content: 'A-only fact', contentHash: 'chunk-hash', embedding: [1, 0, 0, 0, 0, 0, 0, 0] }],

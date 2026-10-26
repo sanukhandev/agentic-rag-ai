@@ -49,6 +49,7 @@ export const ingestionResultSchema = z.object({
   warnings: z.array(z.string().trim().min(1).max(500)).max(100).default([]),
 });
 export const ingestionFailureSchema = z.object({ errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('INGESTION_FAILED'), errorDetail: z.string().trim().min(1).max(2_000).optional() });
+export const ingestionRenewSchema = z.object({ jobId: z.string().uuid(), leaseMs: z.number().int().min(60_000).max(900_000).default(120_000) });
 export const sessionSchema = z.object({ tenantId: z.string().uuid().optional(), tenantSlug: z.string().regex(/^[a-z0-9-]+$/).optional() });
 export const messageSchema = z.object({ sessionId: z.string().uuid(), type: z.enum(['text', 'postback', 'attachment']).default('text'), message: z.string().trim().max(4000).default(''), postbackValue: z.string().trim().max(4000).optional(), replyToPromptId: z.string().uuid().optional(), clientMessageId: z.string().trim().min(1).max(128) }).superRefine((value, context) => {
   if (value.type === 'postback' && !value.postbackValue && !value.message) context.addIssue({ code: z.ZodIssueCode.custom, path: ['postbackValue'], message: 'A postback value is required.' });

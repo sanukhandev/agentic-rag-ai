@@ -14,13 +14,14 @@ import { catalogIntentClarification, catalogIntentLabel, catalogNextFollowUpRequ
 import { reduceIntentJourney } from './intent-journey.js';
 import { exportIntentCatalogWorkbook } from './intent-catalog-xlsx.js';
 import { composeConversationSummary, consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState, phaseFor, prompt } from './conversation-state.js';
+import { createOutboxEvent } from './events.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
 import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
-import type { ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, Message, Session, SourceStatus, Store, SupportingDocument } from './types.js';
+import type { ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, Message, Session, SourceStatus, Store, SupportingDocument } from './types.js';
 import { HttpError, parse } from './http/errors.js';
 import {
   DEFAULT_CONTEXT_WINDOW_MESSAGES,
@@ -39,6 +40,7 @@ import {
   historyQuerySchema,
   ingestionFailureSchema,
   ingestionRequestSchema,
+  ingestionRenewSchema,
   ingestionResultSchema,
   intentCatalogEditSchema,
   intentCatalogResultSchema,
@@ -69,6 +71,23 @@ const errorProperty = (error: unknown, property: string): unknown => typeof erro
 const errorType = (error: unknown): string | undefined => { const value = errorProperty(error, 'type'); return typeof value === 'string' ? value : undefined; };
 const errorCode = (error: unknown): string | undefined => { const value = errorProperty(error, 'code'); return typeof value === 'string' ? value : undefined; };
 const ingestionErrorDetail = (error: unknown): string | null => { const value = error instanceof Error ? error.message : String(error); const normalized = value.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim(); return normalized ? normalized.slice(0, 2_000) : null; };
+const INGESTION_LEASE_MS = 120_000;
+const publishIngestionProgress = async (store: Store, job: IngestionJob, stage: string, processed: number, total: number, status: IngestionJobStatus = job.status, failureCode: string | null = null): Promise<void> => {
+  try {
+    await store.enqueueOutboxEvent(createOutboxEvent({
+      eventId: randomUUID(),
+      eventType: 'ingestion.progress.v1',
+      tenantId: job.tenantId,
+      aggregateId: job.id,
+      aggregateVersion: Math.max(1, processed + 1),
+      payloadRef: job.id,
+      idempotencyKey: `ingestion:${job.id}:${status}:${stage}:${processed}:${failureCode ?? ''}`,
+      payload: { jobId: job.id, status, stage, processed, total, errorCode: failureCode },
+    }));
+  } catch {
+    // Job state in PostgreSQL is authoritative; Redis progress is best effort.
+  }
+};
 export const isValidBase64 = (value: string): boolean => {
   if (value.length === 0 || value.length % 4 !== 0) return false;
   const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
@@ -226,7 +245,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   if (!dependencies.tokenVault) assertPiiVaultSecret(process.env.PII_VAULT_KEY, nodeEnv);
   const tokenVault = dependencies.tokenVault ?? new TokenVault(vaultSecret);
   const channelVault = new ChannelSecretVault(channelCredentialKey);
-  const embedding = dependencies.embedding ?? new DeterministicEmbeddingProvider();
+  const fallbackEmbeddingDimension = process.env.STORE === 'postgres' ? Number(process.env.AZURE_AI_EMBEDDING_DIMENSION ?? 1536) : 8;
+  const embedding = dependencies.embedding ?? new DeterministicEmbeddingProvider(fallbackEmbeddingDimension);
   const n8nCallbackSecret = dependencies.n8nCallbackSecret ?? process.env.N8N_WEBHOOK_SECRET ?? '';
   const ingestionWorkerSecret = dependencies.ingestionWorkerSecret ?? process.env.INGESTION_WORKER_SECRET ?? '';
   const ingestionStaging = new IngestionStaging(dependencies.ingestionStagingRoot ?? process.env.INGESTION_STAGING_ROOT ?? join(process.cwd(), 'data', 'ingestion-staging'));
@@ -540,6 +560,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const input = parse(ingestionRequestSchema, req.body);
       await validateSourceUrl(store, tenantId, input.sourceUrl);
       const job = await store.createIngestionJob({ id: randomUUID(), tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl ?? null, audience: input.audience ?? 'public' });
+      await publishIngestionProgress(store, job, 'queued', 0, 0, 'queued');
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'ingestion.queued', metadata: { jobId: job.id }, createdAt: new Date().toISOString() });
       res.status(202).json({ job });
     } catch (error) { next(error); }
@@ -556,8 +577,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const versionId = randomUUID();
       const jobId = randomUUID();
       const createdJob = await store.createIngestionJob({ id: jobId, tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl ?? null, audience: input.audience ?? 'public' });
-      const job = await store.claimIngestionJob(createdJob.id, 60_000);
+      const job = await store.claimIngestionJob(createdJob.id, INGESTION_LEASE_MS);
       if (!job) throw new HttpError(409, 'INGESTION_BUSY', 'The ingestion job could not be claimed.');
+      await publishIngestionProgress(store, job, 'processing', 0, 0, 'processing');
       const sourceBase = { id: sourceId, tenantId, versionId };
       const safeContent = sanitizeKnowledgeText(input.content);
       const safeContentHash = contentHash(safeContent);
@@ -569,13 +591,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       try {
         const chunks = await buildChunksWithEmbeddings(sourceBase, safeContent, embedding);
-        const source = await store.createSource({ id: sourceId, tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl ?? null, audience: input.audience ?? 'public', status: 'awaiting_review', versionId, contentHash: safeContentHash, chunks });
-        await store.updateIngestionJob({ ...job, sourceId: source.id, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        const source = await store.createSource({ id: sourceId, tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: input.sourceUrl ?? null, audience: input.audience ?? 'public', status: 'awaiting_review', embeddingReady: true, versionId, contentHash: safeContentHash, chunks });
+        const completed = await store.updateIngestionJob({ ...job, sourceId: source.id, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        await publishIngestionProgress(store, completed, 'completed', chunks.length, chunks.length, 'completed');
         await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'source.staged', metadata: { sourceId, chunks: chunks.length, jobId }, createdAt: new Date().toISOString() });
         res.status(201).json({ source, ingestion: { jobId, status: 'completed', sourceStatus: 'awaiting_review', chunks: chunks.length } });
       } catch (error) {
         const errorCode = error instanceof HttpError ? error.code : 'INGESTION_FAILED';
-        await store.updateIngestionJob({ ...job, status: 'failed', errorCode, errorDetail: ingestionErrorDetail(error), leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        const failed = await store.updateIngestionJob({ ...job, status: 'failed', errorCode, errorDetail: ingestionErrorDetail(error), leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        await publishIngestionProgress(store, failed, 'failed', 0, 0, 'failed', errorCode);
         throw error;
       }
     } catch (error) { next(error); }
@@ -595,6 +619,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       try {
         await ingestionStaging.write(jobId, input.mimeType, content);
         const job = await store.createIngestionJob({ id: jobId, tenantId, title: input.title, mimeType: input.mimeType, sourceUrl: null, audience: input.audience ?? 'public' });
+        await publishIngestionProgress(store, job, 'queued', 0, 0, 'queued');
         await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'ingestion.file_queued', metadata: { jobId, mimeType: input.mimeType, bytes: content.length }, createdAt: new Date().toISOString() });
         res.status(202).json({ job });
       } catch (error) {
@@ -616,6 +641,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       try {
         await ingestionStaging.write(jobId, 'application/vnd.agentic.intent-catalog+excel', content);
         const job = await store.createIngestionJob({ id: jobId, tenantId, title: input.fileName, mimeType: 'application/vnd.agentic.intent-catalog+excel', sourceUrl: null, audience: 'internal' });
+        await publishIngestionProgress(store, job, 'queued', 0, 0, 'queued');
         await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog.queued', metadata: { jobId, bytes: content.length }, createdAt: new Date().toISOString() });
         res.status(202).json({ job });
       } catch (error) {
@@ -675,7 +701,18 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     } catch (error) { next(error); }
   });
   const setSourceStatus = (status: SourceStatus) => async (req: Request, res: Response, next: NextFunction) => {
-    try { const tenantId = await tenantForRequest(store, req); await activeTenant(store, tenantId); const source = await store.setSourceStatus(routeParam(req, 'id'), tenantId, status); if (!source) throw new HttpError(404, 'SOURCE_NOT_FOUND', 'Source not found.'); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: `source.${status}`, metadata: { sourceId: source.id }, createdAt: new Date().toISOString() }); res.json({ source }); } catch (error) { next(error); }
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      await activeTenant(store, tenantId);
+      const sourceId = routeParam(req, 'id');
+      const current = await store.getSource(sourceId);
+      if (!current || current.tenantId !== tenantId) throw new HttpError(404, 'SOURCE_NOT_FOUND', 'Source not found.');
+      if (status === 'active' && current.embeddingReady === false) throw new HttpError(409, 'SOURCE_REINDEX_REQUIRED', 'Reindex this source before publishing it.');
+      const source = await store.setSourceStatus(sourceId, tenantId, status);
+      if (!source) throw new HttpError(409, status === 'active' ? 'SOURCE_REINDEX_REQUIRED' : 'SOURCE_STATUS_CONFLICT', 'The source status could not be changed.');
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: `source.${status}`, metadata: { sourceId: source.id }, createdAt: new Date().toISOString() });
+      res.json({ source });
+    } catch (error) { next(error); }
   };
   app.post('/api/v1/admin/sources/:id/publish', protectedApi, requireRoles('tenant_admin'), setSourceStatus('active'));
   app.post('/api/v1/admin/sources/:id/revoke', protectedApi, requireRoles('tenant_admin'), setSourceStatus('revoked'));
@@ -699,19 +736,22 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const currentChunks = await store.listSourceChunks(source.id, tenantId);
       if (currentChunks.length === 0) throw new HttpError(422, 'SOURCE_EMPTY', 'The source has no current chunks to reindex.');
       const createdJob = await store.createIngestionJob({ id: randomUUID(), tenantId, title: source.title, mimeType: source.mimeType, sourceUrl: source.sourceUrl, audience: source.audience });
-      const job = await store.claimIngestionJob(createdJob.id, 60_000);
+      const job = await store.claimIngestionJob(createdJob.id, INGESTION_LEASE_MS);
       if (!job) throw new HttpError(409, 'INGESTION_BUSY', 'The reindex job could not be claimed.');
+      await publishIngestionProgress(store, job, 'processing', 0, currentChunks.length, 'processing');
       try {
         const versionId = randomUUID();
-        const chunks = await buildIngestionChunksWithEmbeddings({ id: source.id, tenantId, versionId }, currentChunks.map((chunk) => ({ ordinal: chunk.ordinal, locator: chunk.locator, content: chunk.content, contentHash: chunk.contentHash })), embedding);
+        const chunks = await buildIngestionChunksWithEmbeddings({ id: source.id, tenantId, versionId }, currentChunks.map((chunk) => ({ ordinal: chunk.ordinal, locator: chunk.locator, content: chunk.content, contentHash: chunk.contentHash })), embedding, async (processed, total) => publishIngestionProgress(store, job, 'embedding', processed, total, 'processing'));
         const updated = await store.replaceSourceVersion({ sourceId: source.id, tenantId, versionId, contentHash: source.contentHash, chunks });
         if (!updated) throw new HttpError(404, 'SOURCE_NOT_FOUND', 'Source not found.');
         const completed = await store.updateIngestionJob({ ...job, sourceId: updated.id, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        await publishIngestionProgress(store, completed, 'completed', chunks.length, chunks.length, 'completed');
         await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'source.reindexed', metadata: { sourceId: source.id, jobId: job.id, versionId }, createdAt: new Date().toISOString() });
         res.json({ job: completed, source: updated, ingestion: { status: 'awaiting_review', chunks: chunks.length } });
       } catch (error) {
         const errorCode = error instanceof HttpError ? error.code : 'INGESTION_FAILED';
-        await store.updateIngestionJob({ ...job, status: 'failed', errorCode, errorDetail: ingestionErrorDetail(error), leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        const failed = await store.updateIngestionJob({ ...job, status: 'failed', errorCode, errorDetail: ingestionErrorDetail(error), leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        await publishIngestionProgress(store, failed, 'failed', 0, currentChunks.length, 'failed', errorCode);
         throw error;
       }
     } catch (error) { next(error); }
@@ -734,13 +774,27 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     try {
       const job = await store.getIngestionJob(routeParam(req, 'id'));
       if (!job) throw new HttpError(404, 'JOB_NOT_FOUND', 'Ingestion job not found.');
-      const claimed = await store.claimIngestionJob(job.id, 60_000);
+      const claimed = await store.claimIngestionJob(job.id, INGESTION_LEASE_MS);
       if (!claimed) throw new HttpError(409, 'INGESTION_BUSY', 'The ingestion job is already claimed or complete.');
+      await publishIngestionProgress(store, claimed, 'processing', 0, 0, 'processing');
       res.json({ job: claimed });
     } catch (error) { next(error); }
   });
   app.post('/api/v1/internal/ingestion-jobs/claim-next', workerApi, async (_req, res, next) => {
-    try { res.json({ job: await store.claimNextIngestionJob(60_000) }); } catch (error) { next(error); }
+    try {
+      const job = await store.claimNextIngestionJob(INGESTION_LEASE_MS);
+      if (job) await publishIngestionProgress(store, job, 'processing', 0, 0, 'processing');
+      res.json({ job });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/ingestion-jobs/:id/renew', workerApi, async (req, res, next) => {
+    try {
+      const jobId = routeParam(req, 'id');
+      const input = parse(ingestionRenewSchema, { ...req.body, jobId });
+      const renewed = await store.renewIngestionJob(jobId, input.leaseMs ?? 120_000);
+      if (!renewed) throw new HttpError(409, 'INGESTION_NOT_CLAIMED', 'The ingestion job is not actively leased.');
+      res.json({ job: renewed });
+    } catch (error) { next(error); }
   });
   app.get('/api/v1/internal/ingestion-jobs/:id/input', workerApi, async (req, res, next) => {
     try {
@@ -762,6 +816,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const errorCode = input.errorCode ?? 'INGESTION_FAILED';
       const failed = await store.updateIngestionJob({ ...job, status: 'failed', errorCode, errorDetail: input.errorDetail ? ingestionErrorDetail(input.errorDetail) : null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
       await ingestionStaging.purge(job.id, job.mimeType);
+      await publishIngestionProgress(store, failed, 'failed', 0, 0, 'failed', errorCode);
       await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'ingestion.failed', metadata: { jobId: job.id, errorCode }, createdAt: new Date().toISOString() });
       res.json({ job: failed });
     } catch (error) { next(error); }
@@ -782,18 +837,24 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           if (existing) {
             const completed = await store.updateIngestionJob({ ...job, status: 'completed', errorDetail: null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
             await ingestionStaging.purge(job.id, job.mimeType);
+            await publishIngestionProgress(store, completed, 'completed', 1, 1, 'completed');
             res.status(200).json({ job: completed, version: existing, idempotent: true });
             return;
           }
           const version = await store.createIntentCatalogVersion({ tenantId: job.tenantId, status: 'draft', sourceFileName: job.title, sourceHash: input.sourceHash, parserVersion: input.parserVersion, catalog: validation.catalog });
           const completed = await store.updateIngestionJob({ ...job, status: 'completed', errorDetail: null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
           await ingestionStaging.purge(job.id, job.mimeType);
+          await publishIngestionProgress(store, completed, 'completed', 1, 1, 'completed');
           await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'intent_catalog.imported', metadata: { versionId: version.id, version: version.version, jobId: job.id }, createdAt: new Date().toISOString() });
           res.status(201).json({ job: completed, version });
           return;
         } catch (error) {
           const current = await store.getIngestionJob(job.id);
-          if (current?.status === 'processing') await store.updateIngestionJob({ ...current, status: 'failed', errorCode: error instanceof HttpError ? error.code : 'CATALOG_IMPORT_FAILED', errorDetail: ingestionErrorDetail(error), leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+          if (current?.status === 'processing') {
+            const errorCode = error instanceof HttpError ? error.code : 'CATALOG_IMPORT_FAILED';
+            const failed = await store.updateIngestionJob({ ...current, status: 'failed', errorCode, errorDetail: ingestionErrorDetail(error), leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+            await publishIngestionProgress(store, failed, 'failed', 0, 0, 'failed', errorCode);
+          }
           await ingestionStaging.purge(job.id, job.mimeType);
           throw error;
         }
@@ -810,21 +871,25 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (existing) {
         const completed = await store.updateIngestionJob({ ...job, sourceId: existing.id, status: 'completed', errorDetail: warnings.length ? ingestionErrorDetail(warnings.join(' | ')) : null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
         await ingestionStaging.purge(job.id, job.mimeType);
+        await publishIngestionProgress(store, completed, 'completed', chunks.length, chunks.length, 'completed');
         res.status(200).json({ job: completed, source: existing, idempotent: true });
         return;
       }
       try {
         const sourceId = randomUUID();
         const versionId = randomUUID();
-        const embeddedChunks = await buildIngestionChunksWithEmbeddings({ id: sourceId, tenantId: job.tenantId, versionId }, safeChunks, embedding);
-        const source = await store.createSource({ id: sourceId, tenantId: job.tenantId, title: job.title, mimeType: job.mimeType, sourceUrl: job.sourceUrl, audience: job.audience, status: 'awaiting_review', versionId, contentHash: input.contentHash, chunks: embeddedChunks });
+        await publishIngestionProgress(store, job, 'embedding', 0, safeChunks.length, 'processing');
+        const embeddedChunks = await buildIngestionChunksWithEmbeddings({ id: sourceId, tenantId: job.tenantId, versionId }, safeChunks, embedding, async (processed, total) => publishIngestionProgress(store, job, 'embedding', processed, total, 'processing'));
+        const source = await store.createSource({ id: sourceId, tenantId: job.tenantId, title: job.title, mimeType: job.mimeType, sourceUrl: job.sourceUrl, audience: job.audience, status: 'awaiting_review', embeddingReady: true, versionId, contentHash: input.contentHash, chunks: embeddedChunks });
         const completed = await store.updateIngestionJob({ ...job, sourceId: source.id, status: 'completed', errorDetail: warnings.length ? ingestionErrorDetail(warnings.join(' | ')) : null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
         await ingestionStaging.purge(job.id, job.mimeType);
+        await publishIngestionProgress(store, completed, 'completed', embeddedChunks.length, embeddedChunks.length, 'completed');
         await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'source.ingested', metadata: { sourceId, jobId: job.id, parserVersion: input.parserVersion, chunks: embeddedChunks.length }, createdAt: new Date().toISOString() });
         res.status(201).json({ job: completed, source, ingestion: { status: 'awaiting_review', chunks: embeddedChunks.length } });
       } catch (error) {
         const errorCode = error instanceof HttpError ? error.code : 'INGESTION_FAILED';
-        await store.updateIngestionJob({ ...job, status: 'failed', errorCode, errorDetail: ingestionErrorDetail(error), leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        const failed = await store.updateIngestionJob({ ...job, status: 'failed', errorCode, errorDetail: ingestionErrorDetail(error), leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+        await publishIngestionProgress(store, failed, 'failed', 0, safeChunks.length, 'failed', errorCode);
         throw error;
       }
     } catch (error) { next(error); }

@@ -125,8 +125,8 @@ import { BadgeComponent } from '../shared/badge.component';
                 </td>
                 <td class="px-3 py-3.5">
                   <app-badge
-                    [variant]="src.status === 'active' ? 'success' : src.status === 'awaiting_review' ? 'warning' : 'error'"
-                    [text]="src.status === 'awaiting_review' ? 'Awaiting Review' : (src.status | titlecase)"
+                    [variant]="src.embeddingReady === false ? 'warning' : src.status === 'active' ? 'success' : src.status === 'awaiting_review' ? 'warning' : 'error'"
+                    [text]="src.embeddingReady === false ? 'Reindex Required' : (src.status === 'awaiting_review' ? 'Awaiting Review' : (src.status | titlecase))"
                   ></app-badge>
                 </td>
                 <td class="px-3 py-3.5 font-mono text-neutral-700">
@@ -139,7 +139,7 @@ import { BadgeComponent } from '../shared/badge.component';
                   <div class="flex items-center justify-end gap-1.5">
                     <!-- Publish -->
                     <button
-                      *ngIf="src.status === 'awaiting_review'"
+                      *ngIf="src.status === 'awaiting_review' && src.embeddingReady !== false"
                       type="button"
                       (click)="publish(src)"
                       class="rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 transition-colors button-press"

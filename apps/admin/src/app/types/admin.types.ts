@@ -55,6 +55,7 @@ export interface Source {
   id: string;
   title: string;
   status: SourceStatus;
+  embeddingReady?: boolean;
   audience: SourceAudience;
   mimeType: string;
   chunkCount?: number;

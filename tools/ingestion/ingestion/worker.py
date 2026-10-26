@@ -15,6 +15,25 @@ from .pipeline import MAX_BYTES, IngestedSource, ingest_file, ingest_url
 from .document_ocr import document_summary, extract_document_text
 from .staging import LocalStaging
 
+DEFAULT_INGESTION_LEASE_MS = 120_000
+DEFAULT_INGESTION_RESULT_TIMEOUT_SECONDS = 600.0
+
+
+def configured_ingestion_lease_ms() -> int:
+    try:
+        value = int(os.environ.get("INGESTION_LEASE_MS", str(DEFAULT_INGESTION_LEASE_MS)))
+    except ValueError:
+        return DEFAULT_INGESTION_LEASE_MS
+    return max(60_000, min(value, 900_000))
+
+
+def configured_ingestion_result_timeout_seconds() -> float:
+    try:
+        value = float(os.environ.get("INGESTION_RESULT_TIMEOUT_SECONDS", str(DEFAULT_INGESTION_RESULT_TIMEOUT_SECONDS)))
+    except ValueError:
+        return DEFAULT_INGESTION_RESULT_TIMEOUT_SECONDS
+    return max(30.0, min(value, 900.0))
+
 
 def raise_for_api_status(response: requests.Response) -> None:
     try:
@@ -64,6 +83,22 @@ def claim_next_job(api_base: str, worker_secret: str, session: requests.Session 
     return job["id"]
 
 
+def renew_ingestion_job(api_base: str, job_id: str, worker_secret: str, lease_ms: int = DEFAULT_INGESTION_LEASE_MS, session: requests.Session | None = None) -> dict[str, Any]:
+    client = session or requests.Session()
+    response = client.post(
+        f"{api_base.rstrip('/')}/api/v1/internal/ingestion-jobs/{job_id}/renew",
+        headers={"x-ingestion-worker-secret": worker_secret},
+        json={"jobId": job_id, "leaseMs": lease_ms},
+        timeout=15,
+    )
+    raise_for_api_status(response)
+    body = response.json()
+    job = body.get("job") if isinstance(body, dict) else None
+    if not isinstance(job, dict):
+        raise ValueError("The ingestion API returned an invalid renewed job.")
+    return job
+
+
 def fetch_job_input(api_base: str, job_id: str, worker_secret: str, session: requests.Session | None = None) -> tuple[str, str, bytes]:
     client = session or requests.Session()
     response = client.get(f"{api_base.rstrip('/')}/api/v1/internal/ingestion-jobs/{job_id}/input", headers={"x-ingestion-worker-secret": worker_secret}, timeout=30)
@@ -86,7 +121,7 @@ def submit_result(api_base: str, job_id: str, worker_secret: str, source: Ingest
     base = api_base.rstrip("/")
     if claim:
         claim_job(base, job_id, worker_secret, client)
-    result = client.post(f"{base}/api/v1/internal/ingestion-jobs/{job_id}/result", headers=headers, json=result_payload(source), timeout=30)
+    result = client.post(f"{base}/api/v1/internal/ingestion-jobs/{job_id}/result", headers=headers, json=result_payload(source), timeout=configured_ingestion_result_timeout_seconds())
     raise_for_api_status(result)
     body = result.json()
     if not isinstance(body, dict):
@@ -96,7 +131,7 @@ def submit_result(api_base: str, job_id: str, worker_secret: str, source: Ingest
 
 def submit_catalog_result(api_base: str, job_id: str, worker_secret: str, result: dict[str, Any], session: requests.Session | None = None) -> dict[str, Any]:
     client = session or requests.Session()
-    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/ingestion-jobs/{job_id}/result", headers={"x-ingestion-worker-secret": worker_secret}, json=result, timeout=30)
+    response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/ingestion-jobs/{job_id}/result", headers={"x-ingestion-worker-secret": worker_secret}, json=result, timeout=configured_ingestion_result_timeout_seconds())
     raise_for_api_status(response)
     body = response.json()
     if not isinstance(body, dict):
@@ -216,10 +251,24 @@ def process_job(
 ) -> dict[str, Any]:
     client = session or requests.Session()
     claimed = already_claimed
+    stop_heartbeat = threading.Event()
+    heartbeat_thread: threading.Thread | None = None
+    lease_ms = configured_ingestion_lease_ms()
     try:
         if not claimed:
             claim_job(api_base, job_id, worker_secret, client)
             claimed = True
+        if claimed:
+            def heartbeat() -> None:
+                with requests.Session() as heartbeat_session:
+                    while not stop_heartbeat.wait(max(5.0, lease_ms / 3_000)):
+                        try:
+                            renew_ingestion_job(api_base, job_id, worker_secret, lease_ms, heartbeat_session)
+                        except requests.RequestException:
+                            pass
+
+            heartbeat_thread = threading.Thread(target=heartbeat, name=f"ingestion-lease-{job_id}", daemon=True)
+            heartbeat_thread.start()
         if url:
             ingested = ingest_url(title or "", url, allowed_hosts or set())
         elif path:
@@ -250,6 +299,10 @@ def process_job(
             except Exception:
                 pass
         raise
+    finally:
+        stop_heartbeat.set()
+        if heartbeat_thread:
+            heartbeat_thread.join(timeout=5)
 
 
 def main() -> None:

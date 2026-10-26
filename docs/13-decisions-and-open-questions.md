@@ -30,7 +30,7 @@ This log explicitly separates accepted requirements from pending architecture ch
 | D-01 | Tenant scope | **Multi-tenant is confirmed**; decide verified public channel binding, domains, invitation flow and tenant ID resolution |
 | D-02 | Auth | Anonymous web chat, customer identity, admin SSO/RBAC, channel verification |
 | D-03 | Azure | Foundry resource region, endpoint/API, credential mode, exact GPT-4.1-mini deployment |
-| D-04 | Embeddings | Approved embedding model/deployment, dimensions, rate limits, re-embed strategy |
+| D-04 | Embeddings | Azure AI Foundry `text-embedding-3-large` / 1,536 dimensions selected locally for the current pgvector HNSW limit; production rate limits and re-embed operations remain controlled decisions |
 | D-05 | Document storage | Blob/object store, quarantine rules, allowed source classes and max size |
 | D-06 | Parsers | Minimum supported formats, OCR, spreadsheets/table fidelity, sandbox design |
 | D-07 | Privacy | Specific PII classifications, lawful basis, data processing location, retention |
@@ -55,7 +55,8 @@ This log explicitly separates accepted requirements from pending architecture ch
 These decisions are scoped to the local implementation and do not approve production rollout.
 
 - **D-12 local implementation**: npm workspaces, Node 22, TypeScript strict mode, Vitest, and Python 3.12 in a containerized venv/test command.
-- **D-04 local implementation**: deterministic 8-dimensional embeddings for tests and demo data. A separate embedding adapter boundary is required before selecting a real Azure embedding deployment or changing pgvector dimensions.
+- **D-04 local implementation**: deterministic 8-dimensional embeddings remain the test double; real embeddings use the separate Azure adapter and a versioned pgvector migration.
+- **D-04 Azure local integration**: the server-side Azure AI Foundry `text-embedding-3-large` deployment requests 1,536-dimensional vectors to remain compatible with the current pgvector HNSW index; the PostgreSQL migration demotes existing active sources for explicit re-index and review before publication.
 - **D-02 local implementation**: signed development JWTs with tenant memberships and roles. Replace with approved SSO/MFA before real users or customer traffic.
 - **D-10 local implementation**: one `lead.capture` mock action through an injectable private workflow adapter. It accepts only a masked opaque reference, requires confirmation, is idempotent, and records an audit event.
 - **D-05 local implementation**: source text is staged in the application repository boundary for deterministic tests. Production storage must move to approved private object storage with malware scanning and retention controls.

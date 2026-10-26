@@ -142,7 +142,7 @@ export class MemoryStore implements Store {
   }
 
   async createSource(input: Omit<Source, 'createdAt' | 'approvedAt'> & { chunks: Chunk[] }): Promise<Source> {
-    const source: Source = { ...input, createdAt: now(), approvedAt: null };
+    const source: Source = { ...input, embeddingReady: input.embeddingReady ?? true, createdAt: now(), approvedAt: null };
     this.sources.set(source.id, source);
     this.sourceVersions.set(source.id, [{ sourceId: source.id, tenantId: source.tenantId, versionId: source.versionId, contentHash: source.contentHash, createdAt: source.createdAt }]);
     for (const chunk of input.chunks) this.chunks.set(chunk.id, chunk);
@@ -154,6 +154,7 @@ export class MemoryStore implements Store {
   async setSourceStatus(id: string, tenantId: string, status: SourceStatus): Promise<Source | null> {
     const source = this.sources.get(id);
     if (!source || source.tenantId !== tenantId) return null;
+    if (status === 'active' && !source.embeddingReady) return null;
     const updated = { ...source, status, approvedAt: status === 'active' ? now() : source.approvedAt };
     this.sources.set(id, updated);
     return updated;
@@ -174,7 +175,7 @@ export class MemoryStore implements Store {
     for (const chunk of input.chunks) this.chunks.set(chunk.id, chunk);
     const createdAt = now();
     this.sourceVersions.set(source.id, [...(this.sourceVersions.get(source.id) ?? []), { sourceId: source.id, tenantId: source.tenantId, versionId: input.versionId, contentHash: input.contentHash, createdAt }]);
-    const updated: Source = { ...source, versionId: input.versionId, contentHash: input.contentHash, status: 'awaiting_review', approvedAt: null };
+    const updated: Source = { ...source, versionId: input.versionId, contentHash: input.contentHash, embeddingReady: true, status: 'awaiting_review', approvedAt: null };
     this.sources.set(source.id, updated);
     return updated;
   }
@@ -201,6 +202,13 @@ export class MemoryStore implements Store {
       .filter((job) => job.status === 'queued' || (job.status === 'processing' && job.leaseExpiresAt && Date.parse(job.leaseExpiresAt) <= nowMs))
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0];
     return next ? this.claimIngestionJob(next.id, leaseMs) : null;
+  }
+  async renewIngestionJob(id: string, leaseMs: number): Promise<IngestionJob | null> {
+    const job = this.ingestionJobs.get(id);
+    if (!job || job.status !== 'processing' || !job.leaseExpiresAt || Date.parse(job.leaseExpiresAt) <= Date.now()) return null;
+    const renewed: IngestionJob = { ...job, leaseExpiresAt: new Date(Date.now() + leaseMs).toISOString(), updatedAt: now() };
+    this.ingestionJobs.set(id, renewed);
+    return renewed;
   }
   async updateIngestionJob(job: IngestionJob): Promise<IngestionJob> { this.ingestionJobs.set(job.id, job); return job; }
   async listSearchableChunks(tenantId: string, audience: 'public' | 'internal'): Promise<Array<{ source: Source; chunk: Chunk }>> {

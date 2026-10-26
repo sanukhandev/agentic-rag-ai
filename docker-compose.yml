@@ -198,6 +198,8 @@ services:
       INGESTION_API_BASE: http://api:4000
       INGESTION_WORKER_SECRET: ${INGESTION_WORKER_SECRET:-local-ingestion-worker-secret}
       INGESTION_POLL_INTERVAL_SECONDS: ${INGESTION_POLL_INTERVAL_SECONDS:-5}
+      INGESTION_LEASE_MS: ${INGESTION_LEASE_MS:-120000}
+      INGESTION_RESULT_TIMEOUT_SECONDS: ${INGESTION_RESULT_TIMEOUT_SECONDS:-600}
     volumes:
       - ./data/ingestion-staging:/app/data/ingestion-staging:rw
       - ./data/supporting-documents:/app/data/supporting-documents:rw
