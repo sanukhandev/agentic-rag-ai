@@ -202,6 +202,13 @@ export class MemoryStore implements Store {
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0];
     return next ? this.claimIngestionJob(next.id, leaseMs) : null;
   }
+  async renewIngestionJob(id: string, leaseMs: number): Promise<IngestionJob | null> {
+    const job = this.ingestionJobs.get(id);
+    if (!job || job.status !== 'processing' || !job.leaseExpiresAt || Date.parse(job.leaseExpiresAt) <= Date.now()) return null;
+    const renewed: IngestionJob = { ...job, leaseExpiresAt: new Date(Date.now() + leaseMs).toISOString(), updatedAt: now() };
+    this.ingestionJobs.set(id, renewed);
+    return renewed;
+  }
   async updateIngestionJob(job: IngestionJob): Promise<IngestionJob> { this.ingestionJobs.set(job.id, job); return job; }
   async listSearchableChunks(tenantId: string, audience: 'public' | 'internal'): Promise<Array<{ source: Source; chunk: Chunk }>> {
     return [...this.chunks.values()]

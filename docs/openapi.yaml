@@ -325,6 +325,13 @@ paths:
       security: [{ ingestionWorker: [] }]
       parameters: [{ $ref: '#/components/parameters/Id' }]
       responses: { '200': { description: Worker input locator or URL } }
+  /api/v1/internal/ingestion-jobs/{id}/renew:
+    post:
+      tags: [Internal]
+      security: [{ ingestionWorker: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [jobId], properties: { jobId: { type: string, format: uuid }, leaseMs: { type: integer, minimum: 60000, maximum: 900000, default: 120000 } } } } } }
+      responses: { '200': { description: Active ingestion lease renewed } }
   /api/v1/internal/ingestion-jobs/{id}/result:
     post:
       tags: [Internal]

@@ -39,6 +39,26 @@ describe('knowledge pipeline primitives', () => {
     expect(chunks[0]?.embedding).toHaveLength(provider.dimension);
   });
 
+  it('batches ingestion embeddings and reports progress after each batch', async () => {
+    const batches: string[][] = [];
+    const progress: Array<[number, number]> = [];
+    const provider = {
+      model: 'test-batch',
+      dimension: 2,
+      embed: async (text: string) => [text.length, 0],
+      embedBatch: async (texts: readonly string[]) => { batches.push([...texts]); return texts.map((text) => [text.length, 0]); },
+    };
+    const chunks = await buildIngestionChunksWithEmbeddings(
+      { id: 'source', tenantId: 'tenant', versionId: 'version' },
+      Array.from({ length: 65 }, (_, ordinal) => ({ ordinal, locator: `section ${ordinal + 1}`, content: `chunk-${ordinal}`, contentHash: contentHash(`chunk-${ordinal}`) })),
+      provider,
+      async (processed, total) => { progress.push([processed, total]); },
+    );
+    expect(chunks).toHaveLength(65);
+    expect(batches.map((batch) => batch.length)).toEqual([64, 1]);
+    expect(progress).toEqual([[64, 65], [65, 65]]);
+  });
+
   it('keeps source-backed facts but removes ingestion metadata from model evidence', () => {
     expect(presentKnowledgeText(`File: pricing.docx\n\nPRICE-001 — Starter\n\nSource-backed content: AED 4,888 per year\n\nRetrieval keywords: starter, price\n\nSample user query (generated, review required): What is the price?\n\nResponse policy: paraphrase only supported information.`)).toBe('AED 4,888 per year');
     expect(presentKnowledgeText(`File: faq.docx\n\n4. Detailed retrieval-ready knowledge records\n\nGENERAL_FAQ-001 | General\n\nSource-backed knowledge: 1. What is ANCFZ?\nANCFZ supports company setup.\n\nSearch phrasing: What is ANCFZ?\n\nRelated customer phrasing: Who can apply?\n\nContext / limitation: Verify the approved source.\n\nResponse pattern: Answer directly.`)).toBe('1. What is ANCFZ?\nANCFZ supports company setup.');

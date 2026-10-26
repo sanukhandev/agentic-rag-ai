@@ -12,7 +12,7 @@
 What inputs are allowed? Who can call the endpoint? Can it expose customer identity to a model, embedding service, n8n or logs? What is source of truth? What happens when evidence is absent? How are side effects confirmed? What happens on retries, crashes, duplicate delivery and revoked sources? Can a different tenant see it? Tests must answer these, not just a happy-path screenshot.
 
 ## Metrics and tracing
-Record redacted trace ID/correlation ID, request volume, request rate and p95 latency; retrieval duration, sanitized top-k IDs, citation precision, unsupported-rate and model failures; ingestion backlog, failures and active source versions; workflow action success/retry/unknown rate; token usage and cost estimates. **Never** emit plaintext prompts, customer input, token-map values, raw document text or third-party workflow secrets to shared telemetry.
+Record redacted trace ID/correlation ID, request volume, request rate and p95 latency; retrieval duration, sanitized top-k IDs, citation precision, unsupported-rate and model failures; ingestion backlog, failures, active source versions and Redis-stream progress by job/stage/counter; workflow action success/retry/unknown rate; token usage and cost estimates. **Never** emit plaintext prompts, customer input, token-map values, raw document text or third-party workflow secrets to shared telemetry.
 
 ## Logs and audit
 Structured log fields: timestamp, service, environment, requestId, tenant pseudonymous reference, event name, sanitized error code. Restrict admin/audit access. Separate immutable privileged audit events from diagnostic logs. Implement data retention and deletion rules for both.

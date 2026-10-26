@@ -6,6 +6,7 @@ export const EVENT_STREAMS = {
   documents: 'rag:v2:documents',
   actions: 'rag:v2:actions',
   notifications: 'rag:v2:notifications',
+  ingestion: 'rag:v2:ingestion',
   deadLetter: 'rag:v2:dead-letter',
 } as const satisfies Record<string, EventStream>;
 
@@ -21,8 +22,9 @@ export const outboxEventSchema = z.object({
     'document.extraction.requested.v1',
     'intent.action.requested.v1',
     'conversation.notification.requested.v1',
+    'ingestion.progress.v1',
   ]),
-  stream: z.enum(['rag:v2:crm', 'rag:v2:documents', 'rag:v2:actions', 'rag:v2:notifications', 'rag:v2:dead-letter']),
+  stream: z.enum(['rag:v2:crm', 'rag:v2:documents', 'rag:v2:actions', 'rag:v2:notifications', 'rag:v2:ingestion', 'rag:v2:dead-letter']),
   tenantId: uuid,
   sessionId: uuid.nullable(),
   actionId: uuid.nullable(),
@@ -50,6 +52,7 @@ export const assertSafeEvent = (event: OutboxEvent): OutboxEvent => {
 };
 
 export const eventStreamFor = (eventType: DomainEventType): EventStream => {
+  if (eventType.startsWith('ingestion.')) return EVENT_STREAMS.ingestion;
   if (eventType.startsWith('document.')) return EVENT_STREAMS.documents;
   if (eventType.startsWith('intent.')) return EVENT_STREAMS.actions;
   if (eventType.startsWith('conversation.')) return EVENT_STREAMS.notifications;

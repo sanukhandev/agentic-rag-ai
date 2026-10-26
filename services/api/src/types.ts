@@ -7,14 +7,15 @@ export type IngestionJobStatus = 'queued' | 'processing' | 'completed' | 'failed
 export type SupportingDocumentStatus = 'uploaded' | 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
 export type DocumentJobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
 
-export type EventStream = 'rag:v2:crm' | 'rag:v2:documents' | 'rag:v2:actions' | 'rag:v2:notifications' | 'rag:v2:dead-letter';
+export type EventStream = 'rag:v2:crm' | 'rag:v2:documents' | 'rag:v2:actions' | 'rag:v2:notifications' | 'rag:v2:ingestion' | 'rag:v2:dead-letter';
 export type DomainEventType =
   | 'crm.contact.upsert.requested.v1'
   | 'crm.summary.update.requested.v1'
   | 'crm.reconcile.requested.v1'
   | 'document.extraction.requested.v1'
   | 'intent.action.requested.v1'
-  | 'conversation.notification.requested.v1';
+  | 'conversation.notification.requested.v1'
+  | 'ingestion.progress.v1';
 
 export type EventPayload = Record<string, string | number | boolean | null>;
 export type EventInboxState = 'pending' | 'processing' | 'completed' | 'retry_scheduled' | 'reconcile_required' | 'dead_lettered';
@@ -628,6 +629,7 @@ export interface Store {
   listIngestionJobs(tenantId: string): Promise<IngestionJob[]>;
   claimIngestionJob(id: string, leaseMs: number): Promise<IngestionJob | null>;
   claimNextIngestionJob(leaseMs: number): Promise<IngestionJob | null>;
+  renewIngestionJob(id: string, leaseMs: number): Promise<IngestionJob | null>;
   updateIngestionJob(job: IngestionJob): Promise<IngestionJob>;
   listSearchableChunks(tenantId: string, audience: Audience): Promise<Array<{ source: Source; chunk: Chunk }>>;
   searchSearchableChunks(tenantId: string, audience: Audience, queryEmbedding: number[], limit: number, queryText?: string): Promise<Array<{ source: Source; chunk: Chunk }>>;

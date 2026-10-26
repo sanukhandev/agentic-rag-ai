@@ -496,6 +496,8 @@ describe('API vertical slice', () => {
     await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/claim`).expect(401);
     const claimed = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/claim`).set('x-ingestion-worker-secret', 'worker-secret').expect(200);
     expect(claimed.body.job.status).toBe('processing');
+    const renewed = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/renew`).set('x-ingestion-worker-secret', 'worker-secret').send({ jobId: job.body.job.id }).expect(200);
+    expect(renewed.body.job).toMatchObject({ id: job.body.job.id, status: 'processing' });
     const result = await api.post(`/api/v1/internal/ingestion-jobs/${job.body.job.id}/result`).set('x-ingestion-worker-secret', 'worker-secret').send({ normalizedContent, contentHash: contentHash(normalizedContent), parserVersion: 'test-parser', chunks: [{ ordinal: 0, locator: 'page 2', content: chunkContent, contentHash: contentHash(chunkContent) }], warnings: ['Skipped legacy.exe: unsupported file type .exe.'] }).expect(201);
     expect(result.body.source).toMatchObject({ tenantId: tenant.body.tenant.id, title: 'Worker FAQ', status: 'awaiting_review' });
     expect((await api.get(`/api/v1/admin/ingestion-jobs/${job.body.job.id}`).set('Authorization', `Bearer ${admin.body.token}`).expect(200)).body.job).toMatchObject({ status: 'completed', sourceId: result.body.source.id, attempts: 1, errorDetail: 'Skipped legacy.exe: unsupported file type .exe.' });

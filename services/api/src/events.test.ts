@@ -13,6 +13,12 @@ describe('durable event contracts', () => {
     expect(eventFromFields(eventFields(action))).toMatchObject({ eventId: action.eventId, payloadRef: 'opaque-action' });
   });
 
+  it('routes ingestion progress without accepting document content', () => {
+    const event = createOutboxEvent({ eventId: randomUUID(), eventType: 'ingestion.progress.v1', tenantId: randomUUID(), aggregateId: randomUUID(), payloadRef: 'job-1', idempotencyKey: 'ingestion-progress-1', payload: { jobId: randomUUID(), status: 'processing', stage: 'embedding', processed: 64, total: 2057, errorCode: null } });
+    expect(event.stream).toBe('rag:v2:ingestion');
+    expect(() => createOutboxEvent({ ...event, eventId: randomUUID(), idempotencyKey: 'ingestion-unsafe', payload: { ...event.payload, content: 'private document text' } })).toThrow('routing references only');
+  });
+
   it('rejects identity-bearing event payloads before Redis publication', () => {
     expect(() => createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: randomUUID(), aggregateId: randomUUID(), payloadRef: 'opaque', idempotencyKey: 'unsafe', payload: { email: 'person@example.com' } })).toThrow('routing references only');
   });

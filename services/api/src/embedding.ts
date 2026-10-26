@@ -4,6 +4,7 @@ export interface EmbeddingProvider {
   readonly model: string;
   readonly dimension: number;
   embed(text: string): Promise<number[]>;
+  embedBatch?(texts: readonly string[]): Promise<number[][]>;
 }
 
 export class DeterministicEmbeddingProvider implements EmbeddingProvider {
@@ -25,18 +26,28 @@ export class AzureEmbeddingProvider implements EmbeddingProvider {
   get model(): string { return this.deployment; }
 
   async embed(text: string): Promise<number[]> {
+    const vectors = await this.embedBatch([text]);
+    const vector = vectors[0];
+    if (!vector) throw new Error('Azure embedding response did not include the requested vector.');
+    return vector;
+  }
+
+  async embedBatch(texts: readonly string[]): Promise<number[][]> {
+    if (texts.length === 0) return [];
     if (!this.endpoint || !this.deployment || !this.apiKey || !this.apiVersion) throw new Error('Azure embedding provider is not configured.');
     const endpoint = this.endpoint.replace(/\/$/, '');
     const v1 = /\/openai\/v1$/i.test(endpoint);
     const url = v1
       ? `${endpoint}/embeddings`
       : `${endpoint}/openai/deployments/${encodeURIComponent(this.deployment)}/embeddings?api-version=${encodeURIComponent(this.apiVersion)}`;
-    const requestBody = v1 ? { model: this.deployment, input: text, dimensions: this.dimension } : { input: text, dimensions: this.dimension };
+    const requestBody = v1 ? { model: this.deployment, input: texts, dimensions: this.dimension } : { input: texts, dimensions: this.dimension };
     const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'api-key': this.apiKey }, body: JSON.stringify(requestBody) });
     if (!response.ok) throw new Error(`Azure embedding request failed with status ${response.status}.`);
-    const body = await response.json() as { data?: Array<{ embedding?: unknown }> };
-    const vector = body.data?.[0]?.embedding;
-    if (!Array.isArray(vector) || vector.length !== this.dimension || vector.some((value) => typeof value !== 'number' || !Number.isFinite(value))) throw new Error('Azure embedding response did not match the configured dimension.');
-    return vector;
+    const body = await response.json() as { data?: Array<{ index?: number; embedding?: unknown }> };
+    const data = body.data;
+    if (!Array.isArray(data) || data.length !== texts.length) throw new Error('Azure embedding response did not match the requested batch.');
+    const vectors = texts.map((_, index) => data.find((item) => item.index === index)?.embedding ?? data[index]?.embedding);
+    if (vectors.some((vector) => !Array.isArray(vector) || vector.length !== this.dimension || vector.some((value) => typeof value !== 'number' || !Number.isFinite(value)))) throw new Error('Azure embedding response did not match the configured dimension.');
+    return vectors as number[][];
   }
 }

@@ -48,8 +48,29 @@ export const buildChunks = (source: Pick<Source, 'id' | 'tenantId' | 'versionId'
 
 export const buildChunksWithEmbeddings = async (source: Pick<Source, 'id' | 'tenantId' | 'versionId'>, content: string, provider: EmbeddingProvider): Promise<Chunk[]> => {
   const chunks = chunkText(content);
+  return embedChunkRows(source, chunks.map((content, ordinal) => ({ ordinal, locator: `section ${ordinal + 1}`, content, contentHash: contentHash(content) })), provider);
+};
+
+const EMBEDDING_BATCH_SIZE = 64;
+
+const embedChunkRows = async (
+  source: Pick<Source, 'id' | 'tenantId' | 'versionId'>,
+  chunks: Array<{ ordinal: number; locator: string; content: string; contentHash: string }>,
+  provider: EmbeddingProvider,
+  onProgress?: (processed: number, total: number) => Promise<void>,
+): Promise<Chunk[]> => {
   const result: Chunk[] = [];
-  for (const [ordinal, chunk] of chunks.entries()) result.push({ id: randomUUID(), sourceId: source.id, tenantId: source.tenantId, versionId: source.versionId, ordinal, locator: `section ${ordinal + 1}`, content: chunk, contentHash: contentHash(chunk), embedding: await provider.embed(chunk) });
+  for (let start = 0; start < chunks.length; start += EMBEDDING_BATCH_SIZE) {
+    const batch = chunks.slice(start, start + EMBEDDING_BATCH_SIZE);
+    const embeddings = provider.embedBatch ? await provider.embedBatch(batch.map((chunk) => chunk.content)) : await Promise.all(batch.map((chunk) => provider.embed(chunk.content)));
+    if (embeddings.length !== batch.length) throw new Error('Embedding provider returned an incomplete batch.');
+    result.push(...batch.map((chunk, index) => {
+      const embedding = embeddings[index];
+      if (!embedding) throw new Error('Embedding provider returned a missing vector.');
+      return { id: randomUUID(), sourceId: source.id, tenantId: source.tenantId, versionId: source.versionId, ordinal: chunk.ordinal, locator: chunk.locator, content: chunk.content, contentHash: chunk.contentHash, embedding };
+    }));
+    if (onProgress) await onProgress(Math.min(start + batch.length, chunks.length), chunks.length);
+  }
   return result;
 };
 
@@ -57,10 +78,9 @@ export const buildIngestionChunksWithEmbeddings = async (
   source: Pick<Source, 'id' | 'tenantId' | 'versionId'>,
   chunks: Array<{ ordinal: number; locator: string; content: string; contentHash: string }>,
   provider: EmbeddingProvider,
+  onProgress?: (processed: number, total: number) => Promise<void>,
 ): Promise<Chunk[]> => {
-  const result: Chunk[] = [];
-  for (const chunk of chunks) result.push({ id: randomUUID(), sourceId: source.id, tenantId: source.tenantId, versionId: source.versionId, ordinal: chunk.ordinal, locator: chunk.locator, content: chunk.content, contentHash: chunk.contentHash, embedding: await provider.embed(chunk.content) });
-  return result;
+  return embedChunkRows(source, chunks, provider, onProgress);
 };
 
 const evidenceMetadataLine = /^(?:File|Format|Primary intent|Suggested routing|Retrieval keywords|Sample user query(?:\s*\([^)]*\))?|Search phrasing|Related customer phrasing|Context\s*\/\s*limitation|Response policy|Response pattern|Retrieval metadata|Detection examples|Clarification|Next action):/iu;

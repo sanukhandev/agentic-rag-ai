@@ -14,7 +14,7 @@ No system can accurately support literally every file type by default. Define a 
 5. **Sanitize**: identify private data, credentials and regulated content; reject or tokenize/redact according to source classification and explicit approval. Never pass raw customer PII to third-party embedding endpoints.
 6. **Chunk**: deterministic chunk strategy tuned to document structure; record offsets, page, section, content hash and exact source version. Use overlap conservatively and retain heading context.
 7. **Embed**: use an explicitly selected **embedding model/deployment distinct from GPT-4.1-mini**; store model ID, dimensions, preprocessing version, vector creation time and chunk checksum. Embedding size must match pgvector column/index; model changes require versioned re-indexing.
-8. **Index**: transactional upsert by tenant + source version + chunk fingerprint; safe retries, progress and failure states; use pgvector index appropriate to verified workload.
+8. **Index**: transactional upsert by tenant + source version + chunk fingerprint; safe retries, progress and failure states; use pgvector index appropriate to verified workload. Long-running embedding work renews its ingestion lease and reports only job/stage/counter metadata through the Redis ingestion stream; PostgreSQL remains authoritative.
 9. **Evaluate and publish**: run corpus-specific sample questions with expected evidence; atomically mark new version active and retire old version. Never serve partial uploads as authoritative.
 10. **Lifecycle**: revoke, re-index, delete, retention, tombstones, re-run on parser/model changes, and audit provenance.
 
