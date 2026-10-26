@@ -93,4 +93,13 @@ describe('conversation state concurrency merge', () => {
     expect(merged.pendingFollowUpOffer).toBeNull();
     expect(merged.pendingPrompt).toBeNull();
   });
+
+  it('does not restore a stale prompt after a newer workflow callback clears it', () => {
+    const latest = { ...newConversationState(), workflowStatus: 'succeeded' as const, phase: 'SUCCEEDED' as const, lastTurnAt: '2026-10-26T10:01:00.000Z', pendingPrompt: null };
+    const candidate = { ...newConversationState(), workflowStatus: 'awaiting_customer' as const, phase: 'SLOT_COLLECTION' as const, lastTurnAt: '2026-10-26T10:02:00.000Z', pendingPrompt: { id: 'stale-prompt', type: 'slot' as const, intentKey: 'company.setup', slotKey: 'business_activity', issuedAt: '2026-10-26T10:01:30.000Z' } };
+    const merged = mergeConcurrentConversationState(latest, candidate);
+    expect(merged.workflowStatus).toBe('succeeded');
+    expect(merged.phase).toBe('SUCCEEDED');
+    expect(merged.pendingPrompt).toBeNull();
+  });
 });

@@ -77,12 +77,13 @@ export const mergeConcurrentConversationState = (latest: ConversationState, cand
     || ((candidate.summaryRevision ?? 0) === (latest.summaryRevision ?? 0) && (candidate.messageSequence ?? 0) > (latest.messageSequence ?? 0))
     ? candidate : latest;
   const candidateTurnIsNewer = newerTurnWins(latest, candidate);
+  const workflowClearedPrompt = workflowStatusRank[latest.workflowStatus] > workflowStatusRank[candidate.workflowStatus] && latest.pendingPrompt === null;
   return {
     ...latest,
     ...candidate,
     workflowStatus: workflowState.workflowStatus,
     phase: workflowState.phase,
-    pendingPrompt: candidateTurnIsNewer ? candidate.pendingPrompt : latest.pendingPrompt,
+    pendingPrompt: workflowClearedPrompt ? null : candidateTurnIsNewer ? candidate.pendingPrompt : latest.pendingPrompt,
     pendingFollowUpOffer: mergePendingOffer(latest, candidate),
     slotValues,
     slotProvenance,
