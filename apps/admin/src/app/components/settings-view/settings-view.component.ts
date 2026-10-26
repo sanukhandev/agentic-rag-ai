@@ -296,6 +296,17 @@ import { ConfirmDialogComponent } from '../shared/confirm-dialog.component';
 
       </div>
 
+      <!-- Revocation Confirmation Dialog -->
+      <app-confirm-dialog
+        [isOpen]="confirmRevokeOpen"
+        title="Revoke Connector Credential"
+        [message]="confirmRevokeMessage"
+        consequence="External integrations (WhatsApp, CRM webhook, etc.) using this API key will immediately fail authentication."
+        confirmText="Revoke Credential"
+        (confirm)="executeRevokeCredential()"
+        (cancel)="confirmRevokeOpen = false"
+      ></app-confirm-dialog>
+
     </div>
   `
 })
@@ -383,10 +394,30 @@ export class SettingsViewComponent implements OnInit {
     });
   }
 
-  revokeConnectorCredential(credential: ChannelCredential): void {
-    if (window.confirm(`Revoke the ${credential.channel} connector credential?`)) {
-      this.state.settings.revokeChannelCredential(credential);
+  confirmRevokeOpen = false;
+  pendingRevokeChannel = '';
+
+  get confirmRevokeMessage(): string {
+    return 'Are you sure you want to revoke the credential for channel \'' + (this.pendingRevokeChannel || '') + '\'?';
+  }
+  pendingRevokeCredential: ChannelCredential | null = null;
+
+  requestRevokeCredential(cred: ChannelCredential): void {
+    this.pendingRevokeChannel = cred.channel;
+    this.pendingRevokeCredential = cred;
+    this.confirmRevokeOpen = true;
+  }
+
+  executeRevokeCredential(): void {
+    if (this.pendingRevokeCredential) {
+      this.state.settings.revokeChannelCredential(this.pendingRevokeCredential);
+      this.pendingRevokeCredential = null;
     }
+    this.confirmRevokeOpen = false;
+  }
+
+  revokeConnectorCredential(credential: ChannelCredential): void {
+    this.requestRevokeCredential(credential);
   }
 
   purgeExpiredSessions(): void {

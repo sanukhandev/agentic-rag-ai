@@ -24,35 +24,35 @@ export class BadgeComponent {
   get badgeClass(): string {
     switch (this.variant) {
       case 'success':
-        return 'bg-[#166534]/10 text-[#166534] border-[#166534]/20';
+        return 'bg-emerald-50 text-emerald-800 border-emerald-200';
       case 'warning':
-        return 'bg-[#B45309]/10 text-[#B45309] border-[#B45309]/20';
+        return 'bg-amber-50 text-amber-800 border-amber-200';
       case 'error':
-        return 'bg-[#B91C1C]/10 text-[#B91C1C] border-[#B91C1C]/20';
+        return 'bg-rose-50 text-rose-800 border-rose-200';
       case 'black':
-        return 'bg-[#111111] text-[#FFFFFF] border-[#111111]';
+        return 'bg-neutral-900 text-white border-neutral-900';
       case 'outline':
-        return 'bg-[#FFFFFF] text-[#525252] border-[#E5E5E5]';
+        return 'bg-white text-neutral-700 border-neutral-300';
       case 'neutral':
       default:
-        return 'bg-[#F5F5F5] text-[#525252] border-[#E5E5E5]';
+        return 'bg-neutral-100 text-neutral-700 border-neutral-200';
     }
   }
 
   get dotClass(): string {
     switch (this.variant) {
       case 'success':
-        return 'bg-[#166534] animate-pulse';
+        return 'bg-emerald-600 animate-pulse';
       case 'warning':
-        return 'bg-[#B45309]';
+        return 'bg-amber-600';
       case 'error':
-        return 'bg-[#B91C1C]';
+        return 'bg-rose-600';
       case 'black':
-        return 'bg-[#A3A3A3]';
+        return 'bg-neutral-400';
       case 'outline':
       case 'neutral':
       default:
-        return 'bg-[#737373]';
+        return 'bg-neutral-500';
     }
   }
 }
