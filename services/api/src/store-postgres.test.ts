@@ -9,6 +9,8 @@ import { EventConsumer, N8nEventBridge, type StreamBus, type StreamMessage } fro
 import { PostgresStore } from './store-postgres.js';
 import type { OutboxEvent } from './types.js';
 
+const postgresEmbedding = [0.1, ...Array.from({ length: 1_535 }, () => 0)];
+
 class PostgresTestBus implements StreamBus {
   readonly acknowledged: string[] = [];
   readonly deadLetters: OutboxEvent[] = [];
@@ -174,7 +176,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       expect((await store.getSession(session.id))?.tokenMap.get('[EMAIL_1]')).toBe('v1.ciphertext');
       const sourceId = randomUUID();
       const versionId = randomUUID();
-      const source = await store.createSource({ id: sourceId, tenantId: tenant.id, title: 'FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'awaiting_review', versionId, contentHash: 'hash', chunks: [{ id: randomUUID(), sourceId, tenantId: tenant.id, versionId, ordinal: 0, locator: 'section 1', content: 'Pricing is 100 credits.', contentHash: 'chunk-hash', embedding: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8] }] });
+      const source = await store.createSource({ id: sourceId, tenantId: tenant.id, title: 'FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'awaiting_review', versionId, contentHash: 'hash', chunks: [{ id: randomUUID(), sourceId, tenantId: tenant.id, versionId, ordinal: 0, locator: 'section 1', content: 'Pricing is 100 credits.', contentHash: 'chunk-hash', embedding: postgresEmbedding }] });
       const job = await store.createIngestionJob({ id: randomUUID(), tenantId: tenant.id, title: 'FAQ', mimeType: 'text/plain', sourceUrl: null, audience: 'public' });
       const claimedJob = await store.claimIngestionJob(job.id, 60_000);
       expect(claimedJob).toMatchObject({ status: 'processing', attempts: 1 });
@@ -188,7 +190,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       expect(await store.claimCallbackNonce(callbackNonce, new Date(Date.now() + 60_000).toISOString())).toBe(false);
       await store.setSourceStatus(source.id, tenant.id, 'active');
       expect((await store.listSearchableChunks(tenant.id, 'public')).length).toBe(1);
-      expect((await store.searchSearchableChunks(tenant.id, 'public', [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8], 4)).length).toBe(1);
+      expect((await store.searchSearchableChunks(tenant.id, 'public', postgresEmbedding, 4)).length).toBe(1);
       const userMessage = await store.addMessage({ id: randomUUID(), sessionId: session.id, tenantId: tenant.id, role: 'user', maskedContent: 'What is pricing?', citations: [], clientMessageId: 'client-1', response: null, createdAt: new Date().toISOString() });
       await store.updateMessage({ ...userMessage, response: { answer: 'Pricing is 100 credits.' } });
       expect((await store.getMessageByClientId(session.id, 'client-1'))?.response).toMatchObject({ answer: 'Pricing is 100 credits.' });

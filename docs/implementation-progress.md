@@ -19,7 +19,7 @@ The complete feature brief, execution plan, acceptance matrix and master prompt 
 ## Decisions for this local vertical slice
 
 - npm workspaces with Node 22 and TypeScript strict mode.
-- A deterministic 8-dimensional embedding double is used locally; the production embedding deployment and dimension remain configurable and must be selected before real data. The pgvector migration is explicitly marked local-demo-only.
+- A deterministic 8-dimensional embedding double remains used by deterministic tests; the local Azure integration is configured for `text-embedding-3-large` at 1,536 dimensions to remain compatible with the current pgvector HNSW index. Existing source versions require migration, re-indexing and review before publication.
 - In-memory repositories make unit and deterministic end-to-end tests repeatable. A parameterized PostgreSQL/pgvector adapter and migration are included for integration and deployment work.
 - Azure AI Foundry and n8n are injectable adapters. Tests use deterministic model and private mock workflow doubles; no live credential or production call is claimed.
 - Authentication is a signed development JWT boundary with RBAC and tenant resolution. Production SSO/MFA/KMS decisions remain open.
@@ -110,8 +110,8 @@ This section is updated after verification. No scenario is marked passing from s
 
 ## Blockers and risks
 
-- Live identity-provider and production n8n credentials are unavailable; live Azure chat is verified locally, while embedding remains blocked by the missing deployment.
-- Azure Foundry chat credentials are now configured locally from the user-provided private note; a live GPT-4.1-mini v1 request returned HTTP 200 with valid JSON. The configured resource does not have an embedding deployment available (`DeploymentNotFound` for `text-embedding-3-small`), so local runs keep the deterministic embedding provider until a deployed embedding model name is supplied.
+- Live identity-provider and production n8n credentials are unavailable; live Azure chat and embedding are verified locally, while production approvals remain open.
+- Azure Foundry chat credentials are configured locally; GPT-4.1-mini and `text-embedding-3-large` smoke requests returned HTTP 200. The local PostgreSQL migration changes the vector dimension to 1,536 and requires source re-indexing before publication.
 - Hosted GitHub Actions verification is intentionally not configured; `npm run verify:local` is the authoritative repository gate.
 - The framework dependency audit and lockfile integrity are clean locally.
 - No browser automation was used; UI validation is build/typecheck-only per the requested unit-test-only constraint.

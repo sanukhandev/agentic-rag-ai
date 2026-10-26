@@ -31,7 +31,7 @@ export class AzureEmbeddingProvider implements EmbeddingProvider {
     const url = v1
       ? `${endpoint}/embeddings`
       : `${endpoint}/openai/deployments/${encodeURIComponent(this.deployment)}/embeddings?api-version=${encodeURIComponent(this.apiVersion)}`;
-    const requestBody = v1 ? { model: this.deployment, input: text } : { input: text };
+    const requestBody = v1 ? { model: this.deployment, input: text, dimensions: this.dimension } : { input: text, dimensions: this.dimension };
     const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'api-key': this.apiKey }, body: JSON.stringify(requestBody) });
     if (!response.ok) throw new Error(`Azure embedding request failed with status ${response.status}.`);
     const body = await response.json() as { data?: Array<{ embedding?: unknown }> };
