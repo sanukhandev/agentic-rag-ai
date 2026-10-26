@@ -31,6 +31,8 @@ Normalization output is untrusted: the server length-checks it, rejects unmasked
 ## Conversation memory
 Node stores scope-limited **masked** summaries/turns, retention and redaction rules. Do not reinject raw historical identities in subsequent model prompts. Retrieval knowledge and customer memory are separate sources with different access lifecycles.
 
+When a visitor asks a knowledge question during an active catalog journey, the backend uses the masked question, active intent, validated non-PII context and a bounded summary to retrieve evidence. If no evidence is available, the model may ask one context-preserving clarification without factual business claims; the pending catalog requirement remains unchanged.
+
 ## Adversarial and evaluation scenarios
 - No matching source: do not invent fees, locations or service availability.
 - Ambiguous/expired/conflicting brochure: do not select convenient terms.

@@ -20,9 +20,11 @@ No system can accurately support literally every file type by default. Define a 
 
 ## Retrieval
 - Normalize and mask incoming text before embedding/query logging.
+- During an active catalog journey, knowledge questions use the masked current question together with the active intent, validated non-PII requirements, and a bounded conversation summary. Spelling normalization is allowed before a bounded retrieval retry; the current question remains authoritative.
 - Perform SQL-level tenant isolation and allowed-source filters **before returning rows**. Post-filtering only in the application is insufficient.
 - Use vector similarity, optional lexical search, reranking and top-k/token limits. Record sanitized retrieval diagnostics.
 - Never use similarity alone as a truth guarantee. Require an evidence sufficiency gate that checks relevance, conflicting facts, approved validity, and citation alignment.
+- If retrieval has no usable evidence during an active journey, ask a safe contextual clarification while preserving the pending catalog requirement; do not replace the journey with a generic answer or invent business facts.
 - Cite source document/version + page/section + chunk IDs in user-visible answers where appropriate.
 - Do not use deleted, unapproved, expired, quarantined, tenant-foreign or private-to-others chunks.
 - A citation is valid only if it refers to evidence actually supplied to and used by the answer model. Do not generate plausible-looking source references.

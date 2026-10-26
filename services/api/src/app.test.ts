@@ -67,6 +67,15 @@ class ContextNormalizingModel extends CapturingModel {
   async normalizeQuery(input: QueryNormalizationInput): Promise<string | null> { this.normalizationInputs.push(input); return input.maskedMessage; }
 }
 
+class KnowledgeClarificationModel extends CapturingModel {
+  async draft(input: Parameters<ChatModel['draft']>[0]): Promise<ModelDraft> {
+    const draft = await super.draft(input);
+    return input.followUpContext?.responseMode === 'knowledge_clarification'
+      ? { answer: 'Which part of this would you like me to explain first?', citationIds: [], proposedIntent: null }
+      : draft;
+  }
+}
+
 class InvalidCitationModel implements ChatModel {
   async draft(): Promise<ModelDraft> { return { answer: 'An unsupported invented answer.', citationIds: ['00000000-0000-0000-0000-000000000000'], proposedIntent: null }; }
 }
@@ -1397,9 +1406,39 @@ describe('API vertical slice', () => {
     expect(response.body.grounded).toBe(true);
     expect(response.body.citations).not.toHaveLength(0);
     expect(response.body.pendingPromptId).toEqual(expect.any(String));
-    expect(model.normalizationInputs).toHaveLength(0);
+    expect(model.normalizationInputs).toHaveLength(1);
+    expect(model.normalizationInputs[0]).toMatchObject({ selectedIntentKey: 'company.setup' });
     expect(response.body.pendingRequirementKey).toBe('slot:name');
     expect(model.followUpContexts.at(-1)).toMatchObject({ responseMode: 'mixed', primaryIntentKey: 'company.setup', conversationSummary: 'The visitor wants to set up a fashion store.' });
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ selectedIntentKey: 'company.setup', pendingPrompt: { type: 'slot', slotKey: 'name' } });
+  });
+
+  it('keeps an active journey contextual when knowledge evidence is unavailable', async () => {
+    const model = new KnowledgeClarificationModel();
+    const runtime = createApp({ nodeEnv: 'test', model });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-clarification@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Clarification Tenant', slug: 'clarification-tenant', adminEmail: 'admin-clarification@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const catalog = {
+      tenantScope: tenant.body.tenant.slug,
+      intents: [{ intentKey: 'company.setup', displayName: 'Set up a company', description: 'Company setup', category: 'service', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' }],
+      signals: [{ intentKey: 'company.setup', signalId: 'company-start', signalType: 'phrase' as const, value: 'start a business', language: 'en', matchMode: 'contains' as const, weight: 80, relationGroup: null, notes: '' }],
+      slots: [{ intentKey: 'company.setup', slotKey: 'name', dataType: 'person_name', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', retentionClass: 'pii' }],
+      relations: [],
+      workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'clarification-workflow', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
+    } satisfies IntentCatalog;
+    const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'clarification.json', sourceHash: 'c'.repeat(64), parserVersion: 'test', catalog });
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const storedSession = await runtime.store.getSession(session.body.sessionId);
+    storedSession!.conversationState = { ...storedSession!.conversationState!, catalogVersionId: version.id, selectedIntentKey: 'company.setup', slotValues: { interest_summary: 'trading company' }, rollingSummary: 'The visitor wants to set up a trading company.', pendingPrompt: { id: 'pending-name', type: 'slot', intentKey: 'company.setup', slotKey: 'name', requirementKey: 'slot:name', issuedAt: new Date().toISOString() } };
+    await runtime.store.updateSession(storedSession!);
+
+    const response = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'tell me about your offerss', clientMessageId: 'knowledge-clarification' }).expect(200);
+    expect(response.body.grounded).toBe(false);
+    expect(response.body.conversational).toBe(true);
+    expect(response.body.answer).toContain('?');
+    expect(response.body.answer).not.toContain('knowledge base');
+    expect(response.body.pendingRequirementKey).toBe('slot:name');
+    expect(model.followUpContexts.at(-1)).toMatchObject({ responseMode: 'knowledge_clarification', conversationSummary: 'The visitor wants to set up a trading company.' });
   });
 });

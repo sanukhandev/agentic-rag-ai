@@ -31,7 +31,7 @@ export interface ModelFollowUpContext {
   conversationSummary?: string;
   detectedSecondaryIntentKey?: string | null;
   continuityTurn?: boolean;
-  responseMode?: 'slot_collection' | 'intent_clarification' | 'consent' | 'confirmation' | 'document_collection' | 'document_processing' | 'knowledge' | 'mixed' | 'follow_up' | 'queued' | 'reconcile_follow_up' | 'offer_clarification';
+  responseMode?: 'slot_collection' | 'intent_clarification' | 'consent' | 'confirmation' | 'document_collection' | 'document_processing' | 'knowledge' | 'knowledge_clarification' | 'mixed' | 'follow_up' | 'queued' | 'reconcile_follow_up' | 'offer_clarification';
   pendingOffer?: PendingFollowUpOffer | null;
   resolvedOfferOption?: FollowUpOfferOption | null;
   nextSlotLabel?: string | null;
@@ -175,6 +175,7 @@ export const leadCollectionReply = (data: LeadData, invalidField?: 'name' | 'ema
 export class DeterministicGroundedModel implements ChatModel {
   async draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[]; followUpContext?: ModelFollowUpContext }): Promise<ModelDraft> {
     if (input.followUpContext?.responseMode === 'reconcile_follow_up') return { answer: 'I’ll keep the conversation open while this is reviewed. What would you like to go over next?', citationIds: [], proposedIntent: null };
+    if (input.followUpContext?.responseMode === 'knowledge_clarification') return { answer: 'Which part of this would you like me to explain first?', citationIds: [], proposedIntent: null };
     if (input.followUpContext?.continuityTurn) return { answer: 'Thanks, I’ve noted that. What would you like to explore next?', citationIds: [], proposedIntent: null };
     const wantsLead = /\b(contact|call|email|interested|demo|quote)\b/i.test(input.maskedMessage);
     return { answer: naturalAbstention(detectedLanguage(input.maskedMessage)), citationIds: [], proposedIntent: wantsLead ? 'lead.capture' : null };
@@ -208,6 +209,8 @@ const responseSystemPrompt = (input: {
             ? 'Answer the latest approved knowledge question first using only the supplied evidence. Acknowledge the visitor facts already captured, then ask only the one next catalog requirement question supplied by the backend. Do not expose routing or internal state.'
           : input.followUpContext?.responseMode === 'knowledge'
               ? `Answer the latest approved knowledge question using only the supplied evidence. Preserve the active conversation context and pending requirement; do not invent facts or claim that a requirement was completed.${input.followUpContext.resolvedOfferOption ? ` The visitor selected this offered path: ${input.followUpContext.resolvedOfferOption.label}. Use its retrieval hints to answer the original offer, not the acknowledgement alone.` : ''}`
+          : input.followUpContext?.responseMode === 'knowledge_clarification'
+            ? 'The approved evidence did not answer the latest knowledge question. Ask one concise, natural clarification tied to the active conversation so the visitor can specify what they want to know. Do not make business claims, mention the knowledge base, repeat the pending slot question, or invent a package, price, requirement or timeline.'
           : input.followUpContext?.responseMode === 'queued'
             ? 'The backend has accepted the request for asynchronous processing. Acknowledge the latest contribution and explain only that processing will continue; do not claim completion.'
           : input.followUpContext?.responseMode === 'follow_up'
@@ -435,6 +438,11 @@ export const isSafeContinuityAnswer = (answer: string, citations: Citation[]): b
   if (!normalized || normalized.length > 1_200 || citations.length > 0 || /(?:\$|€|£|aed|\b\d+(?:\.\d+)?\s*%?\b)/u.test(normalized)) return false;
   if (/\b(?:we offer|we provide|our package|our packages|starts at|costs?|prices?|requires?|includes\b|available|guarantee|will be|is located|officially)\b/u.test(normalized)) return false;
   return normalized.includes('?') || /^(?:thanks?|thank you|great|okay|noted|understood|got it|sure|i(?:'ve| have) noted)\b/u.test(normalized);
+};
+export const isSafeKnowledgeClarification = (answer: string, citations: Citation[]): boolean => {
+  const normalized = answer.normalize('NFKC').trim().toLocaleLowerCase('en-US');
+  return isSafeContinuityAnswer(answer, citations)
+    && !/\b(?:verified information|knowledge base|what would you like to explore)\b/u.test(normalized);
 };
 export const isGuidedResponse = (answer: string, mode: 'slot_collection' | 'intent_clarification' | 'consent' | 'confirmation' | 'document_collection' | 'document_processing' | 'queued' | 'follow_up' | 'offer_clarification', slotKey: string | null = null, scopeLabel: string | null = null): boolean => {
   const normalized = answer.normalize('NFKC').toLocaleLowerCase('en-US');

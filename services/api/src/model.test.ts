@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AzureFoundryModel, classifyOfferReply, classifyOfferReplyDeterministically, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isGuidedResponse, isGreeting, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, preservesNormalizationFacts, validateCitations } from './model.js';
+import { AzureFoundryModel, classifyOfferReply, classifyOfferReplyDeterministically, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isGuidedResponse, isGreeting, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, isSafeKnowledgeClarification, leadCollectionReply, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, preservesNormalizationFacts, validateCitations } from './model.js';
 
 describe('Azure Foundry model adapter', () => {
   it('uses the complete configured greeting', () => {
@@ -101,6 +101,13 @@ describe('Azure Foundry model adapter', () => {
     expect(isSafeContinuityAnswer(draft.answer, [])).toBe(true);
     expect(draft.citationIds).toEqual([]);
   });
+  it('creates a safe clarification when an active knowledge journey needs a narrower question', async () => {
+    const model = new DeterministicGroundedModel();
+    const draft = await model.draft({ maskedMessage: 'tell me about your offerss', personaName: 'Zara', evidence: [], followUpContext: { leadCaptured: false, primaryIntentKey: 'anc.activity.trading', responseMode: 'knowledge_clarification' } });
+    expect(draft.answer).toContain('?');
+    expect(isSafeKnowledgeClarification(draft.answer, [])).toBe(true);
+    expect(isSafeKnowledgeClarification(naturalAbstention(), [])).toBe(false);
+  });
   it('recognizes contextual answers without treating factual questions as answers', () => {
     expect(isContextualReply('yes 2 weeks')).toBe(true);
     expect(isContextualReply('shared office')).toBe(true);
@@ -171,6 +178,14 @@ describe('Azure Foundry model adapter', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ query: 'Email person@example.com' }) } }] }), { status: 200 }));
     await expect(model.normalizeQuery({ maskedMessage: 'Email [EMAIL_1]', catalog: { intents: [], signals: [], relations: [] } })).resolves.toBeNull();
     vi.restoreAllMocks();
+  });
+
+  it('normalizes a misspelled knowledge question without changing its meaning', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ query: 'tell me about your offers' }) } }] }), { status: 200 }));
+    const model = new AzureFoundryModel('https://foundry.example/openai/v1', 'gpt-4.1-mini', 'server-key');
+    await expect(model.normalizeQuery({ maskedMessage: 'tell me about your offerss', selectedIntentKey: 'anc.activity.trading', conversation: [{ role: 'user', content: 'I want to start a trading company' }], catalog: { intents: [{ intentKey: 'anc.activity.trading', displayName: 'Trading activity', description: 'Trading company setup', category: 'commercial', workflowKey: 'crm.lead.capture', minimumScore: 60, confidenceThreshold: 0.8, confirmationRequired: true, active: true, priority: 100, versionNote: '' }], signals: [{ intentKey: 'anc.activity.trading', signalId: 'trading-start', signalType: 'phrase', value: 'start a trading company', language: 'en', matchMode: 'contains', weight: 75, relationGroup: null, notes: '' }], relations: [] } })).resolves.toBe('tell me about your offers');
+    expect(String(fetchMock.mock.calls[0]?.[1]?.body)).toContain('Correct spelling');
+    fetchMock.mockRestore();
   });
 
   it('rejects normalizations that change negation, quantities or privacy tokens', () => {
