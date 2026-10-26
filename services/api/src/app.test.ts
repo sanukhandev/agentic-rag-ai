@@ -1019,6 +1019,9 @@ describe('API vertical slice', () => {
     const ambiguous = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'yes please', clientMessageId: 'offer-ambiguous' }).expect(200);
     expect(ambiguous.body.answer).toContain('the setup steps');
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer?.options).toHaveLength(2);
+    const repeatedAmbiguous = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'yes', clientMessageId: 'offer-repeated-ambiguous' }).expect(200);
+    expect(repeatedAmbiguous.body.answer).toContain('the setup steps');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer?.options).toHaveLength(2);
     const knowledgeQuestion = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Is the package price inclusive?', clientMessageId: 'offer-knowledge-question' }).expect(200);
     expect(knowledgeQuestion.body.grounded).toBe(true);
     expect(knowledgeQuestion.body.answer).toContain('approved guide');

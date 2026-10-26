@@ -1105,6 +1105,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : null;
       const offerReplyOwnsTurn = Boolean(activeFollowUpOffer && !promptScopedReply && !pendingValue && !pendingConsentValue && ['accept', 'select_option', 'reject', 'clarify'].includes(offerReply?.action ?? ''));
       const offerNeedsClarification = Boolean(activeFollowUpOffer && !promptScopedReply && !pendingValue && !pendingConsentValue && (offerReply?.action === 'clarify' || offerReply?.action === 'unknown'));
+      const offerOwnsConversationState = Boolean(activeFollowUpOffer && (offerReplyOwnsTurn || offerNeedsClarification));
       const awaitingConsentAction = pendingCatalogIntent && publishedCatalog
         ? sessionActions.find((action) => action.state === 'awaiting_confirmation' && action.catalogVersionId === publishedCatalog.id && action.intentKey === pendingCatalogIntent && action.payload.contactConsent === false) ?? null
         : null;
@@ -1196,7 +1197,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const pendingTransitionPrompt = state.pendingPrompt?.type === 'confirmation' && state.pendingPrompt.requirementKey?.startsWith('transition:') ? state.pendingPrompt : null;
       const transitionApproval = Boolean(pendingTransitionPrompt?.intentKey && !knowledgeQuestion && !offerReplyOwnsTurn && /^(?:yes|yeah|yep|sure|okay|ok|confirm|confirmed|approve|approved|proceed|go ahead)\b/iu.test(maskedMessage));
       const transitionDenied = Boolean(pendingTransitionPrompt && !knowledgeQuestion && !offerReplyOwnsTurn && /^(?:no|nope|not now|later|decline|reject|stop)\b/iu.test(maskedMessage));
-      const intentContinuity = publishedCatalog ? resolveIntentContinuity(publishedCatalog, { currentText: normalizedMessage, contextText: intentContextQuery, slotValues: catalogSlotValues, selectedIntentKey: transitionDenied ? state.selectedIntentKey : state.activeFollowUpIntentKey ?? state.selectedIntentKey, pendingPromptType: state.pendingPrompt?.type ?? null }) : null;
+      const intentContinuity = publishedCatalog && !offerOwnsConversationState ? resolveIntentContinuity(publishedCatalog, { currentText: normalizedMessage, contextText: intentContextQuery, slotValues: catalogSlotValues, selectedIntentKey: transitionDenied ? state.selectedIntentKey : state.activeFollowUpIntentKey ?? state.selectedIntentKey, pendingPromptType: state.pendingPrompt?.type ?? null }) : null;
       let catalogResolution = intentContinuity?.primary ?? null;
       const pendingJourneyConfirmation = state.pendingPrompt?.type === 'confirmation' && !pendingTransitionPrompt && state.pendingPrompt.requirementKey && state.pendingPrompt.intentKey
         ? publishedCatalog?.catalog.journeyRequirements?.some((requirement) => requirement.intentKey === state.pendingPrompt?.intentKey && requirement.requirementKey === state.pendingPrompt?.requirementKey && requirement.requirementType === 'confirmation') ?? false
@@ -1235,7 +1236,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const journeyResolvedIntentKey = catalogResolution && ['matched', 'missing_slots'].includes(catalogResolution.reason)
         ? catalogResolution.intentKey
         : null;
-      const journeyResult = journeyCatalogEnabled && publishedCatalog
+      const journeyResult = journeyCatalogEnabled && publishedCatalog && !offerOwnsConversationState
         ? reduceIntentJourney(publishedCatalog, state.intentProgress, {
           currentIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyCurrentIntentKey : journeyCurrentIntentKey,
           selectedIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyResolvedIntentKey ?? null : transitionDenied ? state.selectedIntentKey ?? state.intentProgress?.activeIntentKey ?? null : journeyResolvedIntentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? null,
@@ -1424,13 +1425,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           : consentActionReady ? prompt('consent', catalogResolution?.intentKey ?? journeyResult?.activeIntentKey ?? state.selectedIntentKey, null, journeyRequirement?.requirementKey ?? null)
             : catalogResolution?.actionAllowed && !consentDenied && !journeyOfferPending && !declinedTransitionHold ? prompt('confirmation', catalogResolution.intentKey, null) : null;
       state.catalogVersionId = catalogResolution?.catalogVersionId ?? state.catalogVersionId;
-      if (journeyResult) state.intentProgress = journeyResult.progress;
-      state.selectedIntentKey = transitionApproval ? journeyResult?.activeIntentKey ?? pendingTransitionPrompt?.intentKey ?? state.selectedIntentKey : postCaptureFollowUp || knowledgeOnlyTurn || journeyOfferPending ? state.selectedIntentKey : catalogResolution?.intentKey ?? state.selectedIntentKey;
-      if (transitionApproval) state.activeFollowUpIntentKey = null;
-      if (transitionDenied) state.activeFollowUpIntentKey = state.selectedIntentKey;
-      if (!state.selectedIntentKey && journeyResult?.activeIntentKey) state.selectedIntentKey = journeyResult.activeIntentKey;
-      if (journeyResult?.activeIntentKey && journeyResult.activeIntentKey !== state.selectedIntentKey) state.activeFollowUpIntentKey = journeyResult.activeIntentKey;
-      if (!postCaptureFollowUp && !knowledgeOnlyTurn) {
+      if (journeyResult && !offerOwnsConversationState) state.intentProgress = journeyResult.progress;
+      if (!offerOwnsConversationState) {
+        state.selectedIntentKey = transitionApproval ? journeyResult?.activeIntentKey ?? pendingTransitionPrompt?.intentKey ?? state.selectedIntentKey : postCaptureFollowUp || knowledgeOnlyTurn || journeyOfferPending ? state.selectedIntentKey : catalogResolution?.intentKey ?? state.selectedIntentKey;
+        if (transitionApproval) state.activeFollowUpIntentKey = null;
+        if (transitionDenied) state.activeFollowUpIntentKey = state.selectedIntentKey;
+        if (!state.selectedIntentKey && journeyResult?.activeIntentKey) state.selectedIntentKey = journeyResult.activeIntentKey;
+        if (journeyResult?.activeIntentKey && journeyResult.activeIntentKey !== state.selectedIntentKey) state.activeFollowUpIntentKey = journeyResult.activeIntentKey;
+      }
+      if (!offerOwnsConversationState && !postCaptureFollowUp && !knowledgeOnlyTurn) {
         state.intentScore = catalogResolution?.score ?? state.intentScore ?? 0;
         state.intentConfidence = catalogResolution?.confidence ?? state.intentConfidence ?? 0;
       }
@@ -1466,7 +1469,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       state.contactConsent = nextContactConsent;
       state.summaryRevision += 1;
       state.messageSequence += 1;
-      state.phase = endedConversation || knowledgeOnlyTurn ? state.phase : journeyDocumentPending ? 'DOCUMENT_COLLECTION' : journeyRequirement?.requirementType === 'slot' ? 'SLOT_COLLECTION' : postCaptureFollowUp ? state.phase : phaseFor({ intentKey: catalogResolution?.intentKey ?? pendingCatalogIntent, missingSlot: nextMissingSlot, consentPending: consentActionReady, actionPending: Boolean(catalogResolution?.actionAllowed && !consentDenied) });
+      if (!offerOwnsConversationState) state.phase = endedConversation || knowledgeOnlyTurn ? state.phase : journeyDocumentPending ? 'DOCUMENT_COLLECTION' : journeyRequirement?.requirementType === 'slot' ? 'SLOT_COLLECTION' : postCaptureFollowUp ? state.phase : phaseFor({ intentKey: catalogResolution?.intentKey ?? pendingCatalogIntent, missingSlot: nextMissingSlot, consentPending: consentActionReady, actionPending: Boolean(catalogResolution?.actionAllowed && !consentDenied) });
       state.rollingSummary = composeConversationSummary(state, maskedMessage).slice(-4000);
       session.conversationState = state;
       await updateSessionSafely(session, true);
