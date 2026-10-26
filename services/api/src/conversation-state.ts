@@ -89,7 +89,8 @@ export const mergeWorkflowCallbackState = (latest: ConversationState, candidate:
     workflowStatus: workflowState.workflowStatus,
     phase: preserveVisitorPrompt ? latest.phase : workflowState.phase,
     pendingPrompt: preserveVisitorPrompt ? latest.pendingPrompt : workflowState.pendingPrompt,
-    pendingFollowUpOffer: candidate.pendingFollowUpOffer !== undefined ? candidate.pendingFollowUpOffer : latest.pendingFollowUpOffer ?? null,
+    // Workflow callbacks do not own conversational offers; never let a stale callback erase a newer chat turn.
+    pendingFollowUpOffer: latest.pendingFollowUpOffer ?? null,
     activeFollowUpIntentKey: latest.activeFollowUpIntentKey ?? candidate.activeFollowUpIntentKey ?? null,
     intentProgress: mergeIntentProgress(latest, candidate),
   };

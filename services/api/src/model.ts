@@ -80,11 +80,14 @@ export const normalizeConversationQuery = (text: string): string => text
 const offerReplyText = (text: string): string => normalizeConversationQuery(text).toLocaleLowerCase('en-US');
 const offerAffirmation = /^(?:yes|yeah|yep|sure|okay|ok|please do|go ahead|tell me more|please explain|that would help|i(?:'d| would) like that)(?:[\s,.]*(?:please|sure|yes|go ahead))*[.!]*$/iu;
 const offerRejection = /^(?:no|nope|not now|later|not yet|maybe later|decline|reject|stop|nothing else|i(?:'m| am) done)[.!]*$/iu;
+const offerReplyQuestion = /(?:[?؟]$|^(?:what|how|where|which|why|when|who|can|could|would|is|are|does|should|will)\b|^do\s+(?:you|we|they|i)\b)/iu;
+const offerReplyMinimumConfidence = 0.75;
 
 /** Resolves only against the currently persisted offer; it never chooses a business intent. */
 export const classifyOfferReplyDeterministically = (maskedMessage: string, offer: PendingFollowUpOffer): ModelOfferReply => {
   const message = offerReplyText(maskedMessage);
   if (offerRejection.test(message)) return { action: 'reject', confidence: 1 };
+  if (!offerAffirmation.test(message) && offerReplyQuestion.test(message)) return { action: 'new_request', confidence: 1 };
   const matches = offer.options.filter((option) => [option.key, option.label, ...option.retrievalHints]
     .map(offerReplyText)
     .some((candidate) => candidate.length >= 3 && (message === candidate || message.includes(candidate))));
@@ -102,14 +105,21 @@ export const classifyOfferReplyDeterministically = (maskedMessage: string, offer
 };
 
 export const classifyOfferReply = async (model: ChatModel, input: { maskedMessage: string; offer: PendingFollowUpOffer; conversation?: ConversationTurn[]; conversationSummary?: string; activeIntentKey?: string | null }): Promise<ModelOfferReply> => {
+  if (input.offer.intentKey && input.activeIntentKey && input.offer.intentKey !== input.activeIntentKey) return { action: 'new_request', optionKey: null, confidence: 1 };
   const deterministic = classifyOfferReplyDeterministically(input.maskedMessage, input.offer);
   if (deterministic.action !== 'unknown' || !model.classifyOfferReply) return deterministic;
   try {
     const result = await model.classifyOfferReply(input);
     const validKey = result.optionKey && input.offer.options.some((option) => option.key === result.optionKey) ? result.optionKey : null;
     const confidence = Number.isFinite(result.confidence) ? Math.min(Math.max(result.confidence, 0), 1) : 0;
-    if ((result.action === 'accept' || result.action === 'select_option') && !validKey) return { action: 'clarify', confidence };
-    return { action: result.action, optionKey: validKey, confidence };
+    if (confidence < offerReplyMinimumConfidence) return { action: 'unknown', optionKey: null, confidence };
+    if (result.action === 'accept') {
+      const onlyOption = input.offer.options.length === 1 ? input.offer.options[0] : null;
+      if (!onlyOption || (validKey && validKey !== onlyOption.key)) return { action: 'clarify', optionKey: null, confidence };
+      return { action: 'accept', optionKey: onlyOption.key, confidence };
+    }
+    if (result.action === 'select_option' && !validKey) return { action: 'clarify', optionKey: null, confidence };
+    return { action: result.action, optionKey: result.action === 'select_option' ? validKey : null, confidence };
   } catch {
     return deterministic;
   }
@@ -401,7 +411,7 @@ export const needsConversationContext = (text: string): boolean => {
 export const isKnowledgeQuestion = (text: string): boolean => {
   const normalized = normalizeConversationQuery(text).toLocaleLowerCase('en-US');
   return !hasLeadIntent(normalized)
-    && (/[?؟]/u.test(normalized) || /^(?:what|how|where|which|why|when|who|can you|could you|tell me|please explain)\b/u.test(normalized) || /\b(?:i(?:'d| would| want) like to know|i want to understand)\b/u.test(normalized));
+    && (/[?؟]/u.test(normalized) || /^(?:what|how|where|which|why|when|who|can(?: you)?|could(?: you)?|would(?: you)?|is|are|does|should|will|do\s+(?:you|we|they|i)|tell me|please explain)\b/u.test(normalized) || /\b(?:i(?:'d| would| want) like to know|i want to understand)\b/u.test(normalized));
 };
 
 /** A short non-question can answer the last journey question without being a knowledge query. */

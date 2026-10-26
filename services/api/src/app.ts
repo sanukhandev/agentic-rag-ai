@@ -196,6 +196,14 @@ const catalogSlotTerms = (slot: IntentCatalogSlot): string[] => slot.slotKey.spl
 
 const messageMentionsCatalogSlot = (slot: IntentCatalogSlot, message: string): boolean => catalogSlotTerms(slot).some((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&')}\\b`, 'iu').test(message));
 
+const offerText = (text: string): string => normalizeConversationQuery(text).toLocaleLowerCase('en-US');
+const offerOptionIsPresented = (answer: string, option: FollowUpOfferOption): boolean => offerText(answer).includes(offerText(option.label));
+const offerHintIsGrounded = (evidence: ModelEvidence[], hint: string): boolean => {
+  const evidenceText = offerText(evidence.map((item) => item.content).join(' '));
+  const terms = offerText(hint).match(/[\p{L}\p{N}]{4,}/gu) ?? [];
+  return terms.length === 0 || terms.some((term) => evidenceText.includes(term));
+};
+
 export interface AppDependencies {
   store?: Store;
   model?: ChatModel;
@@ -1043,18 +1051,25 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const catalogHistory = publishedCatalog ? await store.listMessages(session.id, session.tenantId, modelContextWindow + 1) : [];
       let activeFollowUpOffer: PendingFollowUpOffer | null = null;
       if (state.pendingFollowUpOffer && Date.parse(state.pendingFollowUpOffer.expiresAt) > Date.now()) {
-        try { assertKnownTokens(session, state.pendingFollowUpOffer.sourceQuery, tokenVault); activeFollowUpOffer = state.pendingFollowUpOffer; } catch { state.pendingFollowUpOffer = null; }
+        const offerIntentScope = new Set([state.selectedIntentKey, state.activeFollowUpIntentKey, state.intentProgress?.activeIntentKey].filter((value): value is string => Boolean(value)));
+        const offerIntentChanged = Boolean(state.pendingFollowUpOffer.intentKey && !offerIntentScope.has(state.pendingFollowUpOffer.intentKey));
+        try {
+          if (offerIntentChanged) throw new Error('Pending offer intent is no longer active.');
+          assertKnownTokens(session, state.pendingFollowUpOffer.sourceQuery, tokenVault);
+          activeFollowUpOffer = state.pendingFollowUpOffer;
+        } catch { state.pendingFollowUpOffer = null; }
       } else if (state.pendingFollowUpOffer) state.pendingFollowUpOffer = null;
+      if (input.replyToPromptId && input.replyToPromptId !== state.pendingPrompt?.id) throw new HttpError(409, 'PROMPT_MISMATCH', 'The reply no longer matches the active conversation prompt.');
+      const promptScopedReply = Boolean(input.replyToPromptId && input.replyToPromptId === state.pendingPrompt?.id);
       const offerReply = activeFollowUpOffer
-        ? await classifyOfferReply(model, { maskedMessage: masked.masked, offer: activeFollowUpOffer, conversation: catalogHistory.filter((message) => message.id !== userMessage.id).slice(-modelContextWindow).map((message) => ({ role: message.role, content: message.maskedContent })), conversationSummary: state.rollingSummary, activeIntentKey: state.selectedIntentKey })
+        && !directKnowledgeQuestion && !promptScopedReply
+        ? await classifyOfferReply(model, { maskedMessage: masked.masked, offer: activeFollowUpOffer, conversation: catalogHistory.filter((message) => message.id !== userMessage.id).slice(-modelContextWindow).map((message) => ({ role: message.role, content: message.maskedContent })), conversationSummary: state.rollingSummary, activeIntentKey: state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey })
         : null;
       const acceptedOfferOption = activeFollowUpOffer && (offerReply?.action === 'accept' || offerReply?.action === 'select_option') && offerReply.optionKey
         ? activeFollowUpOffer.options.find((option) => option.key === offerReply.optionKey) ?? null
         : null;
-      const offerNeedsClarification = Boolean(activeFollowUpOffer && (offerReply?.action === 'clarify' || offerReply?.action === 'unknown'));
       const knowledgeQuestion = directKnowledgeQuestion || Boolean(acceptedOfferOption);
       const lastCatalogAssistant = [...catalogHistory].reverse().find((message) => message.role === 'assistant');
-      if (input.replyToPromptId && input.replyToPromptId !== state.pendingPrompt?.id) throw new HttpError(409, 'PROMPT_MISMATCH', 'The reply no longer matches the active conversation prompt.');
       const activeCatalogIntent = state.activeFollowUpIntentKey ?? state.selectedIntentKey;
       const pendingCatalogIntent = state.pendingPrompt && activeCatalogIntent && state.catalogVersionId === publishedCatalog?.id
         ? activeCatalogIntent
@@ -1084,10 +1099,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : false;
       const pendingContactKind = pendingSlot?.alternativeGroup === 'contact' ? masked.masked.match(/\[(EMAIL|PHONE)_\d+\]/u)?.[1] ?? null : null;
       const pendingTextRedirected = Boolean(pendingSlot && publishedCatalog && /^text:/u.test(pendingSlot.validationRule) && publishedCatalog.catalog.slots.some((slot) => slot.intentKey === pendingSlotIntent && slot.slotKey !== pendingSlot.slotKey && messageMentionsCatalogSlot(slot, inputText)));
-      const pendingValue = pendingSlot && !pendingConsentSlot && !knowledgeQuestion && !activeFollowUpOffer && !pendingNameIsIntentPhrase && !pendingTextRedirected ? pendingCatalogSlotValue(pendingContactKind ? `token:${pendingContactKind}` : pendingSlot.validationRule, inputText, masked.masked, session, tokenVault) : null;
-      const pendingConsentValue = state.pendingPrompt?.type === 'consent' && (!pendingSlot || pendingConsentSlot) && !knowledgeQuestion && !activeFollowUpOffer
+      const pendingValue = pendingSlot && !pendingConsentSlot && !knowledgeQuestion && !pendingNameIsIntentPhrase && !pendingTextRedirected ? pendingCatalogSlotValue(pendingContactKind ? `token:${pendingContactKind}` : pendingSlot.validationRule, inputText, masked.masked, session, tokenVault) : null;
+      const pendingConsentValue = state.pendingPrompt?.type === 'consent' && (!pendingSlot || pendingConsentSlot) && !knowledgeQuestion && (!activeFollowUpOffer || promptScopedReply)
         ? pendingCatalogSlotValue('boolean:explicit_opt_in', inputText, masked.masked, session, tokenVault)
         : null;
+      const offerReplyOwnsTurn = Boolean(activeFollowUpOffer && !promptScopedReply && !pendingValue && !pendingConsentValue && ['accept', 'select_option', 'reject', 'clarify'].includes(offerReply?.action ?? ''));
+      const offerNeedsClarification = Boolean(activeFollowUpOffer && !promptScopedReply && !pendingValue && !pendingConsentValue && (offerReply?.action === 'clarify' || offerReply?.action === 'unknown'));
       const awaitingConsentAction = pendingCatalogIntent && publishedCatalog
         ? sessionActions.find((action) => action.state === 'awaiting_confirmation' && action.catalogVersionId === publishedCatalog.id && action.intentKey === pendingCatalogIntent && action.payload.contactConsent === false) ?? null
         : null;
@@ -1177,14 +1194,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const leadData = mergeLeadData(pendingCatalogValues as LeadData, ...recentMessages.filter((message) => message.role === 'user').map((message) => extractLeadData(message.maskedContent)), currentLeadData);
       const catalogSlotValues: Record<string, string> = { ...pendingCatalogValues, ...Object.fromEntries(recentMessages.filter((message) => message.role === 'user').flatMap((message) => Object.entries(extractLeadData(message.maskedContent)))), ...(extractLeadData(maskedMessage) as Record<string, string>), ...inferredCatalogValueData, ...pendingCatalogValueData };
       const pendingTransitionPrompt = state.pendingPrompt?.type === 'confirmation' && state.pendingPrompt.requirementKey?.startsWith('transition:') ? state.pendingPrompt : null;
-      const transitionApproval = Boolean(pendingTransitionPrompt?.intentKey && !knowledgeQuestion && /^(?:yes|yeah|yep|sure|okay|ok|confirm|confirmed|approve|approved|proceed|go ahead)\b/iu.test(maskedMessage));
-      const transitionDenied = Boolean(pendingTransitionPrompt && !knowledgeQuestion && /^(?:no|nope|not now|later|decline|reject|stop)\b/iu.test(maskedMessage));
+      const transitionApproval = Boolean(pendingTransitionPrompt?.intentKey && !knowledgeQuestion && !offerReplyOwnsTurn && /^(?:yes|yeah|yep|sure|okay|ok|confirm|confirmed|approve|approved|proceed|go ahead)\b/iu.test(maskedMessage));
+      const transitionDenied = Boolean(pendingTransitionPrompt && !knowledgeQuestion && !offerReplyOwnsTurn && /^(?:no|nope|not now|later|decline|reject|stop)\b/iu.test(maskedMessage));
       const intentContinuity = publishedCatalog ? resolveIntentContinuity(publishedCatalog, { currentText: normalizedMessage, contextText: intentContextQuery, slotValues: catalogSlotValues, selectedIntentKey: transitionDenied ? state.selectedIntentKey : state.activeFollowUpIntentKey ?? state.selectedIntentKey, pendingPromptType: state.pendingPrompt?.type ?? null }) : null;
       let catalogResolution = intentContinuity?.primary ?? null;
       const pendingJourneyConfirmation = state.pendingPrompt?.type === 'confirmation' && !pendingTransitionPrompt && state.pendingPrompt.requirementKey && state.pendingPrompt.intentKey
         ? publishedCatalog?.catalog.journeyRequirements?.some((requirement) => requirement.intentKey === state.pendingPrompt?.intentKey && requirement.requirementKey === state.pendingPrompt?.requirementKey && requirement.requirementType === 'confirmation') ?? false
         : false;
-      const pendingConfirmationIntentMatches = Boolean(pendingJourneyConfirmation && state.pendingPrompt?.intentKey === (catalogResolution?.intentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey));
+      const pendingConfirmationIntentMatches = Boolean(pendingJourneyConfirmation && !offerReplyOwnsTurn && state.pendingPrompt?.intentKey === (catalogResolution?.intentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey));
       // Consent is purpose-bound. A strong, newly requested intent must not inherit
       // the opt-in or pending question from a different customer journey. Intents
       // mapped to the same workflow remain one opportunity; a different workflow
@@ -1229,7 +1246,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           knowledgeQuestion: knowledgeOnlyTurn,
           followUp: postCaptureFollowUp,
           farewell: intent === 'farewell',
-          completedRequirementKeys: pendingConfirmationIntentMatches && state.pendingPrompt?.requirementKey && !knowledgeQuestion && /^(?:yes|yeah|yep|sure|okay|ok|confirm|confirmed|approve|approved|proceed|go ahead)\b/iu.test(maskedMessage)
+          completedRequirementKeys: pendingConfirmationIntentMatches && state.pendingPrompt?.requirementKey && !knowledgeQuestion && !offerReplyOwnsTurn && /^(?:yes|yeah|yep|sure|okay|ok|confirm|confirmed|approve|approved|proceed|go ahead)\b/iu.test(maskedMessage)
             ? [state.pendingPrompt.requirementKey]
             : [],
         })
@@ -1391,7 +1408,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const preserveConsentPrompt = knowledgeQuestion && state.pendingPrompt?.type === 'consent';
       const preserveTypedConsentPrompt = textConsentApproval && state.pendingPrompt?.type === 'consent';
       const preserveTransitionOfferPrompt = Boolean(pendingTransitionPrompt && !transitionApproval && !transitionDenied);
-      const preservePendingPrompt = (knowledgeQuestion && state.pendingPrompt && ['slot', 'consent', 'document', 'confirmation'].includes(state.pendingPrompt.type)) || preserveTransitionOfferPrompt || preserveTypedConsentPrompt;
+      const preservePendingPrompt = (state.pendingPrompt && (offerReplyOwnsTurn || knowledgeQuestion) && ['slot', 'consent', 'document', 'confirmation'].includes(state.pendingPrompt.type)) || preserveTransitionOfferPrompt || preserveTypedConsentPrompt;
       const preserveDocumentProcessingPrompt = journeyDocumentAwaiting && state.pendingPrompt?.type === 'document' && state.pendingPrompt.requirementKey === journeyRequirement?.requirementKey;
       const nextPrompt = preservePendingPrompt || preserveConsentPrompt ? state.pendingPrompt : endedConversation ? null : consentDenied || transitionDenied ? null : journeyOfferPending
          ? prompt('confirmation', journeyResult?.offeredIntentKey ?? catalogResolution?.intentKey ?? state.selectedIntentKey, null, journeyTransitionRequirementKey)
@@ -1427,14 +1444,21 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const value = catalogSlotValues[slotKey];
         if (value) state.slotProvenance[slotKey] = { source: 'visitor', messageSequence: state.messageSequence + 1, capturedAt: new Date().toISOString(), corrected: Boolean(previousSlotValues[slotKey] && previousSlotValues[slotKey] !== value) };
       }
+      const responseMessageId = randomUUID();
+      const seenOfferKeys = new Set<string>();
       const validFollowUpOptions = (draft.followUpOptions ?? []).map((option): FollowUpOfferOption | null => {
-        if (!/^[a-z0-9][a-z0-9_.-]{0,79}$/u.test(option.key) || option.label.trim().length === 0 || option.label.length > 160) return null;
-        try { assertKnownTokens(session, `${option.label} ${option.retrievalHints.join(' ')}`, tokenVault); } catch { return null; }
-        return { key: option.key, label: option.label.trim(), retrievalHints: option.retrievalHints.map((hint) => hint.trim()).filter((hint) => hint.length > 0 && hint.length <= 120).slice(0, 6) };
+        const key = option.key.trim().toLocaleLowerCase('en-US');
+        const label = option.label.trim();
+        const retrievalHints = option.retrievalHints.map((hint) => hint.trim()).filter((hint) => hint.length > 0 && hint.length <= 120).slice(0, 6);
+        if (!/^[a-z0-9][a-z0-9_.-]{0,79}$/u.test(key) || seenOfferKeys.has(key) || label.length === 0 || label.length > 160 || !offerOptionIsPresented(safeAnswer, { key, label, retrievalHints }) || retrievalHints.some((hint) => !offerHintIsGrounded(evidence, hint))) return null;
+        try { assertKnownTokens(session, `${label} ${retrievalHints.join(' ')}`, tokenVault); } catch { return null; }
+        seenOfferKeys.add(key);
+        return { key, label, retrievalHints };
       }).filter((option): option is FollowUpOfferOption => Boolean(option)).slice(0, 4);
       state.pendingFollowUpOffer = safeGrounded && validFollowUpOptions.length > 0
-        ? { offerKey: randomUUID(), intentKey: state.selectedIntentKey, sourceMessageId: userMessage.id, sourceQuery: knowledgeRetrievalQuery, options: validFollowUpOptions, issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() }
+        ? { offerKey: randomUUID(), intentKey: state.selectedIntentKey, sourceMessageId: responseMessageId, sourceQuery: knowledgeRetrievalQuery, options: validFollowUpOptions, issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() }
         : offerNeedsClarification ? activeFollowUpOffer
+          : pendingValue || pendingConsentValue ? null
           : offerReply?.action === 'reject' || offerReply?.action === 'new_request' || acceptedOfferOption ? null : activeFollowUpOffer;
       state.pendingPrompt = nextPrompt;
       const nextContactConsent = catalogSlotValues.contact_consent === 'true' ? 'granted' : catalogSlotValues.contact_consent === 'false' ? 'denied' : state.contactConsent;
@@ -1461,7 +1485,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       const intentActionAlreadySubmitted = Boolean(catalogResolution?.intentKey && sessionActions.some((candidate) => (candidate.intentKey ?? candidate.workflowKey) === catalogResolution.intentKey && ['awaiting_confirmation', 'awaiting_customer', 'approved', 'processing', 'completed'].includes(candidate.state)));
       const sameWorkflowOpportunityExists = Boolean(catalogResolution?.workflowKey && sessionActions.some((candidate) => candidate.workflowKey === catalogResolution?.workflowKey && ['awaiting_confirmation', 'awaiting_customer', 'approved', 'processing', 'completed'].includes(candidate.state)));
-      const shouldProposeAction = !resumedAction && !sameWorkflowOpportunityExists && !postCaptureFollowUp && !knowledgeQuestion && !journeyOfferPending && !transitionDenied && !declinedTransitionHold && (catalogResolution ? catalogSlotsReady && !intentActionAlreadySubmitted && !actionAlreadySubmitted && !consentDenied && !crmContactMissing && (catalogResolution.actionAllowed || consentActionReady) : draft.proposedIntent === 'lead.capture' && leadIntent && validatedLeadReady);
+      const shouldProposeAction = !resumedAction && !sameWorkflowOpportunityExists && !postCaptureFollowUp && !knowledgeQuestion && !offerReplyOwnsTurn && !journeyOfferPending && !transitionDenied && !declinedTransitionHold && (catalogResolution ? catalogSlotsReady && !intentActionAlreadySubmitted && !actionAlreadySubmitted && !consentDenied && !crmContactMissing && (catalogResolution.actionAllowed || consentActionReady) : draft.proposedIntent === 'lead.capture' && leadIntent && validatedLeadReady);
       const action = resumedAction ?? (shouldProposeAction ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, actionLeadData, catalogResolution ? { workflowKey: catalogResolution.workflowKey ?? 'lead.capture', intentKey: catalogResolution.intentKey ?? 'lead.capture', intentScore: catalogResolution.score, intentConfidence: catalogResolution.confidence, catalogVersionId: catalogResolution.catalogVersionId, webhookPath: publishedCatalog?.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution.workflowKey)?.webhookPath ?? 'lead-capture' } : undefined) : null);
       const awaitingConfirmationAction = sessionActions.find((candidate) => candidate.state === 'awaiting_confirmation'
         && candidate.payload.contactConsent !== true
@@ -1469,11 +1493,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         && (publishedCatalog
           ? candidate.catalogVersionId === publishedCatalog.id && candidate.intentKey === (pendingCatalogIntent ?? state.pendingPrompt?.intentKey)
           : !candidate.catalogVersionId));
-      const actionForResponse = action ?? ((knowledgeQuestion || state.pendingPrompt?.type === 'consent' || awaitingConfirmationAction) ? awaitingConfirmationAction ?? null : null);
+      const actionForResponse = action ?? ((!offerReplyOwnsTurn && (knowledgeQuestion || state.pendingPrompt?.type === 'consent' || awaitingConfirmationAction)) ? awaitingConfirmationAction ?? null : null);
       const finalAnswer = resumedAction ? 'Thanks — I have the remaining details and your request is back in processing.' : safeAnswer;
       const finalMaskedAnswer = resumedAction ? maskPiiForSession(session, finalAnswer, tokenVault) : maskedAnswer;
        const pendingCatalogState = publishedCatalog && (catalogResolution?.intentKey || journeyResult?.activeIntentKey) && (catalogResolution?.missingSlots.length || nextPrompt || journeyDocumentPending) ? { catalogIntentKey: catalogResolution?.intentKey ?? journeyResult?.activeIntentKey ?? null, catalogVersionId: catalogResolution?.catalogVersionId ?? publishedCatalog.id, catalogSlotKey: nextPrompt && (nextPrompt.type === 'slot' || nextPrompt.type === 'consent') ? nextMissingSlot : null, catalogRequirementKey: nextPrompt?.requirementKey ?? journeyRequirement?.requirementKey ?? null, catalogSlotValues, pendingPromptId: nextPrompt?.id ?? null } : null;
-      const response = { messageId: randomUUID(), sessionId: session.id, answer: rehydrateForSession(session, finalMaskedAnswer, tokenVault), grounded: safeGrounded, conversational: casualFallback || leadCollection || catalogClarification || continuityAnswer || continuityTurn || offerClarificationAnswer || endedConversation, citations: safeCitations, actionProposal: actionForResponse && !resumedAction ? { id: actionForResponse.id, intent: actionForResponse.workflowKey, consentRequired: actionForResponse.payload.contactConsent !== true, confirmation: actionForResponse.payload.contactConsent !== true ? 'I consent to the use of my contact details to register this request.' : 'Your contact request is ready to submit.', expiresAt: new Date(Date.parse(actionForResponse.createdAt) + 15 * 60_000).toISOString() } : null, pendingPromptId: nextPrompt?.id ?? null, pendingRequirementKey: nextPrompt?.requirementKey ?? null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
+      const response = { messageId: responseMessageId, sessionId: session.id, answer: rehydrateForSession(session, finalMaskedAnswer, tokenVault), grounded: safeGrounded, conversational: casualFallback || leadCollection || catalogClarification || continuityAnswer || continuityTurn || offerClarificationAnswer || endedConversation, citations: safeCitations, actionProposal: actionForResponse && !resumedAction ? { id: actionForResponse.id, intent: actionForResponse.workflowKey, consentRequired: actionForResponse.payload.contactConsent !== true, confirmation: actionForResponse.payload.contactConsent !== true ? 'I consent to the use of my contact details to register this request.' : 'Your contact request is ready to submit.', expiresAt: new Date(Date.parse(actionForResponse.createdAt) + 15 * 60_000).toISOString() } : null, pendingPromptId: nextPrompt?.id ?? null, pendingRequirementKey: nextPrompt?.requirementKey ?? null, requestId: (req as AuthedRequest).requestId ?? randomUUID() };
       const persistedResponse = { ...response, answer: finalMaskedAnswer };
       const estimatedInputTokens = estimateTokens([maskedMessage, ...evidence.map((item) => item.content), persona?.name ?? '', persona?.personality ?? '', persona?.tone ?? '', persona?.speakingStyle ?? ''].join('\n'));
       const estimatedOutputTokens = estimateTokens(finalMaskedAnswer);
