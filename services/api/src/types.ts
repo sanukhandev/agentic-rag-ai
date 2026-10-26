@@ -171,6 +171,7 @@ export interface ConversationState {
   rollingSummary: string;
   summaryRevision: number;
   messageSequence: number;
+  lastTurnAt?: string | null;
   workflowStatus: ConversationWorkflowStatus;
   contactConsent: 'unknown' | 'granted' | 'denied';
   consentVersion: string | null;
