@@ -343,7 +343,7 @@ import { PaginationComponent } from '../shared/pagination.component';
         <app-pagination
           [totalItems]="filteredLeads.length"
           [pageSize]="pageSize"
-          [currentPage]="currentPage"
+          [currentPage]="safeCurrentPage"
           (pageChange)="currentPage = $event"
           (pageSizeChange)="pageSize = $event; currentPage = 1"
         ></app-pagination>
@@ -449,8 +449,17 @@ export class CrmComponent implements OnInit, OnDestroy {
     return this.leads.filter((l) => l.validationPass).length;
   }
 
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.filteredLeads.length / this.pageSize));
+  }
+
+  get safeCurrentPage(): number {
+    return Math.min(Math.max(1, this.currentPage), this.totalPages);
+  }
+
   get paginatedLeads(): CrmLead[] {
-    const start = (this.currentPage - 1) * this.pageSize;
+    const page = this.safeCurrentPage;
+    const start = (page - 1) * this.pageSize;
     return this.filteredLeads.slice(start, start + this.pageSize);
   }
 

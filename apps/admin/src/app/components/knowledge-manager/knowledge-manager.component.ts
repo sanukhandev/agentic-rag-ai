@@ -258,7 +258,7 @@ import { ConfirmDialogComponent } from '../shared/confirm-dialog.component';
         <app-pagination
           [totalItems]="filteredSources.length"
           [pageSize]="pageSize"
-          [currentPage]="currentPage"
+          [currentPage]="safeCurrentPage"
           (pageChange)="currentPage = $event"
           (pageSizeChange)="pageSize = $event; currentPage = 1"
         ></app-pagination>
@@ -553,8 +553,17 @@ export class KnowledgeManagerComponent implements OnInit {
     });
   }
 
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.filteredSources.length / this.pageSize));
+  }
+
+  get safeCurrentPage(): number {
+    return Math.min(Math.max(1, this.currentPage), this.totalPages);
+  }
+
   get paginatedSources(): Source[] {
-    const start = (this.currentPage - 1) * this.pageSize;
+    const page = this.safeCurrentPage;
+    const start = (page - 1) * this.pageSize;
     return this.filteredSources.slice(start, start + this.pageSize);
   }
 

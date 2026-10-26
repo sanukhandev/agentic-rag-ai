@@ -1,4 +1,15 @@
-import { Component, EventEmitter, HostListener, Input, Output } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  EventEmitter,
+  HostListener,
+  Input,
+  OnChanges,
+  OnDestroy,
+  Output,
+  SimpleChanges,
+  ViewChild
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IconComponent } from './icon.component';
 
@@ -13,8 +24,11 @@ import { IconComponent } from './icon.component';
       role="dialog"
       aria-modal="true"
       [attr.aria-labelledby]="dialogId + '-title'"
+      [attr.aria-describedby]="dialogId + '-desc'"
+      (click)="onCancel()"
     >
       <div
+        #dialogContent
         class="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-6 shadow-2xl animate-scale-in"
         (click)="$event.stopPropagation()"
       >
@@ -30,7 +44,7 @@ import { IconComponent } from './icon.component';
             <h3 [id]="dialogId + '-title'" class="text-base font-semibold text-neutral-900 leading-tight">
               {{ title }}
             </h3>
-            <p class="mt-1.5 text-xs text-neutral-600 leading-relaxed">
+            <p [id]="dialogId + '-desc'" class="mt-1.5 text-xs text-neutral-600 leading-relaxed">
               {{ message }}
             </p>
             <p *ngIf="consequence" class="mt-2 text-[11px] font-medium text-rose-700 bg-rose-50 p-2 rounded-lg border border-rose-200/60 leading-relaxed">
@@ -42,17 +56,19 @@ import { IconComponent } from './icon.component';
         <!-- Action Buttons -->
         <div class="mt-6 flex items-center justify-end gap-2.5 pt-3 border-t border-neutral-100">
           <button
+            #cancelBtn
             type="button"
             (click)="onCancel()"
-            class="rounded-lg border border-neutral-200 bg-white px-3.5 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors button-press"
+            class="rounded-lg border border-neutral-200 bg-white px-3.5 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors button-press focus:outline-none focus:ring-2 focus:ring-neutral-400"
           >
             {{ cancelText }}
           </button>
           <button
+            #confirmBtn
             type="button"
             (click)="onConfirm()"
-            class="rounded-lg px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition-all button-press"
-            [ngClass]="isDanger ? 'bg-rose-600 hover:bg-rose-700' : 'bg-neutral-900 hover:bg-neutral-800'"
+            class="rounded-lg px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition-all button-press focus:outline-none focus:ring-2"
+            [ngClass]="isDanger ? 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500' : 'bg-neutral-900 hover:bg-neutral-800 focus:ring-neutral-900'"
           >
             {{ confirmText }}
           </button>
@@ -61,9 +77,13 @@ import { IconComponent } from './icon.component';
     </div>
   `
 })
-export class ConfirmDialogComponent {
+export class ConfirmDialogComponent implements OnChanges, OnDestroy {
   private static nextId = 1;
   readonly dialogId = `confirm-dialog-${ConfirmDialogComponent.nextId++}`;
+  private previouslyFocusedElement: HTMLElement | null = null;
+
+  @ViewChild('cancelBtn') cancelBtn?: ElementRef<HTMLButtonElement>;
+  @ViewChild('dialogContent') dialogContent?: ElementRef<HTMLDivElement>;
 
   @Input() isOpen = false;
   @Input() title = 'Confirm Action';
@@ -76,10 +96,52 @@ export class ConfirmDialogComponent {
   @Output() confirm = new EventEmitter<void>();
   @Output() cancel = new EventEmitter<void>();
 
-  @HostListener('document:keydown.escape')
-  onEscape(): void {
-    if (this.isOpen) {
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['isOpen']) {
+      if (this.isOpen) {
+        this.previouslyFocusedElement = document.activeElement as HTMLElement | null;
+        // Shift focus into dialog (Cancel button by default for safe keyboard confirmation)
+        setTimeout(() => this.cancelBtn?.nativeElement?.focus(), 0);
+      } else if (this.previouslyFocusedElement) {
+        this.previouslyFocusedElement.focus();
+        this.previouslyFocusedElement = null;
+      }
+    }
+  }
+
+  ngOnDestroy(): void {
+    if (this.previouslyFocusedElement) {
+      this.previouslyFocusedElement.focus();
+      this.previouslyFocusedElement = null;
+    }
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  onKeydown(event: KeyboardEvent): void {
+    if (!this.isOpen) return;
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
       this.onCancel();
+      return;
+    }
+
+    if (event.key === 'Tab' && this.dialogContent) {
+      const focusable = this.dialogContent.nativeElement.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
   }
 
