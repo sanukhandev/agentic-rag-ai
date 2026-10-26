@@ -21,7 +21,7 @@ const config = JSON.parse(result.stdout);
 const services = config.services ?? {};
 const hostPorts = Object.entries(services).flatMap(([name, serviceConfig]) => (serviceConfig.ports ?? []).map((entry) => ({ name, entry })));
 if (hostPorts.length !== 1 || hostPorts[0].name !== 'nginx') throw new Error('Only the Docker Nginx service may publish a host port.');
-if (String(hostPorts[0].entry.published) !== '3000' || String(hostPorts[0].entry.target) !== '80') throw new Error('Docker Nginx must publish host port 3000 to container port 80.');
+if (String(hostPorts[0].entry.published) !== '80' || String(hostPorts[0].entry.target) !== '80') throw new Error('Docker Nginx must publish host port 80 to container port 80.');
 for (const serviceName of ['postgres', 'redis', 'n8n', 'api', 'web', 'admin']) if (services[serviceName]?.ports?.length) throw new Error(`${serviceName} must not publish a host port.`);
 const expectedExposedPorts = { postgres: '5432', redis: '6379', n8n: '5678', api: '4000', web: '3000', admin: '80' };
 for (const [serviceName, target] of Object.entries(expectedExposedPorts)) {
@@ -34,4 +34,4 @@ for (const serviceName of ['postgres', 'redis', 'n8n']) if (!services[serviceNam
 if (!services.api?.healthcheck) throw new Error('API must define a healthcheck.');
 if (services.web?.build?.args?.NEXT_PUBLIC_API_URL !== '/' || services.admin?.build?.args?.ADMIN_BASE_HREF !== '/admin/') throw new Error('Web and Angular admin must build for same-origin reverse-proxy paths.');
 
-console.log('Compose deployment defaults passed: Docker Nginx on 3000, internal-only application services, persistent local volumes, digest-pinned images and all app build targets.');
+console.log('Compose deployment defaults passed: Docker Nginx on 80, internal-only application services, persistent local volumes, digest-pinned images and all app build targets.');
