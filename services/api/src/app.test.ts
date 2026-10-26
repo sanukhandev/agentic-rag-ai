@@ -44,6 +44,8 @@ class OfferModel extends CapturingModel {
     const base = await super.draft(input);
     const evidence = input.evidence[0];
     if (!evidence) return base;
+    if (input.maskedMessage.includes('unstructured')) return { ...base, answer: 'The approved guide covers setup. Would you like the setup steps or the required documents?', citationIds: [evidence.citation.chunkId], followUpOptions: null };
+    if (input.maskedMessage.includes('partial')) return { ...base, answer: 'The approved guide covers setup. Would you like the setup steps or the unsupported hidden path?', citationIds: [evidence.citation.chunkId], followUpOptions: [{ key: 'setup_steps', label: 'the setup steps', retrievalHints: ['setup procedure steps'] }, { key: 'hidden_path', label: 'the unsupported hidden path', retrievalHints: ['unsupported hidden path'] }] };
     if (input.followUpContext?.responseMode === 'knowledge' && !input.followUpContext.resolvedOfferOption) {
       if (input.maskedMessage.includes('hidden')) return { ...base, answer: evidence.content, citationIds: [evidence.citation.chunkId], followUpOptions: [{ key: 'hidden_option', label: 'an unsupported hidden option', retrievalHints: ['unrelated unsupported fact'] }] };
       const options = input.maskedMessage.includes('single') ? [{ key: 'setup_steps', label: 'the setup steps', retrievalHints: ['setup procedure steps'] }] : [{ key: 'setup_steps', label: 'the setup steps', retrievalHints: ['setup procedure steps'] }, { key: 'required_documents', label: 'the required documents', retrievalHints: ['document requirements'] }];
@@ -1049,6 +1051,37 @@ describe('API vertical slice', () => {
     const ambiguousConfirmation = await api.post('/api/v1/chat/messages').send({ sessionId: confirmationSession.body.sessionId, message: 'yes please', clientMessageId: 'confirmation-offer-ambiguous' }).expect(200);
     expect(ambiguousConfirmation.body.actionProposal).toBeNull();
     expect(ambiguousConfirmation.body.pendingPromptId).toBe('journey-confirmation');
+    const unknownConfirmation = await api.post('/api/v1/chat/messages').send({ sessionId: confirmationSession.body.sessionId, message: 'maybe', clientMessageId: 'confirmation-offer-unknown' }).expect(200);
+    expect(unknownConfirmation.body.actionProposal).toBeNull();
+    expect(unknownConfirmation.body.pendingPromptId).toBe('journey-confirmation');
+  });
+
+  it('does not expose choices when the model omits persisted offer metadata', async () => {
+    const runtime = createApp({ nodeEnv: 'test', model: new OfferModel() });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-unstructured-offer@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Unstructured Offer Tenant', slug: 'unstructured-offer-tenant', adminEmail: 'admin-unstructured-offer@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-unstructured-offer@example.test', password: 'TenantA1Password' }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Company setup guide', mimeType: 'text/plain', audience: 'public', content: 'The approved guide covers setup steps and required documents.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const response = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is the unstructured setup information?', clientMessageId: 'unstructured-offer-question' }).expect(200);
+    expect(response.body.answer).not.toContain('the setup steps or the required documents');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer).toBeNull();
+  });
+
+  it('does not expose a partial choice set when one option fails validation', async () => {
+    const runtime = createApp({ nodeEnv: 'test', model: new OfferModel() });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-partial-offer@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Partial Offer Tenant', slug: 'partial-offer-tenant', adminEmail: 'admin-partial-offer@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-partial-offer@example.test', password: 'TenantA1Password' }).expect(200);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Company setup guide', mimeType: 'text/plain', audience: 'public', content: 'The approved guide covers setup steps and required documents.' }).expect(201);
+    await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const response = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is the partial setup information?', clientMessageId: 'partial-offer-question' }).expect(200);
+    expect(response.body.answer).not.toContain('unsupported hidden path');
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer).toBeNull();
   });
 
   it('generates and persists an AI reconciliation follow-up instead of a hardcoded status message', async () => {

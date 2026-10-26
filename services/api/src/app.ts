@@ -198,6 +198,10 @@ const messageMentionsCatalogSlot = (slot: IntentCatalogSlot, message: string): b
 
 const offerText = (text: string): string => normalizeConversationQuery(text).toLocaleLowerCase('en-US');
 const offerOptionIsPresented = (answer: string, option: FollowUpOfferOption): boolean => offerText(answer).includes(offerText(option.label));
+const presentsUntrackedOffer = (answer: string): boolean => {
+  const normalized = offerText(answer);
+  return /[?؟]/u.test(normalized) && /\b(?:would you like|do you want|would you prefer|do you prefer|shall i|should i|which (?:option|one|path)|either|what would you prefer)\b/u.test(normalized);
+};
 const offerHintIsGrounded = (evidence: ModelEvidence[], hint: string): boolean => {
   const evidenceText = offerText(evidence.map((item) => item.content).join(' '));
   const terms = offerText(hint).match(/[\p{L}\p{N}]{4,}/gu) ?? [];
@@ -1400,16 +1404,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const offerClarificationAnswer = offerNeedsClarification && Boolean(activeFollowUpOffer);
       const leadAnswer = !postCaptureFollowUp && !knowledgeQuestion && (leadCollection || (leadIntent && validatedLeadReady) || consentActionReady || catalogClarification || Boolean(catalogResolution?.actionAllowed)) || journeyDocumentPending || journeyDocumentAwaiting || journeyConfirmationPending || journeyOfferPending || Boolean(!knowledgeQuestion && journeyRequirement && journeySlotKey);
        const answer = !languageAllowed ? draft.answer : casualFallback || leadAnswer || continuityAnswer ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
-      const safeAnswer = casualFallback || leadAnswer || continuityAnswer || offerClarificationAnswer ? draft.answer : continuityTurn ? conversationalReply('acknowledgement', persona?.name ?? 'Sales assistant', language, tenant.name) : answer;
-      const maskedAnswer = maskPiiForSession(session, safeAnswer, tokenVault);
-      try { assertKnownTokens(session, maskedAnswer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
+      let safeAnswer = casualFallback || leadAnswer || continuityAnswer || offerClarificationAnswer ? draft.answer : continuityTurn ? conversationalReply('acknowledgement', persona?.name ?? 'Sales assistant', language, tenant.name) : answer;
       if (intent === 'farewell') session.closedAt = new Date().toISOString();
       const nextMissingSlot = crmContactMissing ?? journeySlotKey ?? catalogResolution?.missingSlots[0] ?? null;
       const endedConversation = conversational && intent === 'farewell';
       const preserveConsentPrompt = knowledgeQuestion && state.pendingPrompt?.type === 'consent';
       const preserveTypedConsentPrompt = textConsentApproval && state.pendingPrompt?.type === 'consent';
       const preserveTransitionOfferPrompt = Boolean(pendingTransitionPrompt && !transitionApproval && !transitionDenied);
-      const preservePendingPrompt = (state.pendingPrompt && (offerReplyOwnsTurn || knowledgeQuestion) && ['slot', 'consent', 'document', 'confirmation'].includes(state.pendingPrompt.type)) || preserveTransitionOfferPrompt || preserveTypedConsentPrompt;
+      const preservePendingPrompt = (state.pendingPrompt && (offerOwnsConversationState || knowledgeQuestion) && ['slot', 'consent', 'document', 'confirmation'].includes(state.pendingPrompt.type)) || preserveTransitionOfferPrompt || preserveTypedConsentPrompt;
       const preserveDocumentProcessingPrompt = journeyDocumentAwaiting && state.pendingPrompt?.type === 'document' && state.pendingPrompt.requirementKey === journeyRequirement?.requirementKey;
       const nextPrompt = preservePendingPrompt || preserveConsentPrompt ? state.pendingPrompt : endedConversation ? null : consentDenied || transitionDenied ? null : journeyOfferPending
          ? prompt('confirmation', journeyResult?.offeredIntentKey ?? catalogResolution?.intentKey ?? state.selectedIntentKey, null, journeyTransitionRequirementKey)
@@ -1449,7 +1451,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       const responseMessageId = randomUUID();
       const seenOfferKeys = new Set<string>();
-      const validFollowUpOptions = (draft.followUpOptions ?? []).map((option): FollowUpOfferOption | null => {
+      const rawFollowUpOptions = draft.followUpOptions ?? [];
+      const validatedFollowUpOptions = rawFollowUpOptions.map((option): FollowUpOfferOption | null => {
         const key = option.key.trim().toLocaleLowerCase('en-US');
         const label = option.label.trim();
         const retrievalHints = option.retrievalHints.map((hint) => hint.trim()).filter((hint) => hint.length > 0 && hint.length <= 120).slice(0, 6);
@@ -1457,7 +1460,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         try { assertKnownTokens(session, `${label} ${retrievalHints.join(' ')}`, tokenVault); } catch { return null; }
         seenOfferKeys.add(key);
         return { key, label, retrievalHints };
-      }).filter((option): option is FollowUpOfferOption => Boolean(option)).slice(0, 4);
+      }).filter((option): option is FollowUpOfferOption => Boolean(option));
+      const validFollowUpOptions = rawFollowUpOptions.length > 0 && rawFollowUpOptions.length <= 4 && validatedFollowUpOptions.length === rawFollowUpOptions.length ? validatedFollowUpOptions : [];
+      const untrackedKnowledgeOffer = safeGrounded && !activeFollowUpOffer && !crmContactMissing && !consentActionReady && !journeyRequirement && !journeyOfferPending && !journeyConfirmationPending && !journeyDocumentPending && !journeyDocumentAwaiting && !catalogClarification && presentsUntrackedOffer(safeAnswer) && validFollowUpOptions.length === 0;
+      if (untrackedKnowledgeOffer) {
+        // Do not show a yes/no or multi-choice question that has no persisted state.
+        const safeFallback = 'I can help with the next step. What would you like to focus on first?';
+        const composedContinuation = await composeGuidedDraft({ answer: safeFallback, citationIds: [], proposedIntent: null }, 'intent_clarification');
+        safeAnswer = presentsUntrackedOffer(composedContinuation.answer) ? safeFallback : composedContinuation.answer;
+      }
+      const maskedAnswer = maskPiiForSession(session, safeAnswer, tokenVault);
+      try { assertKnownTokens(session, maskedAnswer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       state.pendingFollowUpOffer = safeGrounded && validFollowUpOptions.length > 0
         ? { offerKey: randomUUID(), intentKey: state.selectedIntentKey, sourceMessageId: responseMessageId, sourceQuery: knowledgeRetrievalQuery, options: validFollowUpOptions, issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() }
         : offerNeedsClarification ? activeFollowUpOffer
@@ -1469,6 +1482,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       state.contactConsent = nextContactConsent;
       state.summaryRevision += 1;
       state.messageSequence += 1;
+      state.lastTurnAt = userMessage.createdAt;
       if (!offerOwnsConversationState) state.phase = endedConversation || knowledgeOnlyTurn ? state.phase : journeyDocumentPending ? 'DOCUMENT_COLLECTION' : journeyRequirement?.requirementType === 'slot' ? 'SLOT_COLLECTION' : postCaptureFollowUp ? state.phase : phaseFor({ intentKey: catalogResolution?.intentKey ?? pendingCatalogIntent, missingSlot: nextMissingSlot, consentPending: consentActionReady, actionPending: Boolean(catalogResolution?.actionAllowed && !consentDenied) });
       state.rollingSummary = composeConversationSummary(state, maskedMessage).slice(-4000);
       session.conversationState = state;

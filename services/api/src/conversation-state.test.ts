@@ -84,4 +84,13 @@ describe('conversation state concurrency merge', () => {
     const correction = { ...stale, slotProvenance: { phone: { ...stale.slotProvenance.phone, capturedAt: latest.slotProvenance.phone.capturedAt, corrected: true } } };
     expect(mergeConcurrentConversationState(latest, correction).slotValues.phone).toBe('[PHONE_0]');
   });
+
+  it('does not resurrect a cleared offer or prompt from an older concurrent turn', () => {
+    const offer = { offerKey: 'offer-old', intentKey: 'company.setup', sourceMessageId: 'assistant-old', sourceQuery: 'setup procedure', options: [{ key: 'steps', label: 'the setup steps', retrievalHints: ['setup procedure'] }], issuedAt: '2026-10-26T10:00:00.000Z', expiresAt: '2026-10-26T10:30:00.000Z' };
+    const latest = { ...newConversationState(), messageSequence: 3, lastTurnAt: '2026-10-26T10:01:00.000Z', pendingPrompt: null, pendingFollowUpOffer: null };
+    const stale = { ...newConversationState(), messageSequence: 3, lastTurnAt: '2026-10-26T10:00:30.000Z', pendingPrompt: { id: 'old-prompt', type: 'confirmation' as const, intentKey: 'company.setup', slotKey: null, issuedAt: '2026-10-26T10:00:30.000Z' }, pendingFollowUpOffer: offer };
+    const merged = mergeConcurrentConversationState(latest, stale);
+    expect(merged.pendingFollowUpOffer).toBeNull();
+    expect(merged.pendingPrompt).toBeNull();
+  });
 });
