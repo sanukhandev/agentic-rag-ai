@@ -1515,27 +1515,28 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       state.lastTurnAt = userMessage.createdAt;
       if (!offerOwnsConversationState) state.phase = endedConversation || knowledgeOnlyTurn ? state.phase : journeyDocumentPending ? 'DOCUMENT_COLLECTION' : journeyRequirement?.requirementType === 'slot' ? 'SLOT_COLLECTION' : postCaptureFollowUp ? state.phase : phaseFor({ intentKey: catalogResolution?.intentKey ?? pendingCatalogIntent, missingSlot: nextMissingSlot, consentPending: consentActionReady, actionPending: Boolean(catalogResolution?.actionAllowed && !consentDenied) });
       state.rollingSummary = composeConversationSummary(state, maskedMessage).slice(-4000);
-      session.conversationState = state;
-      await updateSessionSafely(session, true);
-      const collectedSlotValues = Object.fromEntries(Object.entries(catalogSlotValues).filter(([key]) => !['name', 'email', 'phone', 'contact_consent'].includes(key)));
-      const actionLeadData = { ...leadData, ...(Object.keys(collectedSlotValues).length ? { slotValues: collectedSlotValues } : {}), ...(catalogResolution?.interest ? { interest: catalogResolution.interest } : {}), ...(consentActionReady ? { contactConsent: false } : catalogSlotValues.contact_consent === 'true' ? { contactConsent: true } : !catalogResolution ? { contactConsent: false } : {}) };
-      const actionAlreadySubmitted = Boolean(pendingConsentAction && ['approved', 'processing', 'completed'].includes(pendingConsentAction.state));
       const opportunityIntentKey = journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? '';
       const opportunityIdForAction = state.intentProgress?.entries[opportunityIntentKey]?.journeyId ?? currentOpportunityId;
       const establishingOriginalJourney = !reopeningOpportunity && !currentOpportunityId && Boolean(opportunityIdForAction);
       const legacyCandidates = establishingOriginalJourney && opportunityIntentKey
         ? sessionActions.filter((candidate) => candidate.opportunityId == null && candidate.intentKey === opportunityIntentKey && candidate.catalogVersionId === (catalogResolution?.catalogVersionId ?? publishedCatalog?.id ?? null) && ['awaiting_confirmation', 'awaiting_customer'].includes(candidate.state))
         : [];
+      if (legacyCandidates.length > 1) throw new HttpError(409, 'LEGACY_ACTION_ASSOCIATION_AMBIGUOUS', 'Multiple legacy requests require controlled reconciliation before this journey can continue.');
+      session.conversationState = state;
       if (legacyCandidates.length === 1 && opportunityIdForAction) {
-        const association = await store.assignLegacyActionOpportunity({ tenantId: session.tenantId, sessionId: session.id, actionId: legacyCandidates[0]!.id, intentKey: opportunityIntentKey, catalogVersionId: legacyCandidates[0]!.catalogVersionId ?? null, opportunityId: opportunityIdForAction, eligibleStates: ['awaiting_confirmation', 'awaiting_customer'] });
-        if (association.status === 'conflict' || association.status === 'not_found') throw new HttpError(409, 'LEGACY_ACTION_ASSOCIATION_CONFLICT', 'The existing request changed while its journey identity was being established. Please retry.');
-        if (association.action) {
-          const index = sessionActions.findIndex((candidate) => candidate.id === association.action.id);
-          if (index >= 0) sessionActions[index] = association.action;
+        const migration = await store.establishLegacyJourneyAndAssignAction({ session, actionId: legacyCandidates[0]!.id, intentKey: opportunityIntentKey, catalogVersionId: legacyCandidates[0]!.catalogVersionId ?? null, opportunityId: opportunityIdForAction, eligibleStates: ['awaiting_confirmation', 'awaiting_customer'] });
+        if (!migration.committed || migration.assignment.status === 'conflict' || migration.assignment.status === 'not_found') throw new HttpError(409, 'LEGACY_ACTION_ASSOCIATION_CONFLICT', 'The existing request changed while its journey identity was being established. Please retry.');
+        const migratedAction = migration.assignment.action;
+        if (migratedAction) {
+          const index = sessionActions.findIndex((candidate) => candidate.id === migratedAction.id);
+          if (index >= 0) sessionActions[index] = migratedAction;
         }
-      } else if (legacyCandidates.length > 1) {
-        throw new HttpError(409, 'LEGACY_ACTION_ASSOCIATION_AMBIGUOUS', 'Multiple legacy requests require controlled reconciliation before this journey can continue.');
+      } else {
+        await updateSessionSafely(session, true);
       }
+      const collectedSlotValues = Object.fromEntries(Object.entries(catalogSlotValues).filter(([key]) => !['name', 'email', 'phone', 'contact_consent'].includes(key)));
+      const actionLeadData = { ...leadData, ...(Object.keys(collectedSlotValues).length ? { slotValues: collectedSlotValues } : {}), ...(catalogResolution?.interest ? { interest: catalogResolution.interest } : {}), ...(consentActionReady ? { contactConsent: false } : catalogSlotValues.contact_consent === 'true' ? { contactConsent: true } : !catalogResolution ? { contactConsent: false } : {}) };
+      const actionAlreadySubmitted = Boolean(pendingConsentAction && ['approved', 'processing', 'completed'].includes(pendingConsentAction.state));
       const resumableAction = !reopeningOpportunity && catalogResolution?.intentKey ? sessionActions.find((candidate) => candidate.state === 'awaiting_customer' && candidate.catalogVersionId === catalogResolution.catalogVersionId && candidate.intentKey === catalogResolution.intentKey && actionMatchesTargetOpportunity(candidate, opportunityIdForAction) && candidate.payload.contactConsent === true) : null;
       const shouldResumeAction = Boolean(resumableAction && state.contactConsent === 'granted' && !consentDenied && !crmContactMissing && !journeyRequirement?.required && catalogSlotsReady && catalogResolution?.actionAllowed);
       const resumedAction = shouldResumeAction && resumableAction ? await store.approveAction({ ...resumableAction, state: 'approved', payload: { ...resumableAction.payload, ...actionLeadData }, result: null }) : null;

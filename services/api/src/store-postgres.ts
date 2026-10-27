@@ -185,6 +185,7 @@ export class PostgresStore implements Store {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SELECT id FROM chat_sessions WHERE id=$1 AND tenant_id=$2 FOR UPDATE', [session.id, session.tenantId]);
       const current = await client.query<ActionRow>('SELECT * FROM action_requests WHERE id=$1 AND tenant_id=$2 FOR UPDATE', [action.id, action.tenantId]);
       if (!current.rows[0]) throw new Error('Action not found.');
       if (!['approved', 'processing', 'completed'].includes(current.rows[0].state)) {
@@ -206,15 +207,47 @@ export class PostgresStore implements Store {
     const assigned = await this.pool.query<ActionRow>(`UPDATE action_requests
       SET opportunity_id=$1
       WHERE id=$2 AND tenant_id=$3 AND session_id=$4 AND opportunity_id IS NULL
-        AND intent_key=$5 AND ($6::text IS NULL OR catalog_version_id=$6)
-        AND state = ANY($7::text[])
-      RETURNING *`, [input.opportunityId, input.actionId, input.tenantId, input.sessionId, input.intentKey, input.catalogVersionId ?? null, input.eligibleStates]);
+        AND intent_key=$5
+        AND ($6::boolean = false OR ($7::uuid IS NULL AND catalog_version_id IS NULL) OR ($7::uuid IS NOT NULL AND catalog_version_id=$7::uuid))
+        AND state = ANY($8::text[])
+      RETURNING *`, [input.opportunityId, input.actionId, input.tenantId, input.sessionId, input.intentKey, input.catalogVersionId !== undefined, input.catalogVersionId ?? null, input.eligibleStates]);
     if (assigned.rows[0]) return { status: 'assigned', action: this.action(assigned.rows[0]) };
     const current = await this.pool.query<ActionRow>('SELECT * FROM action_requests WHERE id=$1 AND tenant_id=$2', [input.actionId, input.tenantId]);
     if (!current.rows[0]) return { status: 'not_found', action: null };
     const action = this.action(current.rows[0]);
     if (action.opportunityId === input.opportunityId) return { status: 'already_assigned', action };
     return { status: 'conflict', action: null };
+  }
+  async establishLegacyJourneyAndAssignAction(input: { session: Session; actionId: string; intentKey: string; catalogVersionId?: string | null; opportunityId: string; eligibleStates: ActionRequest['state'][] }): Promise<import('./types.js').LegacyJourneyAssociationResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT id FROM chat_sessions WHERE id=$1 AND tenant_id=$2 FOR UPDATE', [input.session.id, input.session.tenantId]);
+      const persistedSession = await this.updateSessionOnClient(client, input.session);
+      const assigned = await client.query<ActionRow>(`UPDATE action_requests
+        SET opportunity_id=$1
+        WHERE id=$2 AND tenant_id=$3 AND session_id=$4 AND opportunity_id IS NULL
+          AND intent_key=$5
+          AND ($6::boolean = false OR ($7::uuid IS NULL AND catalog_version_id IS NULL) OR ($7::uuid IS NOT NULL AND catalog_version_id=$7::uuid))
+          AND state = ANY($8::text[])
+        RETURNING *`, [input.opportunityId, input.actionId, input.session.id, input.session.id, input.intentKey, input.catalogVersionId !== undefined, input.catalogVersionId ?? null, input.eligibleStates]);
+      if (assigned.rows[0]) {
+        await client.query('COMMIT');
+        return { committed: true, session: persistedSession, assignment: { status: 'assigned', action: this.action(assigned.rows[0]) } };
+      }
+      const current = await client.query<ActionRow>('SELECT * FROM action_requests WHERE id=$1 AND tenant_id=$2 FOR UPDATE', [input.actionId, input.session.tenantId]);
+      const assignment: import('./types.js').LegacyActionAssignment = !current.rows[0]
+        ? { status: 'not_found', action: null }
+        : this.action(current.rows[0]).opportunityId === input.opportunityId
+          ? { status: 'already_assigned', action: this.action(current.rows[0]) }
+          : { status: 'conflict', action: null };
+      if (assignment.status === 'already_assigned') {
+        await client.query('COMMIT');
+        return { committed: true, session: persistedSession, assignment };
+      }
+      await client.query('ROLLBACK');
+      return { committed: false, session: input.session, assignment };
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
   async updateAction(action: ActionRequest): Promise<ActionRequest> { await this.pool.query('UPDATE action_requests SET opportunity_id=$1,state=$2,result=$3,payload=$4 WHERE id=$5 AND tenant_id=$6', [action.opportunityId ?? null, action.state, action.result ? JSON.stringify(action.result) : null, JSON.stringify(action.payload), action.id, action.tenantId]); return action; }
   async transitionAction(actionId: string, tenantId: string, fromState: ActionRequest['state'], toState: ActionRequest['state'], result: ActionRequest['result']): Promise<ActionRequest | null> {

@@ -594,6 +594,12 @@ export type LegacyActionAssignment =
   | { status: 'assigned' | 'already_assigned'; action: ActionRequest }
   | { status: 'not_found' | 'conflict'; action: null };
 
+export interface LegacyJourneyAssociationResult {
+  committed: boolean;
+  session: Session;
+  assignment: LegacyActionAssignment;
+}
+
 export interface AuditEvent {
   id: string;
   tenantId: string | null;
@@ -685,6 +691,7 @@ export interface Store {
   getActionByIdentity(input: { tenantId: string; opportunityId: string; actionKey: string; actionRevision: number }): Promise<ActionRequest | null>;
   updateAction(action: ActionRequest): Promise<ActionRequest>;
   assignLegacyActionOpportunity(input: { tenantId: string; sessionId: string; actionId: string; intentKey: string; catalogVersionId?: string | null; opportunityId: string; eligibleStates: ActionState[] }): Promise<LegacyActionAssignment>;
+  establishLegacyJourneyAndAssignAction(input: { session: Session; actionId: string; intentKey: string; catalogVersionId?: string | null; opportunityId: string; eligibleStates: ActionState[] }): Promise<LegacyJourneyAssociationResult>;
   transitionAction(actionId: string, tenantId: string, fromState: ActionState, toState: ActionState, result: ActionRequest['result']): Promise<ActionRequest | null>;
   transitionActionWithExecution(input: { actionId: string; tenantId: string; fromState: ActionState; toState: ActionState; result: ActionRequest['result']; providerStatus: string; n8nExecutionRef: string; eventId: string; correlationId: string; expectedAttempt: number; resolveReconciliation?: boolean; outcome?: ActionExecution['outcome'] }): Promise<{ action: ActionRequest; execution: ActionExecution } | null>;
   claimWorkflowActionsWithExecutions(input: { actionId?: string; tenantId?: string; n8nWorkflowId: string; executionReference: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]>;

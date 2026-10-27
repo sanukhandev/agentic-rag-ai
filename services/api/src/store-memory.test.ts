@@ -96,4 +96,16 @@ describe('MemoryStore tenant and lifecycle boundaries', () => {
     expect(assigned.action?.result).toEqual(action.result);
     expect((await store.assignLegacyActionOpportunity({ tenantId: tenant.id, sessionId: session.id, actionId: action.id, intentKey: 'company.setup', catalogVersionId: 'catalog-v1', opportunityId: randomUUID(), eligibleStates: ['awaiting_confirmation'] })).status).toBe('conflict');
   });
+
+  it('rolls back the memory journey migration when the legacy action is no longer eligible', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'Rollback Tenant', slug: `rollback-${randomUUID()}` });
+    const session = await store.createSession(tenant.id);
+    const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'lead.capture', intentKey: 'company.setup', opportunityId: null, idempotencyKey: randomUUID(), state: 'completed', opaqueReference: 'completed', payload: {}, result: null, createdAt: new Date().toISOString() });
+    const candidate = { ...session, conversationState: { ...session.conversationState!, selectedIntentKey: 'company.setup' } };
+    const result = await store.establishLegacyJourneyAndAssignAction({ session: candidate, actionId: action.id, intentKey: 'company.setup', opportunityId: randomUUID(), eligibleStates: ['awaiting_confirmation'] });
+    expect(result.committed).toBe(false);
+    expect((await store.getSession(session.id))?.stateVersion).toBe(session.stateVersion);
+    expect((await store.getAction(action.id))?.opportunityId).toBeFalsy();
+  });
 });
