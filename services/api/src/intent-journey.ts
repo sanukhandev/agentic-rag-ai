@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { IntentCatalogVersion, IntentProgressEntry, IntentProgressState } from './types.js';
 import { catalogFollowUpRequirements, catalogJourneyRequirements, catalogNextFollowUpRequirement, catalogNextJourneyRequirement, journeyRequirementFulfilled } from './intent-catalog.js';
 
@@ -28,7 +29,7 @@ export interface JourneyReducerResult {
   transitionPromptKey?: string | null;
 }
 
-const entry = (intentKey: string, status: IntentProgressEntry['status'] = 'active'): IntentProgressEntry => ({ intentKey, status, completedRequirementKeys: [], currentRequirementKey: null, revision: 0 });
+const entry = (intentKey: string, status: IntentProgressEntry['status'] = 'active'): IntentProgressEntry => ({ intentKey, journeyId: randomUUID(), status, completedRequirementKeys: [], currentRequirementKey: null, slotValues: {}, slotProvenance: {}, revision: 0 });
 
 const ensureEntry = (progress: IntentProgressState, intentKey: string): IntentProgressEntry => {
   const current = progress.entries[intentKey];
@@ -61,7 +62,7 @@ const markRequirements = (version: IntentCatalogVersion, progress: IntentProgres
 
 export const reduceIntentJourney = (version: IntentCatalogVersion, previous: IntentProgressState | undefined, input: JourneyReducerInput): JourneyReducerResult => {
   const progress: IntentProgressState = previous?.version === 1
-    ? { ...previous, pausedIntentKeys: [...previous.pausedIntentKeys], fulfilledIntentKeys: [...previous.fulfilledIntentKeys], visitedIntentKeys: [...previous.visitedIntentKeys], entries: Object.fromEntries(Object.entries(previous.entries).map(([key, value]) => [key, { ...value, completedRequirementKeys: [...value.completedRequirementKeys] }])) }
+    ? { ...previous, pausedIntentKeys: [...previous.pausedIntentKeys], fulfilledIntentKeys: [...previous.fulfilledIntentKeys], visitedIntentKeys: [...previous.visitedIntentKeys], entries: Object.fromEntries(Object.entries(previous.entries).map(([key, value]) => [key, { ...value, journeyId: value.journeyId ?? randomUUID(), completedRequirementKeys: [...value.completedRequirementKeys], slotValues: { ...(value.slotValues ?? {}) }, slotProvenance: { ...(value.slotProvenance ?? {}) } }])) }
     : { version: 1, activeIntentKey: null, pausedIntentKeys: [], fulfilledIntentKeys: [], entries: {}, visitedIntentKeys: [], lastTransitionReason: null, journeyRevision: 0 };
   if (input.farewell) return { progress: { ...progress, activeIntentKey: null, lastTransitionReason: 'farewell', journeyRevision: progress.journeyRevision + 1 }, decision: 'close_session', activeIntentKey: null, nextRequirement: null };
   const currentIntentKey = catalogIntentExists(version, input.currentIntentKey) ? input.currentIntentKey : null;

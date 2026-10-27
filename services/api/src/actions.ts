@@ -60,7 +60,7 @@ export class ActionGateway {
 
   constructor(private readonly store: Store, _adapter?: WorkflowAdapter) {}
 
-  async propose(tenantId: string, sessionId: string, idempotencyKey: string, leadData: ActionPayload = {}, options: { workflowKey?: string; intentKey?: string; intentScore?: number; intentConfidence?: number; catalogVersionId?: string | null; webhookPath?: string } = {}): Promise<ActionRequest> {
+  async propose(tenantId: string, sessionId: string, idempotencyKey: string, leadData: ActionPayload = {}, options: { workflowKey?: string; intentKey?: string; intentScore?: number; intentConfidence?: number; catalogVersionId?: string | null; webhookPath?: string; opportunityId?: string | null; actionKey?: string | null; actionRevision?: number } = {}): Promise<ActionRequest> {
     const key = `${tenantId}:${idempotencyKey}`;
     const pending = this.proposals.get(key);
     if (pending) return pending;
@@ -69,10 +69,10 @@ export class ActionGateway {
     try { return await proposal; } finally { this.proposals.delete(key); }
   }
 
-  private async proposeInternal(tenantId: string, sessionId: string, idempotencyKey: string, leadData: ActionPayload, options: { workflowKey?: string; intentKey?: string; intentScore?: number; intentConfidence?: number; catalogVersionId?: string | null; webhookPath?: string }): Promise<ActionRequest> {
+  private async proposeInternal(tenantId: string, sessionId: string, idempotencyKey: string, leadData: ActionPayload, options: { workflowKey?: string; intentKey?: string; intentScore?: number; intentConfidence?: number; catalogVersionId?: string | null; webhookPath?: string; opportunityId?: string | null; actionKey?: string | null; actionRevision?: number }): Promise<ActionRequest> {
     const existing = await this.store.getActionByIdempotency(tenantId, idempotencyKey);
     if (existing) return existing;
-    const action: ActionRequest = { id: randomUUID(), tenantId, sessionId, workflowKey: options.workflowKey ?? 'lead.capture', webhookPath: options.webhookPath ?? 'lead-capture', intentKey: options.intentKey ?? 'lead.capture', intentScore: options.intentScore ?? 0, intentConfidence: options.intentConfidence ?? 0, catalogVersionId: options.catalogVersionId ?? null, idempotencyKey, state: 'awaiting_confirmation', opaqueReference: opaqueReference(), payload: leadData, createdAt: new Date().toISOString(), result: null };
+    const action: ActionRequest = { id: randomUUID(), tenantId, sessionId, workflowKey: options.workflowKey ?? 'lead.capture', webhookPath: options.webhookPath ?? 'lead-capture', intentKey: options.intentKey ?? 'lead.capture', intentScore: options.intentScore ?? 0, intentConfidence: options.intentConfidence ?? 0, catalogVersionId: options.catalogVersionId ?? null, opportunityId: options.opportunityId ?? null, actionKey: options.actionKey ?? options.intentKey ?? options.workflowKey ?? 'lead.capture', actionRevision: options.actionRevision ?? 1, idempotencyKey, state: 'awaiting_confirmation', opaqueReference: opaqueReference(), payload: leadData, createdAt: new Date().toISOString(), result: null };
     try { return await this.store.createAction(action); } catch (error) {
       if (!isUniqueViolation(error)) throw error;
       const raced = await this.store.getActionByIdempotency(tenantId, idempotencyKey);
