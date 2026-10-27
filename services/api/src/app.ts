@@ -1083,7 +1083,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const reopeningIntentKey = publishedCatalog && /^(?:i|we)\s+(?:want|need|would\s+like|am\s+looking|need\s+help)\b/iu.test(masked.masked)
         ? Object.entries(state.intentProgress?.entries ?? {}).find(([intentKey, entry]) => entry.status === 'fulfilled' && publishedCatalog.catalog.signals.some((signal) => signal.intentKey === intentKey && signal.signalType === 'phrase' && signal.value && masked.masked.toLocaleLowerCase('en-US').includes(signal.value.toLocaleLowerCase('en-US'))))?.[0] ?? null
         : null;
-      const reopeningOpportunity = Boolean(reopeningIntentKey);
+      const provisionalIntentKey = publishedCatalog ? resolveIntent(publishedCatalog, normalizeConversationQuery(masked.masked), state.slotValues).intentKey : null;
+      const reopeningOpportunity = Boolean(reopeningIntentKey && provisionalIntentKey === reopeningIntentKey);
       const currentOpportunityId = state.intentProgress?.entries[activeIntentForTurn ?? '']?.journeyId ?? null;
       const actionMatchesOpportunity = (action: ActionRequest): boolean => currentOpportunityId
         ? action.opportunityId === currentOpportunityId
@@ -1518,7 +1519,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const collectedSlotValues = Object.fromEntries(Object.entries(catalogSlotValues).filter(([key]) => !['name', 'email', 'phone', 'contact_consent'].includes(key)));
       const actionLeadData = { ...leadData, ...(Object.keys(collectedSlotValues).length ? { slotValues: collectedSlotValues } : {}), ...(catalogResolution?.interest ? { interest: catalogResolution.interest } : {}), ...(consentActionReady ? { contactConsent: false } : catalogSlotValues.contact_consent === 'true' ? { contactConsent: true } : !catalogResolution ? { contactConsent: false } : {}) };
       const actionAlreadySubmitted = Boolean(pendingConsentAction && ['approved', 'processing', 'completed'].includes(pendingConsentAction.state));
-      const resumableAction = !reopeningOpportunity && catalogResolution?.intentKey ? sessionActions.find((candidate) => candidate.state === 'awaiting_customer' && candidate.catalogVersionId === catalogResolution.catalogVersionId && candidate.intentKey === catalogResolution.intentKey && actionMatchesOpportunity(candidate) && candidate.payload.contactConsent === true) : null;
+      const opportunityIntentKey = journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? '';
+      const opportunityIdForAction = state.intentProgress?.entries[opportunityIntentKey]?.journeyId ?? currentOpportunityId;
+      const legacyPendingAction = !reopeningOpportunity && opportunityIdForAction
+        ? sessionActions.find((candidate) => candidate.opportunityId == null && candidate.intentKey === opportunityIntentKey && ['awaiting_confirmation', 'awaiting_customer', 'approved', 'processing'].includes(candidate.state))
+        : null;
+      if (legacyPendingAction) {
+        legacyPendingAction.opportunityId = opportunityIdForAction;
+        await store.updateAction(legacyPendingAction);
+      }
+      const resumableAction = !reopeningOpportunity && catalogResolution?.intentKey ? sessionActions.find((candidate) => candidate.state === 'awaiting_customer' && candidate.catalogVersionId === catalogResolution.catalogVersionId && candidate.intentKey === catalogResolution.intentKey && actionMatchesTargetOpportunity(candidate, opportunityIdForAction) && candidate.payload.contactConsent === true) : null;
       const shouldResumeAction = Boolean(resumableAction && state.contactConsent === 'granted' && !consentDenied && !crmContactMissing && !journeyRequirement?.required && catalogSlotsReady && catalogResolution?.actionAllowed);
       const resumedAction = shouldResumeAction && resumableAction ? await store.approveAction({ ...resumableAction, state: 'approved', payload: { ...resumableAction.payload, ...actionLeadData }, result: null }) : null;
       if (resumedAction) {
@@ -1528,8 +1538,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         session.conversationState = state;
         await updateSessionSafely(session, true);
       }
-      const opportunityIntentKey = journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? '';
-      const opportunityIdForAction = state.intentProgress?.entries[opportunityIntentKey]?.journeyId ?? currentOpportunityId;
       const actionKeyForProposal = catalogResolution?.intentKey ?? catalogResolution?.workflowKey ?? 'lead.capture';
       const priorRevisions = opportunityIdForAction ? sessionActions.filter((candidate) => candidate.opportunityId === opportunityIdForAction && (candidate.actionKey ?? candidate.intentKey ?? candidate.workflowKey) === actionKeyForProposal).map((candidate) => candidate.actionRevision ?? 1) : [];
       const actionRevisionForProposal = priorRevisions.length ? Math.max(...priorRevisions) + 1 : 1;
