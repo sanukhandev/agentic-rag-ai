@@ -148,6 +148,8 @@ export interface IntentProgressState {
   pausedIntentKeys: string[];
   fulfilledIntentKeys: string[];
   entries: Record<string, IntentProgressEntry>;
+  /** Primary journey instance index; entries remains a legacy intent-key projection. */
+  journeys?: Record<string, IntentProgressEntry>;
   visitedIntentKeys: string[];
   lastTransitionReason: string | null;
   lastDeclinedTransition?: {
@@ -675,6 +677,7 @@ export interface Store {
   approveActionAndSession(action: ActionRequest, session: Session): Promise<ActionRequest>;
   getAction(id: string): Promise<ActionRequest | null>;
   getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null>;
+  getActionByIdentity(input: { tenantId: string; opportunityId: string; actionKey: string; actionRevision: number }): Promise<ActionRequest | null>;
   updateAction(action: ActionRequest): Promise<ActionRequest>;
   transitionAction(actionId: string, tenantId: string, fromState: ActionState, toState: ActionState, result: ActionRequest['result']): Promise<ActionRequest | null>;
   transitionActionWithExecution(input: { actionId: string; tenantId: string; fromState: ActionState; toState: ActionState; result: ActionRequest['result']; providerStatus: string; n8nExecutionRef: string; eventId: string; correlationId: string; expectedAttempt: number; resolveReconciliation?: boolean; outcome?: ActionExecution['outcome'] }): Promise<{ action: ActionRequest; execution: ActionExecution } | null>;

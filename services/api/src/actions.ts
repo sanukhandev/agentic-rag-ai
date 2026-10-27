@@ -72,11 +72,19 @@ export class ActionGateway {
   private async proposeInternal(tenantId: string, sessionId: string, idempotencyKey: string, leadData: ActionPayload, options: { workflowKey?: string; intentKey?: string; intentScore?: number; intentConfidence?: number; catalogVersionId?: string | null; webhookPath?: string; opportunityId?: string | null; actionKey?: string | null; actionRevision?: number }): Promise<ActionRequest> {
     const existing = await this.store.getActionByIdempotency(tenantId, idempotencyKey);
     if (existing) return existing;
+    const identity = options.opportunityId && (options.actionKey ?? options.intentKey ?? options.workflowKey)
+      ? await this.store.getActionByIdentity({ tenantId, opportunityId: options.opportunityId, actionKey: options.actionKey ?? options.intentKey ?? options.workflowKey!, actionRevision: options.actionRevision ?? 1 })
+      : null;
+    if (identity && !['failed', 'reconcile_required'].includes(identity.state)) return identity;
     const action: ActionRequest = { id: randomUUID(), tenantId, sessionId, workflowKey: options.workflowKey ?? 'lead.capture', webhookPath: options.webhookPath ?? 'lead-capture', intentKey: options.intentKey ?? 'lead.capture', intentScore: options.intentScore ?? 0, intentConfidence: options.intentConfidence ?? 0, catalogVersionId: options.catalogVersionId ?? null, opportunityId: options.opportunityId ?? null, actionKey: options.actionKey ?? options.intentKey ?? options.workflowKey ?? 'lead.capture', actionRevision: options.actionRevision ?? 1, idempotencyKey, state: 'awaiting_confirmation', opaqueReference: opaqueReference(), payload: leadData, createdAt: new Date().toISOString(), result: null };
     try { return await this.store.createAction(action); } catch (error) {
       if (!isUniqueViolation(error)) throw error;
       const raced = await this.store.getActionByIdempotency(tenantId, idempotencyKey);
       if (raced) return raced;
+      if (options.opportunityId && action.actionKey) {
+        const identityRace = await this.store.getActionByIdentity({ tenantId, opportunityId: options.opportunityId, actionKey: action.actionKey, actionRevision: action.actionRevision ?? 1 });
+        if (identityRace) return identityRace;
+      }
       throw error;
     }
   }

@@ -297,6 +297,7 @@ export class MemoryStore implements Store {
   async getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null> {
     return [...this.actions.values()].find((action) => action.tenantId === tenantId && action.idempotencyKey === idempotencyKey) ?? null;
   }
+  async getActionByIdentity(input: { tenantId: string; opportunityId: string; actionKey: string; actionRevision: number }): Promise<ActionRequest | null> { return [...this.actions.values()].find((action) => action.tenantId === input.tenantId && action.opportunityId === input.opportunityId && action.actionKey === input.actionKey && action.actionRevision === input.actionRevision) ?? null; }
   async updateAction(action: ActionRequest): Promise<ActionRequest> { this.actions.set(action.id, action); return action; }
   async transitionAction(actionId: string, tenantId: string, fromState: ActionRequest['state'], toState: ActionRequest['state'], result: ActionRequest['result']): Promise<ActionRequest | null> {
     const current = this.actions.get(actionId);

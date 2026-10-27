@@ -179,6 +179,15 @@ describe('intent catalog', () => {
     expect(fulfilled.decision).toBe('continue');
   });
 
+  it('creates a separate journey instance when a fulfilled intent is explicitly reopened', () => {
+    const journeyVersion = { ...version, catalog: { ...version.catalog, journeyRequirements: [{ intentKey: 'lead.capture', requirementKey: 'lead.name', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', slotKey: 'name', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' }] } };
+    const first = reduceIntentJourney(journeyVersion, undefined, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: { name: '[NAME_1]' } });
+    const second = reduceIntentJourney(journeyVersion, first.progress, { currentIntentKey: 'lead.capture', selectedIntentKey: 'lead.capture', slotValues: {}, newOpportunity: true });
+    expect(second.progress.entries['lead.capture']?.journeyId).not.toBe(first.progress.entries['lead.capture']?.journeyId);
+    expect(Object.keys(second.progress.journeys ?? {})).toHaveLength(2);
+    expect(second.progress.entries['lead.capture']?.completedRequirementKeys).toEqual([]);
+  });
+
   it('offers a configured related intent and activates it only after approval', () => {
     const journeyVersion = {
       ...version,
