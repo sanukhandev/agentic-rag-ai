@@ -308,6 +308,19 @@ export class MemoryStore implements Store {
     this.actions.set(current.id, assigned);
     return { status: 'assigned', action: assigned };
   }
+  async establishLegacyJourneyAndAssignAction(input: { session: Session; actionId: string; intentKey: string; catalogVersionId?: string | null; opportunityId: string; eligibleStates: ActionRequest['state'][] }): Promise<import('./types.js').LegacyJourneyAssociationResult> {
+    const currentSession = this.sessions.get(input.session.id);
+    const currentAction = this.actions.get(input.actionId);
+    if (!currentSession || currentSession.tenantId !== input.session.tenantId || currentSession.stateVersion !== input.session.stateVersion || !currentAction || currentAction.tenantId !== input.session.tenantId || currentAction.sessionId !== input.session.id || currentAction.intentKey !== input.intentKey || (input.catalogVersionId !== undefined && currentAction.catalogVersionId !== input.catalogVersionId) || currentAction.opportunityId != null || !input.eligibleStates.includes(currentAction.state)) {
+      const assignment: import('./types.js').LegacyActionAssignment = currentAction?.opportunityId === input.opportunityId ? { status: 'already_assigned', action: currentAction } : { status: currentAction ? 'conflict' : 'not_found', action: null };
+      return { committed: false, session: input.session, assignment };
+    }
+    const assigned = { ...currentAction, opportunityId: input.opportunityId };
+    const persistedSession = { ...structuredClone(input.session), stateVersion: (input.session.stateVersion ?? 0) + 1 };
+    this.actions.set(assigned.id, assigned);
+    this.sessions.set(persistedSession.id, persistedSession);
+    return { committed: true, session: persistedSession, assignment: { status: 'assigned', action: assigned } };
+  }
   async updateAction(action: ActionRequest): Promise<ActionRequest> { this.actions.set(action.id, action); return action; }
   async transitionAction(actionId: string, tenantId: string, fromState: ActionRequest['state'], toState: ActionRequest['state'], result: ActionRequest['result']): Promise<ActionRequest | null> {
     const current = this.actions.get(actionId);

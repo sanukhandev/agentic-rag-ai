@@ -28,6 +28,40 @@ class PostgresTestBus implements StreamBus {
 }
 
 describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
+  it('atomically establishes a legacy journey and binds only the original pending action', async () => {
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const store = new PostgresStore(pool);
+    const tenant = await store.createTenant({ name: 'Legacy Association Test', slug: `legacy-association-${randomUUID()}` });
+    try {
+      const session = await store.createSession(tenant.id);
+      const catalog = await store.createIntentCatalogVersion({ tenantId: tenant.id, status: 'published', sourceFileName: 'legacy-association.json', sourceHash: 'f'.repeat(64), parserVersion: 'test', catalog: { tenantScope: tenant.slug, intents: [], signals: [], slots: [], relations: [], workflowBindings: [] } });
+      const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'legacy.workflow', intentKey: 'legacy.intent', catalogVersionId: catalog.id, idempotencyKey: randomUUID(), state: 'awaiting_confirmation', opaqueReference: 'legacy', payload: {}, result: { externalReference: 'preserve-me' }, createdAt: new Date().toISOString() });
+      session.conversationState = { ...session.conversationState!, selectedIntentKey: 'legacy.intent' };
+      const opportunityId = randomUUID();
+      const migration = await store.establishLegacyJourneyAndAssignAction({ session, actionId: action.id, intentKey: 'legacy.intent', catalogVersionId: catalog.id, opportunityId, eligibleStates: ['awaiting_confirmation'] });
+      expect(migration.committed).toBe(true);
+      expect(migration.assignment.action).toMatchObject({ id: action.id, opportunityId, result: action.result });
+      const persisted = await store.getSession(session.id);
+      expect(persisted?.conversationState?.selectedIntentKey).toBe('legacy.intent');
+
+      const nullableAction = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'legacy.workflow', intentKey: 'legacy.null', catalogVersionId: null, idempotencyKey: randomUUID(), state: 'awaiting_customer', opaqueReference: 'legacy-null', payload: {}, result: null, createdAt: new Date().toISOString() });
+      const nullable = await store.assignLegacyActionOpportunity({ tenantId: tenant.id, sessionId: session.id, actionId: nullableAction.id, intentKey: 'legacy.null', catalogVersionId: null, opportunityId: randomUUID(), eligibleStates: ['awaiting_customer'] });
+      expect(nullable.status).toBe('assigned');
+
+      const sessionForRace = await store.getSession(session.id);
+      expect(sessionForRace).not.toBeNull();
+      const raceAction = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'legacy.workflow', intentKey: 'legacy.race', catalogVersionId: catalog.id, idempotencyKey: randomUUID(), state: 'awaiting_confirmation', opaqueReference: 'legacy-race', payload: {}, result: null, createdAt: new Date().toISOString() });
+      const [left, right] = await Promise.all([
+        store.assignLegacyActionOpportunity({ tenantId: tenant.id, sessionId: session.id, actionId: raceAction.id, intentKey: 'legacy.race', catalogVersionId: catalog.id, opportunityId: randomUUID(), eligibleStates: ['awaiting_confirmation'] }),
+        store.assignLegacyActionOpportunity({ tenantId: tenant.id, sessionId: session.id, actionId: raceAction.id, intentKey: 'legacy.race', catalogVersionId: catalog.id, opportunityId: randomUUID(), eligibleStates: ['awaiting_confirmation'] }),
+      ]);
+      expect([left.status, right.status].filter((status) => status === 'assigned')).toHaveLength(1);
+    } finally {
+      await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
+      await pool.end();
+    }
+  }, 20_000);
+
   it('claims only bounded actions for the matching catalog workflow binding', async () => {
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     const store = new PostgresStore(pool);
