@@ -131,9 +131,14 @@ export interface IntentCatalogJourneyTransition {
 
 export interface IntentProgressEntry {
   intentKey: string;
+  /** Durable opportunity identity. Legacy sessions may not have this until resumed. */
+  journeyId?: string;
   status: 'active' | 'paused' | 'fulfilled';
   completedRequirementKeys: string[];
   currentRequirementKey: string | null;
+  /** Facts belong to this opportunity, never to the whole conversation. */
+  slotValues?: Record<string, string>;
+  slotProvenance?: Record<string, { source: 'visitor'; messageSequence: number; capturedAt: string; corrected: boolean }>;
   revision: number;
 }
 
@@ -570,6 +575,10 @@ export interface ActionRequest {
   intentScore?: number;
   intentConfidence?: number;
   catalogVersionId?: string | null;
+  /** Business identity is separate from the workflow implementation key. */
+  opportunityId?: string | null;
+  actionKey?: string | null;
+  actionRevision?: number;
   idempotencyKey: string;
   state: ActionState;
   opaqueReference: string;

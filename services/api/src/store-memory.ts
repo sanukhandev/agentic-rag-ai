@@ -279,7 +279,7 @@ export class MemoryStore implements Store {
     if (!current || current.tenantId !== action.tenantId) throw new Error('Action not found.');
     if (current.state === 'approved' || current.state === 'processing' || current.state === 'completed') return current;
     this.actions.set(action.id, action);
-    if (isUuid(action.tenantId) && isUuid(action.sessionId) && isUuid(action.id)) await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: action.tenantId, sessionId: action.sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId: action.sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? null, catalogVersionId: action.catalogVersionId ?? null } }));
+    if (isUuid(action.tenantId) && isUuid(action.sessionId) && isUuid(action.id)) await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: action.tenantId, sessionId: action.sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId: action.sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? null, catalogVersionId: action.catalogVersionId ?? null, opportunityId: action.opportunityId ?? null, actionKey: action.actionKey ?? null, actionRevision: action.actionRevision ?? 1 } }));
     return action;
   }
   async approveActionAndSession(action: ActionRequest, session: Session): Promise<ActionRequest> {
@@ -290,7 +290,7 @@ export class MemoryStore implements Store {
     }
     await this.updateSession(session);
     this.actions.set(action.id, action);
-    if (isUuid(action.tenantId) && isUuid(action.sessionId) && isUuid(action.id)) await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: action.tenantId, sessionId: action.sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId: action.sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? null, catalogVersionId: action.catalogVersionId ?? null } }));
+    if (isUuid(action.tenantId) && isUuid(action.sessionId) && isUuid(action.id)) await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: action.tenantId, sessionId: action.sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId: action.sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? null, catalogVersionId: action.catalogVersionId ?? null, opportunityId: action.opportunityId ?? null, actionKey: action.actionKey ?? null, actionRevision: action.actionRevision ?? 1 } }));
     return action;
   }
   async getAction(id: string): Promise<ActionRequest | null> { return this.actions.get(id) ?? null; }

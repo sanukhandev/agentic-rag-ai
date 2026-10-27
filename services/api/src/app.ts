@@ -1088,7 +1088,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         ? await store.listSupportingDocuments(session.tenantId, session.id)
         : [];
       const pendingConsentAction = publishedCatalog && pendingCatalogIntent ? sessionActions.find((action) => action.catalogVersionId === publishedCatalog.id && action.intentKey === pendingCatalogIntent && action.payload.contactConsent === true) : null;
-      const pendingCatalogValues: Record<string, string> = { ...state.slotValues, ...(lastCatalogAssistant?.response?.catalogSlotValues && typeof lastCatalogAssistant.response.catalogSlotValues === 'object' && !Array.isArray(lastCatalogAssistant.response.catalogSlotValues) ? Object.fromEntries(Object.entries(lastCatalogAssistant.response.catalogSlotValues).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {}), ...(pendingConsentAction?.state === 'approved' || pendingConsentAction?.state === 'processing' || pendingConsentAction?.state === 'completed' || state.contactConsent === 'granted' ? { contact_consent: 'true' } : state.contactConsent === 'denied' ? { contact_consent: 'false' } : {}) };
+      const scopedIntentKey = state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey;
+      const scopedJourneyValues = scopedIntentKey ? state.intentProgress?.entries[scopedIntentKey]?.slotValues ?? {} : {};
+      const pendingCatalogValues: Record<string, string> = { ...(Object.keys(scopedJourneyValues).length ? scopedJourneyValues : state.slotValues), ...(lastCatalogAssistant?.response?.catalogSlotValues && typeof lastCatalogAssistant.response.catalogSlotValues === 'object' && !Array.isArray(lastCatalogAssistant.response.catalogSlotValues) ? Object.fromEntries(Object.entries(lastCatalogAssistant.response.catalogSlotValues).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {}), ...(pendingConsentAction?.state === 'approved' || pendingConsentAction?.state === 'processing' || pendingConsentAction?.state === 'completed' || state.contactConsent === 'granted' ? { contact_consent: 'true' } : state.contactConsent === 'denied' ? { contact_consent: 'false' } : {}) };
       const postCaptureSlotRequirement = postCaptureFollowUp && publishedCatalog && activeCatalogIntent
         ? catalogNextFollowUpRequirement(publishedCatalog, activeCatalogIntent, pendingCatalogValues, state.intentProgress?.entries[activeCatalogIntent]?.completedRequirementKeys ?? [], journeyDocuments.map((document) => ({ intentKey: document.intentKey ?? null, catalogVersionId: document.catalogVersionId ?? null, requirementKey: document.requirementKey ?? null, expectedDocumentType: document.expectedDocumentType ?? null, status: document.status })))
         : null;
@@ -1214,7 +1216,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const distinctIntentKey = catalogResolution?.intentKey && state.selectedIntentKey && catalogResolution.intentKey !== state.selectedIntentKey ? catalogResolution.intentKey : null;
       const explicitIntentSwitch = /^(?:i|we)\s+(?:want|need|would\s+like|am\s+looking|need\s+help)|^(?:please|can\s+you|could\s+you)\b/iu.test(maskedMessage);
       const distinctIntent = Boolean(distinctIntentKey && (!pendingValue || explicitIntentSwitch));
-      const sameOpportunityWorkflow = Boolean(catalogResolution?.workflowKey && sessionActions.some((action) => action.workflowKey === catalogResolution?.workflowKey));
+      const currentOpportunityId = (state.intentProgress?.entries[state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? '']?.journeyId) ?? null;
+      const sameOpportunityWorkflow = Boolean(currentOpportunityId && sessionActions.some((action) => action.opportunityId === currentOpportunityId && action.workflowKey === catalogResolution?.workflowKey));
       if (distinctIntent && publishedCatalog) {
         // A new catalog journey may collect slots after the first CRM lead,
         // while action creation remains blocked by the existing opportunity.
@@ -1449,6 +1452,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const value = catalogSlotValues[slotKey];
         if (value) state.slotProvenance[slotKey] = { source: 'visitor', messageSequence: state.messageSequence + 1, capturedAt: new Date().toISOString(), corrected: Boolean(previousSlotValues[slotKey] && previousSlotValues[slotKey] !== value) };
       }
+      const persistedJourneyKey = journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey;
+      if (persistedJourneyKey && state.intentProgress?.entries[persistedJourneyKey]) {
+        const journeyEntry = state.intentProgress.entries[persistedJourneyKey];
+        journeyEntry.slotValues = { ...(journeyEntry.slotValues ?? {}), ...catalogSlotValues };
+        journeyEntry.slotProvenance = { ...(journeyEntry.slotProvenance ?? {}), ...(state.slotProvenance ?? {}) };
+      }
       const responseMessageId = randomUUID();
       const seenOfferKeys = new Set<string>();
       const rawFollowUpOptions = draft.followUpOptions ?? [];
@@ -1500,10 +1509,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         session.conversationState = state;
         await updateSessionSafely(session, true);
       }
-      const intentActionAlreadySubmitted = Boolean(catalogResolution?.intentKey && sessionActions.some((candidate) => (candidate.intentKey ?? candidate.workflowKey) === catalogResolution.intentKey && ['awaiting_confirmation', 'awaiting_customer', 'approved', 'processing', 'completed'].includes(candidate.state)));
-      const sameWorkflowOpportunityExists = Boolean(catalogResolution?.workflowKey && sessionActions.some((candidate) => candidate.workflowKey === catalogResolution?.workflowKey && ['awaiting_confirmation', 'awaiting_customer', 'approved', 'processing', 'completed'].includes(candidate.state)));
+      const opportunityIntentKey = journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? '';
+      const opportunityIdForAction = state.intentProgress?.entries[opportunityIntentKey]?.journeyId ?? currentOpportunityId;
+      const intentActionAlreadySubmitted = Boolean(catalogResolution?.intentKey && sessionActions.some((candidate) => (opportunityIdForAction ? candidate.opportunityId === opportunityIdForAction : true) && (candidate.intentKey ?? candidate.workflowKey) === catalogResolution.intentKey && ['awaiting_confirmation', 'awaiting_customer', 'approved', 'processing', 'completed'].includes(candidate.state)));
+      const sameWorkflowOpportunityExists = Boolean(opportunityIdForAction && catalogResolution?.workflowKey && sessionActions.some((candidate) => candidate.opportunityId === opportunityIdForAction && candidate.workflowKey === catalogResolution.workflowKey && ['awaiting_confirmation', 'awaiting_customer', 'approved', 'processing', 'completed'].includes(candidate.state)));
       const shouldProposeAction = !resumedAction && !sameWorkflowOpportunityExists && !postCaptureFollowUp && !knowledgeQuestion && !offerReplyOwnsTurn && !journeyOfferPending && !transitionDenied && !declinedTransitionHold && (catalogResolution ? catalogSlotsReady && !intentActionAlreadySubmitted && !actionAlreadySubmitted && !consentDenied && !crmContactMissing && (catalogResolution.actionAllowed || consentActionReady) : draft.proposedIntent === 'lead.capture' && leadIntent && validatedLeadReady);
-      const action = resumedAction ?? (shouldProposeAction ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, actionLeadData, catalogResolution ? { workflowKey: catalogResolution.workflowKey ?? 'lead.capture', intentKey: catalogResolution.intentKey ?? 'lead.capture', intentScore: catalogResolution.score, intentConfidence: catalogResolution.confidence, catalogVersionId: catalogResolution.catalogVersionId, webhookPath: publishedCatalog?.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution.workflowKey)?.webhookPath ?? 'lead-capture' } : undefined) : null);
+      const action = resumedAction ?? (shouldProposeAction ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, actionLeadData, catalogResolution ? { workflowKey: catalogResolution.workflowKey ?? 'lead.capture', intentKey: catalogResolution.intentKey ?? 'lead.capture', actionKey: catalogResolution.intentKey ?? catalogResolution.workflowKey ?? 'lead.capture', actionRevision: 1, opportunityId: opportunityIdForAction, intentScore: catalogResolution.score, intentConfidence: catalogResolution.confidence, catalogVersionId: catalogResolution.catalogVersionId, webhookPath: publishedCatalog?.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution.workflowKey)?.webhookPath ?? 'lead-capture' } : undefined) : null);
       const awaitingConfirmationAction = sessionActions.find((candidate) => candidate.state === 'awaiting_confirmation'
         && candidate.payload.contactConsent !== true
         && !consentDenied
