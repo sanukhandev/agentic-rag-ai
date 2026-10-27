@@ -55,6 +55,7 @@ describe('Azure Foundry model adapter', () => {
   it('handles common small-talk and identity questions without RAG abstention', () => {
     expect(conversationalIntent('I m good')).toBe('wellbeing');
     expect(conversationalIntent('i m sanu')).toBe('introduction');
+    expect(conversationalIntent('hey zara i m [NAME_1]')).toBe('introduction');
     expect(conversationalIntent('what ?')).toBe('clarification');
     expect(conversationalIntent('why')).toBe('clarification');
     expect(conversationalIntent('i am looking for a company')).toBeNull();
@@ -63,6 +64,7 @@ describe('Azure Foundry model adapter', () => {
     expect(conversationalIntent("what's your name?")).toBe('identity');
     expect(conversationalIntent('Thanks so much')).toBe('thanks');
     expect(conversationalIntent('That’s all')).toBe('farewell');
+    expect(conversationalIntent('Thanks, that is all for now')).toBe('farewell');
     expect(conversationalIntent('Nothing more I need')).toBe('farewell');
     expect(conversationalIntent('Sure')).toBe('acknowledgement');
     expect(conversationalIntent('What is the price?')).toBeNull();
@@ -214,6 +216,13 @@ describe('Azure Foundry model adapter', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: '{"answer":"unsafe"}' } }] }), { status: 200 }));
     const model = new AzureFoundryModel('https://foundry.example', 'gpt-4.1-mini', 'server-key');
     await expect(model.draft({ maskedMessage: 'question', personaName: 'Ava', evidence: [] })).resolves.toEqual({ answer: naturalAbstention(), citationIds: [], proposedIntent: null });
+    vi.restoreAllMocks();
+  });
+
+  it('keeps a valid core answer when optional follow-up metadata is malformed', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: 'Here is the grounded answer.', citationIds: ['chunk-1'], proposedIntent: null, followUpOptions: 'invalid optional metadata' }) } }] }), { status: 200 }));
+    const model = new AzureFoundryModel('https://foundry.example', 'gpt-4.1-mini', 'server-key');
+    await expect(model.draft({ maskedMessage: 'question', personaName: 'Ava', evidence: [] })).resolves.toEqual({ answer: 'Here is the grounded answer.', citationIds: ['chunk-1'], proposedIntent: null });
     vi.restoreAllMocks();
   });
 

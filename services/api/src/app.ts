@@ -195,12 +195,23 @@ const pendingCatalogSlotValue = (validationRule: string, rawInput: string, maske
 const catalogSlotTerms = (slot: IntentCatalogSlot): string[] => slot.slotKey.split(/[._-]+/u).filter((term) => term.length >= 4);
 
 const messageMentionsCatalogSlot = (slot: IntentCatalogSlot, message: string): boolean => catalogSlotTerms(slot).some((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&')}\\b`, 'iu').test(message));
+const genericSlotTerms = new Set(['business', 'company', 'contact', 'details', 'expected', 'information', 'preferred', 'request']);
+const messageExplicitlyMentionsCatalogSlot = (slot: IntentCatalogSlot, message: string): boolean => catalogSlotTerms(slot).filter((term) => !genericSlotTerms.has(term)).some((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&')}\\b`, 'iu').test(message));
 
 const offerText = (text: string): string => normalizeConversationQuery(text).toLocaleLowerCase('en-US');
 const offerOptionIsPresented = (answer: string, option: FollowUpOfferOption): boolean => offerText(answer).includes(offerText(option.label));
 const presentsUntrackedOffer = (answer: string): boolean => {
   const normalized = offerText(answer);
   return /[?؟]/u.test(normalized) && /\b(?:would you like|do you want|would you prefer|do you prefer|shall i|should i|which (?:option|one|path)|either|what would you prefer)\b/u.test(normalized);
+};
+const replaceTerminalQuestion = (answer: string, nextQuestion: string): string => {
+  const sentences = answer.trim().split(/(?<=[.!?؟])\s+/u).filter(Boolean);
+  if (sentences.at(-1)?.trim().match(/[?؟]$/u)) sentences.pop();
+  return [...sentences, nextQuestion.trim()].filter(Boolean).join(' ').trim();
+};
+const hasGuidedSlotQuestion = (answer: string, slotKey: string): boolean => {
+  const question = answer.trim().split(/(?<=[.!?؟])\s+/u).filter((sentence) => sentence.trim().match(/[?؟]$/u)).at(-1);
+  return Boolean(question && isGuidedResponse(question, 'slot_collection', slotKey));
 };
 const offerHintIsGrounded = (evidence: ModelEvidence[], hint: string): boolean => {
   const evidenceText = offerText(evidence.map((item) => item.content).join(' '));
@@ -1138,7 +1149,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           }) ?? false;
           for (const slot of publishedCatalog?.catalog.slots.filter((candidate) => candidate.intentKey === inferredCatalogIntentKey && candidate.slotKey !== pendingSlot?.slotKey && !candidate.validationRule.startsWith('token:') && candidate.validationRule !== 'boolean:explicit_opt_in') ?? []) {
             if (isIntentPhrase && slot.validationRule.startsWith('text:')) continue;
-            if (!messageMentionsCatalogSlot(slot, inputText)) continue;
+            if (!messageExplicitlyMentionsCatalogSlot(slot, inputText)) continue;
             const value = pendingCatalogSlotValue(slot.validationRule, inputText, maskedMessage, session, tokenVault);
             if (value) inferred[slot.slotKey] = value;
           }
@@ -1150,7 +1161,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const currentLeadData = mergeLeadData(pendingCatalogValues as LeadData, extractLeadData(maskedMessage), pendingValueData);
       const currentCatalogSlotValues: Record<string, string> = { ...baseCatalogSlotValues, ...inferredCatalogValueData };
       const history = publishedCatalog ? catalogHistory : await store.listMessages(session.id, session.tenantId, modelContextWindow + 1);
-      const recentMessages = intent === null || Boolean(activeFollowUpOffer) ? history.filter((message) => message.id !== userMessage.id).slice(-modelContextWindow) : [];
+      const recentMessages = intent === null || Boolean(activeFollowUpOffer) || (intent === 'introduction' && !publishedCatalog) ? history.filter((message) => message.id !== userMessage.id).slice(-modelContextWindow) : [];
       const conversation = recentMessages.map((message) => ({ role: message.role, content: message.maskedContent }));
       let normalizedMessage = deterministicMessage;
       const normalizationNeeded = !conversational && (knowledgeQuestion || Boolean(pendingSlot && !pendingValue) || ['no_signal', 'below_threshold'].includes(currentCatalogResolution?.reason ?? 'no_signal') || Boolean(currentCatalogResolution?.ambiguous));
@@ -1300,6 +1311,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const catalogSlotsReady = catalogResolution ? (catalogResolution.missingSlots.length === 0 || consentActionReady) && (isContactWorkflow ? validatedLeadReady : true) && !journeyBlocksAction : validatedLeadReady;
       const leadCollection = leadIntent && !catalogSlotsReady;
       const catalogClarification = !postCaptureFollowUp && !knowledgeQuestion && Boolean(catalogResolution?.intentKey && (catalogResolution.ambiguous || catalogResolution.reason === 'below_threshold'));
+      const responseIntentKey = journeyResult?.activeIntentKey ?? catalogResolution?.intentKey ?? pendingCatalogIntent ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey;
+      const responseSlotKey = state.pendingPrompt?.slotKey ?? crmContactMissing ?? journeySlotKey ?? catalogResolution?.missingSlots[0] ?? null;
+      const responseSlotLabel = publishedCatalog && responseIntentKey && responseSlotKey ? catalogSlotLabel(publishedCatalog, responseIntentKey, responseSlotKey, catalogSlotValues) : null;
       const composeGuidedDraft = async (fallback: ModelDraft, responseMode: 'slot_collection' | 'intent_clarification' | 'consent' | 'confirmation' | 'document_collection' | 'document_processing' | 'queued' | 'follow_up' | 'offer_clarification', slotKey: string | null = null): Promise<ModelDraft> => {
         if (!model.compose) return fallback;
         try {
@@ -1342,7 +1356,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
        else if (!postCaptureFollowUp && !knowledgeQuestion && publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'below_threshold') draft = await composeGuidedDraft({ answer: catalogIntentClarification(publishedCatalog, catalogResolution.intentKey), citationIds: [], proposedIntent: null }, 'intent_clarification');
        else if (!postCaptureFollowUp && !knowledgeQuestion && publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'intent_inactive') draft = { answer: 'I can note that request, but the matching workflow is not currently enabled.', citationIds: [], proposedIntent: null };
       else if (conversational && intent === 'farewell') draft = { answer: conversationalReply(intent, persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
-      else if (!postCaptureFollowUp && conversational && intent !== 'greeting' && !pendingValue && !acceptedOfferOption) draft = { answer: conversationalReply(intent ?? 'acknowledgement', persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
+       else if (!postCaptureFollowUp && conversational && intent !== 'greeting' && !pendingValue && !acceptedOfferOption && !leadCollection) draft = { answer: conversationalReply(intent ?? 'acknowledgement', persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
       else if (!postCaptureFollowUp && !knowledgeQuestion && consentDenied && isContactWorkflow) draft = { answer: 'Understood. I will not register or share your contact details without consent. I can still answer your questions.', citationIds: [], proposedIntent: null };
         else if (crmContactMissing) draft = await composeGuidedDraft({ answer: leadCollectionReply(leadData, crmContactMissing), citationIds: [], proposedIntent: null }, 'slot_collection', crmContactMissing);
         else if (consentActionReady) draft = await composeGuidedDraft({ answer: 'I have the details needed. Please approve the consent action below to register your request.', citationIds: [], proposedIntent: catalogResolution?.intentKey ?? null }, 'consent');
@@ -1384,9 +1398,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
             capturedSlots: { ...catalogSlotValues },
             conversationSummary: state.rollingSummary.slice(-2_000),
             detectedSecondaryIntentKey,
-            pendingOffer: activeFollowUpOffer,
-            resolvedOfferOption: acceptedOfferOption,
-            continuityTurn,
+             pendingOffer: activeFollowUpOffer,
+             resolvedOfferOption: acceptedOfferOption,
+             continuityTurn,
+             nextSlotLabel: responseSlotLabel,
             nextRequirement: journeyRequirement ? { requirementKey: journeyRequirement.requirementKey, requirementType: journeyRequirement.requirementType, promptKey: journeyRequirement.promptKey, documentType: journeyRequirement.documentType, label: journeyConfirmationLabel } : journeyOfferPending ? { requirementKey: journeyTransitionRequirementKey ?? 'transition', requirementType: 'confirmation', promptKey: journeyResult?.transitionPromptKey ?? '', documentType: null, label: journeyOfferLabel } : null,
             responseMode: knowledgeClarificationTurn ? 'knowledge_clarification' as const : mixedKnowledgeTurn ? 'mixed' as const : knowledgeQuestion ? 'knowledge' as const : journeyDocumentPending ? 'document_collection' as const : journeyRequirement?.requirementType === 'slot' ? 'slot_collection' as const : 'follow_up' as const,
             documentPolicies: (publishedCatalog?.catalog.documentPolicies ?? []).filter((policy) => policy.enabled && (!followUpIntentKeys.size || followUpIntentKeys.has(policy.intentKey))).map((policy) => ({ intentKey: policy.intentKey, requestMode: policy.requestMode, required: policy.required, requestPromptKey: policy.requestPromptKey, allowedDocumentTypes: policy.allowedDocumentTypes })),
@@ -1422,6 +1437,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const preserveTransitionOfferPrompt = Boolean(pendingTransitionPrompt && !transitionApproval && !transitionDenied);
       const preservePendingPrompt = (state.pendingPrompt && (offerOwnsConversationState || knowledgeQuestion) && ['slot', 'consent', 'document', 'confirmation'].includes(state.pendingPrompt.type)) || preserveTransitionOfferPrompt || preserveTypedConsentPrompt;
       const preserveDocumentProcessingPrompt = journeyDocumentAwaiting && state.pendingPrompt?.type === 'document' && state.pendingPrompt.requirementKey === journeyRequirement?.requirementKey;
+      const nextSlotRequirementKey = nextMissingSlot && nextMissingSlot === journeySlotKey ? journeyRequirement?.requirementKey ?? `slot:${nextMissingSlot}` : nextMissingSlot ? `slot:${nextMissingSlot}` : journeyRequirement?.requirementKey ?? null;
       const nextPrompt = preservePendingPrompt || preserveConsentPrompt ? state.pendingPrompt : endedConversation ? null : consentDenied || transitionDenied ? null : journeyOfferPending
          ? prompt('confirmation', journeyResult?.offeredIntentKey ?? catalogResolution?.intentKey ?? state.selectedIntentKey, null, journeyTransitionRequirementKey)
         : (postCaptureFollowUp && !journeyDocumentPending && !journeyRequirement) ? null : journeyDocumentPending
@@ -1432,7 +1448,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : catalogResolution?.ambiguous || (catalogResolution?.reason === 'below_threshold')
         ? prompt('clarification', catalogResolution.intentKey, null)
         : nextMissingSlot
-          ? prompt(consentActionReady ? 'consent' : 'slot', journeyResult?.activeIntentKey ?? catalogResolution?.intentKey ?? pendingCatalogIntent ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey, nextMissingSlot, journeyRequirement?.requirementKey ?? null)
+          ? prompt(consentActionReady ? 'consent' : 'slot', journeyResult?.activeIntentKey ?? catalogResolution?.intentKey ?? pendingCatalogIntent ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey, nextMissingSlot, nextSlotRequirementKey)
           : consentActionReady ? prompt('consent', catalogResolution?.intentKey ?? journeyResult?.activeIntentKey ?? state.selectedIntentKey, null, journeyRequirement?.requirementKey ?? null)
             : catalogResolution?.actionAllowed && !consentDenied && !journeyOfferPending && !declinedTransitionHold ? prompt('confirmation', catalogResolution.intentKey, null) : null;
       state.catalogVersionId = catalogResolution?.catalogVersionId ?? state.catalogVersionId;
@@ -1471,12 +1487,18 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         return { key, label, retrievalHints };
       }).filter((option): option is FollowUpOfferOption => Boolean(option));
       const validFollowUpOptions = rawFollowUpOptions.length > 0 && rawFollowUpOptions.length <= 4 && validatedFollowUpOptions.length === rawFollowUpOptions.length ? validatedFollowUpOptions : [];
-      const untrackedKnowledgeOffer = safeGrounded && !activeFollowUpOffer && !crmContactMissing && !consentActionReady && !journeyRequirement && !journeyOfferPending && !journeyConfirmationPending && !journeyDocumentPending && !journeyDocumentAwaiting && !catalogClarification && presentsUntrackedOffer(safeAnswer) && validFollowUpOptions.length === 0;
-      if (untrackedKnowledgeOffer) {
-        // Do not show a yes/no or multi-choice question that has no persisted state.
-        const safeFallback = 'I can help with the next step. What would you like to focus on first?';
-        const composedContinuation = await composeGuidedDraft({ answer: safeFallback, citationIds: [], proposedIntent: null }, 'intent_clarification');
-        safeAnswer = presentsUntrackedOffer(composedContinuation.answer) ? safeFallback : composedContinuation.answer;
+      const untrackedKnowledgeOffer = safeGrounded && !activeFollowUpOffer && !crmContactMissing && !consentActionReady && !journeyOfferPending && !journeyConfirmationPending && !journeyDocumentPending && !journeyDocumentAwaiting && !catalogClarification && presentsUntrackedOffer(safeAnswer) && validFollowUpOptions.length === 0;
+      const missingMixedSlotQuestion = safeGrounded && mixedKnowledgeTurn && nextPrompt?.type === 'slot' && Boolean(nextPrompt.slotKey) && !hasGuidedSlotQuestion(safeAnswer, nextPrompt.slotKey ?? '');
+      if (untrackedKnowledgeOffer || missingMixedSlotQuestion) {
+        if (nextPrompt?.type === 'slot' && nextPrompt.slotKey && publishedCatalog && nextPrompt.intentKey) {
+          const safeFallback = catalogSlotQuestion(publishedCatalog, nextPrompt.intentKey, nextPrompt.slotKey, catalogSlotValues);
+          const composedContinuation = await composeGuidedDraft({ answer: safeFallback, citationIds: [], proposedIntent: null }, 'slot_collection', nextPrompt.slotKey);
+          safeAnswer = replaceTerminalQuestion(safeAnswer, composedContinuation.answer);
+        } else if (untrackedKnowledgeOffer) {
+          // Do not show a yes/no or multi-choice question that has no persisted state.
+          const safeFallback = 'Please tell me the specific detail you want me to explain next.';
+          safeAnswer = replaceTerminalQuestion(safeAnswer, safeFallback);
+        }
       }
       const maskedAnswer = maskPiiForSession(session, safeAnswer, tokenVault);
       try { assertKnownTokens(session, maskedAnswer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }

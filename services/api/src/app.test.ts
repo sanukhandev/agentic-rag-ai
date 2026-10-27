@@ -151,6 +151,37 @@ describe('API vertical slice', () => {
     expect(model.normalizationInputs.filter((input) => input.maskedMessage === 'I ned a demo')).toHaveLength(2);
   });
 
+  it('enters a catalog journey from natural preference wording after a masked introduction', async () => {
+    const runtime = createApp({ nodeEnv: 'test', model: new CapturingModel() });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-entry-path@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Entry Path Tenant', slug: 'entry-path-tenant', adminEmail: 'admin-entry-path@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    await runtime.store.createIntentCatalogVersion({
+      tenantId: tenant.body.tenant.id,
+      status: 'published',
+      sourceFileName: 'entry-path.json',
+      sourceHash: 'e'.repeat(64),
+      parserVersion: 'test',
+      catalog: {
+        tenantScope: tenant.body.tenant.slug,
+        intents: [{ intentKey: 'company.setup', displayName: 'Company setup', description: 'Help start a company', category: 'commercial', workflowKey: 'crm.lead.create', minimumScore: 70, confidenceThreshold: 0.7, confirmationRequired: true, active: true, priority: 100, versionNote: '' }],
+        signals: [{ intentKey: 'company.setup', signalId: 'company-start', signalType: 'phrase', value: 'I want to start a company', language: 'en', matchMode: 'contains', weight: 75, relationGroup: null, notes: '' }],
+        slots: [{ intentKey: 'company.setup', slotKey: 'name', dataType: 'person_name', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'lead.ask_name', validationRule: 'token:NAME', retentionClass: 'pii' }],
+        relations: [],
+        workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'entry-path-workflow', webhookPath: 'entry-path', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
+      },
+    });
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const introduction = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'hey assistant i m Tom', clientMessageId: 'entry-introduction' }).expect(200);
+    expect(introduction.body.answer).not.toContain('verified information');
+    const requestResponse = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to start a company', clientMessageId: 'entry-request' }).expect(200);
+    expect(requestResponse.body.answer).not.toContain('verified information');
+    expect(requestResponse.body.pendingRequirementKey).toBe('slot:email');
+    const storedState = (await runtime.store.getSession(session.body.sessionId))?.conversationState;
+    expect(storedState).toMatchObject({ selectedIntentKey: 'company.setup', slotValues: { name: expect.stringMatching(/^\[NAME_\d+\]$/) } });
+    expect(storedState?.slotValues.company_structure).toBeUndefined();
+  });
+
   it('rejects invalid usage cost rates', () => {
     expect(() => createApp({ nodeEnv: 'test', inputCostUsdPerMillion: -1 })).toThrow('MODEL_INPUT_COST_USD_PER_MILLION');
   });
@@ -1076,6 +1107,8 @@ describe('API vertical slice', () => {
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
     const response = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is the unstructured setup information?', clientMessageId: 'unstructured-offer-question' }).expect(200);
     expect(response.body.answer).not.toContain('the setup steps or the required documents');
+    expect(response.body.answer).toContain('approved guide covers setup');
+    expect(response.body.answer).toContain('specific detail');
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.pendingFollowUpOffer).toBeNull();
   });
 
@@ -1409,7 +1442,8 @@ describe('API vertical slice', () => {
     expect(model.normalizationInputs).toHaveLength(1);
     expect(model.normalizationInputs[0]).toMatchObject({ selectedIntentKey: 'company.setup' });
     expect(response.body.pendingRequirementKey).toBe('slot:name');
-    expect(model.followUpContexts.at(-1)).toMatchObject({ responseMode: 'mixed', primaryIntentKey: 'company.setup', conversationSummary: 'The visitor wants to set up a fashion store.' });
+    expect(response.body.answer.toLowerCase()).toContain('name');
+    expect(model.followUpContexts.at(-1)).toMatchObject({ responseMode: 'mixed', primaryIntentKey: 'company.setup', conversationSummary: 'The visitor wants to set up a fashion store.', nextSlotLabel: 'name' });
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ selectedIntentKey: 'company.setup', pendingPrompt: { type: 'slot', slotKey: 'name' } });
   });
 

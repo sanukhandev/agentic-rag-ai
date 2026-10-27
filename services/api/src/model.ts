@@ -206,7 +206,7 @@ const responseSystemPrompt = (input: {
             : input.followUpContext?.responseMode === 'confirmation'
               ? `The backend requires one concise confirmation for the current journey requirement${input.followUpContext.nextRequirement?.label ? ` (${input.followUpContext.nextRequirement.label})` : ''}. Ask the visitor to confirm only that named requirement; do not claim it is complete until they explicitly confirm.`
           : input.followUpContext?.responseMode === 'mixed'
-            ? 'Answer the latest approved knowledge question first using only the supplied evidence. Acknowledge the visitor facts already captured, then ask only the one next catalog requirement question supplied by the backend. Do not expose routing or internal state.'
+            ? `Answer the latest approved knowledge question first using only the supplied evidence. Acknowledge the visitor facts already captured, then ask only the one next catalog requirement question supplied by the backend${input.followUpContext.nextSlotLabel ? `: ${input.followUpContext.nextSlotLabel}` : ''}. Do not offer an unspecified next topic or expose routing or internal state.`
           : input.followUpContext?.responseMode === 'knowledge'
               ? `Answer the latest approved knowledge question using only the supplied evidence. Preserve the active conversation context and pending requirement; do not invent facts or claim that a requirement was completed.${input.followUpContext.resolvedOfferOption ? ` The visitor selected this offered path: ${input.followUpContext.resolvedOfferOption.label}. Use its retrieval hints to answer the original offer, not the acknowledgement alone.` : ''}`
           : input.followUpContext?.responseMode === 'knowledge_clarification'
@@ -362,17 +362,19 @@ export class AzureFoundryModel implements ChatModel {
     try { body = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> }; } catch { return safeFallback(); }
     const content = body.choices?.[0]?.message?.content;
     if (typeof content !== 'string') return safeFallback();
-    const schema = z.object({
+    const coreSchema = z.object({
       answer: z.string().min(1).max(8000),
       citationIds: z.array(z.string().min(1)).max(8),
       // Azure may return a descriptive non-action intent such as "inform"; only an explicit lead action is actionable.
       proposedIntent: z.preprocess((value) => value === 'lead.capture' ? value : null, z.literal('lead.capture').nullable()),
-      followUpOptions: z.array(z.object({ key: z.string().regex(/^[a-z0-9][a-z0-9_.-]{0,79}$/u), label: z.string().trim().min(1).max(160), retrievalHints: z.array(z.string().trim().min(1).max(120)).max(6) }).strict()).max(4).nullable().optional(),
-    }).strict();
+    }).passthrough();
+    const followUpSchema = z.array(z.object({ key: z.string().regex(/^[a-z0-9][a-z0-9_.-]{0,79}$/u), label: z.string().trim().min(1).max(160), retrievalHints: z.array(z.string().trim().min(1).max(120)).max(6) }).strict()).max(4).nullable();
     let parsed: unknown;
     try { parsed = JSON.parse(content); } catch { return safeFallback(); }
-    const result = schema.safeParse(parsed);
-    return result.success ? result.data : safeFallback();
+    const core = coreSchema.safeParse(parsed);
+    if (!core.success) return safeFallback();
+    const followUp = followUpSchema.safeParse(core.data.followUpOptions);
+    return { answer: core.data.answer, citationIds: core.data.citationIds, proposedIntent: core.data.proposedIntent, ...(followUp.success ? { followUpOptions: followUp.data } : {}) };
   }
 
   async compose(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[]; followUpContext?: ModelFollowUpContext }): Promise<ModelDraft> {
@@ -386,6 +388,7 @@ export type ConversationalIntent = 'greeting' | 'wellbeing' | 'identity' | 'intr
 
 export const conversationalIntent = (text: string): ConversationalIntent | null => {
   const normalized = text.toLowerCase().replace(/[\u064b-\u065f]/gu, '').replace(/[؟،؛]/gu, ' ').replace(/[أإآ]/gu, 'ا').replace(/ى/gu, 'ي').replace(/[^a-z0-9\u0600-\u06ff]+/gu, ' ').trim();
+  if (/^(?:hi|hello|hey|hiya)(?: there| [a-z0-9]+)?\s+(?:i m|im|i am|my name is|this is)\s+name\s+\d+$/u.test(normalized)) return 'introduction';
   if (/^(?:(?:hi|hello|hey|hiya)(?: there)?(?: [a-z0-9]+)?|(?:hi|hello|hey|hiya) how (?:are you(?: doing)?|(?:is|s|z) (?:it )?going)|good (?:morning|afternoon|evening)(?: there)?)$/u.test(normalized)) return 'greeting';
   if (/^(?:مرحبا|اهلا|السلام عليكم|صباح الخير|مساء الخير)(?: يا [\u0600-\u06ff]+)?$/u.test(normalized)) return 'greeting';
   if (/^(?:how are you(?: doing)?|how (?:is|s|z) (?:it )?going|what (?:is|s) up|how (?:is|s) your day)$/u.test(normalized)) return 'wellbeing';
@@ -396,9 +399,9 @@ export const conversationalIntent = (text: string): ConversationalIntent | null 
   const introduction = normalized.match(/^(?:i m|im|i am|my name is|this is) (.+)$/u)?.[1];
   if (introduction && introduction.split(' ').length <= 4 && !/\b(?:looking|interested|trying|here|asking|calling|working|planning|starting|setting|going|from|based)\b/u.test(introduction)) return 'introduction';
   if (/^(?:what|why|huh|sorry|pardon|come again)[!?.,\s]*$/u.test(normalized)) return 'clarification';
+  if (/^(?:(?:thanks|thank you) )?(?:bye|goodbye|see you|talk to you later|have a good (?:day|one)|that (?:is|s) all(?: for now| bye)?|i (?:am|m) done|nothing (?:more|else)(?: i need)?(?: for now)?|no more (?:questions|help)(?: needed)?|i (?:do not|don't) need anything (?:else|more))(?: thank you| thanks?)?$/u.test(normalized)) return 'farewell';
   if (/^(?:thanks|thank you)(?: very much| so much)?|^(?:much )?appreciate it$/u.test(normalized)) return 'thanks';
   if (/^(?:شكرا|مشكور|مشكورة|جزاك الله خيرا)$/u.test(normalized)) return 'thanks';
-  if (/^(?:bye|goodbye|see you|talk to you later|have a good (?:day|one)|that (?:is|s) all(?: for now| bye)?|i (?:am|m) done|nothing (?:more|else)(?: i need)?(?: for now)?|no more (?:questions|help)(?: needed)?|i (?:do not|don't) need anything (?:else|more))(?: thank you| thanks?)?$/u.test(normalized)) return 'farewell';
   if (/^(?:مع السلامة|الى اللقاء|وداعا|باي)$/u.test(normalized)) return 'farewell';
   if (/^(?:ok|okay|sure|yes|yeah|yep|got it|sounds good|great|nice|cool|perfect)$/u.test(normalized)) return 'acknowledgement';
   if (/^(?:حسنا|نعم|موافق|رائع)$/u.test(normalized)) return 'acknowledgement';

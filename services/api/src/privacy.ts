@@ -92,18 +92,18 @@ export const maskPii = (input: string): MaskResult => {
     });
   };
   const replaceName = (pattern: RegExp, shouldMask: (name: string) => boolean = () => true): void => {
-    masked = masked.replace(pattern, (_value, name: string) => {
+    masked = masked.replace(pattern, (_value, prefix: string, name: string) => {
       if (!shouldMask(name)) return _value;
       const tokenValue = token('NAME', tokens.filter((item) => item.token.startsWith('[NAME_')).length + 1);
       tokens.push({ token: tokenValue, value: name });
-      return tokenValue;
+      return `${prefix}${tokenValue}`;
     });
   };
   replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, 'EMAIL');
   replace(/(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)/g, 'PHONE');
   const nameComponent = String.raw`[\p{L}\d]+(?:['’\-][\p{L}\d]+)*`;
   const nonNameOpeners = new Set(['a', 'an', 'available', 'based', 'building', 'calling', 'contacting', 'exploring', 'from', 'happy', 'here', 'interested', 'looking', 'need', 'new', 'planning', 'ready', 'seeking', 'setting', 'starting', 'the', 'trying', 'unable', 'want']);
-  const introductionName = new RegExp(String.raw`\b(?:my name is|i am|i'm)\s+(${nameComponent}(?:\s+(?!(?:and|but|i|i'm|im|need|want|for|from|with|please)\b)${nameComponent}){0,3})(?=\s*(?:[,.!?;]|$|\b(?:and|but|i|i'm|im|need|want|for|from|with|please)\b))`, 'giu');
+  const introductionName = new RegExp(String.raw`\b((?:my name is|i am|i['’]?m|i\s+m)\s+)(${nameComponent}(?:\s+(?!(?:and|but|i|i'm|im|need|want|for|from|with|please)\b)${nameComponent}){0,3})(?=\s*(?:[,.!?;]|$|\b(?:and|but|i|i'm|im|need|want|for|from|with|please)\b))`, 'giu');
   replaceName(introductionName, (name) => !nonNameOpeners.has(name.split(/\s+/u)[0]?.toLocaleLowerCase('en-US') ?? ''));
   replace(/\b(?:passport|account|customer|member)[ #:-]*[A-Z0-9-]{4,}\b/gi, 'ID');
   return { masked, tokens };
@@ -135,8 +135,7 @@ export const maskPiiForSession = (session: Session, input: string, vault: TokenV
     replacements.set(item.token, replacement);
     return { token: replacement, value: item.value };
   });
-  let masked = result.masked;
-  for (const [from, to] of replacements) masked = masked.replaceAll(from, to);
+  const masked = result.masked.replace(/\[(?:EMAIL|PHONE|NAME|ID)_\d+\]/gu, (placeholder) => replacements.get(placeholder) ?? placeholder);
   vault.save(session, values);
   return masked;
 };

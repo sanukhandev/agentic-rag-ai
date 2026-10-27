@@ -27,13 +27,17 @@ describe('privacy boundary', () => {
     expect(rehydrateForSession(session, result.masked, vault, 'workflow_payload')).not.toContain('Alice Karim');
     expect(rehydrateForSession(session, result.masked, vault, 'assistant_response')).toContain('Alice Karim');
     expect(maskPii('I am interested in a demo.').masked).toBe('I am interested in a demo.');
-    expect(maskPii('I am Alice.').masked).toBe('[NAME_1].');
-    expect(maskPii('My name is N8n Tester.').masked).toBe('[NAME_1].');
-    expect(maskPii('My name is Alice smith.').masked).toBe('[NAME_1].');
-    expect(maskPii('my name is alice smith.').masked).toBe('[NAME_1].');
-    expect(maskPii('My name is Alice Smith Johnson.').masked).toBe('[NAME_1].');
-    expect(maskPii('I am alice smith.').masked).toBe('[NAME_1].');
-    expect(maskPii("I'm Anne-Marie O'Neil.").masked).toBe('[NAME_1].');
+    expect(maskPii('I am Alice.').masked).toBe('I am [NAME_1].');
+    expect(maskPii('My name is N8n Tester.').masked).toBe('My name is [NAME_1].');
+    expect(maskPii('My name is Alice smith.').masked).toBe('My name is [NAME_1].');
+    expect(maskPii('my name is alice smith.').masked).toBe('my name is [NAME_1].');
+    expect(maskPii('My name is Alice Smith Johnson.').masked).toBe('My name is [NAME_1].');
+    expect(maskPii('I am alice smith.').masked).toBe('I am [NAME_1].');
+    expect(maskPii("I'm Anne-Marie O'Neil.").masked).toBe("I'm [NAME_1].");
+    expect(maskPii('i m Tom').masked).toBe('i m [NAME_1]');
+    expect(maskPii('im Tom Holland').masked).toBe('im [NAME_1]');
+    expect(maskPii('hey zara i m Tom').masked).toBe('hey zara i m [NAME_1]');
+    expect(maskPii('I m starting a company').masked).toBe('I m starting a company');
   });
 
   it('allocates response tokens without overwriting earlier session values', () => {
@@ -45,6 +49,15 @@ describe('privacy boundary', () => {
     expect(output).toBe('Please contact [EMAIL_2].');
     expect(rehydrateForSession(session, input.masked, vault)).toContain('alice@example.com');
     expect(rehydrateForSession(session, output, vault)).toContain('bob@example.com');
+  });
+
+  it('remaps multiple new placeholders in one pass when the session already has tokens', () => {
+    const session = { id: 'session-remap', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
+    const vault = new TokenVault('remap-vault-secret-2026');
+    saveTokens(session, maskPii('first@example.com').tokens, vault);
+    const masked = maskPiiForSession(session, 'second@example.com and third@example.com', vault);
+    expect(masked).toBe('[EMAIL_2] and [EMAIL_3]');
+    expect(rehydrateForSession(session, masked, vault)).toBe('second@example.com and third@example.com');
   });
 
   it('keeps assistant persona names separate from a later visitor name', () => {

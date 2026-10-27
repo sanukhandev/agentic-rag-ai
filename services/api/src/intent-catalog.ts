@@ -42,6 +42,7 @@ const finite = (value: unknown): number => typeof value === 'number' && Number.i
 const clamp = (value: number): number => Math.max(0, Math.min(100, Math.round(value)));
 const normalize = (value: string): string => value.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim();
 const normalizeCatalogPhrase = (value: string): string => normalize(value)
+  .replace(/\b(?:would|d)\s+like\s+to\b/g, 'want to')
   .replace(/\bset[\s-]?up\b/g, 'start')
   .replace(/\b(?:establish|establishing|launch|launching|open|opening|create|creating|register|registering)\b/g, 'start');
 const phraseTokens = (value: string): string[] => normalizeCatalogPhrase(value).match(/[\p{L}\p{N}]+/gu) ?? [];
