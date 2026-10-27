@@ -57,9 +57,10 @@ export class AzureEmbeddingProvider implements EmbeddingProvider {
     const requestBody = v1 ? { model: this.deployment, input: texts, dimensions: this.dimension } : { input: texts, dimensions: this.dimension };
     let response: Response | undefined;
     for (let attempt = 1; attempt <= MAX_EMBEDDING_ATTEMPTS; attempt += 1) {
-      response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'api-key': this.apiKey }, body: JSON.stringify(requestBody), signal: AbortSignal.timeout(EMBEDDING_REQUEST_TIMEOUT_MS) });
-      if (response.ok || response.status !== 429 || attempt === MAX_EMBEDDING_ATTEMPTS) break;
-      await new Promise((resolve) => setTimeout(resolve, retryDelayMs(response, attempt)));
+      const currentResponse = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'api-key': this.apiKey }, body: JSON.stringify(requestBody), signal: AbortSignal.timeout(EMBEDDING_REQUEST_TIMEOUT_MS) });
+      response = currentResponse;
+      if (currentResponse.ok || currentResponse.status !== 429 || attempt === MAX_EMBEDDING_ATTEMPTS) break;
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs(currentResponse, attempt)));
     }
     if (!response || !response.ok) throw new Error(`Azure embedding request failed with status ${response?.status ?? 'unknown'}.`);
     const body = await response.json() as { data?: Array<{ index?: number; embedding?: unknown }> };
