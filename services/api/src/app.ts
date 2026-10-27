@@ -1526,6 +1526,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (legacyCandidates.length === 1 && opportunityIdForAction) {
         const migration = await store.establishLegacyJourneyAndAssignAction({ session, actionId: legacyCandidates[0]!.id, intentKey: opportunityIntentKey, catalogVersionId: legacyCandidates[0]!.catalogVersionId ?? null, opportunityId: opportunityIdForAction, eligibleStates: ['awaiting_confirmation', 'awaiting_customer'] });
         if (!migration.committed || migration.assignment.status === 'conflict' || migration.assignment.status === 'not_found') throw new HttpError(409, 'LEGACY_ACTION_ASSOCIATION_CONFLICT', 'The existing request changed while its journey identity was being established. Please retry.');
+        if (migration.session.stateVersion !== undefined) session.stateVersion = migration.session.stateVersion;
+        session.lastActivityAt = migration.session.lastActivityAt;
+        session.closedAt = migration.session.closedAt;
+        session.tokenMap = migration.session.tokenMap;
         const migratedAction = migration.assignment.action;
         if (migratedAction) {
           const index = sessionActions.findIndex((candidate) => candidate.id === migratedAction.id);

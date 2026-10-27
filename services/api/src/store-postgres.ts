@@ -148,8 +148,7 @@ export class PostgresStore implements Store {
     if (updated.rowCount !== 1) throw new HttpError(409, 'SESSION_STATE_CONFLICT', 'Another message changed this conversation. Retry with the latest prompt.');
     await client.query('DELETE FROM session_tokens WHERE session_id=$1', [session.id]);
     for (const [token, ciphertext] of session.tokenMap) await client.query('INSERT INTO session_tokens (session_id,token,ciphertext) VALUES ($1,$2,$3)', [session.id, token, ciphertext]);
-    session.stateVersion = Number(updated.rows[0].state_version);
-    return session;
+    return { ...session, stateVersion: Number(updated.rows[0].state_version), tokenMap: new Map(session.tokenMap) };
   }
   async updateSession(session: Session): Promise<Session> {
     const client = await this.pool.connect();
@@ -230,7 +229,7 @@ export class PostgresStore implements Store {
           AND intent_key=$5
           AND ($6::boolean = false OR ($7::uuid IS NULL AND catalog_version_id IS NULL) OR ($7::uuid IS NOT NULL AND catalog_version_id=$7::uuid))
           AND state = ANY($8::text[])
-        RETURNING *`, [input.opportunityId, input.actionId, input.session.id, input.session.id, input.intentKey, input.catalogVersionId !== undefined, input.catalogVersionId ?? null, input.eligibleStates]);
+        RETURNING *`, [input.opportunityId, input.actionId, input.session.tenantId, input.session.id, input.intentKey, input.catalogVersionId !== undefined, input.catalogVersionId ?? null, input.eligibleStates]);
       if (assigned.rows[0]) {
         await client.query('COMMIT');
         return { committed: true, session: persistedSession, assignment: { status: 'assigned', action: this.action(assigned.rows[0]) } };
