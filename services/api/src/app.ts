@@ -1235,9 +1235,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         ? publishedCatalog.catalog.journeyTransitions?.find((transition) => transition.sourceIntentKey === sourceIntentKey && transition.targetIntentKey === transitionTargetIntentKey) ?? null
         : null;
       const transitionIsOnlyBeingOffered = transitionCandidate?.activationMode === 'offer' && !transitionApproval;
-      const sourceWorkflowKey = sourceIntentKey && publishedCatalog ? publishedCatalog.catalog.intents.find((intent) => intent.intentKey === sourceIntentKey)?.workflowKey ?? null : null;
-      const targetWorkflowKey = transitionTargetIntentKey && publishedCatalog ? publishedCatalog.catalog.intents.find((intent) => intent.intentKey === transitionTargetIntentKey)?.workflowKey ?? null : null;
-      if (transitionTargetIntentKey && sourceIntentKey && transitionTargetIntentKey !== sourceIntentKey && !transitionIsOnlyBeingOffered && sourceWorkflowKey !== targetWorkflowKey) {
+      if (transitionTargetIntentKey && sourceIntentKey && transitionTargetIntentKey !== sourceIntentKey && !transitionIsOnlyBeingOffered) {
         delete catalogSlotValues.contact_consent;
         state.contactConsent = 'unknown';
         state.consentCapturedAt = null;
@@ -1832,7 +1830,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (content.length === 0 || content.length > maxBytes) throw new HttpError(413, 'DOCUMENT_TOO_LARGE', 'The document exceeds the published size limit.');
       if (!hasSupportingDocumentSignature(input.mimeType, content)) throw new HttpError(422, 'DOCUMENT_SIGNATURE_INVALID', 'The document content does not match its declared type.');
       const sha256 = documentSha256(content);
+      const documentOpportunityId = conversationState.intentProgress?.entries[requestedIntentKey]?.journeyId ?? null;
       const duplicate = (await store.listSupportingDocuments(session.tenantId, session.id)).find((candidate) => candidate.sha256 === sha256
+        && (candidate.opportunityId ?? null) === documentOpportunityId
         && candidate.intentKey === requestedIntentKey
         && (candidate.catalogVersionId ?? null) === (version?.id ?? null)
         && (candidate.requirementKey ?? null) === (journeyRequirement?.requirementKey ?? input.requirementKey ?? null));
@@ -1857,6 +1857,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         await documentStorage.purge(storageKey);
         const concurrent = (error as { code?: unknown }).code === '23505'
           ? (await store.listSupportingDocuments(session.tenantId, session.id)).find((candidate) => candidate.sha256 === sha256
+            && (candidate.opportunityId ?? null) === documentOpportunityId
             && candidate.intentKey === requestedIntentKey
             && (candidate.catalogVersionId ?? null) === (version?.id ?? null)
             && (candidate.requirementKey ?? null) === (journeyRequirement?.requirementKey ?? input.requirementKey ?? null))

@@ -45,7 +45,7 @@ const mergeIntentProgress = (latest: ConversationState, candidate: ConversationS
   const entries = { ...left.entries };
   for (const [intentKey, entry] of Object.entries(right.entries)) {
     const existing = entries[intentKey];
-    if (!existing || entry.revision >= existing.revision) entries[intentKey] = { ...entry, completedRequirementKeys: [...new Set(entry.completedRequirementKeys)] };
+    if (!existing || (entry.journeyId !== existing.journeyId && winner.activeIntentKey === intentKey && right.journeyRevision >= left.journeyRevision) || (entry.journeyId === existing.journeyId && entry.revision >= existing.revision)) entries[intentKey] = { ...entry, completedRequirementKeys: [...new Set(entry.completedRequirementKeys)] };
     else entries[intentKey] = { ...existing, completedRequirementKeys: [...new Set([...existing.completedRequirementKeys, ...entry.completedRequirementKeys])] };
   }
   const journeys = { ...(left.journeys ?? {}), ...(right.journeys ?? {}) };
