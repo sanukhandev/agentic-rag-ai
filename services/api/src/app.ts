@@ -1080,9 +1080,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : state.workflowStatus !== 'queued' && state.contactConsent !== 'granted' && typeof lastCatalogAssistant?.response?.catalogIntentKey === 'string' && typeof lastCatalogAssistant.response.catalogVersionId === 'string' && typeof lastCatalogAssistant.response.catalogSlotKey === 'string' && lastCatalogAssistant.response.catalogSlotKey && lastCatalogAssistant.response.catalogVersionId === publishedCatalog?.id ? lastCatalogAssistant.response.catalogIntentKey : null;
       const sessionActions = await store.listActionsBySession(session.id, session.tenantId);
       const activeIntentForTurn = state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey;
-      const activeIntentPhrase = activeIntentForTurn && publishedCatalog?.catalog.signals.some((signal) => signal.intentKey === activeIntentForTurn && signal.signalType === 'phrase' && signal.value && masked.masked.toLocaleLowerCase('en-US').includes(signal.value.toLocaleLowerCase('en-US')));
-      const reopeningOpportunity = Boolean(activeIntentForTurn && activeIntentPhrase && state.intentProgress?.entries[activeIntentForTurn]?.status === 'fulfilled' && /^(?:i|we)\s+(?:want|need|would\s+like|am\s+looking|need\s+help)\b/iu.test(masked.masked));
-      const hasRegisteredAction = sessionActions.some((action) => ['approved', 'processing', 'completed', 'human_review', 'reconcile_required'].includes(action.state));
+      const isNewOpportunityRequest = (intentKey: string | null): boolean => Boolean(intentKey && publishedCatalog?.catalog.signals.some((signal) => signal.intentKey === intentKey && signal.signalType === 'phrase' && signal.value && masked.masked.toLocaleLowerCase('en-US').includes(signal.value.toLocaleLowerCase('en-US'))) && state.intentProgress?.entries[intentKey]?.status === 'fulfilled' && /^(?:i|we)\s+(?:want|need|would\s+like|am\s+looking|need\s+help)\b/iu.test(masked.masked));
+      const reopeningOpportunity = isNewOpportunityRequest(activeIntentForTurn ?? null);
+      const currentOpportunityId = state.intentProgress?.entries[activeIntentForTurn ?? '']?.journeyId ?? null;
+      const hasRegisteredAction = sessionActions.some((action) => ['approved', 'processing', 'completed', 'human_review', 'reconcile_required'].includes(action.state) && (currentOpportunityId ? action.opportunityId === currentOpportunityId : action.opportunityId === null));
       let postCaptureFollowUp = !reopeningOpportunity && (['queued', 'processing', 'succeeded', 'human_review', 'reconcile_required'].includes(state.workflowStatus) || hasRegisteredAction);
       const activeConversationJourney = Boolean(postCaptureFollowUp || state.pendingPrompt || state.activeFollowUpIntentKey || state.selectedIntentKey);
       const knowledgeOnlyTurn = knowledgeQuestion && !activeConversationJourney;
@@ -1221,7 +1222,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const distinctIntentKey = catalogResolution?.intentKey && state.selectedIntentKey && catalogResolution.intentKey !== state.selectedIntentKey ? catalogResolution.intentKey : null;
       const explicitIntentSwitch = /^(?:i|we)\s+(?:want|need|would\s+like|am\s+looking|need\s+help)|^(?:please|can\s+you|could\s+you)\b/iu.test(maskedMessage);
       const distinctIntent = Boolean(distinctIntentKey && (!pendingValue || explicitIntentSwitch));
-      const currentOpportunityId = (state.intentProgress?.entries[state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? '']?.journeyId) ?? null;
       if (distinctIntent && catalogResolution?.intentKey && !sessionActions.some((action) => action.opportunityId === currentOpportunityId && action.intentKey === catalogResolution.intentKey)) postCaptureFollowUp = false;
       if (distinctIntent && publishedCatalog) {
         // A distinct intent is a new opportunity, even when it reuses the same workflow.
@@ -1241,6 +1241,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         state.consentCapturedAt = null;
         state.consentVersion = null;
       }
+      if (reopeningOpportunity) {
+        state.contactConsent = 'unknown';
+        state.consentCapturedAt = null;
+        state.consentVersion = null;
+      }
       if (catalogResolution?.intentKey && state.selectedIntentKey === catalogResolution.intentKey && state.activeFollowUpIntentKey && state.activeFollowUpIntentKey !== catalogResolution.intentKey) state.activeFollowUpIntentKey = null;
       const journeyCurrentIntentKey = intentContinuity && ['matched', 'missing_slots'].includes(intentContinuity.current.reason) ? intentContinuity.current.intentKey : null;
       const journeyResolvedIntentKey = catalogResolution && ['matched', 'missing_slots'].includes(catalogResolution.reason)
@@ -1251,7 +1256,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           currentIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyCurrentIntentKey : journeyCurrentIntentKey,
           selectedIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyResolvedIntentKey ?? null : transitionDenied ? state.selectedIntentKey ?? state.intentProgress?.activeIntentKey ?? null : journeyResolvedIntentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? null,
           transitionApproval,
-          newOpportunity: Boolean(journeyResolvedIntentKey && state.intentProgress?.entries[journeyResolvedIntentKey]?.status === 'fulfilled' && /^(?:i|we)\s+(?:want|need|would\s+like|am\s+looking|need\s+help)\b/iu.test(maskedMessage)),
+          newOpportunity: isNewOpportunityRequest(journeyResolvedIntentKey),
           ...(transitionDenied && pendingTransitionPrompt?.intentKey && (state.selectedIntentKey ?? state.intentProgress?.activeIntentKey) ? { declinedTransition: { sourceIntentKey: state.selectedIntentKey ?? state.intentProgress!.activeIntentKey!, targetIntentKey: pendingTransitionPrompt.intentKey } } : {}),
           slotValues: catalogSlotValues,
           documents: journeyDocuments.map((document) => ({ intentKey: document.intentKey ?? null, catalogVersionId: document.catalogVersionId ?? null, requirementKey: document.requirementKey ?? null, expectedDocumentType: document.expectedDocumentType ?? null, status: document.status })),
