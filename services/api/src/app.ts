@@ -1080,11 +1080,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : state.workflowStatus !== 'queued' && state.contactConsent !== 'granted' && typeof lastCatalogAssistant?.response?.catalogIntentKey === 'string' && typeof lastCatalogAssistant.response.catalogVersionId === 'string' && typeof lastCatalogAssistant.response.catalogSlotKey === 'string' && lastCatalogAssistant.response.catalogSlotKey && lastCatalogAssistant.response.catalogVersionId === publishedCatalog?.id ? lastCatalogAssistant.response.catalogIntentKey : null;
       const sessionActions = await store.listActionsBySession(session.id, session.tenantId);
       const activeIntentForTurn = state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey;
-      const reopeningIntentKey = publishedCatalog && /^(?:i|we)\s+(?:want|need|would\s+like|am\s+looking|need\s+help)\b/iu.test(masked.masked)
-        ? Object.entries(state.intentProgress?.entries ?? {}).find(([intentKey, entry]) => entry.status === 'fulfilled' && publishedCatalog.catalog.signals.some((signal) => signal.intentKey === intentKey && signal.signalType === 'phrase' && signal.value && masked.masked.toLocaleLowerCase('en-US').includes(signal.value.toLocaleLowerCase('en-US'))))?.[0] ?? null
+      const provisionalResolution = publishedCatalog ? resolveIntent(publishedCatalog, normalizeConversationQuery(masked.masked), state.slotValues) : null;
+      const explicitNewOpportunityRequest = /^(?:i|we)\s+(?:want|need|would\s+like|am\s+looking|need\s+help)\b/iu.test(masked.masked);
+      const reopeningIntentKey = explicitNewOpportunityRequest && provisionalResolution && ['matched', 'missing_slots'].includes(provisionalResolution.reason) && !provisionalResolution.ambiguous && provisionalResolution.intentKey && state.intentProgress?.entries[provisionalResolution.intentKey]?.status === 'fulfilled'
+        ? provisionalResolution.intentKey
         : null;
-      const provisionalIntentKey = publishedCatalog ? resolveIntent(publishedCatalog, normalizeConversationQuery(masked.masked), state.slotValues).intentKey : null;
-      const reopeningOpportunity = Boolean(reopeningIntentKey && provisionalIntentKey === reopeningIntentKey);
+      const reopeningOpportunity = Boolean(reopeningIntentKey);
       const currentOpportunityId = state.intentProgress?.entries[activeIntentForTurn ?? '']?.journeyId ?? null;
       const actionMatchesOpportunity = (action: ActionRequest): boolean => currentOpportunityId
         ? action.opportunityId === currentOpportunityId
@@ -1264,9 +1265,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const journeyResult = journeyCatalogEnabled && publishedCatalog && !offerOwnsConversationState
         ? reduceIntentJourney(publishedCatalog, state.intentProgress, {
           currentIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyCurrentIntentKey : journeyCurrentIntentKey,
-          selectedIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyResolvedIntentKey ?? null : transitionDenied ? state.selectedIntentKey ?? state.intentProgress?.activeIntentKey ?? null : journeyResolvedIntentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? null,
+          selectedIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyResolvedIntentKey ?? null : transitionDenied ? state.selectedIntentKey ?? state.intentProgress?.activeIntentKey ?? null : reopeningIntentKey ?? journeyResolvedIntentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? null,
           transitionApproval,
-          newOpportunity: reopeningOpportunity && journeyResolvedIntentKey === reopeningIntentKey,
+          newOpportunity: reopeningOpportunity,
           ...(transitionDenied && pendingTransitionPrompt?.intentKey && (state.selectedIntentKey ?? state.intentProgress?.activeIntentKey) ? { declinedTransition: { sourceIntentKey: state.selectedIntentKey ?? state.intentProgress!.activeIntentKey!, targetIntentKey: pendingTransitionPrompt.intentKey } } : {}),
           slotValues: catalogSlotValues,
           documents: journeyDocuments.map((document) => ({ intentKey: document.intentKey ?? null, catalogVersionId: document.catalogVersionId ?? null, requirementKey: document.requirementKey ?? null, expectedDocumentType: document.expectedDocumentType ?? null, status: document.status })),
@@ -1521,12 +1522,19 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const actionAlreadySubmitted = Boolean(pendingConsentAction && ['approved', 'processing', 'completed'].includes(pendingConsentAction.state));
       const opportunityIntentKey = journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? '';
       const opportunityIdForAction = state.intentProgress?.entries[opportunityIntentKey]?.journeyId ?? currentOpportunityId;
-      const legacyPendingAction = !reopeningOpportunity && opportunityIdForAction
-        ? sessionActions.find((candidate) => candidate.opportunityId == null && candidate.intentKey === opportunityIntentKey && ['awaiting_confirmation', 'awaiting_customer', 'approved', 'processing'].includes(candidate.state))
-        : null;
-      if (legacyPendingAction) {
-        legacyPendingAction.opportunityId = opportunityIdForAction;
-        await store.updateAction(legacyPendingAction);
+      const establishingOriginalJourney = !reopeningOpportunity && !currentOpportunityId && Boolean(opportunityIdForAction);
+      const legacyCandidates = establishingOriginalJourney && opportunityIntentKey
+        ? sessionActions.filter((candidate) => candidate.opportunityId == null && candidate.intentKey === opportunityIntentKey && candidate.catalogVersionId === (catalogResolution?.catalogVersionId ?? publishedCatalog?.id ?? null) && ['awaiting_confirmation', 'awaiting_customer'].includes(candidate.state))
+        : [];
+      if (legacyCandidates.length === 1 && opportunityIdForAction) {
+        const association = await store.assignLegacyActionOpportunity({ tenantId: session.tenantId, sessionId: session.id, actionId: legacyCandidates[0]!.id, intentKey: opportunityIntentKey, catalogVersionId: legacyCandidates[0]!.catalogVersionId ?? null, opportunityId: opportunityIdForAction, eligibleStates: ['awaiting_confirmation', 'awaiting_customer'] });
+        if (association.status === 'conflict' || association.status === 'not_found') throw new HttpError(409, 'LEGACY_ACTION_ASSOCIATION_CONFLICT', 'The existing request changed while its journey identity was being established. Please retry.');
+        if (association.action) {
+          const index = sessionActions.findIndex((candidate) => candidate.id === association.action.id);
+          if (index >= 0) sessionActions[index] = association.action;
+        }
+      } else if (legacyCandidates.length > 1) {
+        throw new HttpError(409, 'LEGACY_ACTION_ASSOCIATION_AMBIGUOUS', 'Multiple legacy requests require controlled reconciliation before this journey can continue.');
       }
       const resumableAction = !reopeningOpportunity && catalogResolution?.intentKey ? sessionActions.find((candidate) => candidate.state === 'awaiting_customer' && candidate.catalogVersionId === catalogResolution.catalogVersionId && candidate.intentKey === catalogResolution.intentKey && actionMatchesTargetOpportunity(candidate, opportunityIdForAction) && candidate.payload.contactConsent === true) : null;
       const shouldResumeAction = Boolean(resumableAction && state.contactConsent === 'granted' && !consentDenied && !crmContactMissing && !journeyRequirement?.required && catalogSlotsReady && catalogResolution?.actionAllowed);
