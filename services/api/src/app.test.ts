@@ -1330,13 +1330,14 @@ describe('API vertical slice', () => {
       pendingPrompt: null,
     };
     await runtime.store.updateSession(storedSession!);
-    await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'crm.lead.create', intentKey: 'company.setup', catalogVersionId: version.id, idempotencyKey: 'follow-up-action', state: 'approved', opaqueReference: 'follow-up-reference', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
-
     const followUp = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'yes', clientMessageId: 'follow-up-yes' }).expect(200);
     expect(followUp.body.pendingRequirementKey).toBe('followup:company.setup:company_structure');
     expect(followUp.body.pendingPromptId).toEqual(expect.any(String));
     expect(followUp.body.answer.toLowerCase()).toContain('company structure');
     expect(followUp.body.answer).not.toContain('What would you like to explore next?');
+    const followUpState = await runtime.store.getSession(session.body.sessionId);
+    const followUpOpportunityId = followUpState?.conversationState?.intentProgress?.entries['company.setup']?.journeyId;
+    await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'crm.lead.create', intentKey: 'company.setup', catalogVersionId: version.id, opportunityId: followUpOpportunityId ?? null, idempotencyKey: 'follow-up-action', state: 'approved', opaqueReference: 'follow-up-reference', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
     const correction = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I told you already', clientMessageId: 'follow-up-correction' }).expect(200);
     expect(correction.body.answer).toContain('noted');
     expect(correction.body.answer).not.toContain('company structure');
