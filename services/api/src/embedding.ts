@@ -1,5 +1,16 @@
 import { assertExternalEndpoint } from './runtime-security.js';
 
+const MAX_EMBEDDING_ATTEMPTS = 3;
+const MAX_RETRY_DELAY_MS = 30_000;
+const EMBEDDING_REQUEST_TIMEOUT_MS = 60_000;
+
+const retryDelayMs = (response: Response, attempt: number): number => {
+  const retryAfter = response.headers.get('retry-after');
+  const seconds = retryAfter ? Number(retryAfter) : Number.NaN;
+  const delay = Number.isFinite(seconds) && seconds >= 0 ? seconds * 1_000 : 1_000 * (2 ** (attempt - 1));
+  return Math.min(MAX_RETRY_DELAY_MS, delay);
+};
+
 export interface EmbeddingProvider {
   readonly model: string;
   readonly dimension: number;
@@ -44,8 +55,13 @@ export class AzureEmbeddingProvider implements EmbeddingProvider {
       ? `${endpoint}/embeddings`
       : `${endpoint}/openai/deployments/${encodeURIComponent(this.deployment)}/embeddings?api-version=${encodeURIComponent(this.apiVersion)}`;
     const requestBody = v1 ? { model: this.deployment, input: texts, dimensions: this.dimension } : { input: texts, dimensions: this.dimension };
-    const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'api-key': this.apiKey }, body: JSON.stringify(requestBody) });
-    if (!response.ok) throw new Error(`Azure embedding request failed with status ${response.status}.`);
+    let response: Response | undefined;
+    for (let attempt = 1; attempt <= MAX_EMBEDDING_ATTEMPTS; attempt += 1) {
+      response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'api-key': this.apiKey }, body: JSON.stringify(requestBody), signal: AbortSignal.timeout(EMBEDDING_REQUEST_TIMEOUT_MS) });
+      if (response.ok || response.status !== 429 || attempt === MAX_EMBEDDING_ATTEMPTS) break;
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs(response, attempt)));
+    }
+    if (!response || !response.ok) throw new Error(`Azure embedding request failed with status ${response?.status ?? 'unknown'}.`);
     const body = await response.json() as { data?: Array<{ index?: number; embedding?: unknown }> };
     const data = body.data;
     if (!Array.isArray(data) || data.length !== texts.length) throw new Error('Azure embedding response did not match the requested batch.');

@@ -6,7 +6,7 @@ describe('Azure embedding adapter', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), { status: 200 }));
     const provider = new AzureEmbeddingProvider('https://foundry.example', 'embed-v1', 'server-key', '2026-01-01', 2);
     await expect(provider.embed('masked [EMAIL_1]')).resolves.toEqual([0.1, 0.2]);
-    expect(fetchMock).toHaveBeenCalledWith('https://foundry.example/openai/deployments/embed-v1/embeddings?api-version=2026-01-01', expect.objectContaining({ method: 'POST', body: JSON.stringify({ input: ['masked [EMAIL_1]'], dimensions: 2 }) }));
+    expect(fetchMock).toHaveBeenCalledWith('https://foundry.example/openai/deployments/embed-v1/embeddings?api-version=2026-01-01', expect.objectContaining({ method: 'POST', body: JSON.stringify({ input: ['masked [EMAIL_1]'], dimensions: 2 }), signal: expect.any(AbortSignal) }));
     fetchMock.mockRestore();
   });
 
@@ -22,6 +22,16 @@ describe('Azure embedding adapter', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: [{ index: 1, embedding: [0.3, 0.4] }, { index: 0, embedding: [0.1, 0.2] }] }), { status: 200 }));
     const provider = new AzureEmbeddingProvider('https://foundry.example', 'embed-v1', 'server-key', '2026-01-01', 2);
     await expect(provider.embedBatch?.(['first', 'second'])).resolves.toEqual([[0.1, 0.2], [0.3, 0.4]]);
+    fetchMock.mockRestore();
+  });
+
+  it('retries a throttled request before succeeding', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers: { 'retry-after': '0' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), { status: 200 }));
+    const provider = new AzureEmbeddingProvider('https://foundry.example', 'embed-v1', 'server-key', '2026-01-01', 2);
+    await expect(provider.embed('masked [EMAIL_1]')).resolves.toEqual([0.1, 0.2]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     fetchMock.mockRestore();
   });
 });
