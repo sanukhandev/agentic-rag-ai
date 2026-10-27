@@ -29,6 +29,20 @@ describe('conversation state concurrency merge', () => {
     expect(merged.contactConsent).toBe('denied');
   });
 
+  it('does not restore consent across generations of the same intent', () => {
+    const purpose = { catalogVersionId: 'catalog-v1', selectedIntentKey: 'company.setup' } as const;
+    const latestJourneyId = 'journey-latest';
+    const candidateJourneyId = 'journey-reopened';
+    const latest = { ...newConversationState(), ...purpose, intentProgress: { version: 1 as const, activeIntentKey: 'company.setup', pausedIntentKeys: [], fulfilledIntentKeys: ['company.setup'], entries: { 'company.setup': { intentKey: 'company.setup', journeyId: latestJourneyId, status: 'fulfilled' as const, completedRequirementKeys: [], currentRequirementKey: null, slotValues: {}, slotProvenance: {}, revision: 2 } }, journeys: {}, visitedIntentKeys: ['company.setup'], lastTransitionReason: null, journeyRevision: 2 }, contactConsent: 'granted' as const, consentVersion: consentVersionForState(purpose) };
+    const candidate = { ...latest, intentProgress: { ...latest.intentProgress, entries: { 'company.setup': { ...latest.intentProgress.entries['company.setup'], journeyId: candidateJourneyId, status: 'active' as const, revision: 0 } }, journeyRevision: 3 }, contactConsent: 'granted' as const };
+
+    const merged = mergeConcurrentConversationState(latest, candidate);
+
+    expect(merged.intentProgress?.entries['company.setup']?.journeyId).toBe(candidateJourneyId);
+    expect(merged.contactConsent).toBe('unknown');
+    expect(merged.consentVersion).toBeNull();
+  });
+
   it('keeps the latest intent when an older workflow callback races with it', () => {
     const latest = {
       ...newConversationState(),

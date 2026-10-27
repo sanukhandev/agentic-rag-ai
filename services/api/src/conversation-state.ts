@@ -28,6 +28,11 @@ export const consentVersionForState = (state: Pick<ConversationState, 'catalogVe
 
 const hasScopedConsent = (state: ConversationState): boolean => state.contactConsent === 'granted' && state.consentVersion === consentVersionForState(state);
 
+const opportunityIdForConsent = (state: ConversationState): string | null => {
+  const intentKey = state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey;
+  return intentKey ? state.intentProgress?.entries[intentKey]?.journeyId ?? null : null;
+};
+
 export const newIntentProgress = (): IntentProgressState => ({ version: 1, activeIntentKey: null, pausedIntentKeys: [], fulfilledIntentKeys: [], entries: {}, journeys: {}, visitedIntentKeys: [], lastTransitionReason: null, journeyRevision: 0 });
 
 const normalizeIntentProgress = (progress: IntentProgressState | undefined): IntentProgressState => {
@@ -55,7 +60,7 @@ const mergeIntentProgress = (latest: ConversationState, candidate: ConversationS
 export const mergeConcurrentConversationState = (latest: ConversationState, candidate: ConversationState): ConversationState => {
   const latestWins = workflowStatusRank[latest.workflowStatus] > workflowStatusRank[candidate.workflowStatus];
   const workflowState = latestWins ? latest : candidate;
-  const consentPurposeChanged = latest.catalogVersionId !== candidate.catalogVersionId || latest.selectedIntentKey !== candidate.selectedIntentKey;
+  const consentPurposeChanged = latest.catalogVersionId !== candidate.catalogVersionId || latest.selectedIntentKey !== candidate.selectedIntentKey || opportunityIdForConsent(latest) !== opportunityIdForConsent(candidate);
   const slotValues = { ...latest.slotValues };
   const slotProvenance = { ...(latest.slotProvenance ?? {}) };
   for (const [slotKey, value] of Object.entries(candidate.slotValues)) {
