@@ -84,4 +84,16 @@ describe('MemoryStore tenant and lifecycle boundaries', () => {
     expect(persisted?.conversationState?.pendingPrompt?.slotKey).toBe('contact_consent');
     expect(persisted?.conversationState?.slotValues.name).toBe('[NAME_1]');
   });
+
+  it('binds a legacy pending action once without overwriting execution state', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'Legacy Tenant', slug: `legacy-${randomUUID()}` });
+    const session = await store.createSession(tenant.id);
+    const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'lead.capture', intentKey: 'company.setup', catalogVersionId: 'catalog-v1', idempotencyKey: randomUUID(), state: 'awaiting_confirmation', opaqueReference: 'opaque', payload: { contactConsent: true }, result: { externalReference: 'existing' }, createdAt: new Date().toISOString() });
+    const assigned = await store.assignLegacyActionOpportunity({ tenantId: tenant.id, sessionId: session.id, actionId: action.id, intentKey: 'company.setup', catalogVersionId: 'catalog-v1', opportunityId: randomUUID(), eligibleStates: ['awaiting_confirmation'] });
+    expect(assigned.status).toBe('assigned');
+    expect(assigned.action?.id).toBe(action.id);
+    expect(assigned.action?.result).toEqual(action.result);
+    expect((await store.assignLegacyActionOpportunity({ tenantId: tenant.id, sessionId: session.id, actionId: action.id, intentKey: 'company.setup', catalogVersionId: 'catalog-v1', opportunityId: randomUUID(), eligibleStates: ['awaiting_confirmation'] })).status).toBe('conflict');
+  });
 });

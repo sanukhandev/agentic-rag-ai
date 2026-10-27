@@ -202,6 +202,20 @@ export class PostgresStore implements Store {
   async getAction(id: string): Promise<ActionRequest | null> { const result = await this.pool.query('SELECT * FROM action_requests WHERE id=$1', [id]); return result.rows[0] ? this.action(result.rows[0]) : null; }
   async getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null> { const result = await this.pool.query('SELECT * FROM action_requests WHERE tenant_id=$1 AND idempotency_key=$2', [tenantId, idempotencyKey]); return result.rows[0] ? this.action(result.rows[0]) : null; }
   async getActionByIdentity(input: { tenantId: string; opportunityId: string; actionKey: string; actionRevision: number }): Promise<ActionRequest | null> { const result = await this.pool.query<ActionRow>('SELECT * FROM action_requests WHERE tenant_id=$1 AND opportunity_id=$2 AND action_key=$3 AND action_revision=$4', [input.tenantId, input.opportunityId, input.actionKey, input.actionRevision]); return result.rows[0] ? this.action(result.rows[0]) : null; }
+  async assignLegacyActionOpportunity(input: { tenantId: string; sessionId: string; actionId: string; intentKey: string; catalogVersionId?: string | null; opportunityId: string; eligibleStates: ActionRequest['state'][] }): Promise<import('./types.js').LegacyActionAssignment> {
+    const assigned = await this.pool.query<ActionRow>(`UPDATE action_requests
+      SET opportunity_id=$1
+      WHERE id=$2 AND tenant_id=$3 AND session_id=$4 AND opportunity_id IS NULL
+        AND intent_key=$5 AND ($6::text IS NULL OR catalog_version_id=$6)
+        AND state = ANY($7::text[])
+      RETURNING *`, [input.opportunityId, input.actionId, input.tenantId, input.sessionId, input.intentKey, input.catalogVersionId ?? null, input.eligibleStates]);
+    if (assigned.rows[0]) return { status: 'assigned', action: this.action(assigned.rows[0]) };
+    const current = await this.pool.query<ActionRow>('SELECT * FROM action_requests WHERE id=$1 AND tenant_id=$2', [input.actionId, input.tenantId]);
+    if (!current.rows[0]) return { status: 'not_found', action: null };
+    const action = this.action(current.rows[0]);
+    if (action.opportunityId === input.opportunityId) return { status: 'already_assigned', action };
+    return { status: 'conflict', action: null };
+  }
   async updateAction(action: ActionRequest): Promise<ActionRequest> { await this.pool.query('UPDATE action_requests SET opportunity_id=$1,state=$2,result=$3,payload=$4 WHERE id=$5 AND tenant_id=$6', [action.opportunityId ?? null, action.state, action.result ? JSON.stringify(action.result) : null, JSON.stringify(action.payload), action.id, action.tenantId]); return action; }
   async transitionAction(actionId: string, tenantId: string, fromState: ActionRequest['state'], toState: ActionRequest['state'], result: ActionRequest['result']): Promise<ActionRequest | null> {
     const updated = await this.pool.query<ActionRow>('UPDATE action_requests SET state=$1,result=$2 WHERE id=$3 AND tenant_id=$4 AND state=$5 RETURNING *', [toState, result ? JSON.stringify(result) : null, actionId, tenantId, fromState]);

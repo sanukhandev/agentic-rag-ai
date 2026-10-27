@@ -298,6 +298,16 @@ export class MemoryStore implements Store {
     return [...this.actions.values()].find((action) => action.tenantId === tenantId && action.idempotencyKey === idempotencyKey) ?? null;
   }
   async getActionByIdentity(input: { tenantId: string; opportunityId: string; actionKey: string; actionRevision: number }): Promise<ActionRequest | null> { return [...this.actions.values()].find((action) => action.tenantId === input.tenantId && action.opportunityId === input.opportunityId && action.actionKey === input.actionKey && action.actionRevision === input.actionRevision) ?? null; }
+  async assignLegacyActionOpportunity(input: { tenantId: string; sessionId: string; actionId: string; intentKey: string; catalogVersionId?: string | null; opportunityId: string; eligibleStates: ActionRequest['state'][] }): Promise<import('./types.js').LegacyActionAssignment> {
+    const current = this.actions.get(input.actionId);
+    if (!current || current.tenantId !== input.tenantId || current.sessionId !== input.sessionId || current.intentKey !== input.intentKey || (input.catalogVersionId !== undefined && current.catalogVersionId !== input.catalogVersionId)) return { status: 'not_found', action: null };
+    if (current.opportunityId === input.opportunityId) return { status: 'already_assigned', action: current };
+    if (current.opportunityId !== null && current.opportunityId !== undefined) return { status: 'conflict', action: null };
+    if (!input.eligibleStates.includes(current.state)) return { status: 'conflict', action: null };
+    const assigned = { ...current, opportunityId: input.opportunityId };
+    this.actions.set(current.id, assigned);
+    return { status: 'assigned', action: assigned };
+  }
   async updateAction(action: ActionRequest): Promise<ActionRequest> { this.actions.set(action.id, action); return action; }
   async transitionAction(actionId: string, tenantId: string, fromState: ActionRequest['state'], toState: ActionRequest['state'], result: ActionRequest['result']): Promise<ActionRequest | null> {
     const current = this.actions.get(actionId);
