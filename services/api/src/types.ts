@@ -533,6 +533,7 @@ export interface SupportingDocument {
   tenantId: string;
   sessionId: string;
   leadId: string | null;
+  opportunityId?: string | null;
   intentKey?: string | null;
   catalogVersionId?: string | null;
   fileName: string;
