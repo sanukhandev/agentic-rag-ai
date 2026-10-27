@@ -1519,7 +1519,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const opportunityIdForAction = state.intentProgress?.entries[opportunityIntentKey]?.journeyId ?? currentOpportunityId;
       const establishingOriginalJourney = !reopeningOpportunity && !currentOpportunityId && Boolean(opportunityIdForAction);
       const legacyCandidates = establishingOriginalJourney && opportunityIntentKey
-        ? sessionActions.filter((candidate) => candidate.opportunityId == null && candidate.intentKey === opportunityIntentKey && candidate.catalogVersionId === (catalogResolution?.catalogVersionId ?? publishedCatalog?.id ?? null) && ['awaiting_confirmation', 'awaiting_customer'].includes(candidate.state))
+        ? sessionActions.filter((candidate) => candidate.opportunityId == null && candidate.intentKey === opportunityIntentKey && (candidate.catalogVersionId == null || candidate.catalogVersionId === (catalogResolution?.catalogVersionId ?? publishedCatalog?.id ?? null)) && ['awaiting_confirmation', 'awaiting_customer'].includes(candidate.state))
         : [];
       if (legacyCandidates.length > 1) throw new HttpError(409, 'LEGACY_ACTION_ASSOCIATION_AMBIGUOUS', 'Multiple legacy requests require controlled reconciliation before this journey can continue.');
       session.conversationState = state;
