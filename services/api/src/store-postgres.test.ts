@@ -36,6 +36,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
       const session = await store.createSession(tenant.id);
       const catalog = await store.createIntentCatalogVersion({ tenantId: tenant.id, status: 'published', sourceFileName: 'legacy-association.json', sourceHash: 'f'.repeat(64), parserVersion: 'test', catalog: { tenantScope: tenant.slug, intents: [], signals: [], slots: [], relations: [], workflowBindings: [] } });
       const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'legacy.workflow', intentKey: 'legacy.intent', catalogVersionId: catalog.id, idempotencyKey: randomUUID(), state: 'awaiting_confirmation', opaqueReference: 'legacy', payload: {}, result: { externalReference: 'preserve-me' }, createdAt: new Date().toISOString() });
+      await store.updateAction({ ...action, result: { externalReference: 'preserve-me' } });
       session.conversationState = { ...session.conversationState!, selectedIntentKey: 'legacy.intent' };
       const opportunityId = randomUUID();
       const migration = await store.establishLegacyJourneyAndAssignAction({ session, actionId: action.id, intentKey: 'legacy.intent', catalogVersionId: catalog.id, opportunityId, eligibleStates: ['awaiting_confirmation'] });
@@ -71,6 +72,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
     try {
       const session = await store.createSession(tenant.id);
       const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'legacy.workflow', intentKey: 'legacy.rollback', idempotencyKey: randomUUID(), state: 'completed', opaqueReference: 'rollback', payload: {}, result: { externalReference: 'unchanged' }, createdAt: new Date().toISOString() });
+      await store.updateAction({ ...action, result: { externalReference: 'unchanged' } });
       const candidate = { ...session, conversationState: { ...session.conversationState!, selectedIntentKey: 'legacy.rollback' } };
       const migration = await store.establishLegacyJourneyAndAssignAction({ session: candidate, actionId: action.id, intentKey: 'legacy.rollback', opportunityId: randomUUID(), eligibleStates: ['awaiting_confirmation'] });
       expect(migration.committed).toBe(false);
