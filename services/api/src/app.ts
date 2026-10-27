@@ -1100,7 +1100,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const journeyDocuments = publishedCatalog?.catalog.journeyRequirements?.some((requirement) => requirement.requirementType === 'document') || postCaptureFollowUp
         ? (await store.listSupportingDocuments(session.tenantId, session.id)).filter((document) => !reopeningOpportunity && (!scopedOpportunityId || document.opportunityId === scopedOpportunityId))
         : [];
-      const pendingConsentAction = publishedCatalog && pendingCatalogIntent ? sessionActions.find((action) => action.catalogVersionId === publishedCatalog.id && action.intentKey === pendingCatalogIntent && (!scopedIntentKey ? true : Boolean(scopedOpportunityId && action.opportunityId === scopedOpportunityId)) && action.payload.contactConsent === true) : null;
+      const pendingConsentAction = !reopeningOpportunity && publishedCatalog && pendingCatalogIntent ? sessionActions.find((action) => action.catalogVersionId === publishedCatalog.id && action.intentKey === pendingCatalogIntent && (!scopedIntentKey ? true : Boolean(scopedOpportunityId && action.opportunityId === scopedOpportunityId)) && action.payload.contactConsent === true) : null;
       const assistantJourneyValues = lastCatalogAssistant?.response?.catalogOpportunityId === (state.intentProgress?.entries[scopedIntentKey ?? '']?.journeyId ?? null) && lastCatalogAssistant.response.catalogSlotValues && typeof lastCatalogAssistant.response.catalogSlotValues === 'object' && !Array.isArray(lastCatalogAssistant.response.catalogSlotValues) ? Object.fromEntries(Object.entries(lastCatalogAssistant.response.catalogSlotValues).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {};
       const pendingCatalogValues: Record<string, string> = { ...(reopeningOpportunity ? {} : (Object.keys(scopedJourneyValues).length ? scopedJourneyValues : state.slotValues)), ...(reopeningOpportunity ? {} : assistantJourneyValues), ...(!reopeningOpportunity && (pendingConsentAction?.state === 'approved' || pendingConsentAction?.state === 'processing' || pendingConsentAction?.state === 'completed' || state.contactConsent === 'granted') ? { contact_consent: 'true' } : !reopeningOpportunity && state.contactConsent === 'denied' ? { contact_consent: 'false' } : {}) };
       const postCaptureSlotRequirement = postCaptureFollowUp && publishedCatalog && activeCatalogIntent
@@ -1124,7 +1124,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const offerReplyOwnsTurn = Boolean(activeFollowUpOffer && !promptScopedReply && !pendingValue && !pendingConsentValue && ['accept', 'select_option', 'reject', 'clarify'].includes(offerReply?.action ?? ''));
       const offerNeedsClarification = Boolean(activeFollowUpOffer && !promptScopedReply && !pendingValue && !pendingConsentValue && (offerReply?.action === 'clarify' || offerReply?.action === 'unknown'));
       const offerOwnsConversationState = Boolean(activeFollowUpOffer && (offerReplyOwnsTurn || offerNeedsClarification));
-      const awaitingConsentAction = pendingCatalogIntent && publishedCatalog
+      const awaitingConsentAction = !reopeningOpportunity && pendingCatalogIntent && publishedCatalog
         ? sessionActions.find((action) => action.state === 'awaiting_confirmation' && action.catalogVersionId === publishedCatalog.id && action.intentKey === pendingCatalogIntent && (!scopedIntentKey ? true : Boolean(scopedOpportunityId && action.opportunityId === scopedOpportunityId)) && action.payload.contactConsent === false) ?? null
         : null;
       // A typed yes is only an acknowledgement; the scoped consent button still approves the action.
@@ -1262,7 +1262,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           currentIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyCurrentIntentKey : journeyCurrentIntentKey,
           selectedIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyResolvedIntentKey ?? null : transitionDenied ? state.selectedIntentKey ?? state.intentProgress?.activeIntentKey ?? null : journeyResolvedIntentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? null,
           transitionApproval,
-          newOpportunity: reopeningOpportunity,
+          newOpportunity: reopeningOpportunity && journeyResolvedIntentKey === reopeningIntentKey,
           ...(transitionDenied && pendingTransitionPrompt?.intentKey && (state.selectedIntentKey ?? state.intentProgress?.activeIntentKey) ? { declinedTransition: { sourceIntentKey: state.selectedIntentKey ?? state.intentProgress!.activeIntentKey!, targetIntentKey: pendingTransitionPrompt.intentKey } } : {}),
           slotValues: catalogSlotValues,
           documents: journeyDocuments.map((document) => ({ intentKey: document.intentKey ?? null, catalogVersionId: document.catalogVersionId ?? null, requirementKey: document.requirementKey ?? null, expectedDocumentType: document.expectedDocumentType ?? null, status: document.status })),
@@ -1291,7 +1291,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const terms = slot.slotKey.split(/[._-]+/u).filter((term) => term.length >= 4);
         return terms.some((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\b`, 'iu').test(maskedMessage)) && slotCorrectionPrefix.test(maskedMessage);
       }));
-      if (!postCaptureFollowUp && structuredSlotCorrection && state.workflowStatus === 'succeeded') postCaptureFollowUp = true;
+      const currentOpportunityCompleted = sessionActions.some((action) => actionMatchesOpportunity(action) && action.state === 'completed');
+      if (!postCaptureFollowUp && structuredSlotCorrection && currentOpportunityCompleted) postCaptureFollowUp = true;
       const catalogSlotNonAnswer = Boolean(pendingSlot && isCatalogSlotNonAnswer(maskedMessage));
       const continuityTurn = postCaptureFollowUp && !knowledgeOnlyTurn && !knowledgeQuestion && (catalogSlotNonAnswer || structuredSlotCorrection || (isContextualReply(maskedMessage) && !detectedSecondaryIntentKey));
       const workflowBinding = publishedCatalog && catalogResolution?.workflowKey ? publishedCatalog.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution?.workflowKey) : null;
@@ -1514,7 +1515,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const collectedSlotValues = Object.fromEntries(Object.entries(catalogSlotValues).filter(([key]) => !['name', 'email', 'phone', 'contact_consent'].includes(key)));
       const actionLeadData = { ...leadData, ...(Object.keys(collectedSlotValues).length ? { slotValues: collectedSlotValues } : {}), ...(catalogResolution?.interest ? { interest: catalogResolution.interest } : {}), ...(consentActionReady ? { contactConsent: false } : catalogSlotValues.contact_consent === 'true' ? { contactConsent: true } : !catalogResolution ? { contactConsent: false } : {}) };
       const actionAlreadySubmitted = Boolean(pendingConsentAction && ['approved', 'processing', 'completed'].includes(pendingConsentAction.state));
-      const resumableAction = catalogResolution?.intentKey ? sessionActions.find((candidate) => candidate.state === 'awaiting_customer' && candidate.catalogVersionId === catalogResolution.catalogVersionId && candidate.intentKey === catalogResolution.intentKey && actionMatchesOpportunity(candidate) && candidate.payload.contactConsent === true) : null;
+      const resumableAction = !reopeningOpportunity && catalogResolution?.intentKey ? sessionActions.find((candidate) => candidate.state === 'awaiting_customer' && candidate.catalogVersionId === catalogResolution.catalogVersionId && candidate.intentKey === catalogResolution.intentKey && actionMatchesOpportunity(candidate) && candidate.payload.contactConsent === true) : null;
       const shouldResumeAction = Boolean(resumableAction && state.contactConsent === 'granted' && !consentDenied && !crmContactMissing && !journeyRequirement?.required && catalogSlotsReady && catalogResolution?.actionAllowed);
       const resumedAction = shouldResumeAction && resumableAction ? await store.approveAction({ ...resumableAction, state: 'approved', payload: { ...resumableAction.payload, ...actionLeadData }, result: null }) : null;
       if (resumedAction) {
