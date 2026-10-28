@@ -161,6 +161,32 @@
       "position": [2620, 20]
     },
     {
+      "parameters": { "conditions": { "boolean": [{ "value1": "={{ Boolean(($json.body ?? $json).alreadyLinked) }}", "operation": "isTrue" }] } },
+      "id": "anc-wf1-existing-remote",
+      "name": "Existing Remote CRM Identity?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2840, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://api:4000/api/v1/internal/crm/leads/' + (($json.body ?? $json).canonicalLeadId) + '/remote-reconcile' }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $('Prepare Remote CRM Decision').first().json.tenantId, actionId: $('Prepare Remote CRM Decision').first().json.actionId }) }}",
+        "options": {}
+      },
+      "id": "anc-wf1-reconcile-existing",
+      "name": "Reconcile Existing CRM Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
+      "position": [3060, 180]
+    },
+    {
       "parameters": {
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "oAuth2Api",
@@ -361,7 +387,9 @@
     "Persist Score and Summary": { "main": [[{ "node": "Prepare Remote CRM Decision", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
     "Prepare Remote CRM Decision": { "main": [[{ "node": "Remote CRM Qualification Gate", "type": "main", "index": 0 }]] },
     "Remote CRM Qualification Gate": { "main": [[{ "node": "Fetch Authorized Remote CRM Payload", "type": "main", "index": 0 }], [{ "node": "Complete Internal Registration", "type": "main", "index": 0 }]] },
-    "Fetch Authorized Remote CRM Payload": { "main": [[{ "node": "Remote CRM Create Lead", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
+    "Fetch Authorized Remote CRM Payload": { "main": [[{ "node": "Existing Remote CRM Identity?", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
+    "Existing Remote CRM Identity?": { "main": [[{ "node": "Reconcile Existing CRM Lead", "type": "main", "index": 0 }], [{ "node": "Remote CRM Create Lead", "type": "main", "index": 0 }]] },
+    "Reconcile Existing CRM Lead": { "main": [[{ "node": "Complete Async Registration", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
     "Remote CRM Create Lead": { "main": [[{ "node": "Validate Remote CRM Lead ID", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
     "Validate Remote CRM Lead ID": { "main": [[{ "node": "Internal CRM Remote ID Callback", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
     "Internal CRM Remote ID Callback": { "main": [[{ "node": "Complete Async Registration", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
@@ -371,7 +399,7 @@
     "Complete Partial Review": { "main": [[{ "node": "Return Partial Lead", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
     "Complete CRM Reconciliation": { "main": [[{ "node": "Return CRM Reconciliation", "type": "main", "index": 0 }]] }
   },
-  "active": false,
+  "active": true,
   "settings": { "executionOrder": "v1" },
   "versionId": "anc-lead-capture-wf-1-v1",
   "meta": { "templateCredsSetupCompleted": false },

@@ -24,7 +24,10 @@ test('binds remote CRM OAuth to the n8n credential store', async () => {
   assert.equal(remoteCreate?.parameters.url, '={{ $env.REMOTE_CRM_LEAD_URL }}');
   assert.deepEqual(remoteCreate?.credentials?.oAuth2Api, { id: 'TLK73VxX5k6day4t', name: 'SalesForce ANC - CREDS' });
   assert.equal(workflow.nodes.some((node) => node.name === 'Remote CRM OAuth'), false);
-  assert.match(text, /Fetch Authorized Remote CRM Payload.*Remote CRM Create Lead/s);
+  assert.equal(workflow.connections['Fetch Authorized Remote CRM Payload'].main[0][0].node, 'Existing Remote CRM Identity?');
+  assert.equal(workflow.connections['Existing Remote CRM Identity?'].main[0][0].node, 'Reconcile Existing CRM Lead');
+  assert.equal(workflow.connections['Existing Remote CRM Identity?'].main[1][0].node, 'Remote CRM Create Lead');
+  assert.equal(workflow.connections['Reconcile Existing CRM Lead'].main[0][0].node, 'Complete Async Registration');
   assert.doesNotMatch(text, /REMOTE_CRM_TOKEN_URL|REMOTE_CRM_GRANT_TYPE|REMOTE_CRM_CLIENT_ID|REMOTE_CRM_CLIENT_SECRET/);
   assert.doesNotMatch(text, /techcarrot4--realforce|salesforce\.com|remote\/sync/iu);
   const internalCompletion = workflow.nodes.find((node) => node.name === 'Complete Internal Registration');
@@ -35,7 +38,7 @@ test('binds remote CRM OAuth to the n8n credential store', async () => {
   assert.equal(workflow.connections['Required Lead Data Present?'].main[1][0].node, 'Complete Partial Review');
   assert.equal(workflow.connections['Complete Support Review'].main[0][0].node, 'Return Support or Human Review');
   assert.equal(workflow.connections['Complete Partial Review'].main[0][0].node, 'Return Partial Lead');
-  for (const name of ['Internal CRM Upsert', 'Persist Score and Summary', 'Fetch Authorized Remote CRM Payload', 'Remote CRM Create Lead', 'Validate Remote CRM Lead ID', 'Internal CRM Remote ID Callback', 'Complete Support Review', 'Complete Partial Review']) {
+  for (const name of ['Internal CRM Upsert', 'Persist Score and Summary', 'Fetch Authorized Remote CRM Payload', 'Reconcile Existing CRM Lead', 'Remote CRM Create Lead', 'Validate Remote CRM Lead ID', 'Internal CRM Remote ID Callback', 'Complete Support Review', 'Complete Partial Review']) {
     assert.equal(workflow.nodes.find((node) => node.name === name)?.onError, 'continueErrorOutput');
     assert.equal(workflow.connections[name].main[1][0].node, 'Complete CRM Reconciliation');
   }

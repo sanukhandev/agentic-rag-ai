@@ -31,6 +31,7 @@ import {
   crmQualitySchema,
   crmQualificationSchema,
   crmRemotePayloadSchema,
+  crmRemoteReconcileSchema,
   crmRemoteSchema,
   crmSummarySchema,
   documentFailureSchema,
@@ -1891,9 +1892,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const lead: CrmLead = { id: randomUUID(), tenantId: input.tenantId, actionId: input.actionId, sessionId: input.sessionId, intent: authorizedIntent, secondaryIntentKeys: (session.conversationState?.candidateIntentKeys ?? []).filter((key) => key !== authorizedIntent), intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: action.catalogVersionId ?? null, score, contactCompletenessScore: contactCompletenessScore({ validName, validEmail: Boolean(rehydratedEmail && isValidLeadEmail(rehydratedEmail)), validPhone: Boolean(rehydratedPhone && isValidLeadPhone(rehydratedPhone)) }), validationPass, leadData, conversation, summary: null, summaryStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       const created = await store.upsertCrmLead(lead, crmDedupeKey(input.tenantId, leadData, session, tokenVault, vaultSecret));
       if (created.actionId !== input.actionId || created.sessionId !== input.sessionId) {
+        const association = await store.createCrmLeadAssociation({ id: randomUUID(), tenantId: input.tenantId, crmLeadId: created.id, actionId: input.actionId, sessionId: input.sessionId, opportunityId: action.opportunityId ?? null, associationType: 'deduplicated', createdAt: new Date().toISOString() });
         await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'crm.lead.reuse_requires_reconciliation', metadata: { leadId: created.id, actionId: input.actionId, originalActionId: created.actionId, sessionId: input.sessionId, originalSessionId: created.sessionId }, createdAt: new Date().toISOString() });
-        res.status(201).json({ lead: created, externalReference: `crm-lead-${created.id}`, reconciliationRequired: true }); return;
+        res.status(201).json({ lead: created, externalReference: `crm-lead-${created.id}`, associationId: association.id, reconciliationRequired: true }); return;
       }
+      await store.createCrmLeadAssociation({ id: randomUUID(), tenantId: input.tenantId, crmLeadId: created.id, actionId: input.actionId, sessionId: input.sessionId, opportunityId: action.opportunityId ?? null, associationType: 'canonical', createdAt: new Date().toISOString() });
       await store.linkSessionDocuments(created.sessionId, created.tenantId, created.id);
       if (input.completeAction) await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${created.id}` } });
       session.conversationState = { ...(session.conversationState ?? newConversationState()), workflowStatus: 'queued', phase: 'QUEUED', pendingPrompt: null };
@@ -1959,7 +1962,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const input = parse(crmRemotePayloadSchema, req.body);
       const lead = await store.getCrmLead(routeParam(req, 'id'), input.tenantId);
       if (!lead) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
-      if (lead.actionId !== input.actionId || lead.leadId || lead.remoteCrm) throw new HttpError(409, 'LEAD_ALREADY_LINKED', 'This lead is already linked to a remote CRM or the action does not match.');
+      if (lead.actionId !== input.actionId) {
+        if (!lead.leadId || !lead.remoteCrm) throw new HttpError(409, 'LEAD_ALREADY_LINKED', 'This lead is already associated with another action and requires reconciliation.');
+        res.json({ alreadyLinked: true, canonicalLeadId: lead.id, existingRemoteLeadId: lead.leadId, existingRemoteCrm: lead.remoteCrm }); return;
+      }
+      if (lead.leadId || lead.remoteCrm) throw new HttpError(409, 'LEAD_ALREADY_LINKED', 'This lead is already linked to a remote CRM or the action does not match.');
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId || action.sessionId !== lead.sessionId || !['approved', 'processing'].includes(action.state)) throw new HttpError(403, 'REMOTE_PAYLOAD_FORBIDDEN', 'Remote CRM payload access is not authorized for this action.');
       const session = await store.getSession(lead.sessionId);
@@ -1969,6 +1976,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const payload = { name: rehydrate(lead.leadData.name), company: lead.leadData.slotValues?.company ? rehydrate(lead.leadData.slotValues.company) : 'Individual', email: lead.leadData.email ? rehydrate(lead.leadData.email) : '', phone: lead.leadData.phone ? rehydrate(lead.leadData.phone) : '', description: rehydrate(lead.summary ?? `Intent: ${lead.intent}`) };
       await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'crm.lead.remote_payload_issued', metadata: { leadId: lead.id, actionId: action.id }, createdAt: new Date().toISOString() });
       res.json(payload);
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/crm/leads/:id/remote-reconcile', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(crmRemoteReconcileSchema, req.body);
+      const lead = await store.getCrmLead(routeParam(req, 'id'), input.tenantId);
+      const action = await store.getAction(input.actionId);
+      if (!lead || !action || action.tenantId !== input.tenantId || action.state !== 'processing' || !lead.leadId || !lead.remoteCrm) throw new HttpError(403, 'REMOTE_RECONCILE_FORBIDDEN', 'Remote CRM reconciliation is not authorized for this action.');
+      const association = await store.createCrmLeadAssociation({ id: randomUUID(), tenantId: input.tenantId, crmLeadId: lead.id, actionId: action.id, sessionId: action.sessionId, opportunityId: action.opportunityId ?? null, associationType: 'deduplicated', createdAt: new Date().toISOString() });
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'crm.lead.remote_reconciled', metadata: { leadId: lead.id, actionId: action.id, remoteLeadId: lead.leadId, remoteCrm: lead.remoteCrm, associationId: association.id }, createdAt: new Date().toISOString() });
+      res.json({ alreadyLinked: true, canonicalLeadId: lead.id, externalLeadId: lead.leadId, remoteCrm: lead.remoteCrm, associationId: association.id });
     } catch (error) { next(error); }
   });
   app.post('/api/v1/internal/n8n/callback', async (req, res, next) => {
