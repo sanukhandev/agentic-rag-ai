@@ -163,8 +163,19 @@ def extract_file(path: Path) -> tuple[str, str]:
         from docx import Document
 
         document = Document(path)
-        parts = [paragraph.text for paragraph in document.paragraphs if paragraph.text.strip()]
-        parts.extend(" | ".join(cell.text for cell in row.cells) for table in document.tables for row in table.rows)
+        parts = []
+        for paragraph in document.paragraphs:
+            text = paragraph.text.strip()
+            if not text:
+                continue
+            style_name = str(getattr(paragraph.style, "name", ""))
+            heading = re.fullmatch(r"Heading\s+(\d+)", style_name, re.IGNORECASE)
+            parts.append(f"Heading {heading.group(1)}: {text}" if heading else text)
+        parts.extend(
+            f"Table {table_index + 1}, row {row_index + 1}: " + " | ".join(cell.text.strip() for cell in row.cells)
+            for table_index, table in enumerate(document.tables)
+            for row_index, row in enumerate(table.rows)
+        )
         return "\n\n".join(parts), "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     if suffix == ".xlsx":
         from openpyxl import load_workbook

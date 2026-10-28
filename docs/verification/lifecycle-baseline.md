@@ -22,7 +22,7 @@ and fresh-source ingestion unverified; those remain acceptance blockers.
 | Existing Node/API, web, admin and tenant security | IMPLEMENTED | Existing source and test suite |
 | Source-grounded retrieval and masking | IMPLEMENTED / UNVERIFIED for fresh ZIP | Existing tests; fresh ZIP only preflighted |
 | ANCFZ starter artifacts | IMPORTED | Commit `2058628`; archive SHA recorded in delivery manifest |
-| ANCFZ seven-stage state and external identities | MISSING on this baseline | Candidate branch reviewed, not yet integrated |
+| ANCFZ seven-stage state and external identities | IMPLEMENTED / LOCALLY TESTED | Lifecycle state CAS helper, qualification persistence, account/package gates and candidate journeys |
 | Salesforce/n8n live provider effects | BLOCKED | Managed credentials and sandbox evidence unavailable to this checkout |
 | Quote/invoice PDFs | MOCK-ONLY | Starter ReportLab service explicitly accepts `mode=MOCK` only |
 | Payment | MOCK-ONLY | Development SQLite/HTTP mock; no card data accepted |
@@ -41,11 +41,25 @@ and fresh-source ingestion unverified; those remain acceptance blockers.
   ZIP SHA-256 `5a0d6f5f50809ec562f46125279304d9be918b88be92fadbe60f2d0919ce237`.
   This is preflight only, not ingestion or publication.
 
+- Docker ingestion image extraction: PASS; all 18 staged members extracted in
+  deterministic filename order, 1,678 chunks, zero extraction warnings. The
+  output was written to the ignored local review directory and contains hashes
+  and locators only; no raw source text was committed.
+- `docker exec agentic-postgres pg_dump ...`: PASS before migration; the local
+  ANCFZ backup is `data/ancfz-backups/ancfz-pre-migration-20261029.dump`.
+- `npm run db:migrate`: PASS through migration 053. The live database has the
+  qualification columns, seven lifecycle tables, pgvector 0.8.7, and the
+  starter synthetic package rows revoked. Existing database source chunks are
+  1,536-dimensional, but they are not evidence of fresh ZIP ingestion.
+- Docker ingestion tests: PASS; 27 tests. DOCX extraction now retains heading
+  level and table-row locators.
+
 ## Required follow-up gates
 
-Fresh document extraction and review, real embedding writes to isolated pgvector,
-catalog parser support for ANCFZ stage metadata, durable seven-stage persistence,
+Fresh-source approval/publication and real embedding writes to pgvector,
 provider callback verification, one uninterrupted 25+ turn API session, eight
 scenario/200-turn coverage, browser acceptance, and real Salesforce/n8n/invoice/
-signing evidence remain to be implemented or executed. No completion claim is
-made by this baseline.
+signing evidence remain to be executed. No completion claim is made by this
+baseline. Local administrator credentials were not supplied in the checkout, so
+the live admin upload/publication path cannot be exercised without creating an
+unauthorized password or reusing unknown credentials.

@@ -116,8 +116,8 @@ class IngestionTests(unittest.TestCase):
             document.tables[0].rows[0].cells[1].text = "100 credits"
             document.save(docx_path)
             docx_text, _ = extract_file(docx_path)
-            self.assertIn("Pricing", docx_text)
-            self.assertIn("100 credits", docx_text)
+            self.assertIn("Heading 1: Pricing", docx_text)
+            self.assertIn("Table 1, row 1: Plan | 100 credits", docx_text)
 
             xlsx_path = Path(directory) / "pricing.xlsx"
             workbook = Workbook()
