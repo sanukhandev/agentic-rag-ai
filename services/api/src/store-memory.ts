@@ -422,9 +422,9 @@ export class MemoryStore implements Store {
     const existingId = this.crmLeadDedupe.get(key);
     const existing = existingId ? this.crmLeads.get(existingId) : undefined;
     if (existing) {
-      const updated = { ...lead, id: existing.id, createdAt: existing.createdAt, updatedAt: now() };
-      this.crmLeads.set(existing.id, updated);
-      return updated;
+      // A dedupe hit identifies the customer CRM record, not ownership of a new action.
+      // Preserve the original action/session until an explicit association is authorized.
+      return existing;
     }
     this.crmLeadDedupe.set(key, lead.id);
     this.crmLeads.set(lead.id, lead);
