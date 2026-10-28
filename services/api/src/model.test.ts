@@ -75,6 +75,8 @@ describe('Azure Foundry model adapter', () => {
     expect(isKnowledgeQuestion('I would like to know how the shared office works')).toBe(true);
     expect(isKnowledgeQuestion('I want to start a digital marketing company and would like to know the steps and cost')).toBe(true);
     expect(isKnowledgeQuestion('Can I book a demo?')).toBe(false);
+    expect(isKnowledgeQuestion('Can you book a demo?')).toBe(false);
+    expect(isKnowledgeQuestion('How are you?')).toBe(false);
     expect(hasLeadIntent('Please contact me about a demo')).toBe(true);
     expect(hasLeadIntent('I would like get service from Sanu')).toBe(true);
     expect(hasLeadIntent('Can we arrange a meeting with Sanu?')).toBe(true);
@@ -270,5 +272,7 @@ describe('Azure Foundry model adapter', () => {
     const evidence = [{ citation, content: 'The approved price is 42 credits.' }];
     expect(hasSufficientEvidence('The approved price is 999 credits.', evidence, [citation])).toBe(false);
     expect(hasSufficientEvidence('The approved price is 42 credits.', evidence, [citation])).toBe(true);
+    expect(hasSufficientEvidence('The approved price is 42 credits. Approval is guaranteed.', evidence, [citation])).toBe(false);
+    expect(hasSufficientEvidence('The approved price is 42 credits. The office is in Dubai.', evidence, [citation])).toBe(false);
   });
 });
