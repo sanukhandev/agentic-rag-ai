@@ -8,6 +8,20 @@ const body = { verticalAlignment: 'center', wrapText: true };
 const slots = workbook.worksheets.getItem('Slots');
 const slotRow = slots.getUsedRange().rowCount + 1;
 slots.getRange(`A${slotRow}:J${slotRow}`).values = [['anc.setup.new_company','workspace_preference','enum',false,'',8,'setup.ask_workspace','enum:shared_office|private_office|none','business',0]];
+const relations = workbook.worksheets.getItem('Relations');
+const relationRows = [
+  ['anc.setup.new_company','anc.activity.eligibility','refines','activity',0,2,'anc.clarify_primary_requirement'],
+  ['anc.setup.new_company','anc.activity.it_software','refines','activity',0,2,'anc.clarify_primary_requirement'],
+  ['anc.setup.new_company','anc.activity.consulting','refines','activity',0,2,'anc.clarify_primary_requirement'],
+  ['anc.setup.new_company','anc.activity.marketing','refines','activity',0,2,'anc.clarify_primary_requirement'],
+  ['anc.setup.new_company','anc.activity.trading','refines','activity',0,2,'anc.clarify_primary_requirement'],
+  ['anc.setup.new_company','anc.activity.logistics','refines','activity',0,2,'anc.clarify_primary_requirement'],
+  ['anc.setup.new_company','anc.activity.accounting','refines','activity',0,2,'anc.clarify_primary_requirement'],
+  ['anc.setup.new_company','anc.activity.ai_blockchain','refines','activity',0,2,'anc.clarify_primary_requirement'],
+  ['anc.setup.new_company','anc.activity.real_estate_services','refines','activity',0,2,'anc.clarify_primary_requirement'],
+];
+const relationRow = relations.getUsedRange().rowCount + 1;
+relations.getRange(`A${relationRow}:G${relationRow + relationRows.length - 1}`).values = relationRows;
 const addTable = (name, headers, rows) => {
   const sheet = workbook.worksheets.add(name);
   const values = [headers, ...rows];

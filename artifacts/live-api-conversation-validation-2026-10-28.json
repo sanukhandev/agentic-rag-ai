@@ -1,0 +1,2463 @@
+{
+  "generatedAt": "2026-10-28T08:48:12.363Z",
+  "baseUrl": "http://localhost",
+  "tenantSlug": "anc",
+  "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+  "health": {
+    "live": {
+      "status": 200,
+      "body": {
+        "status": "ok"
+      }
+    },
+    "ready": {
+      "status": 200,
+      "body": {
+        "status": "ready",
+        "store": "available",
+        "cache": "available"
+      }
+    },
+    "config": {
+      "status": 200,
+      "body": {
+        "tenant": {
+          "slug": "anc",
+          "name": "ANC"
+        },
+        "persona": {
+          "name": "Zara",
+          "greeting": "Hey there! 👋 I'm Zara, your friendly AI assistant! Whether you're exploring our services, need a little guidance, or have a question, I'm here to make things easy. ✨ What can I help you with today?",
+          "tone": "Warm, upbeat, empathetic, friendly, and confident.",
+          "speakingStyle": "Natural, engaging, concise, conversational, and enthusiastic. Ask one question at a time.",
+          "permittedLanguages": [
+            "en",
+            "ar"
+          ],
+          "voiceName": "Google UK English Female",
+          "voiceLanguage": "en-GB",
+          "voiceRate": 1.1,
+          "voicePitch": 1.1,
+          "voiceVolume": 1
+        },
+        "documents": {
+          "enabled": true,
+          "requireUploadConsent": true,
+          "maxFileBytes": 15728640,
+          "maxFilesPerRequest": 5,
+          "maxPdfPages": 20,
+          "allowedMimeTypes": [
+            "application/pdf",
+            "image/jpeg",
+            "image/png",
+            "image/tiff",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "text/plain",
+            "text/csv"
+          ],
+          "policies": [
+            {
+              "intentKey": "anc.setup.foreign_branch",
+              "requestMode": "conditional_offer",
+              "allowedDocumentTypes": [
+                "company_profile",
+                "trade_license",
+                "business_plan"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.setup.uae_branch",
+              "requestMode": "conditional_offer",
+              "allowedDocumentTypes": [
+                "company_profile",
+                "trade_license"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.setup.relocate",
+              "requestMode": "conditional_offer",
+              "allowedDocumentTypes": [
+                "trade_license",
+                "company_profile",
+                "business_plan"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.activity.eligibility",
+              "requestMode": "conditional_offer",
+              "allowedDocumentTypes": [
+                "activity_description",
+                "business_plan",
+                "company_profile"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.license.quote",
+              "requestMode": "user_offer_only",
+              "allowedDocumentTypes": [
+                "business_plan",
+                "requirements_sheet",
+                "company_profile"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.sales.proposal",
+              "requestMode": "conditional_offer",
+              "allowedDocumentTypes": [
+                "business_plan",
+                "requirements_sheet",
+                "company_profile"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.partner.introduction",
+              "requestMode": "user_offer_only",
+              "allowedDocumentTypes": [
+                "company_profile"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.existing.expansion",
+              "requestMode": "conditional_offer",
+              "allowedDocumentTypes": [
+                "trade_license",
+                "requirements_sheet",
+                "company_profile"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.existing.renewal",
+              "requestMode": "conditional_offer",
+              "allowedDocumentTypes": [
+                "trade_license"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.existing.amendment",
+              "requestMode": "conditional_offer",
+              "allowedDocumentTypes": [
+                "trade_license",
+                "requirements_sheet"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.existing.portal",
+              "requestMode": "user_offer_only",
+              "allowedDocumentTypes": [
+                "requirements_sheet",
+                "other_business_document"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.finance.banking",
+              "requestMode": "user_offer_only",
+              "allowedDocumentTypes": [
+                "company_profile",
+                "trade_license"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.regulatory.specialist",
+              "requestMode": "conditional_offer",
+              "allowedDocumentTypes": [
+                "company_profile",
+                "activity_description",
+                "requirements_sheet"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.setup.new_company",
+              "requestMode": "conditional_offer",
+              "allowedDocumentTypes": [
+                "business_plan",
+                "company_profile",
+                "requirements_sheet"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.activity.trading",
+              "requestMode": "conditional_offer",
+              "allowedDocumentTypes": [
+                "activity_description",
+                "company_profile",
+                "requirements_sheet"
+              ],
+              "consentRequired": true
+            },
+            {
+              "intentKey": "anc.document.supporting_upload",
+              "requestMode": "explicit_upload",
+              "allowedDocumentTypes": [
+                "trade_license",
+                "business_plan",
+                "company_profile",
+                "requirements_sheet",
+                "activity_description",
+                "other_business_document"
+              ],
+              "consentRequired": true
+            }
+          ],
+          "workflowKey": "anc.document.ocr.extract",
+          "binding": {
+            "webhookPath": "anc-test-document-ocr-wf-1",
+            "payloadContract": "anc-document-ocr-v1"
+          }
+        }
+      }
+    }
+  },
+  "turns": [
+    {
+      "turn": 1,
+      "userMessage": "Hi, good morning.",
+      "clientMessageId": "312a33bc-1266-4dd2-802d-ee604828669a",
+      "response": {
+        "status": 200,
+        "body": {
+          "messageId": "1ee7ab23-c50f-42ec-a395-fda0390d5703",
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "answer": "Hey there! 👋 Zara, your friendly AI assistant! Whether you're exploring our services, need a little guidance, or have a question, I'm here to make things easy. ✨ What can I help you with today?",
+          "grounded": false,
+          "conversational": true,
+          "citations": [],
+          "actionProposal": null,
+          "pendingPromptId": null,
+          "pendingRequirementKey": null,
+          "requestId": "bfa407b9-eb76-4af6-b27b-84ea2a75e3b0"
+        }
+      },
+      "persisted": {
+        "status": 200,
+        "body": {
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "tenantId": "d432b965-6862-49b6-abbc-882284ffa1d0",
+          "createdAt": "2026-10-28T08:47:40.795Z",
+          "messages": [
+            {
+              "id": "32e24a20-8cf0-402f-b6f7-3e953568ff9e",
+              "role": "user",
+              "content": "Hi, good morning.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "312a33bc-1266-4dd2-802d-ee604828669a",
+              "createdAt": "2026-10-28T08:47:40.839Z"
+            },
+            {
+              "id": "1ee7ab23-c50f-42ec-a395-fda0390d5703",
+              "role": "assistant",
+              "content": "Hey there! 👋 Zara, your friendly AI assistant! Whether you're exploring our services, need a little guidance, or have a question, I'm here to make things easy. ✨ What can I help you with today?",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:43.352Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "turn": 2,
+      "userMessage": "I want to start a company in Dubai. Can you explain the steps involved?",
+      "clientMessageId": "bf1751c3-cc82-4ca4-84a0-3e3ad73db45a",
+      "response": {
+        "status": 200,
+        "body": {
+          "messageId": "11016c44-2445-404b-9800-0969f6ac51f4",
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "answer": "Here’s what I can verify: Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. | Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. Office 901, 9th Floor, Aspin Commercial Tower, Sheikh Zayed Road, Dubai. ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+          "grounded": true,
+          "conversational": false,
+          "citations": [
+            {
+              "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+              "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03",
+              "chunkId": "614b07d0-69e6-45d0-86f9-4453d33372b9",
+              "title": "latest file test",
+              "locator": "ANCFZ_Descriptive_RAG_FAQs.docx · section 4"
+            },
+            {
+              "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+              "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03",
+              "chunkId": "87318b0e-4913-48e2-891f-0c37be4cb625",
+              "title": "latest file test",
+              "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 17"
+            },
+            {
+              "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+              "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03",
+              "chunkId": "d0afe66c-8bdf-4284-9c23-12ef35679297",
+              "title": "latest file test",
+              "locator": "knowledge_registry.csv · section 66"
+            },
+            {
+              "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+              "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03",
+              "chunkId": "1b9c9d74-d427-48b1-bdaa-b2f70466455f",
+              "title": "latest file test",
+              "locator": "RAG_ANCFZ_Contact_Us.docx · section 2"
+            }
+          ],
+          "actionProposal": null,
+          "pendingPromptId": "2c440aa2-8fd6-4207-8535-d59f5bbc8d8a",
+          "pendingRequirementKey": null,
+          "requestId": "a46b9702-648c-4ad3-b653-423df11a1bc2"
+        }
+      },
+      "persisted": {
+        "status": 200,
+        "body": {
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "tenantId": "d432b965-6862-49b6-abbc-882284ffa1d0",
+          "createdAt": "2026-10-28T08:47:40.795Z",
+          "messages": [
+            {
+              "id": "32e24a20-8cf0-402f-b6f7-3e953568ff9e",
+              "role": "user",
+              "content": "Hi, good morning.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "312a33bc-1266-4dd2-802d-ee604828669a",
+              "createdAt": "2026-10-28T08:47:40.839Z"
+            },
+            {
+              "id": "1ee7ab23-c50f-42ec-a395-fda0390d5703",
+              "role": "assistant",
+              "content": "Hey there! 👋 Zara, your friendly AI assistant! Whether you're exploring our services, need a little guidance, or have a question, I'm here to make things easy. ✨ What can I help you with today?",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:43.352Z"
+            },
+            {
+              "id": "c5e86ce7-7da3-495c-a02f-37c23028cd8d",
+              "role": "user",
+              "content": "I want to start a company in Dubai. Can you explain the steps involved?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "bf1751c3-cc82-4ca4-84a0-3e3ad73db45a",
+              "createdAt": "2026-10-28T08:47:43.386Z"
+            },
+            {
+              "id": "11016c44-2445-404b-9800-0969f6ac51f4",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. | Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. Office 901, 9th Floor, Aspin Commercial Tower, Sheikh Zayed Road, Dubai. ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "614b07d0-69e6-45d0-86f9-4453d33372b9",
+                  "locator": "ANCFZ_Descriptive_RAG_FAQs.docx · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "87318b0e-4913-48e2-891f-0c37be4cb625",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 17",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d0afe66c-8bdf-4284-9c23-12ef35679297",
+                  "locator": "knowledge_registry.csv · section 66",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "1b9c9d74-d427-48b1-bdaa-b2f70466455f",
+                  "locator": "RAG_ANCFZ_Contact_Us.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:46.974Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "turn": 3,
+      "userMessage": "I want to start a digital marketing agency that handles social media, advertising and content creation.",
+      "clientMessageId": "f2b4bc30-4332-45cd-b8a3-a85386ddda5e",
+      "response": {
+        "status": 200,
+        "body": {
+          "messageId": "88c3fd05-19f7-4813-a7f0-819848e5e5d4",
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "answer": "What name should I use?",
+          "grounded": false,
+          "conversational": true,
+          "citations": [],
+          "actionProposal": null,
+          "pendingPromptId": "ea591784-5317-4233-81db-a82db02c3187",
+          "pendingRequirementKey": "setup.name",
+          "requestId": "f7bb6bff-bbdd-4d08-9e0c-2af47d7418fb"
+        }
+      },
+      "persisted": {
+        "status": 200,
+        "body": {
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "tenantId": "d432b965-6862-49b6-abbc-882284ffa1d0",
+          "createdAt": "2026-10-28T08:47:40.795Z",
+          "messages": [
+            {
+              "id": "32e24a20-8cf0-402f-b6f7-3e953568ff9e",
+              "role": "user",
+              "content": "Hi, good morning.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "312a33bc-1266-4dd2-802d-ee604828669a",
+              "createdAt": "2026-10-28T08:47:40.839Z"
+            },
+            {
+              "id": "1ee7ab23-c50f-42ec-a395-fda0390d5703",
+              "role": "assistant",
+              "content": "Hey there! 👋 Zara, your friendly AI assistant! Whether you're exploring our services, need a little guidance, or have a question, I'm here to make things easy. ✨ What can I help you with today?",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:43.352Z"
+            },
+            {
+              "id": "c5e86ce7-7da3-495c-a02f-37c23028cd8d",
+              "role": "user",
+              "content": "I want to start a company in Dubai. Can you explain the steps involved?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "bf1751c3-cc82-4ca4-84a0-3e3ad73db45a",
+              "createdAt": "2026-10-28T08:47:43.386Z"
+            },
+            {
+              "id": "11016c44-2445-404b-9800-0969f6ac51f4",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. | Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. Office 901, 9th Floor, Aspin Commercial Tower, Sheikh Zayed Road, Dubai. ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "614b07d0-69e6-45d0-86f9-4453d33372b9",
+                  "locator": "ANCFZ_Descriptive_RAG_FAQs.docx · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "87318b0e-4913-48e2-891f-0c37be4cb625",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 17",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d0afe66c-8bdf-4284-9c23-12ef35679297",
+                  "locator": "knowledge_registry.csv · section 66",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "1b9c9d74-d427-48b1-bdaa-b2f70466455f",
+                  "locator": "RAG_ANCFZ_Contact_Us.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:46.974Z"
+            },
+            {
+              "id": "100c82c9-e470-4301-9652-2449413ee337",
+              "role": "user",
+              "content": "I want to start a digital marketing agency that handles social media, advertising and content creation.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "f2b4bc30-4332-45cd-b8a3-a85386ddda5e",
+              "createdAt": "2026-10-28T08:47:47.003Z"
+            },
+            {
+              "id": "88c3fd05-19f7-4813-a7f0-819848e5e5d4",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:49.804Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "turn": 4,
+      "userMessage": "What visa packages are available?",
+      "clientMessageId": "10fb661c-f507-45dc-91e5-4250722e4b69",
+      "response": {
+        "status": 200,
+        "body": {
+          "messageId": "48170dc7-4fb5-43c6-9022-9139e28cbe51",
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "answer": "Here’s what I can verify: Packages start from AED 4,888. Tabby payment options are available for the GCC market, with prices starting from AED 1,222. 1 to 10 Visa All Inclusive Package Visa Packages Add (ICP Services) I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+          "grounded": true,
+          "conversational": false,
+          "citations": [
+            {
+              "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+              "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03",
+              "chunkId": "0e0ae9f0-bcac-4443-bc2e-5fe146a651ac",
+              "title": "latest file test",
+              "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 1"
+            },
+            {
+              "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+              "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03",
+              "chunkId": "a91afd7e-8368-4ec2-8f7d-419d96311d90",
+              "title": "latest file test",
+              "locator": "knowledge_registry.csv · section 4"
+            },
+            {
+              "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+              "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03",
+              "chunkId": "01fb4e8f-fbf5-4280-9e3c-081cb6c57515",
+              "title": "latest file test",
+              "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 2"
+            },
+            {
+              "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+              "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03",
+              "chunkId": "d00baf08-d295-418d-a64f-2401cb076986",
+              "title": "latest file test",
+              "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 2"
+            }
+          ],
+          "actionProposal": null,
+          "pendingPromptId": "ea591784-5317-4233-81db-a82db02c3187",
+          "pendingRequirementKey": "setup.name",
+          "requestId": "061061e5-9a08-42b7-8239-0ff4e56b5667"
+        }
+      },
+      "persisted": {
+        "status": 200,
+        "body": {
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "tenantId": "d432b965-6862-49b6-abbc-882284ffa1d0",
+          "createdAt": "2026-10-28T08:47:40.795Z",
+          "messages": [
+            {
+              "id": "32e24a20-8cf0-402f-b6f7-3e953568ff9e",
+              "role": "user",
+              "content": "Hi, good morning.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "312a33bc-1266-4dd2-802d-ee604828669a",
+              "createdAt": "2026-10-28T08:47:40.839Z"
+            },
+            {
+              "id": "1ee7ab23-c50f-42ec-a395-fda0390d5703",
+              "role": "assistant",
+              "content": "Hey there! 👋 Zara, your friendly AI assistant! Whether you're exploring our services, need a little guidance, or have a question, I'm here to make things easy. ✨ What can I help you with today?",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:43.352Z"
+            },
+            {
+              "id": "c5e86ce7-7da3-495c-a02f-37c23028cd8d",
+              "role": "user",
+              "content": "I want to start a company in Dubai. Can you explain the steps involved?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "bf1751c3-cc82-4ca4-84a0-3e3ad73db45a",
+              "createdAt": "2026-10-28T08:47:43.386Z"
+            },
+            {
+              "id": "11016c44-2445-404b-9800-0969f6ac51f4",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. | Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. Office 901, 9th Floor, Aspin Commercial Tower, Sheikh Zayed Road, Dubai. ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "614b07d0-69e6-45d0-86f9-4453d33372b9",
+                  "locator": "ANCFZ_Descriptive_RAG_FAQs.docx · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "87318b0e-4913-48e2-891f-0c37be4cb625",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 17",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d0afe66c-8bdf-4284-9c23-12ef35679297",
+                  "locator": "knowledge_registry.csv · section 66",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "1b9c9d74-d427-48b1-bdaa-b2f70466455f",
+                  "locator": "RAG_ANCFZ_Contact_Us.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:46.974Z"
+            },
+            {
+              "id": "100c82c9-e470-4301-9652-2449413ee337",
+              "role": "user",
+              "content": "I want to start a digital marketing agency that handles social media, advertising and content creation.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "f2b4bc30-4332-45cd-b8a3-a85386ddda5e",
+              "createdAt": "2026-10-28T08:47:47.003Z"
+            },
+            {
+              "id": "88c3fd05-19f7-4813-a7f0-819848e5e5d4",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:49.804Z"
+            },
+            {
+              "id": "52c0d4b9-046a-4c4e-a520-5f09f8de1c9e",
+              "role": "user",
+              "content": "What visa packages are available?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "10fb661c-f507-45dc-91e5-4250722e4b69",
+              "createdAt": "2026-10-28T08:47:49.833Z"
+            },
+            {
+              "id": "48170dc7-4fb5-43c6-9022-9139e28cbe51",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Packages start from AED 4,888. Tabby payment options are available for the GCC market, with prices starting from AED 1,222. 1 to 10 Visa All Inclusive Package Visa Packages Add (ICP Services) I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "0e0ae9f0-bcac-4443-bc2e-5fe146a651ac",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 1",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "a91afd7e-8368-4ec2-8f7d-419d96311d90",
+                  "locator": "knowledge_registry.csv · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "01fb4e8f-fbf5-4280-9e3c-081cb6c57515",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d00baf08-d295-418d-a64f-2401cb076986",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:54.318Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "turn": 5,
+      "userMessage": "Okay, let's continue with my company setup.",
+      "clientMessageId": "2d2d2341-f410-4888-9e12-2736a69a93ae",
+      "response": {
+        "status": 200,
+        "body": {
+          "messageId": "181c7b1f-59b0-4c97-ba81-2834d8904363",
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "answer": "What name should I use?",
+          "grounded": false,
+          "conversational": true,
+          "citations": [],
+          "actionProposal": null,
+          "pendingPromptId": "ed8eced1-ebb3-401e-8312-bc4dfc596113",
+          "pendingRequirementKey": "setup.name",
+          "requestId": "a4e85ca9-0ae2-4e4f-88e3-a117a06bde37"
+        }
+      },
+      "persisted": {
+        "status": 200,
+        "body": {
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "tenantId": "d432b965-6862-49b6-abbc-882284ffa1d0",
+          "createdAt": "2026-10-28T08:47:40.795Z",
+          "messages": [
+            {
+              "id": "32e24a20-8cf0-402f-b6f7-3e953568ff9e",
+              "role": "user",
+              "content": "Hi, good morning.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "312a33bc-1266-4dd2-802d-ee604828669a",
+              "createdAt": "2026-10-28T08:47:40.839Z"
+            },
+            {
+              "id": "1ee7ab23-c50f-42ec-a395-fda0390d5703",
+              "role": "assistant",
+              "content": "Hey there! 👋 Zara, your friendly AI assistant! Whether you're exploring our services, need a little guidance, or have a question, I'm here to make things easy. ✨ What can I help you with today?",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:43.352Z"
+            },
+            {
+              "id": "c5e86ce7-7da3-495c-a02f-37c23028cd8d",
+              "role": "user",
+              "content": "I want to start a company in Dubai. Can you explain the steps involved?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "bf1751c3-cc82-4ca4-84a0-3e3ad73db45a",
+              "createdAt": "2026-10-28T08:47:43.386Z"
+            },
+            {
+              "id": "11016c44-2445-404b-9800-0969f6ac51f4",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. | Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. Office 901, 9th Floor, Aspin Commercial Tower, Sheikh Zayed Road, Dubai. ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "614b07d0-69e6-45d0-86f9-4453d33372b9",
+                  "locator": "ANCFZ_Descriptive_RAG_FAQs.docx · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "87318b0e-4913-48e2-891f-0c37be4cb625",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 17",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d0afe66c-8bdf-4284-9c23-12ef35679297",
+                  "locator": "knowledge_registry.csv · section 66",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "1b9c9d74-d427-48b1-bdaa-b2f70466455f",
+                  "locator": "RAG_ANCFZ_Contact_Us.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:46.974Z"
+            },
+            {
+              "id": "100c82c9-e470-4301-9652-2449413ee337",
+              "role": "user",
+              "content": "I want to start a digital marketing agency that handles social media, advertising and content creation.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "f2b4bc30-4332-45cd-b8a3-a85386ddda5e",
+              "createdAt": "2026-10-28T08:47:47.003Z"
+            },
+            {
+              "id": "88c3fd05-19f7-4813-a7f0-819848e5e5d4",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:49.804Z"
+            },
+            {
+              "id": "52c0d4b9-046a-4c4e-a520-5f09f8de1c9e",
+              "role": "user",
+              "content": "What visa packages are available?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "10fb661c-f507-45dc-91e5-4250722e4b69",
+              "createdAt": "2026-10-28T08:47:49.833Z"
+            },
+            {
+              "id": "48170dc7-4fb5-43c6-9022-9139e28cbe51",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Packages start from AED 4,888. Tabby payment options are available for the GCC market, with prices starting from AED 1,222. 1 to 10 Visa All Inclusive Package Visa Packages Add (ICP Services) I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "0e0ae9f0-bcac-4443-bc2e-5fe146a651ac",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 1",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "a91afd7e-8368-4ec2-8f7d-419d96311d90",
+                  "locator": "knowledge_registry.csv · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "01fb4e8f-fbf5-4280-9e3c-081cb6c57515",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d00baf08-d295-418d-a64f-2401cb076986",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:54.318Z"
+            },
+            {
+              "id": "4cf2543e-b828-4ac5-9e79-35a62ac4b3b8",
+              "role": "user",
+              "content": "Okay, let's continue with my company setup.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "2d2d2341-f410-4888-9e12-2736a69a93ae",
+              "createdAt": "2026-10-28T08:47:54.352Z"
+            },
+            {
+              "id": "181c7b1f-59b0-4c97-ba81-2834d8904363",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:56.735Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "turn": 6,
+      "userMessage": "We need two visas, a shared office and want to start next month. Our budget is AED 25000.",
+      "clientMessageId": "79ad59bc-98c8-485d-8c48-6d480ea4f0d0",
+      "response": {
+        "status": 200,
+        "body": {
+          "messageId": "b4722662-0c0a-496a-96bf-7e19ef02df7c",
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "answer": "What name should I use?",
+          "grounded": false,
+          "conversational": true,
+          "citations": [],
+          "actionProposal": null,
+          "pendingPromptId": "c652430d-3965-483c-83df-0764b9d727b1",
+          "pendingRequirementKey": "setup.name",
+          "requestId": "3dfbd4f3-7e1e-4e9f-96d8-642f78cc67e5"
+        }
+      },
+      "persisted": {
+        "status": 200,
+        "body": {
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "tenantId": "d432b965-6862-49b6-abbc-882284ffa1d0",
+          "createdAt": "2026-10-28T08:47:40.795Z",
+          "messages": [
+            {
+              "id": "32e24a20-8cf0-402f-b6f7-3e953568ff9e",
+              "role": "user",
+              "content": "Hi, good morning.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "312a33bc-1266-4dd2-802d-ee604828669a",
+              "createdAt": "2026-10-28T08:47:40.839Z"
+            },
+            {
+              "id": "1ee7ab23-c50f-42ec-a395-fda0390d5703",
+              "role": "assistant",
+              "content": "Hey there! 👋 Zara, your friendly AI assistant! Whether you're exploring our services, need a little guidance, or have a question, I'm here to make things easy. ✨ What can I help you with today?",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:43.352Z"
+            },
+            {
+              "id": "c5e86ce7-7da3-495c-a02f-37c23028cd8d",
+              "role": "user",
+              "content": "I want to start a company in Dubai. Can you explain the steps involved?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "bf1751c3-cc82-4ca4-84a0-3e3ad73db45a",
+              "createdAt": "2026-10-28T08:47:43.386Z"
+            },
+            {
+              "id": "11016c44-2445-404b-9800-0969f6ac51f4",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. | Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. Office 901, 9th Floor, Aspin Commercial Tower, Sheikh Zayed Road, Dubai. ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "614b07d0-69e6-45d0-86f9-4453d33372b9",
+                  "locator": "ANCFZ_Descriptive_RAG_FAQs.docx · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "87318b0e-4913-48e2-891f-0c37be4cb625",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 17",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d0afe66c-8bdf-4284-9c23-12ef35679297",
+                  "locator": "knowledge_registry.csv · section 66",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "1b9c9d74-d427-48b1-bdaa-b2f70466455f",
+                  "locator": "RAG_ANCFZ_Contact_Us.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:46.974Z"
+            },
+            {
+              "id": "100c82c9-e470-4301-9652-2449413ee337",
+              "role": "user",
+              "content": "I want to start a digital marketing agency that handles social media, advertising and content creation.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "f2b4bc30-4332-45cd-b8a3-a85386ddda5e",
+              "createdAt": "2026-10-28T08:47:47.003Z"
+            },
+            {
+              "id": "88c3fd05-19f7-4813-a7f0-819848e5e5d4",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:49.804Z"
+            },
+            {
+              "id": "52c0d4b9-046a-4c4e-a520-5f09f8de1c9e",
+              "role": "user",
+              "content": "What visa packages are available?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "10fb661c-f507-45dc-91e5-4250722e4b69",
+              "createdAt": "2026-10-28T08:47:49.833Z"
+            },
+            {
+              "id": "48170dc7-4fb5-43c6-9022-9139e28cbe51",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Packages start from AED 4,888. Tabby payment options are available for the GCC market, with prices starting from AED 1,222. 1 to 10 Visa All Inclusive Package Visa Packages Add (ICP Services) I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "0e0ae9f0-bcac-4443-bc2e-5fe146a651ac",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 1",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "a91afd7e-8368-4ec2-8f7d-419d96311d90",
+                  "locator": "knowledge_registry.csv · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "01fb4e8f-fbf5-4280-9e3c-081cb6c57515",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d00baf08-d295-418d-a64f-2401cb076986",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:54.318Z"
+            },
+            {
+              "id": "4cf2543e-b828-4ac5-9e79-35a62ac4b3b8",
+              "role": "user",
+              "content": "Okay, let's continue with my company setup.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "2d2d2341-f410-4888-9e12-2736a69a93ae",
+              "createdAt": "2026-10-28T08:47:54.352Z"
+            },
+            {
+              "id": "181c7b1f-59b0-4c97-ba81-2834d8904363",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:56.735Z"
+            },
+            {
+              "id": "1671f464-4508-4a55-89f7-73a2442a9801",
+              "role": "user",
+              "content": "We need two visas, a shared office and want to start next month. Our budget is AED 25000.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "79ad59bc-98c8-485d-8c48-6d480ea4f0d0",
+              "createdAt": "2026-10-28T08:47:56.761Z"
+            },
+            {
+              "id": "b4722662-0c0a-496a-96bf-7e19ef02df7c",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:58.845Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "turn": 7,
+      "userMessage": "Which package would be suitable for my company?",
+      "clientMessageId": "58552bd1-f5e8-4eea-8cdc-ec67247ed417",
+      "response": {
+        "status": 200,
+        "body": {
+          "messageId": "6abe9d29-d0fb-4c7e-b6ab-ae2de6bb1742",
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "answer": "I don’t have verified information about that in my current knowledge base yet. I can help with topics covered by the approved information here, such as our products, services, and projects. What would you like to explore?",
+          "grounded": false,
+          "conversational": false,
+          "citations": [],
+          "actionProposal": null,
+          "pendingPromptId": "c652430d-3965-483c-83df-0764b9d727b1",
+          "pendingRequirementKey": "setup.name",
+          "requestId": "6c1e29c4-7719-478e-b21f-1d3dc4375319"
+        }
+      },
+      "persisted": {
+        "status": 200,
+        "body": {
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "tenantId": "d432b965-6862-49b6-abbc-882284ffa1d0",
+          "createdAt": "2026-10-28T08:47:40.795Z",
+          "messages": [
+            {
+              "id": "32e24a20-8cf0-402f-b6f7-3e953568ff9e",
+              "role": "user",
+              "content": "Hi, good morning.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "312a33bc-1266-4dd2-802d-ee604828669a",
+              "createdAt": "2026-10-28T08:47:40.839Z"
+            },
+            {
+              "id": "1ee7ab23-c50f-42ec-a395-fda0390d5703",
+              "role": "assistant",
+              "content": "Hey there! 👋 Zara, your friendly AI assistant! Whether you're exploring our services, need a little guidance, or have a question, I'm here to make things easy. ✨ What can I help you with today?",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:43.352Z"
+            },
+            {
+              "id": "c5e86ce7-7da3-495c-a02f-37c23028cd8d",
+              "role": "user",
+              "content": "I want to start a company in Dubai. Can you explain the steps involved?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "bf1751c3-cc82-4ca4-84a0-3e3ad73db45a",
+              "createdAt": "2026-10-28T08:47:43.386Z"
+            },
+            {
+              "id": "11016c44-2445-404b-9800-0969f6ac51f4",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. | Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. Office 901, 9th Floor, Aspin Commercial Tower, Sheikh Zayed Road, Dubai. ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "614b07d0-69e6-45d0-86f9-4453d33372b9",
+                  "locator": "ANCFZ_Descriptive_RAG_FAQs.docx · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "87318b0e-4913-48e2-891f-0c37be4cb625",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 17",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d0afe66c-8bdf-4284-9c23-12ef35679297",
+                  "locator": "knowledge_registry.csv · section 66",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "1b9c9d74-d427-48b1-bdaa-b2f70466455f",
+                  "locator": "RAG_ANCFZ_Contact_Us.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:46.974Z"
+            },
+            {
+              "id": "100c82c9-e470-4301-9652-2449413ee337",
+              "role": "user",
+              "content": "I want to start a digital marketing agency that handles social media, advertising and content creation.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "f2b4bc30-4332-45cd-b8a3-a85386ddda5e",
+              "createdAt": "2026-10-28T08:47:47.003Z"
+            },
+            {
+              "id": "88c3fd05-19f7-4813-a7f0-819848e5e5d4",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:49.804Z"
+            },
+            {
+              "id": "52c0d4b9-046a-4c4e-a520-5f09f8de1c9e",
+              "role": "user",
+              "content": "What visa packages are available?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "10fb661c-f507-45dc-91e5-4250722e4b69",
+              "createdAt": "2026-10-28T08:47:49.833Z"
+            },
+            {
+              "id": "48170dc7-4fb5-43c6-9022-9139e28cbe51",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Packages start from AED 4,888. Tabby payment options are available for the GCC market, with prices starting from AED 1,222. 1 to 10 Visa All Inclusive Package Visa Packages Add (ICP Services) I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "0e0ae9f0-bcac-4443-bc2e-5fe146a651ac",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 1",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "a91afd7e-8368-4ec2-8f7d-419d96311d90",
+                  "locator": "knowledge_registry.csv · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "01fb4e8f-fbf5-4280-9e3c-081cb6c57515",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d00baf08-d295-418d-a64f-2401cb076986",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:54.318Z"
+            },
+            {
+              "id": "4cf2543e-b828-4ac5-9e79-35a62ac4b3b8",
+              "role": "user",
+              "content": "Okay, let's continue with my company setup.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "2d2d2341-f410-4888-9e12-2736a69a93ae",
+              "createdAt": "2026-10-28T08:47:54.352Z"
+            },
+            {
+              "id": "181c7b1f-59b0-4c97-ba81-2834d8904363",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:56.735Z"
+            },
+            {
+              "id": "1671f464-4508-4a55-89f7-73a2442a9801",
+              "role": "user",
+              "content": "We need two visas, a shared office and want to start next month. Our budget is AED 25000.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "79ad59bc-98c8-485d-8c48-6d480ea4f0d0",
+              "createdAt": "2026-10-28T08:47:56.761Z"
+            },
+            {
+              "id": "b4722662-0c0a-496a-96bf-7e19ef02df7c",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:58.845Z"
+            },
+            {
+              "id": "8adc94f1-d2b8-478d-951b-43be41825693",
+              "role": "user",
+              "content": "Which package would be suitable for my company?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "58552bd1-f5e8-4eea-8cdc-ec67247ed417",
+              "createdAt": "2026-10-28T08:47:58.866Z"
+            },
+            {
+              "id": "6abe9d29-d0fb-4c7e-b6ab-ae2de6bb1742",
+              "role": "assistant",
+              "content": "I don’t have verified information about that in my current knowledge base yet. I can help with topics covered by the approved information here, such as our products, services, and projects. What would you like to explore?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:01.848Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "turn": 8,
+      "userMessage": "That sounds good. I want someone to help me proceed.",
+      "clientMessageId": "fee8f9a0-79ca-4399-a2d9-68dfe0fd64ab",
+      "response": {
+        "status": 200,
+        "body": {
+          "messageId": "5ccc2c08-3f8a-4f4a-9399-4fb0a5e339eb",
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "answer": "What name should I use?",
+          "grounded": false,
+          "conversational": true,
+          "citations": [],
+          "actionProposal": null,
+          "pendingPromptId": "0ca75cee-7da7-4b95-9def-0168ed76cbad",
+          "pendingRequirementKey": "setup.name",
+          "requestId": "04735f87-11ae-4f93-8c97-b9cf5838d1c6"
+        }
+      },
+      "persisted": {
+        "status": 200,
+        "body": {
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "tenantId": "d432b965-6862-49b6-abbc-882284ffa1d0",
+          "createdAt": "2026-10-28T08:47:40.795Z",
+          "messages": [
+            {
+              "id": "32e24a20-8cf0-402f-b6f7-3e953568ff9e",
+              "role": "user",
+              "content": "Hi, good morning.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "312a33bc-1266-4dd2-802d-ee604828669a",
+              "createdAt": "2026-10-28T08:47:40.839Z"
+            },
+            {
+              "id": "1ee7ab23-c50f-42ec-a395-fda0390d5703",
+              "role": "assistant",
+              "content": "Hey there! 👋 Zara, your friendly AI assistant! Whether you're exploring our services, need a little guidance, or have a question, I'm here to make things easy. ✨ What can I help you with today?",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:43.352Z"
+            },
+            {
+              "id": "c5e86ce7-7da3-495c-a02f-37c23028cd8d",
+              "role": "user",
+              "content": "I want to start a company in Dubai. Can you explain the steps involved?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "bf1751c3-cc82-4ca4-84a0-3e3ad73db45a",
+              "createdAt": "2026-10-28T08:47:43.386Z"
+            },
+            {
+              "id": "11016c44-2445-404b-9800-0969f6ac51f4",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. | Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. Office 901, 9th Floor, Aspin Commercial Tower, Sheikh Zayed Road, Dubai. ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "614b07d0-69e6-45d0-86f9-4453d33372b9",
+                  "locator": "ANCFZ_Descriptive_RAG_FAQs.docx · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "87318b0e-4913-48e2-891f-0c37be4cb625",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 17",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d0afe66c-8bdf-4284-9c23-12ef35679297",
+                  "locator": "knowledge_registry.csv · section 66",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "1b9c9d74-d427-48b1-bdaa-b2f70466455f",
+                  "locator": "RAG_ANCFZ_Contact_Us.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:46.974Z"
+            },
+            {
+              "id": "100c82c9-e470-4301-9652-2449413ee337",
+              "role": "user",
+              "content": "I want to start a digital marketing agency that handles social media, advertising and content creation.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "f2b4bc30-4332-45cd-b8a3-a85386ddda5e",
+              "createdAt": "2026-10-28T08:47:47.003Z"
+            },
+            {
+              "id": "88c3fd05-19f7-4813-a7f0-819848e5e5d4",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:49.804Z"
+            },
+            {
+              "id": "52c0d4b9-046a-4c4e-a520-5f09f8de1c9e",
+              "role": "user",
+              "content": "What visa packages are available?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "10fb661c-f507-45dc-91e5-4250722e4b69",
+              "createdAt": "2026-10-28T08:47:49.833Z"
+            },
+            {
+              "id": "48170dc7-4fb5-43c6-9022-9139e28cbe51",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Packages start from AED 4,888. Tabby payment options are available for the GCC market, with prices starting from AED 1,222. 1 to 10 Visa All Inclusive Package Visa Packages Add (ICP Services) I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "0e0ae9f0-bcac-4443-bc2e-5fe146a651ac",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 1",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "a91afd7e-8368-4ec2-8f7d-419d96311d90",
+                  "locator": "knowledge_registry.csv · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "01fb4e8f-fbf5-4280-9e3c-081cb6c57515",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d00baf08-d295-418d-a64f-2401cb076986",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:54.318Z"
+            },
+            {
+              "id": "4cf2543e-b828-4ac5-9e79-35a62ac4b3b8",
+              "role": "user",
+              "content": "Okay, let's continue with my company setup.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "2d2d2341-f410-4888-9e12-2736a69a93ae",
+              "createdAt": "2026-10-28T08:47:54.352Z"
+            },
+            {
+              "id": "181c7b1f-59b0-4c97-ba81-2834d8904363",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:56.735Z"
+            },
+            {
+              "id": "1671f464-4508-4a55-89f7-73a2442a9801",
+              "role": "user",
+              "content": "We need two visas, a shared office and want to start next month. Our budget is AED 25000.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "79ad59bc-98c8-485d-8c48-6d480ea4f0d0",
+              "createdAt": "2026-10-28T08:47:56.761Z"
+            },
+            {
+              "id": "b4722662-0c0a-496a-96bf-7e19ef02df7c",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:58.845Z"
+            },
+            {
+              "id": "8adc94f1-d2b8-478d-951b-43be41825693",
+              "role": "user",
+              "content": "Which package would be suitable for my company?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "58552bd1-f5e8-4eea-8cdc-ec67247ed417",
+              "createdAt": "2026-10-28T08:47:58.866Z"
+            },
+            {
+              "id": "6abe9d29-d0fb-4c7e-b6ab-ae2de6bb1742",
+              "role": "assistant",
+              "content": "I don’t have verified information about that in my current knowledge base yet. I can help with topics covered by the approved information here, such as our products, services, and projects. What would you like to explore?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:01.848Z"
+            },
+            {
+              "id": "d8b57621-a6fb-435c-a2e2-fda31baa41a0",
+              "role": "user",
+              "content": "That sounds good. I want someone to help me proceed.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "fee8f9a0-79ca-4399-a2d9-68dfe0fd64ab",
+              "createdAt": "2026-10-28T08:48:01.876Z"
+            },
+            {
+              "id": "5ccc2c08-3f8a-4f4a-9399-4fb0a5e339eb",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:05.450Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "turn": 9,
+      "userMessage": "My name is Alex Morgan.",
+      "clientMessageId": "03e8ddc9-0727-4274-9f2e-f8e03d161ab5",
+      "response": {
+        "status": 200,
+        "body": {
+          "messageId": "e44cb7fc-ce5f-4ae7-85dd-312070d9e604",
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "answer": "Thanks. What email address should I use?",
+          "grounded": false,
+          "conversational": true,
+          "citations": [],
+          "actionProposal": null,
+          "pendingPromptId": "7c4a70e2-8467-45a0-832b-ef8a2e675bb3",
+          "pendingRequirementKey": "setup.email",
+          "requestId": "339b1b39-dcd2-43b4-b39e-9a82670ed5f3"
+        }
+      },
+      "persisted": {
+        "status": 200,
+        "body": {
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "tenantId": "d432b965-6862-49b6-abbc-882284ffa1d0",
+          "createdAt": "2026-10-28T08:47:40.795Z",
+          "messages": [
+            {
+              "id": "32e24a20-8cf0-402f-b6f7-3e953568ff9e",
+              "role": "user",
+              "content": "Hi, good morning.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "312a33bc-1266-4dd2-802d-ee604828669a",
+              "createdAt": "2026-10-28T08:47:40.839Z"
+            },
+            {
+              "id": "1ee7ab23-c50f-42ec-a395-fda0390d5703",
+              "role": "assistant",
+              "content": "Hey there! 👋 Zara, your friendly AI assistant! Whether you're exploring our services, need a little guidance, or have a question, I'm here to make things easy. ✨ What can I help you with today?",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:43.352Z"
+            },
+            {
+              "id": "c5e86ce7-7da3-495c-a02f-37c23028cd8d",
+              "role": "user",
+              "content": "I want to start a company in Dubai. Can you explain the steps involved?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "bf1751c3-cc82-4ca4-84a0-3e3ad73db45a",
+              "createdAt": "2026-10-28T08:47:43.386Z"
+            },
+            {
+              "id": "11016c44-2445-404b-9800-0969f6ac51f4",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. | Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. Office 901, 9th Floor, Aspin Commercial Tower, Sheikh Zayed Road, Dubai. ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "614b07d0-69e6-45d0-86f9-4453d33372b9",
+                  "locator": "ANCFZ_Descriptive_RAG_FAQs.docx · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "87318b0e-4913-48e2-891f-0c37be4cb625",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 17",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d0afe66c-8bdf-4284-9c23-12ef35679297",
+                  "locator": "knowledge_registry.csv · section 66",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "1b9c9d74-d427-48b1-bdaa-b2f70466455f",
+                  "locator": "RAG_ANCFZ_Contact_Us.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:46.974Z"
+            },
+            {
+              "id": "100c82c9-e470-4301-9652-2449413ee337",
+              "role": "user",
+              "content": "I want to start a digital marketing agency that handles social media, advertising and content creation.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "f2b4bc30-4332-45cd-b8a3-a85386ddda5e",
+              "createdAt": "2026-10-28T08:47:47.003Z"
+            },
+            {
+              "id": "88c3fd05-19f7-4813-a7f0-819848e5e5d4",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:49.804Z"
+            },
+            {
+              "id": "52c0d4b9-046a-4c4e-a520-5f09f8de1c9e",
+              "role": "user",
+              "content": "What visa packages are available?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "10fb661c-f507-45dc-91e5-4250722e4b69",
+              "createdAt": "2026-10-28T08:47:49.833Z"
+            },
+            {
+              "id": "48170dc7-4fb5-43c6-9022-9139e28cbe51",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Packages start from AED 4,888. Tabby payment options are available for the GCC market, with prices starting from AED 1,222. 1 to 10 Visa All Inclusive Package Visa Packages Add (ICP Services) I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "0e0ae9f0-bcac-4443-bc2e-5fe146a651ac",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 1",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "a91afd7e-8368-4ec2-8f7d-419d96311d90",
+                  "locator": "knowledge_registry.csv · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "01fb4e8f-fbf5-4280-9e3c-081cb6c57515",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d00baf08-d295-418d-a64f-2401cb076986",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:54.318Z"
+            },
+            {
+              "id": "4cf2543e-b828-4ac5-9e79-35a62ac4b3b8",
+              "role": "user",
+              "content": "Okay, let's continue with my company setup.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "2d2d2341-f410-4888-9e12-2736a69a93ae",
+              "createdAt": "2026-10-28T08:47:54.352Z"
+            },
+            {
+              "id": "181c7b1f-59b0-4c97-ba81-2834d8904363",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:56.735Z"
+            },
+            {
+              "id": "1671f464-4508-4a55-89f7-73a2442a9801",
+              "role": "user",
+              "content": "We need two visas, a shared office and want to start next month. Our budget is AED 25000.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "79ad59bc-98c8-485d-8c48-6d480ea4f0d0",
+              "createdAt": "2026-10-28T08:47:56.761Z"
+            },
+            {
+              "id": "b4722662-0c0a-496a-96bf-7e19ef02df7c",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:58.845Z"
+            },
+            {
+              "id": "8adc94f1-d2b8-478d-951b-43be41825693",
+              "role": "user",
+              "content": "Which package would be suitable for my company?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "58552bd1-f5e8-4eea-8cdc-ec67247ed417",
+              "createdAt": "2026-10-28T08:47:58.866Z"
+            },
+            {
+              "id": "6abe9d29-d0fb-4c7e-b6ab-ae2de6bb1742",
+              "role": "assistant",
+              "content": "I don’t have verified information about that in my current knowledge base yet. I can help with topics covered by the approved information here, such as our products, services, and projects. What would you like to explore?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:01.848Z"
+            },
+            {
+              "id": "d8b57621-a6fb-435c-a2e2-fda31baa41a0",
+              "role": "user",
+              "content": "That sounds good. I want someone to help me proceed.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "fee8f9a0-79ca-4399-a2d9-68dfe0fd64ab",
+              "createdAt": "2026-10-28T08:48:01.876Z"
+            },
+            {
+              "id": "5ccc2c08-3f8a-4f4a-9399-4fb0a5e339eb",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:05.450Z"
+            },
+            {
+              "id": "1be37bac-e8eb-470b-957b-faf6a6fd730e",
+              "role": "user",
+              "content": "[NAME_2].",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "03e8ddc9-0727-4274-9f2e-f8e03d161ab5",
+              "createdAt": "2026-10-28T08:48:05.477Z"
+            },
+            {
+              "id": "e44cb7fc-ce5f-4ae7-85dd-312070d9e604",
+              "role": "assistant",
+              "content": "Thanks. What email address should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.email",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:07.625Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "turn": 10,
+      "userMessage": "My email is alex@example.test.",
+      "clientMessageId": "ce4d84b0-a5e5-4a42-903e-62d0ffbda2ca",
+      "response": {
+        "status": 200,
+        "body": {
+          "messageId": "24208aad-4a8f-48e8-84a3-071627f41971",
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "answer": "Thanks. What phone number, including country code, should I use?",
+          "grounded": false,
+          "conversational": true,
+          "citations": [],
+          "actionProposal": null,
+          "pendingPromptId": "13150628-3f8f-47e2-a746-10322f7f42ce",
+          "pendingRequirementKey": "setup.phone",
+          "requestId": "fd6da02f-84f8-48d6-bf5f-733673993741"
+        }
+      },
+      "persisted": {
+        "status": 200,
+        "body": {
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "tenantId": "d432b965-6862-49b6-abbc-882284ffa1d0",
+          "createdAt": "2026-10-28T08:47:40.795Z",
+          "messages": [
+            {
+              "id": "32e24a20-8cf0-402f-b6f7-3e953568ff9e",
+              "role": "user",
+              "content": "Hi, good morning.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "312a33bc-1266-4dd2-802d-ee604828669a",
+              "createdAt": "2026-10-28T08:47:40.839Z"
+            },
+            {
+              "id": "1ee7ab23-c50f-42ec-a395-fda0390d5703",
+              "role": "assistant",
+              "content": "Hey there! 👋 Zara, your friendly AI assistant! Whether you're exploring our services, need a little guidance, or have a question, I'm here to make things easy. ✨ What can I help you with today?",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:43.352Z"
+            },
+            {
+              "id": "c5e86ce7-7da3-495c-a02f-37c23028cd8d",
+              "role": "user",
+              "content": "I want to start a company in Dubai. Can you explain the steps involved?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "bf1751c3-cc82-4ca4-84a0-3e3ad73db45a",
+              "createdAt": "2026-10-28T08:47:43.386Z"
+            },
+            {
+              "id": "11016c44-2445-404b-9800-0969f6ac51f4",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. | Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. Office 901, 9th Floor, Aspin Commercial Tower, Sheikh Zayed Road, Dubai. ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "614b07d0-69e6-45d0-86f9-4453d33372b9",
+                  "locator": "ANCFZ_Descriptive_RAG_FAQs.docx · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "87318b0e-4913-48e2-891f-0c37be4cb625",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 17",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d0afe66c-8bdf-4284-9c23-12ef35679297",
+                  "locator": "knowledge_registry.csv · section 66",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "1b9c9d74-d427-48b1-bdaa-b2f70466455f",
+                  "locator": "RAG_ANCFZ_Contact_Us.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:46.974Z"
+            },
+            {
+              "id": "100c82c9-e470-4301-9652-2449413ee337",
+              "role": "user",
+              "content": "I want to start a digital marketing agency that handles social media, advertising and content creation.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "f2b4bc30-4332-45cd-b8a3-a85386ddda5e",
+              "createdAt": "2026-10-28T08:47:47.003Z"
+            },
+            {
+              "id": "88c3fd05-19f7-4813-a7f0-819848e5e5d4",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:49.804Z"
+            },
+            {
+              "id": "52c0d4b9-046a-4c4e-a520-5f09f8de1c9e",
+              "role": "user",
+              "content": "What visa packages are available?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "10fb661c-f507-45dc-91e5-4250722e4b69",
+              "createdAt": "2026-10-28T08:47:49.833Z"
+            },
+            {
+              "id": "48170dc7-4fb5-43c6-9022-9139e28cbe51",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Packages start from AED 4,888. Tabby payment options are available for the GCC market, with prices starting from AED 1,222. 1 to 10 Visa All Inclusive Package Visa Packages Add (ICP Services) I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "0e0ae9f0-bcac-4443-bc2e-5fe146a651ac",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 1",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "a91afd7e-8368-4ec2-8f7d-419d96311d90",
+                  "locator": "knowledge_registry.csv · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "01fb4e8f-fbf5-4280-9e3c-081cb6c57515",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d00baf08-d295-418d-a64f-2401cb076986",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:54.318Z"
+            },
+            {
+              "id": "4cf2543e-b828-4ac5-9e79-35a62ac4b3b8",
+              "role": "user",
+              "content": "Okay, let's continue with my company setup.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "2d2d2341-f410-4888-9e12-2736a69a93ae",
+              "createdAt": "2026-10-28T08:47:54.352Z"
+            },
+            {
+              "id": "181c7b1f-59b0-4c97-ba81-2834d8904363",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:56.735Z"
+            },
+            {
+              "id": "1671f464-4508-4a55-89f7-73a2442a9801",
+              "role": "user",
+              "content": "We need two visas, a shared office and want to start next month. Our budget is AED 25000.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "79ad59bc-98c8-485d-8c48-6d480ea4f0d0",
+              "createdAt": "2026-10-28T08:47:56.761Z"
+            },
+            {
+              "id": "b4722662-0c0a-496a-96bf-7e19ef02df7c",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:58.845Z"
+            },
+            {
+              "id": "8adc94f1-d2b8-478d-951b-43be41825693",
+              "role": "user",
+              "content": "Which package would be suitable for my company?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "58552bd1-f5e8-4eea-8cdc-ec67247ed417",
+              "createdAt": "2026-10-28T08:47:58.866Z"
+            },
+            {
+              "id": "6abe9d29-d0fb-4c7e-b6ab-ae2de6bb1742",
+              "role": "assistant",
+              "content": "I don’t have verified information about that in my current knowledge base yet. I can help with topics covered by the approved information here, such as our products, services, and projects. What would you like to explore?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:01.848Z"
+            },
+            {
+              "id": "d8b57621-a6fb-435c-a2e2-fda31baa41a0",
+              "role": "user",
+              "content": "That sounds good. I want someone to help me proceed.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "fee8f9a0-79ca-4399-a2d9-68dfe0fd64ab",
+              "createdAt": "2026-10-28T08:48:01.876Z"
+            },
+            {
+              "id": "5ccc2c08-3f8a-4f4a-9399-4fb0a5e339eb",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:05.450Z"
+            },
+            {
+              "id": "1be37bac-e8eb-470b-957b-faf6a6fd730e",
+              "role": "user",
+              "content": "[NAME_2].",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "03e8ddc9-0727-4274-9f2e-f8e03d161ab5",
+              "createdAt": "2026-10-28T08:48:05.477Z"
+            },
+            {
+              "id": "e44cb7fc-ce5f-4ae7-85dd-312070d9e604",
+              "role": "assistant",
+              "content": "Thanks. What email address should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.email",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:07.625Z"
+            },
+            {
+              "id": "fc0c7ed9-6b22-4d0b-abdd-977d961e185e",
+              "role": "user",
+              "content": "My email is [EMAIL_1].",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "ce4d84b0-a5e5-4a42-903e-62d0ffbda2ca",
+              "createdAt": "2026-10-28T08:48:07.649Z"
+            },
+            {
+              "id": "24208aad-4a8f-48e8-84a3-071627f41971",
+              "role": "assistant",
+              "content": "Thanks. What phone number, including country code, should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.phone",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:09.480Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "turn": 11,
+      "userMessage": "My phone number is +971 50 000 0000.",
+      "clientMessageId": "235849b1-95db-4430-bb10-0cfb1e0ff5d9",
+      "response": {
+        "status": 200,
+        "body": {
+          "messageId": "20bba849-87f5-4167-97c0-387c6a74fe52",
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "answer": "I have the details needed. Please approve the consent action below to register your request.",
+          "grounded": false,
+          "conversational": false,
+          "citations": [],
+          "actionProposal": {
+            "id": "9511aec5-d46a-4de4-92f7-9c8c903af1aa",
+            "intent": "anc.crm.lead.capture",
+            "consentRequired": true,
+            "confirmation": "I consent to the use of my contact details to register this request.",
+            "expiresAt": "2026-10-28T09:03:12.342Z"
+          },
+          "pendingPromptId": "f2849a09-3641-42f6-82be-419ba51548c6",
+          "pendingRequirementKey": "setup.contact_consent",
+          "requestId": "6db1d4d0-8b0f-43b9-9311-b2c3311416f1"
+        }
+      },
+      "persisted": {
+        "status": 200,
+        "body": {
+          "sessionId": "bc49d0ec-8082-47cf-ba26-9600c73a258f",
+          "tenantId": "d432b965-6862-49b6-abbc-882284ffa1d0",
+          "createdAt": "2026-10-28T08:47:40.795Z",
+          "messages": [
+            {
+              "id": "32e24a20-8cf0-402f-b6f7-3e953568ff9e",
+              "role": "user",
+              "content": "Hi, good morning.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "312a33bc-1266-4dd2-802d-ee604828669a",
+              "createdAt": "2026-10-28T08:47:40.839Z"
+            },
+            {
+              "id": "1ee7ab23-c50f-42ec-a395-fda0390d5703",
+              "role": "assistant",
+              "content": "Hey there! 👋 Zara, your friendly AI assistant! Whether you're exploring our services, need a little guidance, or have a question, I'm here to make things easy. ✨ What can I help you with today?",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:43.352Z"
+            },
+            {
+              "id": "c5e86ce7-7da3-495c-a02f-37c23028cd8d",
+              "role": "user",
+              "content": "I want to start a company in Dubai. Can you explain the steps involved?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "bf1751c3-cc82-4ca4-84a0-3e3ad73db45a",
+              "createdAt": "2026-10-28T08:47:43.386Z"
+            },
+            {
+              "id": "11016c44-2445-404b-9800-0969f6ac51f4",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. | Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. Office 901, 9th Floor, Aspin Commercial Tower, Sheikh Zayed Road, Dubai. ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "614b07d0-69e6-45d0-86f9-4453d33372b9",
+                  "locator": "ANCFZ_Descriptive_RAG_FAQs.docx · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "87318b0e-4913-48e2-891f-0c37be4cb625",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 17",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d0afe66c-8bdf-4284-9c23-12ef35679297",
+                  "locator": "knowledge_registry.csv · section 66",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "1b9c9d74-d427-48b1-bdaa-b2f70466455f",
+                  "locator": "RAG_ANCFZ_Contact_Us.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:46.974Z"
+            },
+            {
+              "id": "100c82c9-e470-4301-9652-2449413ee337",
+              "role": "user",
+              "content": "I want to start a digital marketing agency that handles social media, advertising and content creation.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "f2b4bc30-4332-45cd-b8a3-a85386ddda5e",
+              "createdAt": "2026-10-28T08:47:47.003Z"
+            },
+            {
+              "id": "88c3fd05-19f7-4813-a7f0-819848e5e5d4",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:49.804Z"
+            },
+            {
+              "id": "52c0d4b9-046a-4c4e-a520-5f09f8de1c9e",
+              "role": "user",
+              "content": "What visa packages are available?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "10fb661c-f507-45dc-91e5-4250722e4b69",
+              "createdAt": "2026-10-28T08:47:49.833Z"
+            },
+            {
+              "id": "48170dc7-4fb5-43c6-9022-9139e28cbe51",
+              "role": "assistant",
+              "content": "Here’s what I can verify: Packages start from AED 4,888. Tabby payment options are available for the GCC market, with prices starting from AED 1,222. 1 to 10 Visa All Inclusive Package Visa Packages Add (ICP Services) I don’t have a complete step-by-step answer for every part of that question in the approved information.",
+              "citations": [
+                {
+                  "title": "latest file test",
+                  "chunkId": "0e0ae9f0-bcac-4443-bc2e-5fe146a651ac",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 1",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "a91afd7e-8368-4ec2-8f7d-419d96311d90",
+                  "locator": "knowledge_registry.csv · section 4",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "01fb4e8f-fbf5-4280-9e3c-081cb6c57515",
+                  "locator": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                },
+                {
+                  "title": "latest file test",
+                  "chunkId": "d00baf08-d295-418d-a64f-2401cb076986",
+                  "locator": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx · section 2",
+                  "sourceId": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+                  "versionId": "0769779a-f34d-4e67-a75a-9452ac541a03"
+                }
+              ],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:54.318Z"
+            },
+            {
+              "id": "4cf2543e-b828-4ac5-9e79-35a62ac4b3b8",
+              "role": "user",
+              "content": "Okay, let's continue with my company setup.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "2d2d2341-f410-4888-9e12-2736a69a93ae",
+              "createdAt": "2026-10-28T08:47:54.352Z"
+            },
+            {
+              "id": "181c7b1f-59b0-4c97-ba81-2834d8904363",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:56.735Z"
+            },
+            {
+              "id": "1671f464-4508-4a55-89f7-73a2442a9801",
+              "role": "user",
+              "content": "We need two visas, a shared office and want to start next month. Our budget is AED 25000.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "79ad59bc-98c8-485d-8c48-6d480ea4f0d0",
+              "createdAt": "2026-10-28T08:47:56.761Z"
+            },
+            {
+              "id": "b4722662-0c0a-496a-96bf-7e19ef02df7c",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:47:58.845Z"
+            },
+            {
+              "id": "8adc94f1-d2b8-478d-951b-43be41825693",
+              "role": "user",
+              "content": "Which package would be suitable for my company?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "58552bd1-f5e8-4eea-8cdc-ec67247ed417",
+              "createdAt": "2026-10-28T08:47:58.866Z"
+            },
+            {
+              "id": "6abe9d29-d0fb-4c7e-b6ab-ae2de6bb1742",
+              "role": "assistant",
+              "content": "I don’t have verified information about that in my current knowledge base yet. I can help with topics covered by the approved information here, such as our products, services, and projects. What would you like to explore?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:01.848Z"
+            },
+            {
+              "id": "d8b57621-a6fb-435c-a2e2-fda31baa41a0",
+              "role": "user",
+              "content": "That sounds good. I want someone to help me proceed.",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "fee8f9a0-79ca-4399-a2d9-68dfe0fd64ab",
+              "createdAt": "2026-10-28T08:48:01.876Z"
+            },
+            {
+              "id": "5ccc2c08-3f8a-4f4a-9399-4fb0a5e339eb",
+              "role": "assistant",
+              "content": "What name should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.name",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:05.450Z"
+            },
+            {
+              "id": "1be37bac-e8eb-470b-957b-faf6a6fd730e",
+              "role": "user",
+              "content": "[NAME_2].",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "03e8ddc9-0727-4274-9f2e-f8e03d161ab5",
+              "createdAt": "2026-10-28T08:48:05.477Z"
+            },
+            {
+              "id": "e44cb7fc-ce5f-4ae7-85dd-312070d9e604",
+              "role": "assistant",
+              "content": "Thanks. What email address should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.email",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:07.625Z"
+            },
+            {
+              "id": "fc0c7ed9-6b22-4d0b-abdd-977d961e185e",
+              "role": "user",
+              "content": "My email is [EMAIL_1].",
+              "citations": [],
+              "conversational": true,
+              "pendingRequirementKey": null,
+              "clientMessageId": "ce4d84b0-a5e5-4a42-903e-62d0ffbda2ca",
+              "createdAt": "2026-10-28T08:48:07.649Z"
+            },
+            {
+              "id": "24208aad-4a8f-48e8-84a3-071627f41971",
+              "role": "assistant",
+              "content": "Thanks. What phone number, including country code, should I use?",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.phone",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:09.480Z"
+            },
+            {
+              "id": "c37c13c0-ef33-4278-9571-cda08acc6a01",
+              "role": "user",
+              "content": "My phone number is [PHONE_1].",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": null,
+              "clientMessageId": "235849b1-95db-4430-bb10-0cfb1e0ff5d9",
+              "createdAt": "2026-10-28T08:48:09.508Z"
+            },
+            {
+              "id": "20bba849-87f5-4167-97c0-387c6a74fe52",
+              "role": "assistant",
+              "content": "I have the details needed. Please approve the consent action below to register your request.",
+              "citations": [],
+              "conversational": false,
+              "pendingRequirementKey": "setup.contact_consent",
+              "clientMessageId": null,
+              "createdAt": "2026-10-28T08:48:12.347Z"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

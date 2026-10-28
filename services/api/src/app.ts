@@ -1165,8 +1165,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         ? publishedCatalog.catalog.signals.some((signal) => signal.intentKey === pendingSlotIntent && signal.signalType === 'phrase' && signal.value && masked.masked.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').includes(signal.value.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim()))
         : false;
       const pendingContactKind = pendingSlot?.alternativeGroup === 'contact' ? masked.masked.match(/\[(EMAIL|PHONE)_\d+\]/u)?.[1] ?? null : null;
+      const continuationReply = /\b(?:continue|resume|proceed|go ahead|help me proceed)\b/iu.test(masked.masked);
       const pendingTextRedirected = Boolean(pendingSlot && publishedCatalog && /^text:/u.test(pendingSlot.validationRule) && publishedCatalog.catalog.slots.some((slot) => slot.intentKey === pendingSlotIntent && slot.slotKey !== pendingSlot.slotKey && messageMentionsCatalogSlot(slot, inputText)));
-      const pendingValue = pendingSlot && !pendingConsentSlot && !knowledgeQuestion && !pendingNameIsIntentPhrase && !pendingTextRedirected ? pendingCatalogSlotValue(pendingContactKind ? `token:${pendingContactKind}` : pendingSlot.validationRule, inputText, masked.masked, session, tokenVault) : null;
+      const activitySignalMentioned = Boolean(publishedCatalog && pendingSlot && /activity|business/iu.test(pendingSlot.slotKey) && publishedCatalog.catalog.signals.some((signal) => {
+        if (signal.signalType === 'exclusion' || signal.relationGroup !== 'activity') return false;
+        const terms = normalizeConversationQuery(signal.value).toLocaleLowerCase('en-US').split(/\s+/u).filter((term) => term.length >= 4);
+        const message = normalizeConversationQuery(masked.masked).toLocaleLowerCase('en-US');
+        return terms.filter((term) => message.includes(term)).length >= Math.min(2, terms.length);
+      }));
+      const pendingValue = pendingSlot && !pendingConsentSlot && !knowledgeQuestion && !pendingNameIsIntentPhrase && (!pendingTextRedirected || activitySignalMentioned) && !(continuationReply && pendingSlot.validationRule.startsWith('text:')) ? pendingCatalogSlotValue(pendingContactKind ? `token:${pendingContactKind}` : pendingSlot.validationRule, inputText, masked.masked, session, tokenVault) : null;
       const pendingConsentValue = state.pendingPrompt?.type === 'consent' && (!pendingSlot || pendingConsentSlot) && !knowledgeQuestion && (!activeFollowUpOffer || promptScopedReply)
         ? pendingCatalogSlotValue('boolean:explicit_opt_in', inputText, masked.masked, session, tokenVault)
         : null;
@@ -1191,7 +1198,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const currentCatalogResolution = publishedCatalog ? resolveIntent(publishedCatalog, deterministicMessage, baseCatalogSlotValues) : null;
       const extractionIntentSwitch = /\b(?:also|another|instead|switch|change)\b/iu.test(maskedMessage);
       const inferredCatalogIntentKey = activeConversationJourney && !extractionIntentSwitch ? activeCatalogIntent : currentCatalogResolution?.intentKey ?? activeCatalogIntent;
-      const inferredCatalogValueData = (Boolean(state.selectedIntentKey) || !publishedCatalog?.catalog.journeyRequirements?.length) && !knowledgeQuestion && !conversational && inferredCatalogIntentKey && !pendingValue
+      const inferredCatalogValueData = (Boolean(state.selectedIntentKey) || !publishedCatalog?.catalog.journeyRequirements?.length) && !knowledgeQuestion && !conversational && inferredCatalogIntentKey
         ? (() => {
           const inferred: Record<string, string> = {};
           const isIntentPhrase = publishedCatalog?.catalog.signals.some((signal) => {
@@ -1207,17 +1214,33 @@ export const createApp = (dependencies: AppDependencies = {}) => {
             if (value) inferred[slot.slotKey] = value;
           }
           const interestSlot = publishedCatalog?.catalog.slots.find((slot) => slot.intentKey === inferredCatalogIntentKey && slot.validationRule.startsWith('text:') && slot.required && !pendingCatalogValues[slot.slotKey]);
+          if (pendingValue && pendingSlot?.validationRule.startsWith('text:')) {
+            for (const slot of publishedCatalog?.catalog.slots.filter((candidate) => candidate.intentKey === inferredCatalogIntentKey && !pendingCatalogValues[candidate.slotKey] && candidate.slotKey !== pendingSlot.slotKey && /activity|business/iu.test(candidate.slotKey) && candidate.validationRule.startsWith('text:')) ?? []) inferred[slot.slotKey] = pendingValue;
+          }
           const continuationPhrase = /\b(?:continue|resume|proceed|go ahead)\b/iu.test(maskedMessage);
           const timelineSlot = publishedCatalog?.catalog.slots.find((slot) => slot.intentKey === inferredCatalogIntentKey && /timeline|start/iu.test(slot.slotKey) && !pendingCatalogValues[slot.slotKey]);
           const timelineValue = deterministicMessage.match(/\b(?:next|this|within)\s+(?:month|months|week|weeks)|\b(?:asap|immediately|urgent)\b/iu)?.[0];
           if (timelineSlot && timelineValue) inferred[timelineSlot.slotKey] = timelineValue;
-          if (interestSlot && interestSlot.slotKey !== pendingSlot?.slotKey && !isIntentPhrase && !continuationPhrase && maskedMessage.trim().length >= 12) inferred[interestSlot.slotKey] = maskedMessage.trim();
+          if (interestSlot && interestSlot.slotKey !== pendingSlot?.slotKey && !continuationPhrase && maskedMessage.trim().length >= 12) {
+            if (!isIntentPhrase) inferred[interestSlot.slotKey] = maskedMessage.trim();
+            const activitySlot = publishedCatalog?.catalog.slots.find((slot) => slot.intentKey === inferredCatalogIntentKey && !pendingCatalogValues[slot.slotKey] && /activity|business/iu.test(slot.slotKey) && slot.validationRule.startsWith('text:'));
+            if (activitySlot && activitySlot.slotKey !== interestSlot.slotKey) inferred[activitySlot.slotKey] = maskedMessage.trim();
+          }
           if (pendingTextRedirected && pendingSlot?.validationRule.startsWith('text:') && pendingSlot.required && !pendingCatalogValues[pendingSlot.slotKey] && !continuationPhrase && maskedMessage.trim().length >= 12) inferred[pendingSlot.slotKey] = maskedMessage.trim();
           return inferred;
         })()
         : {};
       const currentLeadData = mergeLeadData(pendingCatalogValues as LeadData, extractLeadData(maskedMessage), pendingValueData);
       const currentCatalogSlotValues: Record<string, string> = { ...baseCatalogSlotValues, ...inferredCatalogValueData };
+      const relatedActivitySlot = publishedCatalog && currentCatalogResolution?.intentKey && inferredCatalogIntentKey && currentCatalogResolution.intentKey !== inferredCatalogIntentKey
+        && publishedCatalog.catalog.relations.some((relation) => (relation.sourceIntent === inferredCatalogIntentKey && relation.relatedIntent === currentCatalogResolution?.intentKey) || (relation.relatedIntent === inferredCatalogIntentKey && relation.sourceIntent === currentCatalogResolution?.intentKey))
+        ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === inferredCatalogIntentKey && !currentCatalogSlotValues[slot.slotKey] && /activity|business/iu.test(slot.slotKey) && slot.validationRule.startsWith('text:'))
+        : null;
+      if (relatedActivitySlot && maskedMessage.trim().length >= 12 && !knowledgeQuestion && !conversational && !continuationReply) currentCatalogSlotValues[relatedActivitySlot.slotKey] = maskedMessage.trim();
+      const activeActivitySlot = publishedCatalog && state.selectedIntentKey
+        ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === state.selectedIntentKey && !currentCatalogSlotValues[slot.slotKey] && /activity|business/iu.test(slot.slotKey) && slot.validationRule.startsWith('text:'))
+        : null;
+      if (activeActivitySlot && publishedCatalog && maskedMessage.trim().length >= 12 && !knowledgeQuestion && !conversational && !continuationReply && publishedCatalog.catalog.signals.some((signal) => signal.signalType === 'phrase' && signal.relationGroup === 'activity' && normalizeConversationQuery(maskedMessage).toLocaleLowerCase('en-US').includes(normalizeConversationQuery(signal.value).toLocaleLowerCase('en-US').split(/\s+/u).filter((term) => term.length >= 4).slice(-2).join(' ')))) currentCatalogSlotValues[activeActivitySlot.slotKey] = maskedMessage.trim();
       const history = publishedCatalog ? catalogHistory : await store.listMessages(session.id, session.tenantId, modelContextWindow + 1);
       const recentMessages = intent === null || Boolean(activeFollowUpOffer) ? history.filter((message) => message.id !== userMessage.id).slice(-modelContextWindow) : [];
       const conversation = recentMessages.map((message) => ({ role: message.role, content: message.maskedContent }));
@@ -1266,7 +1289,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const retrievalTextQuery = [...new Set(textSearchTerms.filter((term) => !['about', 'all', 'are', 'does', 'have', 'how', 'please', 'tell', 'that', 'the', 'this', 'what', 'which', 'with', 'your'].includes(term)))].slice(0, 40).join(' | ');
       const intentContextQuery = [normalizedMessage, ...intentContext].join('\n');
       const leadData = mergeLeadData(pendingCatalogValues as LeadData, currentLeadData);
-      const catalogSlotValues: Record<string, string> = { ...pendingCatalogValues, ...(extractLeadData(maskedMessage) as Record<string, string>), ...inferredCatalogValueData, ...pendingCatalogValueData };
+      const catalogSlotValues: Record<string, string> = { ...pendingCatalogValues, ...(extractLeadData(maskedMessage) as Record<string, string>), ...inferredCatalogValueData, ...pendingCatalogValueData, ...currentCatalogSlotValues };
       const pendingTransitionPrompt = state.pendingPrompt?.type === 'confirmation' && state.pendingPrompt.requirementKey?.startsWith('transition:') ? state.pendingPrompt : null;
       const transitionApproval = Boolean(pendingTransitionPrompt?.intentKey && !knowledgeQuestion && !offerReplyOwnsTurn && /^(?:yes|yeah|yep|sure|okay|ok|confirm|confirmed|approve|approved|proceed|go ahead)\b/iu.test(maskedMessage));
       const transitionDenied = Boolean(pendingTransitionPrompt && !knowledgeQuestion && /^(?:no|nope|not now|later|decline|reject|stop)\b/iu.test(maskedMessage));
@@ -1431,6 +1454,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         else if (!postCaptureFollowUp && !knowledgeQuestion && publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length > 0) draft = await composeGuidedDraft({ answer: catalogSlotQuestion(publishedCatalog, catalogResolution.intentKey, catalogResolution.missingSlots[0] ?? '', catalogSlotValues), citationIds: [], proposedIntent: null }, 'slot_collection', catalogResolution.missingSlots[0] ?? null);
        else if (!postCaptureFollowUp && !knowledgeQuestion && leadIntent && !catalogSlotsReady) draft = await composeGuidedDraft({ answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: null }, 'slot_collection', invalidLeadField);
        else if (!postCaptureFollowUp && !knowledgeQuestion && ((leadIntent && validatedLeadReady) || (catalogResolution?.actionAllowed && (!isContactWorkflow || validatedLeadReady)))) draft = await composeGuidedDraft({ answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: catalogResolution?.intentKey ?? 'lead.capture' }, 'consent');
+      else if (!postCaptureFollowUp && conversational && intent === 'greeting' && (language === 'ar' || /\bgood (?:morning|afternoon|evening)\b/iu.test(maskedMessage))) draft = { answer: language === 'ar' ? conversationalReply(intent, persona?.name ?? 'Sales assistant', language, tenant.name) : openingGreeting(persona?.greeting, persona?.name ?? 'Sales assistant'), citationIds: [], proposedIntent: null };
       else if (!postCaptureFollowUp && conversational && intent === 'identity') draft = { answer: conversationalReply(intent, persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
       else {
         let queryEmbedding: number[];

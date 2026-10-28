@@ -383,7 +383,7 @@ export type ConversationalIntent = 'greeting' | 'wellbeing' | 'identity' | 'intr
 
 export const conversationalIntent = (text: string): ConversationalIntent | null => {
   const normalized = text.toLowerCase().replace(/[\u064b-\u065f]/gu, '').replace(/[؟،؛]/gu, ' ').replace(/[أإآ]/gu, 'ا').replace(/ى/gu, 'ي').replace(/[^a-z0-9\u0600-\u06ff]+/gu, ' ').trim();
-  if (/^(?:(?:hi|hello|hey|hiya)(?: there)?(?: [a-z0-9]+)?|(?:hi|hello|hey|hiya) how (?:are you(?: doing)?|(?:is|s|z) (?:it )?going)|good (?:morning|afternoon|evening)(?: there)?)$/u.test(normalized)) return 'greeting';
+  if (/^(?:(?:hi|hello|hey|hiya)(?: there)?(?: [a-z0-9]+)?|(?:hi|hello|hey|hiya)(?:,? (?:good )?(?:morning|afternoon|evening))?|(?:hi|hello|hey|hiya) how (?:are you(?: doing)?|(?:is|s|z) (?:it )?going)|good (?:morning|afternoon|evening)(?: there)?)$/u.test(normalized)) return 'greeting';
   if (/^(?:مرحبا|اهلا|السلام عليكم|صباح الخير|مساء الخير)(?: يا [\u0600-\u06ff]+)?$/u.test(normalized)) return 'greeting';
   if (/^(?:how are you(?: doing)?|how (?:is|s|z) (?:it )?going|what (?:is|s) up|how (?:is|s) your day)$/u.test(normalized)) return 'wellbeing';
   if (/^(?:i m|im|i am) (?:good|fine|great|well)|^(?:doing|feeling) (?:good|fine|great|well)$/u.test(normalized)) return 'wellbeing';
