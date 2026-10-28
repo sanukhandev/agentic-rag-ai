@@ -150,8 +150,10 @@ export const naturalAbstention = (
   const normalizedRequest = normalizeConversationQuery(request).toLocaleLowerCase('en-US');
   const topic = /\b(?:price|pricing|cost|fee|quote|quotation)\b/u.test(normalizedRequest)
     ? 'the pricing for this setup'
-    : /\b(?:timeline|when|how long|start)\b/u.test(normalizedRequest)
-      ? 'the setup timeline'
+    : /\b(?:step|steps|process|procedure|register|registration|formation)\b/u.test(normalizedRequest)
+      ? 'the setup steps'
+      : /\b(?:timeline|timelines|when|how long|processing time|duration|timeframe|days?|weeks?|months?)\b/u.test(normalizedRequest)
+        ? 'the setup timeline'
       : /\bvisa\b/u.test(normalizedRequest)
         ? 'the visa details'
         : /\b(?:package|option)\b/u.test(normalizedRequest)
@@ -500,11 +502,13 @@ export const isKnowledgeQuestion = (text: string): boolean => {
   const conversational = conversationalIntent(normalized);
   if (conversational !== null && conversational !== 'clarification') return false;
   const directActionRequest = /^(?:can|could|would)\s+(?:i|you)\s+(?:book|schedule|request|arrange|register|call|contact)\b|^(?:book|schedule|request|arrange|register)\s+(?:a\s+)?(?:demo|quote|call|consultation|meeting|appointment|service|business)\b/u.test(normalized);
+  const embeddedQuestion = /\b(?:what|how|where|which|why|when)\s+(?:are|is|do|does|can|could|should|to)\b[\s\S]{0,120}/u.test(normalized);
   return !directActionRequest && (/[?؟]/u.test(normalized)
     || /^(?:what|how|where|which|why|when|who|can(?: you)?|could(?: you)?|would(?: you)?|is|are|does|should|will|do\s+(?:you|we|they|i)|tell me|please explain)\b/u.test(normalized)
     || /\b(?:i(?:'d| would| want)|we(?:'d| would| want)|would) like to know\b/u.test(normalized)
     || /\b(?:want|need|would like)\s+to know\b/u.test(normalized)
-    || /\bi want to understand\b/u.test(normalized));
+    || /\bi want to understand\b/u.test(normalized)
+    || embeddedQuestion);
 };
 
 /** A short non-question can answer the last journey question without being a knowledge query. */

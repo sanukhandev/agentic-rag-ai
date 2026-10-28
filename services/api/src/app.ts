@@ -103,6 +103,8 @@ const groundedKnowledgeFallback = (question: string, evidence: ModelEvidence[]):
       && (!packageQuestion || /\b(?:package|packages|visa|visas|price|prices|cost|costs|fee|fees|quote|quotation)\b/u.test(sentence))
       && (!processQuestion || (/\b(?:process|procedure|register|registration|application|formation|license|licence|document|required)\b/u.test(sentence) && !/\b(?:also\s+)?offers?\b/iu.test(sentence)))
       && (!timelineQuestion || /\b(?:timeline|timelines|time|duration|processing|days?|weeks?|months?|start)\b/iu.test(sentence)))
+    .filter(({ sentence }) => !processQuestion || (!/\b(?:all-inclusive|package prices?|visa issuance|investor security approval|up to \d+ visas?)\b/iu.test(sentence)
+      && /\b(?:activity|activities|application|registration|register|formation|license|licence|document|documents|proposed company)\b/iu.test(sentence)))
     .sort((left, right) => right.score - left.score);
   const sentences = candidates.slice(0, 4).map(({ sentence }) => sentence);
   if (sentences.length === 0) return null;
@@ -111,7 +113,10 @@ const groundedKnowledgeFallback = (question: string, evidence: ModelEvidence[]):
     .map((sentence) => [sentence.toLocaleLowerCase('en-US').replace(/[^a-z0-9]+/gu, ''), sentence]))
     .values()];
   if (safeSentences.length === 0) return null;
-  return { answer: safeSentences.join(' '), citationIds: evidence.filter((item) => safeSentences.some((sentence) => item.content.includes(sentence))).map((item) => item.citation.chunkId).slice(0, 4), proposedIntent: null };
+  const answer = processQuestion
+    ? `The approved setup information covers these steps: ${safeSentences.map((sentence, index) => `${index + 1}) ${sentence}`).join(' ')}`
+    : safeSentences.join(' ');
+  return { answer, citationIds: evidence.filter((item) => safeSentences.some((sentence) => item.content.includes(sentence))).map((item) => item.citation.chunkId).slice(0, 4), proposedIntent: null };
 };
 const INGESTION_LEASE_MS = 120_000;
 const publishIngestionProgress = async (store: Store, job: IngestionJob, stage: string, processed: number, total: number, status: IngestionJobStatus = job.status, failureCode: string | null = null): Promise<void> => {
@@ -1327,7 +1332,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const useStructuredRetrievalContext = postCaptureFollowUp || Boolean(state.selectedIntentKey) || needsConversationContext(maskedMessage);
       const knowledgeQueryHints = knowledgeQuestion ? [
         /\b(?:documents?|requirements?)\b/i.test(maskedMessage) ? 'documents requirements application process' : '',
-        /\b(?:steps?|process|procedure|how)\b/i.test(maskedMessage) ? 'setup procedure steps' : '',
+        /\b(?:steps?|process|procedure|how)\b/i.test(maskedMessage) ? 'setup procedure steps company registration application documents' : '',
         /\b(?:package|packages|price|prices|cost|costs|fee|fees)\b/i.test(maskedMessage) ? 'package pricing fees' : '',
         ...(acceptedOfferOption?.retrievalHints ?? []),
       ].filter(Boolean).slice(0, 8) : [];
@@ -1595,6 +1600,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         }
       }
       if (!knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog && !consentDenied && !catalogSlotNonAnswer && !isGuidedResponse(draft.answer, 'slot_collection', journeySlotKey)) draft = { answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null };
+      if (knowledgeQuestion && /\b(?:step|steps|process|procedure)\b/iu.test(maskedMessage) && evidence.length > 0 && !/\b(?:step|steps|process|procedure)\b/iu.test(draft.answer)) draft = groundedKnowledgeFallback(maskedMessage, evidence) ?? draft;
       if (knowledgeQuestion && evidence.length > 0 && store.constructor.name !== 'MemoryStore' && draft.citationIds.length === 0) draft = groundedKnowledgeFallback(maskedMessage, evidence) ?? draft;
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       let citations = validateCitations(draft, evidence);
