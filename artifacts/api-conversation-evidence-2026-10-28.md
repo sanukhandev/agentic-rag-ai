@@ -102,3 +102,11 @@ Persisted opportunity facts after turn 4 (token-safe):
 ```
 
 The imported catalog does not currently define an executable `workspace/office` requirement for this journey, so shared-office capture remains a catalog configuration gap rather than an application fallback. The supplied workbook also imports without executable `journeyRequirements`/`journeyTransitions`; contact and consent therefore still use the legacy slot fallback. No CRM action was confirmed and no Salesforce/n8n side effect was executed.
+
+## Catalog/RAG completion status
+
+An import-compatible executable catalog proposal was generated at `artifacts/ANCFZ_Intent_Catalog_Executable_Proposal_2026-10-28.xlsx` and validated by the repository importer and API catalog validator (`37` intents, `10` journey requirements, `2` transitions). It is deliberately a proposal: it is not published to the tenant because the commercial source is still pending business validation and the configured external workflow/document policy requires owner approval.
+
+The source conflict report is in `artifacts/ancfz-source-conflict-report-2026-10-28.md`. The local active corpus has one public source and 2,057 chunks. The API now fails closed when commercial evidence conflicts; it does not select or invent a price.
+
+PostgreSQL tests were attempted with the repository command but remain skipped when `DATABASE_URL` is not provided to the host test process. The Docker database is healthy inside the Compose network, but its port is not published to the host test runner. No Salesforce Lead, conversion, passport/Emirates ID upload, OCR result, or CRM summary synchronization was executed.
