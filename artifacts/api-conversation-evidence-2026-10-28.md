@@ -103,6 +103,10 @@ Persisted opportunity facts after turn 4 (token-safe):
 
 The imported catalog does not currently define an executable `workspace/office` requirement for this journey, so shared-office capture remains a catalog configuration gap rather than an application fallback. The supplied workbook also imports without executable `journeyRequirements`/`journeyTransitions`; contact and consent therefore still use the legacy slot fallback. No CRM action was confirmed and no Salesforce/n8n side effect was executed.
 
+## Development catalog publication
+
+The executable proposal was published locally as catalog version `3` (`e11aa14f-7e3b-4971-940b-312f33eef7de`) for tenant `anc`. A post-publication API smoke conversation confirmed the new `setup.interest_summary` and `setup.business_activity` requirements and preserved the knowledge interruption. The RAG source was intentionally not promoted from business-validation pending status.
+
 ## Catalog/RAG completion status
 
 An import-compatible executable catalog proposal was generated at `artifacts/ANCFZ_Intent_Catalog_Executable_Proposal_2026-10-28.xlsx` and validated by the repository importer and API catalog validator (`37` intents, `10` journey requirements, `2` transitions). It is deliberately a proposal: it is not published to the tenant because the commercial source is still pending business validation and the configured external workflow/document policy requires owner approval.
