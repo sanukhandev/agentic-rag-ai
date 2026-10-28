@@ -133,7 +133,12 @@ const rankWithEmbedding = <T extends { chunk: { content: string; embedding: numb
   const ranked = rows.map((row) => {
     const content = presentKnowledgeText(row.chunk.content).toLowerCase();
     const overlap = terms.filter((term) => content.includes(term)).length;
-    return { row, score: cosine(queryEmbedding, row.chunk.embedding) + overlap * 0.1, overlap };
+    const topicBoost = /\b(?:step|steps|process|procedure|register|registration|formation|application)\b/u.test(query.toLowerCase()) && /\b(?:step|steps|process|procedure|register|registration|formation|application)\b/u.test(content)
+      ? 0.3
+      : /\b(?:package|packages|price|prices|cost|costs|fee|fees|visa|visas)\b/u.test(query.toLowerCase()) && /\b(?:package|packages|price|prices|cost|costs|fee|fees|visa|visas)\b/u.test(content)
+        ? 0.3
+        : 0;
+    return { row, score: cosine(queryEmbedding, row.chunk.embedding) + overlap * 0.1 + topicBoost, overlap };
   })
     .sort((left, right) => right.score - left.score)
     .filter(({ score, overlap }) => (semanticOnlyThreshold !== null && score >= semanticOnlyThreshold) || (overlap > 0 && (score >= 0.45 || overlap >= 2)));
