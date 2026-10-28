@@ -1,7 +1,7 @@
 # Agentic E2E acceptance
 
 - Run: f52f8203-b955-40d6-8de6-a4490f2beb63
-- Commit: WORKTREE-LIVE-RECOVERY
+- Commit: 3e5d827b9cfc8cdcffb2bc0015f07ea1c6541ade
 - Customer messages: 205
 - Assistant responses: 205
 - Assertions passed: 631
