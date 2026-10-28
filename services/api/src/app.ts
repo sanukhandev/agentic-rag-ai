@@ -247,9 +247,17 @@ const inferredCatalogSlotValue = (slot: IntentCatalogSlot, rawInput: string, mas
   if (/visa_count/iu.test(slot.slotKey)) {
     const match = rawInput.match(/(?<![\d.])\d+(?![\d.])(?=\s*(?:visa|visas))/iu);
     if (match) return pendingCatalogSlotValue(slot.validationRule, match[0], match[0], session, tokenVault);
+    const correction = rawInput.match(/\b(?:to|of|is|=)\s*(\d+)\b/iu)?.[1];
+    if (correction) return pendingCatalogSlotValue(slot.validationRule, correction, correction, session, tokenVault);
+    const contextualNumber = rawInput.match(/\b(?:visa(?:s)?\s+(?:requirement|count)|number\s+of\s+visas?)\b[\s\S]{0,24}?\b(?:to|of|is|=)?\s*(\d+)\b/iu)?.[1];
+    if (contextualNumber) return pendingCatalogSlotValue(slot.validationRule, contextualNumber, contextualNumber, session, tokenVault);
     const word = normalized.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+visas?\b/iu)?.[1]?.toLocaleLowerCase('en-US');
     const numeric = word ? { one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10' }[word] : null;
-    return numeric ? pendingCatalogSlotValue(slot.validationRule, numeric, numeric, session, tokenVault) : null;
+    if (numeric) return pendingCatalogSlotValue(slot.validationRule, numeric, numeric, session, tokenVault);
+    const contextualWord = normalized.match(/\b(?:visa(?:s)?\s+(?:requirement|count)|number\s+of\s+visas?)\b[\s\S]{0,24}?\b(?:to|of|is)?\s*(one|two|three|four|five|six|seven|eight|nine|ten)\b/iu)?.[1]?.toLocaleLowerCase('en-US');
+    const correctionWord = normalized.match(/\b(?:to|of|is)\s+(one|two|three|four|five|six|seven|eight|nine|ten)\b/iu)?.[1]?.toLocaleLowerCase('en-US');
+    const selectedWord = contextualWord ?? correctionWord;
+    return selectedWord ? pendingCatalogSlotValue(slot.validationRule, ({ one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10' }[selectedWord] ?? selectedWord), selectedWord, session, tokenVault) : null;
   }
   if (/timeline|start/iu.test(slot.slotKey)) {
     const match = normalized.match(/\b(?:next|this|within)\s+(?:month|months|week|weeks)|\b(?:asap|immediately|urgent)\b/iu);
