@@ -109,7 +109,7 @@ const groundedKnowledgeFallback = (question: string, evidence: ModelEvidence[]):
   const sentences = candidates.slice(0, 4).map(({ sentence }) => sentence);
   if (sentences.length === 0) return null;
   const safeSentences = [...new Map(sentences
-    .filter((sentence) => !/[?؟]$/u.test(sentence) && !/https?:\/\/|\b(?:office\s+\d+|floor|tower|street|road|pending business validation|\.docx|\.pdf|source validation|retrieval metadata|validate all prices)\b/iu.test(sentence))
+    .filter((sentence) => !/[?؟]$/u.test(sentence) && !/\b(?:would you like|what would you like)\b/iu.test(sentence) && !/\||https?:\/\/|(?:\.docx|\.pdf)|\b(?:office\s+\d+|floor|tower|street|road|pending business validation|source validation|retrieval metadata|validate all prices)\b/iu.test(sentence))
     .map((sentence) => [sentence.toLocaleLowerCase('en-US').replace(/[^a-z0-9]+/gu, ''), sentence]))
     .values()];
   if (safeSentences.length === 0) return null;
@@ -1147,6 +1147,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const conversational = intent !== null && (languageAllowed || language === 'ar');
       const leadRequestedNow = hasLeadIntent(masked.masked);
       const directKnowledgeQuestion = isKnowledgeQuestion(masked.masked);
+      const setupConsultationTurn = /^(?:i|we)\s+(?:would like|want|need|plan|intend)\s+to\s+(?:start|set up|setup|open|form|register|establish)\s+(?:an?|the)\s+\S+(?:\s+\S+){0,3}\s+(?:company|business|firm)\b/iu.test(normalizeConversationQuery(masked.masked));
       const contextWindowMessages = persona?.contextWindowMessages ?? DEFAULT_CONTEXT_WINDOW_MESSAGES;
       const modelContextWindow = Math.min(Math.max(contextWindowMessages, 2), 8);
       let evidence: ModelEvidence[] = [];
@@ -1260,7 +1261,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const currentCatalogResolution = publishedCatalog ? resolveIntent(publishedCatalog, deterministicMessage, baseCatalogSlotValues) : null;
       const extractionIntentSwitch = /\b(?:also|another|instead|switch|change)\b/iu.test(maskedMessage);
       const inferredCatalogIntentKey = activeConversationJourney && !extractionIntentSwitch ? activeCatalogIntent : currentCatalogResolution?.intentKey ?? activeCatalogIntent;
-      const inferredCatalogValueData = (Boolean(state.selectedIntentKey) || Boolean(inferredCatalogIntentKey) || !publishedCatalog?.catalog.journeyRequirements?.length) && !knowledgeQuestion && !conversational && inferredCatalogIntentKey
+      const inferredCatalogValueData = (Boolean(state.selectedIntentKey) || Boolean(inferredCatalogIntentKey) || !publishedCatalog?.catalog.journeyRequirements?.length) && (!knowledgeQuestion || setupConsultationTurn) && !conversational && inferredCatalogIntentKey
         ? (() => {
           const inferred: Record<string, string> = {};
           const isIntentPhrase = publishedCatalog?.catalog.signals.some((signal) => {
@@ -1333,6 +1334,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const knowledgeQueryHints = knowledgeQuestion ? [
         /\b(?:documents?|requirements?)\b/i.test(maskedMessage) ? 'documents requirements application process' : '',
         /\b(?:steps?|process|procedure|how)\b/i.test(maskedMessage) ? 'setup procedure steps company registration application documents' : '',
+        setupConsultationTurn ? 'setup procedure steps company registration application documents' : '',
         /\b(?:package|packages|price|prices|cost|costs|fee|fees)\b/i.test(maskedMessage) ? 'package pricing fees' : '',
         ...(acceptedOfferOption?.retrievalHints ?? []),
       ].filter(Boolean).slice(0, 8) : [];
@@ -1546,7 +1548,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           const approvedChunks = await store.listSearchableChunks(session.tenantId, internal ? 'internal' : 'public');
           ranked = rankChunksWithVector(knowledgeRetrievalQuery, approvedChunks, queryEmbedding, 4);
         }
-        if (knowledgeQuestion && process.env.STORE === 'postgres') {
+        if (knowledgeQuestion && process.env.STORE === 'postgres' && ranked.length === 0) {
           const approvedChunks = await store.listSearchableChunks(session.tenantId, internal ? 'internal' : 'public');
           const broadRanked = rankChunksWithVector(knowledgeRetrievalQuery, approvedChunks, queryEmbedding, 4, 0.35);
           if (broadRanked.length > 0) ranked = broadRanked;
@@ -1559,7 +1561,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
             ? { name: result.name, ok: true, data: { evidence } }
             : result);
         }
-        knowledgeConflict = hasConflictingEvidence(evidence.map((item) => item.content));
+        const commercialKnowledgeQuestion = /\b(?:price|pricing|cost|costs|fee|fees|quote|quotation|package|packages)\b/iu.test(knowledgeRetrievalQuery);
+        knowledgeConflict = commercialKnowledgeQuestion && hasConflictingEvidence(evidence.map((item) => item.content));
         let fallbackModelInput: Parameters<ChatModel['draft']>[0] | null = null;
         if (knowledgeConflict) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: evidence.slice(0, 4).map((item) => item.citation.chunkId), proposedIntent: null };
         else if (!postCaptureFollowUp && conversational && evidence.length === 0) draft = { answer: intent === 'greeting' && language !== 'ar' ? openingGreeting(persona?.greeting, persona?.name ?? 'Sales assistant') : conversationalReply(intent ?? 'identity', persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
@@ -1595,6 +1598,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
             // Structured tools are authoritative for this claim; do not let an uncited model abstention hide verified data.
             draft = await new DeterministicGroundedModel().draft(persona ? { ...modelInput, persona } : modelInput);
           }
+          if (setupConsultationTurn && evidence.length > 0) draft = groundedKnowledgeFallback(`${maskedMessage} setup steps`, evidence) ?? draft;
         } catch {
           if (knowledgeQuestion && fallbackModelInput) draft = await new DeterministicGroundedModel().draft(fallbackModelInput);
           else if (knowledgeQuestion && evidence.length === 0) draft = { answer: naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues }), citationIds: [], proposedIntent: null };
@@ -1699,7 +1703,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         return { key, label, retrievalHints };
       }).filter((option): option is FollowUpOfferOption => Boolean(option));
       const validFollowUpOptions = rawFollowUpOptions.length > 0 && rawFollowUpOptions.length <= 4 && validatedFollowUpOptions.length === rawFollowUpOptions.length ? validatedFollowUpOptions : [];
-      const untrackedKnowledgeOffer = safeGrounded && !activeFollowUpOffer && !crmContactMissing && !consentActionReady && !journeyRequirement && !journeyOfferPending && !journeyConfirmationPending && !journeyDocumentPending && !journeyDocumentAwaiting && !catalogClarification && presentsUntrackedOffer(safeAnswer) && validFollowUpOptions.length === 0;
+      const untrackedKnowledgeOffer = safeGrounded && !setupConsultationTurn && !activeFollowUpOffer && !crmContactMissing && !consentActionReady && !journeyRequirement && !journeyOfferPending && !journeyConfirmationPending && !journeyDocumentPending && !journeyDocumentAwaiting && !catalogClarification && presentsUntrackedOffer(safeAnswer) && validFollowUpOptions.length === 0;
       if (untrackedKnowledgeOffer) {
         // Do not show a yes/no or multi-choice question that has no persisted state.
         const safeFallback = 'I can help with the next step. What would you like to focus on first?';
@@ -1709,7 +1713,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!endedConversation && !casualFallback && !continuityAnswer && !/\b(?:unsubscribe|do not contact|stop contacting)\b/iu.test(maskedMessage)) {
         const questionCount = (safeAnswer.match(/\?/gu) ?? []).length;
         if (questionCount !== 1 || !safeAnswer.trim().endsWith('?')) {
-          const followUp = nextMissingSlot && publishedCatalog
+          const followUp = setupConsultationTurn && catalogSlotValues.business_activity
+            ? 'Would you like me to compare the approved package options for this setup?'
+            : nextMissingSlot && publishedCatalog
             ? catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? catalogResolution?.intentKey ?? state.selectedIntentKey ?? '', nextMissingSlot, catalogSlotValues)
             : knowledgeQuestion && catalogSlotValues.business_activity
               ? 'Would you like me to compare the approved package options for this setup?'

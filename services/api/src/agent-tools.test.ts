@@ -32,4 +32,12 @@ describe('bounded agent tool runtime', () => {
     const results = await runAgentTools({ plan: async () => ({ calls: [{ name: 'search_approved_knowledge', input: {} }] }) }, { store, session, catalog: null, opportunityId: null, maskedQuery: 'what all packages' });
     expect(results.map((result) => result.name)).toEqual(expect.arrayContaining(['get_available_packages', 'get_authoritative_pricing']));
   });
+
+  it('loads setup knowledge for a company-start consultation statement', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'ANCFZ', slug: 'anc' });
+    const session = await store.createSession(tenant.id);
+    const results = await runAgentTools({}, { store, session, catalog: null, opportunityId: null, maskedQuery: 'I would like to start an IT service company' });
+    expect(results.map((result) => result.name)).toEqual(expect.arrayContaining(['search_approved_knowledge', 'get_setup_requirements']));
+  });
 });
