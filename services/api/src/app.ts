@@ -73,13 +73,29 @@ const errorCode = (error: unknown): string | undefined => { const value = errorP
 const ingestionErrorDetail = (error: unknown): string | null => { const value = error instanceof Error ? error.message : String(error); const normalized = value.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim(); return normalized ? normalized.slice(0, 2_000) : null; };
 
 const groundedKnowledgeFallback = (question: string, evidence: ModelEvidence[]): ModelDraft | null => {
-  const terms = question.toLocaleLowerCase('en-US').match(/[a-z]{4,}/g) ?? [];
+  const normalizedQuestion = question.toLocaleLowerCase('en-US');
+  const terms = normalizedQuestion.match(/[a-z]{4,}/g) ?? [];
+  const packageQuestion = /\b(?:package|packages|visa|visas|price|prices|cost|costs|fee|fees)\b/u.test(normalizedQuestion);
+  const processQuestion = /\b(?:step|steps|process|procedure|how|register|registration)\b/u.test(normalizedQuestion);
+  const topicTerms = /\b(?:package|packages|visa|visas|price|prices|cost|costs|fee|fees)\b/u.test(normalizedQuestion)
+    ? ['package', 'packages', 'visa', 'visas', 'price', 'prices', 'cost', 'costs', 'fee', 'fees']
+    : /\b(?:step|steps|process|procedure|how|register|registration)\b/u.test(normalizedQuestion)
+      ? ['step', 'steps', 'process', 'procedure', 'register', 'registration', 'application', 'formation', 'license', 'licence']
+      : terms;
   const candidates = [...new Set(evidence.flatMap((item) => item.content.split(/(?<=[.!?])\s+|\n+/u).map((sentence) => sentence.trim()).filter((sentence) => sentence.length > 20 && terms.some((term) => sentence.toLocaleLowerCase('en-US').includes(term)))))]
-    .map((sentence) => ({ sentence, score: terms.filter((term) => sentence.toLocaleLowerCase('en-US').includes(term)).length + (/\b\d+(?:[.,]\d+)?\b/u.test(sentence) ? 2 : 0) }))
+    .map((sentence) => ({ sentence, score: topicTerms.filter((term) => sentence.toLocaleLowerCase('en-US').includes(term)).length + terms.filter((term) => sentence.toLocaleLowerCase('en-US').includes(term)).length }))
+    .filter(({ sentence }) => /^[A-Z]/u.test(sentence)
+      && (!packageQuestion || /\b(?:package|packages|visa|visas|price|prices|cost|costs|fee|fees|quote|quotation)\b/u.test(sentence))
+      && (!processQuestion || (/\b(?:process|procedure|register|registration|application|formation|license|licence|document|required)\b/u.test(sentence) && !/\b(?:also\s+)?offers?\b/iu.test(sentence))))
     .sort((left, right) => right.score - left.score);
   const sentences = candidates.slice(0, 4).map(({ sentence }) => sentence);
   if (sentences.length === 0) return null;
-  return { answer: `Here’s what I can verify: ${sentences.join(' ')} I don’t have a complete step-by-step answer for every part of that question in the approved information.`, citationIds: evidence.slice(0, 4).map((item) => item.citation.chunkId), proposedIntent: null };
+  const safeSentences = [...new Map(sentences
+    .filter((sentence) => !/[?؟]$/u.test(sentence) && !/https?:\/\/|\b(?:office\s+\d+|floor|tower|street|road|pending business validation|\.docx|\.pdf|source validation|retrieval metadata|validate all prices)\b/iu.test(sentence))
+    .map((sentence) => [sentence.toLocaleLowerCase('en-US').replace(/[^a-z0-9]+/gu, ''), sentence]))
+    .values()];
+  if (safeSentences.length === 0) return null;
+  return { answer: `Here’s what I can verify: ${safeSentences.join(' ')}`, citationIds: evidence.filter((item) => safeSentences.some((sentence) => item.content.includes(sentence))).map((item) => item.citation.chunkId).slice(0, 4), proposedIntent: null };
 };
 const INGESTION_LEASE_MS = 120_000;
 const publishIngestionProgress = async (store: Store, job: IngestionJob, stage: string, processed: number, total: number, status: IngestionJobStatus = job.status, failureCode: string | null = null): Promise<void> => {
@@ -1469,6 +1485,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           const approvedChunks = await store.listSearchableChunks(session.tenantId, internal ? 'internal' : 'public');
           ranked = rankChunksWithVector(knowledgeRetrievalQuery, approvedChunks, queryEmbedding, 4);
         }
+        if (knowledgeQuestion && process.env.STORE === 'postgres') {
+          const approvedChunks = await store.listSearchableChunks(session.tenantId, internal ? 'internal' : 'public');
+          const broadRanked = rankChunksWithVector(knowledgeRetrievalQuery, approvedChunks, queryEmbedding, 4, 0.35);
+          if (broadRanked.length > 0) ranked = broadRanked;
+        }
         evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: presentKnowledgeText(chunk.content) })).filter((item) => item.content.length > 0);
         knowledgeConflict = hasConflictingEvidence(evidence.map((item) => item.content));
         if (knowledgeConflict) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: evidence.slice(0, 4).map((item) => item.citation.chunkId), proposedIntent: null };
@@ -1500,7 +1521,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         }
       }
       if (!knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog && !consentDenied && !catalogSlotNonAnswer && !isGuidedResponse(draft.answer, 'slot_collection', journeySlotKey)) draft = { answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null };
-      if (knowledgeQuestion && evidence.length > 0 && draft.answer === naturalAbstention(language)) draft = groundedKnowledgeFallback(maskedMessage, evidence) ?? draft;
+      if (knowledgeQuestion && evidence.length > 0 && store.constructor.name !== 'MemoryStore') draft = groundedKnowledgeFallback(maskedMessage, evidence) ?? draft;
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       let citations = validateCitations(draft, evidence);
       const casualFallback = conversational && (evidence.length === 0 || intent === 'identity');
