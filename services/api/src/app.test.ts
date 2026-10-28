@@ -976,7 +976,7 @@ describe('API vertical slice', () => {
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-continuity@example.test', password: 'Platform1Password' }).expect(201);
     const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Continuity Tenant', slug: 'continuity-tenant', adminEmail: 'admin-continuity@example.test', adminPassword: 'TenantA1Password' }).expect(201);
     const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-continuity@example.test', password: 'TenantA1Password' }).expect(200);
-    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Continuity setup guide', mimeType: 'text/plain', audience: 'public', content: 'The approved setup guide explains company packages, setup steps and available timelines.' }).expect(201);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Continuity setup guide', mimeType: 'text/plain', audience: 'public', content: 'The approved setup guide explains company packages, setup steps, package pricing and available setup timelines.' }).expect(201);
     await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
     await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to get a service', clientMessageId: 'continuity-interest' }).expect(200);
@@ -998,6 +998,11 @@ describe('API vertical slice', () => {
     const knowledge = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What packages and setup steps are available?', clientMessageId: 'continuity-knowledge' }).expect(200);
     expect(knowledge.body.grounded).toBe(true);
     expect(knowledge.body.citations).not.toHaveLength(0);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.consentCapturedAt).toBe(consentCapturedAt);
+    const contextualKnowledge = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Could you tell me about the pricing and timelines for the same?', clientMessageId: 'continuity-contextual-pricing' }).expect(200);
+    expect(contextualKnowledge.body.grounded).toBe(true);
+    expect(contextualKnowledge.body.citations).not.toHaveLength(0);
+    expect(contextualKnowledge.body.actionProposal).toBeNull();
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.consentCapturedAt).toBe(consentCapturedAt);
 
     const repeatedRequest = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to request a demo', clientMessageId: 'continuity-repeat' }).expect(200);
