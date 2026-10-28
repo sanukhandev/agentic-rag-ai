@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 const baseUrl = (process.env.API_BASE_URL ?? 'http://localhost').replace(/\/$/u, '');
 const tenantSlug = process.env.TENANT_SLUG ?? 'anc';
 const primaryIntentKey = process.env.PRIMARY_INTENT_KEY ?? 'anc.setup.new_company';
+const scenarioId = process.env.TEST_SCENARIO ?? `live-${crypto.randomUUID()}`;
 const outputDir = process.env.TEST_ARTIFACT_DIRECTORY ?? 'artifacts';
 const scenario = [
   'Hi, good morning.',
@@ -29,9 +30,11 @@ const json = async (path, options = {}) => {
 };
 const redact = (value) => JSON.parse(JSON.stringify(value).replaceAll('alex@example.test', '[EMAIL_TEST]').replaceAll('+971 50 000 0000', '[PHONE_TEST]').replaceAll('Alex Morgan', '[NAME_TEST]'));
 const postgresContainer = process.env.POSTGRES_CONTAINER ?? 'agentic-postgres';
+const postgresUser = process.env.POSTGRES_USER ?? 'agentic';
+const postgresDatabase = process.env.POSTGRES_DATABASE ?? 'agentic_rag';
 const persistedState = (sessionId) => {
   try {
-    const raw = execFileSync('docker', ['exec', postgresContainer, 'psql', '-U', 'agentic', '-d', 'agentic_rag', '-At', '-c', `select conversation_state from chat_sessions where id='${sessionId}'`], { encoding: 'utf8' }).trim();
+    const raw = execFileSync('docker', ['exec', postgresContainer, 'psql', '-U', postgresUser, '-d', postgresDatabase, '-At', '-c', `select conversation_state from chat_sessions where id='${sessionId}'`], { encoding: 'utf8' }).trim();
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 };
@@ -46,12 +49,14 @@ const turns = [];
 const assertions = [];
 let firstOpportunityId = null;
 for (const [index, message] of scenario.entries()) {
+  const assertionStart = assertions.length;
   const clientMessageId = crypto.randomUUID();
   const response = await json('/api/v1/chat/messages', { method: 'POST', body: { sessionId, type: 'text', message, clientMessageId } });
   const persisted = await json(`/api/v1/chat/sessions/${sessionId}`);
   const state = persistedState(sessionId);
   const entry = state?.intentProgress?.entries?.[primaryIntentKey] ?? null;
   const opportunityId = entry?.journeyId ?? null;
+  const slotValues = state?.slotValues ?? entry?.slotValues ?? {};
   if (index === 2) firstOpportunityId = opportunityId;
   const body = response.body ?? {};
   if (index === 0) { assert(response.status === 200 && body.conversational === true && !body.actionProposal, 'Greeting is conversational with no action', assertions); }
@@ -59,7 +64,8 @@ for (const [index, message] of scenario.entries()) {
   if (index === 2) { assert(Boolean(opportunityId) && entry?.slotValues?.business_activity, 'Business activity is persisted on a durable opportunity', assertions); }
   if (index === 3) { assert(opportunityId === firstOpportunityId && entry?.currentRequirementKey, 'Knowledge interruption preserves the same opportunity and requirement', assertions); }
   if (index === 5) { assert(entry?.slotValues?.visa_count === '2' && entry?.slotValues?.workspace_preference === 'shared office' && entry?.slotValues?.timeline === 'next month' && entry?.slotValues?.budget_aed === '25000', 'Multi-slot qualification facts are persisted', assertions); }
-  turns.push({ turn: index + 1, userMessage: message, clientMessageId, response: redact(response), persisted: redact(persisted), persistedState: redact(state), opportunityId, assertions: assertions.slice(-1) });
+  assert(!/^(?:okay|ok|sure|yes|yeah|can we|tell me more|that sounds good|let['’]s continue|continue|proceed|go ahead)\b/iu.test(message) || !Object.values(slotValues).some((value) => typeof value === 'string' && value.toLocaleLowerCase('en-US') === message.toLocaleLowerCase('en-US')), 'Continuation or acknowledgement did not become a business fact', assertions);
+  turns.push({ turn: index + 1, scenarioId, userMessage: message, clientMessageId, response: redact(response), persisted: redact(persisted), persistedState: redact(state), opportunityId, catalogVersionId: state?.catalogVersionId ?? null, slotValues: redact(slotValues), assertions: assertions.slice(assertionStart) });
   if (response.status !== 200) break;
 }
 const proposal = turns.map((turn) => turn.response.body?.actionProposal?.id).find(Boolean);
@@ -71,6 +77,9 @@ if (proposal) {
   const status = await json(`/api/v1/chat/actions/${proposal}?sessionId=${encodeURIComponent(sessionId)}`);
   const actionState = status.body?.action?.state ?? status.body?.state ?? null;
   assert(status.status === 200 && ['approved', 'queued', 'processing', 'completed', 'human_review', 'reconcile_required'].includes(actionState), 'Confirmed action has a durable lifecycle state', assertions);
+  const actionSlots = status.body?.action?.payload?.slotValues ?? {};
+  assert(!Object.values(actionSlots).some((value) => typeof value === 'string' && /^(?:okay|ok|sure|yes|yeah|can we|tell me more|that sounds good|let['’]s continue|continue|proceed|go ahead)\b/iu.test(value)), 'Action payload contains no continuation phrase as a business fact', assertions);
+  assert(!actionSlots.company_structure || /\b(?:limited\s+liability|llc|fze|fzc|free\s+zone|branch|sole\s+(?:proprietorship|establishment)|partnership|corporation|incorporated)\b/iu.test(actionSlots.company_structure), 'Action company structure is semantically valid', assertions);
 }
 const failedAssertions = assertions.filter((item) => !item.passed);
 const report = { generatedAt: new Date().toISOString(), baseUrl, tenantSlug, sessionId, health: redact(health), turns, confirmation: redact(confirmation), assertions, status: failedAssertions.length ? 'FAILED' : 'PASSED' };
