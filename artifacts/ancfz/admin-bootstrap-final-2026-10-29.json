@@ -1,0 +1,12 @@
+{
+  "generatedAt": "2026-10-28T21:55:42.5989200Z",
+  "backupFile": "data/ancfz-backups/ancfz-pre-admin-bootstrap-20261029.dump",
+  "backupBytes": 15107745,
+  "platformAdmins": 1,
+  "tenantAdmins": 0,
+  "totalUsers": 1,
+  "loginVerified": true,
+  "platformOverviewAuthorized": true,
+  "anonymousAdminDenied": true,
+  "passwordPersistedInGit": false
+}

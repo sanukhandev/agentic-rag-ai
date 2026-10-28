@@ -8,10 +8,11 @@ Implementation commits after bootstrap: >25 (threshold verified with
 
 ## Result
 
-**PARTIALLY VERIFIED — local application gates pass; external and fresh-source gates remain blocked.**
+**PARTIALLY VERIFIED — fresh-source publication and single-admin gates pass; live Salesforce/provider execution remains unverified.**
 
-This is not the requested `DONE — ANCFZ DEVELOPMENT E2E VERIFIED` status. No
-Salesforce, n8n, payment, signing, or fresh-source publication claim is made.
+This is not the requested `DONE — ANCFZ DEVELOPMENT E2E VERIFIED` status. The
+Salesforce sandbox and provider-backed seven-stage journey are not claimed.
+Payment and signing evidence below is explicitly development-only mock evidence.
 
 Continuation commit references: security remediation `70bbf2b`, patched-API
 conversation rerun `5f77cfe`, and acceptance evidence updates `231ad79`,
@@ -25,10 +26,25 @@ were run from the clean branch tip after these commits.
 - Fresh source archive SHA-256:
   `5a0d6f5f50809ec562f46125279304d9be918b88be92fadbe60f2d0919ce237`.
   Safe preflight found 18 eligible members and one rejected unsupported
-  `knowledge_records.jsonl` member.
-- Docker Python extraction: 18/18 eligible files, 1,678 deterministic chunks,
-  zero extraction warnings. DOCX headings and table-row locators are retained.
-  No raw source text was committed.
+  `knowledge_records.jsonl` member. The 18 eligible members extracted into
+  1,714 deterministic chunks with zero parser warnings; DOCX headings and
+  table-row locators were retained and no raw source text was committed.
+- Content review classified the 16 DOCX business sources as approved for ANCFZ
+  public chat. `knowledge_registry.csv` and `README.txt` were ingested for
+  review but revoked because they are metadata/draft-governance material, not
+  approved business sources. The unrelated pre-existing `latest file test`
+  source was also revoked from the isolated ANCFZ tenant.
+- Fresh RAG publication is now verified in the real PostgreSQL/pgvector store:
+  16 active/public fresh sources, 1,467 active fresh chunks, 16 distinct
+  source IDs, and vector dimensions min=max 1,536. The configured Azure
+  `text-embedding-3-large` endpoint returned finite 1,536-dimensional vectors
+  during a live connectivity probe. Redacted source-by-source evidence is
+  [fresh RAG evidence](../../artifacts/ancfz/rag-fresh-acceptance-2026-10-29.json).
+- Real API retrieval probes returned citations from the fresh source IDs for
+  business activity, contact, FAQ, licensing, packages, rules, strategic
+  partners and company-type questions. An unrelated Mars-fact question
+  returned `grounded=false` with no citations. Answers and source text were
+  omitted from the committed evidence artifact.
 - Database backup completed before migration. Migration 053 applied successfully
   after the local backup; lifecycle table count is 7, pgvector is 0.8.7, and
   revoked starter package rows are not available for customer selection.
@@ -64,6 +80,15 @@ were run from the clean branch tip after these commits.
   `vitest@5.0.5`. The current Angular compiler CLI has no matching
   `21.2.29` release, so no broad or incompatible dev-tooling upgrade was
   applied. These packages are not in the production dependency set.
+- Final rerun: unfiltered audit reported 1 low, 9 moderate, 5 high and 2
+  critical findings; production-only audit reported zero vulnerabilities. The
+  critical paths are direct workspace `vitest@3.2.7` through `tinypool@1.1.1`
+  and npm's available fix is the major `vitest@5.0.5`. High paths are
+  development Angular CLI/MCP SDK, nested development `body-parser@1.20.8`,
+  `undici` and Vite. Their fixes require broad toolchain changes or are not in
+  the deployed runtime, so they were not applied during this acceptance run.
+  Exact rerun artifacts are [full audit rerun](../../artifacts/ancfz/npm-audit-final-rerun-2026-10-29.json)
+  and [production audit rerun](../../artifacts/ancfz/npm-audit-prod-rerun-2026-10-29.json).
 - Starter workflow tests 2/2; fresh-RAG preflight tests 4/4; mock payment tests
   5/5; PDF renderer tests 4/4.
 - PDF fixture inspection passed: `quote.mock.pdf` and `invoice.mock.pdf` each
@@ -86,25 +111,50 @@ were run from the clean branch tip after these commits.
   a non-PII knowledge query returned an answer, and the UI rendered “4 Verified
   Sources.” The admin surface loaded the ANC organization and protected CRM
   view.
+- Secure administrator bootstrap completed in the isolated development
+  database after creating a custom-format PostgreSQL backup
+  (`data/ancfz-backups/ancfz-pre-admin-bootstrap-20261029.dump`, 15,107,745
+  bytes). The two unnecessary tenant-admin rows were removed; the resulting
+  database count is exactly one platform administrator, zero tenant
+  administrators and one total user. Protected login, `/auth/me`, platform
+  overview authorization and anonymous HTTP 401 rejection all passed. The
+  generated credential is held only in the ignored local
+  `data/ancfz-admin-bootstrap/credentials.json`; no password is committed or
+  printed. Redacted counts and backup evidence are in [admin bootstrap
+  evidence](../../artifacts/ancfz/admin-bootstrap-final-2026-10-29.json).
+- Final local regression gates after the database changes: `npm test` passed
+  with 284 tests and one skipped; `npm run typecheck`, `npm run lint` and
+  `npm run build` passed. The Docker PostgreSQL aggregate passed 43 test files,
+  284 tests and one skipped. Workflow tests passed 2/2, mock payment tests
+  passed 5/5, fresh-RAG preflight tests passed 4/4, and the PDF renderer passed
+  4/4 in its dependency-complete Docker test image.
+- n8n internal `/healthz` and `/healthz/readiness` returned `{"status":"ok"}`.
+  The active workflow names and non-secret runtime inspection are recorded in
+  [n8n runtime evidence](../../artifacts/ancfz/n8n-runtime-final-2026-10-29.json);
+  no credential secret or exported customer payload was written.
+- The loopback-only mock payment HTTP adapter was independently smoke-tested:
+  authenticated creation returned `pending`, the same idempotency key reused
+  the same payment ID, protected settlement returned `mock_paid`, and replay
+  remained at version 1. The private PDF HTTP adapter returned a mock quote
+  artifact with a 2,468-byte PDF and a 64-character SHA-256. These are adapter
+  checks only, not Node/n8n lifecycle completion.
 
 ## Blocked or not verified
 
-- Fresh ZIP contents are not approved or published into the tenant knowledge
-  store. The live database still contains one pre-existing active source and
-  2,057 1,536-dimensional chunks; these are not evidence of fresh ZIP ingestion.
-  No fresh source embedding write is claimed.
-- The checkout did not provide authorized local administrator credentials. The
-  existing database contains one platform admin and two tenant admins, so no
-  new account was created and no destructive reset was performed. Creating a
-  password or deleting existing users would violate the requested controls.
-- Salesforce sandbox Account, Contact, Opportunity, document associations and
-  seven-stage object IDs were not independently verified for this run. Existing
-  local CRM records do not substitute for a new controlled acceptance journey.
-- Imported n8n exports and local workflow tests do not prove active credentialed
-  execution. Quote, invoice, document, conversion and contract callbacks were
-  not verified against live n8n/Salesforce dependencies.
-- Payment and signing remain explicitly mock/development-only. No real card data
-  was collected and no production payment or signing provider was contacted.
+- Salesforce sandbox Lead creation/qualification, Account/Contact/Opportunity
+  writes, package/quote linkage, SF-02 attachment and independent remote-ID
+  reconciliation remain unverified. The n8n runtime is healthy and
+  `n8n list:workflow --active=true` reports four active workflows (lead,
+  account conversion, invoice generation and contract preparation), but active
+  status is not provider completion evidence. The runtime exposes no billing
+  or contract provider URL variables, and no independently queryable Salesforce
+  sandbox result was obtained without a verified provider test path.
+- The checked-in quote/PDF and mock-payment workflows remain inactive templates
+  that require their secured internal endpoints and private service bindings.
+  Mock unit tests and provider-callback tests pass, but an actual Node→n8n→mock
+  payment callback and a durable `MOCK_SIGNED` contract callback were not
+  executed. No real card data, payment settlement or legal signature was
+  claimed.
 - The unfiltered audit is not fully clean because of the explicitly documented
   development-only findings above. The production audit is clean.
 - `npm run verify:local` is not green in this checkout because its host process
@@ -114,7 +164,7 @@ were run from the clean branch tip after these commits.
 
 ## Delivery decision
 
-Do not push or open a draft pull request yet. The 25-commit threshold is met, but
-the required fresh-source approval/embedding evidence, authorized single-admin
-setup, live Salesforce/n8n verification, payment callback evidence, and contract
-signing evidence are not available in this checkout.
+Do not push or open a draft pull request yet. The 25-commit threshold, fresh
+RAG publication and single-admin setup are complete, but provider-verified
+Salesforce state and the actual runtime mock payment/contract callback evidence
+remain mandatory blockers. The branch therefore remains **PARTIALLY VERIFIED**.
