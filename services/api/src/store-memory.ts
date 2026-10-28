@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, DocumentProcessingJob, EventInboxClaim, EventInboxState, IngestionJob, IntentCatalogVersion, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
+import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, IngestionJob, IntentCatalogVersion, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
@@ -28,6 +28,7 @@ export class MemoryStore implements Store {
   private readonly messages = new Map<string, Message>();
   private readonly actions = new Map<string, ActionRequest>();
   private readonly crmLeads = new Map<string, CrmLead>();
+  private readonly crmLeadAssociations = new Map<string, CrmLeadAssociation>();
   private readonly crmLeadDedupe = new Map<string, string>();
   private readonly supportingDocuments = new Map<string, SupportingDocument>();
   private readonly documentJobs = new Map<string, DocumentProcessingJob>();
@@ -497,6 +498,13 @@ export class MemoryStore implements Store {
   async listPackageOfferings(tenantId: string, input: { catalogVersionId?: string | null; activity?: string; entityType?: string } = {}): Promise<PackageOffering[]> {
     return [...this.packageOfferings.values()].filter((offering) => offering.tenantId === tenantId && offering.approvalStatus === 'approved' && (input.catalogVersionId === undefined || offering.catalogVersionId === input.catalogVersionId) && (!input.activity || offering.eligibleActivities.length === 0 || offering.eligibleActivities.some((value) => input.activity?.toLocaleLowerCase('en-US').includes(value.toLocaleLowerCase('en-US')))) && (!input.entityType || offering.eligibleEntityTypes.length === 0 || offering.eligibleEntityTypes.includes(input.entityType))).sort((left, right) => left.packageKey.localeCompare(right.packageKey));
   }
+  async createCrmLeadAssociation(association: CrmLeadAssociation): Promise<CrmLeadAssociation> {
+    const existing = [...this.crmLeadAssociations.values()].find((candidate) => candidate.tenantId === association.tenantId && candidate.actionId === association.actionId);
+    if (existing) return existing;
+    this.crmLeadAssociations.set(association.id, association);
+    return association;
+  }
+  async getCrmLeadAssociationByActionId(actionId: string, tenantId: string): Promise<CrmLeadAssociation | null> { return [...this.crmLeadAssociations.values()].find((association) => association.actionId === actionId && association.tenantId === tenantId) ?? null; }
   async getPackageOffering(id: string, tenantId: string): Promise<PackageOffering | null> { const offering = this.packageOfferings.get(id); return offering?.tenantId === tenantId ? offering : null; }
   async createPackageOffering(offering: PackageOffering): Promise<PackageOffering> { this.packageOfferings.set(offering.id, offering); return offering; }
   async createPackageSelection(selection: PackageSelection): Promise<PackageSelection> { const existing = [...this.packageSelections.values()].find((candidate) => candidate.tenantId === selection.tenantId && candidate.opportunityId === selection.opportunityId && candidate.status === 'confirmed'); if (existing) throw new HttpError(409, 'PACKAGE_ALREADY_CONFIRMED', 'A package is already confirmed for this opportunity.'); this.packageSelections.set(selection.id, selection); return selection; }

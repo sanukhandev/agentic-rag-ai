@@ -554,6 +554,17 @@ export interface SupportingDocument {
   updatedAt: string;
 }
 
+export interface CrmLeadAssociation {
+  id: string;
+  tenantId: string;
+  crmLeadId: string;
+  actionId: string;
+  sessionId: string;
+  opportunityId: string | null;
+  associationType: 'canonical' | 'deduplicated';
+  createdAt: string;
+}
+
 export type PackageOfferingStatus = 'approved' | 'unavailable' | 'expired';
 export interface PackageOffering {
   id: string;
@@ -810,6 +821,8 @@ export interface Store {
   updateCrmLeadSummary(id: string, tenantId: string, summary: string, status: CrmLead['summaryStatus']): Promise<CrmLead | null>;
   updateCrmLeadScore(id: string, tenantId: string, score: number): Promise<CrmLead | null>;
   updateCrmLeadRemote(input: { id: string; tenantId: string; leadId: string; remoteCrm: string }): Promise<CrmLead | null>;
+  createCrmLeadAssociation(association: CrmLeadAssociation): Promise<CrmLeadAssociation>;
+  getCrmLeadAssociationByActionId(actionId: string, tenantId: string): Promise<CrmLeadAssociation | null>;
   createSupportingDocument(document: SupportingDocument): Promise<SupportingDocument>;
   createSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<void>;
   requeueSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
