@@ -27,6 +27,13 @@ describe('knowledge pipeline primitives', () => {
     expect(rankChunksWithVector('business setup timeline cost', rows, [0, 0, 0, 0, 0, 0, 0, 0])).toHaveLength(1);
   });
 
+  it('admits a strong semantic match without lexical overlap when enabled', () => {
+    const source = { id: 'source', tenantId: 'tenant', versionId: 'version' };
+    const chunks = buildChunks(source, 'Company registration procedure includes an application review.');
+    const rows = [{ source: { id: 'source', title: 'Catalog' }, chunk: { ...chunks[0]!, embedding: [1, 0, 0, 0] } }];
+    expect(rankChunksWithVector('How do I establish an entity?', rows, [1, 0, 0, 0], 4, 0.8)).toHaveLength(1);
+  });
+
   it('uses the injectable embedding boundary for indexing and queries', async () => {
     const provider = new DeterministicEmbeddingProvider();
     const source = { id: 'source', tenantId: 'tenant', versionId: 'version' };

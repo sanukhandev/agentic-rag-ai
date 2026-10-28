@@ -410,7 +410,9 @@ export const needsConversationContext = (text: string): boolean => {
 
 export const isKnowledgeQuestion = (text: string): boolean => {
   const normalized = normalizeConversationQuery(text).toLocaleLowerCase('en-US');
-  const directActionRequest = /^(?:can|could|would)\s+i\s+(?:book|schedule|request|arrange)\b|^(?:book|schedule|request|arrange)\s+(?:a\s+)?(?:demo|quote|call|consultation|meeting|appointment)\b/u.test(normalized);
+  const conversational = conversationalIntent(normalized);
+  if (conversational !== null && conversational !== 'clarification') return false;
+  const directActionRequest = /^(?:can|could|would)\s+(?:i|you)\s+(?:book|schedule|request|arrange|register|call|contact)\b|^(?:book|schedule|request|arrange|register)\s+(?:a\s+)?(?:demo|quote|call|consultation|meeting|appointment|service|business)\b/u.test(normalized);
   return !directActionRequest && (/[?؟]/u.test(normalized)
     || /^(?:what|how|where|which|why|when|who|can(?: you)?|could(?: you)?|would(?: you)?|is|are|does|should|will|do\s+(?:you|we|they|i)|tell me|please explain)\b/u.test(normalized)
     || /\b(?:i(?:'d| would| want)|would) like to know\b/u.test(normalized)
@@ -496,10 +498,17 @@ export const openingGreeting = (greeting: string | undefined, personaName: strin
 export const hasSufficientEvidence = (answer: string, evidence: ModelEvidence[], citations: Citation[]): boolean => {
   if (citations.length === 0) return false;
   const citedContent = evidence.filter((item) => citations.some((citation) => citation.chunkId === item.citation.chunkId)).map((item) => item.content.toLowerCase()).join(' ');
-  const numbers = answer.match(/\b\d+(?:[.,]\d+)?\b/g) ?? [];
-  if (numbers.some((number) => !citedContent.includes(number.toLowerCase()))) return false;
-  const terms = (answer.toLowerCase().match(/[a-z\u00c0-\u024f]{4,}/gu) ?? []).filter((term, index, values) => !['that', 'this', 'with', 'from', 'your', 'approved', 'answer'].includes(term) && values.indexOf(term) === index);
-  return terms.length === 0 || terms.some((term) => citedContent.includes(term));
+  const highRisk = ['guarantee', 'guaranteed', 'approved', 'eligible', 'eligibility', 'required', 'requires', 'includes', 'included', 'qualifies', 'available', 'fastest', 'complete in', 'lowest price'];
+  return answer.split(/(?<=[.!?])\s+/u).every((claim) => {
+    const normalizedClaim = claim.toLocaleLowerCase('en-US');
+    const numbers = normalizedClaim.match(/\b\d+(?:[.,]\d+)?\b/g) ?? [];
+    if (numbers.some((number) => !citedContent.includes(number))) return false;
+    const claimWithoutEmail = normalizedClaim.replace(/\bemail\s+[^\s@]+@[^\s@]+\b/gu, ' pii ').replace(/\b[^\s@]+@[^\s@]+\b/gu, ' pii ');
+    const terms = (claimWithoutEmail.match(/[a-z\u00c0-\u024f]{4,}/gu) ?? []).filter((term, index, values) => !['that', 'this', 'with', 'from', 'your', 'approved', 'answer', 'pii'].includes(term) && values.indexOf(term) === index);
+    if (terms.length > 0 && !terms.some((term) => citedContent.includes(term))) return false;
+    const riskTerms = highRisk.filter((term) => normalizedClaim.includes(term));
+    return riskTerms.every((term) => citedContent.includes(term));
+  });
 };
 
 export const validateCitations = (draft: ModelDraft, evidence: ModelEvidence[]): Citation[] => {

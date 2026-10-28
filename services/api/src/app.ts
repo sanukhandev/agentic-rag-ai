@@ -1274,8 +1274,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : null;
       const journeyResult = journeyCatalogEnabled && publishedCatalog && !offerOwnsConversationState
         ? reduceIntentJourney(publishedCatalog, state.intentProgress, {
-          currentIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyCurrentIntentKey : journeyCurrentIntentKey,
-          selectedIntentKey: transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyResolvedIntentKey ?? null : transitionDenied ? state.selectedIntentKey ?? state.intentProgress?.activeIntentKey ?? null : reopeningIntentKey ?? journeyResolvedIntentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? null,
+          currentIntentKey: knowledgeQuestion && activeConversationJourney ? activeIntentForTurn : transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyCurrentIntentKey : journeyCurrentIntentKey,
+          selectedIntentKey: knowledgeQuestion && activeConversationJourney ? activeIntentForTurn : transitionApproval ? pendingTransitionPrompt?.intentKey ?? journeyResolvedIntentKey ?? null : transitionDenied ? state.selectedIntentKey ?? state.intentProgress?.activeIntentKey ?? null : reopeningIntentKey ?? journeyResolvedIntentKey ?? state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey ?? null,
           transitionApproval,
           newOpportunity: reopeningOpportunity,
           ...(transitionDenied && pendingTransitionPrompt?.intentKey && (state.selectedIntentKey ?? state.intentProgress?.activeIntentKey) ? { declinedTransition: { sourceIntentKey: state.selectedIntentKey ?? state.intentProgress!.activeIntentKey!, targetIntentKey: pendingTransitionPrompt.intentKey } } : {}),
@@ -1396,12 +1396,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         let queryEmbedding: number[];
         try { queryEmbedding = await embedding.embed(knowledgeRetrievalQuery); } catch { throw new HttpError(503, 'EMBEDDING_UNAVAILABLE', 'The assistant is currently unable to search approved knowledge.'); }
         const rows = await store.searchSearchableChunks(session.tenantId, internal ? 'internal' : 'public', queryEmbedding, 24, retrievalTextQuery);
-        const ranked = rankChunksWithVector(knowledgeRetrievalQuery, rows, queryEmbedding, 4);
+        const ranked = rankChunksWithVector(knowledgeRetrievalQuery, rows, queryEmbedding, 4, embedding.model.startsWith('deterministic-') ? null : 0.8);
         evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: presentKnowledgeText(chunk.content) })).filter((item) => item.content.length > 0);
         if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null };
         else if (!postCaptureFollowUp && conversational && evidence.length === 0) draft = { answer: intent === 'greeting' && language !== 'ar' ? openingGreeting(persona?.greeting, persona?.name ?? 'Sales assistant') : conversationalReply(intent ?? 'identity', persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
         else try {
-          const documents = postCaptureFollowUp ? await store.listSupportingDocuments(session.tenantId, session.id) : [];
+          const documents = postCaptureFollowUp ? journeyDocuments : [];
           const followUpIntentKeys = new Set([state.selectedIntentKey, detectedSecondaryIntentKey].filter((value): value is string => Boolean(value)));
           const followUpContext = {
             leadCaptured: hasRegisteredAction || postCaptureFollowUp,
@@ -1464,7 +1464,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       state.catalogVersionId = catalogResolution?.catalogVersionId ?? state.catalogVersionId;
       if (journeyResult && !offerOwnsConversationState) state.intentProgress = journeyResult.progress;
       if (!offerOwnsConversationState) {
-        state.selectedIntentKey = transitionApproval ? journeyResult?.activeIntentKey ?? pendingTransitionPrompt?.intentKey ?? state.selectedIntentKey : postCaptureFollowUp || knowledgeOnlyTurn || journeyOfferPending ? state.selectedIntentKey : catalogResolution?.intentKey ?? state.selectedIntentKey;
+        state.selectedIntentKey = transitionApproval ? journeyResult?.activeIntentKey ?? pendingTransitionPrompt?.intentKey ?? state.selectedIntentKey : postCaptureFollowUp || knowledgeQuestion || journeyOfferPending ? state.selectedIntentKey : catalogResolution?.intentKey ?? state.selectedIntentKey;
         if (transitionApproval) state.activeFollowUpIntentKey = null;
         if (transitionDenied) state.activeFollowUpIntentKey = state.selectedIntentKey;
         if (!state.selectedIntentKey && journeyResult?.activeIntentKey) state.selectedIntentKey = journeyResult.activeIntentKey;
