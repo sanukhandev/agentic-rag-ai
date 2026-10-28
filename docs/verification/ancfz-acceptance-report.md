@@ -71,6 +71,11 @@ Salesforce, n8n, payment, signing, or fresh-source publication claim is made.
   sessions with 200/200 answered and durable turns. Redacted status artifacts:
   [25-turn evidence](../../artifacts/ancfz/api-25-turns-local.json) and
   [200-turn evidence](../../artifacts/ancfz/api-200-turns-local.json).
+- The same harness was rerun after rebuilding the API with the security fixes:
+  25/25 in one uninterrupted session and 8/8 scenarios totaling 200/200,
+  each with durable history. Post-upgrade evidence:
+  [25-turn evidence](../../artifacts/ancfz/api-25-turns-after-security-2026-10-29.json)
+  and [200-turn evidence](../../artifacts/ancfz/api-200-turns-after-security-2026-10-29.json).
 - Browser smoke passed on `http://localhost/?tenant=anc`: ANC persona loaded,
   a non-PII knowledge query returned an answer, and the UI rendered “4 Verified
   Sources.” The admin surface loaded the ANC organization and protected CRM
