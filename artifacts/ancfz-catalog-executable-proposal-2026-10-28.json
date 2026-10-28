@@ -1,0 +1,22 @@
+{
+  "tenantScope": "anc",
+  "status": "proposal",
+  "reasonNotPublished": "The imported workbook contains no executable journeyRequirements or journeyTransitions and the supplied commercial records are pending business validation.",
+  "journeyRequirements": [
+    {"intentKey":"anc.setup.new_company","requirementKey":"setup.interest_summary","requirementType":"slot","required":true,"collectionOrder":1,"promptKey":"lead.ask_interest","validationRule":"text:nonempty","slotKey":"interest_summary","fulfillmentMode":"conversation_ready","sourceOfTruth":"tenant_catalog","notes":"Business enquiry summary."},
+    {"intentKey":"anc.setup.new_company","requirementKey":"setup.business_activity","requirementType":"slot","required":true,"collectionOrder":2,"promptKey":"setup.ask_activity","validationRule":"text:nonempty","slotKey":"business_activity","fulfillmentMode":"conversation_ready","sourceOfTruth":"tenant_catalog","notes":"Activity remains subject to approved eligibility evidence."},
+    {"intentKey":"anc.setup.new_company","requirementKey":"setup.visa_count","requirementType":"slot","required":false,"collectionOrder":7,"promptKey":"setup.ask_visa_count","validationRule":"number:nonnegative","slotKey":"visa_count","fulfillmentMode":"conversation_ready","sourceOfTruth":"tenant_catalog","notes":"Optional qualification fact."},
+    {"intentKey":"anc.setup.new_company","requirementKey":"setup.workspace_preference","requirementType":"slot","required":false,"collectionOrder":8,"promptKey":"setup.ask_workspace","validationRule":"enum:shared_office|private_office|none","slotKey":"workspace_preference","fulfillmentMode":"conversation_ready","sourceOfTruth":"tenant_catalog","notes":"Requires approved package data before recommendation."},
+    {"intentKey":"anc.setup.new_company","requirementKey":"setup.timeline","requirementType":"slot","required":false,"collectionOrder":9,"promptKey":"setup.ask_timeline","validationRule":"text:nonempty","slotKey":"timeline","fulfillmentMode":"conversation_ready","sourceOfTruth":"tenant_catalog","notes":"Customer-provided target timeline."},
+    {"intentKey":"anc.setup.new_company","requirementKey":"setup.name","requirementType":"slot","required":true,"collectionOrder":80,"promptKey":"lead.ask_name","validationRule":"token:NAME","slotKey":"name","fulfillmentMode":"conversation_ready","sourceOfTruth":"tenant_catalog","notes":"Validated contact name."},
+    {"intentKey":"anc.setup.new_company","requirementKey":"setup.email","requirementType":"slot","required":true,"collectionOrder":81,"promptKey":"lead.ask_contact","validationRule":"token:EMAIL","slotKey":"email","fulfillmentMode":"conversation_ready","sourceOfTruth":"tenant_catalog","notes":"Validated contact email."},
+    {"intentKey":"anc.setup.new_company","requirementKey":"setup.phone","requirementType":"slot","required":true,"collectionOrder":82,"promptKey":"lead.ask_phone","validationRule":"token:PHONE","slotKey":"phone","fulfillmentMode":"conversation_ready","sourceOfTruth":"tenant_catalog","notes":"Validated contact phone."},
+    {"intentKey":"anc.setup.new_company","requirementKey":"setup.contact_consent","requirementType":"consent","required":true,"collectionOrder":83,"promptKey":"lead.ask_consent","validationRule":"boolean:explicit_opt_in","slotKey":"contact_consent","fulfillmentMode":"external_confirmation_required","sourceOfTruth":"tenant_catalog","notes":"Purpose-bound CRM lead consent."},
+    {"intentKey":"anc.setup.new_company","requirementKey":"setup.package_confirmation","requirementType":"confirmation","required":false,"collectionOrder":90,"promptKey":"package.ask_confirmation","validationRule":"boolean:explicit_opt_in","fulfillmentMode":"external_confirmation_required","sourceOfTruth":"tenant_catalog","notes":"Only after an approved versioned package is selected."}
+  ],
+  "journeyTransitions": [
+    {"sourceIntentKey":"anc.setup.new_company","targetIntentKey":"anc.sales.proposal","activationMode":"offer","maxDepth":2,"triggerGroup":"package_selection","promptKey":"journey.offer_package","notes":"Offer package exploration only after qualification."},
+    {"sourceIntentKey":"anc.sales.proposal","targetIntentKey":"anc.document.supporting_upload","activationMode":"offer","maxDepth":2,"triggerGroup":"supporting_documents","promptKey":"journey.offer_documents","notes":"Offer documents only after authorized CRM/conversion prerequisites."}
+  ],
+  "documentPolicyDecision": "Do not publish passport/emirates_id requirements until business/legal approval and a tenant-scoped policy are provided."
+}
