@@ -77,16 +77,20 @@ const groundedKnowledgeFallback = (question: string, evidence: ModelEvidence[]):
   const terms = normalizedQuestion.match(/[a-z]{4,}/g) ?? [];
   const packageQuestion = /\b(?:package|packages|visa|visas|price|prices|cost|costs|fee|fees)\b/u.test(normalizedQuestion);
   const processQuestion = /\b(?:step|steps|process|procedure|how|register|registration)\b/u.test(normalizedQuestion);
+  const timelineQuestion = /\b(?:timeline|timelines|time|long|duration|when|month|months|week|weeks|days)\b/u.test(normalizedQuestion);
   const topicTerms = /\b(?:package|packages|visa|visas|price|prices|cost|costs|fee|fees)\b/u.test(normalizedQuestion)
     ? ['package', 'packages', 'visa', 'visas', 'price', 'prices', 'cost', 'costs', 'fee', 'fees']
     : /\b(?:step|steps|process|procedure|how|register|registration)\b/u.test(normalizedQuestion)
       ? ['step', 'steps', 'process', 'procedure', 'register', 'registration', 'application', 'formation', 'license', 'licence']
+      : timelineQuestion
+        ? ['timeline', 'timelines', 'time', 'duration', 'processing', 'days', 'weeks', 'months', 'start']
       : terms;
-  const candidates = [...new Set(evidence.flatMap((item) => item.content.split(/(?<=[.!?])\s+|\n+/u).map((sentence) => sentence.trim()).filter((sentence) => sentence.length > 20 && terms.some((term) => sentence.toLocaleLowerCase('en-US').includes(term)))))]
+  const candidates = [...new Set(evidence.flatMap((item) => item.content.split(/(?<=[.!?])\s+|\n+/u).map((sentence) => sentence.trim()).filter((sentence) => sentence.length > 20 && (topicTerms.some((term) => sentence.toLocaleLowerCase('en-US').includes(term)) || terms.some((term) => sentence.toLocaleLowerCase('en-US').includes(term))))))]
     .map((sentence) => ({ sentence, score: topicTerms.filter((term) => sentence.toLocaleLowerCase('en-US').includes(term)).length + terms.filter((term) => sentence.toLocaleLowerCase('en-US').includes(term)).length }))
     .filter(({ sentence }) => /^[A-Z]/u.test(sentence)
       && (!packageQuestion || /\b(?:package|packages|visa|visas|price|prices|cost|costs|fee|fees|quote|quotation)\b/u.test(sentence))
-      && (!processQuestion || (/\b(?:process|procedure|register|registration|application|formation|license|licence|document|required)\b/u.test(sentence) && !/\b(?:also\s+)?offers?\b/iu.test(sentence))))
+      && (!processQuestion || (/\b(?:process|procedure|register|registration|application|formation|license|licence|document|required)\b/u.test(sentence) && !/\b(?:also\s+)?offers?\b/iu.test(sentence)))
+      && (!timelineQuestion || /\b(?:timeline|timelines|time|duration|processing|days?|weeks?|months?|start)\b/iu.test(sentence)))
     .sort((left, right) => right.score - left.score);
   const sentences = candidates.slice(0, 4).map(({ sentence }) => sentence);
   if (sentences.length === 0) return null;
@@ -1291,10 +1295,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         /\b(?:package|packages|price|prices|cost|costs|fee|fees)\b/i.test(maskedMessage) ? 'package pricing fees' : '',
         ...(acceptedOfferOption?.retrievalHints ?? []),
       ].filter(Boolean).slice(0, 8) : [];
-      const knowledgeSlotContext = knowledgeQuestion && publishedCatalog && state.selectedIntentKey
+      const retrievalIntentKey = activeCatalogIntent ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey;
+      const retrievalJourneyValues = retrievalIntentKey ? state.intentProgress?.entries[retrievalIntentKey]?.slotValues ?? {} : {};
+      const knowledgeSlotContext = knowledgeQuestion && publishedCatalog && retrievalIntentKey
         ? publishedCatalog.catalog.slots
-          .filter((slot) => slot.intentKey === state.selectedIntentKey && !/(?:pii|contact|consent)/iu.test(slot.retentionClass) && !/(?:^|[._-])(?:name|email|phone|mobile|contact)(?:$|[._-])/iu.test(slot.slotKey))
-          .map((slot) => currentCatalogSlotValues[slot.slotKey] ? `${slot.slotKey}=${currentCatalogSlotValues[slot.slotKey]}` : '')
+          .filter((slot) => slot.intentKey === retrievalIntentKey && !/(?:pii|contact|consent)/iu.test(slot.retentionClass) && !/(?:^|[._-])(?:name|email|phone|mobile|contact)(?:$|[._-])/iu.test(slot.slotKey))
+          .map((slot) => (retrievalJourneyValues[slot.slotKey] ?? currentCatalogSlotValues[slot.slotKey]) ? `${slot.slotKey}=${retrievalJourneyValues[slot.slotKey] ?? currentCatalogSlotValues[slot.slotKey]}` : '')
           .filter(Boolean)
           .slice(0, 8)
         : [];
@@ -1307,7 +1313,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const retrievalQuery = [normalizedMessage, ...knowledgeQueryHints, ...structuredRetrievalContext, ...retrievalContext].join('\n').slice(0, 6_000);
       const knowledgeIntentLabel = publishedCatalog && state.selectedIntentKey ? publishedCatalog.catalog.intents.find((candidate) => candidate.intentKey === state.selectedIntentKey)?.displayName ?? '' : '';
       const knowledgeRetrievalQuery = knowledgeQuestion
-        ? [acceptedOfferOption && activeFollowUpOffer ? activeFollowUpOffer.sourceQuery : normalizedMessage, acceptedOfferOption?.label ?? '', ...knowledgeQueryHints, knowledgeIntentLabel, ...knowledgeSlotContext].filter(Boolean).join('\n').slice(0, 2_000)
+        ? [normalizedMessage, acceptedOfferOption && activeFollowUpOffer ? activeFollowUpOffer.sourceQuery : '', acceptedOfferOption?.label ?? '', ...knowledgeQueryHints, knowledgeIntentLabel, retrievalIntentKey ? `Active opportunity intent: ${retrievalIntentKey}` : '', ...knowledgeSlotContext].filter(Boolean).join('\n').slice(0, 2_000)
         : retrievalQuery;
       const textSearchTerms = [knowledgeRetrievalQuery, ...knowledgeQueryHints].join(' ').toLocaleLowerCase('en-US').match(/[\p{L}\p{N}]{4,}/gu) ?? [];
       const retrievalTextQuery = [...new Set(textSearchTerms.filter((term) => !['about', 'all', 'are', 'does', 'have', 'how', 'please', 'tell', 'that', 'the', 'this', 'what', 'which', 'with', 'your'].includes(term)))].slice(0, 40).join(' | ');

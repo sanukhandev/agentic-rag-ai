@@ -20,6 +20,17 @@ const scenario = [
   'My email is alex@example.test.',
   'My phone number is +971 50 000 0000.',
 ];
+const followUpScenario = [
+  'Could you tell me about the pricing and timelines for the same?',
+  'What is the cost of two visas?',
+  'Does that include a shared office?',
+  'Can we start next month?',
+  'My budget is still AED 25000. What do you recommend?',
+  'What is the status of my request?',
+  'Do you need any documents from me?',
+  'Actually, I want to change the visa requirement to three.',
+  "Please summarize everything we've discussed.",
+];
 
 const json = async (path, options = {}) => {
   const response = await fetch(`${baseUrl}${path}`, { headers: { 'content-type': 'application/json', ...(options.headers ?? {}) }, ...options, body: options.body ? JSON.stringify(options.body) : undefined });
@@ -93,7 +104,7 @@ const proposal = turns.map((turn) => turn.response.body?.actionProposal?.id).fin
 let confirmation = null;
 let actionDiagnostics = null;
 const workflowStages = { approvalVerified: false, dispatchVerified: false, n8nExecutionVerified: false, salesforceLeadVerified: false, callbackPersistenceVerified: false };
-assert(Boolean(proposal), 'Scoped consent action proposal generated', assertions);
+  assert(Boolean(proposal), 'Scoped consent action proposal generated', assertions);
 if (proposal) {
   confirmation = await json(`/api/v1/chat/actions/${proposal}/confirm`, { method: 'POST', body: { sessionId, confirmed: true } });
   workflowStages.approvalVerified = [200, 202].includes(confirmation.status);
@@ -117,6 +128,26 @@ if (proposal) {
   assert(workflowStages.n8nExecutionVerified, 'n8n execution reference was persisted', assertions);
   assert(workflowStages.salesforceLeadVerified, 'Salesforce Lead completion is persisted for this action', assertions);
   assert(workflowStages.callbackPersistenceVerified, 'Authenticated callback persisted completed action state', assertions);
+}
+if (proposal && confirmation?.status >= 200 && confirmation?.status < 300) {
+  const expectedOpportunity = firstOpportunityId;
+  for (const [followUpIndex, message] of followUpScenario.entries()) {
+    const assertionStart = assertions.length;
+    const clientMessageId = crypto.randomUUID();
+    const response = await json('/api/v1/chat/messages', { method: 'POST', body: { sessionId, type: 'text', message, clientMessageId } });
+    const persisted = await json(`/api/v1/chat/sessions/${sessionId}`);
+    const state = persistedState(sessionId);
+    const entry = state?.intentProgress?.entries?.[primaryIntentKey] ?? null;
+    const opportunityId = entry?.journeyId ?? null;
+    const turnNumber = followUpIndex + 12;
+    assert(response.status === 200, `Post-submission turn ${turnNumber} returned HTTP 200`, assertions);
+    assert(opportunityId === expectedOpportunity, `Post-submission turn ${turnNumber} preserves the active opportunity`, assertions);
+    assert(state?.selectedIntentKey === primaryIntentKey || state?.intentProgress?.activeIntentKey === primaryIntentKey, `Post-submission turn ${turnNumber} preserves the active intent`, assertions);
+    assert(!response.body?.actionProposal, `Post-submission turn ${turnNumber} does not create an unsolicited action`, assertions);
+    if (turnNumber >= 12 && turnNumber <= 18) assert((response.body?.citations?.length ?? 0) > 0 || response.body?.grounded === false, `Post-submission turn ${turnNumber} returns grounded evidence or an explicit abstention`, assertions);
+    if (turnNumber === 19) assert(entry?.slotValues?.visa_count === '3' || state?.slotValues?.visa_count === '3', 'Visa correction is persisted on the same opportunity', assertions);
+    turns.push({ turn: turnNumber, scenarioId, userMessage: message, clientMessageId, response: redact(response), persisted: redact(persisted), persistedState: redact(state), opportunityId, catalogVersionId: state?.catalogVersionId ?? null, slotValues: redact(state?.slotValues ?? entry?.slotValues ?? {}), assertions: assertions.slice(assertionStart) });
+  }
 }
 const failedAssertions = assertions.filter((item) => !item.passed);
 const report = { generatedAt: new Date().toISOString(), baseUrl, tenantSlug, sessionId, health: redact(health), turns, confirmation: redact(confirmation), actionDiagnostics: redact(actionDiagnostics), workflowStages, assertions, status: failedAssertions.length ? 'FAILED' : 'PASSED' };
