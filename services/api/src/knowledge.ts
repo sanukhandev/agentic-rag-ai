@@ -83,7 +83,7 @@ export const buildIngestionChunksWithEmbeddings = async (
   return embedChunkRows(source, chunks, provider, onProgress);
 };
 
-const evidenceMetadataLine = /^(?:File|Format|Primary intent|Suggested routing|Retrieval keywords|Sample user query(?:\s*\([^)]*\))?|Search phrasing|Related customer phrasing|Context\s*\/\s*limitation|Response policy|Response pattern|Retrieval metadata|Detection examples|Clarification|Next action):/iu;
+const evidenceMetadataLine = /^(?:File|Format|Primary intent|Suggested routing|Retrieval keywords|Sample user query(?:\s*\([^)]*\))?|Search phrasing|Related customer phrasing|Context\s*\/\s*limitation|Response policy|Response pattern|Retrieval metadata|Detection examples|Clarification|Next action|☐|https?:\/\/|Validate all prices|Pending business validation):/iu;
 const evidenceMetadataHeader = /^(?:Knowledge Records|Detailed retrieval-ready knowledge records|tenantScope|sourceKey|sourceFile|sourceSha256|visibility|piiScreening|---)$/iu;
 const evidenceRecordHeader = /^[A-Z][A-Z0-9_.-]*-\d+\s*(?:[—-]|\|)/u;
 const sourceBackedLine = /^Source-backed\s+(?:content|knowledge):/iu;

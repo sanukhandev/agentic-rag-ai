@@ -2,8 +2,8 @@
 
 - Base URL: http://localhost
 - Tenant: anc
-- Session: bc49d0ec-8082-47cf-ba26-9600c73a258f
-- Generated: 2026-10-28T08:48:12.363Z
+- Session: 06acc331-1f87-4e40-bc51-fd8a33a41515
+- Generated: 2026-10-28T09:12:48.116Z
 
 ## Turn 1
 
@@ -22,7 +22,7 @@
 **User:** I want to start a company in Dubai. Can you explain the steps involved?
 
 - HTTP: 200
-- Answer: Here’s what I can verify: Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. | Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. Office 901, 9th Floor, Aspin Commercial Tower, Sheikh Zayed Road, Dubai. ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. I don’t have a complete step-by-step answer for every part of that question in the approved information.
+- Answer: Here’s what I can verify: ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names.
 - Grounded: true
 - Citations: 4
 - Pending requirement: none
@@ -46,9 +46,9 @@
 **User:** What visa packages are available?
 
 - HTTP: 200
-- Answer: Here’s what I can verify: Packages start from AED 4,888. Tabby payment options are available for the GCC market, with prices starting from AED 1,222. 1 to 10 Visa All Inclusive Package Visa Packages Add (ICP Services) I don’t have a complete step-by-step answer for every part of that question in the approved information.
+- Answer: Here’s what I can verify: Discover business setup packages at Ajman NuVentures Centre Free Zone, with flexible options designed to support your company setup journey. Tabby payment options are available for the GCC market, with prices starting from AED 1,222. Pay for essential services, such as visa processing and other business support, only when you need them.
 - Grounded: true
-- Citations: 4
+- Citations: 1
 - Pending requirement: setup.name
 - Action proposal: none
 - Persisted state captured: yes
@@ -58,7 +58,7 @@
 **User:** Okay, let's continue with my company setup.
 
 - HTTP: 200
-- Answer: What name should I use?
+- Answer: To help you further with your digital marketing agency setup and visa options, may I know your full name, please?
 - Grounded: false
 - Citations: 0
 - Pending requirement: setup.name
@@ -82,9 +82,9 @@
 **User:** Which package would be suitable for my company?
 
 - HTTP: 200
-- Answer: I don’t have verified information about that in my current knowledge base yet. I can help with topics covered by the approved information here, such as our products, services, and projects. What would you like to explore?
-- Grounded: false
-- Citations: 0
+- Answer: Here’s what I can verify: Discover business setup packages at Ajman NuVentures Centre Free Zone, with flexible options designed to support your company setup journey. Launch your company with a minimal initial investment through the flexible Pay As You Go package. This package is designed to minimise upfront capital outlay and help you scale efficiently as your business grows.
+- Grounded: true
+- Citations: 1
 - Pending requirement: setup.name
 - Action proposal: none
 - Persisted state captured: yes
@@ -134,6 +134,18 @@
 - Grounded: false
 - Citations: 0
 - Pending requirement: setup.contact_consent
-- Action proposal: 9511aec5-d46a-4de4-92f7-9c8c903af1aa
+- Action proposal: dee3815b-309f-4203-a0b3-9be1b38799bb
 - Persisted state captured: yes
 
+## Assertions
+
+- PASS — Greeting is conversational with no action
+- PASS — Setup answer is grounded and cited
+- PASS — Business activity is persisted on a durable opportunity
+- PASS — Knowledge interruption preserves the same opportunity and requirement
+- PASS — Multi-slot qualification facts are persisted
+- PASS — Scoped consent action proposal generated
+- PASS — Scoped consent confirmation is accepted by the API
+- PASS — Confirmed action has a durable lifecycle state
+
+Overall: PASSED
