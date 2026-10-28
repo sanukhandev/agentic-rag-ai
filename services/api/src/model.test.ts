@@ -33,7 +33,7 @@ describe('Azure Foundry model adapter', () => {
 
   it('does not echo raw evidence when the external generation model is unavailable', async () => {
     const model = new DeterministicGroundedModel();
-    await expect(model.draft({ maskedMessage: 'I want to start a fashion boutique', personaName: 'Sara', evidence: [{ citation: { sourceId: 'source', versionId: 'version', chunkId: 'chunk-1', title: 'FAQ', locator: 'section 1' }, content: 'Detailed retrieval-ready knowledge records\nWhat is ANCFZ?\nANCFZ supports company setup.' }] })).resolves.toEqual({ answer: naturalAbstention(), citationIds: [], proposedIntent: null });
+    await expect(model.draft({ maskedMessage: 'I want to start a fashion boutique', personaName: 'Sara', evidence: [{ citation: { sourceId: 'source', versionId: 'version', chunkId: 'chunk-1', title: 'FAQ', locator: 'section 1' }, content: 'Detailed retrieval-ready knowledge records\nWhat is ANCFZ?\nANCFZ supports company setup.' }] })).resolves.toEqual({ answer: naturalAbstention('en', 'I want to start a fashion boutique'), citationIds: [], proposedIntent: null });
   });
 
   it('detects and enforces configured language families', () => {
@@ -92,10 +92,10 @@ describe('Azure Foundry model adapter', () => {
     expect(conversationalReply('introduction', 'Nova')).toContain('Nice to meet you');
     expect(conversationalReply('clarification', 'Nova')).toContain('clarify');
     expect(conversationalReply('farewell', 'Nova')).toContain('lovely chatting');
-    expect(naturalAbstention()).toContain('verified information');
-    expect(naturalAbstention()).toContain('knowledge base');
-    expect(naturalAbstention()).not.toContain('I don’t have that detail');
-    expect(naturalAbstention('ar')).toContain('لا أملك معلومات موثقة');
+    expect(naturalAbstention('en', 'What is the pricing for the same?', { capturedSlots: { visa_count: '2', workspace_preference: 'shared office' } })).toContain('pricing for this setup');
+    expect(naturalAbstention('en', 'What is the pricing for the same?', { capturedSlots: { visa_count: '2', workspace_preference: 'shared office' } })).toContain('2 visas, shared office');
+    expect(naturalAbstention()).not.toContain('knowledge base');
+    expect(naturalAbstention('ar')).toContain('لا أستطيع تأكيد');
   });
 
   it('creates a conversational reconciliation follow-up without business claims', async () => {

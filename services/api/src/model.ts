@@ -137,9 +137,31 @@ export const preservesNormalizationFacts = (original: string, normalized: string
     && JSON.stringify(sorted(normalizationTokens(original))) === JSON.stringify(sorted(normalizationTokens(normalized)));
 };
 
-export const naturalAbstention = (language = 'en'): string => language === 'ar'
-  ? 'لا أملك معلومات موثقة عن هذا الموضوع في قاعدة معرفتي الحالية حتى الآن. يمكنني مساعدتك في الموضوعات التي أضيفت إلى معلوماتي المعتمدة، مثل المنتجات أو الخدمات أو المشاريع. ماذا تود أن تستكشف؟'
-  : 'I don’t have verified information about that in my current knowledge base yet. I can help with topics covered by the approved information here, such as our products, services, and projects. What would you like to explore?';
+export const naturalAbstention = (
+  language = 'en',
+  request = '',
+  context?: { capturedSlots?: Record<string, string> },
+): string => {
+  const normalizedRequest = normalizeConversationQuery(request).toLocaleLowerCase('en-US');
+  const topic = /\b(?:price|pricing|cost|fee|quote|quotation)\b/u.test(normalizedRequest)
+    ? 'the pricing for this setup'
+    : /\b(?:timeline|when|how long|start)\b/u.test(normalizedRequest)
+      ? 'the setup timeline'
+      : /\bvisa\b/u.test(normalizedRequest)
+        ? 'the visa details'
+        : /\b(?:package|option)\b/u.test(normalizedRequest)
+          ? 'the package options'
+          : 'that specific setup detail';
+  const slots = context?.capturedSlots ?? {};
+  const known = [
+    slots.visa_count ? `${slots.visa_count} visa${slots.visa_count === '1' ? '' : 's'}` : '',
+    slots.workspace_preference ?? '',
+    slots.timeline ? `a ${slots.timeline} start` : '',
+    slots.budget_aed ? `a budget of AED ${slots.budget_aed}` : '',
+  ].filter(Boolean).join(', ');
+  if (language === 'ar') return `لا أستطيع تأكيد ${topic} من المعلومات المعتمدة المتاحة حاليًا. سأحتفظ بمتطلباتك الحالية${known ? ` (${known})` : ''}، ويمكنني طلب عرض سعر موثق أو مراجعة من مستشار. هل تريدني أن أطلب ذلك؟`;
+  return `I can’t verify ${topic} from the approved information currently available. I’ll keep your current requirements${known ? ` (${known})` : ''} in view, and I can request a verified quotation or advisor review. Would you like me to request that?`;
+};
 export const permittedLanguageReply = (language: string, permittedLanguages: string[]): string => language === 'ar'
   ? `يمكنني الإجابة فقط باللغات المسموح بها: ${permittedLanguages.join('، ')}.`
   : `I can only answer in the permitted languages: ${permittedLanguages.join(', ')}.`;
@@ -177,7 +199,7 @@ export class DeterministicGroundedModel implements ChatModel {
     if (input.followUpContext?.responseMode === 'reconcile_follow_up') return { answer: 'I’ll keep the conversation open while this is reviewed. What would you like to go over next?', citationIds: [], proposedIntent: null };
     if (input.followUpContext?.continuityTurn) return { answer: 'Thanks, I’ve noted that. What would you like to explore next?', citationIds: [], proposedIntent: null };
     const wantsLead = /\b(contact|call|email|interested|demo|quote)\b/i.test(input.maskedMessage);
-    return { answer: naturalAbstention(detectedLanguage(input.maskedMessage)), citationIds: [], proposedIntent: wantsLead ? 'lead.capture' : null };
+    return { answer: naturalAbstention(detectedLanguage(input.maskedMessage), input.maskedMessage, input.followUpContext), citationIds: [], proposedIntent: wantsLead ? 'lead.capture' : null };
   }
 }
 
@@ -334,7 +356,7 @@ export class AzureFoundryModel implements ChatModel {
   async draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[]; followUpContext?: ModelFollowUpContext }): Promise<ModelDraft> {
     const safeFallback = (): ModelDraft => input.followUpContext?.continuityTurn
       ? { answer: 'Thanks, I’ve noted that. What would you like to explore next?', citationIds: [], proposedIntent: null }
-      : { answer: naturalAbstention(detectedLanguage(input.maskedMessage)), citationIds: [], proposedIntent: null };
+      : { answer: naturalAbstention(detectedLanguage(input.maskedMessage), input.maskedMessage, input.followUpContext), citationIds: [], proposedIntent: null };
     if (!this.endpoint || !this.deployment || !this.apiKey) throw new Error('Azure AI Foundry is not configured.');
     const endpoint = this.endpoint.replace(/\/$/, '');
     const v1 = /\/openai\/v1$/i.test(endpoint);
