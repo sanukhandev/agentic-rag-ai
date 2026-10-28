@@ -1,6 +1,6 @@
 # Agentic RAG AI final acceptance report
 
-Tested code commit: `3e5d827b9cfc8cdcffb2bc0015f07ea1c6541ade`; Docker API image: `sha256:4adb113f18875b1d98146a4911fa7f779148c4b8b9857f08f6115edca3563679`.
+Tested code commit: `cb5a8e6be0f8d0f3fb2c5f19a7931101e7da7279`; Docker API image: `sha256:2ff5e5399d5a28e4ca98b8b5ef981524677ac159108d8100d27accb3d406e5b3`.
 
 ## A. Architecture implemented
 
