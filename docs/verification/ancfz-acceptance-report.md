@@ -13,6 +13,11 @@ Implementation commits after bootstrap: >25 (threshold verified with
 This is not the requested `DONE — ANCFZ DEVELOPMENT E2E VERIFIED` status. No
 Salesforce, n8n, payment, signing, or fresh-source publication claim is made.
 
+Continuation commit references: security remediation `70bbf2b`, patched-API
+conversation rerun `5f77cfe`, and acceptance evidence updates `231ad79`,
+`7b35d81`, `51a7645`. The final local audit, secret scan and Compose checks
+were run from the clean branch tip after these commits.
+
 ## Verified locally
 
 - Starter archive SHA-256: `24fd7b46e92eee67a120371593cc6d263f2f50875edbcebd98a863f9d75c3885`.
