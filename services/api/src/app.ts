@@ -1544,7 +1544,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           const modelInput = { maskedMessage, evidence, personaName: persona?.name ?? 'Sales assistant', ownerName: tenant.name, conversation, followUpContext };
           draft = await model.draft(persona ? { ...modelInput, persona } : modelInput);
         } catch {
-          if (knowledgeQuestion && evidence.length === 0) draft = { answer: naturalAbstention(language), citationIds: [], proposedIntent: null };
+          if (knowledgeQuestion && evidence.length === 0) draft = { answer: naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues }), citationIds: [], proposedIntent: null };
           else throw new HttpError(503, 'MODEL_UNAVAILABLE', 'The assistant is currently unable to verify an answer.');
         }
       }
@@ -1573,7 +1573,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const safeCitations = safeGrounded ? citations : [];
       const offerClarificationAnswer = offerNeedsClarification && Boolean(activeFollowUpOffer);
       const leadAnswer = !postCaptureFollowUp && !knowledgeQuestion && (leadCollection || (leadIntent && validatedLeadReady) || consentActionReady || catalogClarification || Boolean(catalogResolution?.actionAllowed)) || journeyDocumentPending || journeyDocumentAwaiting || journeyConfirmationPending || journeyOfferPending || Boolean(!knowledgeQuestion && journeyRequirement && journeySlotKey);
-      const answer = !languageAllowed ? draft.answer : casualFallback || leadAnswer || continuityAnswer || knowledgeConflict ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
+      const answer = !languageAllowed ? draft.answer : casualFallback || leadAnswer || continuityAnswer || knowledgeConflict ? draft.answer : grounded ? draft.answer : naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues });
       let safeAnswer = casualFallback || leadAnswer || continuityAnswer || offerClarificationAnswer ? draft.answer : continuityTurn ? conversationalReply('acknowledgement', persona?.name ?? 'Sales assistant', language, tenant.name) : answer;
       if (intent === 'farewell') session.closedAt = new Date().toISOString();
       const nextMissingSlot = crmContactMissing ?? journeySlotKey ?? catalogResolution?.missingSlots[0] ?? null;

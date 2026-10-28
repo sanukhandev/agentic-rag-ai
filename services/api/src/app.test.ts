@@ -269,9 +269,9 @@ describe('API vertical slice', () => {
     const unsupported = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the office location?', clientMessageId: 'unknown-1' }).expect(200);
     expect(unsupported.body.grounded).toBe(false);
     expect(unsupported.body.citations).toHaveLength(0);
-    expect(unsupported.body.answer).toContain('verified information');
-    expect(unsupported.body.answer).toContain('knowledge base');
-    expect(unsupported.body.answer).not.toContain('I don’t have that detail');
+    expect(unsupported.body.answer).toContain('specific setup detail');
+    expect(unsupported.body.answer).toContain('verified quotation or advisor review');
+    expect(unsupported.body.answer).not.toContain('knowledge base');
     const history = await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}`).expect(200);
     expect(history.body.messages.length).toBeGreaterThanOrEqual(4);
     expect(JSON.stringify(history.body.messages)).not.toContain('alice@example.com');

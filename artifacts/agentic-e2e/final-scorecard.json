@@ -1,0 +1,27 @@
+{
+  "generatedAt": "2026-10-28",
+  "branch": "feat/catalog-driven-journey-orchestration",
+  "head": "e6a6d59e32fa4a45bc0c4fcfdf1ce5aff4d1ba03",
+  "verdict": "PARTIALLY VERIFIED — ACCEPTANCE FAILURES REMAIN",
+  "unitAndApiTests": { "passed": 194, "skipped": 10 },
+  "liveConversation": { "customerTurns": 20, "assistantResponses": 20, "passed": false },
+  "external": {
+    "n8nDispatch": "observed",
+    "n8nExecutionReference": "observed",
+    "salesforceLead": "not_verified",
+    "salesforceAccount": "not_verified",
+    "documentsOcr": "not_end_to_end_verified",
+    "invoice": "not_implemented_or_verified",
+    "contract": "not_implemented_or_verified"
+  },
+  "mandatoryScenarioCount": 8,
+  "mandatoryCustomerTurnCount": 200,
+  "executedScenarioCount": 1,
+  "remainingFailures": [
+    "Remote Salesforce sandbox workflow and credentials are unavailable or not published",
+    "Account/Contact/Opportunity conversion lifecycle is absent",
+    "Package, invoice/payment and contract lifecycle are absent",
+    "Eight-scenario 200-message acceptance harness is absent",
+    "PostgreSQL integration test port 54329 is not exposed by the running stack"
+  ]
+}
