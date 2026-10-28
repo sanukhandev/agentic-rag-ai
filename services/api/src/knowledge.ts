@@ -130,15 +130,20 @@ const cosine = (left: number[], right: number[]): number => {
 
 const rankWithEmbedding = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit: number): T[] => {
   const terms = query.toLowerCase().match(/[a-z0-9]{4,}/g) ?? [];
-  return rows.map((row) => {
+  const ranked = rows.map((row) => {
     const content = presentKnowledgeText(row.chunk.content).toLowerCase();
     const overlap = terms.filter((term) => content.includes(term)).length;
     return { row, score: cosine(queryEmbedding, row.chunk.embedding) + overlap * 0.1, overlap };
   })
     .sort((left, right) => right.score - left.score)
-    .slice(0, limit)
-    .filter(({ score, overlap }) => score >= 0.45 && overlap > 0)
-    .map(({ row }) => row);
+    .filter(({ score, overlap }) => overlap > 0 && (score >= 0.45 || overlap >= 2));
+  const seen = new Set<string>();
+  return ranked.filter(({ row }) => {
+    const key = presentKnowledgeText(row.chunk.content);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, limit).map(({ row }) => row);
 };
 
 export const rankChunks = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], limit = 4): T[] => rankWithEmbedding(query, rows, embedText(query), limit);

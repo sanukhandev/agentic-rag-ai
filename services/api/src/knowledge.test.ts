@@ -20,6 +20,13 @@ describe('knowledge pipeline primitives', () => {
     expect(rankChunks('What is the office location?', rows)).toHaveLength(0);
   });
 
+  it('keeps an exact text match when the provider vector is weak', () => {
+    const source = { id: 'source', tenantId: 'tenant', versionId: 'version' };
+    const chunks = buildChunks(source, 'Business setup packages include timeline guidance.');
+    const rows = [{ source: { id: 'source', title: 'Catalog' }, chunk: { ...chunks[0]!, embedding: [0, 0, 0, 0, 0, 0, 0, 0] } }];
+    expect(rankChunksWithVector('business setup timeline cost', rows, [0, 0, 0, 0, 0, 0, 0, 0])).toHaveLength(1);
+  });
+
   it('uses the injectable embedding boundary for indexing and queries', async () => {
     const provider = new DeterministicEmbeddingProvider();
     const source = { id: 'source', tenantId: 'tenant', versionId: 'version' };

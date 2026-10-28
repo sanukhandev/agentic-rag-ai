@@ -71,6 +71,16 @@ const errorProperty = (error: unknown, property: string): unknown => typeof erro
 const errorType = (error: unknown): string | undefined => { const value = errorProperty(error, 'type'); return typeof value === 'string' ? value : undefined; };
 const errorCode = (error: unknown): string | undefined => { const value = errorProperty(error, 'code'); return typeof value === 'string' ? value : undefined; };
 const ingestionErrorDetail = (error: unknown): string | null => { const value = error instanceof Error ? error.message : String(error); const normalized = value.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim(); return normalized ? normalized.slice(0, 2_000) : null; };
+
+const groundedKnowledgeFallback = (question: string, evidence: ModelEvidence[]): ModelDraft | null => {
+  const terms = question.toLocaleLowerCase('en-US').match(/[a-z]{4,}/g) ?? [];
+  const candidates = [...new Set(evidence.flatMap((item) => item.content.split(/(?<=[.!?])\s+|\n+/u).map((sentence) => sentence.trim()).filter((sentence) => sentence.length > 20 && terms.some((term) => sentence.toLocaleLowerCase('en-US').includes(term)))))]
+    .map((sentence) => ({ sentence, score: terms.filter((term) => sentence.toLocaleLowerCase('en-US').includes(term)).length + (/\b\d+(?:[.,]\d+)?\b/u.test(sentence) ? 2 : 0) }))
+    .sort((left, right) => right.score - left.score);
+  const sentences = candidates.slice(0, 4).map(({ sentence }) => sentence);
+  if (sentences.length === 0) return null;
+  return { answer: `Here’s what I can verify: ${sentences.join(' ')} I don’t have a complete step-by-step answer for every part of that question in the approved information.`, citationIds: evidence.slice(0, 4).map((item) => item.citation.chunkId), proposedIntent: null };
+};
 const INGESTION_LEASE_MS = 120_000;
 const publishIngestionProgress = async (store: Store, job: IngestionJob, stage: string, processed: number, total: number, status: IngestionJobStatus = job.status, failureCode: string | null = null): Promise<void> => {
   try {
@@ -1417,6 +1427,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         }
       }
       if (!knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog && !consentDenied && !catalogSlotNonAnswer && !isGuidedResponse(draft.answer, 'slot_collection', journeySlotKey)) draft = { answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null };
+      if (knowledgeQuestion && evidence.length > 0 && draft.answer === naturalAbstention(language)) draft = groundedKnowledgeFallback(maskedMessage, evidence) ?? draft;
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       const citations = validateCitations(draft, evidence);
       const casualFallback = conversational && (evidence.length === 0 || intent === 'identity');
