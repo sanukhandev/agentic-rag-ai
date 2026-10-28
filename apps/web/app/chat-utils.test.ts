@@ -55,6 +55,7 @@ describe('web chat utilities', () => {
     expect(applyActionState(replies, 'action-1', 'completed')[0]).toMatchObject({ actionState: 'completed', actionProposal: null });
     expect(applyActionState(replies, 'action-1', 'unknown')[0]).toMatchObject({ actionState: 'unknown', actionProposal: { id: 'action-1' } });
     expect(actionOutcomeText('completed')).toContain('submitted successfully');
+    expect(actionOutcomeText('completed', 'ANCFZ')).toContain('ANCFZ’s team');
     expect(actionOutcomeText('failed')).toContain('could not submit');
     expect(actionOutcomeText('processing')).toBeNull();
     expect(actionOutcomeText('reconcile_required')).toBeNull();
