@@ -276,4 +276,22 @@ describe('Azure Foundry model adapter', () => {
     expect(hasSufficientEvidence('The approved price is 42 credits. Approval is guaranteed.', evidence, [citation])).toBe(false);
     expect(hasSufficientEvidence('The approved price is 42 credits. The office is in Dubai.', evidence, [citation])).toBe(false);
   });
+
+  it('uses scoped pricing tool results while preserving one journey follow-up', async () => {
+    const draft = await new DeterministicGroundedModel().draft({
+      maskedMessage: 'Could you tell me about the pricing and timelines for the same?',
+      personaName: 'Zara',
+      evidence: [{ citation: { sourceId: 'source', versionId: 'version', chunkId: 'chunk-1', title: 'Approved timeline', locator: 'section 1' }, content: 'Processing timelines depend on the selected setup and application details.' }],
+      followUpContext: {
+        leadCaptured: false,
+        primaryIntentKey: 'company.setup',
+        responseMode: 'mixed',
+        nextSlotLabel: 'your business activity',
+        agentToolResults: [{ name: 'get_authoritative_pricing', ok: true, data: { pricing: [{ name: 'Sandbox Growth', amountMinor: 450000, currency: 'AED' }] } }],
+      },
+    });
+    expect(draft.answer).toContain('AED 4,500.00');
+    expect(draft.answer).toContain('?');
+    expect(draft.citationIds).toEqual(['chunk-1']);
+  });
 });

@@ -1,0 +1,165 @@
+{
+  "id": "ANCAccountConversionWF1",
+  "name": "ANC Account Conversion WF-1",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "anc-account-conversion-wf-1", "responseMode": "onReceived", "responseCode": 202, "options": {} },
+      "id": "anc-account-webhook",
+      "name": "ANC Account Conversion Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "anc-account-conversion-wf-1"
+    },
+    {
+      "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 1 }] } },
+      "id": "anc-account-poll",
+      "name": "Async Account Poll Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/claim",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actionId: ($json.body ?? $json).actionId, tenantId: ($json.body ?? $json).tenantId, eventId: ($json.body ?? $json).eventId, correlationId: ($json.body ?? $json).correlationId, attempt: ($json.body ?? $json).attempt, executionReference: $execution.id, n8nWorkflowId: $workflow.id, workflowKey: 'crm.account.convert', contract: 'anc-account-conversion-v1', limit: 1 }) }}",
+        "options": {}
+      },
+      "id": "anc-account-claim",
+      "name": "Authenticate and Claim Account Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 100]
+    },
+    {
+      "parameters": { "jsCode": "const items = Array.isArray($json.items) ? $json.items : []; return items.map((item) => ({ json: item }));" },
+      "id": "anc-account-expand",
+      "name": "Expand Claimed Account Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://api:4000/api/v1/internal/crm/accounts/' + $json.leadData.slotValues.crmAccountId + '/remote-payload' }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, actionId: $json.actionId }) }}",
+        "options": {}
+      },
+      "id": "anc-account-payload",
+      "name": "Fetch Authorized Account Conversion Payload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
+      "position": [740, 100]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "oAuth2Api",
+        "method": "POST",
+        "url": "={{ $env.REMOTE_CRM_ACCOUNT_URL }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "content-type", "value": "application/json" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ LeadId: $('Fetch Authorized Account Conversion Payload').first().json.remoteLeadId, ConversionRule: $('Fetch Authorized Account Conversion Payload').first().json.conversionRule }) }}",
+        "options": {}
+      },
+      "id": "anc-account-remote",
+      "name": "Remote CRM Convert Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
+      "position": [980, 100],
+      "credentials": { "oAuth2Api": { "id": "TLK73VxX5k6day4t", "name": "SalesForce ANC - CREDS" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $json.body && typeof $json.body === 'object' ? $json.body : $json; const accountId = result.accountId ?? result.AccountId ?? result.account?.id ?? result.account?.Id; const contactId = result.contactId ?? result.ContactId ?? result.contact?.id ?? result.contact?.Id; const opportunityId = result.opportunityId ?? result.OpportunityId ?? result.opportunity?.id ?? result.opportunity?.Id; const pattern = $env.REMOTE_CRM_ID_PATTERN || '^[A-Za-z0-9._:-]{1,200}$'; if (![accountId, contactId, opportunityId].every((value) => typeof value === 'string' && new RegExp(pattern).test(value))) throw new Error('Remote CRM did not return verified Account, Contact and Opportunity IDs; reconciliation is required.'); return [{ json: { ...$('Expand Claimed Account Events').first().json, remoteAccountId: accountId, remoteContactId: contactId, remoteOpportunityId: opportunityId } }];"
+      },
+      "id": "anc-account-validate",
+      "name": "Validate Remote Account IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "onError": "continueErrorOutput",
+      "position": [1220, 100]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'http://api:4000/api/v1/internal/crm/accounts/' + $json.leadData.slotValues.crmAccountId + '/remote' }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $json.tenantId, actionId: $json.actionId, remoteAccountId: $json.remoteAccountId, remoteContactId: $json.remoteContactId, remoteOpportunityId: $json.remoteOpportunityId }) }}",
+        "options": {}
+      },
+      "id": "anc-account-callback",
+      "name": "Verified Account IDs Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
+      "position": [1460, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/complete",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actionId: $('Expand Claimed Account Events').first().json.actionId, tenantId: $('Expand Claimed Account Events').first().json.tenantId, state: 'completed', externalReference: 'crm-account-' + $('Expand Claimed Account Events').first().json.leadData.slotValues.crmAccountId, executionReference: $execution.id, eventId: $('Expand Claimed Account Events').first().json.eventId, correlationId: $('Expand Claimed Account Events').first().json.correlationId, attempt: $('Expand Claimed Account Events').first().json.attempt }) }}",
+        "options": {}
+      },
+      "id": "anc-account-complete",
+      "name": "Complete Account Conversion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1700, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/complete",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-agentic-internal-secret", "value": "={{ $env.N8N_WEBHOOK_SECRET }}" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actionId: $('Expand Claimed Account Events').first().json.actionId, tenantId: $('Expand Claimed Account Events').first().json.tenantId, state: 'reconcile_required', externalReference: 'crm-account-reconcile-' + $('Expand Claimed Account Events').first().json.actionId, executionReference: $execution.id, eventId: $('Expand Claimed Account Events').first().json.eventId, correlationId: $('Expand Claimed Account Events').first().json.correlationId, attempt: $('Expand Claimed Account Events').first().json.attempt }) }}",
+        "options": {}
+      },
+      "id": "anc-account-reconcile",
+      "name": "Complete Account Reconciliation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1700, 300]
+    }
+  ],
+  "connections": {
+    "ANC Account Conversion Webhook": { "main": [[{ "node": "Authenticate and Claim Account Event", "type": "main", "index": 0 }]] },
+    "Async Account Poll Trigger": { "main": [[{ "node": "Authenticate and Claim Account Event", "type": "main", "index": 0 }]] },
+    "Authenticate and Claim Account Event": { "main": [[{ "node": "Expand Claimed Account Events", "type": "main", "index": 0 }]] },
+    "Expand Claimed Account Events": { "main": [[{ "node": "Fetch Authorized Account Conversion Payload", "type": "main", "index": 0 }]] },
+    "Fetch Authorized Account Conversion Payload": { "main": [[{ "node": "Remote CRM Convert Lead", "type": "main", "index": 0 }], [{ "node": "Complete Account Reconciliation", "type": "main", "index": 0 }]] },
+    "Remote CRM Convert Lead": { "main": [[{ "node": "Validate Remote Account IDs", "type": "main", "index": 0 }], [{ "node": "Complete Account Reconciliation", "type": "main", "index": 0 }]] },
+    "Validate Remote Account IDs": { "main": [[{ "node": "Verified Account IDs Callback", "type": "main", "index": 0 }], [{ "node": "Complete Account Reconciliation", "type": "main", "index": 0 }]] },
+    "Verified Account IDs Callback": { "main": [[{ "node": "Complete Account Conversion", "type": "main", "index": 0 }], [{ "node": "Complete Account Reconciliation", "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "anc-account-conversion-wf-1-v1",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

@@ -668,7 +668,7 @@ describe('API vertical slice', () => {
     expect(duplicate.body.error.code).toBe('MESSAGE_ID_REUSED');
   });
 
-  it('allows a failed model turn to retry once with the same masked idempotency record', async () => {
+  it('recovers a failed model turn with grounded evidence and preserves idempotency', async () => {
     const runtime = createApp({ nodeEnv: 'test', model: new FailsOnceModel() });
     const api = request(runtime.app);
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-retry-message@example.test', password: 'Platform1Password' }).expect(201);
@@ -677,7 +677,8 @@ describe('API vertical slice', () => {
     const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Retry FAQ', mimeType: 'text/plain', audience: 'public', content: 'Retry pricing is 50 credits.' }).expect(201);
     await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
-    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is retry pricing?', clientMessageId: 'retry-message-1' }).expect(503).expect((response) => expect(response.body.error.code).toBe('MODEL_UNAVAILABLE'));
+    const first = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is retry pricing?', clientMessageId: 'retry-message-1' }).expect(200);
+    expect(first.body.grounded).toBe(true);
     const retry = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is retry pricing?', clientMessageId: 'retry-message-1' }).expect(200);
     expect(retry.body.grounded).toBe(true);
     expect((await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).expect(200)).body.messages.filter((message: { clientMessageId: string | null }) => message.clientMessageId === 'retry-message-1')).toHaveLength(1);

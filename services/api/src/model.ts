@@ -203,6 +203,34 @@ export class DeterministicGroundedModel implements ChatModel {
   async draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[]; followUpContext?: ModelFollowUpContext }): Promise<ModelDraft> {
     if (input.followUpContext?.responseMode === 'reconcile_follow_up') return { answer: 'I’ll keep the conversation open while this is reviewed. What would you like to go over next?', citationIds: [], proposedIntent: null };
     if (input.followUpContext?.continuityTurn) return { answer: 'Thanks, I’ve noted that. What would you like to explore next?', citationIds: [], proposedIntent: null };
+    if (input.followUpContext?.responseMode === 'knowledge' || input.followUpContext?.responseMode === 'mixed') {
+      const query = input.maskedMessage.toLocaleLowerCase('en-US');
+      const boilerplate = /answer only from approved|knowledge base|retrieval metadata|source validation|validate all prices|ingestion|do not invent|where the answer depends on|use this knowledge domain|retrieval instructions|source reference/iu;
+      const sentences = input.evidence.flatMap((item) => item.content.split(/(?<=[.!?])\s+|\n+/u)
+        .map((sentence) => sentence.trim())
+        .filter((sentence) => sentence.length > 24 && !boilerplate.test(sentence))
+        .map((sentence) => ({ sentence, chunkId: item.citation.chunkId })));
+      const queryTerms = query.match(/[a-z]{4,}/gu) ?? [];
+      const selected = [...new Map(sentences
+        .map((item) => ({ ...item, score: queryTerms.filter((term) => item.sentence.toLocaleLowerCase('en-US').includes(term)).length }))
+        .filter((item) => item.score > 0)
+        .sort((left, right) => right.score - left.score)
+        .slice(0, 3)
+        .map((item) => [item.sentence.toLocaleLowerCase('en-US'), item])).values()];
+      const known = input.followUpContext.capturedSlots ?? {};
+      const pricing = input.followUpContext.agentToolResults?.find((result) => result.name === 'get_authoritative_pricing' && result.ok)?.data.pricing;
+      const pricingRows = Array.isArray(pricing) ? pricing.filter((row): row is { name: string; amountMinor: number; currency: string } => typeof row === 'object' && row !== null && typeof row.name === 'string' && typeof row.amountMinor === 'number' && typeof row.currency === 'string') : [];
+      const packageAnswer = /\b(?:package|packages|price|pricing|cost|fee|fees|quote|quotation)\b/u.test(query) && pricingRows.length > 0
+        ? `The approved package pricing currently available for this setup is ${pricingRows.map((row) => `${row.name}: ${row.currency} ${(row.amountMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}`).join('; ')}.`
+        : null;
+      const timelineAnswer = /\b(?:timeline|timelines|how long|processing time|duration)\b/u.test(query)
+        ? 'I cannot confirm an approved processing timeline for this setup from the current catalog.'
+        : null;
+      const nextQuestion = input.followUpContext.nextSlotLabel
+        ? `What ${input.followUpContext.nextSlotLabel.toLocaleLowerCase('en-US').replace(/^what\s+/u, '')} would you like to use for this setup?`
+        : known.business_activity ? 'Would you like me to compare the approved package options for this setup?' : 'What business activity would you like to register?';
+      if (packageAnswer || timelineAnswer || selected.length > 0) return { answer: `${[packageAnswer, timelineAnswer, selected.map((item) => item.sentence).join(' ')].filter(Boolean).join(' ')} ${nextQuestion}`, citationIds: [...new Set([...selected.map((item) => item.chunkId), ...input.evidence.slice(0, packageAnswer || timelineAnswer ? 1 : 0).map((item) => item.citation.chunkId)])], proposedIntent: null };
+    }
     const wantsLead = /\b(contact|call|email|interested|demo|quote)\b/i.test(input.maskedMessage);
     return { answer: naturalAbstention(detectedLanguage(input.maskedMessage), input.maskedMessage, input.followUpContext), citationIds: [], proposedIntent: wantsLead ? 'lead.capture' : null };
   }
@@ -555,9 +583,9 @@ export const openingGreeting = (greeting: string | undefined, personaName: strin
   const normalized = greeting?.replace(/\s+/gu, ' ').replace(/([.!؟?])(?=\p{L})/gu, '$1 ').trim() ?? '';
   return normalized || `Hi! I’m ${personaName}.`;
 };
-export const hasSufficientEvidence = (answer: string, evidence: ModelEvidence[], citations: Citation[]): boolean => {
+export const hasSufficientEvidence = (answer: string, evidence: ModelEvidence[], citations: Citation[], trustedFacts = ''): boolean => {
   if (citations.length === 0) return false;
-  const citedContent = evidence.filter((item) => citations.some((citation) => citation.chunkId === item.citation.chunkId)).map((item) => item.content.toLowerCase()).join(' ');
+  const citedContent = `${evidence.filter((item) => citations.some((citation) => citation.chunkId === item.citation.chunkId)).map((item) => item.content.toLowerCase()).join(' ')} ${trustedFacts.toLocaleLowerCase('en-US')}`;
   const highRisk = ['guarantee', 'guaranteed', 'approved', 'eligible', 'eligibility', 'required', 'requires', 'includes', 'included', 'qualifies', 'available', 'fastest', 'complete in', 'lowest price'];
   return answer.split(/(?<=[.!?])\s+/u).every((claim) => {
     const normalizedClaim = claim.toLocaleLowerCase('en-US');

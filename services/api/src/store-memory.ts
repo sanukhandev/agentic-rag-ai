@@ -514,9 +514,11 @@ export class MemoryStore implements Store {
   async createQuote(quote: Quote): Promise<Quote> { this.quotes.set(quote.id, quote); return quote; }
   async getQuote(id: string, tenantId: string): Promise<Quote | null> { const quote = this.quotes.get(id); return quote?.tenantId === tenantId ? quote : null; }
   async createCrmAccount(account: CrmAccount): Promise<CrmAccount> { this.crmAccounts.set(account.id, account); return account; }
+  async getCrmAccount(id: string, tenantId: string): Promise<CrmAccount | null> { const account = this.crmAccounts.get(id); return account?.tenantId === tenantId ? account : null; }
   async getCrmAccountByOpportunity(opportunityId: string, tenantId: string): Promise<CrmAccount | null> { return [...this.crmAccounts.values()].find((account) => account.tenantId === tenantId && account.opportunityId === opportunityId) ?? null; }
   async updateCrmAccount(account: CrmAccount): Promise<CrmAccount> { this.crmAccounts.set(account.id, account); return account; }
   async createInvoice(invoice: Invoice): Promise<Invoice> { const existing = [...this.invoices.values()].find((candidate) => candidate.tenantId === invoice.tenantId && candidate.quoteId === invoice.quoteId); if (existing) return existing; this.invoices.set(invoice.id, invoice); return invoice; }
+  async getInvoiceByQuote(quoteId: string, tenantId: string): Promise<Invoice | null> { return [...this.invoices.values()].find((invoice) => invoice.quoteId === quoteId && invoice.tenantId === tenantId) ?? null; }
   async getInvoice(id: string, tenantId: string): Promise<Invoice | null> { const invoice = this.invoices.get(id); return invoice?.tenantId === tenantId ? invoice : null; }
   async updateInvoice(invoice: Invoice): Promise<Invoice> { this.invoices.set(invoice.id, invoice); return invoice; }
   async createContract(contract: Contract): Promise<Contract> { this.contracts.set(contract.id, contract); return contract; }
