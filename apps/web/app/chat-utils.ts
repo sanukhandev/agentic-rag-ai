@@ -118,11 +118,11 @@ export const isChatActionState = (value: unknown): value is ChatActionState =>
 
 export const isTerminalChatActionState = (state: ChatActionState): boolean => state === 'completed' || state === 'failed' || state === 'reconcile_required' || state === 'awaiting_customer' || state === 'human_review';
 
-export const actionOutcomeText = (state: ChatActionState): string | null =>
+export const actionOutcomeText = (state: ChatActionState, tenantName = 'your team'): string | null =>
   state === 'completed'
-    ? 'Your contact request has been submitted successfully. Sanu’s team can follow up using the details you provided.'
+    ? `Your contact request has been submitted successfully. ${tenantName}’s team can follow up using the details you provided.`
       : state === 'failed'
-        ? 'I could not submit your contact request. Please try again or contact Sanu directly.'
+        ? `I could not submit your contact request. Please try again or contact ${tenantName} directly.`
         : state === 'reconcile_required'
           ? null
         : state === 'awaiting_customer'

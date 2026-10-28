@@ -103,7 +103,7 @@ export default function Home() {
   };
 
   const appendActionOutcome = (proposalId: string, state: ChatActionState) => {
-    const content = actionOutcomeText(state);
+    const content = actionOutcomeText(state, config?.tenant.name ?? 'your team');
     if (!content) return;
     setMessages((prev) => prev.some((m) => m.id === `action-outcome-${proposalId}`) ? prev : [...prev, {
       id: `action-outcome-${proposalId}`,
