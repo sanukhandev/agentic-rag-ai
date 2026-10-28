@@ -8,9 +8,12 @@ describe('MemoryStore tenant and lifecycle boundaries', () => {
     const tenant = await store.createTenant({ name: 'CRM Tenant', slug: `crm-${randomUUID()}` });
     const base = { tenantId: tenant.id, sessionId: randomUUID(), intent: 'lead.capture', intentScore: 80, intentConfidence: 0.8, catalogVersionId: null, score: 70, validationPass: true, leadData: { name: '[NAME_1]', email: '[EMAIL_1]', interest: 'Request a service' }, conversation: [], summary: null, summaryStatus: 'pending' as const };
     const first = await store.upsertCrmLead({ ...base, id: randomUUID(), actionId: randomUUID(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, 'same-contact');
-    const second = await store.upsertCrmLead({ ...base, id: randomUUID(), actionId: randomUUID(), sessionId: randomUUID(), score: 100, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, 'same-contact');
+    const secondActionId = randomUUID();
+    const secondSessionId = randomUUID();
+    const second = await store.upsertCrmLead({ ...base, id: randomUUID(), actionId: secondActionId, sessionId: secondSessionId, score: 100, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, 'same-contact');
     expect(second.id).toBe(first.id);
-    expect(second.actionId).not.toBe(first.actionId);
+    expect(second.actionId).toBe(first.actionId);
+    expect(second.sessionId).toBe(first.sessionId);
     expect(await store.listCrmLeads(tenant.id)).toHaveLength(1);
   });
 
