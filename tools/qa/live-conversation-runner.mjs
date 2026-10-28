@@ -38,7 +38,28 @@ const persistedState = (sessionId) => {
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 };
+const persistedActionDiagnostics = (actionId) => {
+  try {
+    const sql = `select json_build_object(
+      'actionId', a.id,
+      'actionState', a.state,
+      'opportunityId', a.opportunity_id,
+      'outboxPublished', exists(select 1 from event_outbox o where o.action_id = a.id and o.published_at is not null),
+      'executionId', e.id,
+      'n8nExecutionRef', e.n8n_execution_ref,
+      'providerStatus', e.provider_status,
+      'crmLeadId', l.lead_id,
+      'remoteCrm', l.remote_crm
+    )::text from action_requests a
+      left join lateral (select * from action_executions where action_id = a.id order by updated_at desc limit 1) e on true
+      left join crm_leads l on l.action_id = a.id
+      where a.id = '${actionId}'`;
+    const raw = execFileSync('docker', ['exec', postgresContainer, 'psql', '-U', postgresUser, '-d', postgresDatabase, '-At', '-c', sql], { encoding: 'utf8' }).trim();
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+};
 const assert = (condition, message, assertions) => { assertions.push({ passed: Boolean(condition), message }); };
+const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 await fs.mkdir(outputDir, { recursive: true });
 const health = { live: await json('/api/v1/health/live'), ready: await json('/api/v1/health/ready'), config: await json(`/api/v1/chat/config?tenantSlug=${encodeURIComponent(tenantSlug)}`) };
@@ -70,26 +91,42 @@ for (const [index, message] of scenario.entries()) {
 }
 const proposal = turns.map((turn) => turn.response.body?.actionProposal?.id).find(Boolean);
 let confirmation = null;
+let actionDiagnostics = null;
+const workflowStages = { approvalVerified: false, dispatchVerified: false, n8nExecutionVerified: false, salesforceLeadVerified: false, callbackPersistenceVerified: false };
 assert(Boolean(proposal), 'Scoped consent action proposal generated', assertions);
 if (proposal) {
   confirmation = await json(`/api/v1/chat/actions/${proposal}/confirm`, { method: 'POST', body: { sessionId, confirmed: true } });
-  assert([200, 202].includes(confirmation.status), 'Scoped consent confirmation is accepted by the API', assertions);
+  workflowStages.approvalVerified = [200, 202].includes(confirmation.status);
+  assert(workflowStages.approvalVerified, 'Scoped consent confirmation is accepted by the API', assertions);
   const status = await json(`/api/v1/chat/actions/${proposal}?sessionId=${encodeURIComponent(sessionId)}`);
   const actionState = status.body?.action?.state ?? status.body?.state ?? null;
   assert(status.status === 200 && ['approved', 'queued', 'processing', 'completed', 'human_review', 'reconcile_required'].includes(actionState), 'Confirmed action has a durable lifecycle state', assertions);
   const actionSlots = status.body?.action?.payload?.slotValues ?? {};
   assert(!Object.values(actionSlots).some((value) => typeof value === 'string' && /^(?:okay|ok|sure|yes|yeah|can we|tell me more|that sounds good|let['’]s continue|continue|proceed|go ahead)\b/iu.test(value)), 'Action payload contains no continuation phrase as a business fact', assertions);
   assert(!actionSlots.company_structure || /\b(?:limited\s+liability|llc|fze|fzc|free\s+zone|branch|sole\s+(?:proprietorship|establishment)|partnership|corporation|incorporated)\b/iu.test(actionSlots.company_structure), 'Action company structure is semantically valid', assertions);
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    actionDiagnostics = persistedActionDiagnostics(proposal);
+    if (actionDiagnostics?.n8nExecutionRef || ['completed', 'failed', 'reconcile_required'].includes(actionDiagnostics?.actionState)) break;
+    await sleep(3000);
+  }
+  workflowStages.dispatchVerified = actionDiagnostics?.outboxPublished === true;
+  workflowStages.n8nExecutionVerified = typeof actionDiagnostics?.n8nExecutionRef === 'string' && actionDiagnostics.n8nExecutionRef.length > 0;
+  workflowStages.salesforceLeadVerified = typeof actionDiagnostics?.crmLeadId === 'string' && actionDiagnostics.crmLeadId.length > 0 && typeof actionDiagnostics?.remoteCrm === 'string' && actionDiagnostics.remoteCrm.length > 0 && actionDiagnostics.providerStatus === 'completed';
+  workflowStages.callbackPersistenceVerified = actionDiagnostics?.actionState === 'completed' && actionDiagnostics?.providerStatus === 'completed' && workflowStages.salesforceLeadVerified;
+  assert(workflowStages.dispatchVerified, 'Transactional outbox event was published', assertions);
+  assert(workflowStages.n8nExecutionVerified, 'n8n execution reference was persisted', assertions);
+  assert(workflowStages.salesforceLeadVerified, 'Salesforce Lead completion is persisted for this action', assertions);
+  assert(workflowStages.callbackPersistenceVerified, 'Authenticated callback persisted completed action state', assertions);
 }
 const failedAssertions = assertions.filter((item) => !item.passed);
-const report = { generatedAt: new Date().toISOString(), baseUrl, tenantSlug, sessionId, health: redact(health), turns, confirmation: redact(confirmation), assertions, status: failedAssertions.length ? 'FAILED' : 'PASSED' };
+const report = { generatedAt: new Date().toISOString(), baseUrl, tenantSlug, sessionId, health: redact(health), turns, confirmation: redact(confirmation), actionDiagnostics: redact(actionDiagnostics), workflowStages, assertions, status: failedAssertions.length ? 'FAILED' : 'PASSED' };
 await fs.writeFile(`${outputDir}/live-api-conversation-validation-2026-10-28.json`, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
 const lines = [`# Live API conversation validation`, ``, `- Base URL: ${baseUrl}`, `- Tenant: ${tenantSlug}`, `- Session: ${sessionId}`, `- Generated: ${report.generatedAt}`, ``];
 for (const turn of turns) {
   const body = turn.response.body ?? {};
   lines.push(`## Turn ${turn.turn}`, ``, `**User:** ${turn.userMessage}`, ``, `- HTTP: ${turn.response.status}`, `- Answer: ${body.answer ?? body.error?.message ?? '[no answer]'}`, `- Grounded: ${String(body.grounded ?? 'n/a')}`, `- Citations: ${Array.isArray(body.citations) ? body.citations.length : 0}`, `- Pending requirement: ${body.pendingRequirementKey ?? 'none'}`, `- Action proposal: ${body.actionProposal?.id ?? 'none'}`, `- Persisted state captured: ${turn.persisted.status === 200 ? 'yes' : `no (${turn.persisted.status})`}`, ``);
 }
-lines.push('## Assertions', '', ...assertions.map((item) => `- ${item.passed ? 'PASS' : 'FAIL'} — ${item.message}`), '', `Overall: ${report.status}`);
+lines.push('## Workflow stages', '', ...Object.entries(workflowStages).map(([stage, passed]) => `- ${stage}: ${passed ? 'VERIFIED' : 'NOT VERIFIED'}`), '', '## Assertions', '', ...assertions.map((item) => `- ${item.passed ? 'PASS' : 'FAIL'} — ${item.message}`), '', `Overall: ${report.status}`);
 await fs.writeFile(`${outputDir}/live-api-conversation-validation-2026-10-28.md`, `${lines.join('\n')}\n`, 'utf8');
 console.log(JSON.stringify({ sessionId, turnCount: turns.length, outputDir, status: report.status, failedAssertions }, null, 2));
 if (failedAssertions.length) process.exitCode = 1;
