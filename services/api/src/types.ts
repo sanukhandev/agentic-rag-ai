@@ -554,6 +554,108 @@ export interface SupportingDocument {
   updatedAt: string;
 }
 
+export type PackageOfferingStatus = 'approved' | 'unavailable' | 'expired';
+export interface PackageOffering {
+  id: string;
+  tenantId: string;
+  catalogVersionId: string | null;
+  packageKey: string;
+  name: string;
+  eligibleEntityTypes: string[];
+  eligibleActivities: string[];
+  includedVisaQuantity: number;
+  officeRequirement: string | null;
+  inclusions: string[];
+  priceMinor: number | null;
+  currency: string | null;
+  pricingEffectiveFrom: string | null;
+  pricingEffectiveTo: string | null;
+  additionalFees: Array<Record<string, string | number>>;
+  processingTime: string | null;
+  requiredDocuments: string[];
+  exclusions: string[];
+  availability: string;
+  approvalStatus: PackageOfferingStatus;
+  sourceRefs: string[];
+  createdAt: string;
+}
+
+export type PackageSelectionStatus = 'proposed' | 'confirmed' | 'rejected';
+export interface PackageSelection {
+  id: string;
+  tenantId: string;
+  sessionId: string;
+  opportunityId: string;
+  packageOfferingId: string;
+  quoteId: string | null;
+  status: PackageSelectionStatus;
+  confirmedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type QuoteStatus = 'draft' | 'approved' | 'expired' | 'rejected';
+export interface Quote {
+  id: string;
+  tenantId: string;
+  opportunityId: string;
+  packageOfferingId: string;
+  amountMinor: number;
+  currency: string;
+  validUntil: string;
+  status: QuoteStatus;
+  sourceRefs: string[];
+  createdAt: string;
+}
+
+export type CrmAccountStatus = 'pending' | 'verified' | 'reconcile_required' | 'failed';
+export interface CrmAccount {
+  id: string;
+  tenantId: string;
+  opportunityId: string;
+  leadId: string;
+  remoteAccountId: string | null;
+  remoteContactId: string | null;
+  remoteOpportunityId: string | null;
+  status: CrmAccountStatus;
+  conversionRule: string;
+  verifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type InvoiceStatus = 'draft' | 'pending' | 'paid' | 'failed' | 'reconcile_required';
+export interface Invoice {
+  id: string;
+  tenantId: string;
+  opportunityId: string;
+  quoteId: string;
+  externalInvoiceId: string | null;
+  amountMinor: number;
+  currency: string;
+  paymentUrl: string | null;
+  status: InvoiceStatus;
+  provider: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ContractStatus = 'draft' | 'approval_required' | 'sent' | 'signed' | 'failed' | 'reconcile_required';
+export interface Contract {
+  id: string;
+  tenantId: string;
+  opportunityId: string;
+  packageSelectionId: string;
+  invoiceId: string | null;
+  externalContractId: string | null;
+  templateKey: string;
+  signingUrl: string | null;
+  status: ContractStatus;
+  provider: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface DocumentProcessingJob {
   id: string;
   documentId: string;
@@ -720,6 +822,24 @@ export interface Store {
   renewDocumentProcessingJob(id: string, tenantId: string, leaseMs: number): Promise<DocumentProcessingJob | null>;
   updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
   linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void>;
+  listPackageOfferings(tenantId: string, input?: { catalogVersionId?: string | null; activity?: string; entityType?: string }): Promise<PackageOffering[]>;
+  getPackageOffering(id: string, tenantId: string): Promise<PackageOffering | null>;
+  createPackageOffering(offering: PackageOffering): Promise<PackageOffering>;
+  createPackageSelection(selection: PackageSelection): Promise<PackageSelection>;
+  listPackageSelections(tenantId: string, opportunityId: string): Promise<PackageSelection[]>;
+  getPackageSelection(id: string, tenantId: string): Promise<PackageSelection | null>;
+  confirmPackageSelection(id: string, tenantId: string, quoteId: string): Promise<PackageSelection | null>;
+  createQuote(quote: Quote): Promise<Quote>;
+  getQuote(id: string, tenantId: string): Promise<Quote | null>;
+  createCrmAccount(account: CrmAccount): Promise<CrmAccount>;
+  getCrmAccountByOpportunity(opportunityId: string, tenantId: string): Promise<CrmAccount | null>;
+  updateCrmAccount(account: CrmAccount): Promise<CrmAccount>;
+  createInvoice(invoice: Invoice): Promise<Invoice>;
+  getInvoice(id: string, tenantId: string): Promise<Invoice | null>;
+  updateInvoice(invoice: Invoice): Promise<Invoice>;
+  createContract(contract: Contract): Promise<Contract>;
+  getContract(id: string, tenantId: string): Promise<Contract | null>;
+  updateContract(contract: Contract): Promise<Contract>;
   enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent>;
   claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]>;
   markOutboxPublished(eventId: string, publishedAt?: string): Promise<void>;

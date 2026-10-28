@@ -16,6 +16,7 @@
     "acceptance:seed": "node scripts/seed-acceptance-local.mjs",
     "seed:local": "node scripts/seed-local.mjs",
     "test": "npm run test --workspaces --if-present",
+    "test:postgres:docker": "docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm api-test",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "dev:api": "npm --workspace services/api run dev",
