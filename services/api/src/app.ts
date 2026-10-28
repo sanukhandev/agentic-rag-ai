@@ -56,6 +56,7 @@ import {
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null; normalizationAttempts: number; normalizationFallbacks: number; normalizationFailures: number; normalizationLatencyMs: number };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -1166,6 +1167,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : null;
       const reopeningOpportunity = Boolean(reopeningIntentKey);
       const currentOpportunityId = state.intentProgress?.entries[activeIntentForTurn ?? '']?.journeyId ?? null;
+      const agentToolResults: AgentToolResult[] = await runAgentTools(model, { store, session, catalog: publishedCatalog, opportunityId: currentOpportunityId, maskedQuery: masked.masked });
       const actionMatchesOpportunity = (action: ActionRequest): boolean => currentOpportunityId
         ? action.opportunityId === currentOpportunityId
         : action.opportunityId == null;
@@ -1540,6 +1542,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
             responseMode: mixedKnowledgeTurn ? 'mixed' as const : knowledgeQuestion ? 'knowledge' as const : journeyDocumentPending ? 'document_collection' as const : journeyRequirement?.requirementType === 'slot' ? 'slot_collection' as const : 'follow_up' as const,
             documentPolicies: (publishedCatalog?.catalog.documentPolicies ?? []).filter((policy) => policy.enabled && (!followUpIntentKeys.size || followUpIntentKeys.has(policy.intentKey))).map((policy) => ({ intentKey: policy.intentKey, requestMode: policy.requestMode, required: policy.required, requestPromptKey: policy.requestPromptKey, allowedDocumentTypes: policy.allowedDocumentTypes })),
             documentStatus: documents.map((document) => document.status),
+            agentToolResults: agentToolResults.map(({ name, ok, data }) => ({ name, ok, data })),
           };
           const modelInput = { maskedMessage, evidence, personaName: persona?.name ?? 'Sales assistant', ownerName: tenant.name, conversation, followUpContext };
           draft = await model.draft(persona ? { ...modelInput, persona } : modelInput);

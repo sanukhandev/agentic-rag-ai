@@ -12,6 +12,9 @@ export interface ModelDraft {
   followUpOptions?: FollowUpOfferOption[] | null | undefined;
 }
 
+export interface ModelToolCall { name: string; input: Record<string, string | number | boolean | null>; }
+export interface ModelToolPlan { calls: ModelToolCall[]; }
+
 export type OfferReplyAction = 'accept' | 'reject' | 'select_option' | 'clarify' | 'new_request' | 'unknown';
 export interface ModelOfferReply { action: OfferReplyAction; optionKey?: string | null; confidence: number; }
 
@@ -44,6 +47,7 @@ export interface ModelFollowUpContext {
     allowedDocumentTypes: string[];
   }>;
   documentStatus?: string[];
+  agentToolResults?: Array<{ name: string; ok: boolean; data: Record<string, unknown> }>;
 }
 
 export interface CrmSummaryInput {
@@ -56,6 +60,7 @@ export interface CrmSummaryInput {
 }
 
 export interface ChatModel {
+  plan?(input: { maskedMessage: string; availableTools: readonly string[]; conversationSummary: string; activeIntentKey: string | null }): Promise<ModelToolPlan>;
   draft(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[]; followUpContext?: ModelFollowUpContext }): Promise<ModelDraft>;
   compose?(input: { maskedMessage: string; evidence: ModelEvidence[]; personaName: string; ownerName?: string; persona?: ModelPersona; conversation?: ConversationTurn[]; followUpContext?: ModelFollowUpContext }): Promise<ModelDraft>;
   normalizeQuery?(input: QueryNormalizationInput): Promise<string | null>;
@@ -253,6 +258,38 @@ const responseSystemPrompt = (input: {
 
 export class AzureFoundryModel implements ChatModel {
   constructor(private readonly endpoint: string, private readonly deployment: string, private readonly apiKey: string, private readonly apiVersion = '2024-10-21') { assertExternalEndpoint(endpoint, 'Azure AI'); }
+
+  async plan(input: { maskedMessage: string; availableTools: readonly string[]; conversationSummary: string; activeIntentKey: string | null }): Promise<ModelToolPlan> {
+    if (!this.endpoint || !this.deployment || !this.apiKey) return { calls: [] };
+    const endpoint = this.endpoint.replace(/\/$/u, '');
+    const v1 = /\/openai\/v1$/iu.test(endpoint);
+    const url = v1
+      ? `${endpoint}/chat/completions`
+      : `${endpoint}/openai/deployments/${encodeURIComponent(this.deployment)}/chat/completions?api-version=${encodeURIComponent(this.apiVersion)}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'api-key': this.apiKey },
+      signal: AbortSignal.timeout(3_000),
+      body: JSON.stringify({
+        ...(v1 ? { model: this.deployment } : {}),
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: 'Select only read-only tools needed to answer the latest masked visitor message. Do not authorize or execute side effects. Use the supplied tool names exactly. Return JSON only: {"calls":[{"name":"tool_name","input":{}}]}. Use at most 8 calls and do not include a tool just because it exists.' },
+          { role: 'user', content: JSON.stringify({ message: input.maskedMessage, availableTools: input.availableTools, activeIntentKey: input.activeIntentKey, conversationSummary: input.conversationSummary.slice(-2_000) }) },
+        ],
+      }),
+    });
+    if (!response.ok) return { calls: [] };
+    let body: { choices?: Array<{ message?: { content?: unknown } }> };
+    try { body = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> }; } catch { return { calls: [] }; }
+    const content = body.choices?.[0]?.message?.content;
+    if (typeof content !== 'string') return { calls: [] };
+    try {
+      const parsed = z.object({ calls: z.array(z.object({ name: z.string().min(1).max(100), input: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}) }).strict()).max(8) }).strict().parse(JSON.parse(content));
+      return { calls: parsed.calls };
+    } catch { return { calls: [] }; }
+  }
 
   async normalizeQuery(input: QueryNormalizationInput): Promise<string | null> {
     if (!this.endpoint || !this.deployment || !this.apiKey) return null;
