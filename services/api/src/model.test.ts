@@ -75,6 +75,7 @@ describe('Azure Foundry model adapter', () => {
     expect(isKnowledgeQuestion('I would like to know how the shared office works')).toBe(true);
     expect(isKnowledgeQuestion('I want to start a digital marketing company and would like to know the steps and cost')).toBe(true);
     expect(isKnowledgeQuestion('I want to start a digital marketing company and want to know the steps and cost')).toBe(true);
+    expect(isKnowledgeQuestion('I would like to start an IT service company what are the steps')).toBe(true);
     expect(isKnowledgeQuestion('Can I book a demo?')).toBe(false);
     expect(isKnowledgeQuestion('Can you book a demo?')).toBe(false);
     expect(isKnowledgeQuestion('How are you?')).toBe(false);
@@ -94,6 +95,7 @@ describe('Azure Foundry model adapter', () => {
     expect(conversationalReply('farewell', 'Nova')).toContain('lovely chatting');
     expect(naturalAbstention('en', 'What is the pricing for the same?', { capturedSlots: { visa_count: '2', workspace_preference: 'shared office' } })).toContain('pricing for this setup');
     expect(naturalAbstention('en', 'What is the pricing for the same?', { capturedSlots: { visa_count: '2', workspace_preference: 'shared office' } })).toContain('2 visas, shared office');
+    expect(naturalAbstention('en', 'I would like to start an IT service company what are the steps')).toContain('setup steps');
     expect(naturalAbstention()).not.toContain('knowledge base');
     expect(naturalAbstention('ar')).toContain('لا أستطيع تأكيد');
   });
