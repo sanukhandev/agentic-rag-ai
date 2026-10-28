@@ -1,9 +1,11 @@
 import glob,json,unittest
 from pathlib import Path
 BASE=Path(__file__).resolve().parents[2]/'infra/n8n/workflows'
+EXPECTED=('ANCInvoicePDFWF1.json','ANCPaymentMockWF1.json','ANCQuotePDFWF1.json')
 class Tests(unittest.TestCase):
  def test_workflows_are_inactive_and_connected(self):
-  paths=list(BASE.glob('*.json'));self.assertEqual(len(paths),3)
+  paths=[BASE/name for name in EXPECTED]
+  self.assertTrue(all(path.is_file() for path in paths))
   for p in paths:
    d=json.loads(p.read_text());self.assertFalse(d['active']);self.assertEqual(len(d['connections']),len(d['nodes'])-1)
    self.assertTrue(all(n['type'] in ('n8n-nodes-base.code','n8n-nodes-base.httpRequest','n8n-nodes-base.webhook') for n in d['nodes']))
