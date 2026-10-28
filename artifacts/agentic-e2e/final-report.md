@@ -1,8 +1,8 @@
 # Agentic RAG AI final acceptance report
 
-Tested code commit: `a3ec1eeafc26b502fb48c77f9536789165e3281a`; Docker API image: `sha256:bce5673e5053472d597fbc008c51e8682c2c4089fb19161077b33e9acf381679`.
+Tested code commit: `d3433db51f9e2d7935daf5dcee2daefb1019f365`; Docker API image: `sha256:4ae4c73a172cdae41e9fcf3749457a2ba7a7b6d0624449eba597e3e56dce4aba`.
 
-Targeted live regression passed on ANC session `f93cfd4d-f7ba-4155-996d-54b1960d41c8`: “i would like to start a IT service company” preserved setup context, and “what all packages” returned the approved Sandbox Basic and Sandbox Growth options with AED 2,500.00 and AED 4,500.00 respectively, followed by one contextual question.
+Targeted live regression passed on ANC session `fdeaa149-0457-4a99-8d8e-91de0eee4896`: “i would like to start a IT service company” returned grounded setup guidance with its document-order condition, and “what all packages” returned the approved Sandbox Basic and Sandbox Growth options with AED 2,500.00 and AED 4,500.00 respectively, followed by one contextual question.
 
 ## A. Architecture implemented
 
