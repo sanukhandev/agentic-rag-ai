@@ -415,7 +415,8 @@ export const isKnowledgeQuestion = (text: string): boolean => {
   const directActionRequest = /^(?:can|could|would)\s+(?:i|you)\s+(?:book|schedule|request|arrange|register|call|contact)\b|^(?:book|schedule|request|arrange|register)\s+(?:a\s+)?(?:demo|quote|call|consultation|meeting|appointment|service|business)\b/u.test(normalized);
   return !directActionRequest && (/[?؟]/u.test(normalized)
     || /^(?:what|how|where|which|why|when|who|can(?: you)?|could(?: you)?|would(?: you)?|is|are|does|should|will|do\s+(?:you|we|they|i)|tell me|please explain)\b/u.test(normalized)
-    || /\b(?:i(?:'d| would| want)|would) like to know\b/u.test(normalized)
+    || /\b(?:i(?:'d| would| want)|we(?:'d| would| want)|would) like to know\b/u.test(normalized)
+    || /\b(?:want|need|would like)\s+to know\b/u.test(normalized)
     || /\bi want to understand\b/u.test(normalized));
 };
 
@@ -504,7 +505,7 @@ export const hasSufficientEvidence = (answer: string, evidence: ModelEvidence[],
     const numbers = normalizedClaim.match(/\b\d+(?:[.,]\d+)?\b/g) ?? [];
     if (numbers.some((number) => !citedContent.includes(number))) return false;
     const claimWithoutEmail = normalizedClaim.replace(/\bemail\s+[^\s@]+@[^\s@]+\b/gu, ' pii ').replace(/\b[^\s@]+@[^\s@]+\b/gu, ' pii ');
-    const terms = (claimWithoutEmail.match(/[a-z\u00c0-\u024f]{4,}/gu) ?? []).filter((term, index, values) => !['that', 'this', 'with', 'from', 'your', 'approved', 'answer', 'pii'].includes(term) && values.indexOf(term) === index);
+    const terms = (claimWithoutEmail.match(/[a-z\u00c0-\u024f]{4,}/gu) ?? []).filter((term, index, values) => !['that', 'this', 'with', 'from', 'your', 'approved', 'answer', 'pii', 'here', 'verify', 'verified', 'know', 'information', 'complete', 'step', 'steps'].includes(term) && values.indexOf(term) === index);
     if (terms.length > 0 && !terms.some((term) => citedContent.includes(term))) return false;
     const riskTerms = highRisk.filter((term) => normalizedClaim.includes(term));
     return riskTerms.every((term) => citedContent.includes(term));

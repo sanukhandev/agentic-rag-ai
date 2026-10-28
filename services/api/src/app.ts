@@ -202,9 +202,42 @@ const pendingCatalogSlotValue = (validationRule: string, rawInput: string, maske
   return null;
 };
 
-const catalogSlotTerms = (slot: IntentCatalogSlot): string[] => slot.slotKey.split(/[._-]+/u).filter((term) => term.length >= 4);
+const catalogSlotTerms = (slot: IntentCatalogSlot): string[] => {
+  const keyTerms = slot.slotKey.split(/[._-]+/u).filter((term) => term.length >= 3);
+  const promptTerms = slot.promptKey.split(/[._-]+/u).filter((term) => term.length >= 4 && !['lead', 'ask'].includes(term));
+  const semanticTerms = /visa/iu.test(slot.slotKey) ? ['visa', 'visas']
+    : /timeline|start/iu.test(slot.slotKey) ? ['timeline', 'start', 'month', 'months', 'week', 'weeks', 'asap']
+      : /budget|amount|price|cost|money/iu.test(`${slot.slotKey} ${slot.validationRule}`) ? ['budget', 'aed', 'amount', 'spend', 'cost']
+        : /office|workspace|desk/iu.test(slot.slotKey) ? ['office', 'workspace', 'desk', 'shared', 'private']
+          : [];
+  return [...new Set([...keyTerms, ...promptTerms, ...semanticTerms])];
+};
 
 const messageMentionsCatalogSlot = (slot: IntentCatalogSlot, message: string): boolean => catalogSlotTerms(slot).some((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&')}\\b`, 'iu').test(message));
+
+const inferredCatalogSlotValue = (slot: IntentCatalogSlot, rawInput: string, maskedInput: string, session: Session, tokenVault: TokenVault): string | null => {
+  const normalized = rawInput.toLocaleLowerCase('en-US');
+  if (/visa_count/iu.test(slot.slotKey)) {
+    const match = rawInput.match(/(?<![\d.])\d+(?![\d.])(?=\s*(?:visa|visas))/iu);
+    if (match) return pendingCatalogSlotValue(slot.validationRule, match[0], match[0], session, tokenVault);
+    const word = normalized.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+visas?\b/iu)?.[1]?.toLocaleLowerCase('en-US');
+    const numeric = word ? { one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10' }[word] : null;
+    return numeric ? pendingCatalogSlotValue(slot.validationRule, numeric, numeric, session, tokenVault) : null;
+  }
+  if (/timeline|start/iu.test(slot.slotKey)) {
+    const match = normalized.match(/\b(?:next|this|within)\s+(?:month|months|week|weeks)|\b(?:asap|immediately|urgent)\b/iu);
+    return match?.[0] ?? null;
+  }
+  if (/budget|amount|price|cost|money/iu.test(`${slot.slotKey} ${slot.validationRule}`)) {
+    const match = rawInput.match(/(?:aed|usd|eur|gbp)\s*[\d,]+(?:\.\d+)?|\b[\d,]+(?:\.\d+)?\s*(?:aed|usd|eur|gbp)\b/iu);
+    if (match) return pendingCatalogSlotValue(slot.validationRule === 'money:nonnegative' ? 'number:positive' : slot.validationRule, match[0], match[0], session, tokenVault);
+  }
+  if (/office|workspace|desk/iu.test(slot.slotKey)) {
+    const match = normalized.match(/\b(?:shared|private)\s+(?:office|workspace|desk)\b|\b(?:office|workspace|desk)\b/iu);
+    return match?.[0] ?? null;
+  }
+  return pendingCatalogSlotValue(slot.validationRule, rawInput, maskedInput, session, tokenVault);
+};
 
 const offerText = (text: string): string => normalizeConversationQuery(text).toLocaleLowerCase('en-US');
 const offerOptionIsPresented = (answer: string, option: FollowUpOfferOption): boolean => offerText(answer).includes(offerText(option.label));
@@ -1057,6 +1090,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const modelContextWindow = Math.min(Math.max(contextWindowMessages, 2), 8);
       let evidence: ModelEvidence[] = [];
       let draft: ModelDraft;
+      let knowledgeConflict = false;
       const state = session.conversationState ?? newConversationState();
       const pinnedCatalog = state.catalogVersionId ? await store.getIntentCatalogVersion(session.tenantId, state.catalogVersionId) : null;
       if (state.catalogVersionId && !pinnedCatalog) throw new HttpError(409, 'CATALOG_VERSION_UNAVAILABLE', 'This conversation uses an unavailable catalog version. Please start a new request.');
@@ -1155,7 +1189,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const baseCatalogSlotValues: Record<string, string> = { ...pendingCatalogValues, ...(extractLeadData(maskedMessage) as Record<string, string>), ...pendingCatalogValueData };
       const deterministicMessage = normalizeConversationQuery(maskedMessage);
       const currentCatalogResolution = publishedCatalog ? resolveIntent(publishedCatalog, deterministicMessage, baseCatalogSlotValues) : null;
-      const inferredCatalogIntentKey = currentCatalogResolution?.intentKey ?? (postCaptureFollowUp ? activeCatalogIntent : null);
+      const extractionIntentSwitch = /\b(?:also|another|instead|switch|change)\b/iu.test(maskedMessage);
+      const inferredCatalogIntentKey = activeConversationJourney && !extractionIntentSwitch ? activeCatalogIntent : currentCatalogResolution?.intentKey ?? activeCatalogIntent;
       const inferredCatalogValueData = (Boolean(state.selectedIntentKey) || !publishedCatalog?.catalog.journeyRequirements?.length) && !knowledgeQuestion && !conversational && inferredCatalogIntentKey && !pendingValue
         ? (() => {
           const inferred: Record<string, string> = {};
@@ -1168,11 +1203,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           for (const slot of publishedCatalog?.catalog.slots.filter((candidate) => candidate.intentKey === inferredCatalogIntentKey && candidate.slotKey !== pendingSlot?.slotKey && !candidate.validationRule.startsWith('token:') && candidate.validationRule !== 'boolean:explicit_opt_in') ?? []) {
             if (isIntentPhrase && slot.validationRule.startsWith('text:')) continue;
             if (!messageMentionsCatalogSlot(slot, inputText)) continue;
-            const value = pendingCatalogSlotValue(slot.validationRule, inputText, maskedMessage, session, tokenVault);
+            const value = inferredCatalogSlotValue(slot, inputText, maskedMessage, session, tokenVault);
             if (value) inferred[slot.slotKey] = value;
           }
           const interestSlot = publishedCatalog?.catalog.slots.find((slot) => slot.intentKey === inferredCatalogIntentKey && slot.validationRule.startsWith('text:') && slot.required && !pendingCatalogValues[slot.slotKey]);
-          if (interestSlot && interestSlot.slotKey !== pendingSlot?.slotKey && !isIntentPhrase && maskedMessage.trim().length >= 12) inferred[interestSlot.slotKey] = maskedMessage.trim();
+          const continuationPhrase = /\b(?:continue|resume|proceed|go ahead)\b/iu.test(maskedMessage);
+          const timelineSlot = publishedCatalog?.catalog.slots.find((slot) => slot.intentKey === inferredCatalogIntentKey && /timeline|start/iu.test(slot.slotKey) && !pendingCatalogValues[slot.slotKey]);
+          const timelineValue = deterministicMessage.match(/\b(?:next|this|within)\s+(?:month|months|week|weeks)|\b(?:asap|immediately|urgent)\b/iu)?.[0];
+          if (timelineSlot && timelineValue) inferred[timelineSlot.slotKey] = timelineValue;
+          if (interestSlot && interestSlot.slotKey !== pendingSlot?.slotKey && !isIntentPhrase && !continuationPhrase && maskedMessage.trim().length >= 12) inferred[interestSlot.slotKey] = maskedMessage.trim();
+          if (pendingTextRedirected && pendingSlot?.validationRule.startsWith('text:') && pendingSlot.required && !pendingCatalogValues[pendingSlot.slotKey] && !continuationPhrase && maskedMessage.trim().length >= 12) inferred[pendingSlot.slotKey] = maskedMessage.trim();
           return inferred;
         })()
         : {};
@@ -1242,7 +1282,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       // is an explicit new opportunity and may collect its own consent.
       const distinctIntentKey = catalogResolution?.intentKey && state.selectedIntentKey && catalogResolution.intentKey !== state.selectedIntentKey ? catalogResolution.intentKey : null;
       const explicitIntentSwitch = /^(?:i|we)\s+(?:want|need|would\s+like|am\s+looking|need\s+help)|^(?:please|can\s+you|could\s+you)\b/iu.test(maskedMessage);
-      const distinctIntent = Boolean(distinctIntentKey && (!pendingValue || explicitIntentSwitch));
+      const distinctIntent = Boolean(distinctIntentKey && (explicitIntentSwitch || !activeConversationJourney));
       if (distinctIntent && catalogResolution?.intentKey && !sessionActions.some((action) => action.opportunityId === currentOpportunityId && action.intentKey === catalogResolution.intentKey)) postCaptureFollowUp = false;
       if (distinctIntent && publishedCatalog) {
         // A distinct intent is a new opportunity, even when it reuses the same workflow.
@@ -1389,16 +1429,25 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         else if (postCaptureFollowUp && catalogSlotNonAnswer) draft = await composeGuidedDraft({ answer: 'Thanks, I’ve noted that from earlier. If anything has changed, tell me what to update; otherwise we can continue with the remaining details?', citationIds: [], proposedIntent: null }, 'follow_up', journeySlotKey);
         else if (!knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog) draft = await composeGuidedDraft({ answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null }, 'slot_collection', journeySlotKey);
         else if (!postCaptureFollowUp && !knowledgeQuestion && publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length > 0) draft = await composeGuidedDraft({ answer: catalogSlotQuestion(publishedCatalog, catalogResolution.intentKey, catalogResolution.missingSlots[0] ?? '', catalogSlotValues), citationIds: [], proposedIntent: null }, 'slot_collection', catalogResolution.missingSlots[0] ?? null);
-       else if (!postCaptureFollowUp && leadIntent && !catalogSlotsReady) draft = await composeGuidedDraft({ answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: null }, 'slot_collection', invalidLeadField);
-       else if (!postCaptureFollowUp && ((leadIntent && validatedLeadReady) || (catalogResolution?.actionAllowed && (!isContactWorkflow || validatedLeadReady)))) draft = await composeGuidedDraft({ answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: catalogResolution?.intentKey ?? 'lead.capture' }, 'consent');
+       else if (!postCaptureFollowUp && !knowledgeQuestion && leadIntent && !catalogSlotsReady) draft = await composeGuidedDraft({ answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: null }, 'slot_collection', invalidLeadField);
+       else if (!postCaptureFollowUp && !knowledgeQuestion && ((leadIntent && validatedLeadReady) || (catalogResolution?.actionAllowed && (!isContactWorkflow || validatedLeadReady)))) draft = await composeGuidedDraft({ answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: catalogResolution?.intentKey ?? 'lead.capture' }, 'consent');
       else if (!postCaptureFollowUp && conversational && intent === 'identity') draft = { answer: conversationalReply(intent, persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
       else {
         let queryEmbedding: number[];
         try { queryEmbedding = await embedding.embed(knowledgeRetrievalQuery); } catch { throw new HttpError(503, 'EMBEDDING_UNAVAILABLE', 'The assistant is currently unable to search approved knowledge.'); }
         const rows = await store.searchSearchableChunks(session.tenantId, internal ? 'internal' : 'public', queryEmbedding, 24, retrievalTextQuery);
-        const ranked = rankChunksWithVector(knowledgeRetrievalQuery, rows, queryEmbedding, 4, embedding.model.startsWith('deterministic-') ? null : 0.8);
+        let ranked = rankChunksWithVector(knowledgeRetrievalQuery, rows, queryEmbedding, 4, embedding.model.startsWith('deterministic-') ? null : 0.55);
+        // A mixed natural-language request can have a weaker vector score even when
+        // the approved candidate set contains lexical evidence. Re-rank that same
+        // tenant-filtered set with the normal hybrid gate before abstaining.
+        if (ranked.length === 0 && !embedding.model.startsWith('deterministic-')) ranked = rankChunksWithVector(knowledgeRetrievalQuery, rows, queryEmbedding, 4);
+        if (ranked.length === 0 && knowledgeQuestion) {
+          const approvedChunks = await store.listSearchableChunks(session.tenantId, internal ? 'internal' : 'public');
+          ranked = rankChunksWithVector(knowledgeRetrievalQuery, approvedChunks, queryEmbedding, 4);
+        }
         evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: presentKnowledgeText(chunk.content) })).filter((item) => item.content.length > 0);
-        if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null };
+        knowledgeConflict = hasConflictingEvidence(evidence.map((item) => item.content));
+        if (knowledgeConflict) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: evidence.slice(0, 4).map((item) => item.citation.chunkId), proposedIntent: null };
         else if (!postCaptureFollowUp && conversational && evidence.length === 0) draft = { answer: intent === 'greeting' && language !== 'ar' ? openingGreeting(persona?.greeting, persona?.name ?? 'Sales assistant') : conversationalReply(intent ?? 'identity', persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
         else try {
           const documents = postCaptureFollowUp ? journeyDocuments : [];
@@ -1429,16 +1478,29 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog && !consentDenied && !catalogSlotNonAnswer && !isGuidedResponse(draft.answer, 'slot_collection', journeySlotKey)) draft = { answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null };
       if (knowledgeQuestion && evidence.length > 0 && draft.answer === naturalAbstention(language)) draft = groundedKnowledgeFallback(maskedMessage, evidence) ?? draft;
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
-      const citations = validateCitations(draft, evidence);
+      let citations = validateCitations(draft, evidence);
       const casualFallback = conversational && (evidence.length === 0 || intent === 'identity');
       const continuityAnswer = continuityTurn && isSafeContinuityAnswer(draft.answer, citations);
-      const grounded = !casualFallback && !leadCollection && evidence.length > 0 && hasSufficientEvidence(draft.answer, evidence, citations);
+      let grounded = knowledgeConflict
+        ? citations.length > 0
+        : !casualFallback && !leadCollection && evidence.length > 0 && hasSufficientEvidence(draft.answer, evidence, citations);
+      if (knowledgeQuestion && evidence.length > 0 && !grounded && !knowledgeConflict) {
+        const citedContent = evidence.filter((item) => citations.some((citation) => citation.chunkId === item.citation.chunkId)).map((item) => item.content.toLocaleLowerCase('en-US')).join(' ');
+        const unsupportedNumber = (draft.answer.toLocaleLowerCase('en-US').match(/\b\d+(?:[.,]\d+)?\b/g) ?? []).some((number) => !citedContent.includes(number));
+        const fallbackDraft = unsupportedNumber ? null : groundedKnowledgeFallback(maskedMessage, evidence);
+        if (fallbackDraft) {
+          draft = fallbackDraft;
+          citations = validateCitations(draft, evidence);
+          // This fallback is assembled only from sentences in authorized evidence.
+          grounded = citations.length > 0;
+        }
+      }
       const continuityFallback = continuityTurn && !continuityAnswer;
       const safeGrounded = grounded && !continuityFallback;
       const safeCitations = safeGrounded ? citations : [];
       const offerClarificationAnswer = offerNeedsClarification && Boolean(activeFollowUpOffer);
       const leadAnswer = !postCaptureFollowUp && !knowledgeQuestion && (leadCollection || (leadIntent && validatedLeadReady) || consentActionReady || catalogClarification || Boolean(catalogResolution?.actionAllowed)) || journeyDocumentPending || journeyDocumentAwaiting || journeyConfirmationPending || journeyOfferPending || Boolean(!knowledgeQuestion && journeyRequirement && journeySlotKey);
-       const answer = !languageAllowed ? draft.answer : casualFallback || leadAnswer || continuityAnswer ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
+      const answer = !languageAllowed ? draft.answer : casualFallback || leadAnswer || continuityAnswer || knowledgeConflict ? draft.answer : grounded ? draft.answer : naturalAbstention(language);
       let safeAnswer = casualFallback || leadAnswer || continuityAnswer || offerClarificationAnswer ? draft.answer : continuityTurn ? conversationalReply('acknowledgement', persona?.name ?? 'Sales assistant', language, tenant.name) : answer;
       if (intent === 'farewell') session.closedAt = new Date().toISOString();
       const nextMissingSlot = crmContactMissing ?? journeySlotKey ?? catalogResolution?.missingSlots[0] ?? null;

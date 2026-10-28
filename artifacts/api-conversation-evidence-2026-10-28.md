@@ -77,3 +77,28 @@ Blocking defects exposed by this live API run:
 3. A multi-slot message does not persist visa count, timeline, and budget; it is incorrectly mapped into unrelated slots.
 
 The consent action was intentionally not confirmed, so no CRM/n8n side effect was triggered.
+
+## Reliability-fix rerun (current branch)
+
+After the conversation-path fixes and rebuilding the local API image, session `7ded21b3-1d6c-480f-856f-bf62a0716be7` produced:
+
+| # | Result | Grounded/citations | Pending |
+|---:|---|---|---|
+| 1 | Mixed company-setup + steps/cost request returned a cited conflict-safe response instead of collecting contact first. | `true` / `4` | unchanged journey context |
+| 2 | Visa package interruption returned approved package evidence and preserved the setup journey. | `true` / `4` | unchanged journey context |
+| 3 | Resume request returned the catalog requirement for the business description. | `false` / `0` | `slot:interest_summary` |
+| 4 | Out-of-order facts were accepted without changing intent. | `false` / `0` | `slot:name` |
+
+Persisted opportunity facts after turn 4 (token-safe):
+
+```json
+{
+  "timeline": "next month",
+  "budget_aed": "25000",
+  "visa_count": "2",
+  "interest_summary": "We need two visas, a shared office, and would like to start next month with a budget of AED 25000.",
+  "company_structure": "I want to continue with the company setup."
+}
+```
+
+The imported catalog does not currently define an executable `workspace/office` requirement for this journey, so shared-office capture remains a catalog configuration gap rather than an application fallback. The supplied workbook also imports without executable `journeyRequirements`/`journeyTransitions`; contact and consent therefore still use the legacy slot fallback. No CRM action was confirmed and no Salesforce/n8n side effect was executed.
