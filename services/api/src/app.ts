@@ -32,6 +32,13 @@ import {
   crmQualificationSchema,
   crmRemotePayloadSchema,
   crmRemoteReconcileSchema,
+  crmAccountRemoteSchema,
+  crmAccountRemotePayloadSchema,
+  invoiceRemoteSchema,
+  paymentStatusSchema,
+  contractRemoteSchema,
+  invoiceRemotePayloadSchema,
+  contractRemotePayloadSchema,
   crmRemoteSchema,
   crmSummarySchema,
   documentFailureSchema,
@@ -88,7 +95,9 @@ const groundedKnowledgeFallback = (question: string, evidence: ModelEvidence[]):
       : timelineQuestion
         ? ['timeline', 'timelines', 'time', 'duration', 'processing', 'days', 'weeks', 'months', 'start']
       : terms;
-  const candidates = [...new Set(evidence.flatMap((item) => item.content.split(/(?<=[.!?])\s+|\n+/u).map((sentence) => sentence.trim()).filter((sentence) => sentence.length > 20 && (topicTerms.some((term) => sentence.toLocaleLowerCase('en-US').includes(term)) || terms.some((term) => sentence.toLocaleLowerCase('en-US').includes(term))))))]
+  const candidates = [...new Set(evidence.flatMap((item) => item.content.split(/(?<=[.!?])\s+|\n+/u).map((sentence) => sentence.trim()).filter((sentence) => sentence.length > 20
+    && !/answer only from approved|knowledge base|retrieval metadata|source validation|validate all prices|ingestion|do not invent|where the answer depends on/iu.test(sentence)
+    && (topicTerms.some((term) => sentence.toLocaleLowerCase('en-US').includes(term)) || terms.some((term) => sentence.toLocaleLowerCase('en-US').includes(term))))))]
     .map((sentence) => ({ sentence, score: topicTerms.filter((term) => sentence.toLocaleLowerCase('en-US').includes(term)).length + terms.filter((term) => sentence.toLocaleLowerCase('en-US').includes(term)).length }))
     .filter(({ sentence }) => /^[A-Z]/u.test(sentence)
       && (!packageQuestion || /\b(?:package|packages|visa|visas|price|prices|cost|costs|fee|fees|quote|quotation)\b/u.test(sentence))
@@ -653,7 +662,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     modelConfigured: Boolean(dependencies.model),
     embeddingConfigured: Boolean(dependencies.embedding),
   });
-  registerLifecycleRoutes(app, { store, chatApi, routeParam, authorizeSession: authorizeChatSession });
+  registerLifecycleRoutes(app, { store, gateway, chatApi, routeParam, authorizeSession: authorizeChatSession });
 
   app.post('/api/v1/admin/ingestion-jobs', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
     try {
@@ -1178,7 +1187,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : null;
       const reopeningOpportunity = Boolean(reopeningIntentKey);
       const currentOpportunityId = state.intentProgress?.entries[activeIntentForTurn ?? '']?.journeyId ?? null;
-      const agentToolResults: AgentToolResult[] = await runAgentTools(model, { store, session, catalog: publishedCatalog, opportunityId: currentOpportunityId, maskedQuery: masked.masked });
+      let agentToolResults: AgentToolResult[] = await runAgentTools(model, { store, session, catalog: publishedCatalog, opportunityId: currentOpportunityId, maskedQuery: masked.masked });
       const actionMatchesOpportunity = (action: ActionRequest): boolean => currentOpportunityId
         ? action.opportunityId === currentOpportunityId
         : action.opportunityId == null;
@@ -1289,7 +1298,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const activeActivitySlot = publishedCatalog && state.selectedIntentKey
         ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === state.selectedIntentKey && !currentCatalogSlotValues[slot.slotKey] && /activity|business/iu.test(slot.slotKey) && slot.validationRule.startsWith('text:'))
         : null;
-      if (activeActivitySlot && publishedCatalog && maskedMessage.trim().length >= 12 && !knowledgeQuestion && !conversational && !continuationReply && publishedCatalog.catalog.signals.some((signal) => signal.signalType === 'phrase' && signal.relationGroup === 'activity' && normalizeConversationQuery(maskedMessage).toLocaleLowerCase('en-US').includes(normalizeConversationQuery(signal.value).toLocaleLowerCase('en-US').split(/\s+/u).filter((term) => term.length >= 4).slice(-2).join(' ')))) currentCatalogSlotValues[activeActivitySlot.slotKey] = maskedMessage.trim();
+      const activityMentioned = publishedCatalog?.catalog.signals.some((signal) => {
+        if (signal.signalType !== 'phrase' || signal.relationGroup !== 'activity') return false;
+        const messageTerms = new Set(normalizeConversationQuery(maskedMessage).toLocaleLowerCase('en-US').split(/\s+/u));
+        const signalTerms = normalizeConversationQuery(signal.value).toLocaleLowerCase('en-US').split(/\s+/u).filter((term) => term.length >= 4 && !['open', 'start', 'company', 'business', 'agency'].includes(term));
+        return signalTerms.length > 0 && signalTerms.filter((term) => messageTerms.has(term)).length >= Math.min(2, signalTerms.length);
+      }) ?? false;
+      if (activeActivitySlot && publishedCatalog && maskedMessage.trim().length >= 12 && !conversational && !continuationReply && activityMentioned) currentCatalogSlotValues[activeActivitySlot.slotKey] = maskedMessage.trim();
       const history = publishedCatalog ? catalogHistory : await store.listMessages(session.id, session.tenantId, modelContextWindow + 1);
       const recentMessages = intent === null || Boolean(activeFollowUpOffer) ? history.filter((message) => message.id !== userMessage.id).slice(-modelContextWindow) : [];
       const conversation = recentMessages.map((message) => ({ role: message.role, content: message.maskedContent }));
@@ -1532,7 +1547,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           if (broadRanked.length > 0) ranked = broadRanked;
         }
         evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: presentKnowledgeText(chunk.content) })).filter((item) => item.content.length > 0);
+        // The planner runs before retrieval so it can load scoped business state.
+        // Bind the already tenant-filtered evidence to its planned read-only search result.
+        if (agentToolResults.some((result) => result.name === 'search_approved_knowledge')) {
+          agentToolResults = agentToolResults.map((result) => result.name === 'search_approved_knowledge'
+            ? { name: result.name, ok: true, data: { evidence } }
+            : result);
+        }
         knowledgeConflict = hasConflictingEvidence(evidence.map((item) => item.content));
+        let fallbackModelInput: Parameters<ChatModel['draft']>[0] | null = null;
         if (knowledgeConflict) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: evidence.slice(0, 4).map((item) => item.citation.chunkId), proposedIntent: null };
         else if (!postCaptureFollowUp && conversational && evidence.length === 0) draft = { answer: intent === 'greeting' && language !== 'ar' ? openingGreeting(persona?.greeting, persona?.name ?? 'Sales assistant') : conversationalReply(intent ?? 'identity', persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
         else try {
@@ -1556,23 +1579,36 @@ export const createApp = (dependencies: AppDependencies = {}) => {
             agentToolResults: agentToolResults.map(({ name, ok, data }) => ({ name, ok, data })),
           };
           const modelInput = { maskedMessage, evidence, personaName: persona?.name ?? 'Sales assistant', ownerName: tenant.name, conversation, followUpContext };
-          draft = await model.draft(persona ? { ...modelInput, persona } : modelInput);
+          fallbackModelInput = persona ? { ...modelInput, persona } : modelInput;
+          draft = await model.draft(fallbackModelInput);
+          const structuredKnowledgeAvailable = knowledgeQuestion && agentToolResults.some((result) => result.ok
+            && ['get_available_packages', 'get_authoritative_pricing', 'get_setup_requirements', 'get_package_document_requirements'].includes(result.name)
+            && Object.values(result.data).some((value) => Array.isArray(value) && value.length > 0));
+          if (structuredKnowledgeAvailable && draft.citationIds.length === 0) {
+            // Structured tools are authoritative for this claim; do not let an uncited model abstention hide verified data.
+            draft = await new DeterministicGroundedModel().draft(persona ? { ...modelInput, persona } : modelInput);
+          }
         } catch {
-          if (knowledgeQuestion && evidence.length === 0) draft = { answer: naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues }), citationIds: [], proposedIntent: null };
+          if (knowledgeQuestion && fallbackModelInput) draft = await new DeterministicGroundedModel().draft(fallbackModelInput);
+          else if (knowledgeQuestion && evidence.length === 0) draft = { answer: naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues }), citationIds: [], proposedIntent: null };
           else throw new HttpError(503, 'MODEL_UNAVAILABLE', 'The assistant is currently unable to verify an answer.');
         }
       }
       if (!knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog && !consentDenied && !catalogSlotNonAnswer && !isGuidedResponse(draft.answer, 'slot_collection', journeySlotKey)) draft = { answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null };
-      if (knowledgeQuestion && evidence.length > 0 && store.constructor.name !== 'MemoryStore') draft = groundedKnowledgeFallback(maskedMessage, evidence) ?? draft;
+      if (knowledgeQuestion && evidence.length > 0 && store.constructor.name !== 'MemoryStore' && draft.citationIds.length === 0) draft = groundedKnowledgeFallback(maskedMessage, evidence) ?? draft;
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       let citations = validateCitations(draft, evidence);
+      const trustedToolFacts = JSON.stringify(agentToolResults.filter((result) => result.ok).map((result) => ({ name: result.name, data: result.data })));
       const casualFallback = conversational && (evidence.length === 0 || intent === 'identity');
       const continuityAnswer = continuityTurn && isSafeContinuityAnswer(draft.answer, citations);
+      const toolBackedKnowledge = knowledgeQuestion && agentToolResults.some((result) => result.ok
+        && ['get_available_packages', 'get_authoritative_pricing', 'get_setup_requirements', 'get_package_document_requirements'].includes(result.name)
+        && Object.values(result.data).some((value) => Array.isArray(value) && value.length > 0));
       let grounded = knowledgeConflict
         ? citations.length > 0
-        : !casualFallback && !leadCollection && evidence.length > 0 && hasSufficientEvidence(draft.answer, evidence, citations);
+        : !casualFallback && !leadCollection && (toolBackedKnowledge || evidence.length > 0 && hasSufficientEvidence(draft.answer, evidence, citations, trustedToolFacts));
       if (knowledgeQuestion && evidence.length > 0 && !grounded && !knowledgeConflict) {
-        const citedContent = evidence.filter((item) => citations.some((citation) => citation.chunkId === item.citation.chunkId)).map((item) => item.content.toLocaleLowerCase('en-US')).join(' ');
+        const citedContent = `${evidence.filter((item) => citations.some((citation) => citation.chunkId === item.citation.chunkId)).map((item) => item.content.toLocaleLowerCase('en-US')).join(' ')} ${trustedToolFacts.toLocaleLowerCase('en-US')}`;
         const unsupportedNumber = (draft.answer.toLocaleLowerCase('en-US').match(/\b\d+(?:[.,]\d+)?\b/g) ?? []).some((number) => !citedContent.includes(number));
         const fallbackDraft = unsupportedNumber ? null : groundedKnowledgeFallback(maskedMessage, evidence);
         if (fallbackDraft) {
@@ -1658,6 +1694,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const safeFallback = 'I can help with the next step. What would you like to focus on first?';
         const composedContinuation = await composeGuidedDraft({ answer: safeFallback, citationIds: [], proposedIntent: null }, 'intent_clarification');
         safeAnswer = presentsUntrackedOffer(composedContinuation.answer) ? safeFallback : composedContinuation.answer;
+      }
+      if (!endedConversation && !casualFallback && !continuityAnswer && !/\b(?:unsubscribe|do not contact|stop contacting)\b/iu.test(maskedMessage)) {
+        const questionCount = (safeAnswer.match(/\?/gu) ?? []).length;
+        if (questionCount !== 1 || !safeAnswer.trim().endsWith('?')) {
+          const followUp = nextMissingSlot && publishedCatalog
+            ? catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? catalogResolution?.intentKey ?? state.selectedIntentKey ?? '', nextMissingSlot, catalogSlotValues)
+            : knowledgeQuestion && catalogSlotValues.business_activity
+              ? 'Would you like me to compare the approved package options for this setup?'
+              : 'What would you like to focus on next?';
+          safeAnswer = `${safeAnswer.replace(/\?/gu, '').trim()} ${followUp}`.trim();
+        }
       }
       const maskedAnswer = maskPiiForSession(session, safeAnswer, tokenVault);
       try { assertKnownTokens(session, maskedAnswer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
@@ -1987,6 +2034,81 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const association = await store.createCrmLeadAssociation({ id: randomUUID(), tenantId: input.tenantId, crmLeadId: lead.id, actionId: action.id, sessionId: action.sessionId, opportunityId: action.opportunityId ?? null, associationType: 'deduplicated', createdAt: new Date().toISOString() });
       await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'crm.lead.remote_reconciled', metadata: { leadId: lead.id, actionId: action.id, remoteLeadId: lead.leadId, remoteCrm: lead.remoteCrm, associationId: association.id }, createdAt: new Date().toISOString() });
       res.json({ alreadyLinked: true, canonicalLeadId: lead.id, externalLeadId: lead.leadId, remoteCrm: lead.remoteCrm, associationId: association.id });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/crm/accounts/:id/remote-payload', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(crmAccountRemotePayloadSchema, req.body);
+      const account = await store.getCrmAccount(routeParam(req, 'id'), input.tenantId);
+      const action = await store.getAction(input.actionId);
+      const session = action ? await store.getSession(action.sessionId) : null;
+      if (!account || account.status !== 'pending' || !action || !session || session.tenantId !== input.tenantId || action.tenantId !== input.tenantId || action.opportunityId !== account.opportunityId || !['approved', 'processing'].includes(action.state) || action.payload.slotValues?.crmAccountId !== account.id) throw new HttpError(403, 'ACCOUNT_REMOTE_PAYLOAD_FORBIDDEN', 'Remote Account conversion is not authorized for this action.');
+      const lead = await store.getCrmLead(account.leadId, input.tenantId);
+      if (!lead?.leadId || !lead.remoteCrm) throw new HttpError(409, 'LEAD_NOT_VERIFIED', 'A verified remote Lead is required before Account conversion.');
+      res.json({ accountId: account.id, opportunityId: account.opportunityId, remoteLeadId: lead.leadId, remoteCrm: lead.remoteCrm, conversionRule: account.conversionRule });
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/internal/crm/accounts/:id/remote', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(crmAccountRemoteSchema, req.body);
+      const account = await store.getCrmAccount(routeParam(req, 'id'), input.tenantId);
+      const action = await store.getAction(input.actionId);
+      if (!account || account.status !== 'pending' || !action || action.tenantId !== input.tenantId || action.opportunityId !== account.opportunityId || !['approved', 'processing'].includes(action.state) || action.payload.slotValues?.crmAccountId !== account.id) throw new HttpError(409, 'ACCOUNT_NOT_PENDING', 'This Account conversion is not awaiting a verified remote result.');
+      const updated = await store.updateCrmAccount({ ...account, remoteAccountId: input.remoteAccountId, remoteContactId: input.remoteContactId, remoteOpportunityId: input.remoteOpportunityId, status: 'verified', verifiedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'crm.account.remote_verified', metadata: { accountId: account.id, opportunityId: account.opportunityId, remoteAccountId: input.remoteAccountId, remoteContactId: input.remoteContactId, remoteOpportunityId: input.remoteOpportunityId }, createdAt: new Date().toISOString() });
+      res.json({ account: updated, verified: true });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/finance/invoices/:id/remote-payload', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(invoiceRemotePayloadSchema, req.body);
+      const invoice = await store.getInvoice(routeParam(req, 'id'), input.tenantId);
+      const action = await store.getAction(input.actionId);
+      if (!invoice || invoice.status !== 'pending' || !action || action.tenantId !== input.tenantId || action.opportunityId !== invoice.opportunityId || !['approved', 'processing'].includes(action.state) || action.payload.slotValues?.invoiceId !== invoice.id) throw new HttpError(403, 'INVOICE_REMOTE_PAYLOAD_FORBIDDEN', 'Invoice generation is not authorized for this action.');
+      res.json({ invoiceId: invoice.id, opportunityId: invoice.opportunityId, amountMinor: invoice.amountMinor, currency: invoice.currency });
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/internal/finance/invoices/:id/remote', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(invoiceRemoteSchema, req.body);
+      const invoice = await store.getInvoice(routeParam(req, 'id'), input.tenantId);
+      const action = await store.getAction(input.actionId);
+      if (!invoice || !action || action.tenantId !== input.tenantId || action.opportunityId !== invoice.opportunityId || !['approved', 'processing'].includes(action.state) || action.payload.slotValues?.invoiceId !== invoice.id || !['pending', 'draft'].includes(invoice.status)) throw new HttpError(409, 'INVOICE_NOT_PENDING', 'This invoice is not awaiting a verified provider result.');
+      const updated = await store.updateInvoice({ ...invoice, externalInvoiceId: input.externalInvoiceId, paymentUrl: input.paymentUrl, status: input.status, updatedAt: new Date().toISOString() });
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'invoice.remote_verified', metadata: { invoiceId: invoice.id, status: input.status, externalInvoiceId: input.externalInvoiceId }, createdAt: new Date().toISOString() });
+      res.json({ invoice: updated, verified: input.status === 'paid' });
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/internal/finance/invoices/:id/payment-status', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(paymentStatusSchema, req.body);
+      const invoice = await store.getInvoice(routeParam(req, 'id'), input.tenantId);
+      const action = await store.getAction(input.actionId);
+      if (!invoice || !action || action.tenantId !== input.tenantId || action.opportunityId !== invoice.opportunityId || invoice.externalInvoiceId !== input.externalInvoiceId) throw new HttpError(409, 'PAYMENT_STATUS_MISMATCH', 'The payment status does not match the authorized invoice.');
+      const updated = await store.updateInvoice({ ...invoice, status: input.status, updatedAt: new Date().toISOString() });
+      res.json({ invoice: updated, verified: input.status === 'paid' });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/contracts/:id/remote-payload', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(contractRemotePayloadSchema, req.body);
+      const contract = await store.getContract(routeParam(req, 'id'), input.tenantId);
+      const action = await store.getAction(input.actionId);
+      const invoice = contract?.invoiceId ? await store.getInvoice(contract.invoiceId, input.tenantId) : null;
+      const account = contract ? await store.getCrmAccountByOpportunity(contract.opportunityId, input.tenantId) : null;
+      if (!contract || contract.status !== 'draft' || !invoice || invoice.status !== 'paid' || !account || account.status !== 'verified' || !action || action.tenantId !== input.tenantId || action.opportunityId !== contract.opportunityId || !['approved', 'processing'].includes(action.state) || action.payload.slotValues?.contractId !== contract.id) throw new HttpError(403, 'CONTRACT_REMOTE_PAYLOAD_FORBIDDEN', 'Contract preparation prerequisites are not verified for this action.');
+      res.json({ contractId: contract.id, opportunityId: contract.opportunityId, templateKey: contract.templateKey, remoteAccountId: account.remoteAccountId, packageSelectionId: contract.packageSelectionId, invoiceId: invoice.id });
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/internal/contracts/:id/remote', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(contractRemoteSchema, req.body);
+      const contract = await store.getContract(routeParam(req, 'id'), input.tenantId);
+      const action = await store.getAction(input.actionId);
+      if (!contract || contract.status !== 'draft' || !action || action.tenantId !== input.tenantId || action.opportunityId !== contract.opportunityId || !['approved', 'processing'].includes(action.state) || action.payload.slotValues?.contractId !== contract.id) throw new HttpError(409, 'CONTRACT_NOT_PENDING', 'This contract is not awaiting a verified provider result.');
+      const updated = await store.updateContract({ ...contract, externalContractId: input.externalContractId, signingUrl: input.signingUrl, status: input.status, updatedAt: new Date().toISOString() });
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'contract.remote_verified', metadata: { contractId: contract.id, status: input.status, externalContractId: input.externalContractId }, createdAt: new Date().toISOString() });
+      res.json({ contract: updated, verified: input.status === 'signed' });
     } catch (error) { next(error); }
   });
   app.post('/api/v1/internal/n8n/callback', async (req, res, next) => {

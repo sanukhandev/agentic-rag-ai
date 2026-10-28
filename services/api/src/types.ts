@@ -294,6 +294,15 @@ export interface IntentCatalogDocumentSettings {
   notes: string;
 }
 
+export type CrmAccountConversionRule = 'package_confirmed' | 'invoice_paid' | 'manual_approval';
+export interface IntentCatalogCrmAccountConversionPolicy {
+  intentKey: string;
+  workflowKey: string;
+  conversionRule: CrmAccountConversionRule;
+  active: boolean;
+  notes: string;
+}
+
 export type IntentCatalogExtensionRow = Record<string, string | number | boolean | null>;
 
 export interface IntentCatalog {
@@ -308,6 +317,7 @@ export interface IntentCatalog {
   journeyTransitions?: IntentCatalogJourneyTransition[];
   documentPolicies?: IntentCatalogDocumentPolicy[];
   documentSettings?: IntentCatalogDocumentSettings;
+  crmAccountConversionPolicies?: IntentCatalogCrmAccountConversionPolicy[];
   documentRequirements?: IntentCatalogExtensionRow[];
   crmFieldMappings?: IntentCatalogExtensionRow[];
   channelCapabilities?: IntentCatalogExtensionRow[];
@@ -629,7 +639,7 @@ export interface CrmAccount {
   remoteContactId: string | null;
   remoteOpportunityId: string | null;
   status: CrmAccountStatus;
-  conversionRule: string;
+  conversionRule: CrmAccountConversionRule;
   verifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -845,9 +855,11 @@ export interface Store {
   createQuote(quote: Quote): Promise<Quote>;
   getQuote(id: string, tenantId: string): Promise<Quote | null>;
   createCrmAccount(account: CrmAccount): Promise<CrmAccount>;
+  getCrmAccount(id: string, tenantId: string): Promise<CrmAccount | null>;
   getCrmAccountByOpportunity(opportunityId: string, tenantId: string): Promise<CrmAccount | null>;
   updateCrmAccount(account: CrmAccount): Promise<CrmAccount>;
   createInvoice(invoice: Invoice): Promise<Invoice>;
+  getInvoiceByQuote(quoteId: string, tenantId: string): Promise<Invoice | null>;
   getInvoice(id: string, tenantId: string): Promise<Invoice | null>;
   updateInvoice(invoice: Invoice): Promise<Invoice>;
   createContract(contract: Contract): Promise<Contract>;

@@ -1,4 +1,4 @@
-import type { IntentCatalog, IntentCatalogActivationMode, IntentCatalogDocumentPolicy, IntentCatalogDocumentSettings, IntentCatalogExtensionRow, IntentCatalogIntent, IntentCatalogJourneyRequirement, IntentCatalogJourneyTransition, IntentCatalogQualityRule, IntentCatalogRequirementType, IntentCatalogSlot, IntentCatalogVersion, IntentCatalogWorkflowBinding } from './types.js';
+import type { IntentCatalog, IntentCatalogActivationMode, IntentCatalogCrmAccountConversionPolicy, IntentCatalogDocumentPolicy, IntentCatalogDocumentSettings, IntentCatalogExtensionRow, IntentCatalogIntent, IntentCatalogJourneyRequirement, IntentCatalogJourneyTransition, IntentCatalogQualityRule, IntentCatalogRequirementType, IntentCatalogSlot, IntentCatalogVersion, IntentCatalogWorkflowBinding } from './types.js';
 
 export interface IntentResolution {
   intentKey: string | null;
@@ -163,6 +163,7 @@ export const validateIntentCatalog = (input: unknown): CatalogValidationResult =
     return rule;
   });
   const documentPoliciesInput = Array.isArray(value.documentPolicies) ? value.documentPolicies : [];
+  const conversionPoliciesInput = Array.isArray(value.crmAccountConversionPolicies) ? value.crmAccountConversionPolicies : [];
   const journeyRequirementsInput = Array.isArray(value.journeyRequirements) ? value.journeyRequirements : [];
   const journeyRequirementKeys = new Set<string>();
   const parsedJourneyRequirements: IntentCatalogJourneyRequirement[] = journeyRequirementsInput.map((item, index) => {
@@ -242,7 +243,17 @@ export const validateIntentCatalog = (input: unknown): CatalogValidationResult =
     if (!intentSet.has(policy.intentKey) || !workflowSet.has(policy.workflowKey) || !['conditional_offer', 'user_offer_only', 'explicit_upload'].includes(policy.requestMode) || !policy.allowedDocumentTypes.length || !policy.requestPromptKey) errors.push(`DocumentPolicies row ${index + 2} has invalid references or required fields.`);
     return policy;
   });
-  const catalog: IntentCatalog = { tenantScope: text(value.tenantScope) || null, intents: parsedIntents, signals: parsedSignals, slots: parsedSlots, relations: parsedRelations, workflowBindings: parsedBindings, qualityRules: parsedQualityRules, ...(parsedJourneyRequirements.length ? { journeyRequirements: parsedJourneyRequirements } : {}), ...(parsedJourneyTransitions.length ? { journeyTransitions: parsedJourneyTransitions } : {}), ...(documentSettings ? { documentSettings } : {}), ...(documentPoliciesInput.length ? { documentPolicies: parsedDocumentPolicies } : {}), ...(extensionRows(value, 'documentRequirements').length ? { documentRequirements: extensionRows(value, 'documentRequirements') } : {}), ...(extensionRows(value, 'crmFieldMappings').length ? { crmFieldMappings: extensionRows(value, 'crmFieldMappings') } : {}), ...(extensionRows(value, 'channelCapabilities').length ? { channelCapabilities: extensionRows(value, 'channelCapabilities') } : {}), ...(extensionRows(value, 'testUtterances').length ? { testUtterances: extensionRows(value, 'testUtterances') } : {}), ...(extensionRows(value, 'catalogManifest').length ? { catalogManifest: extensionRows(value, 'catalogManifest') } : {}) };
+  const conversionPolicyKeys = new Set<string>();
+  const parsedConversionPolicies: IntentCatalogCrmAccountConversionPolicy[] = conversionPoliciesInput.map((item, index) => {
+    const row = record(item);
+    const policy: IntentCatalogCrmAccountConversionPolicy = { intentKey: text(row.intentKey), workflowKey: text(row.workflowKey), conversionRule: text(row.conversionRule) as IntentCatalogCrmAccountConversionPolicy['conversionRule'], active: bool(row.active), notes: text(row.notes) };
+    const key = `${policy.intentKey}:${policy.conversionRule}`;
+    if (conversionPolicyKeys.has(key)) errors.push(`CrmAccountConversionPolicies row ${index + 2} contains a duplicate policy.`);
+    conversionPolicyKeys.add(key);
+    if (!intentSet.has(policy.intentKey) || !workflowSet.has(policy.workflowKey) || !['package_confirmed', 'invoice_paid', 'manual_approval'].includes(policy.conversionRule)) errors.push(`CrmAccountConversionPolicies row ${index + 2} has invalid references or conversion rule.`);
+    return policy;
+  });
+  const catalog: IntentCatalog = { tenantScope: text(value.tenantScope) || null, intents: parsedIntents, signals: parsedSignals, slots: parsedSlots, relations: parsedRelations, workflowBindings: parsedBindings, qualityRules: parsedQualityRules, ...(parsedJourneyRequirements.length ? { journeyRequirements: parsedJourneyRequirements } : {}), ...(parsedJourneyTransitions.length ? { journeyTransitions: parsedJourneyTransitions } : {}), ...(documentSettings ? { documentSettings } : {}), ...(documentPoliciesInput.length ? { documentPolicies: parsedDocumentPolicies } : {}), ...(conversionPoliciesInput.length ? { crmAccountConversionPolicies: parsedConversionPolicies } : {}), ...(extensionRows(value, 'documentRequirements').length ? { documentRequirements: extensionRows(value, 'documentRequirements') } : {}), ...(extensionRows(value, 'crmFieldMappings').length ? { crmFieldMappings: extensionRows(value, 'crmFieldMappings') } : {}), ...(extensionRows(value, 'channelCapabilities').length ? { channelCapabilities: extensionRows(value, 'channelCapabilities') } : {}), ...(extensionRows(value, 'testUtterances').length ? { testUtterances: extensionRows(value, 'testUtterances') } : {}), ...(extensionRows(value, 'catalogManifest').length ? { catalogManifest: extensionRows(value, 'catalogManifest') } : {}) };
   if (catalog.intents.length === 0) errors.push('Catalog must contain at least one intent.');
   if (catalog.workflowBindings.length === 0) errors.push('Catalog must contain at least one workflow binding.');
   return { errors: [...new Set(errors)], catalog: errors.length ? null : catalog };

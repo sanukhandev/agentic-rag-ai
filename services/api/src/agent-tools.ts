@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { ModelEvidence, ChatModel, ModelToolPlan } from './model.js';
 import type { IntentCatalogVersion, Session, Store } from './types.js';
-import { catalogNextFollowUpRequirement } from './intent-catalog.js';
+import { catalogNextFollowUpRequirement, catalogNextJourneyRequirement } from './intent-catalog.js';
 
 export const agentToolNames = [
   'get_active_opportunity',
@@ -56,11 +56,12 @@ const scopedEntry = (context: AgentToolContext) => {
 
 const unavailable = (name: AgentToolName, reason: string): AgentToolResult => ({ name, ok: false, errorCode: 'TOOL_NOT_AVAILABLE', data: { status: 'unavailable', reason } });
 
-const executeReadTool = async (name: AgentToolName, context: AgentToolContext): Promise<AgentToolResult> => {
+const executeReadTool = async (name: AgentToolName, context: AgentToolContext, input: Record<string, string | number | boolean | null> = {}): Promise<AgentToolResult> => {
   const state = context.session.conversationState;
   const entry = scopedEntry(context);
   const intentKey = activeIntent(context);
-  const packageInput = { catalogVersionId: context.catalog?.id ?? state?.catalogVersionId ?? null, ...(state?.slotValues.business_activity ? { activity: state.slotValues.business_activity } : {}), ...(state?.slotValues.entity_type ? { entityType: state.slotValues.entity_type } : {}) };
+  const journeyValues = entry?.slotValues ?? state?.slotValues ?? {};
+  const packageInput = { catalogVersionId: context.catalog?.id ?? state?.catalogVersionId ?? null, ...(journeyValues.business_activity ? { activity: journeyValues.business_activity } : {}), ...(journeyValues.entity_type ? { entityType: journeyValues.entity_type } : {}) };
   switch (name) {
     case 'get_active_opportunity':
       return { name, ok: true, data: { opportunityId: entry?.journeyId ?? context.opportunityId, intentKey, status: entry?.status ?? 'discovery', catalogVersionId: state?.catalogVersionId ?? context.catalog?.id ?? null } };
@@ -70,7 +71,8 @@ const executeReadTool = async (name: AgentToolName, context: AgentToolContext): 
       return { name, ok: true, data: { facts: Object.fromEntries(Object.entries(state?.slotValues ?? {}).filter(([key]) => key !== 'contact_consent').map(([key, value]) => [key, { value, provenance: state?.slotProvenance?.[key] ?? null }])) } };
     case 'get_pending_requirements': {
       if (!context.catalog || !intentKey) return { name, ok: true, data: { requirement: null, status: 'not_started' } };
-      const requirement = catalogNextFollowUpRequirement(context.catalog, intentKey, entry?.slotValues ?? state?.slotValues ?? {}, entry?.completedRequirementKeys ?? []);
+      const requirement = catalogNextJourneyRequirement(context.catalog, intentKey, journeyValues, entry?.completedRequirementKeys ?? [])
+        ?? catalogNextFollowUpRequirement(context.catalog, intentKey, journeyValues, entry?.completedRequirementKeys ?? []);
       return { name, ok: true, data: { requirement: requirement ? { requirementKey: requirement.requirementKey, requirementType: requirement.requirementType, promptKey: requirement.promptKey, documentType: requirement.documentType } : null } };
     }
     case 'get_customer_registration_status': {
@@ -104,10 +106,20 @@ const executeReadTool = async (name: AgentToolName, context: AgentToolContext): 
     }
     case 'get_document_processing_status':
       return { name, ok: true, data: { documents: (await context.store.listSupportingDocuments(context.session.tenantId, context.session.id)).filter((document) => !context.opportunityId || document.opportunityId === context.opportunityId).map((document) => ({ id: document.id, requirementKey: document.requirementKey ?? null, type: document.expectedDocumentType ?? null, status: document.status, summaryAvailable: Boolean(document.summary) })) } };
-    case 'get_invoice_status':
-      return unavailable(name, 'Invoice provider state is not available for this opportunity yet.');
-    case 'get_contract_status':
-      return unavailable(name, 'Contract provider state is not available for this opportunity yet.');
+    case 'get_invoice_status': {
+      if (!context.opportunityId) return unavailable(name, 'No active opportunity is available for invoice lookup.');
+      const selection = (await context.store.listPackageSelections(context.session.tenantId, context.opportunityId)).find((candidate) => candidate.status === 'confirmed' && candidate.quoteId);
+      const quote = selection?.quoteId ? await context.store.getQuote(selection.quoteId, context.session.tenantId) : null;
+      const invoice = quote ? await context.store.getInvoiceByQuote(quote.id, context.session.tenantId) : null;
+      return { name, ok: true, data: { status: invoice?.status ?? 'not_created', invoice: invoice ? { id: invoice.id, externalInvoiceId: invoice.externalInvoiceId, amountMinor: invoice.amountMinor, currency: invoice.currency, paymentUrl: invoice.paymentUrl, status: invoice.status } : null } };
+    }
+    case 'get_contract_status': {
+      const contractId = typeof input.contractId === 'string' ? input.contractId : null;
+      if (!contractId) return unavailable(name, 'A contract identifier is required for status lookup.');
+      const contract = await context.store.getContract(contractId, context.session.tenantId);
+      if (!contract || (context.opportunityId && contract.opportunityId !== context.opportunityId)) return unavailable(name, 'The contract is not associated with this tenant opportunity.');
+      return { name, ok: true, data: { status: contract.status, contract: { id: contract.id, externalContractId: contract.externalContractId, signingUrl: contract.signingUrl, templateKey: contract.templateKey } } };
+    }
   }
 };
 
@@ -137,6 +149,6 @@ export const runAgentTools = async (model: Pick<ChatModel, 'plan'>, context: Age
     }
   }
   const results: AgentToolResult[] = [];
-  for (const call of plan.calls) results.push(await executeReadTool(call.name, context));
+  for (const call of plan.calls) results.push(await executeReadTool(call.name, context, call.input));
   return results;
 };

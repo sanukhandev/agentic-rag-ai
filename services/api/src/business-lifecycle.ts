@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Contract, CrmAccount, Invoice, PackageOffering, PackageSelection, Quote, Session, Store } from './types.js';
+import type { Contract, CrmAccount, CrmAccountConversionRule, Invoice, PackageOffering, PackageSelection, Quote, Session, Store } from './types.js';
 import { HttpError } from './http/errors.js';
 
 const now = (): string => new Date().toISOString();
@@ -52,13 +52,36 @@ export const confirmPackageSelection = async (store: Store, session: Session, se
   return confirmed;
 };
 
+export const proposeAccountConversion = async (store: Store, session: Session, opportunityId: string, conversionRule: CrmAccountConversionRule): Promise<CrmAccount> => {
+  requireOpportunity(session, opportunityId);
+  const catalogVersionId = session.conversationState?.catalogVersionId;
+  const catalog = catalogVersionId ? await store.getIntentCatalogVersion(session.tenantId, catalogVersionId) : null;
+  const conversionPolicy = catalog?.catalog.crmAccountConversionPolicies?.find((policy) => policy.intentKey === 'account.registration' && policy.workflowKey === 'crm.account.convert' && policy.conversionRule === conversionRule && policy.active);
+  if (!conversionPolicy) throw new HttpError(409, 'ACCOUNT_CONVERSION_NOT_CONFIGURED', 'Account conversion is not enabled for this catalog and conversion rule.');
+  const confirmedSelection = (await store.listPackageSelections(session.tenantId, opportunityId)).find((selection) => selection.status === 'confirmed');
+  if (!confirmedSelection) throw new HttpError(409, 'PACKAGE_NOT_CONFIRMED', 'The package must be confirmed before Account conversion can be proposed.');
+  if (conversionRule === 'invoice_paid') {
+    const quote = confirmedSelection.quoteId ? await store.getQuote(confirmedSelection.quoteId, session.tenantId) : null;
+    const invoice = quote ? await store.getInvoiceByQuote(quote.id, session.tenantId) : null;
+    if (!invoice || invoice.status !== 'paid') throw new HttpError(409, 'PAYMENT_NOT_VERIFIED', 'The configured Account conversion rule requires a verified paid invoice.');
+  }
+  const existing = await store.getCrmAccountByOpportunity(opportunityId, session.tenantId);
+  if (existing) return existing;
+  const actions = await store.listActionsBySession(session.id, session.tenantId);
+  const leadAction = actions.find((action) => action.opportunityId === opportunityId && action.workflowKey !== 'crm.account.convert');
+  const association = leadAction ? await store.getCrmLeadAssociationByActionId(leadAction.id, session.tenantId) : null;
+  const lead = association ? await store.getCrmLead(association.crmLeadId, session.tenantId) : await store.getCrmLeadBySessionId(session.id, session.tenantId);
+  if (!lead?.leadId || !lead.remoteCrm) throw new HttpError(409, 'LEAD_NOT_VERIFIED', 'A verified remote Lead is required before Account conversion.');
+  return store.createCrmAccount({ id: randomUUID(), tenantId: session.tenantId, opportunityId, leadId: lead.id, remoteAccountId: null, remoteContactId: null, remoteOpportunityId: null, status: 'pending', conversionRule, verifiedAt: null, createdAt: now(), updatedAt: now() });
+};
+
 export const createInvoiceDraft = async (store: Store, session: Session, opportunityId: string, quoteId: string): Promise<Invoice> => {
   requireOpportunity(session, opportunityId);
   const quote = await store.getQuote(quoteId, session.tenantId);
   if (!quote || quote.opportunityId !== opportunityId || quote.status !== 'approved' || Date.parse(quote.validUntil) <= Date.now()) throw new HttpError(409, 'QUOTE_NOT_VALID', 'An active approved quote is required before invoice creation.');
   const selection = (await store.listPackageSelections(session.tenantId, opportunityId)).find((candidate) => candidate.quoteId === quote.id && candidate.status === 'confirmed');
   if (!selection) throw new HttpError(409, 'PACKAGE_NOT_CONFIRMED', 'The package must be explicitly confirmed before invoice creation.');
-  return store.createInvoice({ id: randomUUID(), tenantId: session.tenantId, opportunityId, quoteId: quote.id, externalInvoiceId: null, amountMinor: quote.amountMinor, currency: quote.currency, paymentUrl: null, status: 'draft', provider: 'sandbox-pending', createdAt: now(), updatedAt: now() });
+  return store.createInvoice({ id: randomUUID(), tenantId: session.tenantId, opportunityId, quoteId: quote.id, externalInvoiceId: null, amountMinor: quote.amountMinor, currency: quote.currency, paymentUrl: null, status: 'pending', provider: 'sandbox-pending', createdAt: now(), updatedAt: now() });
 };
 
 export const createContractDraft = async (store: Store, session: Session, opportunityId: string, selectionId: string, invoiceId: string): Promise<Contract> => {
