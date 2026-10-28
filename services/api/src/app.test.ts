@@ -1143,9 +1143,15 @@ describe('API vertical slice', () => {
     expect(activity.body.answer).toContain('company structure');
     expect(activity.body.pendingRequirementKey).toBe('company.structure');
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ slotValues: { business_activity: 'CCTV installation and monitoring' }, pendingPrompt: { requirementKey: 'company.structure', slotKey: 'company_structure' }, intentProgress: { entries: { 'company.setup': { completedRequirementKeys: ['company.activity'] } } } });
-    const structure = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'FZC with two partners', clientMessageId: 'journey-contract-3' }).expect(200);
-    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.company_structure).toBe('FZC with two partners');
+    for (const [index, message] of ['Okay, let\'s continue with my company setup.', 'Can we proceed?', 'That sounds good.', 'Tell me more about the company.'].entries()) {
+      await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message, clientMessageId: `journey-contract-invalid-structure-${index}` }).expect(200);
+      expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues).not.toHaveProperty('company_structure');
+    }
+    const structure = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I want a limited liability company', clientMessageId: 'journey-contract-3' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.company_structure).toBe('I want a limited liability company');
     expect(structure.body.pendingRequirementKey).toBe('company.visas');
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Actually, I prefer a different legal structure.', clientMessageId: 'journey-contract-structure-correction' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.company_structure).toBe('I want a limited liability company');
     const visas = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: '3 visas', clientMessageId: 'journey-contract-4' }).expect(200);
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.visa_count).toBe('3');
     expect(visas.body.answer).not.toContain('company visas');

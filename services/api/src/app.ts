@@ -231,6 +231,13 @@ const catalogSlotTerms = (slot: IntentCatalogSlot): string[] => {
 
 const messageMentionsCatalogSlot = (slot: IntentCatalogSlot, message: string): boolean => catalogSlotTerms(slot).some((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&')}\\b`, 'iu').test(message));
 
+const catalogSlotValueForSlot = (slot: IntentCatalogSlot, rawInput: string, maskedInput: string, session: Session, tokenVault: TokenVault): string | null => {
+  if (/structure|legal|entity|company_type/iu.test(slot.slotKey)) {
+    if (!/\b(?:limited\s+liability|llc|fze|fzc|free\s+zone|branch|sole\s+(?:proprietorship|establishment)|partnership|corporation|incorporated)\b/iu.test(rawInput)) return null;
+  }
+  return pendingCatalogSlotValue(slot.validationRule, rawInput, maskedInput, session, tokenVault);
+};
+
 const inferredCatalogSlotValue = (slot: IntentCatalogSlot, rawInput: string, maskedInput: string, session: Session, tokenVault: TokenVault): string | null => {
   const normalized = rawInput.toLocaleLowerCase('en-US');
   if (/visa_count/iu.test(slot.slotKey)) {
@@ -252,7 +259,7 @@ const inferredCatalogSlotValue = (slot: IntentCatalogSlot, rawInput: string, mas
     const match = normalized.match(/\b(?:shared|private)\s+(?:office|workspace|desk)\b|\b(?:office|workspace|desk)\b/iu);
     return match?.[0] ?? null;
   }
-  return pendingCatalogSlotValue(slot.validationRule, rawInput, maskedInput, session, tokenVault);
+  return catalogSlotValueForSlot(slot, rawInput, maskedInput, session, tokenVault);
 };
 
 const offerText = (text: string): string => normalizeConversationQuery(text).toLocaleLowerCase('en-US');
@@ -1189,7 +1196,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const message = normalizeConversationQuery(masked.masked).toLocaleLowerCase('en-US');
         return terms.filter((term) => message.includes(term)).length >= Math.min(2, terms.length);
       }));
-      const pendingValue = pendingSlot && !pendingConsentSlot && !knowledgeQuestion && !pendingNameIsIntentPhrase && (!pendingTextRedirected || activitySignalMentioned) && !(continuationReply && pendingSlot.validationRule.startsWith('text:')) ? pendingCatalogSlotValue(pendingContactKind ? `token:${pendingContactKind}` : pendingSlot.validationRule, inputText, masked.masked, session, tokenVault) : null;
+      const pendingValue = pendingSlot && !pendingConsentSlot && !knowledgeQuestion && !pendingNameIsIntentPhrase && (!pendingTextRedirected || activitySignalMentioned) && !(continuationReply && pendingSlot.validationRule.startsWith('text:')) ? pendingContactKind ? pendingCatalogSlotValue(`token:${pendingContactKind}`, inputText, masked.masked, session, tokenVault) : catalogSlotValueForSlot(pendingSlot, inputText, masked.masked, session, tokenVault) : null;
       const pendingConsentValue = state.pendingPrompt?.type === 'consent' && (!pendingSlot || pendingConsentSlot) && !knowledgeQuestion && (!activeFollowUpOffer || promptScopedReply)
         ? pendingCatalogSlotValue('boolean:explicit_opt_in', inputText, masked.masked, session, tokenVault)
         : null;
@@ -1223,7 +1230,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
             const message = deterministicMessage.toLocaleLowerCase('en-US');
             return message.includes(phrase) && message.length <= phrase.length + 16;
           }) ?? false;
+          const continuationPhrase = /\b(?:continue|resume|proceed|go ahead|help me proceed)\b/iu.test(maskedMessage);
           for (const slot of publishedCatalog?.catalog.slots.filter((candidate) => candidate.intentKey === inferredCatalogIntentKey && candidate.slotKey !== pendingSlot?.slotKey && !candidate.validationRule.startsWith('token:') && candidate.validationRule !== 'boolean:explicit_opt_in') ?? []) {
+            if (continuationPhrase || conversational) continue;
             if (isIntentPhrase && slot.validationRule.startsWith('text:')) continue;
             if (!messageMentionsCatalogSlot(slot, inputText)) continue;
             const value = inferredCatalogSlotValue(slot, inputText, maskedMessage, session, tokenVault);
@@ -1233,7 +1242,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           if (pendingValue && pendingSlot?.validationRule.startsWith('text:')) {
             for (const slot of publishedCatalog?.catalog.slots.filter((candidate) => candidate.intentKey === inferredCatalogIntentKey && !pendingCatalogValues[candidate.slotKey] && candidate.slotKey !== pendingSlot.slotKey && /activity|business/iu.test(candidate.slotKey) && candidate.validationRule.startsWith('text:')) ?? []) inferred[slot.slotKey] = pendingValue;
           }
-          const continuationPhrase = /\b(?:continue|resume|proceed|go ahead)\b/iu.test(maskedMessage);
           const timelineSlot = publishedCatalog?.catalog.slots.find((slot) => slot.intentKey === inferredCatalogIntentKey && /timeline|start/iu.test(slot.slotKey) && !pendingCatalogValues[slot.slotKey]);
           const timelineValue = deterministicMessage.match(/\b(?:next|this|within)\s+(?:month|months|week|weeks)|\b(?:asap|immediately|urgent)\b/iu)?.[0];
           if (timelineSlot && timelineValue) inferred[timelineSlot.slotKey] = timelineValue;
@@ -1306,6 +1314,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const intentContextQuery = [normalizedMessage, ...intentContext].join('\n');
       const leadData = mergeLeadData(pendingCatalogValues as LeadData, currentLeadData);
       const catalogSlotValues: Record<string, string> = { ...pendingCatalogValues, ...(extractLeadData(maskedMessage) as Record<string, string>), ...inferredCatalogValueData, ...pendingCatalogValueData, ...currentCatalogSlotValues };
+      if (publishedCatalog && inferredCatalogIntentKey) {
+        for (const slot of publishedCatalog.catalog.slots.filter((candidate) => candidate.intentKey === inferredCatalogIntentKey && /structure|legal|entity|company_type/iu.test(candidate.slotKey))) {
+          const value = catalogSlotValues[slot.slotKey];
+          if (value && !catalogSlotValueForSlot(slot, value, value, session, tokenVault)) delete catalogSlotValues[slot.slotKey];
+        }
+      }
       const pendingTransitionPrompt = state.pendingPrompt?.type === 'confirmation' && state.pendingPrompt.requirementKey?.startsWith('transition:') ? state.pendingPrompt : null;
       const transitionApproval = Boolean(pendingTransitionPrompt?.intentKey && !knowledgeQuestion && !offerReplyOwnsTurn && /^(?:yes|yeah|yep|sure|okay|ok|confirm|confirmed|approve|approved|proceed|go ahead)\b/iu.test(maskedMessage));
       const transitionDenied = Boolean(pendingTransitionPrompt && !knowledgeQuestion && /^(?:no|nope|not now|later|decline|reject|stop)\b/iu.test(maskedMessage));
