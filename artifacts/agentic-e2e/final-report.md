@@ -1,5 +1,7 @@
 # Agentic RAG AI final acceptance report
 
+Tested code commit: `3e5d827b9cfc8cdcffb2bc0015f07ea1c6541ade`; Docker API image: `sha256:4adb113f18875b1d98146a4911fa7f779148c4b8b9857f08f6115edca3563679`.
+
 ## A. Architecture implemented
 
 The API now runs a bounded, typed agent-tool loop for tenant-scoped opportunity, catalog, knowledge, package, pricing, CRM, document, invoice and contract reads. Read-only model planning is separated from deterministic authorization and side effects; durable lifecycle state, idempotency and verified callbacks remain backend-owned.

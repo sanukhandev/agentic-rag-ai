@@ -1,7 +1,7 @@
 {
   "generatedAt": "2026-10-28",
   "branch": "feat/catalog-driven-journey-orchestration",
-  "head": "3e5d827b9cfc8cdcffb2bc0015f07ea1c6541ade",
+  "testedCodeCommit": "3e5d827b9cfc8cdcffb2bc0015f07ea1c6541ade",
   "apiImage": "sha256:4adb113f18875b1d98146a4911fa7f779148c4b8b9857f08f6115edca3563679",
   "verdict": "CONVERSATION VERIFIED — EXTERNAL GATES REMAIN",
   "unitAndApiTests": { "passed": 277, "skipped": 1 },
