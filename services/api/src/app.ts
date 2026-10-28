@@ -1260,7 +1260,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const currentCatalogResolution = publishedCatalog ? resolveIntent(publishedCatalog, deterministicMessage, baseCatalogSlotValues) : null;
       const extractionIntentSwitch = /\b(?:also|another|instead|switch|change)\b/iu.test(maskedMessage);
       const inferredCatalogIntentKey = activeConversationJourney && !extractionIntentSwitch ? activeCatalogIntent : currentCatalogResolution?.intentKey ?? activeCatalogIntent;
-      const inferredCatalogValueData = (Boolean(state.selectedIntentKey) || !publishedCatalog?.catalog.journeyRequirements?.length) && !knowledgeQuestion && !conversational && inferredCatalogIntentKey
+      const inferredCatalogValueData = (Boolean(state.selectedIntentKey) || Boolean(inferredCatalogIntentKey) || !publishedCatalog?.catalog.journeyRequirements?.length) && !knowledgeQuestion && !conversational && inferredCatalogIntentKey
         ? (() => {
           const inferred: Record<string, string> = {};
           const isIntentPhrase = publishedCatalog?.catalog.signals.some((signal) => {
@@ -1589,7 +1589,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           const structuredKnowledgeAvailable = knowledgeQuestion && agentToolResults.some((result) => result.ok
             && ['get_available_packages', 'get_authoritative_pricing', 'get_setup_requirements', 'get_package_document_requirements'].includes(result.name)
             && Object.values(result.data).some((value) => Array.isArray(value) && value.length > 0));
-          if (structuredKnowledgeAvailable && draft.citationIds.length === 0) {
+          const packageToolHasResults = knowledgeQuestion && /\b(?:package|packages|option|options)\b/iu.test(maskedMessage)
+            && agentToolResults.some((result) => result.name === 'get_available_packages' && result.ok && Array.isArray(result.data.packages) && result.data.packages.length > 0);
+          if (structuredKnowledgeAvailable && (draft.citationIds.length === 0 || packageToolHasResults)) {
             // Structured tools are authoritative for this claim; do not let an uncited model abstention hide verified data.
             draft = await new DeterministicGroundedModel().draft(persona ? { ...modelInput, persona } : modelInput);
           }
