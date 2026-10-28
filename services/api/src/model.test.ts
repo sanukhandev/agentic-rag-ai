@@ -76,6 +76,7 @@ describe('Azure Foundry model adapter', () => {
     expect(isKnowledgeQuestion('I want to start a digital marketing company and would like to know the steps and cost')).toBe(true);
     expect(isKnowledgeQuestion('I want to start a digital marketing company and want to know the steps and cost')).toBe(true);
     expect(isKnowledgeQuestion('I would like to start an IT service company what are the steps')).toBe(true);
+    expect(isKnowledgeQuestion('I would like to start an IT service company')).toBe(true);
     expect(isKnowledgeQuestion('Can I book a demo?')).toBe(false);
     expect(isKnowledgeQuestion('Can you book a demo?')).toBe(false);
     expect(isKnowledgeQuestion('How are you?')).toBe(false);

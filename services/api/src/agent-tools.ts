@@ -126,7 +126,8 @@ const executeReadTool = async (name: AgentToolName, context: AgentToolContext, i
 const deterministicPlan = (context: AgentToolContext): ModelToolPlan => {
   const query = context.maskedQuery.toLocaleLowerCase('en-US');
   const names: AgentToolName[] = ['get_active_opportunity', 'get_confirmed_customer_facts', 'get_pending_requirements'];
-  if (/[?]|\b(?:what|how|where|which|why|when|price|pricing|cost|timeline|visa|office|package|document|requirement|process)\b/u.test(query)) names.push('search_approved_knowledge');
+  if (/[?]|\b(?:what|how|where|which|why|when|price|pricing|cost|timeline|visa|office|package|document|requirement|process|start|setup|company|business)\b/u.test(query)) names.push('search_approved_knowledge');
+  if (/\b(?:start|set up|setup|open|form|register|establish)\b[\s\S]{0,100}\b(?:company|business|firm)\b/u.test(query)) names.push('get_setup_requirements');
   if (/\b(?:package|packages|option|options|price|pricing|cost|quote|quotation)\b/u.test(query)) names.push('get_available_packages', 'get_authoritative_pricing');
   if (/\b(?:document|passport|upload|ocr|file)\b/u.test(query)) names.push('get_package_document_requirements', 'get_document_processing_status');
   if (/\b(?:lead|account|contact|registration|crm|status)\b/u.test(query)) names.push('get_customer_registration_status', 'get_crm_status');
