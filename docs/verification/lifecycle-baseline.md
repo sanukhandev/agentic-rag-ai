@@ -53,6 +53,11 @@ and fresh-source ingestion unverified; those remain acceptance blockers.
   1,536-dimensional, but they are not evidence of fresh ZIP ingestion.
 - Docker ingestion tests: PASS; 27 tests. DOCX extraction now retains heading
   level and table-row locators.
+- Docker API test service: PASS; 42 test files, 277 tests passed and 1 Redis
+  integration test skipped. The host-side `npm test` path is not database-ready
+  because it targets the intentionally unpublished `127.0.0.1:54329` port.
+- `npm audit --omit=dev --audit-level=high`: BLOCKED by two high advisories in
+  `body-parser` and `zod`; the available Zod fix is a breaking major upgrade.
 
 ## Required follow-up gates
 
