@@ -127,7 +127,7 @@ const deterministicPlan = (context: AgentToolContext): ModelToolPlan => {
   const query = context.maskedQuery.toLocaleLowerCase('en-US');
   const names: AgentToolName[] = ['get_active_opportunity', 'get_confirmed_customer_facts', 'get_pending_requirements'];
   if (/[?]|\b(?:what|how|where|which|why|when|price|pricing|cost|timeline|visa|office|package|document|requirement|process)\b/u.test(query)) names.push('search_approved_knowledge');
-  if (/\b(?:package|option|price|pricing|cost|quote|quotation)\b/u.test(query)) names.push('get_available_packages', 'get_authoritative_pricing');
+  if (/\b(?:package|packages|option|options|price|pricing|cost|quote|quotation)\b/u.test(query)) names.push('get_available_packages', 'get_authoritative_pricing');
   if (/\b(?:document|passport|upload|ocr|file)\b/u.test(query)) names.push('get_package_document_requirements', 'get_document_processing_status');
   if (/\b(?:lead|account|contact|registration|crm|status)\b/u.test(query)) names.push('get_customer_registration_status', 'get_crm_status');
   if (/\b(?:invoice|payment)\b/u.test(query)) names.push('get_invoice_status');
@@ -138,14 +138,18 @@ const deterministicPlan = (context: AgentToolContext): ModelToolPlan => {
 export const runAgentTools = async (model: Pick<ChatModel, 'plan'>, context: AgentToolContext): Promise<AgentToolResult[]> => {
   const fallback = deterministicPlan(context);
   const bounded = (candidate: ModelToolPlan): { calls: Array<z.infer<typeof toolCallSchema>> } => ({ calls: candidate.calls.map((call) => toolCallSchema.safeParse(call)).filter((result): result is { success: true; data: z.infer<typeof toolCallSchema> } => result.success).map((result) => result.data).slice(0, 8) });
-  let plan: { calls: Array<z.infer<typeof toolCallSchema>> } = bounded(fallback);
+  const fallbackPlan = bounded(fallback);
+  let plan: { calls: Array<z.infer<typeof toolCallSchema>> } = fallbackPlan;
   if (model.plan) {
     try {
       const candidate = await model.plan({ maskedMessage: context.maskedQuery, availableTools: agentToolNames, conversationSummary: context.session.conversationState?.rollingSummary ?? '', activeIntentKey: activeIntent(context) });
       const safePlan = bounded(candidate);
-      if (safePlan.calls.length > 0) plan = safePlan;
+      if (safePlan.calls.length > 0) {
+        const seen = new Set<string>();
+        plan = { calls: [...fallbackPlan.calls, ...safePlan.calls].filter((call) => !seen.has(call.name) && seen.add(call.name)).slice(0, 8) };
+      }
     } catch {
-      plan = bounded(fallback);
+      plan = fallbackPlan;
     }
   }
   const results: AgentToolResult[] = [];

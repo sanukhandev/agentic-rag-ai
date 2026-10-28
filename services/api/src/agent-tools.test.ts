@@ -24,4 +24,12 @@ describe('bounded agent tool runtime', () => {
     expect(results.some((result) => result.name === 'search_approved_knowledge')).toBe(true);
     expect(results.some((result) => (result as { name?: string }).name === 'delete_everything')).toBe(false);
   });
+
+  it('retains deterministic package reads when the model plan omits them', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'ANCFZ', slug: 'anc' });
+    const session = await store.createSession(tenant.id);
+    const results = await runAgentTools({ plan: async () => ({ calls: [{ name: 'search_approved_knowledge', input: {} }] }) }, { store, session, catalog: null, opportunityId: null, maskedQuery: 'what all packages' });
+    expect(results.map((result) => result.name)).toEqual(expect.arrayContaining(['get_available_packages', 'get_authoritative_pricing']));
+  });
 });

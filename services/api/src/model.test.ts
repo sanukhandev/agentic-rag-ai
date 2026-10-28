@@ -306,11 +306,12 @@ describe('Azure Foundry model adapter', () => {
         leadCaptured: false,
         primaryIntentKey: null,
         responseMode: 'knowledge',
-        agentToolResults: [{ name: 'get_available_packages', ok: true, data: { packages: [{ name: 'Sandbox Basic', visas: 1, officeRequirement: 'flexi-desk' }, { name: 'Sandbox Growth', visas: 3, officeRequirement: 'shared office' }] } }],
+        agentToolResults: [{ name: 'get_available_packages', ok: true, data: { packages: [{ name: 'Sandbox Basic', visas: 1, officeRequirement: 'flexi-desk' }, { name: 'Sandbox Growth', visas: 3, officeRequirement: 'shared office' }] } }, { name: 'get_authoritative_pricing', ok: true, data: { pricing: [{ name: 'Sandbox Basic', amountMinor: 250000, currency: 'AED' }, { name: 'Sandbox Growth', amountMinor: 450000, currency: 'AED' }] } }],
       },
     });
     expect(draft.answer).toContain('Sandbox Basic');
     expect(draft.answer).toContain('Sandbox Growth');
+    expect(draft.answer).toContain('AED 2,500.00');
     expect(draft.answer).not.toContain('AED 4,888');
     expect(draft.answer).toContain('?');
   });
