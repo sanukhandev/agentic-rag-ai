@@ -3,7 +3,8 @@
 Date: 2026-10-29  
 Branch: `feat/ancfz-seven-stage-lifecycle-acceptance`  
 Bootstrap: `c863f5fcfc189a460688e4815cce4080b70de598`  
-Implementation commits after bootstrap: 58
+Implementation commits after bootstrap: >25 (threshold verified with
+`git rev-list --count c863f5fcfc189a460688e4815cce4080b70de598..HEAD`)
 
 ## Result
 
