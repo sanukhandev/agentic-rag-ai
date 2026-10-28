@@ -14,6 +14,12 @@ const requireOpportunity = (session: Session, opportunityId: string): void => {
   if (activeOpportunityId(session) !== opportunityId) throw new HttpError(409, 'OPPORTUNITY_NOT_ACTIVE', 'This request is not the active business opportunity.');
 };
 
+const requireVerifiedAccount = async (store: Store, session: Session, opportunityId: string): Promise<CrmAccount> => {
+  const account = await store.getCrmAccountByOpportunity(opportunityId, session.tenantId);
+  if (!account || account.status !== 'verified' || !account.remoteAccountId || !account.remoteContactId || !account.remoteOpportunityId) throw new HttpError(409, 'ACCOUNT_NOT_VERIFIED', 'A verified Account, Contact and Opportunity are required before package selection.');
+  return account;
+};
+
 export const listEligiblePackages = async (store: Store, session: Session): Promise<PackageOffering[]> => {
   const state = session.conversationState;
   return store.listPackageOfferings(session.tenantId, {
@@ -25,6 +31,7 @@ export const listEligiblePackages = async (store: Store, session: Session): Prom
 
 export const createApprovedQuote = async (store: Store, session: Session, opportunityId: string, packageOfferingId: string): Promise<Quote> => {
   requireOpportunity(session, opportunityId);
+  await requireVerifiedAccount(store, session, opportunityId);
   const offering = await store.getPackageOffering(packageOfferingId, session.tenantId);
   if (!offering || offering.approvalStatus !== 'approved') throw new HttpError(409, 'PACKAGE_NOT_ELIGIBLE', 'That package is not approved for this tenant and opportunity.');
   if (offering.priceMinor === null || !offering.currency) throw new HttpError(409, 'AUTHORITATIVE_PRICE_UNAVAILABLE', 'An approved price is not available for that package yet.');
@@ -36,6 +43,7 @@ export const createApprovedQuote = async (store: Store, session: Session, opport
 
 export const proposePackageSelection = async (store: Store, session: Session, opportunityId: string, packageOfferingId: string): Promise<PackageSelection> => {
   requireOpportunity(session, opportunityId);
+  await requireVerifiedAccount(store, session, opportunityId);
   const offering = await store.getPackageOffering(packageOfferingId, session.tenantId);
   if (!offering || offering.approvalStatus !== 'approved') throw new HttpError(409, 'PACKAGE_NOT_ELIGIBLE', 'That package is not approved for this tenant and opportunity.');
   return store.createPackageSelection({ id: randomUUID(), tenantId: session.tenantId, sessionId: session.id, opportunityId, packageOfferingId, quoteId: null, status: 'proposed', confirmedAt: null, createdAt: now(), updatedAt: now() });
@@ -79,6 +87,7 @@ export const proposeAccountConversion = async (store: Store, session: Session, o
 
 export const createInvoiceDraft = async (store: Store, session: Session, opportunityId: string, quoteId: string): Promise<Invoice> => {
   requireOpportunity(session, opportunityId);
+  await requireVerifiedAccount(store, session, opportunityId);
   const quote = await store.getQuote(quoteId, session.tenantId);
   if (!quote || quote.opportunityId !== opportunityId || quote.status !== 'approved' || Date.parse(quote.validUntil) <= Date.now()) throw new HttpError(409, 'QUOTE_NOT_VALID', 'An active approved quote is required before invoice creation.');
   const selection = (await store.listPackageSelections(session.tenantId, opportunityId)).find((candidate) => candidate.quoteId === quote.id && candidate.status === 'confirmed');
