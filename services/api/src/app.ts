@@ -1603,7 +1603,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       if (!knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog && !consentDenied && !catalogSlotNonAnswer && !isGuidedResponse(draft.answer, 'slot_collection', journeySlotKey)) draft = { answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null };
       if (knowledgeQuestion && /\b(?:step|steps|process|procedure)\b/iu.test(maskedMessage) && evidence.length > 0 && !/\b(?:step|steps|process|procedure)\b/iu.test(draft.answer)) draft = groundedKnowledgeFallback(maskedMessage, evidence) ?? draft;
-      if (knowledgeQuestion && evidence.length > 0 && store.constructor.name !== 'MemoryStore' && draft.citationIds.length === 0) draft = groundedKnowledgeFallback(maskedMessage, evidence) ?? draft;
+      const structuredToolKnowledge = knowledgeQuestion && agentToolResults.some((result) => result.ok
+        && ['get_available_packages', 'get_authoritative_pricing', 'get_setup_requirements', 'get_package_document_requirements'].includes(result.name)
+        && Object.values(result.data).some((value) => Array.isArray(value) && value.length > 0));
+      if (knowledgeQuestion && evidence.length > 0 && store.constructor.name !== 'MemoryStore' && draft.citationIds.length === 0 && !structuredToolKnowledge) draft = groundedKnowledgeFallback(maskedMessage, evidence) ?? draft;
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       let citations = validateCitations(draft, evidence);
       const trustedToolFacts = JSON.stringify(agentToolResults.filter((result) => result.ok).map((result) => ({ name: result.name, data: result.data })));

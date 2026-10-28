@@ -225,7 +225,7 @@ export class DeterministicGroundedModel implements ChatModel {
       const pricing = input.followUpContext.agentToolResults?.find((result) => result.name === 'get_authoritative_pricing' && result.ok)?.data.pricing;
       const pricingRows = Array.isArray(pricing) ? pricing.filter((row): row is { name: string; amountMinor: number; currency: string } => typeof row === 'object' && row !== null && typeof row.name === 'string' && typeof row.amountMinor === 'number' && typeof row.currency === 'string') : [];
       const packageAnswer = /\b(?:package|packages|option|options)\b/u.test(query) && packageRows.length > 0
-        ? `The approved packages currently available are ${packageRows.map((row) => `${row.name}${typeof row.visas === 'number' ? ` with ${row.visas} visa${row.visas === 1 ? '' : 's'}` : ''}${row.officeRequirement ? ` (${row.officeRequirement})` : ''}`).join('; ')}.`
+        ? `The approved packages currently available are ${packageRows.map((row) => { const price = pricingRows.find((candidate) => candidate.name === row.name); return `${row.name}${typeof row.visas === 'number' ? ` with ${row.visas} visa${row.visas === 1 ? '' : 's'}` : ''}${row.officeRequirement ? ` (${row.officeRequirement})` : ''}${price ? ` at ${price.currency} ${(price.amountMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}`; }).join('; ')}.`
         : null;
       const pricingAnswer = /\b(?:price|pricing|cost|fee|fees|quote|quotation)\b/u.test(query) && pricingRows.length > 0
         ? `The approved package pricing currently available for this setup is ${pricingRows.map((row) => `${row.name}: ${row.currency} ${(row.amountMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}`).join('; ')}.`
@@ -236,8 +236,8 @@ export class DeterministicGroundedModel implements ChatModel {
       const nextQuestion = input.followUpContext.nextSlotLabel
         ? `What ${input.followUpContext.nextSlotLabel.toLocaleLowerCase('en-US').replace(/^what\s+/u, '')} would you like to use for this setup?`
         : known.business_activity ? 'Would you like me to compare the approved package options for this setup?' : 'What business activity would you like to register?';
-      const evidenceAnswer = packageAnswer || pricingAnswer ? '' : selected.map((item) => item.sentence).join(' ');
-      if (packageAnswer || pricingAnswer || timelineAnswer || selected.length > 0) return { answer: `${[packageAnswer, pricingAnswer, timelineAnswer, evidenceAnswer].filter(Boolean).join(' ')} ${nextQuestion}`, citationIds: selected.map((item) => item.chunkId), proposedIntent: null };
+      const evidenceAnswer = packageAnswer ? '' : selected.map((item) => item.sentence).join(' ');
+      if (packageAnswer || pricingAnswer || timelineAnswer || selected.length > 0) return { answer: `${[packageAnswer, pricingAnswer, timelineAnswer, evidenceAnswer].filter(Boolean).join(' ')} ${nextQuestion}`, citationIds: packageAnswer ? [] : selected.map((item) => item.chunkId), proposedIntent: null };
     }
     const wantsLead = /\b(contact|call|email|interested|demo|quote)\b/i.test(input.maskedMessage);
     return { answer: naturalAbstention(detectedLanguage(input.maskedMessage), input.maskedMessage, input.followUpContext), citationIds: [], proposedIntent: wantsLead ? 'lead.capture' : null };
