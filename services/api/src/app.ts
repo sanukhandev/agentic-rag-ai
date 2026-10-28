@@ -99,7 +99,7 @@ const groundedKnowledgeFallback = (question: string, evidence: ModelEvidence[]):
     .map((sentence) => [sentence.toLocaleLowerCase('en-US').replace(/[^a-z0-9]+/gu, ''), sentence]))
     .values()];
   if (safeSentences.length === 0) return null;
-  return { answer: `Here’s what I can verify: ${safeSentences.join(' ')}`, citationIds: evidence.filter((item) => safeSentences.some((sentence) => item.content.includes(sentence))).map((item) => item.citation.chunkId).slice(0, 4), proposedIntent: null };
+  return { answer: safeSentences.join(' '), citationIds: evidence.filter((item) => safeSentences.some((sentence) => item.content.includes(sentence))).map((item) => item.citation.chunkId).slice(0, 4), proposedIntent: null };
 };
 const INGESTION_LEASE_MS = 120_000;
 const publishIngestionProgress = async (store: Store, job: IngestionJob, stage: string, processed: number, total: number, status: IngestionJobStatus = job.status, failureCode: string | null = null): Promise<void> => {
