@@ -1,0 +1,1787 @@
+{
+  "README": [
+    [
+      "Field",
+      "Value"
+    ],
+    [
+      "Tenant scope",
+      "anc-test"
+    ],
+    [
+      "Catalog purpose",
+      "Dedicated ANCFZ seven-stage sales / onboarding draft, for review against local OneDrive_1_23-10-2026.zip"
+    ],
+    [
+      "Status",
+      "DRAFT — unverified source material, external workflows and Salesforce field mapping. Do not publish."
+    ],
+    [
+      "Source archive",
+      "OneDrive_1_23-10-2026.zip (available on operator workstation; not available to this generation session)"
+    ],
+    [
+      "Required sheets",
+      "README, Intents, Signals, Slots, Relations, WorkflowBindings"
+    ],
+    [
+      "Optional runtime sheets",
+      "JourneyRequirements, JourneyTransitions, DocumentPolicies, DocumentSettings, QualityRules"
+    ],
+    [
+      "Extension requiring code change",
+      "BusinessStages: requires typed parser and Node lifecycle gates; not parsed by existing main"
+    ],
+    [
+      "Workflow ID caveat",
+      "Identifiers below are proposed n8n workflow keys/IDs; confirm real imported workflow IDs and credential bindings"
+    ],
+    [
+      "Safety",
+      "No package pricing, eligibility, mandatory identity document or remote CRM field is asserted by this proposal"
+    ],
+    [
+      "Publish gate",
+      "Validate against source ZIP, source version, approved price book, current API validator, live n8n and sandbox test results"
+    ],
+    [
+      "Deployment",
+      "Dedicated ANCFZ tenant scope with existing tenantId internal isolation retained for database compatibility"
+    ]
+  ],
+  "Intents": [
+    [
+      "intent_key",
+      "display_name",
+      "description",
+      "category",
+      "workflow_key",
+      "minimum_score",
+      "confidence_threshold",
+      "confirmation_required",
+      "active",
+      "priority",
+      "version_note"
+    ],
+    [
+      "anc.company_setup",
+      "Company formation enquiry",
+      "Start a grounded ANCFZ setup journey and collect consented lead information.",
+      "sales",
+      "crm.lead.create",
+      60,
+      0.6,
+      true,
+      true,
+      100,
+      "Primary sales journey; contact consent required for CRM write."
+    ],
+    [
+      "anc.visa_enquiry",
+      "Visa enquiry",
+      "Qualify company-related visa enquiry using approved ANCFZ evidence.",
+      "sales",
+      "crm.lead.create",
+      60,
+      0.6,
+      true,
+      true,
+      85,
+      "Visa rules must come from approved sources."
+    ],
+    [
+      "anc.quote_request",
+      "Package / quotation request",
+      "Ask about verified offers and quotations, without claiming price before approval.",
+      "sales",
+      "crm.lead.create",
+      60,
+      0.6,
+      true,
+      true,
+      90,
+      "Use same opportunity; no duplicate lead."
+    ],
+    [
+      "anc.document_submission",
+      "Document submission",
+      "Accept a requested supporting document only under approved document policy.",
+      "support",
+      "anc.document.ocr.extract",
+      65,
+      0.65,
+      true,
+      true,
+      75,
+      "Do not directly ingest customer documents into public RAG."
+    ],
+    [
+      "anc.billing_inquiry",
+      "Invoice / payment enquiry",
+      "Read existing invoice/payment status; do not accept payment details in chat.",
+      "support",
+      "human.review",
+      65,
+      0.65,
+      false,
+      true,
+      65,
+      "Only mock payment in local development."
+    ],
+    [
+      "anc.contract_inquiry",
+      "Contract status enquiry",
+      "Read verified contract status or request authorized handoff.",
+      "support",
+      "human.review",
+      65,
+      0.65,
+      false,
+      true,
+      60,
+      "Do not assert signing complete from a draft."
+    ],
+    [
+      "anc.application_status",
+      "Existing application status",
+      "Help identify an existing application's authorized state.",
+      "support",
+      "human.review",
+      60,
+      0.6,
+      false,
+      true,
+      70,
+      "Identity/ownership verification before customer-specific disclosure."
+    ],
+    [
+      "anc.knowledge",
+      "ANCFZ knowledge question",
+      "Answer approved source-cited business FAQs.",
+      "information",
+      "human.review",
+      80,
+      0.8,
+      false,
+      true,
+      20,
+      "Evidence-only; unsupported questions abstain."
+    ]
+  ],
+  "Signals": [
+    [
+      "intent_key",
+      "signal_id",
+      "signal_type",
+      "value",
+      "language",
+      "match_mode",
+      "weight",
+      "relation_group",
+      "notes"
+    ],
+    [
+      "anc.company_setup",
+      "anc-sig-001",
+      "phrase",
+      "I want to start a company",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.company_setup",
+      "anc-sig-002",
+      "phrase",
+      "set up a business in a free zone",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.company_setup",
+      "anc-sig-003",
+      "phrase",
+      "register a new business",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.company_setup",
+      "anc-sig-004",
+      "phrase",
+      "business setup consultation",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.company_setup",
+      "anc-sig-005",
+      "phrase",
+      "company formation",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.company_setup",
+      "anc-sig-006",
+      "phrase",
+      "start a fashion boutique",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.visa_enquiry",
+      "anc-sig-007",
+      "phrase",
+      "I need a visa for company setup",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.visa_enquiry",
+      "anc-sig-008",
+      "phrase",
+      "business visa requirements",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.visa_enquiry",
+      "anc-sig-009",
+      "phrase",
+      "how many visas can I get",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.quote_request",
+      "anc-sig-010",
+      "phrase",
+      "I need a quotation for a business setup package",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.quote_request",
+      "anc-sig-011",
+      "phrase",
+      "send me a setup quote",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.quote_request",
+      "anc-sig-012",
+      "phrase",
+      "what are your approved packages",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.document_submission",
+      "anc-sig-013",
+      "phrase",
+      "I want to upload my requested document",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.document_submission",
+      "anc-sig-014",
+      "phrase",
+      "submit supporting documents",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.billing_inquiry",
+      "anc-sig-015",
+      "phrase",
+      "where is my invoice",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.billing_inquiry",
+      "anc-sig-016",
+      "phrase",
+      "what is the payment status",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.contract_inquiry",
+      "anc-sig-017",
+      "phrase",
+      "where can I sign my contract",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.contract_inquiry",
+      "anc-sig-018",
+      "phrase",
+      "contract signing status",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.application_status",
+      "anc-sig-019",
+      "phrase",
+      "track my business setup application",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.application_status",
+      "anc-sig-020",
+      "phrase",
+      "check my application status",
+      "en",
+      "contains",
+      70,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.knowledge",
+      "anc-sig-021",
+      "phrase",
+      "what is your office location",
+      "en",
+      "contains",
+      82,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.knowledge",
+      "anc-sig-022",
+      "phrase",
+      "what services does ANCFZ provide",
+      "en",
+      "contains",
+      82,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ],
+    [
+      "anc.knowledge",
+      "anc-sig-023",
+      "phrase",
+      "what is the approved documentation process",
+      "en",
+      "contains",
+      82,
+      "ancfz",
+      "Proposed signal only; no business fact implied."
+    ]
+  ],
+  "Slots": [
+    [
+      "intent_key",
+      "slot_key",
+      "data_type",
+      "required",
+      "alternative_group",
+      "collection_order",
+      "prompt_key",
+      "validation_rule",
+      "retention_class",
+      "quality_weight"
+    ],
+    [
+      "anc.company_setup",
+      "business_activity",
+      "text",
+      true,
+      "",
+      10,
+      "anc.ask_business_activity",
+      "text:nonempty",
+      "business",
+      10
+    ],
+    [
+      "anc.company_setup",
+      "entity_type",
+      "text",
+      true,
+      "",
+      20,
+      "anc.ask_entity_type",
+      "text:nonempty",
+      "business",
+      10
+    ],
+    [
+      "anc.company_setup",
+      "visa_type",
+      "text",
+      false,
+      "",
+      30,
+      "anc.ask_visa_type",
+      "text:nonempty",
+      "business",
+      5
+    ],
+    [
+      "anc.company_setup",
+      "number_of_visas",
+      "integer",
+      false,
+      "",
+      40,
+      "anc.ask_visa_quantity",
+      "integer:nonnegative",
+      "business",
+      5
+    ],
+    [
+      "anc.company_setup",
+      "budget",
+      "money",
+      false,
+      "",
+      50,
+      "anc.ask_budget",
+      "money:nonnegative",
+      "business",
+      5
+    ],
+    [
+      "anc.company_setup",
+      "timeline",
+      "text",
+      true,
+      "",
+      60,
+      "anc.ask_timeline",
+      "text:nonempty",
+      "business",
+      10
+    ],
+    [
+      "anc.company_setup",
+      "name",
+      "text",
+      true,
+      "",
+      70,
+      "anc.ask_name",
+      "token:NAME",
+      "contact",
+      10
+    ],
+    [
+      "anc.company_setup",
+      "email",
+      "text",
+      true,
+      "",
+      80,
+      "anc.ask_email",
+      "token:EMAIL",
+      "contact",
+      10
+    ],
+    [
+      "anc.company_setup",
+      "phone",
+      "text",
+      true,
+      "",
+      90,
+      "anc.ask_phone",
+      "token:PHONE",
+      "contact",
+      10
+    ],
+    [
+      "anc.company_setup",
+      "contact_consent",
+      "boolean",
+      true,
+      "",
+      100,
+      "anc.ask_contact_consent",
+      "boolean:explicit_opt_in",
+      "consent",
+      0
+    ],
+    [
+      "anc.visa_enquiry",
+      "visa_type",
+      "text",
+      true,
+      "",
+      10,
+      "anc.ask_visa_type",
+      "text:nonempty",
+      "business",
+      10
+    ],
+    [
+      "anc.visa_enquiry",
+      "name",
+      "text",
+      true,
+      "",
+      20,
+      "anc.ask_name",
+      "token:NAME",
+      "contact",
+      10
+    ],
+    [
+      "anc.visa_enquiry",
+      "email",
+      "text",
+      true,
+      "",
+      30,
+      "anc.ask_email",
+      "token:EMAIL",
+      "contact",
+      10
+    ],
+    [
+      "anc.visa_enquiry",
+      "phone",
+      "text",
+      true,
+      "",
+      40,
+      "anc.ask_phone",
+      "token:PHONE",
+      "contact",
+      10
+    ],
+    [
+      "anc.visa_enquiry",
+      "contact_consent",
+      "boolean",
+      true,
+      "",
+      50,
+      "anc.ask_contact_consent",
+      "boolean:explicit_opt_in",
+      "consent",
+      0
+    ],
+    [
+      "anc.quote_request",
+      "package_interest",
+      "text",
+      true,
+      "",
+      10,
+      "anc.ask_package_interest",
+      "text:nonempty",
+      "business",
+      10
+    ],
+    [
+      "anc.quote_request",
+      "name",
+      "text",
+      true,
+      "",
+      20,
+      "anc.ask_name",
+      "token:NAME",
+      "contact",
+      10
+    ],
+    [
+      "anc.quote_request",
+      "email",
+      "text",
+      true,
+      "",
+      30,
+      "anc.ask_email",
+      "token:EMAIL",
+      "contact",
+      10
+    ],
+    [
+      "anc.quote_request",
+      "phone",
+      "text",
+      true,
+      "",
+      40,
+      "anc.ask_phone",
+      "token:PHONE",
+      "contact",
+      10
+    ],
+    [
+      "anc.quote_request",
+      "contact_consent",
+      "boolean",
+      true,
+      "",
+      50,
+      "anc.ask_contact_consent",
+      "boolean:explicit_opt_in",
+      "consent",
+      0
+    ],
+    [
+      "anc.document_submission",
+      "document_requirement_key",
+      "text",
+      true,
+      "",
+      10,
+      "anc.ask_document_requirement",
+      "text:nonempty",
+      "business",
+      5
+    ]
+  ],
+  "Relations": [
+    [
+      "source_intent",
+      "related_intent",
+      "relation_type",
+      "trigger_group",
+      "score_adjustment",
+      "minimum_cooccurrence",
+      "clarification_prompt_key"
+    ],
+    [
+      "anc.company_setup",
+      "anc.quote_request",
+      "related",
+      "package_discussion",
+      5,
+      1,
+      "anc.offer_quotation"
+    ],
+    [
+      "anc.company_setup",
+      "anc.visa_enquiry",
+      "related",
+      "visa_discussion",
+      5,
+      1,
+      "anc.offer_visa"
+    ],
+    [
+      "anc.company_setup",
+      "anc.document_submission",
+      "related",
+      "document_discussion",
+      5,
+      1,
+      "anc.offer_document"
+    ],
+    [
+      "anc.company_setup",
+      "anc.billing_inquiry",
+      "related",
+      "billing_discussion",
+      5,
+      1,
+      "anc.offer_invoice"
+    ]
+  ],
+  "WorkflowBindings": [
+    [
+      "workflow_key",
+      "n8n_workflow_id",
+      "webhook_path",
+      "payload_contract",
+      "side_effect_class",
+      "active"
+    ],
+    [
+      "crm.lead.create",
+      "ANCLeadCaptureWF1",
+      "anc-lead-capture-wf-1",
+      "anc-lead-capture-v1",
+      "crm_write",
+      false
+    ],
+    [
+      "crm.account.convert",
+      "ANCAccountConversionWF1",
+      "anc-account-conversion-wf-1",
+      "anc-account-conversion-v1",
+      "crm_write",
+      false
+    ],
+    [
+      "sales.quote.generate",
+      "ANCQuotePDFWF1",
+      "anc-quote-pdf-wf-1",
+      "anc-pdf-quote-v1",
+      "crm_write",
+      false
+    ],
+    [
+      "anc.document.ocr.extract",
+      "ANCDocumentOCRWF1",
+      "anc-test-document-ocr-wf-1",
+      "anc-document-ocr-v1",
+      "crm_write",
+      false
+    ],
+    [
+      "crm.document.attach",
+      "SF02DocumentUpload",
+      "anc-sf02-document-upload",
+      "anc-sf02-attach-v1",
+      "crm_write",
+      false
+    ],
+    [
+      "billing.invoice.issue",
+      "ANCInvoicePDFWF1",
+      "anc-invoice-pdf-wf-1",
+      "anc-pdf-invoice-v1",
+      "crm_write",
+      false
+    ],
+    [
+      "billing.payment.mock",
+      "ANCPaymentMockWF1",
+      "anc-mock-payment-wf-1",
+      "anc-payment-mock-v1",
+      "crm_write",
+      false
+    ],
+    [
+      "legal.contract.prepare",
+      "ANCContractPreparationWF1",
+      "anc-contract-preparation-wf-1",
+      "anc-contract-preparation-v1",
+      "crm_write",
+      false
+    ],
+    [
+      "human.review",
+      "ANCReviewWF1",
+      "anc-human-review-wf-1",
+      "anc-review-v1",
+      "human_review",
+      false
+    ]
+  ],
+  "QualityRules": [
+    [
+      "intent_key",
+      "quality_workflow_key",
+      "intent_weight",
+      "confidence_weight",
+      "contact_weight",
+      "hot_threshold",
+      "warm_threshold",
+      "nurture_threshold"
+    ],
+    [
+      "anc.company_setup",
+      "crm.lead.create",
+      0.5,
+      0.2,
+      0.3,
+      85,
+      70,
+      40
+    ],
+    [
+      "anc.visa_enquiry",
+      "crm.lead.create",
+      0.5,
+      0.2,
+      0.3,
+      85,
+      70,
+      40
+    ],
+    [
+      "anc.quote_request",
+      "crm.lead.create",
+      0.5,
+      0.2,
+      0.3,
+      85,
+      70,
+      40
+    ]
+  ],
+  "JourneyRequirements": [
+    [
+      "intent_key",
+      "requirement_key",
+      "requirement_type",
+      "required",
+      "collection_order",
+      "prompt_key",
+      "validation_rule",
+      "slot_key",
+      "document_type",
+      "fulfillment_mode",
+      "source_of_truth",
+      "visitor_confirmation_text",
+      "notes"
+    ],
+    [
+      "anc.company_setup",
+      "slot:business_activity",
+      "slot",
+      true,
+      10,
+      "anc.ask_business_activity",
+      "text:nonempty",
+      "business_activity",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.company_setup",
+      "slot:entity_type",
+      "slot",
+      true,
+      20,
+      "anc.ask_entity_type",
+      "text:nonempty",
+      "entity_type",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.company_setup",
+      "slot:visa_type",
+      "slot",
+      false,
+      30,
+      "anc.ask_visa_type",
+      "text:nonempty",
+      "visa_type",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.company_setup",
+      "slot:number_of_visas",
+      "slot",
+      false,
+      40,
+      "anc.ask_visa_quantity",
+      "integer:nonnegative",
+      "number_of_visas",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.company_setup",
+      "slot:budget",
+      "slot",
+      false,
+      50,
+      "anc.ask_budget",
+      "money:nonnegative",
+      "budget",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.company_setup",
+      "slot:timeline",
+      "slot",
+      true,
+      60,
+      "anc.ask_timeline",
+      "text:nonempty",
+      "timeline",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.company_setup",
+      "slot:name",
+      "slot",
+      true,
+      70,
+      "anc.ask_name",
+      "token:NAME",
+      "name",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.company_setup",
+      "slot:email",
+      "slot",
+      true,
+      80,
+      "anc.ask_email",
+      "token:EMAIL",
+      "email",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.company_setup",
+      "slot:phone",
+      "slot",
+      true,
+      90,
+      "anc.ask_phone",
+      "token:PHONE",
+      "phone",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.company_setup",
+      "slot:contact_consent",
+      "consent",
+      true,
+      100,
+      "anc.ask_contact_consent",
+      "boolean:explicit_opt_in",
+      "contact_consent",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "I consent to ANCFZ contacting me about this enquiry.",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.visa_enquiry",
+      "slot:visa_type",
+      "slot",
+      true,
+      10,
+      "anc.ask_visa_type",
+      "text:nonempty",
+      "visa_type",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.visa_enquiry",
+      "slot:name",
+      "slot",
+      true,
+      20,
+      "anc.ask_name",
+      "token:NAME",
+      "name",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.visa_enquiry",
+      "slot:email",
+      "slot",
+      true,
+      30,
+      "anc.ask_email",
+      "token:EMAIL",
+      "email",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.visa_enquiry",
+      "slot:phone",
+      "slot",
+      true,
+      40,
+      "anc.ask_phone",
+      "token:PHONE",
+      "phone",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.visa_enquiry",
+      "slot:contact_consent",
+      "consent",
+      true,
+      50,
+      "anc.ask_contact_consent",
+      "boolean:explicit_opt_in",
+      "contact_consent",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "I consent to ANCFZ contacting me about this enquiry.",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.quote_request",
+      "slot:package_interest",
+      "slot",
+      true,
+      10,
+      "anc.ask_package_interest",
+      "text:nonempty",
+      "package_interest",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.quote_request",
+      "slot:name",
+      "slot",
+      true,
+      20,
+      "anc.ask_name",
+      "token:NAME",
+      "name",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.quote_request",
+      "slot:email",
+      "slot",
+      true,
+      30,
+      "anc.ask_email",
+      "token:EMAIL",
+      "email",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.quote_request",
+      "slot:phone",
+      "slot",
+      true,
+      40,
+      "anc.ask_phone",
+      "token:PHONE",
+      "phone",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "",
+      "Conditional fields are required only after business rules approve them."
+    ],
+    [
+      "anc.quote_request",
+      "slot:contact_consent",
+      "consent",
+      true,
+      50,
+      "anc.ask_contact_consent",
+      "boolean:explicit_opt_in",
+      "contact_consent",
+      null,
+      "conversation_ready",
+      "catalog.slots",
+      "I consent to ANCFZ contacting me about this enquiry.",
+      "Conditional fields are required only after business rules approve them."
+    ]
+  ],
+  "JourneyTransitions": [
+    [
+      "source_intent_key",
+      "target_intent_key",
+      "activation_mode",
+      "max_depth",
+      "trigger_group",
+      "prompt_key",
+      "notes"
+    ],
+    [
+      "anc.company_setup",
+      "anc.quote_request",
+      "offer",
+      6,
+      "approved_package_interest",
+      "anc.offer_quotation",
+      "Advisory intent handoff, never bypass Stage 3 Account verification"
+    ],
+    [
+      "anc.quote_request",
+      "anc.document_submission",
+      "offer",
+      6,
+      "documents_approved",
+      "anc.offer_documents",
+      "Upload only approved required document from authoritative source"
+    ],
+    [
+      "anc.document_submission",
+      "anc.billing_inquiry",
+      "offer",
+      6,
+      "invoice_verified",
+      "anc.offer_invoice",
+      "No claim of invoice paid until mock payment callback"
+    ],
+    [
+      "anc.billing_inquiry",
+      "anc.contract_inquiry",
+      "offer",
+      6,
+      "contract_eligible",
+      "anc.offer_contract",
+      "Contract signed requires provider verification"
+    ]
+  ],
+  "DocumentPolicies": [
+    [
+      "intent_key",
+      "enabled",
+      "workflow_key",
+      "request_mode",
+      "required",
+      "request_prompt_key",
+      "allowed_document_types",
+      "allow_user_initiated",
+      "consent_required",
+      "preserve_primary_intent",
+      "store_extracted_text",
+      "summary_target",
+      "auto_create_lead",
+      "auto_index_in_rag",
+      "notes"
+    ],
+    [
+      "anc.document_submission",
+      false,
+      "anc.document.ocr.extract",
+      "explicit_upload",
+      false,
+      "anc.ask_requested_document",
+      "[\"business_supporting_document\"]",
+      false,
+      true,
+      true,
+      true,
+      "crm_summary",
+      false,
+      false,
+      "Disabled until approved ANCFZ source documents define exact documents and legal processing basis."
+    ],
+    [
+      "anc.company_setup",
+      false,
+      "anc.document.ocr.extract",
+      "conditional_offer",
+      false,
+      "anc.ask_requested_document",
+      "[\"business_supporting_document\"]",
+      false,
+      true,
+      true,
+      true,
+      "crm_summary",
+      false,
+      false,
+      "No implied passport/Emirates ID requirement; human review required."
+    ]
+  ],
+  "DocumentSettings": [
+    [
+      "schema_version",
+      "enabled",
+      "storage_backend",
+      "processing_provider",
+      "workflow_key",
+      "require_upload_consent",
+      "max_file_bytes",
+      "max_files_per_request",
+      "max_pdf_pages",
+      "ocr_languages",
+      "allowed_mime_types",
+      "retention_policy",
+      "allow_public_document_urls",
+      "allow_automatic_knowledge_ingestion",
+      "allow_personal_identity_documents_by_default",
+      "summary_rendering",
+      "notes"
+    ],
+    [
+      "1",
+      false,
+      "private_local",
+      "python_tesseract",
+      "anc.document.ocr.extract",
+      true,
+      10000000,
+      1,
+      25,
+      "[\"eng\"]",
+      "[\"application/pdf\",\"image/png\",\"image/jpeg\"]",
+      "review_required",
+      false,
+      false,
+      false,
+      "validated_compact_summary",
+      "Enable only after document inventory, privacy policy, authorization and OCR callback validation."
+    ]
+  ],
+  "BusinessStages": [
+    [
+      "stage_order",
+      "stage_key",
+      "display_name",
+      "authoritative_owner",
+      "prerequisite_expression",
+      "success_evidence",
+      "workflow_key",
+      "on_failure",
+      "test_requirement",
+      "status"
+    ],
+    [
+      1,
+      "lead_generation",
+      "Lead generation",
+      "Node/Postgres",
+      "validated contact + scoped consent",
+      "durable lead draft; CRM Lead id only when independently verified",
+      "crm.lead.create",
+      "awaiting_customer_or_reconciliation",
+      "contact validation; consent; dedupe",
+      "PROPOSED"
+    ],
+    [
+      2,
+      "lead_qualification",
+      "Qualification",
+      "Node/Postgres",
+      "approved catalog slots + qualification policy",
+      "qualified state + score + traceability",
+      "crm.lead.create",
+      "awaiting_customer_or_human_review",
+      "negative/unqualified; corrections",
+      "PROPOSED"
+    ],
+    [
+      3,
+      "account_creation",
+      "Account / Contact / Opportunity",
+      "Salesforce",
+      "verified qualified Lead + conversion consent",
+      "verified remote Lead/Account/Contact/Opportunity IDs",
+      "crm.account.convert",
+      "reconcile_required",
+      "duplicate, already-converted, timeout",
+      "PROPOSED"
+    ],
+    [
+      4,
+      "package_selection",
+      "Package and quote",
+      "Node/approved pricebook",
+      "verified account + approved effective package offer",
+      "accepted quote revision and package selection",
+      "sales.quote.generate",
+      "awaiting_customer_or_review",
+      "expired price, no price, mismatch",
+      "PROPOSED"
+    ],
+    [
+      5,
+      "document_upload",
+      "Supporting documents",
+      "Node/Python/Salesforce",
+      "approved conditional document policy + upload consent",
+      "OCR accepted; SF02 attachment ID verified",
+      "crm.document.attach",
+      "awaiting_document_or_reconciliation",
+      "OCR failure, stale callback, duplicate upload",
+      "PROPOSED"
+    ],
+    [
+      6,
+      "billing_invoice",
+      "Mock payment and invoice",
+      "Node/Python/local mock payment",
+      "accepted quote + required docs and billing verification",
+      "stored quote/invoice PDF hash; mock payment status verified",
+      "billing.invoice.issue",
+      "reconcile_required",
+      "invalid total, repeated callbacks, no real charge",
+      "PROPOSED"
+    ],
+    [
+      7,
+      "contract",
+      "Contract and signing",
+      "Salesforce/approved signer",
+      "account verified + stage 6 completed + approved template",
+      "remote signed status and signed artifact evidence",
+      "legal.contract.prepare",
+      "awaiting_signature_or_reconciliation",
+      "provider failure, expired URL, draft not signed",
+      "PROPOSED"
+    ]
+  ],
+  "CRMFieldMappings": [
+    [
+      "provider",
+      "object_name",
+      "source_field",
+      "remote_field",
+      "retention_class",
+      "required"
+    ],
+    [
+      "salesforce",
+      "Lead",
+      "name",
+      "REVIEW_SF_LEAD_NAME_FIELD",
+      "contact",
+      false
+    ],
+    [
+      "salesforce",
+      "Lead",
+      "email",
+      "REVIEW_SF_LEAD_EMAIL_FIELD",
+      "contact",
+      false
+    ],
+    [
+      "salesforce",
+      "Lead",
+      "phone",
+      "REVIEW_SF_LEAD_PHONE_FIELD",
+      "contact",
+      false
+    ],
+    [
+      "salesforce",
+      "Opportunity",
+      "business_activity",
+      "REVIEW_SF_ACTIVITY_FIELD",
+      "business",
+      false
+    ],
+    [
+      "salesforce",
+      "Opportunity",
+      "package_selection",
+      "REVIEW_SF_PACKAGE_FIELD",
+      "business",
+      false
+    ],
+    [
+      "salesforce",
+      "Account",
+      "account_id",
+      "REVIEW_SF_EXTERNAL_ID_MAPPING",
+      "business",
+      false
+    ]
+  ],
+  "ChannelCapabilities": [
+    [
+      "channel",
+      "text",
+      "postback",
+      "attachment",
+      "server_authenticated",
+      "notes"
+    ],
+    [
+      "web",
+      true,
+      true,
+      true,
+      true,
+      "Existing Node channel must enforce verified tenant origin and session binding."
+    ]
+  ],
+  "TestUtterances": [
+    [
+      "test_id",
+      "language",
+      "label",
+      "utterance",
+      "expected_mode",
+      "expected_intent",
+      "notes"
+    ],
+    [
+      "T01",
+      "en",
+      "ANCFZ API scenario",
+      "I want to start a fashion boutique",
+      "collect_activity",
+      "anc.company_setup",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T02",
+      "en",
+      "ANCFZ API scenario",
+      "I want to set up a company",
+      "collect_requirements",
+      "anc.company_setup",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T03",
+      "en",
+      "ANCFZ API scenario",
+      "Can you explain your licensing options?",
+      "grounded_or_abstain",
+      "anc.knowledge",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T04",
+      "en",
+      "ANCFZ API scenario",
+      "I want a quote",
+      "no_unverified_price",
+      "anc.quote_request",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T05",
+      "en",
+      "ANCFZ API scenario",
+      "I need a visa for the business",
+      "catalog_question",
+      "anc.visa_enquiry",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T06",
+      "en",
+      "ANCFZ API scenario",
+      "yes 2 weeks",
+      "bind_pending_timeline",
+      "anc.company_setup",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T07",
+      "en",
+      "ANCFZ API scenario",
+      "I have changed my email address",
+      "latest_verified_slot_wins",
+      "anc.company_setup",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T08",
+      "en",
+      "ANCFZ API scenario",
+      "No I do not consent to the contact transfer",
+      "zero_salesforce_write",
+      "anc.company_setup",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T09",
+      "en",
+      "ANCFZ API scenario",
+      "I agree to be contacted about company formation",
+      "consent_only_for_contact",
+      "anc.company_setup",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T10",
+      "en",
+      "ANCFZ API scenario",
+      "Can you show packages and prices",
+      "verified_price_only",
+      "anc.quote_request",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T11",
+      "en",
+      "ANCFZ API scenario",
+      "I will choose the second package",
+      "confirm_approved_quote",
+      "anc.quote_request",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T12",
+      "en",
+      "ANCFZ API scenario",
+      "I want to upload my document",
+      "document_policy_gate",
+      "anc.document_submission",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T13",
+      "en",
+      "ANCFZ API scenario",
+      "The scanned document is blurry",
+      "retry_or_review",
+      "anc.document_submission",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T14",
+      "en",
+      "ANCFZ API scenario",
+      "Where is my invoice",
+      "read_verified_status",
+      "anc.billing_inquiry",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T15",
+      "en",
+      "ANCFZ API scenario",
+      "Can I pay using my card number in chat",
+      "reject_card_in_chat",
+      "anc.billing_inquiry",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T16",
+      "en",
+      "ANCFZ API scenario",
+      "I want to sign the contract",
+      "provider_status_gate",
+      "anc.contract_inquiry",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T17",
+      "en",
+      "ANCFZ API scenario",
+      "What is the status of the contract",
+      "never_fake_signed",
+      "anc.contract_inquiry",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T18",
+      "en",
+      "ANCFZ API scenario",
+      "What did I tell you earlier?",
+      "conversation_summary_no_PII_exposure",
+      "anc.knowledge",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T19",
+      "en",
+      "ANCFZ API scenario",
+      "Do you know the current world news",
+      "refuse_non_approved_knowledge",
+      "anc.knowledge",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T20",
+      "en",
+      "ANCFZ API scenario",
+      "A second customer is using a different tenant",
+      "cross_tenant_denied",
+      "anc.knowledge",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T21",
+      "en",
+      "ANCFZ API scenario",
+      "Please resend the lead",
+      "duplicate_no_second_lead",
+      "anc.company_setup",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T22",
+      "en",
+      "ANCFZ API scenario",
+      "I would like a different package",
+      "new_revision_not_old_quote",
+      "anc.quote_request",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T23",
+      "en",
+      "ANCFZ API scenario",
+      "My timeline is next month not next week",
+      "correction_in_opportunity",
+      "anc.company_setup",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T24",
+      "en",
+      "ANCFZ API scenario",
+      "The payment webhook was sent twice",
+      "mock_idempotent",
+      "anc.billing_inquiry",
+      "Synthetic, not proof of execution"
+    ],
+    [
+      "T25",
+      "en",
+      "ANCFZ API scenario",
+      "Please summarise my journey",
+      "validated_state_no_provider_claim",
+      "anc.knowledge",
+      "Synthetic, not proof of execution"
+    ]
+  ],
+  "CatalogManifest": [
+    [
+      "key",
+      "value"
+    ],
+    [
+      "draft",
+      "true"
+    ],
+    [
+      "sourceZip",
+      "OneDrive_1_23-10-2026.zip"
+    ],
+    [
+      "sourceHash",
+      "PENDING_LOCAL_PREFLIGHT"
+    ],
+    [
+      "tenantSlug",
+      "anc-test"
+    ],
+    [
+      "scope",
+      "ANCFZ dedicated"
+    ],
+    [
+      "paymentMode",
+      "MOCK"
+    ],
+    [
+      "pdfEngine",
+      "Python ReportLab called through n8n/Node orchestration"
+    ],
+    [
+      "credentialStrategy",
+      "Reuse managed n8n Salesforce credentials; never commit values"
+    ],
+    [
+      "stageGatesParser",
+      "NOT_IMPLEMENTED_IN_MAIN"
+    ],
+    [
+      "publishReady",
+      "false"
+    ]
+  ]
+}

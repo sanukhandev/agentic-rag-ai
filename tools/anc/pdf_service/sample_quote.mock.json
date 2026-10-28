@@ -1,0 +1,15 @@
+{
+  "mode": "MOCK",
+  "document_type": "quote",
+  "reference": "Q-DEV-0001",
+  "issue_date": "2026-10-29",
+  "due_date": "2026-11-05",
+  "currency": "AED",
+  "customer_label": "Synthetic Test Customer",
+  "seller_label": "ANCFZ Development Sandbox",
+  "items": [
+    {"description":"Synthetic service (not an ANCFZ approved price)","quantity":"1","unit_price":"100.00"}
+  ],
+  "tax_amount": "0.00",
+  "grand_total": "100.00"
+}
