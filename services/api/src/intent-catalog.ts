@@ -43,6 +43,7 @@ const clamp = (value: number): number => Math.max(0, Math.min(100, Math.round(va
 const normalize = (value: string): string => value.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim();
 const normalizeCatalogPhrase = (value: string): string => normalize(value)
   .replace(/\bset[\s-]?up\b/g, 'start')
+  .replace(/\b(?:would|could)\s+like\s+to\b/g, 'want to')
   .replace(/\b(?:establish|establishing|launch|launching|open|opening|create|creating|register|registering)\b/g, 'start');
 const phraseTokens = (value: string): string[] => normalizeCatalogPhrase(value).match(/[\p{L}\p{N}]+/gu) ?? [];
 const optionalPhraseTokens = new Set(['a', 'an', 'for', 'in', 'of', 'on', 'the', 'to']);

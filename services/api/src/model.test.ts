@@ -296,4 +296,22 @@ describe('Azure Foundry model adapter', () => {
     expect(draft.answer).toContain('?');
     expect(draft.citationIds).toEqual(['chunk-1']);
   });
+
+  it('uses available package tool results for an unqualified package question', async () => {
+    const draft = await new DeterministicGroundedModel().draft({
+      maskedMessage: 'what all packages',
+      personaName: 'Zara',
+      evidence: [{ citation: { sourceId: 'source', versionId: 'version', chunkId: 'chunk-1', title: 'Approved packages', locator: 'section 1' }, content: 'Approved packages are available for company setup.' }],
+      followUpContext: {
+        leadCaptured: false,
+        primaryIntentKey: null,
+        responseMode: 'knowledge',
+        agentToolResults: [{ name: 'get_available_packages', ok: true, data: { packages: [{ name: 'Sandbox Basic', visas: 1, officeRequirement: 'flexi-desk' }, { name: 'Sandbox Growth', visas: 3, officeRequirement: 'shared office' }] } }],
+      },
+    });
+    expect(draft.answer).toContain('Sandbox Basic');
+    expect(draft.answer).toContain('Sandbox Growth');
+    expect(draft.answer).not.toContain('AED 4,888');
+    expect(draft.answer).toContain('?');
+  });
 });

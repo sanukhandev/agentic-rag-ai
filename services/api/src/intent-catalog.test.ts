@@ -47,6 +47,7 @@ describe('intent catalog', () => {
   it('normalizes generic company-setup verb paraphrases before catalog matching', () => {
     const variant = { ...version, catalog: { ...version.catalog, signals: [...version.catalog.signals, { intentKey: 'lead.capture', signalId: 'lead-4', signalType: 'phrase' as const, value: 'I want to start a company', language: 'en', matchMode: 'exact_phrase' as const, weight: 75, relationGroup: null, notes: '' }] } };
     expect(resolveIntent(variant, 'I want to set up a CCTV company').intentKey).toBe('lead.capture');
+    expect(resolveIntent(variant, 'I would like to start an IT service company').intentKey).toBe('lead.capture');
   });
 
   it('tolerates a single visitor spelling error while matching a published phrase', () => {
