@@ -1,12 +1,18 @@
 {
   "generatedAt": "2026-10-28",
   "branch": "feat/catalog-driven-journey-orchestration",
-  "testedCodeCommit": "897e1024ecf26c77b6f5e457acc8df9bcf738a9a",
-  "apiImage": "sha256:314572a76e24ba0ac1dd49a46aadf239cc7b4bb32b993e275c7fa78d623d7325",
+  "testedCodeCommit": "a3ec1eeafc26b502fb48c77f9536789165e3281a",
+  "apiImage": "sha256:bce5673e5053472d597fbc008c51e8682c2c4089fb19161077b33e9acf381679",
   "verdict": "CONVERSATION VERIFIED — EXTERNAL GATES REMAIN",
   "unitAndApiTests": { "passed": 277, "skipped": 1 },
   "focusedAppTests": { "passed": 45, "skipped": 0 },
   "typecheck": "passed",
+  "targetedSetupPackageRegression": {
+    "passed": true,
+    "sessionId": "f93cfd4d-f7ba-4155-996d-54b1960d41c8",
+    "customerTurns": 2,
+    "result": "IT-service setup context was preserved and approved ANC packages/prices were returned without generic fallback"
+  },
   "liveConversation": {
     "runId": "f52f8203-b955-40d6-8de6-a4490f2beb63",
     "customerTurns": 205,
