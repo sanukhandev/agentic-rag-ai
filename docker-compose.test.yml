@@ -1,0 +1,13 @@
+services:
+  api-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: node-source
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:-agentic_local_only}@postgres:5432/agentic_rag
+    command: ["npx", "vitest", "run", "--pool=threads", "--poolOptions.threads.singleThread=true"]

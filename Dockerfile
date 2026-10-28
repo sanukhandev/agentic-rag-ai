@@ -13,6 +13,7 @@ COPY tsconfig.base.json ./
 COPY apps ./apps
 COPY packages ./packages
 COPY services ./services
+COPY docs ./docs
 
 FROM node-source AS api-build
 RUN npm run build --workspace services/api

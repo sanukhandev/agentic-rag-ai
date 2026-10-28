@@ -12,7 +12,7 @@ describe('bounded agent tool runtime', () => {
     const results = await runAgentTools({}, { store, session, catalog: null, opportunityId: null, maskedQuery: 'What packages and pricing are available?' });
     expect(results.map((result) => result.name)).toEqual(expect.arrayContaining(['get_active_opportunity', 'get_confirmed_customer_facts', 'get_available_packages', 'get_authoritative_pricing']));
     expect(results.find((result) => result.name === 'get_confirmed_customer_facts')?.data).toMatchObject({ facts: { business_activity: { value: 'digital marketing' } } });
-    expect(results.find((result) => result.name === 'get_available_packages')).toMatchObject({ ok: false, errorCode: 'TOOL_NOT_AVAILABLE' });
+    expect(results.find((result) => result.name === 'get_available_packages')).toMatchObject({ ok: true, data: { status: 'unavailable', packages: [] } });
     expect(await store.listActionsBySession(session.id, tenant.id)).toHaveLength(0);
   });
 

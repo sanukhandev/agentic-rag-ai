@@ -60,6 +60,7 @@ const executeReadTool = async (name: AgentToolName, context: AgentToolContext): 
   const state = context.session.conversationState;
   const entry = scopedEntry(context);
   const intentKey = activeIntent(context);
+  const packageInput = { catalogVersionId: context.catalog?.id ?? state?.catalogVersionId ?? null, ...(state?.slotValues.business_activity ? { activity: state.slotValues.business_activity } : {}), ...(state?.slotValues.entity_type ? { entityType: state.slotValues.entity_type } : {}) };
   switch (name) {
     case 'get_active_opportunity':
       return { name, ok: true, data: { opportunityId: entry?.journeyId ?? context.opportunityId, intentKey, status: entry?.status ?? 'discovery', catalogVersionId: state?.catalogVersionId ?? context.catalog?.id ?? null } };
@@ -85,10 +86,18 @@ const executeReadTool = async (name: AgentToolName, context: AgentToolContext): 
     case 'search_approved_knowledge':
       if (!context.retrieve) return unavailable(name, 'Approved retrieval is not configured for this turn.');
       return { name, ok: true, data: { evidence: await context.retrieve(context.maskedQuery) } };
-    case 'get_available_packages':
-    case 'get_authoritative_pricing':
-    case 'get_package_document_requirements':
-      return unavailable(name, 'No approved package catalogue is published for this tenant and opportunity.');
+    case 'get_available_packages': {
+      const offerings = await context.store.listPackageOfferings(context.session.tenantId, packageInput);
+      return { name, ok: true, data: { status: offerings.length > 0 ? 'available' : 'unavailable', packages: offerings.map((offering) => ({ id: offering.id, key: offering.packageKey, name: offering.name, visas: offering.includedVisaQuantity, officeRequirement: offering.officeRequirement, inclusions: offering.inclusions, availability: offering.availability })) } };
+    }
+    case 'get_authoritative_pricing': {
+      const offerings = await context.store.listPackageOfferings(context.session.tenantId, packageInput);
+      return { name, ok: true, data: { status: offerings.some((offering) => offering.priceMinor !== null) ? 'available' : 'unavailable', pricing: offerings.map((offering) => ({ packageId: offering.id, name: offering.name, amountMinor: offering.priceMinor, currency: offering.currency, effectiveFrom: offering.pricingEffectiveFrom, effectiveTo: offering.pricingEffectiveTo, sourceRefs: offering.sourceRefs })) } };
+    }
+    case 'get_package_document_requirements': {
+      const offerings = await context.store.listPackageOfferings(context.session.tenantId, packageInput);
+      return { name, ok: true, data: { requirements: offerings.map((offering) => ({ packageId: offering.id, packageName: offering.name, documents: offering.requiredDocuments })) } };
+    }
     case 'get_crm_status': {
       const lead = await context.store.getCrmLeadBySessionId(context.session.id, context.session.tenantId);
       return { name, ok: true, data: { leadId: lead?.leadId ?? null, crm: lead?.remoteCrm ?? null, verified: Boolean(lead?.leadId && lead?.remoteCrm), account: { status: 'not_created', reason: 'Lead conversion is conditional and has not been verified for this opportunity.' } } };

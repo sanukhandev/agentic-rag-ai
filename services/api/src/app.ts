@@ -57,6 +57,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { runAgentTools, type AgentToolResult } from './agent-tools.js';
+import { registerLifecycleRoutes } from './routes/lifecycle.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null; normalizationAttempts: number; normalizationFallbacks: number; normalizationFailures: number; normalizationLatencyMs: number };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -615,6 +616,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       void channelApi(req, res, next).catch(next);
     });
   };
+  const authorizeChatSession = async (req: Request, session: Session): Promise<void> => {
+    ensureLiveSession(session.lastActivityAt, session.closedAt);
+    const tenant = await activeTenant(store, session.tenantId);
+    const channel = getChannel(req);
+    if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+    if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
+    else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.');
+  };
 
   registerHealthRoutes(app, { store, cache });
   registerAuthRoutes(app, { store, auth, nodeEnv, protectedApi, publicUser });
@@ -643,6 +652,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     modelConfigured: Boolean(dependencies.model),
     embeddingConfigured: Boolean(dependencies.embedding),
   });
+  registerLifecycleRoutes(app, { store, chatApi, routeParam, authorizeSession: authorizeChatSession });
 
   app.post('/api/v1/admin/ingestion-jobs', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
     try {

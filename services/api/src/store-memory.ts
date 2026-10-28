@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, DocumentProcessingJob, EventInboxClaim, EventInboxState, IngestionJob, IntentCatalogVersion, Message, OutboxEvent, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
+import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, DocumentProcessingJob, EventInboxClaim, EventInboxState, IngestionJob, IntentCatalogVersion, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
@@ -31,6 +31,12 @@ export class MemoryStore implements Store {
   private readonly crmLeadDedupe = new Map<string, string>();
   private readonly supportingDocuments = new Map<string, SupportingDocument>();
   private readonly documentJobs = new Map<string, DocumentProcessingJob>();
+  private readonly packageOfferings = new Map<string, PackageOffering>();
+  private readonly packageSelections = new Map<string, PackageSelection>();
+  private readonly quotes = new Map<string, Quote>();
+  private readonly crmAccounts = new Map<string, CrmAccount>();
+  private readonly invoices = new Map<string, Invoice>();
+  private readonly contracts = new Map<string, Contract>();
   private readonly outbox = new Map<string, OutboxEvent>();
   private readonly deadLetteredOutbox = new Set<string>();
   private readonly publishedDeadLetterProjections = new Set<string>();
@@ -488,6 +494,26 @@ export class MemoryStore implements Store {
   }
   async updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob> { this.documentJobs.set(job.id, job); return job; }
   async linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void> { for (const document of await this.listSupportingDocuments(tenantId, sessionId)) this.supportingDocuments.set(document.id, { ...document, leadId, updatedAt: now() }); }
+  async listPackageOfferings(tenantId: string, input: { catalogVersionId?: string | null; activity?: string; entityType?: string } = {}): Promise<PackageOffering[]> {
+    return [...this.packageOfferings.values()].filter((offering) => offering.tenantId === tenantId && offering.approvalStatus === 'approved' && (input.catalogVersionId === undefined || offering.catalogVersionId === input.catalogVersionId) && (!input.activity || offering.eligibleActivities.length === 0 || offering.eligibleActivities.some((value) => input.activity?.toLocaleLowerCase('en-US').includes(value.toLocaleLowerCase('en-US')))) && (!input.entityType || offering.eligibleEntityTypes.length === 0 || offering.eligibleEntityTypes.includes(input.entityType))).sort((left, right) => left.packageKey.localeCompare(right.packageKey));
+  }
+  async getPackageOffering(id: string, tenantId: string): Promise<PackageOffering | null> { const offering = this.packageOfferings.get(id); return offering?.tenantId === tenantId ? offering : null; }
+  async createPackageOffering(offering: PackageOffering): Promise<PackageOffering> { this.packageOfferings.set(offering.id, offering); return offering; }
+  async createPackageSelection(selection: PackageSelection): Promise<PackageSelection> { const existing = [...this.packageSelections.values()].find((candidate) => candidate.tenantId === selection.tenantId && candidate.opportunityId === selection.opportunityId && candidate.status === 'confirmed'); if (existing) throw new HttpError(409, 'PACKAGE_ALREADY_CONFIRMED', 'A package is already confirmed for this opportunity.'); this.packageSelections.set(selection.id, selection); return selection; }
+  async listPackageSelections(tenantId: string, opportunityId: string): Promise<PackageSelection[]> { return [...this.packageSelections.values()].filter((selection) => selection.tenantId === tenantId && selection.opportunityId === opportunityId).sort((left, right) => right.createdAt.localeCompare(left.createdAt)); }
+  async getPackageSelection(id: string, tenantId: string): Promise<PackageSelection | null> { const selection = this.packageSelections.get(id); return selection?.tenantId === tenantId ? selection : null; }
+  async confirmPackageSelection(id: string, tenantId: string, quoteId: string): Promise<PackageSelection | null> { const selection = await this.getPackageSelection(id, tenantId); if (!selection || selection.status !== 'proposed') return null; const updated = { ...selection, quoteId, status: 'confirmed' as const, confirmedAt: now(), updatedAt: now() }; this.packageSelections.set(id, updated); return updated; }
+  async createQuote(quote: Quote): Promise<Quote> { this.quotes.set(quote.id, quote); return quote; }
+  async getQuote(id: string, tenantId: string): Promise<Quote | null> { const quote = this.quotes.get(id); return quote?.tenantId === tenantId ? quote : null; }
+  async createCrmAccount(account: CrmAccount): Promise<CrmAccount> { this.crmAccounts.set(account.id, account); return account; }
+  async getCrmAccountByOpportunity(opportunityId: string, tenantId: string): Promise<CrmAccount | null> { return [...this.crmAccounts.values()].find((account) => account.tenantId === tenantId && account.opportunityId === opportunityId) ?? null; }
+  async updateCrmAccount(account: CrmAccount): Promise<CrmAccount> { this.crmAccounts.set(account.id, account); return account; }
+  async createInvoice(invoice: Invoice): Promise<Invoice> { const existing = [...this.invoices.values()].find((candidate) => candidate.tenantId === invoice.tenantId && candidate.quoteId === invoice.quoteId); if (existing) return existing; this.invoices.set(invoice.id, invoice); return invoice; }
+  async getInvoice(id: string, tenantId: string): Promise<Invoice | null> { const invoice = this.invoices.get(id); return invoice?.tenantId === tenantId ? invoice : null; }
+  async updateInvoice(invoice: Invoice): Promise<Invoice> { this.invoices.set(invoice.id, invoice); return invoice; }
+  async createContract(contract: Contract): Promise<Contract> { this.contracts.set(contract.id, contract); return contract; }
+  async getContract(id: string, tenantId: string): Promise<Contract | null> { const contract = this.contracts.get(id); return contract?.tenantId === tenantId ? contract : null; }
+  async updateContract(contract: Contract): Promise<Contract> { this.contracts.set(contract.id, contract); return contract; }
   async enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent> { const existing = this.outbox.get(event.eventId); if (existing) return existing; this.outbox.set(event.eventId, event); return event; }
   async claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]> {
     const current = Date.now();
