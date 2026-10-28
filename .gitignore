@@ -16,3 +16,5 @@ data/
 .tmp-intent-catalog-artifact
 login
 docs/feature-specs
+*.zip
+*.xlsx
