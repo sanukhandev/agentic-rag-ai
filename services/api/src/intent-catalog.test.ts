@@ -151,6 +151,19 @@ describe('intent catalog', () => {
     expect(validateIntentCatalog({ ...version.catalog }).catalog?.journeyRequirements).toBeUndefined();
   });
 
+  it('parses the ordered ANCFZ BusinessStages extension and rejects gaps', () => {
+    const rows = [
+      ['stage_order', 'stage_key', 'display_name', 'authoritative_owner', 'prerequisite_expression', 'success_evidence', 'workflow_key', 'on_failure', 'test_requirement', 'status'],
+      ...['lead_generation', 'lead_qualification', 'account_creation', 'package_selection', 'document_upload', 'billing_invoice', 'contract'].map((stageKey, index) => [index + 1, stageKey, stageKey, 'Node/Postgres', 'catalog gate', 'verified evidence', 'crm.lead.create', 'human_review', 'negative path', 'PROPOSED']),
+    ];
+    const result = validateIntentCatalog({ ...version.catalog, BusinessStages: rows });
+    expect(result.errors).toEqual([]);
+    expect(result.catalog?.businessStages?.map((stage) => stage.stageKey)).toEqual(['lead_generation', 'lead_qualification', 'account_creation', 'package_selection', 'document_upload', 'billing_invoice', 'contract']);
+    const invalid = validateIntentCatalog({ ...version.catalog, BusinessStages: rows.slice(0, 3) });
+    expect(invalid.catalog).toBeNull();
+    expect(invalid.errors.join(' ')).toContain('seven ordered lifecycle stages');
+  });
+
   it('never exposes catalog notes as visitor confirmation copy', () => {
     expect(catalogRequirementLabel({ intentKey: 'lead.capture', requirementKey: 'lead.contact-consent', requirementType: 'consent', required: true, collectionOrder: 1, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', slotKey: null, documentType: null, fulfillmentMode: 'conversation_ready', sourceOfTruth: 'tenant_catalog', notes: 'Internal review note.' })).toBe('explicit consent for this request');
     expect(catalogRequirementLabel({ intentKey: 'lead.capture', requirementKey: 'lead.contact-consent', requirementType: 'consent', required: true, collectionOrder: 1, promptKey: 'lead.ask_consent', validationRule: 'boolean:explicit_opt_in', slotKey: null, documentType: null, fulfillmentMode: 'conversation_ready', sourceOfTruth: 'tenant_catalog', visitorConfirmationText: 'I consent to contact for this enquiry.', notes: 'Internal review note.' })).toBe('I consent to contact for this enquiry.');

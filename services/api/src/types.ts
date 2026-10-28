@@ -129,6 +129,37 @@ export interface IntentCatalogJourneyTransition {
   notes: string;
 }
 
+export interface IntentCatalogBusinessStage {
+  order: number;
+  stageKey: LifecycleStage;
+  displayName: string;
+  authoritativeOwner: string;
+  prerequisiteExpression: string;
+  successEvidence: string;
+  workflowKey: string;
+  onFailure: string;
+  testRequirement: string;
+  status: 'PROPOSED' | 'ACTIVE';
+}
+
+export const lifecycleStages = ['lead_generation', 'lead_qualification', 'account_creation', 'package_selection', 'document_upload', 'billing_invoice', 'contract'] as const;
+export type LifecycleStage = typeof lifecycleStages[number];
+export type LifecycleStageStatus = 'not_started' | 'awaiting_customer' | 'ready' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'human_review';
+
+export interface LifecycleStageState {
+  stage: LifecycleStage;
+  status: LifecycleStageStatus;
+  revision: number;
+  evidence: Record<string, string | number | boolean>;
+  completedAt: string | null;
+}
+
+export interface LifecycleState {
+  currentStage: LifecycleStage;
+  revision: number;
+  stages: Record<LifecycleStage, LifecycleStageState>;
+}
+
 export interface IntentProgressEntry {
   intentKey: string;
   /** Durable opportunity identity. Legacy sessions may not have this until resumed. */
@@ -139,6 +170,7 @@ export interface IntentProgressEntry {
   /** Facts belong to this opportunity, never to the whole conversation. */
   slotValues?: Record<string, string>;
   slotProvenance?: Record<string, { source: 'visitor'; messageSequence: number; capturedAt: string; corrected: boolean }>;
+  lifecycle?: LifecycleState;
   revision: number;
 }
 
@@ -294,7 +326,7 @@ export interface IntentCatalogDocumentSettings {
   notes: string;
 }
 
-export type CrmAccountConversionRule = 'package_confirmed' | 'invoice_paid' | 'manual_approval';
+export type CrmAccountConversionRule = 'qualification_verified' | 'package_confirmed' | 'invoice_paid' | 'manual_approval';
 export interface IntentCatalogCrmAccountConversionPolicy {
   intentKey: string;
   workflowKey: string;
@@ -315,6 +347,7 @@ export interface IntentCatalog {
   qualityRules?: IntentCatalogQualityRule[];
   journeyRequirements?: IntentCatalogJourneyRequirement[];
   journeyTransitions?: IntentCatalogJourneyTransition[];
+  businessStages?: IntentCatalogBusinessStage[];
   documentPolicies?: IntentCatalogDocumentPolicy[];
   documentSettings?: IntentCatalogDocumentSettings;
   crmAccountConversionPolicies?: IntentCatalogCrmAccountConversionPolicy[];
@@ -528,6 +561,8 @@ export interface CrmLead {
   score: number;
   contactCompletenessScore?: number;
   validationPass: boolean;
+  qualificationStatus?: 'pending' | 'qualified' | 'disqualified' | 'reconcile_required';
+  qualificationEvidence?: Record<string, string | number | boolean>;
   leadData: LeadData;
   conversation: LeadConversationMessage[];
   summary: string | null;
@@ -830,6 +865,7 @@ export interface Store {
   listCrmLeads(tenantId: string): Promise<CrmLead[]>;
   updateCrmLeadSummary(id: string, tenantId: string, summary: string, status: CrmLead['summaryStatus']): Promise<CrmLead | null>;
   updateCrmLeadScore(id: string, tenantId: string, score: number): Promise<CrmLead | null>;
+  updateCrmLeadQualification(id: string, tenantId: string, status: CrmLead['qualificationStatus'], evidence?: CrmLead['qualificationEvidence']): Promise<CrmLead | null>;
   updateCrmLeadRemote(input: { id: string; tenantId: string; leadId: string; remoteCrm: string }): Promise<CrmLead | null>;
   createCrmLeadAssociation(association: CrmLeadAssociation): Promise<CrmLeadAssociation>;
   getCrmLeadAssociationByActionId(actionId: string, tenantId: string): Promise<CrmLeadAssociation | null>;

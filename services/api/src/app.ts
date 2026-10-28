@@ -1992,7 +1992,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const scored = await store.updateCrmLeadScore(lead.id, input.tenantId, input.score);
       const documents = scored ? await store.listSupportingDocuments(scored.tenantId, undefined, scored.id) : [];
       const composed = documents.some((document) => document.status === 'completed') ? `${input.summary}\n${composeDocumentSummary(scored!, documents)}`.slice(0, 20_000) : input.summary;
-      const updated = scored ? await store.updateCrmLeadSummary(scored.id, input.tenantId, composed, 'completed') : null;
+      const summarized = scored ? await store.updateCrmLeadSummary(scored.id, input.tenantId, composed, 'completed') : null;
+      const updated = summarized ? await store.updateCrmLeadQualification(summarized.id, input.tenantId, input.status, input.evidence) : null;
       if (!updated) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
       res.json({ lead: updated });
     } catch (error) { next(error); }

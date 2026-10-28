@@ -455,6 +455,13 @@ export class MemoryStore implements Store {
     this.crmLeads.set(id, updated);
     return updated;
   }
+  async updateCrmLeadQualification(id: string, tenantId: string, status: CrmLead['qualificationStatus'], evidence: CrmLead['qualificationEvidence'] = {}): Promise<CrmLead | null> {
+    const lead = await this.getCrmLead(id, tenantId);
+    if (!lead || !status) return null;
+    const updated = { ...lead, qualificationStatus: status, qualificationEvidence: { ...evidence }, updatedAt: now() };
+    this.crmLeads.set(id, updated);
+    return updated;
+  }
   async updateCrmLeadRemote(input: { id: string; tenantId: string; leadId: string; remoteCrm: string }): Promise<CrmLead | null> {
     const lead = await this.getCrmLead(input.id, input.tenantId);
     if (!lead) return null;

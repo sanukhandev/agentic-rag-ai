@@ -58,13 +58,6 @@ export const proposeAccountConversion = async (store: Store, session: Session, o
   const catalog = catalogVersionId ? await store.getIntentCatalogVersion(session.tenantId, catalogVersionId) : null;
   const conversionPolicy = catalog?.catalog.crmAccountConversionPolicies?.find((policy) => policy.intentKey === 'account.registration' && policy.workflowKey === 'crm.account.convert' && policy.conversionRule === conversionRule && policy.active);
   if (!conversionPolicy) throw new HttpError(409, 'ACCOUNT_CONVERSION_NOT_CONFIGURED', 'Account conversion is not enabled for this catalog and conversion rule.');
-  const confirmedSelection = (await store.listPackageSelections(session.tenantId, opportunityId)).find((selection) => selection.status === 'confirmed');
-  if (!confirmedSelection) throw new HttpError(409, 'PACKAGE_NOT_CONFIRMED', 'The package must be confirmed before Account conversion can be proposed.');
-  if (conversionRule === 'invoice_paid') {
-    const quote = confirmedSelection.quoteId ? await store.getQuote(confirmedSelection.quoteId, session.tenantId) : null;
-    const invoice = quote ? await store.getInvoiceByQuote(quote.id, session.tenantId) : null;
-    if (!invoice || invoice.status !== 'paid') throw new HttpError(409, 'PAYMENT_NOT_VERIFIED', 'The configured Account conversion rule requires a verified paid invoice.');
-  }
   const existing = await store.getCrmAccountByOpportunity(opportunityId, session.tenantId);
   if (existing) return existing;
   const actions = await store.listActionsBySession(session.id, session.tenantId);
@@ -72,6 +65,15 @@ export const proposeAccountConversion = async (store: Store, session: Session, o
   const association = leadAction ? await store.getCrmLeadAssociationByActionId(leadAction.id, session.tenantId) : null;
   const lead = association ? await store.getCrmLead(association.crmLeadId, session.tenantId) : await store.getCrmLeadBySessionId(session.id, session.tenantId);
   if (!lead?.leadId || !lead.remoteCrm) throw new HttpError(409, 'LEAD_NOT_VERIFIED', 'A verified remote Lead is required before Account conversion.');
+  if (lead.qualificationStatus !== 'qualified') throw new HttpError(409, 'QUALIFICATION_NOT_VERIFIED', 'Server-verified qualification is required before Account conversion.');
+  const confirmedSelection = (await store.listPackageSelections(session.tenantId, opportunityId)).find((selection) => selection.status === 'confirmed');
+  if (conversionRule === 'package_confirmed' && !confirmedSelection) throw new HttpError(409, 'PACKAGE_NOT_CONFIRMED', 'The package must be confirmed before Account conversion can be proposed.');
+  if (conversionRule === 'invoice_paid') {
+    if (!confirmedSelection) throw new HttpError(409, 'PACKAGE_NOT_CONFIRMED', 'The package must be confirmed before Account conversion can be proposed.');
+    const quote = confirmedSelection.quoteId ? await store.getQuote(confirmedSelection.quoteId, session.tenantId) : null;
+    const invoice = quote ? await store.getInvoiceByQuote(quote.id, session.tenantId) : null;
+    if (!invoice || invoice.status !== 'paid') throw new HttpError(409, 'PAYMENT_NOT_VERIFIED', 'The configured Account conversion rule requires a verified paid invoice.');
+  }
   return store.createCrmAccount({ id: randomUUID(), tenantId: session.tenantId, opportunityId, leadId: lead.id, remoteAccountId: null, remoteContactId: null, remoteOpportunityId: null, status: 'pending', conversionRule, verifiedAt: null, createdAt: now(), updatedAt: now() });
 };
 

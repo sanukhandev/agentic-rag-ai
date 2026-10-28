@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { ConversationPhase, ConversationState, IntentProgressEntry, IntentProgressState, PendingFollowUpOffer, PendingPrompt } from './types.js';
+import { newLifecycleState } from './lifecycle-state.js';
 
 const workflowStatusRank: Record<ConversationState['workflowStatus'], number> = { none: 0, awaiting_customer: 1, queued: 1, processing: 2, human_review: 3, reconcile_required: 3, failed: 3, succeeded: 4 };
 
@@ -37,7 +38,7 @@ export const newIntentProgress = (): IntentProgressState => ({ version: 1, activ
 
 const normalizeIntentProgress = (progress: IntentProgressState | undefined): IntentProgressState => {
   if (!progress || progress.version !== 1) return newIntentProgress();
-  const normalizeEntry = (entry: IntentProgressEntry): IntentProgressEntry => ({ intentKey: entry.intentKey, ...(entry.journeyId ? { journeyId: entry.journeyId } : {}), status: entry.status, completedRequirementKeys: [...new Set((entry.completedRequirementKeys ?? []).slice(0, 64))], currentRequirementKey: entry.currentRequirementKey ?? null, slotValues: { ...(entry.slotValues ?? {}) }, slotProvenance: { ...(entry.slotProvenance ?? {}) }, revision: Math.max(0, Math.floor(entry.revision ?? 0)) });
+  const normalizeEntry = (entry: IntentProgressEntry): IntentProgressEntry => ({ intentKey: entry.intentKey, ...(entry.journeyId ? { journeyId: entry.journeyId } : {}), status: entry.status, completedRequirementKeys: [...new Set((entry.completedRequirementKeys ?? []).slice(0, 64))], currentRequirementKey: entry.currentRequirementKey ?? null, slotValues: { ...(entry.slotValues ?? {}) }, slotProvenance: { ...(entry.slotProvenance ?? {}) }, lifecycle: entry.lifecycle ?? newLifecycleState(), revision: Math.max(0, Math.floor(entry.revision ?? 0)) });
   const entries = Object.fromEntries(Object.entries(progress.entries ?? {}).slice(0, 32).map(([key, entry]) => [key, normalizeEntry(entry)])) as IntentProgressState['entries'];
   const journeys = Object.fromEntries(Object.entries(progress.journeys ?? entries).slice(0, 64).map(([key, entry]) => [entry.journeyId ?? key, normalizeEntry(entry)]));
   return { version: 1, activeIntentKey: progress.activeIntentKey ?? null, pausedIntentKeys: [...new Set((progress.pausedIntentKeys ?? []).slice(0, 16))], fulfilledIntentKeys: [...new Set((progress.fulfilledIntentKeys ?? []).slice(0, 16))], entries, journeys, visitedIntentKeys: [...new Set((progress.visitedIntentKeys ?? []).slice(0, 32))], lastTransitionReason: progress.lastTransitionReason ?? null, ...(progress.lastDeclinedTransition ? { lastDeclinedTransition: progress.lastDeclinedTransition } : {}), journeyRevision: Math.max(0, Math.floor(progress.journeyRevision ?? 0)) };

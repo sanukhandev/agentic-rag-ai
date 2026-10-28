@@ -75,7 +75,7 @@ export const crmLeadSchema = z.object({
 });
 export const crmSummarySchema = z.object({ tenantId: z.string().uuid(), summary: z.string().trim().min(1).max(20_000), status: z.enum(['completed', 'failed']) });
 export const crmAdminSummarySchema = z.object({}).strict();
-export const crmQualificationSchema = z.object({ tenantId: z.string().uuid(), score: z.number().int().min(0).max(100), summary: z.string().trim().min(1).max(20_000) });
+export const crmQualificationSchema = z.object({ tenantId: z.string().uuid(), score: z.number().int().min(0).max(100), summary: z.string().trim().min(1).max(20_000), status: z.enum(['qualified', 'disqualified', 'reconcile_required']).default('qualified'), evidence: z.record(z.string().trim().min(1).max(100), z.union([z.string().trim().max(500), z.number(), z.boolean()])).default({}) });
 export const crmRemoteSchema = z.object({ tenantId: z.string().uuid(), leadId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteCrm: z.string().trim().min(1).max(80).regex(/^[A-Za-z][A-Za-z0-9._:-]*$/u) });
 export const crmRemotePayloadSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid() });
 export const crmRemoteReconcileSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid() });
@@ -108,7 +108,7 @@ export const lifecycleQuoteSchema = lifecyclePackageProposalSchema;
 export const lifecycleSelectionConfirmationSchema = z.object({ quoteId: z.string().uuid() }).strict();
 export const lifecycleInvoiceSchema = z.object({ opportunityId: z.string().uuid(), quoteId: z.string().uuid() }).strict();
 export const lifecycleContractSchema = z.object({ opportunityId: z.string().uuid(), packageSelectionId: z.string().uuid(), invoiceId: z.string().uuid() }).strict();
-export const lifecycleAccountProposalSchema = lifecycleOpportunitySchema.extend({ conversionRule: z.enum(['package_confirmed', 'invoice_paid', 'manual_approval']) }).strict();
+export const lifecycleAccountProposalSchema = lifecycleOpportunitySchema.extend({ conversionRule: z.enum(['qualification_verified', 'package_confirmed', 'invoice_paid', 'manual_approval']) }).strict();
 export const crmAccountRemoteSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid(), remoteAccountId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteContactId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteOpportunityId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u) }).strict();
 export const crmAccountRemotePayloadSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid() }).strict();
 export const invoiceRemoteSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid(), externalInvoiceId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), paymentUrl: z.string().url().max(2_000), status: z.enum(['pending', 'paid', 'failed']) }).strict();

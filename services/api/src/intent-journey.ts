@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { IntentCatalogVersion, IntentProgressEntry, IntentProgressState } from './types.js';
+import { newLifecycleState } from './lifecycle-state.js';
 import { catalogFollowUpRequirements, catalogJourneyRequirements, catalogNextFollowUpRequirement, catalogNextJourneyRequirement, journeyRequirementFulfilled } from './intent-catalog.js';
 
 const MAX_INTENTS = 16;
@@ -30,7 +31,7 @@ export interface JourneyReducerResult {
   transitionPromptKey?: string | null;
 }
 
-const entry = (intentKey: string, status: IntentProgressEntry['status'] = 'active'): IntentProgressEntry => ({ intentKey, journeyId: randomUUID(), status, completedRequirementKeys: [], currentRequirementKey: null, slotValues: {}, slotProvenance: {}, revision: 0 });
+const entry = (intentKey: string, status: IntentProgressEntry['status'] = 'active'): IntentProgressEntry => ({ intentKey, journeyId: randomUUID(), status, completedRequirementKeys: [], currentRequirementKey: null, slotValues: {}, slotProvenance: {}, lifecycle: newLifecycleState(), revision: 0 });
 
 const ensureEntry = (progress: IntentProgressState, intentKey: string): IntentProgressEntry => {
   const current = progress.entries[intentKey];
