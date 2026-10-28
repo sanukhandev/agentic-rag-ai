@@ -73,6 +73,7 @@ describe('Azure Foundry model adapter', () => {
     expect(needsConversationContext('Tell me about Sanu Khan')).toBe(false);
     expect(isKnowledgeQuestion('what all are the requirements?')).toBe(true);
     expect(isKnowledgeQuestion('I would like to know how the shared office works')).toBe(true);
+    expect(isKnowledgeQuestion('I want to start a digital marketing company and would like to know the steps and cost')).toBe(true);
     expect(isKnowledgeQuestion('Can I book a demo?')).toBe(false);
     expect(hasLeadIntent('Please contact me about a demo')).toBe(true);
     expect(hasLeadIntent('I would like get service from Sanu')).toBe(true);

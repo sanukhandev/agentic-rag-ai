@@ -410,8 +410,11 @@ export const needsConversationContext = (text: string): boolean => {
 
 export const isKnowledgeQuestion = (text: string): boolean => {
   const normalized = normalizeConversationQuery(text).toLocaleLowerCase('en-US');
-  return !hasLeadIntent(normalized)
-    && (/[?؟]/u.test(normalized) || /^(?:what|how|where|which|why|when|who|can(?: you)?|could(?: you)?|would(?: you)?|is|are|does|should|will|do\s+(?:you|we|they|i)|tell me|please explain)\b/u.test(normalized) || /\b(?:i(?:'d| would| want) like to know|i want to understand)\b/u.test(normalized));
+  const directActionRequest = /^(?:can|could|would)\s+i\s+(?:book|schedule|request|arrange)\b|^(?:book|schedule|request|arrange)\s+(?:a\s+)?(?:demo|quote|call|consultation|meeting|appointment)\b/u.test(normalized);
+  return !directActionRequest && (/[?؟]/u.test(normalized)
+    || /^(?:what|how|where|which|why|when|who|can(?: you)?|could(?: you)?|would(?: you)?|is|are|does|should|will|do\s+(?:you|we|they|i)|tell me|please explain)\b/u.test(normalized)
+    || /\b(?:i(?:'d| would| want)|would) like to know\b/u.test(normalized)
+    || /\bi want to understand\b/u.test(normalized));
 };
 
 /** A short non-question can answer the last journey question without being a knowledge query. */
