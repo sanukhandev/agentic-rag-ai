@@ -322,7 +322,7 @@ export class AzureFoundryModel implements ChatModel {
     const content = body.choices?.[0]?.message?.content;
     if (typeof content !== 'string') return { calls: [] };
     try {
-      const parsed = z.object({ calls: z.array(z.object({ name: z.string().min(1).max(100), input: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}) }).strict()).max(8) }).strict().parse(JSON.parse(content));
+      const parsed = z.object({ calls: z.array(z.object({ name: z.string().min(1).max(100), input: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}) }).strict()).max(8) }).strict().parse(JSON.parse(content));
       return { calls: parsed.calls };
     } catch { return { calls: [] }; }
   }

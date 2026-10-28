@@ -3,7 +3,7 @@
 Date: 2026-10-29  
 Branch: `feat/ancfz-seven-stage-lifecycle-acceptance`  
 Bootstrap: `c863f5fcfc189a460688e4815cce4080b70de598`  
-Implementation commits after bootstrap: 54
+Implementation commits after bootstrap: 55
 
 ## Result
 
@@ -26,12 +26,38 @@ Salesforce, n8n, payment, signing, or fresh-source publication claim is made.
 - Database backup completed before migration. Migration 053 applied successfully
   after the local backup; lifecycle table count is 7, pgvector is 0.8.7, and
   revoked starter package rows are not available for customer selection.
-- Correct Docker PostgreSQL test path:
-  `docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm api-test`
-  — 42 test files passed, 277 tests passed, 1 Redis test skipped.
-- Workspace tests: admin 45, web 14, API 209/11 skipped, chat-utils 3,
-  contracts 3. Typecheck, lint, production build, compose verification, and
-  repository secret scan passed.
+- Correct Docker PostgreSQL test path after the dependency upgrade:
+  `docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm --build api-test`
+  — 43 test files passed, 1 optional Redis test file skipped, 284 tests passed,
+  1 skipped. The workspace `npm test`, typecheck, lint and production builds
+  also passed after the upgrade.
+- Workspace tests before the Docker aggregate: admin 45, web 14, API 209/11
+  skipped, chat-utils 3, contracts 3. Compose verification and the repository
+  secret scan passed.
+- Production dependency audit is clean after upgrading the API runtime to
+  `body-parser@2.4.0` and `zod@4.6.7`:
+  `npm audit --omit=dev --audit-level=high --json` reports zero vulnerabilities.
+  The redacted package audit evidence is [full audit JSON](../../artifacts/ancfz/npm-audit-final-2026-10-29.json)
+  and [production audit JSON](../../artifacts/ancfz/npm-audit-prod-final-2026-10-29.json).
+- The two production high advisories were:
+  - `GHSA-27r3-jxmh-p828` (`body-parser`, CVSS 7.5): a network-reachable
+    denial of service when trailing bytes follow a compressed request body.
+    The affected runtime tree was `express@5.3.0 -> body-parser@2.3.0`, range
+    `>=2.0.0 <2.4.0`; `body-parser@2.4.0` is now installed directly in the API
+    workspace to pin the patched transitive runtime.
+  - `GHSA-mrhx-c7xc-m3w5` (`zod`, CVSS 7.5): memory exhaustion while validating
+    oversized constrained collections supplied at an untrusted boundary. The
+    affected direct API/contracts dependency was `zod@3.25.76`, fixed from
+    `4.6.6`; `zod@4.6.7` is now installed. Zod 4 compatibility changes preserve
+    the prior GUID-shaped identifier contract and all tests pass.
+- The unfiltered `npm audit --json` remains non-zero only for development
+  tooling: 1 low, 9 moderate, 5 high and 2 critical findings. The remaining
+  high findings are in Angular CLI, MCP SDK, nested development `body-parser`,
+  undici and Vite; the two critical findings are in Vitest/tinypool. npm's
+  available remediation for the Vitest findings is the major upgrade to
+  `vitest@5.0.5`. The current Angular compiler CLI has no matching
+  `21.2.29` release, so no broad or incompatible dev-tooling upgrade was
+  applied. These packages are not in the production dependency set.
 - Starter workflow tests 2/2; fresh-RAG preflight tests 4/4; mock payment tests
   5/5; PDF renderer tests 4/4.
 - PDF fixture inspection passed: `quote.mock.pdf` and `invoice.mock.pdf` each
@@ -68,9 +94,8 @@ Salesforce, n8n, payment, signing, or fresh-source publication claim is made.
   not verified against live n8n/Salesforce dependencies.
 - Payment and signing remain explicitly mock/development-only. No real card data
   was collected and no production payment or signing provider was contacted.
-- `npm audit --omit=dev --audit-level=high` reports two high vulnerabilities:
-  `body-parser` and `zod`. The available fixes include a breaking Zod major
-  upgrade; no dependency upgrade was made without a scoped compatibility task.
+- The unfiltered audit is not fully clean because of the explicitly documented
+  development-only findings above. The production audit is clean.
 - `npm run verify:local` is not green in this checkout because its host process
   targets `127.0.0.1:54329`, while the Compose PostgreSQL service is intentionally
   internal-only. Its 10 host-side PostgreSQL failures are connection refusals;

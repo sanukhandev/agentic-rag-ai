@@ -1012,7 +1012,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
   app.post('/api/v1/internal/documents/:id/process', n8nInternalApi, async (req, res, next) => {
     try {
-      const input = parse(z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid() }), req.body);
+      const input = parse(z.object({ tenantId: z.string().guid(), jobId: z.string().guid() }), req.body);
       const document = await store.getSupportingDocument(routeParam(req, 'id'), input.tenantId);
       const job = await store.getDocumentProcessingJob(input.jobId, input.tenantId);
       const config = await documentConfig(input.tenantId);
@@ -1855,8 +1855,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.post('/api/v1/internal/crm/contact-lookup', n8nInternalApi, async (req, res, next) => {
     try {
       const input = parse(z.object({
-        tenantId: z.string().uuid(), sessionId: z.string().uuid(),
-        actionId: z.string().uuid(),
+        tenantId: z.string().guid(), sessionId: z.string().guid(),
+        actionId: z.string().guid(),
       }), req.body);
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId || action.sessionId !== input.sessionId
@@ -2138,7 +2138,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const body = JSON.stringify(req.body);
       if (!verifyN8nPayload(n8nCallbackSecret, timestamp, nonce, body, signature)) throw new HttpError(401, 'INVALID_CALLBACK', 'Callback authentication failed.');
       if (!(await store.claimCallbackNonce(nonce, new Date(Date.now() + 300_000).toISOString()))) throw new HttpError(401, 'REPLAYED_CALLBACK', 'Callback replay rejected.');
-      const input = parse(z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['completed', 'failed']), externalReference: z.string().refine(isSafeExternalReference, 'An opaque external reference is required.'), executionReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u), eventId: z.string().uuid(), correlationId: z.string().uuid(), attempt: z.number().int().min(1).max(100_000) }), req.body);
+      const input = parse(z.object({ actionId: z.string().guid(), tenantId: z.string().guid(), state: z.enum(['completed', 'failed']), externalReference: z.string().refine(isSafeExternalReference, 'An opaque external reference is required.'), executionReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u), eventId: z.string().guid(), correlationId: z.string().guid(), attempt: z.number().int().min(1).max(100_000) }), req.body);
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
       const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt);

@@ -49,46 +49,46 @@ export const ingestionResultSchema = z.object({
   warnings: z.array(z.string().trim().min(1).max(500)).max(100).default([]),
 });
 export const ingestionFailureSchema = z.object({ errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('INGESTION_FAILED'), errorDetail: z.string().trim().min(1).max(2_000).optional() });
-export const ingestionRenewSchema = z.object({ jobId: z.string().uuid(), leaseMs: z.number().int().min(60_000).max(900_000).default(120_000) });
-export const sessionSchema = z.object({ tenantId: z.string().uuid().optional(), tenantSlug: z.string().regex(/^[a-z0-9-]+$/).optional() });
-export const messageSchema = z.object({ sessionId: z.string().uuid(), type: z.enum(['text', 'postback', 'attachment']).default('text'), message: z.string().trim().max(4000).default(''), postbackValue: z.string().trim().max(4000).optional(), replyToPromptId: z.string().uuid().optional(), clientMessageId: z.string().trim().min(1).max(128) }).superRefine((value, context) => {
+export const ingestionRenewSchema = z.object({ jobId: z.string().guid(), leaseMs: z.number().int().min(60_000).max(900_000).default(120_000) });
+export const sessionSchema = z.object({ tenantId: z.string().guid().optional(), tenantSlug: z.string().regex(/^[a-z0-9-]+$/).optional() });
+export const messageSchema = z.object({ sessionId: z.string().guid(), type: z.enum(['text', 'postback', 'attachment']).default('text'), message: z.string().trim().max(4000).default(''), postbackValue: z.string().trim().max(4000).optional(), replyToPromptId: z.string().guid().optional(), clientMessageId: z.string().trim().min(1).max(128) }).superRefine((value, context) => {
   if (value.type === 'postback' && !value.postbackValue && !value.message) context.addIssue({ code: z.ZodIssueCode.custom, path: ['postbackValue'], message: 'A postback value is required.' });
   if (value.type !== 'postback' && !value.message) context.addIssue({ code: z.ZodIssueCode.custom, path: ['message'], message: 'A message is required.' });
 });
-export const confirmSchema = z.object({ sessionId: z.string().uuid(), confirmed: z.literal(true) });
+export const confirmSchema = z.object({ sessionId: z.string().guid(), confirmed: z.literal(true) });
 export const retentionSchema = z.object({ before: z.string().datetime() });
 export const historyQuerySchema = z.object({ limit: z.coerce.number().int().min(1).max(200).default(100) });
 const leadTokenSchema = z.string().regex(/^\[(?:NAME|EMAIL|PHONE)_\d+\]$/);
 export const crmLeadSchema = z.object({
-  actionId: z.string().uuid(),
-  tenantId: z.string().uuid(),
-  sessionId: z.string().uuid(),
+  actionId: z.string().guid(),
+  tenantId: z.string().guid(),
+  sessionId: z.string().guid(),
   leadData: z.object({ name: leadTokenSchema.optional(), email: leadTokenSchema.optional(), phone: leadTokenSchema.optional(), interest: z.string().trim().min(1).max(200).optional(), slotValues: z.record(z.string().regex(/^[a-z][a-z0-9._-]{0,79}$/u), z.string().trim().max(2000)).optional(), contactConsent: z.boolean().optional() }).strict(),
   intent: z.string().trim().min(1).max(80),
   intentScore: z.number().int().min(0).max(100).optional(),
   intentConfidence: z.number().min(0).max(1).optional(),
-  catalogVersionId: z.string().uuid().nullable().optional(),
+  catalogVersionId: z.string().guid().nullable().optional(),
   score: z.number().int().min(0).max(100),
   validationPass: z.boolean(),
   conversation: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(20_000), createdAt: z.string().datetime() })).min(1).max(200),
   completeAction: z.boolean().default(true)
 });
-export const crmSummarySchema = z.object({ tenantId: z.string().uuid(), summary: z.string().trim().min(1).max(20_000), status: z.enum(['completed', 'failed']) });
+export const crmSummarySchema = z.object({ tenantId: z.string().guid(), summary: z.string().trim().min(1).max(20_000), status: z.enum(['completed', 'failed']) });
 export const crmAdminSummarySchema = z.object({}).strict();
-export const crmQualificationSchema = z.object({ tenantId: z.string().uuid(), score: z.number().int().min(0).max(100), summary: z.string().trim().min(1).max(20_000), status: z.enum(['qualified', 'disqualified', 'reconcile_required']).default('qualified'), evidence: z.record(z.string().trim().min(1).max(100), z.union([z.string().trim().max(500), z.number(), z.boolean()])).default({}) });
-export const crmRemoteSchema = z.object({ tenantId: z.string().uuid(), leadId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteCrm: z.string().trim().min(1).max(80).regex(/^[A-Za-z][A-Za-z0-9._:-]*$/u) });
-export const crmRemotePayloadSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid() });
-export const crmRemoteReconcileSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid() });
+export const crmQualificationSchema = z.object({ tenantId: z.string().guid(), score: z.number().int().min(0).max(100), summary: z.string().trim().min(1).max(20_000), status: z.enum(['qualified', 'disqualified', 'reconcile_required']).default('qualified'), evidence: z.record(z.string().trim().min(1).max(100), z.union([z.string().trim().max(500), z.number(), z.boolean()])).default({}) });
+export const crmRemoteSchema = z.object({ tenantId: z.string().guid(), leadId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteCrm: z.string().trim().min(1).max(80).regex(/^[A-Za-z][A-Za-z0-9._:-]*$/u) });
+export const crmRemotePayloadSchema = z.object({ tenantId: z.string().guid(), actionId: z.string().guid() });
+export const crmRemoteReconcileSchema = z.object({ tenantId: z.string().guid(), actionId: z.string().guid() });
 const workflowExecutionReference = z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u);
-export const workflowClaimSchema = z.object({ actionId: z.string().uuid().optional(), tenantId: z.string().uuid().optional(), workflowKey: z.string().trim().regex(/^[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)+$/i).optional(), n8nWorkflowId: z.string().trim().min(1).max(120), contract: z.string().trim().min(1).max(120).optional(), executionReference: workflowExecutionReference, eventId: z.string().uuid().optional(), correlationId: z.string().uuid().optional(), attempt: z.number().int().min(1).max(100_000).optional(), limit: z.number().int().min(1).max(50).default(10) }).superRefine((value, context) => {
+export const workflowClaimSchema = z.object({ actionId: z.string().guid().optional(), tenantId: z.string().guid().optional(), workflowKey: z.string().trim().regex(/^[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)+$/i).optional(), n8nWorkflowId: z.string().trim().min(1).max(120), contract: z.string().trim().min(1).max(120).optional(), executionReference: workflowExecutionReference, eventId: z.string().guid().optional(), correlationId: z.string().guid().optional(), attempt: z.number().int().min(1).max(100_000).optional(), limit: z.number().int().min(1).max(50).default(10) }).superRefine((value, context) => {
   if (value.actionId && !value.tenantId) context.addIssue({ code: z.ZodIssueCode.custom, path: ['tenantId'], message: 'Webhook claims require the server-issued tenant id.' });
   if (value.actionId && !value.eventId) context.addIssue({ code: z.ZodIssueCode.custom, path: ['eventId'], message: 'Webhook claims require the server-issued event id.' });
   if (value.actionId && !value.correlationId) context.addIssue({ code: z.ZodIssueCode.custom, path: ['correlationId'], message: 'Webhook claims require the server-issued correlation id.' });
   if (value.actionId && value.attempt === undefined) context.addIssue({ code: z.ZodIssueCode.custom, path: ['attempt'], message: 'Webhook claims require the server-issued attempt.' });
 });
 const opaqueReference = z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u).optional();
-const workflowCorrelationFields = { eventId: z.string().uuid().optional(), correlationId: z.string().uuid().optional(), attempt: z.number().int().min(1).max(100_000).optional() };
-export const workflowCompletionSchema = z.object({ actionId: z.string().uuid(), tenantId: z.string().uuid(), state: z.enum(['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review']), externalReference: opaqueReference, executionReference: opaqueReference, ...workflowCorrelationFields }).superRefine((value, context) => {
+const workflowCorrelationFields = { eventId: z.string().guid().optional(), correlationId: z.string().guid().optional(), attempt: z.number().int().min(1).max(100_000).optional() };
+export const workflowCompletionSchema = z.object({ actionId: z.string().guid(), tenantId: z.string().guid(), state: z.enum(['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review']), externalReference: opaqueReference, executionReference: opaqueReference, ...workflowCorrelationFields }).superRefine((value, context) => {
   if (value.state === 'completed' || value.state === 'failed') {
     if (!value.executionReference) context.addIssue({ code: z.ZodIssueCode.custom, path: ['executionReference'], message: 'Provider terminal transitions require an execution reference.' });
     if (!value.eventId) context.addIssue({ code: z.ZodIssueCode.custom, path: ['eventId'], message: 'Provider terminal transitions require an event id.' });
@@ -97,22 +97,22 @@ export const workflowCompletionSchema = z.object({ actionId: z.string().uuid(), 
   }
 });
 export const workflowTransitionSchema = z.object({ state: z.enum(['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review']), externalReference: opaqueReference, executionReference: opaqueReference, ...workflowCorrelationFields });
-export const crmQualitySchema = z.object({ tenantId: z.string().uuid(), score: z.number().int().min(0).max(100), qualityWorkflowKey: z.string().trim().min(1).max(80), catalogVersionId: z.string().uuid(), intentKey: z.string().trim().min(1).max(80) });
+export const crmQualitySchema = z.object({ tenantId: z.string().guid(), score: z.number().int().min(0).max(100), qualityWorkflowKey: z.string().trim().min(1).max(80), catalogVersionId: z.string().guid(), intentKey: z.string().trim().min(1).max(80) });
 export const documentUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.string().trim().min(1).max(160), contentBase64: z.string().min(1).max(MAX_DOCUMENT_BASE64_CHARS), processingConsent: z.literal(true), primaryIntentKey: z.string().trim().min(1).max(80).optional(), requirementKey: z.string().trim().min(1).max(120).optional() });
-export const documentResultSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), extractedText: z.string().max(100_000).default(''), summary: z.string().max(20_000).default(''), executionReference: z.string().trim().max(200).regex(/^[A-Za-z0-9._:-]+$/u).optional() });
-export const documentFailureSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('DOCUMENT_OCR_FAILED') });
-export const documentRenewSchema = z.object({ tenantId: z.string().uuid(), jobId: z.string().uuid(), leaseMs: z.number().int().min(60_000).max(900_000).default(120_000) });
-export const lifecycleOpportunitySchema = z.object({ opportunityId: z.string().uuid() }).strict();
-export const lifecyclePackageProposalSchema = lifecycleOpportunitySchema.extend({ packageOfferingId: z.string().uuid() }).strict();
+export const documentResultSchema = z.object({ tenantId: z.string().guid(), jobId: z.string().guid(), extractedText: z.string().max(100_000).default(''), summary: z.string().max(20_000).default(''), executionReference: z.string().trim().max(200).regex(/^[A-Za-z0-9._:-]+$/u).optional() });
+export const documentFailureSchema = z.object({ tenantId: z.string().guid(), jobId: z.string().guid(), errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('DOCUMENT_OCR_FAILED') });
+export const documentRenewSchema = z.object({ tenantId: z.string().guid(), jobId: z.string().guid(), leaseMs: z.number().int().min(60_000).max(900_000).default(120_000) });
+export const lifecycleOpportunitySchema = z.object({ opportunityId: z.string().guid() }).strict();
+export const lifecyclePackageProposalSchema = lifecycleOpportunitySchema.extend({ packageOfferingId: z.string().guid() }).strict();
 export const lifecycleQuoteSchema = lifecyclePackageProposalSchema;
-export const lifecycleSelectionConfirmationSchema = z.object({ quoteId: z.string().uuid() }).strict();
-export const lifecycleInvoiceSchema = z.object({ opportunityId: z.string().uuid(), quoteId: z.string().uuid() }).strict();
-export const lifecycleContractSchema = z.object({ opportunityId: z.string().uuid(), packageSelectionId: z.string().uuid(), invoiceId: z.string().uuid() }).strict();
+export const lifecycleSelectionConfirmationSchema = z.object({ quoteId: z.string().guid() }).strict();
+export const lifecycleInvoiceSchema = z.object({ opportunityId: z.string().guid(), quoteId: z.string().guid() }).strict();
+export const lifecycleContractSchema = z.object({ opportunityId: z.string().guid(), packageSelectionId: z.string().guid(), invoiceId: z.string().guid() }).strict();
 export const lifecycleAccountProposalSchema = lifecycleOpportunitySchema.extend({ conversionRule: z.enum(['qualification_verified', 'package_confirmed', 'invoice_paid', 'manual_approval']) }).strict();
-export const crmAccountRemoteSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid(), remoteAccountId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteContactId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteOpportunityId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u) }).strict();
-export const crmAccountRemotePayloadSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid() }).strict();
-export const invoiceRemoteSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid(), externalInvoiceId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), paymentUrl: z.string().url().max(2_000), status: z.enum(['pending', 'paid', 'failed']) }).strict();
-export const paymentStatusSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid(), externalInvoiceId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), status: z.enum(['pending', 'paid', 'failed']) }).strict();
-export const contractRemoteSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid(), externalContractId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), signingUrl: z.string().url().max(2_000).nullable(), status: z.enum(['approval_required', 'sent', 'signed']) }).strict();
-export const invoiceRemotePayloadSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid() }).strict();
-export const contractRemotePayloadSchema = z.object({ tenantId: z.string().uuid(), actionId: z.string().uuid() }).strict();
+export const crmAccountRemoteSchema = z.object({ tenantId: z.string().guid(), actionId: z.string().guid(), remoteAccountId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteContactId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteOpportunityId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u) }).strict();
+export const crmAccountRemotePayloadSchema = z.object({ tenantId: z.string().guid(), actionId: z.string().guid() }).strict();
+export const invoiceRemoteSchema = z.object({ tenantId: z.string().guid(), actionId: z.string().guid(), externalInvoiceId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), paymentUrl: z.string().url().max(2_000), status: z.enum(['pending', 'paid', 'failed']) }).strict();
+export const paymentStatusSchema = z.object({ tenantId: z.string().guid(), actionId: z.string().guid(), externalInvoiceId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), status: z.enum(['pending', 'paid', 'failed']) }).strict();
+export const contractRemoteSchema = z.object({ tenantId: z.string().guid(), actionId: z.string().guid(), externalContractId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), signingUrl: z.string().url().max(2_000).nullable(), status: z.enum(['approval_required', 'sent', 'signed']) }).strict();
+export const invoiceRemotePayloadSchema = z.object({ tenantId: z.string().guid(), actionId: z.string().guid() }).strict();
+export const contractRemotePayloadSchema = z.object({ tenantId: z.string().guid(), actionId: z.string().guid() }).strict();

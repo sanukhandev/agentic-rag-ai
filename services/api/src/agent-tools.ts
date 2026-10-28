@@ -23,7 +23,7 @@ export const agentToolNames = [
 
 export type AgentToolName = (typeof agentToolNames)[number];
 
-const toolInput = z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).default({});
+const toolInput = z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).default({});
 const toolCallSchema = z.object({ name: z.enum(agentToolNames), input: toolInput }).strict();
 
 export interface AgentToolContext {
