@@ -114,7 +114,7 @@ const groundedKnowledgeFallback = (question: string, evidence: ModelEvidence[]):
     .values()];
   if (safeSentences.length === 0) return null;
   const answer = processQuestion
-    ? `The approved setup information covers these steps: ${safeSentences.map((sentence, index) => `${index + 1}) ${sentence}`).join(' ')}`
+    ? safeSentences.map((sentence, index) => `${index + 1}) ${sentence}`).join(' ')
     : safeSentences.join(' ');
   return { answer, citationIds: evidence.filter((item) => safeSentences.some((sentence) => item.content.includes(sentence))).map((item) => item.citation.chunkId).slice(0, 4), proposedIntent: null };
 };
