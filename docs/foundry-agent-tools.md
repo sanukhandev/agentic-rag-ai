@@ -24,7 +24,7 @@ The production contract is Microsoft Entra ID bearer-token validation:
 
 Tenant scope is selected from server configuration, never from the request body or model output. The gateway verifies issuer, audience, signature, expiry, key ID, application ID, and configured tenant mapping. Azure resource Reader permissions are not treated as business-data authorization.
 
-For controlled development only, set `FOUNDRY_TOOLS_ALLOW_API_KEY=true`, `FOUNDRY_TOOLS_API_KEY`, and `FOUNDRY_TOOLS_API_KEY_TENANT_ID` outside source control. The API-key variant is in `openapi/foundry-agent-tools.api-key.openapi.json`; it is rejected by the application in production.
+For controlled development only, set `FOUNDRY_TOOLS_ALLOW_API_KEY=true`, `FOUNDRY_TOOLS_API_KEY` (or comma-separated `FOUNDRY_TOOLS_API_KEYS` during rotation), and `FOUNDRY_TOOLS_API_KEY_TENANT_ID` outside source control. The API-key variant is in `openapi/foundry-agent-tools.api-key.openapi.json`; it is rejected by the application in production. Keep both old and new keys only for the overlap window, then remove the old key and restart the API.
 
 ## Journey-state binding
 
@@ -36,14 +36,14 @@ For controlled development only, set `FOUNDRY_TOOLS_ALLOW_API_KEY=true`, `FOUNDR
 2. Set the authentication environment values above, map the Foundry project identity to the approved development tenant, and restart the API. Obtain the real values from the Azure/Foundry operator; none are committed here.
 3. Open `agentic-rag-core-dev` in Microsoft Foundry.
 4. Select **Tools → Add → Custom → OpenAPI tool**.
-5. Use a tool name such as `agentic_rag_read_only` and import `openapi/foundry-agent-tools.openapi.json` after replacing `YOUR_VERIFIED_API_HOSTNAME` with the actual API origin.
+5. Use a tool name such as `agentic_rag_read_only` and import `openapi/foundry-agent-tools.openapi.json`; this checked-in development contract targets `https://c3srnt4h-80.inc1.devtunnels.ms`. Replace it with the final verified HTTPS origin before any non-development use.
 6. Select or create a project managed identity connection. Enter the API target URL and the exact registered Microsoft Entra Application ID URI as the audience; the audience is the target API resource, not the Foundry project endpoint. The current Foundry OpenAPI guidance keeps API key, bearer token, and project managed identity as separate variants and requires a project connection for each. See [Microsoft's OpenAPI tool guidance](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/tools/openapi?view=foundry).
 7. Ensure the API's allowed application/object identity configuration matches the managed identity token claims (`azp` and, when configured, `oid`). Do not use an administrator token or a connection that is not mapped to the approved tenant.
 8. Save and attach the tool. Test `search_knowledge` with `{ "query": "What company formation packages are available?", "maxResults": 4 }`.
 9. Test `get_journey_state` with `{}` and expect `not_linked` until the trusted session-binding resolver is configured.
 10. Review the Foundry trace and the API `x-request-id`; confirm the response contains only approved citations, no private tenant data, no customer PII, and no write/action calls.
 
-The deployment hostname and Foundry connection/resource IDs are intentionally unresolved because no verified HTTPS deployment or Azure-side configuration was available in this local implementation task.
+The configured development hostname is `https://c3srnt4h-80.inc1.devtunnels.ms`. Foundry connection/resource IDs, audience, managed-identity claims, and live authenticated reachability remain Azure-side values that must be verified manually; no Azure resource was changed here.
 
 ## Safe examples
 

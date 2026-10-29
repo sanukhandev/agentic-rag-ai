@@ -7,7 +7,7 @@ import type { EmbeddingProvider } from '../embedding.js';
 import { catalogNextJourneyRequirement, catalogRequirementLabel } from '../intent-catalog.js';
 import { HttpError, parse } from '../http/errors.js';
 import { sanitizeKnowledgeText } from '../privacy.js';
-import { lifecycleStages, type Store } from '../types.js';
+import type { Store } from '../types.js';
 
 const searchKnowledgeSchema = z.object({ query: z.string().trim().min(1).max(1_000), maxResults: z.coerce.number().int().min(1).max(8).default(4) }).strict();
 const journeyStateSchema = z.object({}).strict();
@@ -24,6 +24,7 @@ export interface FoundryToolAuthOptions {
   defaultTenantId?: string;
   allowedInternalRole?: string;
   apiKey?: string;
+  apiKeys?: readonly string[];
   apiKeyTenantId?: string;
   allowApiKey?: boolean;
   fetchImpl?: typeof fetch;
@@ -71,12 +72,14 @@ export const foundryToolAuthOptionsFromEnv = (nodeEnv: string): FoundryToolAuthO
   const jwksUrl = process.env.FOUNDRY_TOOLS_JWKS_URL ?? (entraTenantId ? `https://login.microsoftonline.com/${entraTenantId}/discovery/v2.0/keys` : undefined);
   const defaultTenantId = process.env.FOUNDRY_TOOLS_TENANT_ID;
   const apiKey = process.env.FOUNDRY_TOOLS_API_KEY;
+  const apiKeys = splitEnv(process.env.FOUNDRY_TOOLS_API_KEYS);
   const apiKeyTenantId = process.env.FOUNDRY_TOOLS_API_KEY_TENANT_ID;
   if (issuer) options.issuer = issuer;
   if (audience) options.audience = audience;
   if (jwksUrl) options.jwksUrl = jwksUrl;
   if (defaultTenantId) options.defaultTenantId = defaultTenantId;
   if (apiKey) options.apiKey = apiKey;
+  if (apiKeys.length > 0) options.apiKeys = apiKeys;
   if (apiKeyTenantId) options.apiKeyTenantId = apiKeyTenantId;
   return options;
 };
@@ -108,8 +111,11 @@ export class FoundryToolAuth {
     if (bearer) return this.authenticateBearer(bearer);
     const apiKey = req.header('x-foundry-api-key');
     if (apiKey) {
-      if (!this.options.allowApiKey || !this.options.apiKey || !this.options.apiKeyTenantId) throw unauthorized();
-      if (!sameSecret(this.options.apiKey, apiKey)) throw unauthorized();
+      const configuredKeys = this.options.apiKeys ?? (this.options.apiKey ? [this.options.apiKey] : []);
+      if (!this.options.allowApiKey || configuredKeys.length === 0 || !this.options.apiKeyTenantId) throw unauthorized();
+      let valid = false;
+      for (const configuredKey of configuredKeys) valid = sameSecret(configuredKey, apiKey) || valid;
+      if (!valid) throw unauthorized();
       return { identity: 'development-api-key', tenantId: this.options.apiKeyTenantId, source: 'api_key', allowInternalSources: false };
     }
     throw unauthorized('A Foundry bearer token is required.');
@@ -187,6 +193,7 @@ const withTimeout = async <T>(operation: Promise<T>, timeoutMs: number): Promise
 const redactedText = (value: string, maxLength: number): string => sanitizeKnowledgeText(value).replace(/\[(?:NAME|EMAIL|PHONE|ID)_\d+\]/gu, '[REDACTED_IDENTIFIER]').slice(0, maxLength);
 const identityHash = (identity: string): string => createHash('sha256').update(identity).digest('hex').slice(0, 16);
 const requestId = (req: Request): string => (req as Request & { requestId?: string }).requestId ?? 'unknown';
+const catalogStageKeys = (catalog: Awaited<ReturnType<Store['getPublishedIntentCatalog']>>): string[] => [...new Set([...(catalog?.catalog.businessStages ?? [])].filter((stage) => stage.status === 'ACTIVE').sort((left, right) => left.order - right.order).map((stage) => stage.stageKey))];
 
 const audit = async (store: Store, req: Request, context: FoundryAuthContext, operation: string, outcome: string): Promise<void> => {
   try {
@@ -269,10 +276,12 @@ export const registerFoundryToolRoutes = (app: Pick<Application, 'post'>, depend
         ? catalog.catalog.journeyRequirements?.find((candidate) => candidate.requirementKey === entry?.currentRequirementKey && candidate.intentKey === activeIntentKey)
           ?? catalogNextJourneyRequirement(catalog, activeIntentKey, { ...(state?.slotValues ?? {}), ...(entry?.slotValues ?? {}) }, entry?.completedRequirementKeys ?? [])
         : null;
+      const authorizedStageKeys = catalogStageKeys(catalog);
+      const completedLifecycleStages = new Set(lifecycle ? Object.entries(lifecycle.stages).filter(([, stage]) => stage.status === 'completed').map(([stage]) => stage) : []);
       const response = {
         status: 'available' as const,
-        currentStage: lifecycle?.currentStage ?? null,
-        completedStages: lifecycle ? lifecycleStages.filter((stage) => lifecycle.stages[stage]?.status === 'completed') : [],
+        currentStage: lifecycle && authorizedStageKeys.includes(lifecycle.currentStage) ? lifecycle.currentStage : null,
+        completedStages: authorizedStageKeys.filter((stage) => completedLifecycleStages.has(stage)),
         nextRequirement: requirement ? redactedText(catalogRequirementLabel(requirement), 240) : null,
         revision: lifecycle?.revision ?? state?.intentProgress?.journeyRevision ?? 0,
       };

@@ -3,7 +3,7 @@
   "info": {
     "title": "Agentic RAG Foundry Agent Tools",
     "version": "1.0.0",
-    "description": "Read-only Microsoft Foundry agent tools. Replace the server URL with the verified HTTPS deployment hostname before importing into Foundry."
+    "description": "Read-only Microsoft Foundry agent tools for the development HTTPS deployment. Use the managed-identity variant only after the API hostname, audience, and Entra identity configuration are verified."
   },
   "servers": [
     {
@@ -139,8 +139,8 @@
         "required": ["status", "currentStage", "completedStages", "nextRequirement"],
         "properties": {
           "status": { "type": "string", "enum": ["available", "not_linked"] },
-          "currentStage": { "type": "string", "nullable": true, "enum": ["lead_generation", "lead_qualification", "account_creation", "package_selection", "document_upload", "billing_invoice", "contract"] },
-          "completedStages": { "type": "array", "items": { "type": "string", "enum": ["lead_generation", "lead_qualification", "account_creation", "package_selection", "document_upload", "billing_invoice", "contract"] } },
+          "currentStage": { "type": "string", "nullable": true, "description": "Current stage key from the tenant's published, authorized journey catalog." },
+          "completedStages": { "type": "array", "items": { "type": "string" }, "description": "Completed stage keys from the tenant's published, authorized journey catalog." },
           "nextRequirement": { "type": "string", "nullable": true },
           "revision": { "type": "integer", "minimum": 0 }
         }

@@ -36,12 +36,17 @@ const addSource = async (store: MemoryStore, tenantId: string, content: string, 
 
 describe('Foundry read-only tool gateway', () => {
   it('keeps the checked-in OpenAPI contract aligned with the two read-only operations', () => {
-    const specification = JSON.parse(readFileSync(new URL('../../../openapi/foundry-agent-tools.openapi.json', import.meta.url), 'utf8')) as { paths?: Record<string, { post?: { operationId?: string } }>; security?: unknown; servers?: Array<{ url?: string }> };
+    const specification = JSON.parse(readFileSync(new URL('../../../openapi/foundry-agent-tools.openapi.json', import.meta.url), 'utf8')) as { paths?: Record<string, { post?: { operationId?: string } }>; security?: unknown; servers?: Array<{ url?: string }>; components?: { schemas?: { JourneyStateResponse?: { properties?: { currentStage?: { enum?: unknown }; completedStages?: { items?: { enum?: unknown } } } } } } };
     expect(Object.keys(specification.paths ?? {})).toEqual(['/api/v1/foundry/tools/search-knowledge', '/api/v1/foundry/tools/get-journey-state']);
     expect(specification.paths?.['/api/v1/foundry/tools/search-knowledge']?.post?.operationId).toBe('search_knowledge');
     expect(specification.paths?.['/api/v1/foundry/tools/get-journey-state']?.post?.operationId).toBe('get_journey_state');
     expect(specification.security).toEqual([{ entraBearer: [] }]);
-    expect(specification.servers?.[0]?.url).toBe('https://YOUR_VERIFIED_API_HOSTNAME');
+    expect(specification.servers?.[0]?.url).toBe('https://c3srnt4h-80.inc1.devtunnels.ms');
+    expect(specification.components?.schemas?.JourneyStateResponse?.properties?.currentStage?.enum).toBeUndefined();
+    expect(specification.components?.schemas?.JourneyStateResponse?.properties?.completedStages?.items?.enum).toBeUndefined();
+    const apiKeySpecification = JSON.parse(readFileSync(new URL('../../../openapi/foundry-agent-tools.api-key.openapi.json', import.meta.url), 'utf8')) as { security?: unknown; components?: { securitySchemes?: { foundryApiKey?: { type?: string; in?: string; name?: string } } } };
+    expect(apiKeySpecification.security).toEqual([{ foundryApiKey: [] }]);
+    expect(apiKeySpecification.components?.securitySchemes?.foundryApiKey).toMatchObject({ type: 'apiKey', in: 'header', name: 'X-Foundry-Api-Key' });
   });
 
   it('retrieves only active public evidence for the authorized tenant and redacts contact data', async () => {
@@ -117,6 +122,8 @@ describe('Foundry read-only tool gateway', () => {
     const intentKey = 'company.setup';
     const journeyId = randomUUID();
     state.selectedIntentKey = intentKey;
+    const catalog = await store.createIntentCatalogVersion({ tenantId: tenant.id, status: 'published', sourceFileName: 'foundry-test.json', sourceHash: 'c'.repeat(64), parserVersion: 'test', catalog: { tenantScope: tenant.slug, intents: [], signals: [], slots: [], relations: [], workflowBindings: [], businessStages: [{ order: 1, stageKey: 'lead_generation', displayName: 'Lead generation', authoritativeOwner: 'test', prerequisiteExpression: 'test', successEvidence: 'test', workflowKey: 'test.workflow', onFailure: 'review', testRequirement: 'test', status: 'ACTIVE' }] } });
+    state.catalogVersionId = catalog.id;
     state.intentProgress = { version: 1, activeIntentKey: intentKey, pausedIntentKeys: [], fulfilledIntentKeys: [], entries: { [intentKey]: { intentKey, journeyId, status: 'active', completedRequirementKeys: [], currentRequirementKey: null, slotValues: { name: '[NAME_1]' }, slotProvenance: {}, lifecycle: newLifecycleState(), revision: 2 } }, journeys: {}, visitedIntentKeys: [intentKey], lastTransitionReason: null, journeyRevision: 2 };
     await store.updateSession({ ...session, conversationState: state });
     const runtime = createApp({ store, nodeEnv: 'test', jwtSecret: 'foundry-test-jwt', foundryToolAuth: { apiKey: key, apiKeyTenantId: tenant.id, allowApiKey: true }, foundrySessionBinding: async ({ tenantId }) => tenantId === tenant.id ? session.id : otherSession.id });
@@ -129,6 +136,14 @@ describe('Foundry read-only tool gateway', () => {
     expect(await store.getSession(session.id)).toEqual(before);
     const crossTenantRuntime = createApp({ store, nodeEnv: 'test', jwtSecret: 'foundry-test-jwt', foundryToolAuth: { apiKey: key, apiKeyTenantId: otherTenant.id, allowApiKey: true }, foundrySessionBinding: async () => session.id });
     expect((await request(crossTenantRuntime.app).post('/api/v1/foundry/tools/get-journey-state').set('X-Foundry-Api-Key', key).send({})).body).toEqual({ status: 'not_linked', currentStage: null, completedStages: [], nextRequirement: null });
+  });
+
+  it('accepts multiple configured development keys during rotation without accepting an arbitrary key', async () => {
+    const auth = new FoundryToolAuth({ apiKeys: ['old-key', 'new-key'], apiKeyTenantId: 'tenant-a', allowApiKey: true });
+    const requestFor = (value: string) => ({ header: (name: string) => name === 'x-foundry-api-key' ? value : undefined } as never);
+    await expect(auth.authenticate(requestFor('old-key'))).resolves.toMatchObject({ tenantId: 'tenant-a', source: 'api_key' });
+    await expect(auth.authenticate(requestFor('new-key'))).resolves.toMatchObject({ tenantId: 'tenant-a', source: 'api_key' });
+    await expect(auth.authenticate(requestFor('wrong-key'))).rejects.toMatchObject({ status: 401 });
   });
 });
 

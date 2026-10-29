@@ -110,6 +110,10 @@ services:
       CHAT_SESSION_TTL_MS: ${CHAT_SESSION_TTL_MS:-600000}
       API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-600}
       API_RATE_LIMIT_WINDOW_MS: ${API_RATE_LIMIT_WINDOW_MS:-60000}
+      FOUNDRY_TOOLS_ALLOW_API_KEY: ${FOUNDRY_TOOLS_ALLOW_API_KEY:-false}
+      FOUNDRY_TOOLS_API_KEY: ${FOUNDRY_TOOLS_API_KEY:-}
+      FOUNDRY_TOOLS_API_KEYS: ${FOUNDRY_TOOLS_API_KEYS:-}
+      FOUNDRY_TOOLS_API_KEY_TENANT_ID: ${FOUNDRY_TOOLS_API_KEY_TENANT_ID:-}
     volumes:
       - ./data/ingestion-staging:/app/data/ingestion-staging:rw
       - ./data/supporting-documents:/app/data/supporting-documents:rw
