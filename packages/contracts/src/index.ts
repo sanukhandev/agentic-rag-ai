@@ -45,6 +45,7 @@ export const groundedResponseSchema = z.object({
     expiresAt: z.string().datetime(),
   }).nullable(),
   pendingPromptId: z.string().guid().nullable().optional(),
+  pendingIntentKey: z.string().min(1).nullable().optional(),
   pendingRequirementKey: z.string().min(1).nullable().optional(),
   requestId: z.string().guid(),
 });

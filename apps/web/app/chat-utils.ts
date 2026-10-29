@@ -70,7 +70,13 @@ export const formatAgentGreeting = (greeting: string | undefined, fallback: stri
   return normalized || fallback;
 };
 
-export type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean; pendingRequirementKey?: string | null };
+export type ChatDocumentRequirement = { intentKey: string; requirementKey: string; documentType: string; allowedDocumentTypes: string[] };
+export const resolveActiveDocumentRequirement = (requirements: readonly ChatDocumentRequirement[], intentKey: string | null, requirementKey: string | null): ChatDocumentRequirement | null => {
+  if (!intentKey || !requirementKey) return null;
+  return requirements.find((requirement) => requirement.intentKey === intentKey && requirement.requirementKey === requirementKey && requirement.allowedDocumentTypes.includes(requirement.documentType)) ?? null;
+};
+
+export type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean; pendingIntentKey?: string | null; pendingRequirementKey?: string | null };
 export type ChatActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'awaiting_customer' | 'human_review' | 'unknown';
 export type ChatActionProposal = { id: string; intent: string; confirmation: string; consentRequired?: boolean; expiresAt?: string };
 export type ChatReply = {
@@ -78,6 +84,7 @@ export type ChatReply = {
   grounded: boolean;
   conversational?: boolean;
   citations: ChatCitation[];
+  pendingIntentKey?: string | null;
   pendingRequirementKey?: string | null;
   actionProposal?: ChatActionProposal | null;
   actionState?: ChatActionState;
@@ -93,6 +100,7 @@ export interface DisplayMessage {
   grounded: boolean;
   conversational?: boolean;
   citations: ChatCitation[];
+  pendingIntentKey?: string | null;
   pendingRequirementKey?: string | null;
   actionProposal?: ChatActionProposal | null;
   actionState?: ChatActionState;
