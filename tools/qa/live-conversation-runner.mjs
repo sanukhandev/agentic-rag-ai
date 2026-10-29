@@ -7,6 +7,9 @@ const tenantSlug = process.env.TENANT_SLUG ?? 'anc';
 const primaryIntentKey = process.env.PRIMARY_INTENT_KEY ?? 'anc.setup.new_company';
 const scenarioId = process.env.TEST_SCENARIO ?? `live-${crypto.randomUUID()}`;
 const outputDir = process.env.TEST_ARTIFACT_DIRECTORY ?? 'artifacts';
+const testName = process.env.TEST_NAME ?? 'Alex Morgan';
+const testEmail = process.env.TEST_EMAIL ?? 'alex@example.test';
+const testPhone = process.env.TEST_PHONE ?? '+971 50 000 0000';
 const scenario = [
   'Hi, good morning.',
   'I want to start a company in Dubai. Can you explain the steps involved?',
@@ -16,9 +19,9 @@ const scenario = [
   'We need two visas, a shared office and want to start next month. Our budget is AED 25000.',
   'Which package would be suitable for my company?',
   'That sounds good. I want someone to help me proceed.',
-  'My name is Alex Morgan.',
-  'My email is alex@example.test.',
-  'My phone number is +971 50 000 0000.',
+  `My name is ${testName}.`,
+  `My email is ${testEmail}.`,
+  `My phone number is ${testPhone}.`,
 ];
 const followUpScenario = [
   'Could you tell me about the pricing and timelines for the same?',
@@ -39,7 +42,7 @@ const json = async (path, options = {}) => {
   try { body = JSON.parse(text); } catch { body = { raw: text }; }
   return { status: response.status, body };
 };
-const redact = (value) => JSON.parse(JSON.stringify(value).replaceAll('alex@example.test', '[EMAIL_TEST]').replaceAll('+971 50 000 0000', '[PHONE_TEST]').replaceAll('Alex Morgan', '[NAME_TEST]'));
+const redact = (value) => JSON.parse(JSON.stringify(value).replaceAll(testEmail, '[EMAIL_TEST]').replaceAll(testPhone, '[PHONE_TEST]').replaceAll(testName, '[NAME_TEST]'));
 const postgresContainer = process.env.POSTGRES_CONTAINER ?? 'agentic-postgres';
 const postgresUser = process.env.POSTGRES_USER ?? 'agentic';
 const postgresDatabase = process.env.POSTGRES_DATABASE ?? 'agentic_rag';
@@ -59,11 +62,13 @@ const persistedActionDiagnostics = (actionId) => {
       'executionId', e.id,
       'n8nExecutionRef', e.n8n_execution_ref,
       'providerStatus', e.provider_status,
-      'crmLeadId', l.lead_id,
-      'remoteCrm', l.remote_crm
+      'crmLeadId', coalesce(l.lead_id, associated.lead_id),
+      'remoteCrm', coalesce(l.remote_crm, associated.remote_crm)
     )::text from action_requests a
       left join lateral (select * from action_executions where action_id = a.id order by updated_at desc limit 1) e on true
       left join crm_leads l on l.action_id = a.id
+      left join lateral (select crm_lead_id from crm_lead_associations where action_id = a.id order by created_at desc limit 1) association on true
+      left join crm_leads associated on associated.id = association.crm_lead_id
       where a.id = '${actionId}'`;
     const raw = execFileSync('docker', ['exec', postgresContainer, 'psql', '-U', postgresUser, '-d', postgresDatabase, '-At', '-c', sql], { encoding: 'utf8' }).trim();
     return raw ? JSON.parse(raw) : null;

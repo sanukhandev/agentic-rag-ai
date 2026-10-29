@@ -161,7 +161,7 @@
       "position": [2620, 20]
     },
     {
-      "parameters": { "conditions": { "boolean": [{ "value1": "={{ Boolean(($json.body ?? $json).alreadyLinked) }}", "operation": "isTrue" }] } },
+      "parameters": { "conditions": { "string": [{ "value1": "={{ String(($json.body ?? $json).alreadyLinked ?? '') }}", "operation": "equals", "value2": "true" }] } },
       "id": "anc-wf1-existing-remote",
       "name": "Existing Remote CRM Identity?",
       "type": "n8n-nodes-base.if",
@@ -349,7 +349,7 @@
       "position": [2840, 300]
     },
     {
-      "parameters": { "jsCode": "const source = $('Lead Scoring and Summary').first().json;\nconst remote = $('Validate Remote CRM Lead ID').first().json;\nreturn [{ json: { accepted: true, status: 'registered', actionId: source.actionId, leadId: remote.remoteLeadId, remoteCrm: remote.remoteCrm, message: 'Your request is registered. We will continue processing it asynchronously.' } }];" },
+      "parameters": { "jsCode": "const source = $('Lead Scoring and Summary').first().json;\nconst validated = $('Validate Remote CRM Lead ID');\nconst existing = $('Reconcile Existing CRM Lead');\nconst remote = validated.isExecuted ? validated.first().json : existing.first().json;\nreturn [{ json: { accepted: true, status: 'registered', actionId: source.actionId, leadId: remote.remoteLeadId ?? remote.externalLeadId, remoteCrm: remote.remoteCrm, message: 'Your request is registered. We will continue processing it asynchronously.' } }];" },
       "id": "anc-wf1-completed-response",
       "name": "Return Completed Registration",
       "type": "n8n-nodes-base.code",
@@ -388,7 +388,7 @@
     "Prepare Remote CRM Decision": { "main": [[{ "node": "Remote CRM Qualification Gate", "type": "main", "index": 0 }]] },
     "Remote CRM Qualification Gate": { "main": [[{ "node": "Fetch Authorized Remote CRM Payload", "type": "main", "index": 0 }], [{ "node": "Complete Internal Registration", "type": "main", "index": 0 }]] },
     "Fetch Authorized Remote CRM Payload": { "main": [[{ "node": "Existing Remote CRM Identity?", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
-    "Existing Remote CRM Identity?": { "main": [[{ "node": "Remote CRM Create Lead", "type": "main", "index": 0 }], [{ "node": "Reconcile Existing CRM Lead", "type": "main", "index": 0 }]] },
+    "Existing Remote CRM Identity?": { "main": [[{ "node": "Reconcile Existing CRM Lead", "type": "main", "index": 0 }], [{ "node": "Remote CRM Create Lead", "type": "main", "index": 0 }]] },
     "Reconcile Existing CRM Lead": { "main": [[{ "node": "Complete Async Registration", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
     "Remote CRM Create Lead": { "main": [[{ "node": "Validate Remote CRM Lead ID", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
     "Validate Remote CRM Lead ID": { "main": [[{ "node": "Internal CRM Remote ID Callback", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
