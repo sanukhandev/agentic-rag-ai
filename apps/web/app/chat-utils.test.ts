@@ -12,6 +12,7 @@ import {
   isValidTenantSlug,
   normalizeVoiceTranscript,
   renderMarkdown,
+  resolveActiveDocumentRequirement,
   resolveTenantSlug
 } from './chat-utils';
 
@@ -36,6 +37,14 @@ describe('web chat utilities', () => {
   it('keeps the configured greeting and repairs sentence spacing', () => {
     expect(formatAgentGreeting("Hi! I'm Sara, your assistant.Are you ready?", 'Fallback')).toBe("Hi! I'm Sara, your assistant. Are you ready?");
     expect(formatAgentGreeting(undefined, 'Fallback')).toBe('Fallback');
+  });
+
+  it('exposes document attachment only for the active required catalog document', () => {
+    const requirements = [{ intentKey: 'company.setup', requirementKey: 'company.passport', documentType: 'passport', allowedDocumentTypes: ['passport', 'trade_license'] }];
+    expect(resolveActiveDocumentRequirement(requirements, 'company.setup', 'company.passport')).toMatchObject({ documentType: 'passport' });
+    expect(resolveActiveDocumentRequirement(requirements, 'company.setup', 'company.activity')).toBeNull();
+    expect(resolveActiveDocumentRequirement(requirements, 'other.intent', 'company.passport')).toBeNull();
+    expect(resolveActiveDocumentRequirement([{ ...requirements[0], allowedDocumentTypes: ['trade_license'] }], 'company.setup', 'company.passport')).toBeNull();
   });
 
   it('restores only assistant replies from masked history', () => {

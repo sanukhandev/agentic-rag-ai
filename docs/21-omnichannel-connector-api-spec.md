@@ -176,12 +176,13 @@ Response fields:
   "citations": [],
   "actionProposal": null,
   "pendingPromptId": "opaque-prompt-id",
+  "pendingIntentKey": "company.setup",
   "pendingRequirementKey": "company.shareholder.passport",
   "requestId": "correlation-id"
 }
 ```
 
-Render `answer`, then any approved citations or action prompt. `pendingRequirementKey` is an opaque catalog requirement identifier; connectors that support attachments should send it back as `requirementKey` when uploading the requested document. Do not display raw model data or internal IDs.
+Render `answer`, then any approved citations or action prompt. `pendingIntentKey` identifies the active catalog journey and `pendingRequirementKey` identifies its current requirement; connectors that support attachments should send the requirement key back as `requirementKey` only when their attachment UI is active for that exact intent/requirement pair. Do not display raw model data or internal IDs.
 
 ### 4.3 Read history
 

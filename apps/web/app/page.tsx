@@ -10,9 +10,11 @@ import {
   isValidTenantSlug,
   normalizeVoiceTranscript,
   renderMarkdown,
+  resolveActiveDocumentRequirement,
   resolveTenantSlug,
   type ChatActionState,
   type ChatCitation,
+  type ChatDocumentRequirement,
   type ChatHistoryMessage,
   type ChatReply,
   type DisplayMessage,
@@ -35,7 +37,7 @@ type Config = {
     voicePitch: number;
     voiceVolume: number;
   } | null;
-  documents?: { enabled: boolean; requireUploadConsent: boolean; maxFileBytes: number; allowedMimeTypes: string[]; policies: Array<{ intentKey: string; requestMode: string; allowedDocumentTypes: string[]; consentRequired: boolean }> };
+  documents?: { enabled: boolean; requireUploadConsent: boolean; maxFileBytes: number; allowedMimeTypes: string[]; policies: Array<{ intentKey: string; requestMode: string; allowedDocumentTypes: string[]; consentRequired: boolean }>; requirements: ChatDocumentRequirement[] };
 };
 
 type ChatDocument = { id: string; fileName: string; mimeType: string; sizeBytes: number; status: string; errorCode: string | null; createdAt: string };
@@ -46,6 +48,7 @@ const api = configuredApi && configuredApi !== '/' ? configuredApi.replace(/\/$/
 export default function Home() {
   const [tenantSlug, setTenantSlug] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [pendingIntentKey, setPendingIntentKey] = useState<string | null>(null);
   const [pendingRequirementKey, setPendingRequirementKey] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -173,6 +176,7 @@ export default function Home() {
     if (!isValidTenantSlug(tenantSlug)) {
       setConfig(null);
       setSessionId(null);
+      setPendingIntentKey(null);
       setPendingRequirementKey(null);
       setMessages([]);
       setDocuments([]);
@@ -189,6 +193,7 @@ export default function Home() {
     const savedSession = window.localStorage.getItem(`agentic-rag-session:${tenantSlug}`);
     if (!savedSession) {
       setSessionId(null);
+      setPendingIntentKey(null);
       setPendingRequirementKey(null);
       setMessages([]);
       setDocuments([]);
@@ -200,7 +205,9 @@ export default function Home() {
         if (!response.ok) throw new Error('Saved session is unavailable.');
         const body = (await response.json()) as { messages: ChatHistoryMessage[] };
         setSessionId(savedSession);
-        setPendingRequirementKey([...body.messages].reverse().find((message) => message.role === 'assistant' && message.pendingRequirementKey)?.pendingRequirementKey ?? null);
+        const pendingMessage = [...body.messages].reverse().find((message) => message.role === 'assistant' && message.pendingRequirementKey);
+        setPendingIntentKey(pendingMessage?.pendingIntentKey ?? null);
+        setPendingRequirementKey(pendingMessage?.pendingRequirementKey ?? null);
         void refreshDocuments(savedSession).catch(() => setDocuments([]));
         const restored: DisplayMessage[] = body.messages.map((m, idx) => ({
           id: `restored-${idx}`,
@@ -209,6 +216,7 @@ export default function Home() {
           grounded: m.citations.length > 0,
           conversational: m.conversational,
           citations: m.citations,
+          pendingIntentKey: m.pendingIntentKey,
           pendingRequirementKey: m.pendingRequirementKey,
           createdAt: new Date().toISOString()
         }));
@@ -217,6 +225,7 @@ export default function Home() {
       .catch(() => {
         window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
         setSessionId(null);
+        setPendingIntentKey(null);
         setPendingRequirementKey(null);
         setMessages([]);
         setDocuments([]);
@@ -233,6 +242,8 @@ export default function Home() {
   }, [messages, busy]);
 
   const tenantName = config?.tenant?.name ?? 'Tenant workspace';
+  const activeDocumentRequirement = resolveActiveDocumentRequirement(config?.documents?.requirements ?? [], pendingIntentKey, pendingRequirementKey);
+  const documentAttachmentVisible = Boolean(config?.documents?.enabled && activeDocumentRequirement);
   const agentName = config?.persona?.name ?? 'AI assistant';
   const agentGreeting = formatAgentGreeting(config?.persona?.greeting, 'Create a tenant and configure its assistant to begin.');
   const agentTone = config?.persona?.tone ?? 'Not configured';
@@ -500,11 +511,13 @@ export default function Home() {
         grounded: body.grounded,
         conversational: body.conversational,
         citations: body.citations || [],
+        pendingIntentKey: body.pendingIntentKey ?? null,
         pendingRequirementKey: body.pendingRequirementKey ?? null,
         actionProposal: body.actionProposal,
         actionState: body.actionProposal ? 'awaiting_confirmation' : undefined,
         createdAt: new Date().toISOString()
       };
+      setPendingIntentKey(body.pendingIntentKey ?? null);
       setPendingRequirementKey(body.pendingRequirementKey ?? null);
       setMessages((prev) => [...prev, assistantMsg]);
 
@@ -523,7 +536,11 @@ export default function Home() {
   };
 
   const uploadDocument = async () => {
-    if (!selectedFile || !uploadConsent || uploading || !config?.documents?.enabled) return;
+    if (!selectedFile || !uploadConsent || uploading || !config?.documents?.enabled || !activeDocumentRequirement) return;
+    if (!config.documents.allowedMimeTypes.includes(selectedFile.type)) {
+      setError('This file type is not allowed for the requested document.');
+      return;
+    }
     setUploading(true); setDocumentStatus('Uploading securely…'); setError('');
     try {
       let activeSession = sessionId;
@@ -623,6 +640,7 @@ export default function Home() {
   const reset = () => {
     window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
     setSessionId(null);
+    setPendingIntentKey(null);
     setPendingRequirementKey(null);
     setMessages([]);
     setMessage('');
@@ -1049,10 +1067,11 @@ export default function Home() {
                     void send();
                   }}
                 >
-                  {config?.documents?.enabled && (
+                  {documentAttachmentVisible && activeDocumentRequirement && (
                     <div className="mb-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs">
+                      <p className="mb-2 font-medium text-neutral-800">Required document: {activeDocumentRequirement.documentType}</p>
                       <div className="flex flex-wrap items-center gap-2">
-                        <input ref={documentInputRef} type="file" accept={config.documents.allowedMimeTypes.join(',')} onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} className="max-w-full text-[11px]" aria-label="Choose a supporting document" />
+                        <input ref={documentInputRef} type="file" accept={config?.documents?.allowedMimeTypes.join(',') ?? ''} onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} className="max-w-full text-[11px]" aria-label="Choose a supporting document" />
                         <button type="button" onClick={() => void uploadDocument()} disabled={!selectedFile || !uploadConsent || uploading} className="rounded-lg bg-neutral-900 px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40">{uploading ? 'Registering…' : 'Register attachment'}</button>
                       </div>
                       <label className="mt-2 flex items-start gap-2 text-[11px] text-neutral-600"><input type="checkbox" checked={uploadConsent} onChange={(event) => setUploadConsent(event.target.checked)} />I consent to ANCFZ processing this business document for this enquiry.</label>
