@@ -231,6 +231,16 @@ describe('Azure Foundry model adapter', () => {
     fetchMock.mockRestore();
   });
 
+  it('retries transient Azure responses before returning the model result', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('', { status: 429, headers: { 'retry-after': '0' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: 'retried answer', citationIds: [], proposedIntent: null }) } }] }), { status: 200 }));
+    const model = new AzureFoundryModel('https://foundry.example/openai/v1', 'gpt-4.1-mini', 'server-key');
+    await expect(model.draft({ maskedMessage: 'question', personaName: 'Ava', evidence: [] })).resolves.toMatchObject({ answer: 'retried answer' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    fetchMock.mockRestore();
+  });
+
   it('formats CRM summaries from masked lead data only', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: '## Requirements\n- [NAME_1] requested a demo.' }) } }] }), { status: 200 }));
     const model = new AzureFoundryModel('https://foundry.example/openai/v1', 'gpt-4.1-mini', 'server-key');

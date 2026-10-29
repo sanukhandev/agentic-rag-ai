@@ -1,0 +1,4804 @@
+{
+  "runId": "bace7d47-04e8-4de7-bb75-793840a48c94",
+  "startedAt": "2026-10-29T04:32:43.706Z",
+  "baseUrl": "http://localhost",
+  "tenantSlug": "anc",
+  "scenarios": [
+    {
+      "scenarioId": "A",
+      "name": "complete-new-company",
+      "identityRef": "QA Company Setup A bace7d47",
+      "sessionId": "880d8a3c-785a-481d-8d08-57cf343c81be",
+      "turns": [
+        {
+          "number": 1,
+          "customerMessage": "Hello Zara, I would like to understand the right way to set up a company.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 2,
+          "customerMessage": "I am considering a digital marketing agency in the UAE.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 3,
+          "customerMessage": "The intended activity is specifically digital marketing agency; what should I check first?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 4,
+          "customerMessage": "Could you explain whether a free-zone company would suit that activity?",
+          "assistantResponse": "Free Zone Company (FZC) ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. Free Zone Company (FZC): For multiple shareholders, including the Free Zone Company with Visa Dubai. Free Zone Establishment (FZE) What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 5,
+          "customerMessage": "I am planning one shareholder. How does that affect the setup?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 6,
+          "customerMessage": "I expect to need two visas. What visa information should I prepare?",
+          "assistantResponse": "Number of residence visas required What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 7,
+          "customerMessage": "Please compare the available visa and setup package options.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 8,
+          "customerMessage": "I would prefer a shared office. Is that requirement relevant to eligibility?",
+          "assistantResponse": "Flexi-desk, shared office and private office options are available. ANCFZ offers flexi-desk, shared office, and private office options. Approval is subject to the selected bank’s eligibility criteria, documentation requirements, and compliance checks. There is no minimum paid-up capital requirement for most activities. To continue, could you share your interest summary?",
+          "status": 200,
+          "grounded": true,
+          "citations": 2,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 9,
+          "customerMessage": "My target is next month. What timing can you confirm?",
+          "assistantResponse": "I can’t verify the setup timeline from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 10,
+          "customerMessage": "My working budget is AED 25,000. Which approved costs should I compare?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. To continue, could you share your interest summary?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 11,
+          "customerMessage": "What documents are normally needed after a package is selected?",
+          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. To continue, could you share your interest summary?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 12,
+          "customerMessage": "Before we continue, can you explain the main formation steps again?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 13,
+          "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
+          "assistantResponse": "Easy payment instalment options are available. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 14,
+          "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
+          "assistantResponse": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 15,
+          "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 16,
+          "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 17,
+          "customerMessage": "I have another question: how should I prepare the shareholder information?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. 3) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 18,
+          "customerMessage": "Please keep the current company setup conversation active while answering that.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 19,
+          "customerMessage": "I am now ready to provide my contact details if they are actually required.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 20,
+          "customerMessage": "My synthetic test name is [NAME_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 21,
+          "customerMessage": "My synthetic test email is [EMAIL_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 22,
+          "customerMessage": "My synthetic test phone is [PHONE_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 23,
+          "customerMessage": "Please record the requirement as one shareholder and two visas, but do not submit anything until I explicitly consent.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 24,
+          "customerMessage": "I need to correct one point: the visa requirement is three visas. Please keep the correction auditable.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 25,
+          "customerMessage": "Please summarize the current verified requirements, the next action, and anything still uncertain.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 26,
+          "customerMessage": "What is the approved price for the option that covers my requirements?",
+          "assistantResponse": "Health insurance is mandatory during the visa process and is not included in the package price. Health insurance is mandatory during the visa process and is excluded from the package price. Visa packages also cover the listed visa-related services and Emirates ID processing. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 2,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 27,
+          "customerMessage": "Can the package be changed before I confirm it?",
+          "assistantResponse": "Do not infer an unlisted package price or eligibility for instalment plans. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 28,
+          "customerMessage": "If I select an option, when would document collection begin?",
+          "assistantResponse": "I can’t verify the setup timeline from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 29,
+          "customerMessage": "How will I know whether the Salesforce lead registration is complete?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. 2) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 3) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 30,
+          "customerMessage": "After the package, what is the safe process for invoice and contract preparation?",
+          "assistantResponse": "The approved setup information covers these steps: 1) The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. 2) From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "message": "turn 1 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 26 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 26 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 26 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 27 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 27 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 27 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 28 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 28 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 28 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 29 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 29 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 29 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 30 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 30 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 30 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "scenario executed at least 25 actual customer messages"
+        },
+        {
+          "passed": true,
+          "message": "all planned customer messages received an assistant response"
+        }
+      ],
+      "finalState": {
+        "selectedIntentKey": null,
+        "activeIntentKey": null,
+        "catalogVersionId": "fd9c22b6-c2d1-47ab-ab2c-8d7255a67954",
+        "opportunityId": null,
+        "slotKeys": [
+          "email",
+          "phone"
+        ]
+      },
+      "external": {
+        "salesforce": "not_requested",
+        "n8n": "not_requested",
+        "invoice": "not_requested",
+        "contract": "not_requested"
+      }
+    },
+    {
+      "scenarioId": "B",
+      "name": "returning-customer",
+      "identityRef": "QA Company Setup B bace7d47",
+      "sessionId": "603922d3-1089-49a9-969c-9be28fcbcff0",
+      "turns": [
+        {
+          "number": 1,
+          "customerMessage": "Hello Zara, I would like to understand the right way to set up a company.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 2,
+          "customerMessage": "I am considering a e-commerce consultancy in the UAE.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 3,
+          "customerMessage": "The intended activity is specifically e-commerce consultancy; what should I check first?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 4,
+          "customerMessage": "Could you explain whether a limited liability company would suit that activity?",
+          "assistantResponse": "Use this knowledge domain when the customer asks about business activity categories. Browse the categories below or use the official activity list: Business-activities. Branch of Local Company What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 5,
+          "customerMessage": "I am planning two partners. How does that affect the setup?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 6,
+          "customerMessage": "I expect to need one visa. What visa information should I prepare?",
+          "assistantResponse": "Travel is needed at the visa stage for the medical test and Emirates ID. Tourist visa / Entry stamp (if on a tourist visa) The timeline may vary depending on the required procedures, including the medical fitness test, Emirates ID and visa stamping. Use this knowledge domain when the customer asks about license cost 2026. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 7,
+          "customerMessage": "Please compare the available visa and setup package options.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 8,
+          "customerMessage": "I would prefer a flexi-desk. Is that requirement relevant to eligibility?",
+          "assistantResponse": "Flexi-desk, shared office and private office options are available. ANCFZ offers flexi-desk, shared office, and private office options. For most businesses, flexi-desk solutions are sufficient and cost-effective. Approval is subject to the selected bank’s eligibility criteria, documentation requirements, and compliance checks. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 2,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 9,
+          "customerMessage": "My target is in six weeks. What timing can you confirm?",
+          "assistantResponse": "I can’t verify the setup timeline from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 10,
+          "customerMessage": "My working budget is AED 40,000. Which approved costs should I compare?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 11,
+          "customerMessage": "What documents are normally needed after a package is selected?",
+          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 12,
+          "customerMessage": "Before we continue, can you explain the main formation steps again?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 13,
+          "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
+          "assistantResponse": "Easy payment instalment options are available. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 14,
+          "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
+          "assistantResponse": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 15,
+          "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 16,
+          "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 17,
+          "customerMessage": "I have another question: how should I prepare the shareholder information?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. 3) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 18,
+          "customerMessage": "Please keep the current company setup conversation active while answering that.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 19,
+          "customerMessage": "I am now ready to provide my contact details if they are actually required.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 20,
+          "customerMessage": "My synthetic test name is [NAME_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 21,
+          "customerMessage": "My synthetic test email is [EMAIL_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 22,
+          "customerMessage": "My synthetic test phone is [PHONE_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 23,
+          "customerMessage": "Please record the requirement as two partners and one visa, but do not submit anything until I explicitly consent.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 24,
+          "customerMessage": "I need to correct one point: the visa requirement is two visas. Please keep the correction auditable.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 25,
+          "customerMessage": "Please summarize the current verified requirements, the next action, and anything still uncertain.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "message": "turn 1 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "scenario executed at least 25 actual customer messages"
+        },
+        {
+          "passed": true,
+          "message": "all planned customer messages received an assistant response"
+        }
+      ],
+      "finalState": {
+        "selectedIntentKey": null,
+        "activeIntentKey": null,
+        "catalogVersionId": "fd9c22b6-c2d1-47ab-ab2c-8d7255a67954",
+        "opportunityId": null,
+        "slotKeys": [
+          "email",
+          "phone"
+        ]
+      },
+      "external": {
+        "salesforce": "not_requested",
+        "n8n": "not_requested",
+        "invoice": "not_requested",
+        "contract": "not_requested"
+      }
+    },
+    {
+      "scenarioId": "C",
+      "name": "multiple-shareholders",
+      "identityRef": "QA Company Setup C bace7d47",
+      "sessionId": "75f6655d-37cb-438a-9b53-a32edd6d64eb",
+      "turns": [
+        {
+          "number": 1,
+          "customerMessage": "Hello Zara, I would like to understand the right way to set up a company.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 2,
+          "customerMessage": "I am considering a software development studio in the UAE.",
+          "assistantResponse": "To make sure I route this correctly, are you looking to it and software activity For example: “start a software company”, “تأسيس شركة برمجيات”, “i build websites and want a licence”, “i run a saas startup”. What name should I use?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 3,
+          "customerMessage": "The intended activity is specifically software development studio; what should I check first?",
+          "assistantResponse": "For setting up a software development studio in the UAE, you should first identify the precise business activity you will undertake. This could include activities like Computer Programming Activities (writing code and developing software) or Software Development Services (design, implementation, operation, and maintenance). Understanding your exact activity helps determine the right license and setup requirements. To assist you better, could you please share how many visas you plan to have for your company?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 4,
+          "customerMessage": "Could you explain whether a free-zone company would suit that activity?",
+          "assistantResponse": "A free-zone company at Ajman Nuventures Centre (ANCFZ) can indeed suit a software development studio. ANCFZ offers licenses for activities like Computer Programming Activities (writing code and developing software) and Software Development Services (software design, implementation, operation, and maintenance). You can combine up to 10 activities under one license, which is flexible for IT and software businesses. To guide you better, could you please tell me how many visas you plan to have for your company?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 5,
+          "customerMessage": "I am planning three partners. How does that affect the setup?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 6,
+          "customerMessage": "I expect to need four visas. What visa information should I prepare?",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 7,
+          "customerMessage": "Please compare the available visa and setup package options.",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 8,
+          "customerMessage": "I would prefer a private office. Is that requirement relevant to eligibility?",
+          "assistantResponse": "Office requirement: physical office or flexi-desk The assistant should identify the precise user objective, retrieve the smallest relevant approved source passage, and answer with qualifying conditions. Dubai representative office: meetings for investors based in Dubai and the southern emirates. What name should I use?",
+          "status": 200,
+          "grounded": true,
+          "citations": 2,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 9,
+          "customerMessage": "My target is this quarter. What timing can you confirm?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 10,
+          "customerMessage": "My working budget is AED 60,000. Which approved costs should I compare?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What name should I use?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 11,
+          "customerMessage": "What documents are normally needed after a package is selected?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What name should I use?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 12,
+          "customerMessage": "Before we continue, can you explain the main formation steps again?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. What name should I use?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 13,
+          "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
+          "assistantResponse": "The assistant should identify the precise user objective, retrieve the smallest relevant approved source passage, and answer with qualifying conditions. What name should I use?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 14,
+          "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Every package includes the business license, lease agreement, commercial registry, share certificate, certificate of incorporation, certificate of incumbency, a bank letter to support the account opening process, unlimited shareholders and up to 10 mix-and-match activities. What name should I use?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 15,
+          "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 16,
+          "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What name should I use?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 17,
+          "customerMessage": "I have another question: how should I prepare the shareholder information?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Note: Additional documents may be required depending on the activity and shareholder type (individual or corporate). What name should I use?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 18,
+          "customerMessage": "Please keep the current company setup conversation active while answering that.",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 19,
+          "customerMessage": "I am now ready to provide my contact details if they are actually required.",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 20,
+          "customerMessage": "My synthetic test name is [NAME_TEST].",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 21,
+          "customerMessage": "My synthetic test email is [EMAIL_TEST].",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 22,
+          "customerMessage": "My synthetic test phone is [PHONE_TEST].",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 23,
+          "customerMessage": "Please record the requirement as three partners and four visas, but do not submit anything until I explicitly consent.",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 24,
+          "customerMessage": "I need to correct one point: the visa requirement is five visas. Please keep the correction auditable.",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 25,
+          "customerMessage": "Please summarize the current verified requirements, the next action, and anything still uncertain.",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "message": "turn 1 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "scenario executed at least 25 actual customer messages"
+        },
+        {
+          "passed": true,
+          "message": "all planned customer messages received an assistant response"
+        }
+      ],
+      "finalState": {
+        "selectedIntentKey": "anc.activity.it_software",
+        "activeIntentKey": "anc.activity.it_software",
+        "catalogVersionId": "fd9c22b6-c2d1-47ab-ab2c-8d7255a67954",
+        "opportunityId": null,
+        "slotKeys": [
+          "email",
+          "phone",
+          "visa_count",
+          "interest_summary",
+          "business_activity"
+        ]
+      },
+      "external": {
+        "salesforce": "not_requested",
+        "n8n": "not_requested",
+        "invoice": "not_requested",
+        "contract": "not_requested"
+      }
+    },
+    {
+      "scenarioId": "D",
+      "name": "interruptions-and-references",
+      "identityRef": "QA Company Setup D bace7d47",
+      "sessionId": "ba9393ba-d8b5-496f-a480-2d712c67c98f",
+      "turns": [
+        {
+          "number": 1,
+          "customerMessage": "Hello Zara, I would like to understand the right way to set up a company.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 2,
+          "customerMessage": "I am considering a creative design consultancy in the UAE.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 3,
+          "customerMessage": "The intended activity is specifically creative design consultancy; what should I check first?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 4,
+          "customerMessage": "Could you explain whether a sole establishment would suit that activity?",
+          "assistantResponse": "Browse the categories below or use the official activity list: Business-activities. Use this knowledge domain when the customer asks about business activity categories. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 2,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 5,
+          "customerMessage": "I am planning one shareholder. How does that affect the setup?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 6,
+          "customerMessage": "I expect to need two visas. What visa information should I prepare?",
+          "assistantResponse": "Number of residence visas required What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 7,
+          "customerMessage": "Please compare the available visa and setup package options.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 8,
+          "customerMessage": "I would prefer a shared workspace. Is that requirement relevant to eligibility?",
+          "assistantResponse": "Assistant behavior: Identify the relevant sub-intent, retrieve the approved source passage, state the supported facts and caveats, and ask one relevant follow-up if a required parameter is missing. The assistant should identify the precise user objective, retrieve the smallest relevant approved source passage, and answer with qualifying conditions. ANCFZ has no minimum paid-up capital requirement for most business activities. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 9,
+          "customerMessage": "My target is next month. What timing can you confirm?",
+          "assistantResponse": "I can’t verify the setup timeline from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 10,
+          "customerMessage": "My working budget is AED 30,000. Which approved costs should I compare?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 11,
+          "customerMessage": "What documents are normally needed after a package is selected?",
+          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 12,
+          "customerMessage": "Before we continue, can you explain the main formation steps again?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 13,
+          "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
+          "assistantResponse": "Easy payment instalment options are available. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 14,
+          "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
+          "assistantResponse": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 15,
+          "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 16,
+          "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 17,
+          "customerMessage": "I have another question: how should I prepare the shareholder information?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. 3) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 18,
+          "customerMessage": "Please keep the current company setup conversation active while answering that.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 19,
+          "customerMessage": "I am now ready to provide my contact details if they are actually required.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 20,
+          "customerMessage": "My synthetic test name is [NAME_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 21,
+          "customerMessage": "My synthetic test email is [EMAIL_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 22,
+          "customerMessage": "My synthetic test phone is [PHONE_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 23,
+          "customerMessage": "Please record the requirement as one shareholder and two visas, but do not submit anything until I explicitly consent.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 24,
+          "customerMessage": "I need to correct one point: the visa requirement is one visa. Please keep the correction auditable.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 25,
+          "customerMessage": "Please summarize the current verified requirements, the next action, and anything still uncertain.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "message": "turn 1 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "scenario executed at least 25 actual customer messages"
+        },
+        {
+          "passed": true,
+          "message": "all planned customer messages received an assistant response"
+        }
+      ],
+      "finalState": {
+        "selectedIntentKey": null,
+        "activeIntentKey": null,
+        "catalogVersionId": "fd9c22b6-c2d1-47ab-ab2c-8d7255a67954",
+        "opportunityId": null,
+        "slotKeys": [
+          "email",
+          "phone"
+        ]
+      },
+      "external": {
+        "salesforce": "not_requested",
+        "n8n": "not_requested",
+        "invoice": "not_requested",
+        "contract": "not_requested"
+      }
+    },
+    {
+      "scenarioId": "E",
+      "name": "customer-corrections",
+      "identityRef": "QA Company Setup E bace7d47",
+      "sessionId": "d2fd00fb-fa61-494b-b859-0dd2e287704d",
+      "turns": [
+        {
+          "number": 1,
+          "customerMessage": "Hello Zara, I would like to understand the right way to set up a company.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 2,
+          "customerMessage": "I am considering a management consultancy in the UAE.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 3,
+          "customerMessage": "The intended activity is specifically management consultancy; what should I check first?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 4,
+          "customerMessage": "Could you explain whether a limited liability company would suit that activity?",
+          "assistantResponse": "Use this knowledge domain when the customer asks about business activity categories. Browse the categories below or use the official activity list: Business-activities. Branch of Local Company What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 5,
+          "customerMessage": "I am planning two shareholders. How does that affect the setup?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 6,
+          "customerMessage": "I expect to need two visas. What visa information should I prepare?",
+          "assistantResponse": "Number of residence visas required What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 7,
+          "customerMessage": "Please compare the available visa and setup package options.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 8,
+          "customerMessage": "I would prefer a private office. Is that requirement relevant to eligibility?",
+          "assistantResponse": "ANCFZ offers flexi-desk, shared office, and private office options. Approval is subject to the selected bank’s eligibility criteria, documentation requirements, and compliance checks. Assistant behavior: Identify the relevant sub-intent, retrieve the approved source passage, state the supported facts and caveats, and ask one relevant follow-up if a required parameter is missing. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 2,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 9,
+          "customerMessage": "My target is in two months. What timing can you confirm?",
+          "assistantResponse": "I can’t verify the setup timeline from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 10,
+          "customerMessage": "My working budget is AED 50,000. Which approved costs should I compare?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 11,
+          "customerMessage": "What documents are normally needed after a package is selected?",
+          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 12,
+          "customerMessage": "Before we continue, can you explain the main formation steps again?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 13,
+          "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
+          "assistantResponse": "Easy payment instalment options are available. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 14,
+          "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
+          "assistantResponse": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 15,
+          "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 16,
+          "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 17,
+          "customerMessage": "I have another question: how should I prepare the shareholder information?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. 3) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 18,
+          "customerMessage": "Please keep the current company setup conversation active while answering that.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 19,
+          "customerMessage": "I am now ready to provide my contact details if they are actually required.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 20,
+          "customerMessage": "My synthetic test name is [NAME_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 21,
+          "customerMessage": "My synthetic test email is [EMAIL_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 22,
+          "customerMessage": "My synthetic test phone is [PHONE_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 23,
+          "customerMessage": "Please record the requirement as two shareholders and two visas, but do not submit anything until I explicitly consent.",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 24,
+          "customerMessage": "I need to correct one point: the visa requirement is three visas. Please keep the correction auditable.",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 25,
+          "customerMessage": "Please summarize the current verified requirements, the next action, and anything still uncertain.",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "message": "turn 1 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "scenario executed at least 25 actual customer messages"
+        },
+        {
+          "passed": true,
+          "message": "all planned customer messages received an assistant response"
+        }
+      ],
+      "finalState": {
+        "selectedIntentKey": "anc.setup.fzc",
+        "activeIntentKey": "anc.setup.fzc",
+        "catalogVersionId": "fd9c22b6-c2d1-47ab-ab2c-8d7255a67954",
+        "opportunityId": null,
+        "slotKeys": [
+          "email",
+          "phone",
+          "interest_summary",
+          "business_activity"
+        ]
+      },
+      "external": {
+        "salesforce": "not_requested",
+        "n8n": "not_requested",
+        "invoice": "not_requested",
+        "contract": "not_requested"
+      }
+    },
+    {
+      "scenarioId": "F",
+      "name": "rag-commercial-quality",
+      "identityRef": "QA Company Setup F bace7d47",
+      "sessionId": "7d9b79c7-da8d-4aa8-be37-44a4c21cd092",
+      "turns": [
+        {
+          "number": 1,
+          "customerMessage": "Hello Zara, I would like to understand the right way to set up a company.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 2,
+          "customerMessage": "I am considering a digital marketing agency in the UAE.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 3,
+          "customerMessage": "The intended activity is specifically digital marketing agency; what should I check first?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 4,
+          "customerMessage": "Could you explain whether a free-zone company would suit that activity?",
+          "assistantResponse": "Free Zone Company (FZC) ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. Free Zone Company (FZC): For multiple shareholders, including the Free Zone Company with Visa Dubai. Free Zone Establishment (FZE) What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 5,
+          "customerMessage": "I am planning one shareholder. How does that affect the setup?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 6,
+          "customerMessage": "I expect to need two visas. What visa information should I prepare?",
+          "assistantResponse": "Number of residence visas required What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 7,
+          "customerMessage": "Please compare the available visa and setup package options.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 8,
+          "customerMessage": "I would prefer a shared office. Is that requirement relevant to eligibility?",
+          "assistantResponse": "Flexi-desk, shared office and private office options are available. ANCFZ offers flexi-desk, shared office, and private office options. Approval is subject to the selected bank’s eligibility criteria, documentation requirements, and compliance checks. There is no minimum paid-up capital requirement for most activities. To continue, could you share your interest summary?",
+          "status": 200,
+          "grounded": true,
+          "citations": 2,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 9,
+          "customerMessage": "My target is next quarter. What timing can you confirm?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 10,
+          "customerMessage": "My working budget is AED 35,000. Which approved costs should I compare?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. To continue, could you share your interest summary?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 11,
+          "customerMessage": "What documents are normally needed after a package is selected?",
+          "assistantResponse": "After selecting a package, you will typically receive documents including the business license, lease agreement, commercial registry, share certificate, certificate of incorporation, certificate of incumbency, and a bank letter to support the bank account opening process. Visa packages also include visa-related services and Emirates ID processing. Note that bank account approval depends on the selected bank's criteria and is not guaranteed. Health insurance is mandatory during the visa process but is not included in the package price. To continue, could you share your interest summary?",
+          "status": 200,
+          "grounded": true,
+          "citations": 2,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 12,
+          "customerMessage": "Before we continue, can you explain the main formation steps again?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 13,
+          "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
+          "assistantResponse": "Easy payment instalment options are available. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 14,
+          "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
+          "assistantResponse": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 15,
+          "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 16,
+          "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 17,
+          "customerMessage": "I have another question: how should I prepare the shareholder information?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. 3) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 18,
+          "customerMessage": "Please keep the current company setup conversation active while answering that.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 19,
+          "customerMessage": "I am now ready to provide my contact details if they are actually required.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 20,
+          "customerMessage": "My synthetic test name is [NAME_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 21,
+          "customerMessage": "My synthetic test email is [EMAIL_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 22,
+          "customerMessage": "My synthetic test phone is [PHONE_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 23,
+          "customerMessage": "Please record the requirement as one shareholder and two visas, but do not submit anything until I explicitly consent.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 24,
+          "customerMessage": "I need to correct one point: the visa requirement is three visas. Please keep the correction auditable.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 25,
+          "customerMessage": "Please summarize the current verified requirements, the next action, and anything still uncertain.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "message": "turn 1 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "scenario executed at least 25 actual customer messages"
+        },
+        {
+          "passed": true,
+          "message": "all planned customer messages received an assistant response"
+        }
+      ],
+      "finalState": {
+        "selectedIntentKey": null,
+        "activeIntentKey": null,
+        "catalogVersionId": "fd9c22b6-c2d1-47ab-ab2c-8d7255a67954",
+        "opportunityId": null,
+        "slotKeys": [
+          "email",
+          "phone"
+        ]
+      },
+      "external": {
+        "salesforce": "not_requested",
+        "n8n": "not_requested",
+        "invoice": "not_requested",
+        "contract": "not_requested"
+      }
+    },
+    {
+      "scenarioId": "G",
+      "name": "integration-recovery",
+      "identityRef": "QA Company Setup G bace7d47",
+      "sessionId": "d0c87285-3ad3-41b4-a420-e1a54c9682b1",
+      "turns": [
+        {
+          "number": 1,
+          "customerMessage": "Hello Zara, I would like to understand the right way to set up a company.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 2,
+          "customerMessage": "I am considering a import and export consultancy in the UAE.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 3,
+          "customerMessage": "The intended activity is specifically import and export consultancy; what should I check first?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 4,
+          "customerMessage": "Could you explain whether a free-zone company would suit that activity?",
+          "assistantResponse": "Free Zone Company (FZC) ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. Free Zone Company (FZC): For multiple shareholders, including the Free Zone Company with Visa Dubai. Free Zone Establishment (FZE) What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 5,
+          "customerMessage": "I am planning two partners. How does that affect the setup?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 6,
+          "customerMessage": "I expect to need two visas. What visa information should I prepare?",
+          "assistantResponse": "Number of residence visas required What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 7,
+          "customerMessage": "Please compare the available visa and setup package options.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 8,
+          "customerMessage": "I would prefer a flexi-desk. Is that requirement relevant to eligibility?",
+          "assistantResponse": "Flexi-desk, shared office and private office options are available. ANCFZ offers flexi-desk, shared office, and private office options. For most businesses, flexi-desk solutions are sufficient and cost-effective. Approval is subject to the selected bank’s eligibility criteria, documentation requirements, and compliance checks. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 2,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 9,
+          "customerMessage": "My target is in eight weeks. What timing can you confirm?",
+          "assistantResponse": "I can’t verify the setup timeline from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 10,
+          "customerMessage": "My working budget is AED 45,000. Which approved costs should I compare?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 11,
+          "customerMessage": "What documents are normally needed after a package is selected?",
+          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 12,
+          "customerMessage": "Before we continue, can you explain the main formation steps again?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 13,
+          "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
+          "assistantResponse": "Easy payment instalment options are available. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 14,
+          "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
+          "assistantResponse": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 15,
+          "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 16,
+          "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 17,
+          "customerMessage": "I have another question: how should I prepare the shareholder information?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. 3) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 18,
+          "customerMessage": "Please keep the current company setup conversation active while answering that.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 19,
+          "customerMessage": "I am now ready to provide my contact details if they are actually required.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 20,
+          "customerMessage": "My synthetic test name is [NAME_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 21,
+          "customerMessage": "My synthetic test email is [EMAIL_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 22,
+          "customerMessage": "My synthetic test phone is [PHONE_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 23,
+          "customerMessage": "Please record the requirement as two partners and two visas, but do not submit anything until I explicitly consent.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 24,
+          "customerMessage": "I need to correct one point: the visa requirement is one visa. Please keep the correction auditable.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 25,
+          "customerMessage": "Please summarize the current verified requirements, the next action, and anything still uncertain.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "message": "turn 1 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "scenario executed at least 25 actual customer messages"
+        },
+        {
+          "passed": true,
+          "message": "all planned customer messages received an assistant response"
+        }
+      ],
+      "finalState": {
+        "selectedIntentKey": null,
+        "activeIntentKey": null,
+        "catalogVersionId": "fd9c22b6-c2d1-47ab-ab2c-8d7255a67954",
+        "opportunityId": null,
+        "slotKeys": [
+          "name",
+          "email",
+          "phone"
+        ]
+      },
+      "external": {
+        "salesforce": "not_requested",
+        "n8n": "not_requested",
+        "invoice": "not_requested",
+        "contract": "not_requested"
+      }
+    },
+    {
+      "scenarioId": "H",
+      "name": "tenant-and-privacy-isolation",
+      "identityRef": "QA Company Setup H bace7d47",
+      "sessionId": "7efcbe92-bebe-468a-b4a4-92119ddaa772",
+      "turns": [
+        {
+          "number": 1,
+          "customerMessage": "Hello Zara, I would like to understand the right way to set up a company.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 2,
+          "customerMessage": "I am considering a training consultancy in the UAE.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 3,
+          "customerMessage": "The intended activity is specifically training consultancy; what should I check first?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 4,
+          "customerMessage": "Could you explain whether a limited liability company would suit that activity?",
+          "assistantResponse": "Use this knowledge domain when the customer asks about business activity categories. Browse the categories below or use the official activity list: Business-activities. Branch of Local Company What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 5,
+          "customerMessage": "I am planning two shareholders. How does that affect the setup?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 6,
+          "customerMessage": "I expect to need one visa. What visa information should I prepare?",
+          "assistantResponse": "Travel is needed at the visa stage for the medical test and Emirates ID. Tourist visa / Entry stamp (if on a tourist visa) The timeline may vary depending on the required procedures, including the medical fitness test, Emirates ID and visa stamping. Use this knowledge domain when the customer asks about license cost 2026. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 7,
+          "customerMessage": "Please compare the available visa and setup package options.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 8,
+          "customerMessage": "I would prefer a shared office. Is that requirement relevant to eligibility?",
+          "assistantResponse": "Flexi-desk, shared office and private office options are available. ANCFZ offers flexi-desk, shared office, and private office options. Approval is subject to the selected bank’s eligibility criteria, documentation requirements, and compliance checks. There is no minimum paid-up capital requirement for most activities. To continue, could you share your interest summary?",
+          "status": 200,
+          "grounded": true,
+          "citations": 2,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 9,
+          "customerMessage": "My target is next month. What timing can you confirm?",
+          "assistantResponse": "I can’t verify the setup timeline from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 10,
+          "customerMessage": "My working budget is AED 28,000. Which approved costs should I compare?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. To continue, could you share your interest summary?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 11,
+          "customerMessage": "What documents are normally needed after a package is selected?",
+          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. To continue, could you share your interest summary?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 12,
+          "customerMessage": "Before we continue, can you explain the main formation steps again?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "status": 200,
+          "grounded": true,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 13,
+          "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
+          "assistantResponse": "Easy payment instalment options are available. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 14,
+          "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
+          "assistantResponse": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 15,
+          "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 16,
+          "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 17,
+          "customerMessage": "I have another question: how should I prepare the shareholder information?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. 3) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. What would you like to focus on next?",
+          "status": 200,
+          "grounded": true,
+          "citations": 3,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 18,
+          "customerMessage": "Please keep the current company setup conversation active while answering that.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 19,
+          "customerMessage": "I am now ready to provide my contact details if they are actually required.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 20,
+          "customerMessage": "My synthetic test name is [NAME_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 21,
+          "customerMessage": "My synthetic test email is [EMAIL_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 22,
+          "customerMessage": "My synthetic test phone is [PHONE_TEST].",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 23,
+          "customerMessage": "Please record the requirement as two shareholders and one visa, but do not submit anything until I explicitly consent.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 24,
+          "customerMessage": "I need to correct one point: the visa requirement is two visas. Please keep the correction auditable.",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 25,
+          "customerMessage": "Please summarize the current verified requirements, the next action, and anything still uncertain.",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "message": "turn 1 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 1 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 2 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 3 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 4 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 5 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 6 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 7 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 8 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 9 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 10 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 11 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 12 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 13 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 14 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 15 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 16 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 17 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 18 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 19 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 20 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 21 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 22 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 23 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 24 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 returned HTTP 200"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 avoided generic fallback"
+        },
+        {
+          "passed": true,
+          "message": "turn 25 has one useful closing question or an appropriate termination"
+        },
+        {
+          "passed": true,
+          "message": "scenario executed at least 25 actual customer messages"
+        },
+        {
+          "passed": true,
+          "message": "all planned customer messages received an assistant response"
+        }
+      ],
+      "finalState": {
+        "selectedIntentKey": null,
+        "activeIntentKey": null,
+        "catalogVersionId": "fd9c22b6-c2d1-47ab-ab2c-8d7255a67954",
+        "opportunityId": null,
+        "slotKeys": [
+          "email",
+          "phone"
+        ]
+      },
+      "external": {
+        "salesforce": "not_requested",
+        "n8n": "not_requested",
+        "invoice": "not_requested",
+        "contract": "not_requested"
+      }
+    }
+  ],
+  "totals": {
+    "customerMessages": 205,
+    "assistantResponses": 205,
+    "passed": 631,
+    "failed": 0
+  },
+  "finishedAt": "2026-10-29T04:52:17.887Z",
+  "status": "PASSED"
+}

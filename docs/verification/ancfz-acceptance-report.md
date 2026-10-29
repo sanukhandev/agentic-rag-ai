@@ -118,6 +118,11 @@ readback was observed, so these executions do not satisfy the Salesforce gate.
   each with durable history. Post-upgrade evidence:
   [25-turn evidence](../../artifacts/ancfz/api-25-turns-after-security-2026-10-29.json)
   and [200-turn evidence](../../artifacts/ancfz/api-200-turns-after-security-2026-10-29.json).
+- A fresh run of the repository's full agentic E2E harness completed after the
+  Azure transient-response retry repair: run `bace7d47-04e8-4de7-bb75-793840a48c94`,
+  8 scenarios, 205 customer messages, 205 assistant responses, 631 assertions,
+  zero failures. Redacted evidence is in
+  [the run report](../../artifacts/agentic-e2e/run-bace7d47-04e8-4de7-bb75-793840a48c94.json).
 - Browser smoke passed on `http://localhost/?tenant=anc`: ANC persona loaded,
   a non-PII knowledge query returned an answer, and the UI rendered “4 Verified
   Sources.” The admin surface loaded the ANC organization and protected CRM

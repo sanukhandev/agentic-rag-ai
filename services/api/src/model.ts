@@ -2,6 +2,18 @@ import type { Citation, FollowUpOfferOption, IntentCatalog, LeadData, PendingFol
 import { z } from 'zod';
 import { assertExternalEndpoint } from './runtime-security.js';
 
+const transientAzureStatuses = new Set([408, 429, 500, 502, 503, 504]);
+const fetchAzure = async (url: string, init: RequestInit): Promise<Response> => {
+  for (let attempt = 0; ; attempt += 1) {
+    const response = await fetch(url, init);
+    if (!transientAzureStatuses.has(response.status) || attempt >= 2) return response;
+    const retryAfter = Number(response.headers.get('retry-after'));
+    const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1_000, 60_000) : (attempt + 1) * 1_000;
+    await response.body?.cancel();
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+};
+
 export interface ModelEvidence { citation: Citation; content: string; }
 export interface ModelPersona { name: string; greeting: string; personality: string; tone: string; speakingStyle: string; permittedLanguages: string[]; }
 export interface ConversationTurn { role: 'user' | 'assistant'; content: string; }
@@ -302,7 +314,7 @@ export class AzureFoundryModel implements ChatModel {
     const url = v1
       ? `${endpoint}/chat/completions`
       : `${endpoint}/openai/deployments/${encodeURIComponent(this.deployment)}/chat/completions?api-version=${encodeURIComponent(this.apiVersion)}`;
-    const response = await fetch(url, {
+    const response = await fetchAzure(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'api-key': this.apiKey },
       signal: AbortSignal.timeout(3_000),
@@ -339,7 +351,7 @@ export class AzureFoundryModel implements ChatModel {
       signals: input.catalog.signals.filter((signal) => input.catalog.intents.some((intent) => intent.active && intent.intentKey === signal.intentKey)).map(({ intentKey, signalType, value, language, relationGroup }) => ({ intentKey, signalType, value, language, relationGroup })),
       relations: input.catalog.relations,
     };
-    const response = await fetch(url, {
+    const response = await fetchAzure(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'api-key': this.apiKey },
       signal: AbortSignal.timeout(3_000),
@@ -373,7 +385,7 @@ export class AzureFoundryModel implements ChatModel {
     const url = v1
       ? `${endpoint}/chat/completions`
       : `${endpoint}/openai/deployments/${encodeURIComponent(this.deployment)}/chat/completions?api-version=${encodeURIComponent(this.apiVersion)}`;
-    const response = await fetch(url, {
+    const response = await fetchAzure(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'api-key': this.apiKey },
       signal: AbortSignal.timeout(3_000),
@@ -406,7 +418,7 @@ export class AzureFoundryModel implements ChatModel {
     const url = v1
       ? `${endpoint}/chat/completions`
       : `${endpoint}/openai/deployments/${encodeURIComponent(this.deployment)}/chat/completions?api-version=${encodeURIComponent(this.apiVersion)}`;
-    const response = await fetch(url, {
+    const response = await fetchAzure(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'api-key': this.apiKey },
       body: JSON.stringify({
@@ -436,7 +448,7 @@ export class AzureFoundryModel implements ChatModel {
     const url = v1
       ? `${endpoint}/chat/completions`
       : `${endpoint}/openai/deployments/${encodeURIComponent(this.deployment)}/chat/completions?api-version=${encodeURIComponent(this.apiVersion)}`;
-    const response = await fetch(url, {
+    const response = await fetchAzure(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'api-key': this.apiKey },
       body: JSON.stringify({

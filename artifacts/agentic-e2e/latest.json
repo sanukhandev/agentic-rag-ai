@@ -1,14 +1,14 @@
 {
-  "runId": "f52f8203-b955-40d6-8de6-a4490f2beb63",
-  "startedAt": "2026-10-28T17:58:29.252Z",
+  "runId": "bace7d47-04e8-4de7-bb75-793840a48c94",
+  "startedAt": "2026-10-29T04:32:43.706Z",
   "baseUrl": "http://localhost",
   "tenantSlug": "anc",
   "scenarios": [
     {
       "scenarioId": "A",
       "name": "complete-new-company",
-      "identityRef": "QA Company Setup A f52f8203",
-      "sessionId": "79c58eda-b7ee-4117-a7d5-3c4b55bfe168",
+      "identityRef": "QA Company Setup A bace7d47",
+      "sessionId": "880d8a3c-785a-481d-8d08-57cf343c81be",
       "turns": [
         {
           "number": 1,
@@ -33,17 +33,17 @@
         {
           "number": 3,
           "customerMessage": "The intended activity is specifically digital marketing agency; what should I check first?",
-          "assistantResponse": "Activity | What it covers Marketing Services Via Social Media | Promoting and marketing products and services through social media. Web3 Accelerators | Supporting early-stage and growing Web3 and digital-asset companies. Business Activity Categories at ANCFZ What would you like to focus on next?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 4,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 4,
           "customerMessage": "Could you explain whether a free-zone company would suit that activity?",
-          "assistantResponse": "Free Zone Company (FZC) An FZC is a business entity that can have two or more shareholders, with no stated maximum shareholder limit. Free Zone Company (FZC) ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. Free Zone Establishment (FZE) What would you like to focus on next?",
+          "assistantResponse": "Free Zone Company (FZC) ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. Free Zone Company (FZC): For multiple shareholders, including the Free Zone Company with Visa Dubai. Free Zone Establishment (FZE) What would you like to focus on next?",
           "status": 200,
           "grounded": true,
           "citations": 4,
@@ -56,17 +56,17 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 6,
           "customerMessage": "I expect to need two visas. What visa information should I prepare?",
-          "assistantResponse": "Number of residence visas required To help the team provide a package quote and timeline, prepare the following details: What would you like to focus on next?",
+          "assistantResponse": "Number of residence visas required What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -83,17 +83,17 @@
         {
           "number": 8,
           "customerMessage": "I would prefer a shared office. Is that requirement relevant to eligibility?",
-          "assistantResponse": "Flexi-desk, shared office and private office options are available. Bank account approval is subject to the selected bank’s eligibility criteria, documentation requirements and compliance checks, and is not guaranteed. There is no minimum paid-up capital requirement for most activities. To continue, could you share your interest summary?",
+          "assistantResponse": "Flexi-desk, shared office and private office options are available. ANCFZ offers flexi-desk, shared office, and private office options. Approval is subject to the selected bank’s eligibility criteria, documentation requirements, and compliance checks. There is no minimum paid-up capital requirement for most activities. To continue, could you share your interest summary?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 2,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 9,
           "customerMessage": "My target is next month. What timing can you confirm?",
-          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "assistantResponse": "I can’t verify the setup timeline from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
           "grounded": false,
           "citations": 0,
@@ -103,20 +103,20 @@
         {
           "number": 10,
           "customerMessage": "My working budget is AED 25,000. Which approved costs should I compare?",
-          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. To continue, could you share your interest summary?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. To continue, could you share your interest summary?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 11,
           "customerMessage": "What documents are normally needed after a package is selected?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. To continue, could you share your interest summary?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -126,57 +126,57 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 13,
           "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "Easy payment instalment options are available. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 14,
           "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 15,
           "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
-          "assistantResponse": "ANCFZ was established by Amiri Decree 15/2023, which sets out the free zone’s licensing and company regulations. Companies registered in the free zone must also follow applicable UAE federal requirements relating to beneficial ownership, anti-money laundering and corporate tax. What would you like to focus on next?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 16,
           "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
-          "assistantResponse": "Quote exact source price with visa count, term and discount assumptions; request confirmation of current pricing. Use this knowledge domain when the customer asks about packages and offers. Use this knowledge domain when the customer asks about license cost 2026. What would you like to focus on next?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 17,
           "customerMessage": "I have another question: how should I prepare the shareholder information?",
-          "assistantResponse": "Rules and Regulations | RULES_AND_REGULATIONS-028 | Rules and Regulations | Licensed entities must submit the required information to the relevant Licensing and Registration Authority upon request and within the prescribed timelines. Licensed entities must submit the required information to the relevant Licensing and Registration Authority upon request and within the prescribed timelines. Establish minimum obligations for registrars and legal entities in relation to licensing and registration procedures What would you like to focus on next?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. 3) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -253,27 +253,17 @@
         {
           "number": 25,
           "customerMessage": "Please summarize the current verified requirements, the next action, and anything still uncertain.",
-          "assistantResponse": "Your current verified requirements include one shareholder and three visas, with your email and phone details noted but not verified. The next action is to await your explicit consent before submitting any information or requesting a verified quotation or advisor review. The visa count correction to three visas is recorded and auditable. However, none of these details are verified from approved sources yet, so their accuracy remains uncertain until confirmed. What would you like to focus on next?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 4,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 26,
           "customerMessage": "What is the approved price for the option that covers my requirements?",
-          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
-          "status": 200,
-          "grounded": true,
-          "citations": 4,
-          "pendingRequirementKey": null,
-          "opportunityId": null
-        },
-        {
-          "number": 27,
-          "customerMessage": "Can the package be changed before I confirm it?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "Health insurance is mandatory during the visa process and is not included in the package price. Health insurance is mandatory during the visa process and is excluded from the package price. Visa packages also cover the listed visa-related services and Emirates ID processing. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
           "citations": 2,
@@ -281,19 +271,29 @@
           "opportunityId": null
         },
         {
-          "number": 28,
-          "customerMessage": "If I select an option, when would document collection begin?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "number": 27,
+          "customerMessage": "Can the package be changed before I confirm it?",
+          "assistantResponse": "Do not infer an unlisted package price or eligibility for instalment plans. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 28,
+          "customerMessage": "If I select an option, when would document collection begin?",
+          "assistantResponse": "I can’t verify the setup timeline from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 29,
           "customerMessage": "How will I know whether the Salesforce lead registration is complete?",
-          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. 2) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 3) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
           "citations": 4,
@@ -303,7 +303,7 @@
         {
           "number": 30,
           "customerMessage": "After the package, what is the safe process for invoice and contract preparation?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "The approved setup information covers these steps: 1) The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. 2) From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
           "citations": 3,
@@ -701,16 +701,16 @@
     {
       "scenarioId": "B",
       "name": "returning-customer",
-      "identityRef": "QA Company Setup B f52f8203",
-      "sessionId": "f9aa3077-040b-4fad-a856-94d388ed310b",
+      "identityRef": "QA Company Setup B bace7d47",
+      "sessionId": "603922d3-1089-49a9-969c-9be28fcbcff0",
       "turns": [
         {
           "number": 1,
           "customerMessage": "Hello Zara, I would like to understand the right way to set up a company.",
-          "assistantResponse": "To guide you properly on setting up a company, I need to understand a few details first. Could you please tell me what type of company you are interested in setting up and what business activity you plan to pursue?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 2,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -727,17 +727,17 @@
         {
           "number": 3,
           "customerMessage": "The intended activity is specifically e-commerce consultancy; what should I check first?",
-          "assistantResponse": "Activity | What it covers Real Estate Mortgage Consultancy | Advice on property mortgages and related financing. Real Estate Consultancies | Paid real estate consultancy services. Accounting, Bookkeeping And Tax Consultancy | Recording transactions and preparing or auditing financial accounts. What would you like to focus on next?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 4,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 4,
           "customerMessage": "Could you explain whether a limited liability company would suit that activity?",
-          "assistantResponse": "Free Zone Company (FZC) An FZC is a business entity that can have two or more shareholders, with no stated maximum shareholder limit. Registrars must maintain company information and Beneficial Owner records that are adequate, accurate and up to date, verify relevant information and make it available to competent authorities. Free Zone Company (FZC) An FZC is a business entity that can have two or more shareholders, with no stated maximum shareholder limit. What would you like to focus on next?",
+          "assistantResponse": "Use this knowledge domain when the customer asks about business activity categories. Browse the categories below or use the official activity list: Business-activities. Branch of Local Company What would you like to focus on next?",
           "status": 200,
           "grounded": true,
           "citations": 3,
@@ -750,17 +750,17 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 6,
           "customerMessage": "I expect to need one visa. What visa information should I prepare?",
-          "assistantResponse": "Number of residence visas required Travel is needed at the visa stage for the medical test and Emirates ID. To help the team provide a package quote and timeline, prepare the following details: What would you like to focus on next?",
+          "assistantResponse": "Travel is needed at the visa stage for the medical test and Emirates ID. Tourist visa / Entry stamp (if on a tourist visa) The timeline may vary depending on the required procedures, including the medical fitness test, Emirates ID and visa stamping. Use this knowledge domain when the customer asks about license cost 2026. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -777,17 +777,7 @@
         {
           "number": 8,
           "customerMessage": "I would prefer a flexi-desk. Is that requirement relevant to eligibility?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
-          "status": 200,
-          "grounded": true,
-          "citations": 3,
-          "pendingRequirementKey": null,
-          "opportunityId": null
-        },
-        {
-          "number": 9,
-          "customerMessage": "My target is in six weeks. What timing can you confirm?",
-          "assistantResponse": "The timeline may vary depending on the required procedures, including the medical fitness test, Emirates ID and visa stamping. To help the team provide a package quote and timeline, prepare the following details: Visa processing is estimated to take 24–48 hours. What would you like to focus on next?",
+          "assistantResponse": "Flexi-desk, shared office and private office options are available. ANCFZ offers flexi-desk, shared office, and private office options. For most businesses, flexi-desk solutions are sufficient and cost-effective. Approval is subject to the selected bank’s eligibility criteria, documentation requirements, and compliance checks. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
           "citations": 2,
@@ -795,22 +785,32 @@
           "opportunityId": null
         },
         {
+          "number": 9,
+          "customerMessage": "My target is in six weeks. What timing can you confirm?",
+          "assistantResponse": "I can’t verify the setup timeline from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "status": 200,
+          "grounded": false,
+          "citations": 0,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
           "number": 10,
           "customerMessage": "My working budget is AED 40,000. Which approved costs should I compare?",
-          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. What would you like to focus on next?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 11,
           "customerMessage": "What documents are normally needed after a package is selected?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -820,57 +820,57 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 13,
           "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "Easy payment instalment options are available. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 14,
           "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 15,
           "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
-          "assistantResponse": "ANCFZ was established by Amiri Decree 15/2023, which sets out the free zone’s licensing and company regulations. Companies registered in the free zone must also follow applicable UAE federal requirements relating to beneficial ownership, anti-money laundering and corporate tax. What would you like to focus on next?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 16,
           "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
-          "assistantResponse": "Quote exact source price with visa count, term and discount assumptions; request confirmation of current pricing. Use this knowledge domain when the customer asks about packages and offers. Use this knowledge domain when the customer asks about license cost 2026. What would you like to focus on next?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 17,
           "customerMessage": "I have another question: how should I prepare the shareholder information?",
-          "assistantResponse": "Rules and Regulations | RULES_AND_REGULATIONS-028 | Rules and Regulations | Licensed entities must submit the required information to the relevant Licensing and Registration Authority upon request and within the prescribed timelines. Licensed entities must submit the required information to the relevant Licensing and Registration Authority upon request and within the prescribed timelines. Establish minimum obligations for registrars and legal entities in relation to licensing and registration procedures What would you like to focus on next?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. 3) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -1285,8 +1285,8 @@
     {
       "scenarioId": "C",
       "name": "multiple-shareholders",
-      "identityRef": "QA Company Setup C f52f8203",
-      "sessionId": "99ccb094-a8d7-4d63-ab6b-43b4d2cabdbf",
+      "identityRef": "QA Company Setup C bace7d47",
+      "sessionId": "75f6655d-37cb-438a-9b53-a32edd6d64eb",
       "turns": [
         {
           "number": 1,
@@ -1311,40 +1311,40 @@
         {
           "number": 3,
           "customerMessage": "The intended activity is specifically software development studio; what should I check first?",
-          "assistantResponse": "Business Activity Categories | BUSINESS_ACTIVITY_CATEGORIES-021 | Table 2 row 12 | Cybersecurity and Technology Audit Services of Software Code | Reviewing software code for security and functionality. Business Activity Categories | BUSINESS_ACTIVITY_CATEGORIES-022 | Table 3 row 1 | Activity | What it covers | a Software Development Services | Software design, implementation, operation and maintenance. Activity | What it covers To continue, could you share your interest summary?",
+          "assistantResponse": "For setting up a software development studio in the UAE, you should first identify the precise business activity you will undertake. This could include activities like Computer Programming Activities (writing code and developing software) or Software Development Services (design, implementation, operation, and maintenance). Understanding your exact activity helps determine the right license and setup requirements. To assist you better, could you please share how many visas you plan to have for your company?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 4,
           "customerMessage": "Could you explain whether a free-zone company would suit that activity?",
-          "assistantResponse": "Business Activity Categories at ANCFZ Browse the categories below or use the official activity list: Business-activities. The examples below are selected from the supplied activity content. Encryption Software Trading | Trading software for encryption solutions that protect sensitive data. To continue, could you share your interest summary?",
+          "assistantResponse": "A free-zone company at Ajman Nuventures Centre (ANCFZ) can indeed suit a software development studio. ANCFZ offers licenses for activities like Computer Programming Activities (writing code and developing software) and Software Development Services (software design, implementation, operation, and maintenance). You can combine up to 10 activities under one license, which is flexible for IT and software businesses. To guide you better, could you please tell me how many visas you plan to have for your company?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 5,
           "customerMessage": "I am planning three partners. How does that affect the setup?",
-          "assistantResponse": "Business Activity Categories | BUSINESS_ACTIVITY_CATEGORIES-014 | Table 2 row 5 | Computer Systems & Communication Equipment Software Trading | Trading application software and related documentation. To continue, could you share your interest summary?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 6,
           "customerMessage": "I expect to need four visas. What visa information should I prepare?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -1361,46 +1361,16 @@
         {
           "number": 8,
           "customerMessage": "I would prefer a private office. Is that requirement relevant to eligibility?",
-          "assistantResponse": "The assistant should identify the precise user objective, retrieve the smallest relevant approved source passage, and answer with qualifying conditions. What name should I use?",
+          "assistantResponse": "Office requirement: physical office or flexi-desk The assistant should identify the precise user objective, retrieve the smallest relevant approved source passage, and answer with qualifying conditions. Dubai representative office: meetings for investors based in Dubai and the southern emirates. What name should I use?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 2,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 9,
           "customerMessage": "My target is this quarter. What timing can you confirm?",
-          "assistantResponse": "Use this knowledge domain when the customer asks about packages and offers. Use this knowledge domain when the customer asks about business activity categories. What name should I use?",
-          "status": 200,
-          "grounded": true,
-          "citations": 2,
-          "pendingRequirementKey": null,
-          "opportunityId": null
-        },
-        {
-          "number": 10,
-          "customerMessage": "My working budget is AED 60,000. Which approved costs should I compare?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
-          "status": 200,
-          "grounded": true,
-          "citations": 1,
-          "pendingRequirementKey": null,
-          "opportunityId": null
-        },
-        {
-          "number": 11,
-          "customerMessage": "What documents are normally needed after a package is selected?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
-          "status": 200,
-          "grounded": true,
-          "citations": 2,
-          "pendingRequirementKey": null,
-          "opportunityId": null
-        },
-        {
-          "number": 12,
-          "customerMessage": "Before we continue, can you explain the main formation steps again?",
           "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
           "grounded": false,
@@ -1409,22 +1379,52 @@
           "opportunityId": null
         },
         {
-          "number": 13,
-          "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "number": 10,
+          "customerMessage": "My working budget is AED 60,000. Which approved costs should I compare?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What name should I use?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 11,
+          "customerMessage": "What documents are normally needed after a package is selected?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What name should I use?",
+          "status": 200,
+          "grounded": true,
+          "citations": 4,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 12,
+          "customerMessage": "Before we continue, can you explain the main formation steps again?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. What name should I use?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
+          "pendingRequirementKey": null,
+          "opportunityId": null
+        },
+        {
+          "number": 13,
+          "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
+          "assistantResponse": "The assistant should identify the precise user objective, retrieve the smallest relevant approved source passage, and answer with qualifying conditions. What name should I use?",
+          "status": 200,
+          "grounded": true,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 14,
           "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Every package includes the business license, lease agreement, commercial registry, share certificate, certificate of incorporation, certificate of incumbency, a bank letter to support the account opening process, unlimited shareholders and up to 10 mix-and-match activities. What name should I use?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -1441,20 +1441,20 @@
         {
           "number": 16,
           "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
-          "assistantResponse": "Use this knowledge domain when the customer asks about packages and offers. Flexi-desk availability is subject to package terms. Use this knowledge domain when the customer asks about license cost 2026. What name should I use?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What name should I use?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 17,
           "customerMessage": "I have another question: how should I prepare the shareholder information?",
-          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Note: Additional documents may be required depending on the activity and shareholder type (individual or corporate). What name should I use?",
           "status": 200,
-          "grounded": false,
-          "citations": 0,
+          "grounded": true,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -1872,8 +1872,8 @@
     {
       "scenarioId": "D",
       "name": "interruptions-and-references",
-      "identityRef": "QA Company Setup D f52f8203",
-      "sessionId": "4453ad79-b980-441b-8a9d-77742c24b06a",
+      "identityRef": "QA Company Setup D bace7d47",
+      "sessionId": "ba9393ba-d8b5-496f-a480-2d712c67c98f",
       "turns": [
         {
           "number": 1,
@@ -1901,14 +1901,14 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 4,
           "customerMessage": "Could you explain whether a sole establishment would suit that activity?",
-          "assistantResponse": "Ask for exact activity description, proposed operations, and whether regulated; do not infer licensing eligibility from broad categories. Answer policy | Ask for exact activity description, proposed operations, and whether regulated; do not infer licensing eligibility from broad categories. Source file | RAG_ANCFZ_Business_Activity_Categories(1).docx What would you like to focus on next?",
+          "assistantResponse": "Browse the categories below or use the official activity list: Business-activities. Use this knowledge domain when the customer asks about business activity categories. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
           "citations": 2,
@@ -1921,17 +1921,17 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 6,
           "customerMessage": "I expect to need two visas. What visa information should I prepare?",
-          "assistantResponse": "Number of residence visas required To help the team provide a package quote and timeline, prepare the following details: What would you like to focus on next?",
+          "assistantResponse": "Number of residence visas required What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -1948,17 +1948,17 @@
         {
           "number": 8,
           "customerMessage": "I would prefer a shared workspace. Is that requirement relevant to eligibility?",
-          "assistantResponse": "Bank account approval is subject to the selected bank’s eligibility criteria, documentation requirements and compliance checks, and is not guaranteed.\", There is no minimum paid-up capital requirement for most activities. Flexi-desk, shared office and private office options are available. What would you like to focus on next?",
+          "assistantResponse": "Assistant behavior: Identify the relevant sub-intent, retrieve the approved source passage, state the supported facts and caveats, and ask one relevant follow-up if a required parameter is missing. The assistant should identify the precise user objective, retrieve the smallest relevant approved source passage, and answer with qualifying conditions. ANCFZ has no minimum paid-up capital requirement for most business activities. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 9,
           "customerMessage": "My target is next month. What timing can you confirm?",
-          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "assistantResponse": "I can’t verify the setup timeline from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
           "grounded": false,
           "citations": 0,
@@ -1968,20 +1968,20 @@
         {
           "number": 10,
           "customerMessage": "My working budget is AED 30,000. Which approved costs should I compare?",
-          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. What would you like to focus on next?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 11,
           "customerMessage": "What documents are normally needed after a package is selected?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -1991,57 +1991,57 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 13,
           "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "Easy payment instalment options are available. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 14,
           "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 15,
           "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
-          "assistantResponse": "ANCFZ was established by Amiri Decree 15/2023, which sets out the free zone’s licensing and company regulations. Companies registered in the free zone must also follow applicable UAE federal requirements relating to beneficial ownership, anti-money laundering and corporate tax. What would you like to focus on next?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 16,
           "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
-          "assistantResponse": "Quote exact source price with visa count, term and discount assumptions; request confirmation of current pricing. Use this knowledge domain when the customer asks about packages and offers. Use this knowledge domain when the customer asks about license cost 2026. What would you like to focus on next?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 17,
           "customerMessage": "I have another question: how should I prepare the shareholder information?",
-          "assistantResponse": "Rules and Regulations | RULES_AND_REGULATIONS-028 | Rules and Regulations | Licensed entities must submit the required information to the relevant Licensing and Registration Authority upon request and within the prescribed timelines. Licensed entities must submit the required information to the relevant Licensing and Registration Authority upon request and within the prescribed timelines. Establish minimum obligations for registrars and legal entities in relation to licensing and registration procedures What would you like to focus on next?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. 3) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -2456,8 +2456,8 @@
     {
       "scenarioId": "E",
       "name": "customer-corrections",
-      "identityRef": "QA Company Setup E f52f8203",
-      "sessionId": "dcec76b5-293e-475e-93b2-790b0dd44c8a",
+      "identityRef": "QA Company Setup E bace7d47",
+      "sessionId": "d2fd00fb-fa61-494b-b859-0dd2e287704d",
       "turns": [
         {
           "number": 1,
@@ -2485,14 +2485,14 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 4,
           "customerMessage": "Could you explain whether a limited liability company would suit that activity?",
-          "assistantResponse": "Free Zone Company (FZC) An FZC is a business entity that can have two or more shareholders, with no stated maximum shareholder limit. Registrars must maintain company information and Beneficial Owner records that are adequate, accurate and up to date, verify relevant information and make it available to competent authorities. Free Zone Company (FZC) An FZC is a business entity that can have two or more shareholders, with no stated maximum shareholder limit. What would you like to focus on next?",
+          "assistantResponse": "Use this knowledge domain when the customer asks about business activity categories. Browse the categories below or use the official activity list: Business-activities. Branch of Local Company What would you like to focus on next?",
           "status": 200,
           "grounded": true,
           "citations": 3,
@@ -2505,17 +2505,17 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 6,
           "customerMessage": "I expect to need two visas. What visa information should I prepare?",
-          "assistantResponse": "Number of residence visas required To help the team provide a package quote and timeline, prepare the following details: What would you like to focus on next?",
+          "assistantResponse": "Number of residence visas required What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -2532,40 +2532,40 @@
         {
           "number": 8,
           "customerMessage": "I would prefer a private office. Is that requirement relevant to eligibility?",
-          "assistantResponse": "Flexi-desk, shared office and private office options are available. Bank account approval is subject to the selected bank’s eligibility criteria, documentation requirements and compliance checks, and is not guaranteed. There is no minimum paid-up capital requirement for most activities. Assistant behavior: Identify the relevant sub-intent, retrieve the approved source passage, state the supported facts and caveats, and ask one relevant follow-up if a required parameter is missing. What would you like to focus on next?",
+          "assistantResponse": "ANCFZ offers flexi-desk, shared office, and private office options. Approval is subject to the selected bank’s eligibility criteria, documentation requirements, and compliance checks. Assistant behavior: Identify the relevant sub-intent, retrieve the approved source passage, state the supported facts and caveats, and ask one relevant follow-up if a required parameter is missing. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 2,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 9,
           "customerMessage": "My target is in two months. What timing can you confirm?",
-          "assistantResponse": "The timeline may vary depending on the required procedures, including the medical fitness test, Emirates ID and visa stamping. Visa processing is estimated to take 24–48 hours. What would you like to focus on next?",
+          "assistantResponse": "I can’t verify the setup timeline from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 10,
           "customerMessage": "My working budget is AED 50,000. Which approved costs should I compare?",
-          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. What would you like to focus on next?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 11,
           "customerMessage": "What documents are normally needed after a package is selected?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -2575,57 +2575,57 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 13,
           "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "Easy payment instalment options are available. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 14,
           "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 15,
           "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
-          "assistantResponse": "ANCFZ was established by Amiri Decree 15/2023, which sets out the free zone’s licensing and company regulations. Companies registered in the free zone must also follow applicable UAE federal requirements relating to beneficial ownership, anti-money laundering and corporate tax. What would you like to focus on next?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 16,
           "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
-          "assistantResponse": "Quote exact source price with visa count, term and discount assumptions; request confirmation of current pricing. Use this knowledge domain when the customer asks about packages and offers. Use this knowledge domain when the customer asks about license cost 2026. What would you like to focus on next?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 17,
           "customerMessage": "I have another question: how should I prepare the shareholder information?",
-          "assistantResponse": "Rules and Regulations | RULES_AND_REGULATIONS-028 | Rules and Regulations | Licensed entities must submit the required information to the relevant Licensing and Registration Authority upon request and within the prescribed timelines. Licensed entities must submit the required information to the relevant Licensing and Registration Authority upon request and within the prescribed timelines. Establish minimum obligations for registrars and legal entities in relation to licensing and registration procedures What would you like to focus on next?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. 3) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -2682,7 +2682,7 @@
         {
           "number": 23,
           "customerMessage": "Please record the requirement as two shareholders and two visas, but do not submit anything until I explicitly consent.",
-          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
           "status": 200,
           "grounded": false,
           "citations": 0,
@@ -2692,7 +2692,7 @@
         {
           "number": 24,
           "customerMessage": "I need to correct one point: the visa requirement is three visas. Please keep the correction auditable.",
-          "assistantResponse": "I can’t verify the visa details from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
           "status": 200,
           "grounded": false,
           "citations": 0,
@@ -2702,7 +2702,7 @@
         {
           "number": 25,
           "customerMessage": "Please summarize the current verified requirements, the next action, and anything still uncertain.",
-          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "assistantResponse": "I’d be happy to help. What name should I use?",
           "status": 200,
           "grounded": false,
           "citations": 0,
@@ -3021,13 +3021,15 @@
         }
       ],
       "finalState": {
-        "selectedIntentKey": null,
-        "activeIntentKey": null,
+        "selectedIntentKey": "anc.setup.fzc",
+        "activeIntentKey": "anc.setup.fzc",
         "catalogVersionId": "fd9c22b6-c2d1-47ab-ab2c-8d7255a67954",
         "opportunityId": null,
         "slotKeys": [
           "email",
-          "phone"
+          "phone",
+          "interest_summary",
+          "business_activity"
         ]
       },
       "external": {
@@ -3040,8 +3042,8 @@
     {
       "scenarioId": "F",
       "name": "rag-commercial-quality",
-      "identityRef": "QA Company Setup F f52f8203",
-      "sessionId": "bfa42fae-b36b-4b3b-bfc7-af5218d9b8c4",
+      "identityRef": "QA Company Setup F bace7d47",
+      "sessionId": "7d9b79c7-da8d-4aa8-be37-44a4c21cd092",
       "turns": [
         {
           "number": 1,
@@ -3066,17 +3068,17 @@
         {
           "number": 3,
           "customerMessage": "The intended activity is specifically digital marketing agency; what should I check first?",
-          "assistantResponse": "Activity | What it covers Marketing Services Via Social Media | Promoting and marketing products and services through social media. Web3 Accelerators | Supporting early-stage and growing Web3 and digital-asset companies. Business Activity Categories at ANCFZ What would you like to focus on next?",
+          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 4,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 4,
           "customerMessage": "Could you explain whether a free-zone company would suit that activity?",
-          "assistantResponse": "Free Zone Company (FZC) An FZC is a business entity that can have two or more shareholders, with no stated maximum shareholder limit. Free Zone Company (FZC) ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. Free Zone Establishment (FZE) What would you like to focus on next?",
+          "assistantResponse": "Free Zone Company (FZC) ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. Free Zone Company (FZC): For multiple shareholders, including the Free Zone Company with Visa Dubai. Free Zone Establishment (FZE) What would you like to focus on next?",
           "status": 200,
           "grounded": true,
           "citations": 4,
@@ -3089,17 +3091,17 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 6,
           "customerMessage": "I expect to need two visas. What visa information should I prepare?",
-          "assistantResponse": "Number of residence visas required To help the team provide a package quote and timeline, prepare the following details: What would you like to focus on next?",
+          "assistantResponse": "Number of residence visas required What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -3116,40 +3118,40 @@
         {
           "number": 8,
           "customerMessage": "I would prefer a shared office. Is that requirement relevant to eligibility?",
-          "assistantResponse": "Flexi-desk, shared office and private office options are available. Bank account approval is subject to the selected bank’s eligibility criteria, documentation requirements and compliance checks, and is not guaranteed. There is no minimum paid-up capital requirement for most activities. To continue, could you share your interest summary?",
+          "assistantResponse": "Flexi-desk, shared office and private office options are available. ANCFZ offers flexi-desk, shared office, and private office options. Approval is subject to the selected bank’s eligibility criteria, documentation requirements, and compliance checks. There is no minimum paid-up capital requirement for most activities. To continue, could you share your interest summary?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 2,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 9,
           "customerMessage": "My target is next quarter. What timing can you confirm?",
-          "assistantResponse": "Quote exact source price with visa count, term and discount assumptions; request confirmation of current pricing. Access classification | Proposed public; confirm before publishing To continue, could you share your interest summary?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 3,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 10,
           "customerMessage": "My working budget is AED 35,000. Which approved costs should I compare?",
-          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. To continue, could you share your interest summary?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. To continue, could you share your interest summary?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 11,
           "customerMessage": "What documents are normally needed after a package is selected?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "After selecting a package, you will typically receive documents including the business license, lease agreement, commercial registry, share certificate, certificate of incorporation, certificate of incumbency, and a bank letter to support the bank account opening process. Visa packages also include visa-related services and Emirates ID processing. Note that bank account approval depends on the selected bank's criteria and is not guaranteed. Health insurance is mandatory during the visa process but is not included in the package price. To continue, could you share your interest summary?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 2,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -3159,57 +3161,57 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 13,
           "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "Easy payment instalment options are available. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 14,
           "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 15,
           "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
-          "assistantResponse": "ANCFZ was established by Amiri Decree 15/2023, which sets out the free zone’s licensing and company regulations. Companies registered in the free zone must also follow applicable UAE federal requirements relating to beneficial ownership, anti-money laundering and corporate tax. What would you like to focus on next?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 16,
           "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
-          "assistantResponse": "Quote exact source price with visa count, term and discount assumptions; request confirmation of current pricing. Use this knowledge domain when the customer asks about packages and offers. Use this knowledge domain when the customer asks about license cost 2026. What would you like to focus on next?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 17,
           "customerMessage": "I have another question: how should I prepare the shareholder information?",
-          "assistantResponse": "Rules and Regulations | RULES_AND_REGULATIONS-028 | Rules and Regulations | Licensed entities must submit the required information to the relevant Licensing and Registration Authority upon request and within the prescribed timelines. Licensed entities must submit the required information to the relevant Licensing and Registration Authority upon request and within the prescribed timelines. Establish minimum obligations for registrars and legal entities in relation to licensing and registration procedures What would you like to focus on next?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. 3) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -3624,8 +3626,8 @@
     {
       "scenarioId": "G",
       "name": "integration-recovery",
-      "identityRef": "QA Company Setup G f52f8203",
-      "sessionId": "199a44cf-0fbc-496c-943b-b9d19ff8e399",
+      "identityRef": "QA Company Setup G bace7d47",
+      "sessionId": "d0c87285-3ad3-41b4-a420-e1a54c9682b1",
       "turns": [
         {
           "number": 1,
@@ -3653,14 +3655,14 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 4,
           "customerMessage": "Could you explain whether a free-zone company would suit that activity?",
-          "assistantResponse": "Free Zone Company (FZC) An FZC is a business entity that can have two or more shareholders, with no stated maximum shareholder limit. Free Zone Company (FZC) ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. Free Zone Establishment (FZE) What would you like to focus on next?",
+          "assistantResponse": "Free Zone Company (FZC) ANCFZ also offers a Blockchain Tokenization License Dubai, an E-Commerce License UAE, online company registration in the UAE, and a Free Zone Company University License. Free Zone Company (FZC): For multiple shareholders, including the Free Zone Company with Visa Dubai. Free Zone Establishment (FZE) What would you like to focus on next?",
           "status": 200,
           "grounded": true,
           "citations": 4,
@@ -3673,17 +3675,17 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 6,
           "customerMessage": "I expect to need two visas. What visa information should I prepare?",
-          "assistantResponse": "Number of residence visas required To help the team provide a package quote and timeline, prepare the following details: What would you like to focus on next?",
+          "assistantResponse": "Number of residence visas required What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -3700,7 +3702,7 @@
         {
           "number": 8,
           "customerMessage": "I would prefer a flexi-desk. Is that requirement relevant to eligibility?",
-          "assistantResponse": "Flexi-desk, shared office and private office options are available. Bank account approval is subject to the selected bank’s eligibility criteria, documentation requirements and compliance checks, and is not guaranteed. There is no minimum paid-up capital requirement for most activities. What would you like to focus on next?",
+          "assistantResponse": "Flexi-desk, shared office and private office options are available. ANCFZ offers flexi-desk, shared office, and private office options. For most businesses, flexi-desk solutions are sufficient and cost-effective. Approval is subject to the selected bank’s eligibility criteria, documentation requirements, and compliance checks. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
           "citations": 2,
@@ -3710,30 +3712,30 @@
         {
           "number": 9,
           "customerMessage": "My target is in eight weeks. What timing can you confirm?",
-          "assistantResponse": "The timeline may vary depending on the required procedures, including the medical fitness test, Emirates ID and visa stamping. To help the team provide a package quote and timeline, prepare the following details: Visa processing is estimated to take 24–48 hours. What would you like to focus on next?",
+          "assistantResponse": "I can’t verify the setup timeline from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 2,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 10,
           "customerMessage": "My working budget is AED 45,000. Which approved costs should I compare?",
-          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. What would you like to focus on next?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 11,
           "customerMessage": "What documents are normally needed after a package is selected?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -3743,57 +3745,57 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 13,
           "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "Easy payment instalment options are available. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 14,
           "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 15,
           "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
-          "assistantResponse": "ANCFZ was established by Amiri Decree 15/2023, which sets out the free zone’s licensing and company regulations. Companies registered in the free zone must also follow applicable UAE federal requirements relating to beneficial ownership, anti-money laundering and corporate tax. What would you like to focus on next?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 16,
           "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
-          "assistantResponse": "Quote exact source price with visa count, term and discount assumptions; request confirmation of current pricing. Use this knowledge domain when the customer asks about packages and offers. Use this knowledge domain when the customer asks about license cost 2026. What would you like to focus on next?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 17,
           "customerMessage": "I have another question: how should I prepare the shareholder information?",
-          "assistantResponse": "Rules and Regulations | RULES_AND_REGULATIONS-028 | Rules and Regulations | Licensed entities must submit the required information to the relevant Licensing and Registration Authority upon request and within the prescribed timelines. Licensed entities must submit the required information to the relevant Licensing and Registration Authority upon request and within the prescribed timelines. Establish minimum obligations for registrars and legal entities in relation to licensing and registration procedures What would you like to focus on next?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. 3) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -3870,10 +3872,10 @@
         {
           "number": 25,
           "customerMessage": "Please summarize the current verified requirements, the next action, and anything still uncertain.",
-          "assistantResponse": "Here’s the summary: You have provided your name, email, and phone number as contact details. Your current verified requirement is for two partners and one visa, with the visa count corrected from two to one as per your latest update. No submission or further action has been taken yet, as you have not given explicit consent to proceed. The next action would be to await your consent before submitting or requesting a verified quotation or advisor review. The visa detail and partner count remain unverified from official sources, so they are kept as your stated requirements for now. What would you like to focus on next?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 4,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         }
@@ -4209,8 +4211,8 @@
     {
       "scenarioId": "H",
       "name": "tenant-and-privacy-isolation",
-      "identityRef": "QA Company Setup H f52f8203",
-      "sessionId": "02ef4bbc-3331-4ea0-be3c-4523b61cba28",
+      "identityRef": "QA Company Setup H bace7d47",
+      "sessionId": "7efcbe92-bebe-468a-b4a4-92119ddaa772",
       "turns": [
         {
           "number": 1,
@@ -4245,7 +4247,7 @@
         {
           "number": 4,
           "customerMessage": "Could you explain whether a limited liability company would suit that activity?",
-          "assistantResponse": "Free Zone Company (FZC) An FZC is a business entity that can have two or more shareholders, with no stated maximum shareholder limit. Registrars must maintain company information and Beneficial Owner records that are adequate, accurate and up to date, verify relevant information and make it available to competent authorities. Free Zone Company (FZC) An FZC is a business entity that can have two or more shareholders, with no stated maximum shareholder limit. What would you like to focus on next?",
+          "assistantResponse": "Use this knowledge domain when the customer asks about business activity categories. Browse the categories below or use the official activity list: Business-activities. Branch of Local Company What would you like to focus on next?",
           "status": 200,
           "grounded": true,
           "citations": 3,
@@ -4258,17 +4260,17 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 6,
           "customerMessage": "I expect to need one visa. What visa information should I prepare?",
-          "assistantResponse": "Number of residence visas required Travel is needed at the visa stage for the medical test and Emirates ID. To help the team provide a package quote and timeline, prepare the following details: What would you like to focus on next?",
+          "assistantResponse": "Travel is needed at the visa stage for the medical test and Emirates ID. Tourist visa / Entry stamp (if on a tourist visa) The timeline may vary depending on the required procedures, including the medical fitness test, Emirates ID and visa stamping. Use this knowledge domain when the customer asks about license cost 2026. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -4285,17 +4287,17 @@
         {
           "number": 8,
           "customerMessage": "I would prefer a shared office. Is that requirement relevant to eligibility?",
-          "assistantResponse": "Flexi-desk, shared office and private office options are available. Bank account approval is subject to the selected bank’s eligibility criteria, documentation requirements and compliance checks, and is not guaranteed. There is no minimum paid-up capital requirement for most activities. To continue, could you share your interest summary?",
+          "assistantResponse": "Flexi-desk, shared office and private office options are available. ANCFZ offers flexi-desk, shared office, and private office options. Approval is subject to the selected bank’s eligibility criteria, documentation requirements, and compliance checks. There is no minimum paid-up capital requirement for most activities. To continue, could you share your interest summary?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 2,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 9,
           "customerMessage": "My target is next month. What timing can you confirm?",
-          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+          "assistantResponse": "I can’t verify the setup timeline from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
           "grounded": false,
           "citations": 0,
@@ -4305,20 +4307,20 @@
         {
           "number": 10,
           "customerMessage": "My working budget is AED 28,000. Which approved costs should I compare?",
-          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. To continue, could you share your interest summary?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. To continue, could you share your interest summary?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 11,
           "customerMessage": "What documents are normally needed after a package is selected?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "Visa packages also cover the listed visa-related services and Emirates ID processing. Health insurance is mandatory during the visa process and is not included in the package price. From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. The package covers the business license, listed registration documents and a bank letter to support the bank account opening process. To continue, could you share your interest summary?",
           "status": 200,
           "grounded": true,
-          "citations": 1,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -4328,57 +4330,57 @@
           "assistantResponse": "I can help with the next step. What would you like to focus on first?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 13,
           "customerMessage": "That answer was helpful. What is the difference between the basic and growth options?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "Easy payment instalment options are available. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 1,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 14,
           "customerMessage": "Does the package include registration and licensing items, or are some fees separate?",
-          "assistantResponse": "I can help with the next step. What would you like to focus on first?",
+          "assistantResponse": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 15,
           "customerMessage": "I want to avoid assumptions. Which of my requirements are confirmed so far?",
-          "assistantResponse": "ANCFZ was established by Amiri Decree 15/2023, which sets out the free zone’s licensing and company regulations. Companies registered in the free zone must also follow applicable UAE federal requirements relating to beneficial ownership, anti-money laundering and corporate tax. What would you like to focus on next?",
+          "assistantResponse": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
           "status": 200,
-          "grounded": true,
-          "citations": 1,
+          "grounded": false,
+          "citations": 0,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 16,
           "customerMessage": "Could you tell me whether the activity is eligible for the package with the visa count I gave you?",
-          "assistantResponse": "Quote exact source price with visa count, term and discount assumptions; request confirmation of current pricing. Use this knowledge domain when the customer asks about packages and offers. Use this knowledge domain when the customer asks about license cost 2026. What would you like to focus on next?",
+          "assistantResponse": "The approved sources contain conflicting facts, so I will not choose one without review. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 3,
+          "citations": 4,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
         {
           "number": 17,
           "customerMessage": "I have another question: how should I prepare the shareholder information?",
-          "assistantResponse": "Rules and Regulations | RULES_AND_REGULATIONS-028 | Rules and Regulations | Licensed entities must submit the required information to the relevant Licensing and Registration Authority upon request and within the prescribed timelines. Licensed entities must submit the required information to the relevant Licensing and Registration Authority upon request and within the prescribed timelines. Establish minimum obligations for registrars and legal entities in relation to licensing and registration procedures What would you like to focus on next?",
+          "assistantResponse": "The approved setup information covers these steps: 1) Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. 2) Passport copies of shareholders and directors, passport photographs, proof of residence such as a utility bill or tenancy contract, and the application form with proposed company names. 3) Company registration can be completed remotely, with license issuance in as little as 2 hours, provided all required documents are in order. What would you like to focus on next?",
           "status": 200,
           "grounded": true,
-          "citations": 2,
+          "citations": 3,
           "pendingRequirementKey": null,
           "opportunityId": null
         },
@@ -4797,6 +4799,6 @@
     "passed": 631,
     "failed": 0
   },
-  "finishedAt": "2026-10-28T18:28:32.088Z",
+  "finishedAt": "2026-10-29T04:52:17.887Z",
   "status": "PASSED"
 }
