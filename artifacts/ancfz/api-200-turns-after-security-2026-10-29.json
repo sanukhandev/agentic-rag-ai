@@ -1,0 +1,1691 @@
+{
+  "started_at": "2026-10-28T21:19:33.589797+00:00",
+  "tenant": "anc",
+  "scenarios_requested": 8,
+  "scenarios_executed": 8,
+  "customer_turns": 200,
+  "conversation_gate": "PASS",
+  "external_crm_invoice_document_signing": "NOT_VERIFIED_BY_THIS_HARNESS",
+  "runs": [
+    {
+      "session_id": "7b31262f-ab57-451b-b555-eda188773cd2",
+      "turns_sent": 25,
+      "all_http_answers": true,
+      "history_http_status": 200,
+      "durable_unique_user_messages": 25,
+      "history_has_25_turns": true,
+      "turn_checks": [
+        {
+          "turn": 1,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 2,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 3,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 4,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 5,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 6,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 7,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 8,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 9,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 10,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 11,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 12,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 13,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 14,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 15,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 16,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 17,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 18,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 19,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 20,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 21,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 22,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 23,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 24,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 25,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        }
+      ]
+    },
+    {
+      "session_id": "3683a55c-3ff1-4dc6-91b1-8ec35ade0fba",
+      "turns_sent": 25,
+      "all_http_answers": true,
+      "history_http_status": 200,
+      "durable_unique_user_messages": 25,
+      "history_has_25_turns": true,
+      "turn_checks": [
+        {
+          "turn": 1,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 2,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 3,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 4,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 5,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 6,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 7,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 8,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 9,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 10,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 11,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 12,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 13,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 14,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 15,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 16,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 17,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 18,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 19,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 20,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 21,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 22,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 23,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 24,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 25,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        }
+      ]
+    },
+    {
+      "session_id": "9c01f109-9a91-4195-a855-0ed046e746e1",
+      "turns_sent": 25,
+      "all_http_answers": true,
+      "history_http_status": 200,
+      "durable_unique_user_messages": 25,
+      "history_has_25_turns": true,
+      "turn_checks": [
+        {
+          "turn": 1,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 2,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 3,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 4,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 5,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 6,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 7,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 8,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 9,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 10,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 11,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 12,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 13,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 14,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 15,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 16,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 17,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 18,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 19,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 20,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 21,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 22,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 23,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 24,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 25,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        }
+      ]
+    },
+    {
+      "session_id": "8db340ae-e576-4f65-80ad-3c51a3139ddf",
+      "turns_sent": 25,
+      "all_http_answers": true,
+      "history_http_status": 200,
+      "durable_unique_user_messages": 25,
+      "history_has_25_turns": true,
+      "turn_checks": [
+        {
+          "turn": 1,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 2,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 3,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 4,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 5,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 6,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 7,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 8,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 9,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 10,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 11,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 12,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 13,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 14,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 15,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 16,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 17,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 18,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 19,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 20,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 21,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 22,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 23,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 24,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 25,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        }
+      ]
+    },
+    {
+      "session_id": "362103da-d953-4476-ab80-50f7c322c07f",
+      "turns_sent": 25,
+      "all_http_answers": true,
+      "history_http_status": 200,
+      "durable_unique_user_messages": 25,
+      "history_has_25_turns": true,
+      "turn_checks": [
+        {
+          "turn": 1,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 2,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 3,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 4,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 5,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 6,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 7,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 8,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 9,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 10,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 11,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 12,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 13,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 14,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 15,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 16,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 17,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 18,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 19,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 20,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 21,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 22,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 23,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 24,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 25,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        }
+      ]
+    },
+    {
+      "session_id": "c3628086-0032-4969-ae4d-10a732f3dafd",
+      "turns_sent": 25,
+      "all_http_answers": true,
+      "history_http_status": 200,
+      "durable_unique_user_messages": 25,
+      "history_has_25_turns": true,
+      "turn_checks": [
+        {
+          "turn": 1,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 2,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 3,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 4,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 5,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 6,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 7,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 8,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 9,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 10,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 11,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 12,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 13,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 14,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 15,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 16,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 17,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 18,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 19,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 20,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 21,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 22,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 23,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 24,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 25,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        }
+      ]
+    },
+    {
+      "session_id": "4455a6df-a1a0-406d-b339-a31e0fda831c",
+      "turns_sent": 25,
+      "all_http_answers": true,
+      "history_http_status": 200,
+      "durable_unique_user_messages": 25,
+      "history_has_25_turns": true,
+      "turn_checks": [
+        {
+          "turn": 1,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 2,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 3,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 4,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 5,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 6,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 7,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 8,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 9,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 10,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 11,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 12,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 13,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 14,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 15,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 16,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 17,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 18,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 19,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 20,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 21,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 22,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 23,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 24,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 25,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        }
+      ]
+    },
+    {
+      "session_id": "723887fa-9140-42fa-8657-873203cd0b33",
+      "turns_sent": 25,
+      "all_http_answers": true,
+      "history_http_status": 200,
+      "durable_unique_user_messages": 25,
+      "history_has_25_turns": true,
+      "turn_checks": [
+        {
+          "turn": 1,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 2,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 3,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 4,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 5,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 6,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 7,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 8,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 9,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 10,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 11,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 12,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 13,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 14,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 15,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 16,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 17,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 18,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 19,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 20,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 21,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 22,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 23,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 24,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 25,
+          "status": 200,
+          "answer_present": true,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        }
+      ]
+    }
+  ]
+}

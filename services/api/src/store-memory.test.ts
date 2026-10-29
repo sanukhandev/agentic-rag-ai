@@ -8,9 +8,12 @@ describe('MemoryStore tenant and lifecycle boundaries', () => {
     const tenant = await store.createTenant({ name: 'CRM Tenant', slug: `crm-${randomUUID()}` });
     const base = { tenantId: tenant.id, sessionId: randomUUID(), intent: 'lead.capture', intentScore: 80, intentConfidence: 0.8, catalogVersionId: null, score: 70, validationPass: true, leadData: { name: '[NAME_1]', email: '[EMAIL_1]', interest: 'Request a service' }, conversation: [], summary: null, summaryStatus: 'pending' as const };
     const first = await store.upsertCrmLead({ ...base, id: randomUUID(), actionId: randomUUID(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, 'same-contact');
-    const second = await store.upsertCrmLead({ ...base, id: randomUUID(), actionId: randomUUID(), sessionId: randomUUID(), score: 100, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, 'same-contact');
+    const secondActionId = randomUUID();
+    const secondSessionId = randomUUID();
+    const second = await store.upsertCrmLead({ ...base, id: randomUUID(), actionId: secondActionId, sessionId: secondSessionId, score: 100, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, 'same-contact');
     expect(second.id).toBe(first.id);
-    expect(second.actionId).not.toBe(first.actionId);
+    expect(second.actionId).toBe(first.actionId);
+    expect(second.sessionId).toBe(first.sessionId);
     expect(await store.listCrmLeads(tenant.id)).toHaveLength(1);
   });
 
@@ -83,5 +86,29 @@ describe('MemoryStore tenant and lifecycle boundaries', () => {
     const persisted = await store.getSession(session.id);
     expect(persisted?.conversationState?.pendingPrompt?.slotKey).toBe('contact_consent');
     expect(persisted?.conversationState?.slotValues.name).toBe('[NAME_1]');
+  });
+
+  it('binds a legacy pending action once without overwriting execution state', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'Legacy Tenant', slug: `legacy-${randomUUID()}` });
+    const session = await store.createSession(tenant.id);
+    const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'lead.capture', intentKey: 'company.setup', catalogVersionId: 'catalog-v1', idempotencyKey: randomUUID(), state: 'awaiting_confirmation', opaqueReference: 'opaque', payload: { contactConsent: true }, result: { externalReference: 'existing' }, createdAt: new Date().toISOString() });
+    const assigned = await store.assignLegacyActionOpportunity({ tenantId: tenant.id, sessionId: session.id, actionId: action.id, intentKey: 'company.setup', catalogVersionId: 'catalog-v1', opportunityId: randomUUID(), eligibleStates: ['awaiting_confirmation'] });
+    expect(assigned.status).toBe('assigned');
+    expect(assigned.action?.id).toBe(action.id);
+    expect(assigned.action?.result).toEqual(action.result);
+    expect((await store.assignLegacyActionOpportunity({ tenantId: tenant.id, sessionId: session.id, actionId: action.id, intentKey: 'company.setup', catalogVersionId: 'catalog-v1', opportunityId: randomUUID(), eligibleStates: ['awaiting_confirmation'] })).status).toBe('conflict');
+  });
+
+  it('rolls back the memory journey migration when the legacy action is no longer eligible', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'Rollback Tenant', slug: `rollback-${randomUUID()}` });
+    const session = await store.createSession(tenant.id);
+    const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'lead.capture', intentKey: 'company.setup', opportunityId: null, idempotencyKey: randomUUID(), state: 'completed', opaqueReference: 'completed', payload: {}, result: null, createdAt: new Date().toISOString() });
+    const candidate = { ...session, conversationState: { ...session.conversationState!, selectedIntentKey: 'company.setup' } };
+    const result = await store.establishLegacyJourneyAndAssignAction({ session: candidate, actionId: action.id, intentKey: 'company.setup', opportunityId: randomUUID(), eligibleStates: ['awaiting_confirmation'] });
+    expect(result.committed).toBe(false);
+    expect((await store.getSession(session.id))?.stateVersion).toBe(session.stateVersion);
+    expect((await store.getAction(action.id))?.opportunityId).toBeFalsy();
   });
 });

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, CrmLead, DocumentProcessingJob, EventInboxClaim, EventInboxState, IngestionJob, IntentCatalogVersion, Message, OutboxEvent, Persona, PersonaVersion, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
+import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, IngestionJob, IntentCatalogVersion, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
@@ -28,9 +28,16 @@ export class MemoryStore implements Store {
   private readonly messages = new Map<string, Message>();
   private readonly actions = new Map<string, ActionRequest>();
   private readonly crmLeads = new Map<string, CrmLead>();
+  private readonly crmLeadAssociations = new Map<string, CrmLeadAssociation>();
   private readonly crmLeadDedupe = new Map<string, string>();
   private readonly supportingDocuments = new Map<string, SupportingDocument>();
   private readonly documentJobs = new Map<string, DocumentProcessingJob>();
+  private readonly packageOfferings = new Map<string, PackageOffering>();
+  private readonly packageSelections = new Map<string, PackageSelection>();
+  private readonly quotes = new Map<string, Quote>();
+  private readonly crmAccounts = new Map<string, CrmAccount>();
+  private readonly invoices = new Map<string, Invoice>();
+  private readonly contracts = new Map<string, Contract>();
   private readonly outbox = new Map<string, OutboxEvent>();
   private readonly deadLetteredOutbox = new Set<string>();
   private readonly publishedDeadLetterProjections = new Set<string>();
@@ -279,7 +286,7 @@ export class MemoryStore implements Store {
     if (!current || current.tenantId !== action.tenantId) throw new Error('Action not found.');
     if (current.state === 'approved' || current.state === 'processing' || current.state === 'completed') return current;
     this.actions.set(action.id, action);
-    if (isUuid(action.tenantId) && isUuid(action.sessionId) && isUuid(action.id)) await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: action.tenantId, sessionId: action.sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId: action.sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? null, catalogVersionId: action.catalogVersionId ?? null } }));
+    if (isUuid(action.tenantId) && isUuid(action.sessionId) && isUuid(action.id)) await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: action.tenantId, sessionId: action.sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId: action.sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? null, catalogVersionId: action.catalogVersionId ?? null, opportunityId: action.opportunityId ?? null, actionKey: action.actionKey ?? null, actionRevision: action.actionRevision ?? 1 } }));
     return action;
   }
   async approveActionAndSession(action: ActionRequest, session: Session): Promise<ActionRequest> {
@@ -290,12 +297,36 @@ export class MemoryStore implements Store {
     }
     await this.updateSession(session);
     this.actions.set(action.id, action);
-    if (isUuid(action.tenantId) && isUuid(action.sessionId) && isUuid(action.id)) await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: action.tenantId, sessionId: action.sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId: action.sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? null, catalogVersionId: action.catalogVersionId ?? null } }));
+    if (isUuid(action.tenantId) && isUuid(action.sessionId) && isUuid(action.id)) await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: action.tenantId, sessionId: action.sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: action.idempotencyKey, payload: { actionId: action.id, sessionId: action.sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? null, catalogVersionId: action.catalogVersionId ?? null, opportunityId: action.opportunityId ?? null, actionKey: action.actionKey ?? null, actionRevision: action.actionRevision ?? 1 } }));
     return action;
   }
   async getAction(id: string): Promise<ActionRequest | null> { return this.actions.get(id) ?? null; }
   async getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null> {
     return [...this.actions.values()].find((action) => action.tenantId === tenantId && action.idempotencyKey === idempotencyKey) ?? null;
+  }
+  async getActionByIdentity(input: { tenantId: string; opportunityId: string; actionKey: string; actionRevision: number }): Promise<ActionRequest | null> { return [...this.actions.values()].find((action) => action.tenantId === input.tenantId && action.opportunityId === input.opportunityId && action.actionKey === input.actionKey && action.actionRevision === input.actionRevision) ?? null; }
+  async assignLegacyActionOpportunity(input: { tenantId: string; sessionId: string; actionId: string; intentKey: string; catalogVersionId?: string | null; opportunityId: string; eligibleStates: ActionRequest['state'][] }): Promise<import('./types.js').LegacyActionAssignment> {
+    const current = this.actions.get(input.actionId);
+    if (!current || current.tenantId !== input.tenantId || current.sessionId !== input.sessionId || current.intentKey !== input.intentKey || (input.catalogVersionId !== undefined && current.catalogVersionId !== input.catalogVersionId)) return { status: 'not_found', action: null };
+    if (current.opportunityId === input.opportunityId) return { status: 'already_assigned', action: current };
+    if (current.opportunityId !== null && current.opportunityId !== undefined) return { status: 'conflict', action: null };
+    if (!input.eligibleStates.includes(current.state)) return { status: 'conflict', action: null };
+    const assigned = { ...current, opportunityId: input.opportunityId };
+    this.actions.set(current.id, assigned);
+    return { status: 'assigned', action: assigned };
+  }
+  async establishLegacyJourneyAndAssignAction(input: { session: Session; actionId: string; intentKey: string; catalogVersionId?: string | null; opportunityId: string; eligibleStates: ActionRequest['state'][] }): Promise<import('./types.js').LegacyJourneyAssociationResult> {
+    const currentSession = this.sessions.get(input.session.id);
+    const currentAction = this.actions.get(input.actionId);
+    if (!currentSession || currentSession.tenantId !== input.session.tenantId || currentSession.stateVersion !== input.session.stateVersion || !currentAction || currentAction.tenantId !== input.session.tenantId || currentAction.sessionId !== input.session.id || currentAction.intentKey !== input.intentKey || (input.catalogVersionId !== undefined && currentAction.catalogVersionId !== input.catalogVersionId) || currentAction.opportunityId != null || !input.eligibleStates.includes(currentAction.state)) {
+      const assignment: import('./types.js').LegacyActionAssignment = currentAction?.opportunityId === input.opportunityId ? { status: 'already_assigned', action: currentAction } : { status: currentAction ? 'conflict' : 'not_found', action: null };
+      return { committed: false, session: input.session, assignment };
+    }
+    const assigned = { ...currentAction, opportunityId: input.opportunityId };
+    const persistedSession = { ...structuredClone(input.session), stateVersion: (input.session.stateVersion ?? 0) + 1 };
+    this.actions.set(assigned.id, assigned);
+    this.sessions.set(persistedSession.id, persistedSession);
+    return { committed: true, session: persistedSession, assignment: { status: 'assigned', action: assigned } };
   }
   async updateAction(action: ActionRequest): Promise<ActionRequest> { this.actions.set(action.id, action); return action; }
   async transitionAction(actionId: string, tenantId: string, fromState: ActionRequest['state'], toState: ActionRequest['state'], result: ActionRequest['result']): Promise<ActionRequest | null> {
@@ -398,9 +429,9 @@ export class MemoryStore implements Store {
     const existingId = this.crmLeadDedupe.get(key);
     const existing = existingId ? this.crmLeads.get(existingId) : undefined;
     if (existing) {
-      const updated = { ...lead, id: existing.id, createdAt: existing.createdAt, updatedAt: now() };
-      this.crmLeads.set(existing.id, updated);
-      return updated;
+      // A dedupe hit identifies the customer CRM record, not ownership of a new action.
+      // Preserve the original action/session until an explicit association is authorized.
+      return existing;
     }
     this.crmLeadDedupe.set(key, lead.id);
     this.crmLeads.set(lead.id, lead);
@@ -421,6 +452,27 @@ export class MemoryStore implements Store {
     const lead = await this.getCrmLead(id, tenantId);
     if (!lead) return null;
     const updated = { ...lead, score, updatedAt: now() };
+    this.crmLeads.set(id, updated);
+    return updated;
+  }
+  async retryActionAfterReconciliation(input: { actionId: string; tenantId: string; deadlineAt: string; reason: string }): Promise<{ action: ActionRequest; event: OutboxEvent } | null> {
+    const action = this.actions.get(input.actionId);
+    const execution = action ? await this.getActionExecution(action.id, input.tenantId) : null;
+    const lead = action ? await this.getCrmLeadByActionId(action.id, input.tenantId) : null;
+    if (!action || action.tenantId !== input.tenantId || action.state !== 'reconcile_required' || !execution || execution.providerStatus !== 'reconcile_required' || lead?.leadId || lead?.remoteCrm) return null;
+    const eventId = randomUUID();
+    const correlationId = randomUUID();
+    const attempt = 1;
+    const event = createOutboxEvent({ eventId, eventType: 'intent.action.requested.v1', tenantId: action.tenantId, sessionId: action.sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: `retry:${action.idempotencyKey}:${eventId}`, correlationId, payload: { actionId: action.id, sessionId: action.sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? null, catalogVersionId: action.catalogVersionId ?? null, opportunityId: action.opportunityId ?? null, actionKey: action.actionKey ?? null, actionRevision: action.actionRevision ?? 1 } });
+    this.actions.set(action.id, { ...action, state: 'approved', result: null });
+    this.actionExecutions.set(execution.id, { ...execution, providerStatus: 'dispatching', n8nExecutionRef: null, eventId, correlationId, attempt, deadlineAt: input.deadlineAt, outcome: { eventId, correlationId, reason: input.reason, priorAttempt: execution.attempt }, updatedAt: now() });
+    await this.enqueueOutboxEvent(event);
+    return { action: this.actions.get(action.id)!, event };
+  }
+  async updateCrmLeadQualification(id: string, tenantId: string, status: CrmLead['qualificationStatus'], evidence: CrmLead['qualificationEvidence'] = {}): Promise<CrmLead | null> {
+    const lead = await this.getCrmLead(id, tenantId);
+    if (!lead || !status) return null;
+    const updated = { ...lead, qualificationStatus: status, qualificationEvidence: { ...evidence }, updatedAt: now() };
     this.crmLeads.set(id, updated);
     return updated;
   }
@@ -464,6 +516,35 @@ export class MemoryStore implements Store {
   }
   async updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob> { this.documentJobs.set(job.id, job); return job; }
   async linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void> { for (const document of await this.listSupportingDocuments(tenantId, sessionId)) this.supportingDocuments.set(document.id, { ...document, leadId, updatedAt: now() }); }
+  async listPackageOfferings(tenantId: string, input: { catalogVersionId?: string | null; activity?: string; entityType?: string } = {}): Promise<PackageOffering[]> {
+    return [...this.packageOfferings.values()].filter((offering) => offering.tenantId === tenantId && offering.approvalStatus === 'approved' && (input.catalogVersionId === undefined || offering.catalogVersionId === input.catalogVersionId) && (!input.activity || offering.eligibleActivities.length === 0 || offering.eligibleActivities.some((value) => input.activity?.toLocaleLowerCase('en-US').includes(value.toLocaleLowerCase('en-US')))) && (!input.entityType || offering.eligibleEntityTypes.length === 0 || offering.eligibleEntityTypes.includes(input.entityType))).sort((left, right) => left.packageKey.localeCompare(right.packageKey));
+  }
+  async createCrmLeadAssociation(association: CrmLeadAssociation): Promise<CrmLeadAssociation> {
+    const existing = [...this.crmLeadAssociations.values()].find((candidate) => candidate.tenantId === association.tenantId && candidate.actionId === association.actionId);
+    if (existing) return existing;
+    this.crmLeadAssociations.set(association.id, association);
+    return association;
+  }
+  async getCrmLeadAssociationByActionId(actionId: string, tenantId: string): Promise<CrmLeadAssociation | null> { return [...this.crmLeadAssociations.values()].find((association) => association.actionId === actionId && association.tenantId === tenantId) ?? null; }
+  async getPackageOffering(id: string, tenantId: string): Promise<PackageOffering | null> { const offering = this.packageOfferings.get(id); return offering?.tenantId === tenantId ? offering : null; }
+  async createPackageOffering(offering: PackageOffering): Promise<PackageOffering> { this.packageOfferings.set(offering.id, offering); return offering; }
+  async createPackageSelection(selection: PackageSelection): Promise<PackageSelection> { const existing = [...this.packageSelections.values()].find((candidate) => candidate.tenantId === selection.tenantId && candidate.opportunityId === selection.opportunityId && candidate.status === 'confirmed'); if (existing) throw new HttpError(409, 'PACKAGE_ALREADY_CONFIRMED', 'A package is already confirmed for this opportunity.'); this.packageSelections.set(selection.id, selection); return selection; }
+  async listPackageSelections(tenantId: string, opportunityId: string): Promise<PackageSelection[]> { return [...this.packageSelections.values()].filter((selection) => selection.tenantId === tenantId && selection.opportunityId === opportunityId).sort((left, right) => right.createdAt.localeCompare(left.createdAt)); }
+  async getPackageSelection(id: string, tenantId: string): Promise<PackageSelection | null> { const selection = this.packageSelections.get(id); return selection?.tenantId === tenantId ? selection : null; }
+  async confirmPackageSelection(id: string, tenantId: string, quoteId: string): Promise<PackageSelection | null> { const selection = await this.getPackageSelection(id, tenantId); if (!selection || selection.status !== 'proposed') return null; const updated = { ...selection, quoteId, status: 'confirmed' as const, confirmedAt: now(), updatedAt: now() }; this.packageSelections.set(id, updated); return updated; }
+  async createQuote(quote: Quote): Promise<Quote> { this.quotes.set(quote.id, quote); return quote; }
+  async getQuote(id: string, tenantId: string): Promise<Quote | null> { const quote = this.quotes.get(id); return quote?.tenantId === tenantId ? quote : null; }
+  async createCrmAccount(account: CrmAccount): Promise<CrmAccount> { this.crmAccounts.set(account.id, account); return account; }
+  async getCrmAccount(id: string, tenantId: string): Promise<CrmAccount | null> { const account = this.crmAccounts.get(id); return account?.tenantId === tenantId ? account : null; }
+  async getCrmAccountByOpportunity(opportunityId: string, tenantId: string): Promise<CrmAccount | null> { return [...this.crmAccounts.values()].find((account) => account.tenantId === tenantId && account.opportunityId === opportunityId) ?? null; }
+  async updateCrmAccount(account: CrmAccount): Promise<CrmAccount> { this.crmAccounts.set(account.id, account); return account; }
+  async createInvoice(invoice: Invoice): Promise<Invoice> { const existing = [...this.invoices.values()].find((candidate) => candidate.tenantId === invoice.tenantId && candidate.quoteId === invoice.quoteId); if (existing) return existing; this.invoices.set(invoice.id, invoice); return invoice; }
+  async getInvoiceByQuote(quoteId: string, tenantId: string): Promise<Invoice | null> { return [...this.invoices.values()].find((invoice) => invoice.quoteId === quoteId && invoice.tenantId === tenantId) ?? null; }
+  async getInvoice(id: string, tenantId: string): Promise<Invoice | null> { const invoice = this.invoices.get(id); return invoice?.tenantId === tenantId ? invoice : null; }
+  async updateInvoice(invoice: Invoice): Promise<Invoice> { this.invoices.set(invoice.id, invoice); return invoice; }
+  async createContract(contract: Contract): Promise<Contract> { this.contracts.set(contract.id, contract); return contract; }
+  async getContract(id: string, tenantId: string): Promise<Contract | null> { const contract = this.contracts.get(id); return contract?.tenantId === tenantId ? contract : null; }
+  async updateContract(contract: Contract): Promise<Contract> { this.contracts.set(contract.id, contract); return contract; }
   async enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent> { const existing = this.outbox.get(event.eventId); if (existing) return existing; this.outbox.set(event.eventId, event); return event; }
   async claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]> {
     const current = Date.now();
@@ -501,7 +582,8 @@ export class MemoryStore implements Store {
     const key = `${execution.actionId}:${execution.idempotencyKey}`;
     const existing = [...this.actionExecutions.values()].find((item) => `${item.actionId}:${item.idempotencyKey}` === key);
     if (!existing) { this.actionExecutions.set(execution.id, execution); return { execution, claimed: true }; }
-    if (existing.providerStatus === 'dispatching' && existing.attempt < execution.attempt) { const reclaimed = { ...existing, providerStatus: 'dispatching', attempt: execution.attempt, deadlineAt: execution.deadlineAt, eventId: execution.eventId ?? existing.eventId ?? null, correlationId: execution.correlationId ?? existing.correlationId ?? null, updatedAt: now() }; this.actionExecutions.set(existing.id, reclaimed); return { execution: reclaimed, claimed: true }; }
+    const preclaimedRetry = existing.outcome?.priorAttempt !== undefined;
+    if (existing.providerStatus === 'dispatching' && (existing.attempt < execution.attempt || (preclaimedRetry && existing.attempt === execution.attempt && !existing.n8nExecutionRef && existing.eventId === execution.eventId && existing.correlationId === execution.correlationId))) { const reclaimed = { ...existing, providerStatus: 'dispatching', attempt: execution.attempt, deadlineAt: execution.deadlineAt, eventId: execution.eventId ?? existing.eventId ?? null, correlationId: execution.correlationId ?? existing.correlationId ?? null, outcome: existing.outcome ? Object.fromEntries(Object.entries(existing.outcome).filter(([key]) => key !== 'priorAttempt')) : null, updatedAt: now() }; this.actionExecutions.set(existing.id, reclaimed); return { execution: reclaimed, claimed: true }; }
     return { execution: existing, claimed: false };
   }
   async getActionExecution(actionId: string, tenantId: string): Promise<ActionExecution | null> { return [...this.actionExecutions.values()].filter((item) => item.actionId === actionId && item.tenantId === tenantId).sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null; }

@@ -1,0 +1,29 @@
+{
+  "generatedAt": "2026-10-28T21:55:42.5514837Z",
+  "healthEndpoints": [
+    "/healthz",
+    "/healthz/readiness"
+  ],
+  "health": "ok",
+  "activeWorkflows": [
+    "ANCLeadCaptureWF1",
+    "ANCAccountConversionWF1",
+    "ANCInvoiceGenerationWF1",
+    "ANCContractPreparationWF1"
+  ],
+  "inactiveLifecycleTemplates": [
+    "ANCQuotePDFWF1",
+    "ANCInvoicePDFWF1",
+    "ANCPaymentMockWF1"
+  ],
+  "providerEnvNamesObserved": [
+    "REMOTE_CRM_PROVIDER",
+    "REMOTE_CRM_LEAD_URL",
+    "REMOTE_CRM_LEAD_ID_PATTERN",
+    "N8N_WEBHOOK_SECRET",
+    "N8N_INTERNAL_URL"
+  ],
+  "billingAndContractProviderUrlsConfigured": false,
+  "credentialSecretsExported": false,
+  "liveSalesforceWriteVerified": false
+}

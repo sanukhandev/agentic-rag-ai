@@ -83,7 +83,7 @@ export const buildIngestionChunksWithEmbeddings = async (
   return embedChunkRows(source, chunks, provider, onProgress);
 };
 
-const evidenceMetadataLine = /^(?:File|Format|Primary intent|Suggested routing|Retrieval keywords|Sample user query(?:\s*\([^)]*\))?|Search phrasing|Related customer phrasing|Context\s*\/\s*limitation|Response policy|Response pattern|Retrieval metadata|Detection examples|Clarification|Next action):/iu;
+const evidenceMetadataLine = /^(?:File|Format|Primary intent|Suggested routing|Retrieval keywords|Sample user query(?:\s*\([^)]*\))?|Search phrasing|Related customer phrasing|Context\s*\/\s*limitation|Response policy|Response pattern|Retrieval metadata|Detection examples|Clarification|Next action|☐|https?:\/\/|Validate all prices|Pending business validation):/iu;
 const evidenceMetadataHeader = /^(?:Knowledge Records|Detailed retrieval-ready knowledge records|tenantScope|sourceKey|sourceFile|sourceSha256|visibility|piiScreening|---)$/iu;
 const evidenceRecordHeader = /^[A-Z][A-Z0-9_.-]*-\d+\s*(?:[—-]|\|)/u;
 const sourceBackedLine = /^Source-backed\s+(?:content|knowledge):/iu;
@@ -128,24 +128,34 @@ const cosine = (left: number[], right: number[]): number => {
   return leftMagnitude && rightMagnitude ? dot / Math.sqrt(leftMagnitude * rightMagnitude) : 0;
 };
 
-const rankWithEmbedding = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit: number): T[] => {
+const rankWithEmbedding = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit: number, semanticOnlyThreshold: number | null = null): T[] => {
   const terms = query.toLowerCase().match(/[a-z0-9]{4,}/g) ?? [];
-  return rows.map((row) => {
+  const ranked = rows.map((row) => {
     const content = presentKnowledgeText(row.chunk.content).toLowerCase();
     const overlap = terms.filter((term) => content.includes(term)).length;
-    return { row, score: cosine(queryEmbedding, row.chunk.embedding) + overlap * 0.1, overlap };
+    const topicBoost = /\b(?:step|steps|process|procedure|register|registration|formation|application)\b/u.test(query.toLowerCase()) && /\b(?:step|steps|process|procedure|register|registration|formation|application)\b/u.test(content)
+      ? 0.3
+      : /\b(?:package|packages|price|prices|cost|costs|fee|fees|visa|visas)\b/u.test(query.toLowerCase()) && /\b(?:package|packages|price|prices|cost|costs|fee|fees|visa|visas)\b/u.test(content)
+        ? 0.3
+        : 0;
+    return { row, score: cosine(queryEmbedding, row.chunk.embedding) + overlap * 0.1 + topicBoost, overlap };
   })
     .sort((left, right) => right.score - left.score)
-    .slice(0, limit)
-    .filter(({ score, overlap }) => score >= 0.45 && overlap > 0)
-    .map(({ row }) => row);
+    .filter(({ score, overlap }) => (semanticOnlyThreshold !== null && score >= semanticOnlyThreshold) || (overlap > 0 && (score >= 0.45 || overlap >= 2)));
+  const seen = new Set<string>();
+  return ranked.filter(({ row }) => {
+    const key = presentKnowledgeText(row.chunk.content);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, limit).map(({ row }) => row);
 };
 
 export const rankChunks = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], limit = 4): T[] => rankWithEmbedding(query, rows, embedText(query), limit);
 
 export const rankChunksWithEmbedding = async <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], provider: EmbeddingProvider, limit = 4): Promise<T[]> => rankWithEmbedding(query, rows, await provider.embed(query), limit);
 
-export const rankChunksWithVector = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit = 4): T[] => rankWithEmbedding(query, rows, queryEmbedding, limit);
+export const rankChunksWithVector = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit = 4, semanticOnlyThreshold: number | null = null): T[] => rankWithEmbedding(query, rows, queryEmbedding, limit, semanticOnlyThreshold);
 
 const factualSegments = (content: string): string[] => content
   .replace(/^File:.*$/gim, '')

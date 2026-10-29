@@ -1,4 +1,5 @@
-import type { IntentCatalog, IntentCatalogActivationMode, IntentCatalogDocumentPolicy, IntentCatalogDocumentSettings, IntentCatalogExtensionRow, IntentCatalogIntent, IntentCatalogJourneyRequirement, IntentCatalogJourneyTransition, IntentCatalogQualityRule, IntentCatalogRequirementType, IntentCatalogSlot, IntentCatalogVersion, IntentCatalogWorkflowBinding } from './types.js';
+import { lifecycleStages } from './types.js';
+import type { IntentCatalog, IntentCatalogActivationMode, IntentCatalogBusinessStage, IntentCatalogCrmAccountConversionPolicy, IntentCatalogDocumentPolicy, IntentCatalogDocumentSettings, IntentCatalogExtensionRow, IntentCatalogIntent, IntentCatalogJourneyRequirement, IntentCatalogJourneyTransition, IntentCatalogQualityRule, IntentCatalogRequirementType, IntentCatalogSlot, IntentCatalogVersion, IntentCatalogWorkflowBinding, LifecycleStage } from './types.js';
 
 export interface IntentResolution {
   intentKey: string | null;
@@ -41,8 +42,10 @@ const bool = (value: unknown): boolean => value === true;
 const finite = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) ? value : NaN;
 const clamp = (value: number): number => Math.max(0, Math.min(100, Math.round(value)));
 const normalize = (value: string): string => value.toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim();
+const snakeCase = (value: string): string => value.replace(/([A-Z]+)([A-Z][a-z])/gu, '$1_$2').replace(/([a-z0-9])([A-Z])/gu, '$1_$2').replace(/[ -]+/gu, '_').toLocaleLowerCase('en-US');
 const normalizeCatalogPhrase = (value: string): string => normalize(value)
   .replace(/\bset[\s-]?up\b/g, 'start')
+  .replace(/\b(?:would|could)\s+like\s+to\b/g, 'want to')
   .replace(/\b(?:establish|establishing|launch|launching|open|opening|create|creating|register|registering)\b/g, 'start');
 const phraseTokens = (value: string): string[] => normalizeCatalogPhrase(value).match(/[\p{L}\p{N}]+/gu) ?? [];
 const optionalPhraseTokens = new Set(['a', 'an', 'for', 'in', 'of', 'on', 'the', 'to']);
@@ -86,6 +89,13 @@ const extensionRows = (value: Record<string, unknown>, name: string): IntentCata
   const row = record(item);
   return Object.fromEntries(Object.entries(row).filter(([, cell]) => cell === null || typeof cell === 'string' || typeof cell === 'number' || typeof cell === 'boolean')) as IntentCatalogExtensionRow;
 }) : [];
+const tableRows = (value: Record<string, unknown>, name: string): Record<string, unknown>[] => {
+  const raw = value[name] ?? value[name[0]?.toLocaleLowerCase('en-US') + name.slice(1)];
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  if (!Array.isArray(raw[0])) return raw.map(record);
+  const headers = raw[0].map((header) => snakeCase(text(header)));
+  return raw.slice(1).map((row) => Array.isArray(row) ? Object.fromEntries(headers.map((header, index) => [header, row[index] ?? null])) : record(row));
+};
 
 const duplicateErrors = (values: string[], label: string): string[] => {
   const seen = new Set<string>();
@@ -163,6 +173,7 @@ export const validateIntentCatalog = (input: unknown): CatalogValidationResult =
     return rule;
   });
   const documentPoliciesInput = Array.isArray(value.documentPolicies) ? value.documentPolicies : [];
+  const conversionPoliciesInput = Array.isArray(value.crmAccountConversionPolicies) ? value.crmAccountConversionPolicies : [];
   const journeyRequirementsInput = Array.isArray(value.journeyRequirements) ? value.journeyRequirements : [];
   const journeyRequirementKeys = new Set<string>();
   const parsedJourneyRequirements: IntentCatalogJourneyRequirement[] = journeyRequirementsInput.map((item, index) => {
@@ -225,6 +236,28 @@ export const validateIntentCatalog = (input: unknown): CatalogValidationResult =
     return (automaticTransitions.get(key) ?? []).some((next) => hasAutomaticCycle(next, nextPath));
   };
   if ([...automaticTransitions.keys()].some((key) => hasAutomaticCycle(key, new Set()))) errors.push('JourneyTransitions cannot contain an automatic activation cycle.');
+  const businessStageRows = tableRows(value, 'BusinessStages');
+  const parsedBusinessStages: IntentCatalogBusinessStage[] = businessStageRows.map((row, index) => {
+    const stage = {
+      order: finite(row.order ?? row.stage_order),
+      stageKey: text(row.stageKey ?? row.stage_key) as LifecycleStage,
+      displayName: text(row.displayName ?? row.display_name),
+      authoritativeOwner: text(row.authoritativeOwner ?? row.authoritative_owner),
+      prerequisiteExpression: text(row.prerequisiteExpression ?? row.prerequisite_expression),
+      successEvidence: text(row.successEvidence ?? row.success_evidence),
+      workflowKey: text(row.workflowKey ?? row.workflow_key),
+      onFailure: text(row.onFailure ?? row.on_failure),
+      testRequirement: text(row.testRequirement ?? row.test_requirement),
+      status: text(row.status) as IntentCatalogBusinessStage['status'],
+    } satisfies IntentCatalogBusinessStage;
+    if (!Number.isInteger(stage.order) || stage.order < 1 || stage.order > 7 || !stage.stageKey || !stage.displayName || !stage.authoritativeOwner || !stage.prerequisiteExpression || !stage.successEvidence || !stage.workflowKey || !stage.onFailure || !stage.testRequirement || !['PROPOSED', 'ACTIVE'].includes(stage.status) || (stage.status === 'ACTIVE' && !workflowSet.has(stage.workflowKey))) errors.push(`BusinessStages row ${index + 2} has invalid stage metadata or an inactive binding.`);
+    return stage;
+  });
+  if (parsedBusinessStages.length > 0) {
+    const orders = parsedBusinessStages.map((stage) => stage.order);
+    const keys = parsedBusinessStages.map((stage) => stage.stageKey);
+    if (parsedBusinessStages.length !== lifecycleStages.length || new Set(orders).size !== orders.length || new Set(keys).size !== keys.length || parsedBusinessStages.some((stage, index) => stage.order !== index + 1 || stage.stageKey !== lifecycleStages[index])) errors.push('BusinessStages must contain the seven ordered lifecycle stages exactly once.');
+  }
   const documentSettingsInput = record(value.documentSettings);
   let documentSettings: IntentCatalogDocumentSettings | undefined;
   if (Object.keys(documentSettingsInput).length > 0) {
@@ -242,7 +275,17 @@ export const validateIntentCatalog = (input: unknown): CatalogValidationResult =
     if (!intentSet.has(policy.intentKey) || !workflowSet.has(policy.workflowKey) || !['conditional_offer', 'user_offer_only', 'explicit_upload'].includes(policy.requestMode) || !policy.allowedDocumentTypes.length || !policy.requestPromptKey) errors.push(`DocumentPolicies row ${index + 2} has invalid references or required fields.`);
     return policy;
   });
-  const catalog: IntentCatalog = { tenantScope: text(value.tenantScope) || null, intents: parsedIntents, signals: parsedSignals, slots: parsedSlots, relations: parsedRelations, workflowBindings: parsedBindings, qualityRules: parsedQualityRules, ...(parsedJourneyRequirements.length ? { journeyRequirements: parsedJourneyRequirements } : {}), ...(parsedJourneyTransitions.length ? { journeyTransitions: parsedJourneyTransitions } : {}), ...(documentSettings ? { documentSettings } : {}), ...(documentPoliciesInput.length ? { documentPolicies: parsedDocumentPolicies } : {}), ...(extensionRows(value, 'documentRequirements').length ? { documentRequirements: extensionRows(value, 'documentRequirements') } : {}), ...(extensionRows(value, 'crmFieldMappings').length ? { crmFieldMappings: extensionRows(value, 'crmFieldMappings') } : {}), ...(extensionRows(value, 'channelCapabilities').length ? { channelCapabilities: extensionRows(value, 'channelCapabilities') } : {}), ...(extensionRows(value, 'testUtterances').length ? { testUtterances: extensionRows(value, 'testUtterances') } : {}), ...(extensionRows(value, 'catalogManifest').length ? { catalogManifest: extensionRows(value, 'catalogManifest') } : {}) };
+  const conversionPolicyKeys = new Set<string>();
+  const parsedConversionPolicies: IntentCatalogCrmAccountConversionPolicy[] = conversionPoliciesInput.map((item, index) => {
+    const row = record(item);
+    const policy: IntentCatalogCrmAccountConversionPolicy = { intentKey: text(row.intentKey), workflowKey: text(row.workflowKey), conversionRule: text(row.conversionRule) as IntentCatalogCrmAccountConversionPolicy['conversionRule'], active: bool(row.active), notes: text(row.notes) };
+    const key = `${policy.intentKey}:${policy.conversionRule}`;
+    if (conversionPolicyKeys.has(key)) errors.push(`CrmAccountConversionPolicies row ${index + 2} contains a duplicate policy.`);
+    conversionPolicyKeys.add(key);
+    if (!intentSet.has(policy.intentKey) || !workflowSet.has(policy.workflowKey) || !['qualification_verified', 'package_confirmed', 'invoice_paid', 'manual_approval'].includes(policy.conversionRule)) errors.push(`CrmAccountConversionPolicies row ${index + 2} has invalid references or conversion rule.`);
+    return policy;
+  });
+  const catalog: IntentCatalog = { tenantScope: text(value.tenantScope) || null, intents: parsedIntents, signals: parsedSignals, slots: parsedSlots, relations: parsedRelations, workflowBindings: parsedBindings, qualityRules: parsedQualityRules, ...(parsedJourneyRequirements.length ? { journeyRequirements: parsedJourneyRequirements } : {}), ...(parsedJourneyTransitions.length ? { journeyTransitions: parsedJourneyTransitions } : {}), ...(parsedBusinessStages.length ? { businessStages: parsedBusinessStages } : {}), ...(documentSettings ? { documentSettings } : {}), ...(documentPoliciesInput.length ? { documentPolicies: parsedDocumentPolicies } : {}), ...(conversionPoliciesInput.length ? { crmAccountConversionPolicies: parsedConversionPolicies } : {}), ...(extensionRows(value, 'documentRequirements').length ? { documentRequirements: extensionRows(value, 'documentRequirements') } : {}), ...(extensionRows(value, 'crmFieldMappings').length ? { crmFieldMappings: extensionRows(value, 'crmFieldMappings') } : {}), ...(extensionRows(value, 'channelCapabilities').length ? { channelCapabilities: extensionRows(value, 'channelCapabilities') } : {}), ...(extensionRows(value, 'testUtterances').length ? { testUtterances: extensionRows(value, 'testUtterances') } : {}), ...(extensionRows(value, 'catalogManifest').length ? { catalogManifest: extensionRows(value, 'catalogManifest') } : {}) };
   if (catalog.intents.length === 0) errors.push('Catalog must contain at least one intent.');
   if (catalog.workflowBindings.length === 0) errors.push('Catalog must contain at least one workflow binding.');
   return { errors: [...new Set(errors)], catalog: errors.length ? null : catalog };

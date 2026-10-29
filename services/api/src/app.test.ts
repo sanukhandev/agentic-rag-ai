@@ -269,9 +269,9 @@ describe('API vertical slice', () => {
     const unsupported = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the office location?', clientMessageId: 'unknown-1' }).expect(200);
     expect(unsupported.body.grounded).toBe(false);
     expect(unsupported.body.citations).toHaveLength(0);
-    expect(unsupported.body.answer).toContain('verified information');
-    expect(unsupported.body.answer).toContain('knowledge base');
-    expect(unsupported.body.answer).not.toContain('I don’t have that detail');
+    expect(unsupported.body.answer).toContain('specific setup detail');
+    expect(unsupported.body.answer).toContain('verified quotation or advisor review');
+    expect(unsupported.body.answer).not.toContain('knowledge base');
     const history = await api.get(`/api/v1/chat/sessions/${publicSession.body.sessionId}`).expect(200);
     expect(history.body.messages.length).toBeGreaterThanOrEqual(4);
     expect(JSON.stringify(history.body.messages)).not.toContain('alice@example.com');
@@ -668,7 +668,7 @@ describe('API vertical slice', () => {
     expect(duplicate.body.error.code).toBe('MESSAGE_ID_REUSED');
   });
 
-  it('allows a failed model turn to retry once with the same masked idempotency record', async () => {
+  it('recovers a failed model turn with grounded evidence and preserves idempotency', async () => {
     const runtime = createApp({ nodeEnv: 'test', model: new FailsOnceModel() });
     const api = request(runtime.app);
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-retry-message@example.test', password: 'Platform1Password' }).expect(201);
@@ -677,7 +677,8 @@ describe('API vertical slice', () => {
     const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Retry FAQ', mimeType: 'text/plain', audience: 'public', content: 'Retry pricing is 50 credits.' }).expect(201);
     await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
-    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is retry pricing?', clientMessageId: 'retry-message-1' }).expect(503).expect((response) => expect(response.body.error.code).toBe('MODEL_UNAVAILABLE'));
+    const first = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is retry pricing?', clientMessageId: 'retry-message-1' }).expect(200);
+    expect(first.body.grounded).toBe(true);
     const retry = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What is retry pricing?', clientMessageId: 'retry-message-1' }).expect(200);
     expect(retry.body.grounded).toBe(true);
     expect((await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).expect(200)).body.messages.filter((message: { clientMessageId: string | null }) => message.clientMessageId === 'retry-message-1')).toHaveLength(1);
@@ -976,7 +977,7 @@ describe('API vertical slice', () => {
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-continuity@example.test', password: 'Platform1Password' }).expect(201);
     const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Continuity Tenant', slug: 'continuity-tenant', adminEmail: 'admin-continuity@example.test', adminPassword: 'TenantA1Password' }).expect(201);
     const admin = await api.post('/api/v1/auth/login').send({ email: 'admin-continuity@example.test', password: 'TenantA1Password' }).expect(200);
-    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Continuity setup guide', mimeType: 'text/plain', audience: 'public', content: 'The approved setup guide explains company packages, setup steps and available timelines.' }).expect(201);
+    const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${admin.body.token}`).send({ title: 'Continuity setup guide', mimeType: 'text/plain', audience: 'public', content: 'The approved setup guide explains company packages, setup steps, package pricing and available setup timelines.' }).expect(201);
     await api.post(`/api/v1/admin/sources/${source.body.source.id}/publish`).set('Authorization', `Bearer ${admin.body.token}`).expect(200);
     const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
     await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to get a service', clientMessageId: 'continuity-interest' }).expect(200);
@@ -998,6 +999,11 @@ describe('API vertical slice', () => {
     const knowledge = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'What packages and setup steps are available?', clientMessageId: 'continuity-knowledge' }).expect(200);
     expect(knowledge.body.grounded).toBe(true);
     expect(knowledge.body.citations).not.toHaveLength(0);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.consentCapturedAt).toBe(consentCapturedAt);
+    const contextualKnowledge = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Could you tell me about the pricing and timelines for the same?', clientMessageId: 'continuity-contextual-pricing' }).expect(200);
+    expect(contextualKnowledge.body.grounded).toBe(true);
+    expect(contextualKnowledge.body.citations).not.toHaveLength(0);
+    expect(contextualKnowledge.body.actionProposal).toBeNull();
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.consentCapturedAt).toBe(consentCapturedAt);
 
     const repeatedRequest = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I would like to request a demo', clientMessageId: 'continuity-repeat' }).expect(200);
@@ -1143,9 +1149,15 @@ describe('API vertical slice', () => {
     expect(activity.body.answer).toContain('company structure');
     expect(activity.body.pendingRequirementKey).toBe('company.structure');
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ slotValues: { business_activity: 'CCTV installation and monitoring' }, pendingPrompt: { requirementKey: 'company.structure', slotKey: 'company_structure' }, intentProgress: { entries: { 'company.setup': { completedRequirementKeys: ['company.activity'] } } } });
-    const structure = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'FZC with two partners', clientMessageId: 'journey-contract-3' }).expect(200);
-    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.company_structure).toBe('FZC with two partners');
+    for (const [index, message] of ['Okay, let\'s continue with my company setup.', 'Can we proceed?', 'That sounds good.', 'Tell me more about the company.'].entries()) {
+      await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message, clientMessageId: `journey-contract-invalid-structure-${index}` }).expect(200);
+      expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues).not.toHaveProperty('company_structure');
+    }
+    const structure = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I want a limited liability company', clientMessageId: 'journey-contract-3' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.company_structure).toBe('I want a limited liability company');
     expect(structure.body.pendingRequirementKey).toBe('company.visas');
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Actually, I prefer a different legal structure.', clientMessageId: 'journey-contract-structure-correction' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.company_structure).toBe('I want a limited liability company');
     const visas = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: '3 visas', clientMessageId: 'journey-contract-4' }).expect(200);
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.visa_count).toBe('3');
     expect(visas.body.answer).not.toContain('company visas');
@@ -1330,13 +1342,14 @@ describe('API vertical slice', () => {
       pendingPrompt: null,
     };
     await runtime.store.updateSession(storedSession!);
-    await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'crm.lead.create', intentKey: 'company.setup', catalogVersionId: version.id, idempotencyKey: 'follow-up-action', state: 'approved', opaqueReference: 'follow-up-reference', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
-
     const followUp = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'yes', clientMessageId: 'follow-up-yes' }).expect(200);
     expect(followUp.body.pendingRequirementKey).toBe('followup:company.setup:company_structure');
     expect(followUp.body.pendingPromptId).toEqual(expect.any(String));
     expect(followUp.body.answer.toLowerCase()).toContain('company structure');
     expect(followUp.body.answer).not.toContain('What would you like to explore next?');
+    const followUpState = await runtime.store.getSession(session.body.sessionId);
+    const followUpOpportunityId = followUpState?.conversationState?.intentProgress?.entries['company.setup']?.journeyId;
+    await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'crm.lead.create', intentKey: 'company.setup', catalogVersionId: version.id, opportunityId: followUpOpportunityId ?? null, idempotencyKey: 'follow-up-action', state: 'approved', opaqueReference: 'follow-up-reference', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null });
     const correction = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'I told you already', clientMessageId: 'follow-up-correction' }).expect(200);
     expect(correction.body.answer).toContain('noted');
     expect(correction.body.answer).not.toContain('company structure');

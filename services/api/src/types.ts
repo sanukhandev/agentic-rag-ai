@@ -129,11 +129,48 @@ export interface IntentCatalogJourneyTransition {
   notes: string;
 }
 
+export interface IntentCatalogBusinessStage {
+  order: number;
+  stageKey: LifecycleStage;
+  displayName: string;
+  authoritativeOwner: string;
+  prerequisiteExpression: string;
+  successEvidence: string;
+  workflowKey: string;
+  onFailure: string;
+  testRequirement: string;
+  status: 'PROPOSED' | 'ACTIVE';
+}
+
+export const lifecycleStages = ['lead_generation', 'lead_qualification', 'account_creation', 'package_selection', 'document_upload', 'billing_invoice', 'contract'] as const;
+export type LifecycleStage = typeof lifecycleStages[number];
+export type LifecycleStageStatus = 'not_started' | 'awaiting_customer' | 'ready' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'human_review';
+
+export interface LifecycleStageState {
+  stage: LifecycleStage;
+  status: LifecycleStageStatus;
+  revision: number;
+  evidence: Record<string, string | number | boolean>;
+  completedAt: string | null;
+}
+
+export interface LifecycleState {
+  currentStage: LifecycleStage;
+  revision: number;
+  stages: Record<LifecycleStage, LifecycleStageState>;
+}
+
 export interface IntentProgressEntry {
   intentKey: string;
+  /** Durable opportunity identity. Legacy sessions may not have this until resumed. */
+  journeyId?: string;
   status: 'active' | 'paused' | 'fulfilled';
   completedRequirementKeys: string[];
   currentRequirementKey: string | null;
+  /** Facts belong to this opportunity, never to the whole conversation. */
+  slotValues?: Record<string, string>;
+  slotProvenance?: Record<string, { source: 'visitor'; messageSequence: number; capturedAt: string; corrected: boolean }>;
+  lifecycle?: LifecycleState;
   revision: number;
 }
 
@@ -143,6 +180,8 @@ export interface IntentProgressState {
   pausedIntentKeys: string[];
   fulfilledIntentKeys: string[];
   entries: Record<string, IntentProgressEntry>;
+  /** Primary journey instance index; entries remains a legacy intent-key projection. */
+  journeys?: Record<string, IntentProgressEntry>;
   visitedIntentKeys: string[];
   lastTransitionReason: string | null;
   lastDeclinedTransition?: {
@@ -287,6 +326,15 @@ export interface IntentCatalogDocumentSettings {
   notes: string;
 }
 
+export type CrmAccountConversionRule = 'qualification_verified' | 'package_confirmed' | 'invoice_paid' | 'manual_approval';
+export interface IntentCatalogCrmAccountConversionPolicy {
+  intentKey: string;
+  workflowKey: string;
+  conversionRule: CrmAccountConversionRule;
+  active: boolean;
+  notes: string;
+}
+
 export type IntentCatalogExtensionRow = Record<string, string | number | boolean | null>;
 
 export interface IntentCatalog {
@@ -299,8 +347,10 @@ export interface IntentCatalog {
   qualityRules?: IntentCatalogQualityRule[];
   journeyRequirements?: IntentCatalogJourneyRequirement[];
   journeyTransitions?: IntentCatalogJourneyTransition[];
+  businessStages?: IntentCatalogBusinessStage[];
   documentPolicies?: IntentCatalogDocumentPolicy[];
   documentSettings?: IntentCatalogDocumentSettings;
+  crmAccountConversionPolicies?: IntentCatalogCrmAccountConversionPolicy[];
   documentRequirements?: IntentCatalogExtensionRow[];
   crmFieldMappings?: IntentCatalogExtensionRow[];
   channelCapabilities?: IntentCatalogExtensionRow[];
@@ -511,6 +561,8 @@ export interface CrmLead {
   score: number;
   contactCompletenessScore?: number;
   validationPass: boolean;
+  qualificationStatus?: 'pending' | 'qualified' | 'disqualified' | 'reconcile_required';
+  qualificationEvidence?: Record<string, string | number | boolean>;
   leadData: LeadData;
   conversation: LeadConversationMessage[];
   summary: string | null;
@@ -526,6 +578,7 @@ export interface SupportingDocument {
   tenantId: string;
   sessionId: string;
   leadId: string | null;
+  opportunityId?: string | null;
   intentKey?: string | null;
   catalogVersionId?: string | null;
   fileName: string;
@@ -542,6 +595,119 @@ export interface SupportingDocument {
   summary: string | null;
   errorCode: string | null;
   consentAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrmLeadAssociation {
+  id: string;
+  tenantId: string;
+  crmLeadId: string;
+  actionId: string;
+  sessionId: string;
+  opportunityId: string | null;
+  associationType: 'canonical' | 'deduplicated';
+  createdAt: string;
+}
+
+export type PackageOfferingStatus = 'approved' | 'unavailable' | 'expired';
+export interface PackageOffering {
+  id: string;
+  tenantId: string;
+  catalogVersionId: string | null;
+  packageKey: string;
+  name: string;
+  eligibleEntityTypes: string[];
+  eligibleActivities: string[];
+  includedVisaQuantity: number;
+  officeRequirement: string | null;
+  inclusions: string[];
+  priceMinor: number | null;
+  currency: string | null;
+  pricingEffectiveFrom: string | null;
+  pricingEffectiveTo: string | null;
+  additionalFees: Array<Record<string, string | number>>;
+  processingTime: string | null;
+  requiredDocuments: string[];
+  exclusions: string[];
+  availability: string;
+  approvalStatus: PackageOfferingStatus;
+  sourceRefs: string[];
+  createdAt: string;
+}
+
+export type PackageSelectionStatus = 'proposed' | 'confirmed' | 'rejected';
+export interface PackageSelection {
+  id: string;
+  tenantId: string;
+  sessionId: string;
+  opportunityId: string;
+  packageOfferingId: string;
+  quoteId: string | null;
+  status: PackageSelectionStatus;
+  confirmedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type QuoteStatus = 'draft' | 'approved' | 'expired' | 'rejected';
+export interface Quote {
+  id: string;
+  tenantId: string;
+  opportunityId: string;
+  packageOfferingId: string;
+  amountMinor: number;
+  currency: string;
+  validUntil: string;
+  status: QuoteStatus;
+  sourceRefs: string[];
+  createdAt: string;
+}
+
+export type CrmAccountStatus = 'pending' | 'verified' | 'reconcile_required' | 'failed';
+export interface CrmAccount {
+  id: string;
+  tenantId: string;
+  opportunityId: string;
+  leadId: string;
+  remoteAccountId: string | null;
+  remoteContactId: string | null;
+  remoteOpportunityId: string | null;
+  status: CrmAccountStatus;
+  conversionRule: CrmAccountConversionRule;
+  verifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type InvoiceStatus = 'draft' | 'pending' | 'paid' | 'failed' | 'reconcile_required';
+export interface Invoice {
+  id: string;
+  tenantId: string;
+  opportunityId: string;
+  quoteId: string;
+  externalInvoiceId: string | null;
+  amountMinor: number;
+  currency: string;
+  paymentUrl: string | null;
+  status: InvoiceStatus;
+  provider: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ContractStatus = 'draft' | 'approval_required' | 'sent' | 'signed' | 'failed' | 'reconcile_required';
+export interface Contract {
+  id: string;
+  tenantId: string;
+  opportunityId: string;
+  packageSelectionId: string;
+  invoiceId: string | null;
+  externalContractId: string | null;
+  templateKey: string;
+  signingUrl: string | null;
+  status: ContractStatus;
+  provider: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -570,12 +736,26 @@ export interface ActionRequest {
   intentScore?: number;
   intentConfidence?: number;
   catalogVersionId?: string | null;
+  /** Business identity is separate from the workflow implementation key. */
+  opportunityId?: string | null;
+  actionKey?: string | null;
+  actionRevision?: number;
   idempotencyKey: string;
   state: ActionState;
   opaqueReference: string;
   payload: ActionPayload;
   createdAt: string;
   result: { externalReference: string } | null;
+}
+
+export type LegacyActionAssignment =
+  | { status: 'assigned' | 'already_assigned'; action: ActionRequest }
+  | { status: 'not_found' | 'conflict'; action: null };
+
+export interface LegacyJourneyAssociationResult {
+  committed: boolean;
+  session: Session;
+  assignment: LegacyActionAssignment;
 }
 
 export interface AuditEvent {
@@ -666,8 +846,12 @@ export interface Store {
   approveActionAndSession(action: ActionRequest, session: Session): Promise<ActionRequest>;
   getAction(id: string): Promise<ActionRequest | null>;
   getActionByIdempotency(tenantId: string, idempotencyKey: string): Promise<ActionRequest | null>;
+  getActionByIdentity(input: { tenantId: string; opportunityId: string; actionKey: string; actionRevision: number }): Promise<ActionRequest | null>;
   updateAction(action: ActionRequest): Promise<ActionRequest>;
+  assignLegacyActionOpportunity(input: { tenantId: string; sessionId: string; actionId: string; intentKey: string; catalogVersionId?: string | null; opportunityId: string; eligibleStates: ActionState[] }): Promise<LegacyActionAssignment>;
+  establishLegacyJourneyAndAssignAction(input: { session: Session; actionId: string; intentKey: string; catalogVersionId?: string | null; opportunityId: string; eligibleStates: ActionState[] }): Promise<LegacyJourneyAssociationResult>;
   transitionAction(actionId: string, tenantId: string, fromState: ActionState, toState: ActionState, result: ActionRequest['result']): Promise<ActionRequest | null>;
+  retryActionAfterReconciliation(input: { actionId: string; tenantId: string; deadlineAt: string; reason: string }): Promise<{ action: ActionRequest; event: OutboxEvent } | null>;
   transitionActionWithExecution(input: { actionId: string; tenantId: string; fromState: ActionState; toState: ActionState; result: ActionRequest['result']; providerStatus: string; n8nExecutionRef: string; eventId: string; correlationId: string; expectedAttempt: number; resolveReconciliation?: boolean; outcome?: ActionExecution['outcome'] }): Promise<{ action: ActionRequest; execution: ActionExecution } | null>;
   claimWorkflowActionsWithExecutions(input: { actionId?: string; tenantId?: string; n8nWorkflowId: string; executionReference: string; workflowKey?: string; limit: number; eventId?: string; correlationId?: string; attempt: number; deadlineAt: string }): Promise<WorkflowActionClaim[]>;
   claimAction(actionId: string, workflowKey: string): Promise<ActionRequest | null>;
@@ -682,7 +866,10 @@ export interface Store {
   listCrmLeads(tenantId: string): Promise<CrmLead[]>;
   updateCrmLeadSummary(id: string, tenantId: string, summary: string, status: CrmLead['summaryStatus']): Promise<CrmLead | null>;
   updateCrmLeadScore(id: string, tenantId: string, score: number): Promise<CrmLead | null>;
+  updateCrmLeadQualification(id: string, tenantId: string, status: CrmLead['qualificationStatus'], evidence?: CrmLead['qualificationEvidence']): Promise<CrmLead | null>;
   updateCrmLeadRemote(input: { id: string; tenantId: string; leadId: string; remoteCrm: string }): Promise<CrmLead | null>;
+  createCrmLeadAssociation(association: CrmLeadAssociation): Promise<CrmLeadAssociation>;
+  getCrmLeadAssociationByActionId(actionId: string, tenantId: string): Promise<CrmLeadAssociation | null>;
   createSupportingDocument(document: SupportingDocument): Promise<SupportingDocument>;
   createSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<void>;
   requeueSupportingDocumentWithJob(document: SupportingDocument, job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
@@ -695,6 +882,26 @@ export interface Store {
   renewDocumentProcessingJob(id: string, tenantId: string, leaseMs: number): Promise<DocumentProcessingJob | null>;
   updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
   linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void>;
+  listPackageOfferings(tenantId: string, input?: { catalogVersionId?: string | null; activity?: string; entityType?: string }): Promise<PackageOffering[]>;
+  getPackageOffering(id: string, tenantId: string): Promise<PackageOffering | null>;
+  createPackageOffering(offering: PackageOffering): Promise<PackageOffering>;
+  createPackageSelection(selection: PackageSelection): Promise<PackageSelection>;
+  listPackageSelections(tenantId: string, opportunityId: string): Promise<PackageSelection[]>;
+  getPackageSelection(id: string, tenantId: string): Promise<PackageSelection | null>;
+  confirmPackageSelection(id: string, tenantId: string, quoteId: string): Promise<PackageSelection | null>;
+  createQuote(quote: Quote): Promise<Quote>;
+  getQuote(id: string, tenantId: string): Promise<Quote | null>;
+  createCrmAccount(account: CrmAccount): Promise<CrmAccount>;
+  getCrmAccount(id: string, tenantId: string): Promise<CrmAccount | null>;
+  getCrmAccountByOpportunity(opportunityId: string, tenantId: string): Promise<CrmAccount | null>;
+  updateCrmAccount(account: CrmAccount): Promise<CrmAccount>;
+  createInvoice(invoice: Invoice): Promise<Invoice>;
+  getInvoiceByQuote(quoteId: string, tenantId: string): Promise<Invoice | null>;
+  getInvoice(id: string, tenantId: string): Promise<Invoice | null>;
+  updateInvoice(invoice: Invoice): Promise<Invoice>;
+  createContract(contract: Contract): Promise<Contract>;
+  getContract(id: string, tenantId: string): Promise<Contract | null>;
+  updateContract(contract: Contract): Promise<Contract>;
   enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent>;
   claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]>;
   markOutboxPublished(eventId: string, publishedAt?: string): Promise<void>;

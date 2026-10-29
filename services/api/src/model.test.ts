@@ -33,7 +33,7 @@ describe('Azure Foundry model adapter', () => {
 
   it('does not echo raw evidence when the external generation model is unavailable', async () => {
     const model = new DeterministicGroundedModel();
-    await expect(model.draft({ maskedMessage: 'I want to start a fashion boutique', personaName: 'Sara', evidence: [{ citation: { sourceId: 'source', versionId: 'version', chunkId: 'chunk-1', title: 'FAQ', locator: 'section 1' }, content: 'Detailed retrieval-ready knowledge records\nWhat is ANCFZ?\nANCFZ supports company setup.' }] })).resolves.toEqual({ answer: naturalAbstention(), citationIds: [], proposedIntent: null });
+    await expect(model.draft({ maskedMessage: 'I want to start a fashion boutique', personaName: 'Sara', evidence: [{ citation: { sourceId: 'source', versionId: 'version', chunkId: 'chunk-1', title: 'FAQ', locator: 'section 1' }, content: 'Detailed retrieval-ready knowledge records\nWhat is ANCFZ?\nANCFZ supports company setup.' }] })).resolves.toEqual({ answer: naturalAbstention('en', 'I want to start a fashion boutique'), citationIds: [], proposedIntent: null });
   });
 
   it('detects and enforces configured language families', () => {
@@ -73,7 +73,13 @@ describe('Azure Foundry model adapter', () => {
     expect(needsConversationContext('Tell me about Sanu Khan')).toBe(false);
     expect(isKnowledgeQuestion('what all are the requirements?')).toBe(true);
     expect(isKnowledgeQuestion('I would like to know how the shared office works')).toBe(true);
+    expect(isKnowledgeQuestion('I want to start a digital marketing company and would like to know the steps and cost')).toBe(true);
+    expect(isKnowledgeQuestion('I want to start a digital marketing company and want to know the steps and cost')).toBe(true);
+    expect(isKnowledgeQuestion('I would like to start an IT service company what are the steps')).toBe(true);
+    expect(isKnowledgeQuestion('I would like to start an IT service company')).toBe(true);
     expect(isKnowledgeQuestion('Can I book a demo?')).toBe(false);
+    expect(isKnowledgeQuestion('Can you book a demo?')).toBe(false);
+    expect(isKnowledgeQuestion('How are you?')).toBe(false);
     expect(hasLeadIntent('Please contact me about a demo')).toBe(true);
     expect(hasLeadIntent('I would like get service from Sanu')).toBe(true);
     expect(hasLeadIntent('Can we arrange a meeting with Sanu?')).toBe(true);
@@ -88,10 +94,11 @@ describe('Azure Foundry model adapter', () => {
     expect(conversationalReply('introduction', 'Nova')).toContain('Nice to meet you');
     expect(conversationalReply('clarification', 'Nova')).toContain('clarify');
     expect(conversationalReply('farewell', 'Nova')).toContain('lovely chatting');
-    expect(naturalAbstention()).toContain('verified information');
-    expect(naturalAbstention()).toContain('knowledge base');
-    expect(naturalAbstention()).not.toContain('I don’t have that detail');
-    expect(naturalAbstention('ar')).toContain('لا أملك معلومات موثقة');
+    expect(naturalAbstention('en', 'What is the pricing for the same?', { capturedSlots: { visa_count: '2', workspace_preference: 'shared office' } })).toContain('pricing for this setup');
+    expect(naturalAbstention('en', 'What is the pricing for the same?', { capturedSlots: { visa_count: '2', workspace_preference: 'shared office' } })).toContain('2 visas, shared office');
+    expect(naturalAbstention('en', 'I would like to start an IT service company what are the steps')).toContain('setup steps');
+    expect(naturalAbstention()).not.toContain('knowledge base');
+    expect(naturalAbstention('ar')).toContain('لا أستطيع تأكيد');
   });
 
   it('creates a conversational reconciliation follow-up without business claims', async () => {
@@ -224,6 +231,16 @@ describe('Azure Foundry model adapter', () => {
     fetchMock.mockRestore();
   });
 
+  it('retries transient Azure responses before returning the model result', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('', { status: 429, headers: { 'retry-after': '0' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ answer: 'retried answer', citationIds: [], proposedIntent: null }) } }] }), { status: 200 }));
+    const model = new AzureFoundryModel('https://foundry.example/openai/v1', 'gpt-4.1-mini', 'server-key');
+    await expect(model.draft({ maskedMessage: 'question', personaName: 'Ava', evidence: [] })).resolves.toMatchObject({ answer: 'retried answer' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    fetchMock.mockRestore();
+  });
+
   it('formats CRM summaries from masked lead data only', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: '## Requirements\n- [NAME_1] requested a demo.' }) } }] }), { status: 200 }));
     const model = new AzureFoundryModel('https://foundry.example/openai/v1', 'gpt-4.1-mini', 'server-key');
@@ -269,5 +286,44 @@ describe('Azure Foundry model adapter', () => {
     const evidence = [{ citation, content: 'The approved price is 42 credits.' }];
     expect(hasSufficientEvidence('The approved price is 999 credits.', evidence, [citation])).toBe(false);
     expect(hasSufficientEvidence('The approved price is 42 credits.', evidence, [citation])).toBe(true);
+    expect(hasSufficientEvidence('The approved price is 42 credits. Approval is guaranteed.', evidence, [citation])).toBe(false);
+    expect(hasSufficientEvidence('The approved price is 42 credits. The office is in Dubai.', evidence, [citation])).toBe(false);
+  });
+
+  it('uses scoped pricing tool results while preserving one journey follow-up', async () => {
+    const draft = await new DeterministicGroundedModel().draft({
+      maskedMessage: 'Could you tell me about the pricing and timelines for the same?',
+      personaName: 'Zara',
+      evidence: [{ citation: { sourceId: 'source', versionId: 'version', chunkId: 'chunk-1', title: 'Approved timeline', locator: 'section 1' }, content: 'Processing timelines depend on the selected setup and application details.' }],
+      followUpContext: {
+        leadCaptured: false,
+        primaryIntentKey: 'company.setup',
+        responseMode: 'mixed',
+        nextSlotLabel: 'your business activity',
+        agentToolResults: [{ name: 'get_authoritative_pricing', ok: true, data: { pricing: [{ name: 'Sandbox Growth', amountMinor: 450000, currency: 'AED' }] } }],
+      },
+    });
+    expect(draft.answer).toContain('AED 4,500.00');
+    expect(draft.answer).toContain('?');
+    expect(draft.citationIds).toEqual(['chunk-1']);
+  });
+
+  it('uses available package tool results for an unqualified package question', async () => {
+    const draft = await new DeterministicGroundedModel().draft({
+      maskedMessage: 'what all packages',
+      personaName: 'Zara',
+      evidence: [{ citation: { sourceId: 'source', versionId: 'version', chunkId: 'chunk-1', title: 'Approved packages', locator: 'section 1' }, content: 'Approved packages are available for company setup.' }],
+      followUpContext: {
+        leadCaptured: false,
+        primaryIntentKey: null,
+        responseMode: 'knowledge',
+        agentToolResults: [{ name: 'get_available_packages', ok: true, data: { packages: [{ name: 'Sandbox Basic', visas: 1, officeRequirement: 'flexi-desk' }, { name: 'Sandbox Growth', visas: 3, officeRequirement: 'shared office' }] } }, { name: 'get_authoritative_pricing', ok: true, data: { pricing: [{ name: 'Sandbox Basic', amountMinor: 250000, currency: 'AED' }, { name: 'Sandbox Growth', amountMinor: 450000, currency: 'AED' }] } }],
+      },
+    });
+    expect(draft.answer).toContain('Sandbox Basic');
+    expect(draft.answer).toContain('Sandbox Growth');
+    expect(draft.answer).toContain('AED 2,500.00');
+    expect(draft.answer).not.toContain('AED 4,888');
+    expect(draft.answer).toContain('?');
   });
 });

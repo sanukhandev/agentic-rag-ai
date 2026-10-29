@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import type { IntentCatalogVersion, IntentProgressEntry, IntentProgressState } from './types.js';
+import { newLifecycleState } from './lifecycle-state.js';
 import { catalogFollowUpRequirements, catalogJourneyRequirements, catalogNextFollowUpRequirement, catalogNextJourneyRequirement, journeyRequirementFulfilled } from './intent-catalog.js';
 
 const MAX_INTENTS = 16;
@@ -17,6 +19,7 @@ export interface JourneyReducerInput {
   farewell?: boolean;
   followUp?: boolean;
   completedRequirementKeys?: string[];
+  newOpportunity?: boolean;
 }
 
 export interface JourneyReducerResult {
@@ -28,13 +31,15 @@ export interface JourneyReducerResult {
   transitionPromptKey?: string | null;
 }
 
-const entry = (intentKey: string, status: IntentProgressEntry['status'] = 'active'): IntentProgressEntry => ({ intentKey, status, completedRequirementKeys: [], currentRequirementKey: null, revision: 0 });
+const entry = (intentKey: string, status: IntentProgressEntry['status'] = 'active'): IntentProgressEntry => ({ intentKey, journeyId: randomUUID(), status, completedRequirementKeys: [], currentRequirementKey: null, slotValues: {}, slotProvenance: {}, lifecycle: newLifecycleState(), revision: 0 });
 
 const ensureEntry = (progress: IntentProgressState, intentKey: string): IntentProgressEntry => {
   const current = progress.entries[intentKey];
   if (current) return current;
   const created = entry(intentKey);
   progress.entries[intentKey] = created;
+  progress.journeys ??= {};
+  progress.journeys[created.journeyId!] = created;
   return created;
 };
 
@@ -56,19 +61,27 @@ const markRequirements = (version: IntentCatalogVersion, progress: IntentProgres
   }
   current.status = current.currentRequirementKey ? 'active' : 'fulfilled';
   current.revision += 1;
+  if (current.journeyId) { progress.journeys ??= {}; progress.journeys[current.journeyId] = current; }
   return current;
 };
 
 export const reduceIntentJourney = (version: IntentCatalogVersion, previous: IntentProgressState | undefined, input: JourneyReducerInput): JourneyReducerResult => {
   const progress: IntentProgressState = previous?.version === 1
-    ? { ...previous, pausedIntentKeys: [...previous.pausedIntentKeys], fulfilledIntentKeys: [...previous.fulfilledIntentKeys], visitedIntentKeys: [...previous.visitedIntentKeys], entries: Object.fromEntries(Object.entries(previous.entries).map(([key, value]) => [key, { ...value, completedRequirementKeys: [...value.completedRequirementKeys] }])) }
-    : { version: 1, activeIntentKey: null, pausedIntentKeys: [], fulfilledIntentKeys: [], entries: {}, visitedIntentKeys: [], lastTransitionReason: null, journeyRevision: 0 };
+    ? { ...previous, pausedIntentKeys: [...previous.pausedIntentKeys], fulfilledIntentKeys: [...previous.fulfilledIntentKeys], visitedIntentKeys: [...previous.visitedIntentKeys], entries: Object.fromEntries(Object.entries(previous.entries).map(([key, value]) => [key, { ...value, journeyId: value.journeyId ?? randomUUID(), completedRequirementKeys: [...value.completedRequirementKeys], slotValues: { ...(value.slotValues ?? {}) }, slotProvenance: { ...(value.slotProvenance ?? {}) } }])), journeys: Object.fromEntries(Object.entries(previous.journeys ?? previous.entries).map(([key, value]) => [value.journeyId ?? key, { ...value, journeyId: value.journeyId ?? key, completedRequirementKeys: [...value.completedRequirementKeys], slotValues: { ...(value.slotValues ?? {}) }, slotProvenance: { ...(value.slotProvenance ?? {}) } }])) }
+    : { version: 1, activeIntentKey: null, pausedIntentKeys: [], fulfilledIntentKeys: [], entries: {}, journeys: {}, visitedIntentKeys: [], lastTransitionReason: null, journeyRevision: 0 };
   if (input.farewell) return { progress: { ...progress, activeIntentKey: null, lastTransitionReason: 'farewell', journeyRevision: progress.journeyRevision + 1 }, decision: 'close_session', activeIntentKey: null, nextRequirement: null };
   const currentIntentKey = catalogIntentExists(version, input.currentIntentKey) ? input.currentIntentKey : null;
   const selectedIntentKey = catalogIntentExists(version, input.selectedIntentKey) ? input.selectedIntentKey : null;
   const requestedIntentKey = selectedIntentKey ?? currentIntentKey;
   const requestedIntent = requestedIntentKey;
   const existingActiveIntentKey = progress.activeIntentKey && catalogIntentExists(version, progress.activeIntentKey) ? progress.activeIntentKey : null;
+  if (input.newOpportunity && requestedIntentKey && progress.entries[requestedIntentKey]?.status === 'fulfilled') {
+    const created = entry(requestedIntentKey);
+    progress.entries[requestedIntentKey] = created;
+    progress.journeys ??= {};
+    progress.journeys[created.journeyId!] = created;
+    progress.activeIntentKey = requestedIntentKey;
+  }
   if (input.declinedTransition && catalogIntentExists(version, input.declinedTransition.sourceIntentKey) && catalogIntentExists(version, input.declinedTransition.targetIntentKey)) {
     const activeIntent = input.declinedTransition.sourceIntentKey;
     const activeEntry = markRequirements(version, progress, activeIntent, input);

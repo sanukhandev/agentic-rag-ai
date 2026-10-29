@@ -5,8 +5,8 @@
 ## Mission
 Build a source-grounded, privacy-preserving, omnichannel sales conversation platform. Start with a web channel; add channels incrementally through adapters. Node.js/Express/TypeScript owns the conversation, authorization, masking, retrieval orchestration, intent validation, and approved n8n tool execution. Azure AI Foundry GPT-4.1-mini is the **generation model**; PostgreSQL with pgvector stores knowledge embeddings. Python in an isolated venv performs document extraction, normalization, chunking, and ingestion. Never treat model output as verified business truth.
 
-## Repository reality (15 Oct 2026)
-Only docker-compose.yml (n8n) and a placeholder readme.md existed when this documentation was written. All application directories, schemas, endpoints, commands, features, and CI below are **proposed contracts**, not implemented capabilities. Inspect actual files and history before changing anything. Never claim a feature works solely because it is described in docs.
+## Current repository reality and ANCFZ delivery
+The implementation now contains web/admin/API, ingestion, event delivery, PostgreSQL and n8n foundations. Verify all runtime capabilities against code and live tests; historical document plans are not execution proof. The current feature branch focuses on a dedicated ANCFZ deployment while retaining tenant-scoped security invariants.
 
 ## Confirmed multi-tenant product contract
 - A **platform owner** onboards organizations/tenants. Each tenant has a verified identity/domain scope, independent approved knowledge, sessions, persona, memberships, workflows and audit. Tenant administrators only administer assigned organizations.
@@ -74,3 +74,53 @@ A feature includes source-of-truth path, data-flow diagram (if new integration),
 - docs/16-autonomous-codex-execution-plan.md — phased build and quality gates
 - docs/17-acceptance-test-matrix.md — exhaustive positive/negative validation
 - docs/18-codex-master-prompt.md — ready-to-use autonomous implementation prompt
+
+
+---
+
+## Dedicated ANCFZ delivery addendum (2026-10-29)
+
+## Mandatory source of truth and order
+
+1. Read `docs/plans/ANCFZ_SEVEN_STAGE_IMPLEMENTATION_PLAN.md`, `docs/architecture/ANCFZ_DEDICATED_ARCHITECTURE.md`, `docs/security/ANCFZ_BOUNDARY_DECISIONS.md`, `docs/ops/SAFE_CLEANUP_PLAN.md` and `docs/prompts/CODEX_CONTINUATION_PROMPT.md` before editing.
+2. Inspect the CURRENT `main` and open PR #71 before migrating code. PR #71 is useful but not fully externally verified. Reuse vetted changes without duplicate migrations.
+3. Business sequence is fixed: **Lead Generation → Lead Qualification → Account/Contact/Opportunity → Package → Documents/OCR/Salesforce association → Invoice/Payment → Contract**.
+4. Do not report `DONE` until stage state and external acknowledgements are verified. A fluent chatbot, completed n8n execution or 205 passing chat turns are not end-to-end commercial completion.
+5. Dedicated deployment: ANCFZ only. Keep existing `tenant_id` and scoped auth internally until an independently verified migration, so source, session, CRM, callback and document isolation cannot regress.
+
+## Real inputs and provider configuration
+
+- Expected **local-only** RAG ZIP: `OneDrive_1_23-10-2026.zip`. It is on the operator's workstation, not mounted here. Find the actual file by explicit Windows path during local development; do NOT silently substitute older `OneDrive_1_21-10-2026.zip`, public website scrape or outdated training package.
+- Execute `tools/anc/ingestion/prepare_local_rag.py` to preflight and hash the ZIP before importing. Human review of each source/visibility and external eligibility is required before a source can become active.
+- Intent workbook: `artifacts/ancfz/ANCFZ_Dedicated_Seven_Stage_Intent_Catalog_DRAFT.xlsx`; canonical proposed data in `intent-source/ANCFZ_CATALOG_REVIEW_ROWS.json`. **Draft, bindings inactive** until publication gates pass. Current parser supports required sheets; `BusinessStages` is a new typed extension to implement.
+- Salesforce: reuse the **existing managed n8n credential(s)**. Never read, display, export, rotate or duplicate credential secrets without an explicit need. Bind credential references through n8n operator UI and verify sandbox scopes. Existing SF-02 attachment is in-scope; find before writing a replacement.
+- Payment: MOCK ONLY for development through `tools/anc/payment_mock/server.py`. Never charge a real payment, collect card/bank credentials or equate `mock_paid` with actual settlement.
+- Quote and invoice PDF: `tools/anc/pdf_service/render.py` (ReportLab). Current CLI only renders `mode=MOCK`; production documents require authoritative pricebook, approved template and server-side verified contract.
+- Generated inactive workflows: `infra/n8n/workflows/ANCQuotePDFWF1.json`, `ANCInvoicePDFWF1.json`, `ANCPaymentMockWF1.json`. They are **not functioning integrations** until corresponding Node internal endpoints and n8n credentials are configured and verified.
+
+## Architecture contracts to preserve
+
+- Node/Express/TypeScript is the sole public backend and policy authority: conversation state, PII vault, tenant scope, intent catalog version, evidence, consent, stage gates, approved actions, outbox, callback verification, idempotency, audit.
+- PostgreSQL/pgvector stores session/CRM/process/source/version data. Redis Streams is delivery, not state-of-truth. A transactional outbox protects event dispatch; worker/n8n retries must not duplicate provider side effects.
+- n8n is a credentialed **executor**, not a planner or policy engine. It receives opaque action references and fetches only authorized minimum data via Node. Do not send entire conversations or raw customer identity to model or n8n unnecessarily.
+- Approved RAG knowledge is only source-verified, tenant/scope/ACL filtered, active, versioned and appropriately cited. No generic model knowledge for ANCFZ pricing, visa eligibility, regulation, fees, timelines or package terms. Local ZIP review is required.
+- The LLM may interpret turns or phrase grounded answers; it cannot invoke a provider, satisfy a prerequisite, mark consent or stage, or claim a document/contract completed.
+- Stage state is durable and immutable under revision. Use opportunity ID, stage revision, catalog version, pending question, slot provenance, stage-scoped consent, action idempotency and external references. Enforce compare-and-swap/fencing and reconcile late callbacks.
+- Every provider acknowledgement is subject to verification: Salesforce Lead/Account/Contact/Opportunity IDs, package selection/quote, OCR+SF-02 attachment IDs, mock payment status, invoice PDF SHA, contract signed evidence. Missing IDs or ambiguous timeouts → `reconcile_required`, not green.
+
+## Code boundaries and nonnegotiable rules
+
+- Do not hardcode ANCFZ fees, document lists, pricebook IDs, Salesforce field names, required visa types, legal policies or prompt text in generic Node code. Put rules in reviewed versioned catalog or approved provider mappings.
+- Never collect PAN, CVV, account credentials or raw payment keys in the chat. Document upload consent and CRM transfer consent are separate; revocation and expiring consent are honored.
+- Preserve existing `AGENTS.md` privacy, ACL, source injection, retention, auth and redacted logs protections. No Docker public exposure of Postgres, Redis, n8n, mock payment or Python renderer.
+- No sweeping deletes: review `docs/ops/SAFE_CLEANUP_PLAN.md`, usages/tests/migrations; remove only unreferenced code with successful regression gates and rollback.
+- Work phase-by-phase with unit/API/Postgres tests and docs updated in the same commit. Skip no critical gate silently; status must show PASS / FAIL / BLOCKED with evidence.
+- Require 25 substantive local implementation commits before the first implementation push; the documentation/bootstrap commit on this branch is an explicit requested setup operation, not an implementation commit. Do not merge into main automatically.
+
+## Definition of Done
+
+- All seven lifecycle stages succeed in sequence with verified record identities and persisted evidence, including the required separate consent and source checks.
+- At least **25 consecutive customer messages + 25 assistant responses in one live API session**, verified from durable session history, plus **8 scenarios / 200 customer messages** overall; reject fabricated or in-memory-only output.
+- Tests: `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`, local Postgres integration, Python ingestion/OCR/PDF, n8n static and live, browser flow, security negatives, two-scoped-session isolation, provider API/sandbox idempotency and failure recovery.
+- Evidence report: commit SHAs, deployed service versions, source ZIP SHA, catalog version, n8n workflow IDs, Salesforce sandbox record lookups, quote/invoice PDF SHA, mock payment status, document/OCR/CRM reference, signed contract status, API transcript hashes. Never store sensitive raw identities in Git.
+- Never claim **real** billing or signing succeeded from a development mock. If a provider or source dependency is unavailable, finish all independent tasks, preserve truthful evidence, and mark acceptance BLOCKED.

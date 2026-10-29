@@ -1,0 +1,201 @@
+{
+  "id": "ANCInvoicePDFWF1",
+  "name": "ANCFZ Invoice PDF Generation \u2014 gated",
+  "nodes": [
+    {
+      "id": "ANCInvoicePDFWF1-hook",
+      "name": "Internal Lifecycle Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "anc-invoice-pdf-wf-1",
+        "responseMode": "onReceived",
+        "responseCode": 202,
+        "options": {}
+      },
+      "webhookId": "anc-invoice-pdf-wf-1"
+    },
+    {
+      "id": "ANCInvoicePDFWF1-validate",
+      "name": "Validate Opaque Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const x=$json.body??$json; for (const k of ['tenantId','actionId','eventId','correlationId']) if(typeof x[k]!=='string'||!x[k]) throw new Error('Invalid opaque lifecycle event '+k); if(x.workflowKey!==\"billing.invoice.issue\"||x.contract!==\"anc-pdf-invoice-v1\") throw new Error('Workflow contract mismatch'); if(!Number.isInteger(x.attempt)||x.attempt<1)throw new Error('Invalid attempt');return [{json:{tenantId:x.tenantId,actionId:x.actionId,eventId:x.eventId,correlationId:x.correlationId,attempt:x.attempt,workflowKey:x.workflowKey,contract:x.contract}}];"
+      }
+    },
+    {
+      "id": "ANCInvoicePDFWF1-claim",
+      "name": "Claim Authorized Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/claim",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actionId:$json.actionId,tenantId:$json.tenantId,eventId:$json.eventId,correlationId:$json.correlationId,attempt:$json.attempt,workflowKey:$json.workflowKey,contract:$json.contract,executionReference:$execution.id,n8nWorkflowId:$workflow.id,limit:1 }) }}"
+      }
+    },
+    {
+      "id": "ANCInvoicePDFWF1-one",
+      "name": "Require One Claimed Action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        670,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const items=$json.items;if(!Array.isArray(items)||items.length!==1)throw new Error('Exactly one authorized action claim required');const x=items[0];if(!x.actionId||!x.tenantId||!x.eventId||!x.correlationId||!Number.isInteger(x.attempt))throw new Error('Incomplete claimed action');return [{json:x}];"
+      }
+    },
+    {
+      "id": "ANCInvoicePDFWF1-execute",
+      "name": "Generate PDF Via Node Python Boundary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        910,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/ancfz/lifecycle/pdf-actions/execute",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId:$json.tenantId,actionId:$json.actionId,eventId:$json.eventId,correlationId:$json.correlationId,attempt:$json.attempt,documentType:'invoice',executionReference:$execution.id }) }}"
+      }
+    },
+    {
+      "id": "ANCInvoicePDFWF1-verify",
+      "name": "Check Durable PDF Verification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1130,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const x=$json;if(x.verified!==true||x.mock!==true||typeof x.documentId!=='string'||!/^[a-f0-9]{64}$/i.test(String(x.sha256||'')))throw new Error('PDF is not verified and persisted as a mock');return [{json:{...$('Require One Claimed Action').first().json,documentId:x.documentId,sha256:x.sha256}}];"
+      }
+    },
+    {
+      "id": "ANCInvoicePDFWF1-finish",
+      "name": "Finalize Verified PDF Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1350,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/complete",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId:$json.tenantId,actionId:$json.actionId,eventId:$json.eventId,correlationId:$json.correlationId,attempt:$json.attempt,state:'completed',executionReference:$execution.id,externalReference:$json.documentId }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Internal Lifecycle Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Opaque Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Opaque Event": {
+      "main": [
+        [
+          {
+            "node": "Claim Authorized Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Authorized Action": {
+      "main": [
+        [
+          {
+            "node": "Require One Claimed Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Require One Claimed Action": {
+      "main": [
+        [
+          {
+            "node": "Generate PDF Via Node Python Boundary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate PDF Via Node Python Boundary": {
+      "main": [
+        [
+          {
+            "node": "Check Durable PDF Verification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Durable PDF Verification": {
+      "main": [
+        [
+          {
+            "node": "Finalize Verified PDF Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ANCInvoicePDFWF1-draft-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [],
+  "notes": "INACTIVE / NOT DEPLOYABLE: Node endpoint /ancfz/lifecycle/pdf-actions/execute must be implemented, server-side authorized and wired to private Python ReportLab service. Bind managed HTTP Header Auth credential on each internal HTTP node. Never generate authoritative prices in n8n."
+}

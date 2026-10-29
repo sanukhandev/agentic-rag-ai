@@ -10,7 +10,7 @@ export const EVENT_STREAMS = {
   deadLetter: 'rag:v2:dead-letter',
 } as const satisfies Record<string, EventStream>;
 
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 const payloadValue = z.union([z.string(), z.number().finite(), z.boolean(), z.null()]);
 
 export const outboxEventSchema = z.object({
@@ -34,7 +34,7 @@ export const outboxEventSchema = z.object({
   payloadRef: z.string().min(1).max(200),
   idempotencyKey: z.string().min(1).max(200),
   correlationId: uuid,
-  payload: z.record(payloadValue),
+  payload: z.record(z.string(), payloadValue),
   occurredAt: z.string().datetime(),
   publishedAt: z.string().datetime().nullable(),
   attempts: z.number().int().nonnegative(),

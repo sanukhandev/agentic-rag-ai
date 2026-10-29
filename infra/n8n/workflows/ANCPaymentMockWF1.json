@@ -1,0 +1,241 @@
+{
+  "id": "ANCPaymentMockWF1",
+  "name": "ANCFZ Mock Payment \u2014 creates pending only",
+  "nodes": [
+    {
+      "id": "ANCPaymentMockWF1-hook",
+      "name": "Internal Lifecycle Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "anc-mock-payment-wf-1",
+        "responseMode": "onReceived",
+        "responseCode": 202,
+        "options": {}
+      },
+      "webhookId": "anc-mock-payment-wf-1"
+    },
+    {
+      "id": "ANCPaymentMockWF1-validate",
+      "name": "Validate Opaque Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const x=$json.body??$json; for (const k of ['tenantId','actionId','eventId','correlationId']) if(typeof x[k]!=='string'||!x[k]) throw new Error('Invalid opaque lifecycle event '+k); if(x.workflowKey!==\"billing.payment.mock\"||x.contract!==\"anc-payment-mock-v1\") throw new Error('Workflow contract mismatch'); if(!Number.isInteger(x.attempt)||x.attempt<1)throw new Error('Invalid attempt');return [{json:{tenantId:x.tenantId,actionId:x.actionId,eventId:x.eventId,correlationId:x.correlationId,attempt:x.attempt,workflowKey:x.workflowKey,contract:x.contract}}];"
+      }
+    },
+    {
+      "id": "ANCPaymentMockWF1-claim",
+      "name": "Claim Authorized Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/claim",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actionId:$json.actionId,tenantId:$json.tenantId,eventId:$json.eventId,correlationId:$json.correlationId,attempt:$json.attempt,workflowKey:$json.workflowKey,contract:$json.contract,executionReference:$execution.id,n8nWorkflowId:$workflow.id,limit:1 }) }}"
+      }
+    },
+    {
+      "id": "ANCPaymentMockWF1-one",
+      "name": "Require One Claimed Action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        670,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const items=$json.items;if(!Array.isArray(items)||items.length!==1)throw new Error('Exactly one authorized action claim required');const x=items[0];if(!x.actionId||!x.tenantId||!x.eventId||!x.correlationId||!Number.isInteger(x.attempt))throw new Error('Incomplete claimed action');return [{json:x}];"
+      }
+    },
+    {
+      "id": "ANCPaymentMockWF1-prepare",
+      "name": "Get Approved Invoice Payment Input",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        890,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/ancfz/lifecycle/mock-payments/prepare",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({tenantId:$json.tenantId,actionId:$json.actionId,eventId:$json.eventId,correlationId:$json.correlationId,attempt:$json.attempt}) }}"
+      }
+    },
+    {
+      "id": "ANCPaymentMockWF1-create",
+      "name": "Create MOCK Payment Intent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1110,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://mock-payments:8098/v1/payments",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({invoice_ref:$json.invoiceRef,amount:$json.amount,currency:$json.currency}) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Require One Claimed Action').first().json.actionId+'-'+$('Require One Claimed Action').first().json.attempt }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ANCPaymentMockWF1-validate-mock",
+      "name": "Validate MOCK Provider Intent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1330,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const x=$json;if(x.mock!==true||typeof x.id!=='string'||!/^mockpay_[0-9a-f]{32}$/.test(x.id)||x.status!=='pending')throw new Error('Mock payment intent must start pending');return [{json:{...$('Require One Claimed Action').first().json,mockPaymentId:x.id,providerStatus:x.status,mock:true}}];"
+      }
+    },
+    {
+      "id": "ANCPaymentMockWF1-pending",
+      "name": "Persist Pending MOCK Payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1550,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/ancfz/lifecycle/mock-payments/record-pending",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({tenantId:$json.tenantId,actionId:$json.actionId,eventId:$json.eventId,correlationId:$json.correlationId,attempt:$json.attempt,mockPaymentId:$json.mockPaymentId,providerStatus:'pending',executionReference:$execution.id}) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Internal Lifecycle Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Opaque Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Opaque Event": {
+      "main": [
+        [
+          {
+            "node": "Claim Authorized Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Authorized Action": {
+      "main": [
+        [
+          {
+            "node": "Require One Claimed Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Require One Claimed Action": {
+      "main": [
+        [
+          {
+            "node": "Get Approved Invoice Payment Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Approved Invoice Payment Input": {
+      "main": [
+        [
+          {
+            "node": "Create MOCK Payment Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create MOCK Payment Intent": {
+      "main": [
+        [
+          {
+            "node": "Validate MOCK Provider Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate MOCK Provider Intent": {
+      "main": [
+        [
+          {
+            "node": "Persist Pending MOCK Payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ANCPaymentMockWF1-draft-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [],
+  "notes": "INACTIVE: Node endpoints must be implemented. The mock API creates only pending state; it never charges real money. Manually settle via protected mock endpoint, then a separate Node reconciliation verifies mock_paid; never mark a real payment paid."
+}

@@ -1,0 +1,241 @@
+{
+  "generatedAt": "2026-10-28T21:47:47.0552753Z",
+  "zipSha256": "5a0d6f5f50809ec562f46125279304d9be918b88be92fadbe60f2d0919ce237",
+  "freshApprovedDocxCount": 16,
+  "freshApprovedChunkCount": 1467,
+  "revokedMetadataSources": 2,
+  "rejectedUnsupportedMembers": 1,
+  "embeddingProvider": "Azure text-embedding-3-large",
+  "embeddingDimension": 1536,
+  "database": "isolated agentic_rag ANCFZ tenant anc",
+  "sources": [
+    {
+      "sourceId": "5be62313-119d-4b64-ab4a-d41fa555257e",
+      "title": "ANCFZ_Descriptive_RAG_Business_Activity_Categories.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 236,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "0720a15c-ec62-4bc3-b865-5a46c4d43cc2",
+      "title": "ANCFZ_Descriptive_RAG_Contact_Us.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 55,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "7eb0e9d7-900a-4739-b486-2d2f070fc90d",
+      "title": "ANCFZ_Descriptive_RAG_FAQs.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 71,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "0cb871a4-d4e4-43b3-8acd-6069bec416f1",
+      "title": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 86,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "818a8530-20ed-4ead-bc70-965336cf4c78",
+      "title": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 52,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "309e0287-54bd-4881-bc1f-6aa9594620af",
+      "title": "ANCFZ_Descriptive_RAG_Rules_and_Regulations.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 404,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "60292ec7-a784-4f45-b77b-bacc775fcb41",
+      "title": "ANCFZ_Descriptive_RAG_Strategic_Partners.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 33,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "2f73ae67-d8d4-4c19-8587-08c55fc245b1",
+      "title": "ANCFZ_Descriptive_RAG_Types_of_Companies.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 54,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "34858aa5-419c-45e8-9dc1-bef0f03e9136",
+      "title": "RAG_ANCFZ_Business_Activity_Categories.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 86,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "b9ea3696-63be-4ed8-9c0d-4cbde8be05ee",
+      "title": "RAG_ANCFZ_Contact_Us.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 18,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "9e861d2a-2ade-4873-9802-5d7e1a570311",
+      "title": "RAG_ANCFZ_FAQs.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 26,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "d462ba16-835e-4eb8-99de-4b69971ae9af",
+      "title": "RAG_ANCFZ_License_Cost_2026.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 26,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "8d428646-8f5b-4421-8cfa-a376e70406cd",
+      "title": "RAG_ANCFZ_Packages_and_Offers.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 17,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "cf6b5858-8dee-49d7-a08f-8e0fa6cc8db2",
+      "title": "RAG_ANCFZ_Rules_and_Regulations.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 278,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "64423899-d6b0-4853-bbc2-9afeaf38a3ea",
+      "title": "RAG_ANCFZ_Strategic_Partners.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 11,
+      "databaseVerified": true
+    },
+    {
+      "sourceId": "e73ea68c-e382-440f-877e-9ba889fdec94",
+      "title": "RAG_ANCFZ_Types_of_Companies.docx",
+      "status": "active",
+      "audience": "public",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimension": 1536,
+      "chunkCount": 14,
+      "databaseVerified": true
+    }
+  ],
+  "apiRetrievalProbes": [
+    {
+      "questionClass": "business activity",
+      "grounded": true,
+      "freshSourceIds": [
+        "34858aa5-419c-45e8-9dc1-bef0f03e9136"
+      ]
+    },
+    {
+      "questionClass": "contact",
+      "grounded": true,
+      "freshSourceIds": [
+        "b9ea3696-63be-4ed8-9c0d-4cbde8be05ee",
+        "0720a15c-ec62-4bc3-b865-5a46c4d43cc2"
+      ]
+    },
+    {
+      "questionClass": "faq",
+      "grounded": true,
+      "freshSourceIds": [
+        "7eb0e9d7-900a-4739-b486-2d2f070fc90d"
+      ]
+    },
+    {
+      "questionClass": "licensing",
+      "grounded": true,
+      "freshSourceIds": [
+        "0cb871a4-d4e4-43b3-8acd-6069bec416f1",
+        "d462ba16-835e-4eb8-99de-4b69971ae9af"
+      ]
+    },
+    {
+      "questionClass": "packages",
+      "grounded": true,
+      "freshSourceIds": [
+        "818a8530-20ed-4ead-bc70-965336cf4c78"
+      ]
+    },
+    {
+      "questionClass": "rules",
+      "grounded": true,
+      "freshSourceIds": [
+        "309e0287-54bd-4881-bc1f-6aa9594620af",
+        "cf6b5858-8dee-49d7-a08f-8e0fa6cc8db2"
+      ]
+    },
+    {
+      "questionClass": "strategic partners",
+      "grounded": true,
+      "freshSourceIds": [
+        "60292ec7-a784-4f45-b77b-bacc775fcb41"
+      ]
+    },
+    {
+      "questionClass": "company types",
+      "grounded": true,
+      "freshSourceIds": [
+        "e73ea68c-e382-440f-877e-9ba889fdec94"
+      ]
+    },
+    {
+      "questionClass": "unsupported external fact",
+      "grounded": false,
+      "freshSourceIds": []
+    }
+  ],
+  "unrelatedPreexistingSourceRevoked": "5ec648ca-51e7-4c1c-81b1-ac724e121e78",
+  "notes": "Answers and source text intentionally omitted; evidence is redacted to identifiers, statuses, counts and citation probe classes."
+}

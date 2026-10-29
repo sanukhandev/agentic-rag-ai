@@ -28,6 +28,64 @@ class PostgresTestBus implements StreamBus {
 }
 
 describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
+  it('atomically establishes a legacy journey and binds only the original pending action', async () => {
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const store = new PostgresStore(pool);
+    const tenant = await store.createTenant({ name: 'Legacy Association Test', slug: `legacy-association-${randomUUID()}` });
+    try {
+      const session = await store.createSession(tenant.id);
+      const catalog = await store.createIntentCatalogVersion({ tenantId: tenant.id, status: 'published', sourceFileName: 'legacy-association.json', sourceHash: 'f'.repeat(64), parserVersion: 'test', catalog: { tenantScope: tenant.slug, intents: [], signals: [], slots: [], relations: [], workflowBindings: [] } });
+      const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'legacy.workflow', intentKey: 'legacy.intent', catalogVersionId: catalog.id, idempotencyKey: randomUUID(), state: 'awaiting_confirmation', opaqueReference: 'legacy', payload: {}, result: { externalReference: 'preserve-me' }, createdAt: new Date().toISOString() });
+      await store.updateAction({ ...action, result: { externalReference: 'preserve-me' } });
+      session.conversationState = { ...session.conversationState!, selectedIntentKey: 'legacy.intent' };
+      const opportunityId = randomUUID();
+      const migration = await store.establishLegacyJourneyAndAssignAction({ session, actionId: action.id, intentKey: 'legacy.intent', catalogVersionId: catalog.id, opportunityId, eligibleStates: ['awaiting_confirmation'] });
+      expect(migration.committed).toBe(true);
+      expect(migration.assignment.action).toMatchObject({ id: action.id, opportunityId, result: action.result });
+      const persisted = await store.getSession(session.id);
+      expect(persisted?.conversationState?.selectedIntentKey).toBe('legacy.intent');
+
+      const nullableAction = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'legacy.workflow', intentKey: 'legacy.null', catalogVersionId: null, idempotencyKey: randomUUID(), state: 'awaiting_customer', opaqueReference: 'legacy-null', payload: {}, result: null, createdAt: new Date().toISOString() });
+      const nullable = await store.assignLegacyActionOpportunity({ tenantId: tenant.id, sessionId: session.id, actionId: nullableAction.id, intentKey: 'legacy.null', catalogVersionId: null, opportunityId: randomUUID(), eligibleStates: ['awaiting_customer'] });
+      expect(nullable.status).toBe('assigned');
+
+      const sessionForRace = await store.getSession(session.id);
+      expect(sessionForRace).not.toBeNull();
+      const raceAction = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'legacy.workflow', intentKey: 'legacy.race', catalogVersionId: catalog.id, idempotencyKey: randomUUID(), state: 'awaiting_confirmation', opaqueReference: 'legacy-race', payload: {}, result: null, createdAt: new Date().toISOString() });
+      const raceSession = { ...sessionForRace!, conversationState: { ...sessionForRace!.conversationState!, selectedIntentKey: 'legacy.race' } };
+      const [left, right] = await Promise.allSettled([
+        store.establishLegacyJourneyAndAssignAction({ session: structuredClone(raceSession), actionId: raceAction.id, intentKey: 'legacy.race', catalogVersionId: catalog.id, opportunityId: randomUUID(), eligibleStates: ['awaiting_confirmation'] }),
+        store.establishLegacyJourneyAndAssignAction({ session: structuredClone(raceSession), actionId: raceAction.id, intentKey: 'legacy.race', catalogVersionId: catalog.id, opportunityId: randomUUID(), eligibleStates: ['awaiting_confirmation'] }),
+      ]);
+      expect([left, right].filter((result) => result.status === 'fulfilled' && result.value.committed)).toHaveLength(1);
+      expect((await store.getAction(raceAction.id))?.opportunityId).toBeTruthy();
+    } finally {
+      await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
+      await pool.end();
+    }
+  }, 20_000);
+
+  it('rolls back the session identity when the legacy action is ineligible', async () => {
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const store = new PostgresStore(pool);
+    const tenant = await store.createTenant({ name: 'Legacy Rollback Test', slug: `legacy-rollback-${randomUUID()}` });
+    try {
+      const session = await store.createSession(tenant.id);
+      const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'legacy.workflow', intentKey: 'legacy.rollback', idempotencyKey: randomUUID(), state: 'completed', opaqueReference: 'rollback', payload: {}, result: { externalReference: 'unchanged' }, createdAt: new Date().toISOString() });
+      await store.updateAction({ ...action, result: { externalReference: 'unchanged' } });
+      const candidate = { ...session, conversationState: { ...session.conversationState!, selectedIntentKey: 'legacy.rollback' } };
+      const migration = await store.establishLegacyJourneyAndAssignAction({ session: candidate, actionId: action.id, intentKey: 'legacy.rollback', opportunityId: randomUUID(), eligibleStates: ['awaiting_confirmation'] });
+      expect(migration.committed).toBe(false);
+      expect((await store.getSession(session.id))?.stateVersion).toBe(session.stateVersion);
+      expect((await store.getSession(session.id))?.conversationState?.selectedIntentKey).toBe(session.conversationState?.selectedIntentKey);
+      expect((await store.getAction(action.id))?.opportunityId).toBeNull();
+      expect((await store.getAction(action.id))?.result).toEqual(action.result);
+    } finally {
+      await pool.query('DELETE FROM tenants WHERE id=$1', [tenant.id]);
+      await pool.end();
+    }
+  }, 20_000);
+
   it('claims only bounded actions for the matching catalog workflow binding', async () => {
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     const store = new PostgresStore(pool);
