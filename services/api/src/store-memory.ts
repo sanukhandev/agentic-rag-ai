@@ -157,7 +157,7 @@ export class MemoryStore implements Store {
   }
   async getSource(id: string): Promise<Source | null> { return this.sources.get(id) ?? null; }
   async findSourceByHash(tenantId: string, hash: string): Promise<Source | null> { return [...this.sources.values()].find((source) => source.tenantId === tenantId && source.contentHash === hash) ?? null; }
-  async listSources(tenantId: string): Promise<Source[]> { return [...this.sources.values()].filter((source) => source.tenantId === tenantId); }
+  async listSources(tenantId: string): Promise<Source[]> { return [...this.sources.values()].filter((source) => source.tenantId === tenantId).map((source) => ({ ...source, chunkCount: [...this.chunks.values()].filter((chunk) => chunk.sourceId === source.id && chunk.versionId === source.versionId).length })); }
   async setSourceStatus(id: string, tenantId: string, status: SourceStatus): Promise<Source | null> {
     const source = this.sources.get(id);
     if (!source || source.tenantId !== tenantId) return null;

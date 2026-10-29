@@ -426,6 +426,7 @@ export interface Source {
   versionId: string;
   contentHash: string;
   embeddingReady: boolean;
+  chunkCount?: number;
   createdAt: string;
   approvedAt: string | null;
 }

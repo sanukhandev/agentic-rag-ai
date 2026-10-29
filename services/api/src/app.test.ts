@@ -205,6 +205,7 @@ describe('API vertical slice', () => {
     expect((await api.get('/api/v1/admin/persona').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.persona.name).toBe('Ava 2');
     const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${adminToken}`).send({ title: 'Tenant A Catalog', mimeType: 'text/plain', audience: 'public', content: 'Hello. Tenant A pricing is 100 credits per month. Contact support for approved details.' }).expect(201);
     expect(source.body.ingestion.status).toBe('completed');
+    expect((await api.get('/api/v1/admin/sources').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.items.find((item: { id: string }) => item.id === source.body.source.id)).toMatchObject({ chunkCount: 1 });
     expect((await api.get(`/api/v1/admin/ingestion-jobs/${source.body.ingestion.jobId}`).set('Authorization', `Bearer ${adminToken}`).expect(200)).body.job).toMatchObject({ id: source.body.ingestion.jobId, tenantId: tenantA.body.tenant.id, sourceId: source.body.source.id, status: 'completed', attempts: 1 });
     await api.get(`/api/v1/admin/ingestion-jobs/${source.body.ingestion.jobId}`).set('Authorization', `Bearer ${adminBToken}`).expect(404);
     const duplicateSource = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${adminToken}`).send({ title: 'Retry of catalog', mimeType: 'text/plain', audience: 'public', content: 'Hello. Tenant A pricing is 100 credits per month. Contact support for approved details.' }).expect(200);
