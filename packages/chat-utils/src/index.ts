@@ -18,10 +18,19 @@ export const escapeHtml = (text: string): string => text
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
-export const formatInlineMarkdown = (text: string): string => text
-  .replace(/`([^`]+)`/g, '<code class="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs text-neutral-900 border border-neutral-200/60">$1</code>')
-  .replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-neutral-900">$1</strong>')
-  .replace(/\*([^*]+)\*/g, '<em class="italic">$1</em>');
+export const formatInlineMarkdown = (text: string): string => {
+  const codeSpans: string[] = [];
+  const protectedText = text.replace(/`([^`\n]+)`/g, (_match, code: string) => {
+    codeSpans.push(code);
+    return `\u0000${codeSpans.length - 1}\u0000`;
+  });
+  return protectedText
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong class="font-semibold text-neutral-900">$1</strong>')
+    .replace(/\*([^*\n]+)\*/g, '<strong class="font-semibold text-neutral-900">$1</strong>')
+    .replace(/_([^_\n]+)_/g, '<em class="italic">$1</em>')
+    .replace(/~([^~\n]+)~/g, '<del class="line-through">$1</del>')
+    .replace(/\u0000(\d+)\u0000/g, (_match, index: string) => `<code class="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs text-neutral-900 border border-neutral-200/60">${codeSpans[Number(index)]}</code>`);
+};
 
 export const renderMarkdown = (raw: string): string => {
   if (!raw || !raw.trim()) return '';
@@ -62,7 +71,7 @@ export const renderMarkdown = (raw: string): string => {
       continue;
     }
 
-    const unordered = line.match(/^[-*]\s+(.*)$/);
+    const unordered = line.match(/^(?:[-*]|•)\s+(.*)$/);
     if (unordered) {
       if (currentList && currentList.type !== 'ul') flushList();
       if (!currentList) currentList = { type: 'ul', items: [] };

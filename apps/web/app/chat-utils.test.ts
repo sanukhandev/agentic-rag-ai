@@ -65,9 +65,13 @@ describe('web chat utilities', () => {
 
   it('safely escapes HTML and formats markdown blocks and inline tokens', () => {
     expect(escapeHtml('<script>alert("xss")</script>')).toBe('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;');
-    const rendered = renderMarkdown('Key points:\n- Point 1\n- Point 2');
+    const rendered = renderMarkdown('Key points:\n*Important* _note_ ~old~ `ID-1`\n- Point 1\n- Point 2');
     expect(rendered).toContain('<ul class="my-2.5 space-y-1 list-disc list-inside text-neutral-800">');
     expect(rendered).toContain('<li class="leading-relaxed">Point 1</li>');
+    expect(rendered).toContain('<strong');
+    expect(rendered).toContain('<em');
+    expect(rendered).toContain('<del');
+    expect(rendered).toContain('<code');
   });
 
   it('converts technical abstention text into concise, human phrasing', () => {

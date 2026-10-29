@@ -18,8 +18,13 @@ describe('shared chat utilities', () => {
 
   it('escapes markup before applying supported inline formatting', () => {
     expect(escapeHtml('<script>alert(1)</script>')).toBe('&lt;script&gt;alert(1)&lt;/script&gt;');
-    expect(formatInlineMarkdown('**bold**')).toContain('<strong');
+    const formatted = formatInlineMarkdown('*bold* _italic_ ~removed~ `ID-1`');
+    expect(formatted).toContain('<strong');
+    expect(formatted).toContain('<em');
+    expect(formatted).toContain('<del');
+    expect(formatted).toContain('<code');
     expect(renderMarkdown('- one\n- two')).toContain('<ul');
+    expect(renderMarkdown('• one\n• two')).toContain('<ul');
   });
 
   it('normalizes technical abstentions without changing ordinary answers', () => {
