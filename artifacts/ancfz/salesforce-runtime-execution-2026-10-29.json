@@ -1,0 +1,57 @@
+{
+  "checked_at": "2026-10-29",
+  "runtime": {
+    "n8n_health": "ok",
+    "n8n_readiness": "ok",
+    "active_workflows": [
+      "ANCLeadCaptureWF1",
+      "ANCAccountConversionWF1",
+      "ANCInvoiceGenerationWF1",
+      "ANCContractPreparationWF1"
+    ],
+    "managed_salesforce_credential": {
+      "present": true,
+      "name": "SalesForce ANC - CREDS",
+      "type": "oAuth2Api",
+      "secret_values_recorded": false
+    },
+    "remote_crm": {
+      "provider_configured": true,
+      "lead_endpoint_configured": true,
+      "account_endpoint_configured": false,
+      "lead_endpoint_host": "techcarrot4--realforce.sandbox.my.salesforce.com",
+      "lead_endpoint_path": "/services/apexrest/AIChatbotLead/"
+    }
+  },
+  "live_node_event_worker_n8n_attempts": [
+    {
+      "action_id": "55a60f31-511c-4cf3-8ccc-cb1535e06694",
+      "n8n_execution_reference": "3977",
+      "final_local_state": "reconcile_required",
+      "provider_id_persisted": false,
+      "observed_failed_node": "Reconcile Existing CRM Lead",
+      "observed_http_status": 400,
+      "observed_error_code": "INVALID_DATA"
+    },
+    {
+      "action_id": "48628d85-626a-4659-89cd-484774d60b8b",
+      "n8n_execution_reference": "4008",
+      "final_local_state": "reconcile_required",
+      "provider_id_persisted": false,
+      "observed_failed_node": "Reconcile Existing CRM Lead",
+      "observed_http_status": 400,
+      "observed_error_code": "INVALID_DATA"
+    },
+    {
+      "action_id": "777b27c6-09c4-4d30-9720-8505b840fc1c",
+      "n8n_execution_reference": "4022",
+      "final_local_state": "reconcile_required",
+      "provider_id_persisted": false,
+      "observed_failed_node": "Reconcile Existing CRM Lead",
+      "observed_http_status": 400,
+      "observed_error_code": "INVALID_DATA"
+    }
+  ],
+  "interpretation": "The live Node-to-event-worker-to-n8n path was exercised with synthetic identities. n8n was authorized to use the managed credential reference, but no Salesforce Lead ID, Account ID, Contact ID, Opportunity ID, or independent Salesforce readback was obtained. The action remained reconcile_required and is not counted as a provider success.",
+  "credential_secrets_or_customer_payloads_in_artifact": false
+}

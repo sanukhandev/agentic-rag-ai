@@ -19,6 +19,16 @@ conversation rerun `5f77cfe`, and acceptance evidence updates `231ad79`,
 `7b35d81`, `51a7645`. The final local audit, secret scan and Compose checks
 were run from the clean branch tip after these commits.
 
+The final live Salesforce-path investigation is recorded in [redacted runtime
+execution evidence](../../artifacts/ancfz/salesforce-runtime-execution-2026-10-29.json).
+The n8n database contains one managed `oAuth2Api` credential named `SalesForce
+ANC - CREDS`; its secret data was not exported. The sandbox Lead endpoint host
+and Apex REST path are configured, but the Account endpoint binding is absent.
+Three synthetic Node-authorized actions reached n8n and ended in durable
+`reconcile_required` state after HTTP 400 `INVALID_DATA` from the internal
+reconciliation branch. No Salesforce remote ID or independent Salesforce
+readback was observed, so these executions do not satisfy the Salesforce gate.
+
 ## Verified locally
 
 - Starter archive SHA-256: `24fd7b46e92eee67a120371593cc6d263f2f50875edbcebd98a863f9d75c3885`.
@@ -148,7 +158,11 @@ were run from the clean branch tip after these commits.
   account conversion, invoice generation and contract preparation), but active
   status is not provider completion evidence. The runtime exposes no billing
   or contract provider URL variables, and no independently queryable Salesforce
-  sandbox result was obtained without a verified provider test path.
+  sandbox result was obtained without a verified provider test path. The
+  live Lead attempts are now independently evidenced: the managed credential
+  reference exists, but the active workflow reached `Reconcile Existing CRM
+  Lead` with an absent canonical remote identity and the internal API returned
+  `INVALID_DATA`; the local action was correctly held at `reconcile_required`.
 - The checked-in quote/PDF and mock-payment workflows remain inactive templates
   that require their secured internal endpoints and private service bindings.
   Mock unit tests and provider-callback tests pass, but an actual Node→n8n→mock
