@@ -455,6 +455,20 @@ export class MemoryStore implements Store {
     this.crmLeads.set(id, updated);
     return updated;
   }
+  async retryActionAfterReconciliation(input: { actionId: string; tenantId: string; deadlineAt: string; reason: string }): Promise<{ action: ActionRequest; event: OutboxEvent } | null> {
+    const action = this.actions.get(input.actionId);
+    const execution = action ? await this.getActionExecution(action.id, input.tenantId) : null;
+    const lead = action ? await this.getCrmLeadByActionId(action.id, input.tenantId) : null;
+    if (!action || action.tenantId !== input.tenantId || action.state !== 'reconcile_required' || !execution || execution.providerStatus !== 'reconcile_required' || lead?.leadId || lead?.remoteCrm) return null;
+    const eventId = randomUUID();
+    const correlationId = randomUUID();
+    const attempt = 1;
+    const event = createOutboxEvent({ eventId, eventType: 'intent.action.requested.v1', tenantId: action.tenantId, sessionId: action.sessionId, actionId: action.id, aggregateId: action.id, workflowKey: action.workflowKey, payloadRef: action.opaqueReference, idempotencyKey: `retry:${action.idempotencyKey}:${eventId}`, correlationId, payload: { actionId: action.id, sessionId: action.sessionId, workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? null, catalogVersionId: action.catalogVersionId ?? null, opportunityId: action.opportunityId ?? null, actionKey: action.actionKey ?? null, actionRevision: action.actionRevision ?? 1 } });
+    this.actions.set(action.id, { ...action, state: 'approved', result: null });
+    this.actionExecutions.set(execution.id, { ...execution, providerStatus: 'dispatching', n8nExecutionRef: null, eventId, correlationId, attempt, deadlineAt: input.deadlineAt, outcome: { eventId, correlationId, reason: input.reason, priorAttempt: execution.attempt }, updatedAt: now() });
+    await this.enqueueOutboxEvent(event);
+    return { action: this.actions.get(action.id)!, event };
+  }
   async updateCrmLeadQualification(id: string, tenantId: string, status: CrmLead['qualificationStatus'], evidence: CrmLead['qualificationEvidence'] = {}): Promise<CrmLead | null> {
     const lead = await this.getCrmLead(id, tenantId);
     if (!lead || !status) return null;
@@ -568,7 +582,7 @@ export class MemoryStore implements Store {
     const key = `${execution.actionId}:${execution.idempotencyKey}`;
     const existing = [...this.actionExecutions.values()].find((item) => `${item.actionId}:${item.idempotencyKey}` === key);
     if (!existing) { this.actionExecutions.set(execution.id, execution); return { execution, claimed: true }; }
-    if (existing.providerStatus === 'dispatching' && existing.attempt < execution.attempt) { const reclaimed = { ...existing, providerStatus: 'dispatching', attempt: execution.attempt, deadlineAt: execution.deadlineAt, eventId: execution.eventId ?? existing.eventId ?? null, correlationId: execution.correlationId ?? existing.correlationId ?? null, updatedAt: now() }; this.actionExecutions.set(existing.id, reclaimed); return { execution: reclaimed, claimed: true }; }
+    if (existing.providerStatus === 'dispatching' && (existing.attempt < execution.attempt || (existing.attempt === execution.attempt && !existing.n8nExecutionRef && existing.eventId === execution.eventId && existing.correlationId === execution.correlationId))) { const reclaimed = { ...existing, providerStatus: 'dispatching', attempt: execution.attempt, deadlineAt: execution.deadlineAt, eventId: execution.eventId ?? existing.eventId ?? null, correlationId: execution.correlationId ?? existing.correlationId ?? null, updatedAt: now() }; this.actionExecutions.set(existing.id, reclaimed); return { execution: reclaimed, claimed: true }; }
     return { execution: existing, claimed: false };
   }
   async getActionExecution(actionId: string, tenantId: string): Promise<ActionExecution | null> { return [...this.actionExecutions.values()].filter((item) => item.actionId === actionId && item.tenantId === tenantId).sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null; }

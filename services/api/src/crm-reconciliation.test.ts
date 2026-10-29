@@ -6,6 +6,34 @@ import { MemoryStore } from './store-memory.js';
 import type { ActionRequest, CrmLead } from './types.js';
 
 describe('CRM identity reconciliation', () => {
+  it('requeues only an unlinked reconciliation-required action with its original idempotency key', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'Retry tenant', slug: `retry-${randomUUID()}` });
+    const session = await store.createSession(tenant.id);
+    const action: ActionRequest = { id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'anc.crm.lead.capture', intentKey: 'company.setup', state: 'reconcile_required', idempotencyKey: 'original-idempotency', opaqueReference: 'original-reference', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null };
+    await store.createAction(action);
+    await store.createCrmLead({ id: randomUUID(), tenantId: tenant.id, actionId: action.id, sessionId: session.id, intent: 'company.setup', secondaryIntentKeys: [], intentScore: 90, intentConfidence: 0.95, catalogVersionId: null, score: 90, validationPass: true, leadData: { name: '[NAME_1]', email: '[EMAIL_1]', phone: '[PHONE_1]' }, conversation: [], summary: 'Synthetic unlinked lead', summaryStatus: 'completed', leadId: null, remoteCrm: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    const eventId = randomUUID();
+    await store.recordActionExecution({ id: randomUUID(), actionId: action.id, tenantId: tenant.id, workflowKey: action.workflowKey, catalogVersionId: null, providerStatus: 'reconcile_required', n8nExecutionRef: '3977', eventId, correlationId: eventId, idempotencyKey: action.idempotencyKey, attempt: 1, deadlineAt: null, outcome: { reason: 'invalid-branch' }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+
+    const retried = await store.retryActionAfterReconciliation({ actionId: action.id, tenantId: tenant.id, deadlineAt: new Date(Date.now() + 900_000).toISOString(), reason: 'regression-test' });
+    expect(retried?.action).toMatchObject({ id: action.id, state: 'approved', idempotencyKey: action.idempotencyKey });
+    expect(retried?.event.actionId).toBe(action.id);
+    expect((await store.getActionExecution(action.id, tenant.id))?.providerStatus).toBe('dispatching');
+    expect((await store.getActionExecution(action.id, tenant.id))?.attempt).toBe(1);
+  });
+
+  it('rejects an invalid lead route before PostgreSQL UUID parsing', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'Route validation tenant', slug: `route-validation-${randomUUID()}` });
+    const action: ActionRequest = { id: randomUUID(), tenantId: tenant.id, sessionId: (await store.createSession(tenant.id)).id, workflowKey: 'crm.lead.create', intentKey: 'company.setup', state: 'processing', idempotencyKey: 'invalid-route', opaqueReference: 'invalid-route-ref', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null };
+    await store.createAction(action);
+    const runtime = createApp({ nodeEnv: 'test', store, n8nCallbackSecret: 'internal-secret' });
+    const response = await request(runtime.app).post('/api/v1/internal/crm/leads/undefined/remote-reconcile').set('x-agentic-internal-secret', 'internal-secret').send({ tenantId: tenant.id, actionId: action.id });
+    expect(response.status).toBe(422);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('reuses a verified remote lead without mutating its original action or session', async () => {
     const store = new MemoryStore();
     const tenant = await store.createTenant({ name: 'Reconciliation tenant', slug: `reconcile-${randomUUID()}` });

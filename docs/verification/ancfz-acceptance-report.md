@@ -152,6 +152,35 @@ readback was observed, so these executions do not satisfy the Salesforce gate.
 
 ## Blocked or not verified
 
+### P0 runtime failure reconciliation — 2026-10-29
+
+- Executions `3977`, `4008` and `4022` were inspected node-by-node. All three
+  failed at `Reconcile Existing CRM Lead` with HTTP 400 `INVALID_DATA`; the
+  redacted request IDs, action IDs and local lead IDs are in the [P0 root-cause
+  evidence](../../artifacts/ancfz/salesforce-runtime-root-cause-2026-10-29.json).
+- The exact failing request was `/api/v1/internal/crm/leads/undefined/remote-reconcile`.
+  The API issued the response because PostgreSQL rejected parameter `$1` in
+  `SELECT * FROM crm_leads WHERE id=$1 AND tenant_id=$2` with SQLSTATE `22P02`:
+  the UUID column received the string `undefined`. The cause was an inverted
+  n8n IF connection: the false/unlinked branch was wired to reconciliation.
+- The workflow is now active with false/unlinked leads routed to
+  `Remote CRM Create Lead` and true/linked leads routed to reconciliation. The
+  API also validates the route ID as a UUID before database access. Targeted
+  workflow regression tests pass 3/3 and targeted API CRM tests pass 3/3.
+- No provider write was reached in any of the three original executions: all
+  local remote IDs remain blank and no remote-link audit event exists. A
+  read-only Salesforce REST query through the managed n8n credential succeeded
+  in execution `4337` and returned a redacted Lead count of 143; this is
+  connectivity evidence, not proof of a specific customer Lead write.
+- An audited retry transition preserves the original action idempotency key and
+  uses a unique transport event. A fresh retry reached the internal CRM-upsert
+  path before the provider node; replay of the historical session is now blocked
+  by the configured 15-minute token TTL, so no stale customer data is reused.
+  The controlled same-action retry was n8n execution `4387`; it ended
+  `reconcile_required` with no provider Lead ID and no provider write.
+  A fresh authorized synthetic session is still required for provider-verified
+  Lead creation and the remaining Salesforce lifecycle.
+
 - Salesforce sandbox Lead creation/qualification, Account/Contact/Opportunity
   writes, package/quote linkage, SF-02 attachment and independent remote-ID
   reconciliation remain unverified. The n8n runtime is healthy and

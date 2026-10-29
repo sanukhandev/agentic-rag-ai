@@ -17,4 +17,9 @@ class Tests(unittest.TestCase):
    text=p.read_text().lower();self.assertNotIn('client_secret',text);self.assertNotIn('access_token',text);self.assertNotIn('oauth2:',text)
   payment=json.loads((BASE/'ANCPaymentMockWF1.json').read_text())
   self.assertIn('pending only',payment['name']);self.assertNotIn('state:\'completed\'',json.dumps(payment))
+ def test_unlinked_leads_create_and_linked_leads_reconcile(self):
+  workflow=json.loads((BASE/'03-anc-lead-capture-wf-1.json').read_text())
+  routes=workflow['connections']['Existing Remote CRM Identity?']['main']
+  self.assertEqual(routes[0][0]['node'],'Remote CRM Create Lead')
+  self.assertEqual(routes[1][0]['node'],'Reconcile Existing CRM Lead')
 if __name__=='__main__':unittest.main()

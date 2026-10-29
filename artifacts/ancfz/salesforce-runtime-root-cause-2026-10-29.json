@@ -1,0 +1,41 @@
+{
+  "status": "root_cause_repaired_provider_write_not_verified",
+  "failedExecutions": [
+    { "n8nExecutionId": "3977", "failedNode": "Reconcile Existing CRM Lead", "requestId": "2821036d-6672-44dd-96b5-b868f45eea70", "httpStatus": 400, "errorCode": "INVALID_DATA", "actionId": "55a60f31-511c-4cf3-8ccc-cb1535e06694", "localLeadId": "d44392e9-0132-4f22-9f2f-0eb46b43bf77" },
+    { "n8nExecutionId": "4008", "failedNode": "Reconcile Existing CRM Lead", "requestId": "8e026acc-0b3a-4e85-ba21-a50657a43f98", "httpStatus": 400, "errorCode": "INVALID_DATA", "actionId": "48628d85-626a-4659-89cd-484774d60b8b", "localLeadId": "32058a7b-ec96-47e5-95d8-66fbfe97e193" },
+    { "n8nExecutionId": "4022", "failedNode": "Reconcile Existing CRM Lead", "requestId": "2c2a332e-d060-4144-9f01-63934ac0c327", "httpStatus": 400, "errorCode": "INVALID_DATA", "actionId": "777b27c6-09c4-4d30-9720-8505b840fc1c", "localLeadId": "16cfd9c7-1f95-4e13-9123-a574d7d32ec1" }
+  ],
+  "rootCause": {
+    "workflowNode": "Existing Remote CRM Identity?",
+    "falseBranchBeforeFix": "Reconcile Existing CRM Lead",
+    "falseBranchAfterFix": "Remote CRM Create Lead",
+    "trueBranchAfterFix": "Reconcile Existing CRM Lead",
+    "invalidRequestPath": "/api/v1/internal/crm/leads/undefined/remote-reconcile",
+    "sqlState": "22P02",
+    "sqlOperation": "SELECT * FROM crm_leads WHERE id=$1 AND tenant_id=$2",
+    "offendingParameter": "$1",
+    "expectedType": "uuid",
+    "actualValueType": "string",
+    "actualValue": "undefined",
+    "providerWriteReached": false
+  },
+  "diagnostics": {
+    "apiMapping": "SQLSTATE 22P02 is mapped to INVALID_DATA by the API error handler",
+    "localEvidence": "All three crm_leads rows have blank lead_id and remote_crm; audit has no crm.lead.remote_linked event",
+    "readOnlySalesforceExecution": { "n8nExecutionId": "4337", "operation": "SELECT COUNT() FROM Lead", "resultCount": 143, "credentialSecretRecorded": false },
+    "correctedRuntimeVerified": { "workflowId": "ANCLeadCaptureWF1", "active": true, "falseBranch": "Remote CRM Create Lead", "trueBranch": "Reconcile Existing CRM Lead" }
+  },
+  "regressionEvidence": {
+    "workflowTest": "python tools/anc/test_workflows.py: 3 passed",
+    "apiTest": "npm --workspace services/api test -- --run src/crm-reconciliation.test.ts: 3 passed",
+    "typecheck": "npm --workspace services/api run typecheck: passed"
+  },
+  "recovery": {
+    "originalActionIdempotencyPreserved": true,
+    "authorizedRetryPathAdded": true,
+    "controlledRetry": { "n8nExecutionId": "4387", "actionId": "55a60f31-511c-4cf3-8ccc-cb1535e06694", "result": "reconcile_required", "providerWriteReached": false, "remoteLeadId": null },
+    "remoteLeadIdsObserved": 0,
+    "historicalRetryLimit": "The original session token mappings are beyond the configured 15-minute rehydration TTL; no stale PII was rehydrated and no additional provider write was attempted.",
+    "status": "provider_write_still_requires_fresh_authorized_synthetic_session"
+  }
+}

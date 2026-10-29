@@ -1913,6 +1913,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.json({ action: updated });
     } catch (error) { next(error); }
   });
+  app.post('/api/v1/admin/workflow-runs/:id/retry', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const actionId = routeParam(req, 'id');
+      const retried = await store.retryActionAfterReconciliation({ actionId, tenantId, deadlineAt: new Date(Date.now() + Number(process.env.N8N_COMPLETION_DEADLINE_MS ?? 15 * 60_000)).toISOString(), reason: 'authorized_reconciliation_retry_after_provider_readback' });
+      if (!retried) throw new HttpError(409, 'RECONCILIATION_RETRY_FORBIDDEN', 'Only an unlinked reconciliation-required action can be retried.');
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'workflow.reconciliation_retry_queued', metadata: { actionId, eventId: retried.event.eventId, correlationId: retried.event.correlationId }, createdAt: new Date().toISOString() });
+      res.status(202).json({ action: { id: retried.action.id, state: retried.action.state, workflowKey: retried.action.workflowKey, idempotencyKey: retried.action.idempotencyKey }, event: { eventId: retried.event.eventId, correlationId: retried.event.correlationId, idempotencyKey: retried.event.idempotencyKey } });
+    } catch (error) { next(error); }
+  });
 
   app.post('/api/v1/internal/crm/leads', n8nInternalApi, async (req, res, next) => {
     try {
@@ -2046,7 +2056,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.post('/api/v1/internal/crm/leads/:id/remote-reconcile', n8nInternalApi, async (req, res, next) => {
     try {
       const input = parse(crmRemoteReconcileSchema, req.body);
-      const lead = await store.getCrmLead(routeParam(req, 'id'), input.tenantId);
+      const leadId = parse(z.string().uuid(), routeParam(req, 'id'));
+      const lead = await store.getCrmLead(leadId, input.tenantId);
       const action = await store.getAction(input.actionId);
       if (!lead || !action || action.tenantId !== input.tenantId || action.state !== 'processing' || !lead.leadId || !lead.remoteCrm) throw new HttpError(403, 'REMOTE_RECONCILE_FORBIDDEN', 'Remote CRM reconciliation is not authorized for this action.');
       const association = await store.createCrmLeadAssociation({ id: randomUUID(), tenantId: input.tenantId, crmLeadId: lead.id, actionId: action.id, sessionId: action.sessionId, opportunityId: action.opportunityId ?? null, associationType: 'deduplicated', createdAt: new Date().toISOString() });

@@ -262,6 +262,31 @@ export class PostgresStore implements Store {
     const updated = await this.pool.query<ActionRow>('UPDATE action_requests SET state=$1,result=$2 WHERE id=$3 AND tenant_id=$4 AND state=$5 RETURNING *', [toState, result ? JSON.stringify(result) : null, actionId, tenantId, fromState]);
     return updated.rows[0] ? this.action(updated.rows[0]) : null;
   }
+  async retryActionAfterReconciliation(input: { actionId: string; tenantId: string; deadlineAt: string; reason: string }): Promise<{ action: ActionRequest; event: OutboxEvent } | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const actionResult = await client.query<ActionRow>('SELECT * FROM action_requests WHERE id=$1 AND tenant_id=$2 FOR UPDATE', [input.actionId, input.tenantId]);
+      const action = actionResult.rows[0];
+      const executionResult = await client.query<ActionExecutionRow>('SELECT * FROM action_executions WHERE action_id=$1 AND tenant_id=$2 ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE', [input.actionId, input.tenantId]);
+      const execution = executionResult.rows[0];
+      const leadResult = await client.query<{ lead_id: string | null; remote_crm: string | null }>('SELECT lead_id,remote_crm FROM crm_leads WHERE action_id=$1 AND tenant_id=$2 LIMIT 1', [input.actionId, input.tenantId]);
+      const lead = leadResult.rows[0];
+      if (!action || action.state !== 'reconcile_required' || !execution || execution.provider_status !== 'reconcile_required' || lead?.lead_id || lead?.remote_crm) { await client.query('ROLLBACK'); return null; }
+      const eventId = randomUUID();
+      const correlationId = randomUUID();
+      const attempt = 1;
+      const event = createOutboxEvent({ eventId, eventType: 'intent.action.requested.v1', tenantId: action.tenant_id, sessionId: action.session_id, actionId: action.id, aggregateId: action.id, workflowKey: action.workflow_key, payloadRef: action.opaque_reference, idempotencyKey: `retry:${action.idempotency_key}:${eventId}`, correlationId, payload: { actionId: action.id, sessionId: action.session_id, workflowKey: action.workflow_key, webhookPath: action.webhook_path ?? null, catalogVersionId: action.catalog_version_id ?? null, opportunityId: action.opportunity_id ?? null, actionKey: action.action_key ?? null, actionRevision: action.action_revision ?? 1 } });
+      const updated = await client.query<ActionRow>('UPDATE action_requests SET state=\'approved\',result=NULL WHERE id=$1 AND tenant_id=$2 AND state=\'reconcile_required\' RETURNING *', [input.actionId, input.tenantId]);
+      if (!updated.rows[0]) { await client.query('ROLLBACK'); return null; }
+      const executionUpdate = await client.query<ActionExecutionRow>(`UPDATE action_executions SET provider_status='dispatching',n8n_execution_ref=NULL,event_id=$1,correlation_id=$2,attempt=$3,deadline_at=$4,outcome=$5,updated_at=now()
+        WHERE id=$6 AND provider_status='reconcile_required' RETURNING *`, [eventId, correlationId, attempt, input.deadlineAt, JSON.stringify({ eventId, correlationId, reason: input.reason, priorAttempt: execution.attempt }), execution.id]);
+      if (!executionUpdate.rows[0]) { await client.query('ROLLBACK'); return null; }
+      await this.insertOutbox(client, event);
+      await client.query('COMMIT');
+      return { action: this.action(updated.rows[0]), event };
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+  }
   async transitionActionWithExecution(input: { actionId: string; tenantId: string; fromState: ActionRequest['state']; toState: ActionRequest['state']; result: ActionRequest['result']; providerStatus: string; n8nExecutionRef: string; eventId: string; correlationId: string; expectedAttempt: number; resolveReconciliation?: boolean; outcome?: ActionExecution['outcome'] }): Promise<{ action: ActionRequest; execution: ActionExecution } | null> {
     const client = await this.pool.connect();
     try {
@@ -518,7 +543,7 @@ export class PostgresStore implements Store {
       const existing = await client.query<ActionExecutionRow>('SELECT * FROM action_executions WHERE action_id=$1 AND idempotency_key=$2 FOR UPDATE', [execution.actionId, execution.idempotencyKey]);
       const row = existing.rows[0];
       if (!row) throw new Error('Action execution disappeared after conflict resolution.');
-      if (row.provider_status === 'dispatching' && row.attempt < execution.attempt) {
+      if (row.provider_status === 'dispatching' && (row.attempt < execution.attempt || (row.attempt === execution.attempt && !row.n8n_execution_ref && row.event_id === execution.eventId && row.correlation_id === execution.correlationId))) {
         const reclaimed = await client.query<ActionExecutionRow>(`UPDATE action_executions SET provider_status='dispatching',attempt=$2,deadline_at=$3,event_id=COALESCE($4,event_id),correlation_id=COALESCE($5,correlation_id),updated_at=now() WHERE id=$1 AND provider_status='dispatching' RETURNING *`, [row.id, execution.attempt, execution.deadlineAt, execution.eventId, execution.correlationId]);
         if (reclaimed.rows[0]) { await client.query('COMMIT'); return { execution: this.actionExecution(reclaimed.rows[0]), claimed: true }; }
       }

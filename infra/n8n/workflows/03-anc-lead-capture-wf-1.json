@@ -388,7 +388,7 @@
     "Prepare Remote CRM Decision": { "main": [[{ "node": "Remote CRM Qualification Gate", "type": "main", "index": 0 }]] },
     "Remote CRM Qualification Gate": { "main": [[{ "node": "Fetch Authorized Remote CRM Payload", "type": "main", "index": 0 }], [{ "node": "Complete Internal Registration", "type": "main", "index": 0 }]] },
     "Fetch Authorized Remote CRM Payload": { "main": [[{ "node": "Existing Remote CRM Identity?", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
-    "Existing Remote CRM Identity?": { "main": [[{ "node": "Reconcile Existing CRM Lead", "type": "main", "index": 0 }], [{ "node": "Remote CRM Create Lead", "type": "main", "index": 0 }]] },
+    "Existing Remote CRM Identity?": { "main": [[{ "node": "Remote CRM Create Lead", "type": "main", "index": 0 }], [{ "node": "Reconcile Existing CRM Lead", "type": "main", "index": 0 }]] },
     "Reconcile Existing CRM Lead": { "main": [[{ "node": "Complete Async Registration", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
     "Remote CRM Create Lead": { "main": [[{ "node": "Validate Remote CRM Lead ID", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
     "Validate Remote CRM Lead ID": { "main": [[{ "node": "Internal CRM Remote ID Callback", "type": "main", "index": 0 }], [{ "node": "Complete CRM Reconciliation", "type": "main", "index": 0 }]] },
