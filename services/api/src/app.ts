@@ -6,7 +6,7 @@ import { ActionGateway, isSafeExternalReference, leadQuality, verifyN8nPayload, 
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
 import { cacheKey, createCache, type CacheStore } from './cache.js';
 import { channelAuthMiddleware, ChannelSecretVault, getChannel, type StaticChannelAuth } from './channel-auth.js';
-import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, presentKnowledgeText, rankChunksWithVector } from './knowledge.js';
+import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, retrieveApprovedKnowledge } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { classifyOfferReply, conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isGuidedResponse, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
 import { assertKnownTokens, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, TokenVault } from './privacy.js';
@@ -66,6 +66,7 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 import { registerLifecycleRoutes } from './routes/lifecycle.js';
+import { foundryToolAuthOptionsFromEnv, FoundryToolAuth, registerFoundryToolRoutes, type FoundrySessionBindingResolver, type FoundryToolAuthOptions } from './routes/foundry-tools.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null; normalizationAttempts: number; normalizationFallbacks: number; normalizationFailures: number; normalizationLatencyMs: number };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -329,6 +330,12 @@ export interface AppDependencies {
   cache?: CacheStore;
   chatResponseCacheTtlSeconds?: number;
   catalogQueryNormalizationEnabled?: boolean;
+  foundryToolAuth?: FoundryToolAuthOptions;
+  foundrySessionBinding?: FoundrySessionBindingResolver;
+  foundryToolRateLimitMax?: number;
+  foundryToolRateLimitWindowMs?: number;
+  foundryToolTimeoutMs?: number;
+  foundryToolMaxResponseBytes?: number;
 }
 
 export const createApp = (dependencies: AppDependencies = {}) => {
@@ -516,7 +523,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       return { value: fallback, usedFallback: true, failed: true };
     }
   };
-  const rateLimitMax = readRateLimit(dependencies.rateLimitMax, 'API_RATE_LIMIT_MAX', nodeEnv === 'development' ? 600 : 120, 100_000);
+  const rateLimitMax = readRateLimit(dependencies.rateLimitMax, 'API_RATE_LIMIT_MAX', nodeEnv === 'development' || nodeEnv === 'test' ? 600 : 120, 100_000);
   const rateLimitWindowMs = readRateLimit(dependencies.rateLimitWindowMs, 'API_RATE_LIMIT_WINDOW_MS', 60_000, 3_600_000);
   if (nodeEnv === 'production' && (!dependencies.model || !dependencies.embedding || !n8nCallbackSecret || !ingestionWorkerSecret)) throw new Error('Production Azure, embedding, n8n polling and ingestion adapters are required.');
   if (nodeEnv === 'production' && (!configuredChannelCredentialKey || /^(?:replace-with|local-development|change-me)/i.test(configuredChannelCredentialKey))) throw new Error('Production CHANNEL_CREDENTIAL_KEY is required.');
@@ -544,6 +551,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const auth = new AuthService(store, jwtSecret);
   const gateway = new ActionGateway(store, workflow);
   const app = express();
+  const foundryToolAuthOptions = dependencies.foundryToolAuth ?? foundryToolAuthOptionsFromEnv(nodeEnv);
+  if (nodeEnv === 'production' && foundryToolAuthOptions.allowApiKey) throw new Error('Production Foundry tools cannot use the development API-key fallback.');
   const rateLimits = new Map<string, RateLimitEntry>();
   const newTelemetry = (): Telemetry => ({ requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null, chatResponses: 0, groundedResponses: 0, abstentions: 0, actionProposals: 0, estimatedInputTokens: 0, estimatedOutputTokens: 0, estimatedCostUsd: inputCostUsdPerMillion !== null && outputCostUsdPerMillion !== null ? 0 : null, normalizationAttempts: 0, normalizationFallbacks: 0, normalizationFailures: 0, normalizationLatencyMs: 0 });
   const telemetry = newTelemetry();
@@ -674,6 +683,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     embeddingConfigured: Boolean(dependencies.embedding),
   });
   registerLifecycleRoutes(app, { store, gateway, chatApi, routeParam, authorizeSession: authorizeChatSession });
+  registerFoundryToolRoutes(app, {
+    store,
+    embedding,
+    auth: new FoundryToolAuth(foundryToolAuthOptions),
+    ...(dependencies.foundrySessionBinding ? { sessionBinding: dependencies.foundrySessionBinding } : {}),
+    ...(dependencies.foundryToolRateLimitMax !== undefined ? { rateLimitMax: dependencies.foundryToolRateLimitMax } : {}),
+    ...(dependencies.foundryToolRateLimitWindowMs !== undefined ? { rateLimitWindowMs: dependencies.foundryToolRateLimitWindowMs } : {}),
+    ...(dependencies.foundryToolTimeoutMs !== undefined ? { timeoutMs: dependencies.foundryToolTimeoutMs } : {}),
+    ...(dependencies.foundryToolMaxResponseBytes !== undefined ? { maxResponseBytes: dependencies.foundryToolMaxResponseBytes } : {}),
+  });
 
   app.post('/api/v1/admin/ingestion-jobs', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
     try {
@@ -1542,24 +1561,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       else if (!postCaptureFollowUp && conversational && intent === 'greeting' && (language === 'ar' || /\bgood (?:morning|afternoon|evening)\b/iu.test(maskedMessage))) draft = { answer: language === 'ar' ? conversationalReply(intent, persona?.name ?? 'Sales assistant', language, tenant.name) : openingGreeting(persona?.greeting, persona?.name ?? 'Sales assistant'), citationIds: [], proposedIntent: null };
       else if (!postCaptureFollowUp && conversational && intent === 'identity') draft = { answer: conversationalReply(intent, persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
       else {
-        let queryEmbedding: number[];
-        try { queryEmbedding = await embedding.embed(knowledgeRetrievalQuery); } catch { throw new HttpError(503, 'EMBEDDING_UNAVAILABLE', 'The assistant is currently unable to search approved knowledge.'); }
-        const rows = await store.searchSearchableChunks(session.tenantId, internal ? 'internal' : 'public', queryEmbedding, 24, retrievalTextQuery);
-        let ranked = rankChunksWithVector(knowledgeRetrievalQuery, rows, queryEmbedding, 4, embedding.model.startsWith('deterministic-') ? null : 0.55);
-        // A mixed natural-language request can have a weaker vector score even when
-        // the approved candidate set contains lexical evidence. Re-rank that same
-        // tenant-filtered set with the normal hybrid gate before abstaining.
-        if (ranked.length === 0 && !embedding.model.startsWith('deterministic-')) ranked = rankChunksWithVector(knowledgeRetrievalQuery, rows, queryEmbedding, 4);
-        if (ranked.length === 0 && knowledgeQuestion) {
-          const approvedChunks = await store.listSearchableChunks(session.tenantId, internal ? 'internal' : 'public');
-          ranked = rankChunksWithVector(knowledgeRetrievalQuery, approvedChunks, queryEmbedding, 4);
-        }
-        if (knowledgeQuestion && process.env.STORE === 'postgres' && ranked.length === 0) {
-          const approvedChunks = await store.listSearchableChunks(session.tenantId, internal ? 'internal' : 'public');
-          const broadRanked = rankChunksWithVector(knowledgeRetrievalQuery, approvedChunks, queryEmbedding, 4, 0.35);
-          if (broadRanked.length > 0) ranked = broadRanked;
-        }
-        evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: presentKnowledgeText(chunk.content) })).filter((item) => item.content.length > 0);
+        try { evidence = await retrieveApprovedKnowledge(store, embedding, session.tenantId, internal ? 'internal' : 'public', knowledgeRetrievalQuery, 4, retrievalTextQuery); } catch { throw new HttpError(503, 'EMBEDDING_UNAVAILABLE', 'The assistant is currently unable to search approved knowledge.'); }
         // The planner runs before retrieval so it can load scoped business state.
         // Bind the already tenant-filtered evidence to its planned read-only search result.
         if (agentToolResults.some((result) => result.name === 'search_approved_knowledge')) {

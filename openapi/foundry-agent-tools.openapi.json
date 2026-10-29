@@ -1,0 +1,173 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Agentic RAG Foundry Agent Tools",
+    "version": "1.0.0",
+    "description": "Read-only Microsoft Foundry agent tools. Replace the server URL with the verified HTTPS deployment hostname before importing into Foundry."
+  },
+  "servers": [
+    {
+      "url": "https://c3srnt4h-80.inc1.devtunnels.ms",
+      "description": "Required: the deployed Node API HTTPS origin; localhost and unsecured HTTP are not valid Foundry deployment targets."
+    }
+  ],
+  "security": [
+    {
+      "entraBearer": []
+    }
+  ],
+  "paths": {
+    "/api/v1/foundry/tools/search-knowledge": {
+      "post": {
+        "operationId": "search_knowledge",
+        "summary": "Search approved tenant knowledge",
+        "description": "Returns only active, authorized source excerpts for the tenant bound to the authenticated Foundry integration identity. This operation never performs business writes.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchKnowledgeRequest"
+              },
+              "example": {
+                "query": "What company formation packages are available?",
+                "maxResults": 4
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Grounded evidence or an explicit no-evidence result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchKnowledgeResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "422": { "$ref": "#/components/responses/ValidationError" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/api/v1/foundry/tools/get-journey-state": {
+      "post": {
+        "operationId": "get_journey_state",
+        "summary": "Read the authorized customer journey state",
+        "description": "Returns sanitized lifecycle state only when the backend has a trusted server-side Foundry-to-session binding. The model cannot supply or override a session identifier.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              },
+              "example": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sanitized journey state, or not_linked when no trusted binding exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JourneyStateResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "422": { "$ref": "#/components/responses/ValidationError" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "entraBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Microsoft Entra ID access token for the configured Foundry project identity, with the configured audience and authorized application ID."
+      }
+    },
+    "schemas": {
+      "SearchKnowledgeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["query"],
+        "properties": {
+          "query": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "maxResults": { "type": "integer", "minimum": 1, "maximum": 8, "default": 4 }
+        }
+      },
+      "KnowledgeCitation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceId", "title", "chunkId", "locator", "excerpt"],
+        "properties": {
+          "sourceId": { "type": "string" },
+          "title": { "type": "string" },
+          "chunkId": { "type": "string" },
+          "locator": { "type": "string" },
+          "excerpt": { "type": "string" }
+        }
+      },
+      "SearchKnowledgeResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "answer", "citations"],
+        "properties": {
+          "status": { "type": "string", "enum": ["grounded", "no_evidence"] },
+          "answer": { "type": "string" },
+          "citations": { "type": "array", "maxItems": 8, "items": { "$ref": "#/components/schemas/KnowledgeCitation" } }
+        }
+      },
+      "JourneyStateResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "currentStage", "completedStages", "nextRequirement"],
+        "properties": {
+          "status": { "type": "string", "enum": ["available", "not_linked"] },
+          "currentStage": { "type": "string", "nullable": true, "enum": ["lead_generation", "lead_qualification", "account_creation", "package_selection", "document_upload", "billing_invoice", "contract"] },
+          "completedStages": { "type": "array", "items": { "type": "string", "enum": ["lead_generation", "lead_qualification", "account_creation", "package_selection", "document_upload", "billing_invoice", "contract"] } },
+          "nextRequirement": { "type": "string", "nullable": true },
+          "revision": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "requestId": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": { "description": "Missing, invalid, expired, or unauthorized Foundry identity.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Forbidden": { "description": "The verified integration identity is not authorized for the configured tenant.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "ValidationError": { "description": "The request body is invalid or exceeds a boundary limit.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "RateLimited": { "description": "Per-identity rate limit exceeded.", "headers": { "Retry-After": { "schema": { "type": "integer" } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Unavailable": { "description": "Authentication keys, retrieval, database, or journey binding is temporarily unavailable.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    }
+  }
+}

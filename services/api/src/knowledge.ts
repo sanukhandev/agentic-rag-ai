@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { Chunk, Source } from './types.js';
+import type { Chunk, Source, Store } from './types.js';
 import { contentHash } from './store-memory.js';
 import type { EmbeddingProvider } from './embedding.js';
+import type { ModelEvidence } from './model.js';
 
 export const EMBEDDING_MODEL = 'deterministic-demo-8d-v1';
 
@@ -156,6 +157,26 @@ export const rankChunks = <T extends { chunk: { content: string; embedding: numb
 export const rankChunksWithEmbedding = async <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], provider: EmbeddingProvider, limit = 4): Promise<T[]> => rankWithEmbedding(query, rows, await provider.embed(query), limit);
 
 export const rankChunksWithVector = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit = 4, semanticOnlyThreshold: number | null = null): T[] => rankWithEmbedding(query, rows, queryEmbedding, limit, semanticOnlyThreshold);
+
+export const retrieveApprovedKnowledge = async (
+  store: Pick<Store, 'searchSearchableChunks' | 'listSearchableChunks'>,
+  embedding: EmbeddingProvider,
+  tenantId: string,
+  audience: 'public' | 'internal',
+  query: string,
+  limit = 4,
+  queryText = query,
+): Promise<ModelEvidence[]> => {
+  const queryEmbedding = await embedding.embed(query);
+  const rows = await store.searchSearchableChunks(tenantId, audience, queryEmbedding, Math.min(24, Math.max(limit, 1) * 6), queryText);
+  let ranked = rankChunksWithVector(query, rows, queryEmbedding, limit, embedding.model.startsWith('deterministic-') ? null : 0.55);
+  if (ranked.length === 0 && !embedding.model.startsWith('deterministic-')) ranked = rankChunksWithVector(query, rows, queryEmbedding, limit);
+  if (ranked.length === 0) ranked = rankChunksWithVector(query, await store.listSearchableChunks(tenantId, audience), queryEmbedding, limit);
+  if (ranked.length === 0 && store.constructor.name === 'PostgresStore') ranked = rankChunksWithVector(query, await store.listSearchableChunks(tenantId, audience), queryEmbedding, limit, 0.35);
+  return ranked
+    .map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: presentKnowledgeText(chunk.content) }))
+    .filter((item) => item.content.length > 0);
+};
 
 const factualSegments = (content: string): string[] => content
   .replace(/^File:.*$/gim, '')

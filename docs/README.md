@@ -27,6 +27,7 @@ These documents describe the **target system**, not a completed implementation. 
 | [18-codex-master-prompt](18-codex-master-prompt.md) | Ready-to-copy implementation directive |
 | [20-intent-catalog](20-intent-catalog.md) | Excel catalog import, publish, resolution and n8n action contract |
 | [21-omnichannel-connector-api-spec](21-omnichannel-connector-api-spec.md) | Server URI, channel credentials, signed connector requests and async omnichannel usage |
+| [foundry-agent-tools](foundry-agent-tools.md) | Read-only Microsoft Foundry OpenAPI tool gateway, authentication, binding and setup |
 
 **Requirements precedence:** AGENTS.md security invariants + docs/15 feature brief govern new feature requirements; docs/16–18 govern execution/acceptance. Existing numbered docs describe background architecture. Resolve contradictions by tightening isolation, not by relaxing it, and update all affected documentation.
 
