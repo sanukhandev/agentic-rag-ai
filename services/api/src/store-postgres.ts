@@ -543,8 +543,9 @@ export class PostgresStore implements Store {
       const existing = await client.query<ActionExecutionRow>('SELECT * FROM action_executions WHERE action_id=$1 AND idempotency_key=$2 FOR UPDATE', [execution.actionId, execution.idempotencyKey]);
       const row = existing.rows[0];
       if (!row) throw new Error('Action execution disappeared after conflict resolution.');
-      if (row.provider_status === 'dispatching' && (row.attempt < execution.attempt || (row.attempt === execution.attempt && !row.n8n_execution_ref && row.event_id === execution.eventId && row.correlation_id === execution.correlationId))) {
-        const reclaimed = await client.query<ActionExecutionRow>(`UPDATE action_executions SET provider_status='dispatching',attempt=$2,deadline_at=$3,event_id=COALESCE($4,event_id),correlation_id=COALESCE($5,correlation_id),updated_at=now() WHERE id=$1 AND provider_status='dispatching' RETURNING *`, [row.id, execution.attempt, execution.deadlineAt, execution.eventId, execution.correlationId]);
+      const preclaimedRetry = row.outcome?.priorAttempt !== undefined;
+      if (row.provider_status === 'dispatching' && (row.attempt < execution.attempt || (preclaimedRetry && row.attempt === execution.attempt && !row.n8n_execution_ref && row.event_id === execution.eventId && row.correlation_id === execution.correlationId))) {
+        const reclaimed = await client.query<ActionExecutionRow>(`UPDATE action_executions SET provider_status='dispatching',attempt=$2,deadline_at=$3,event_id=COALESCE($4,event_id),correlation_id=COALESCE($5,correlation_id),outcome=COALESCE(outcome,'{}'::jsonb)-'priorAttempt',updated_at=now() WHERE id=$1 AND provider_status='dispatching' RETURNING *`, [row.id, execution.attempt, execution.deadlineAt, execution.eventId, execution.correlationId]);
         if (reclaimed.rows[0]) { await client.query('COMMIT'); return { execution: this.actionExecution(reclaimed.rows[0]), claimed: true }; }
       }
       await client.query('COMMIT');

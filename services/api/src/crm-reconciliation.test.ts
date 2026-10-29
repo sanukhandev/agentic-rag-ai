@@ -21,6 +21,10 @@ describe('CRM identity reconciliation', () => {
     expect(retried?.event.actionId).toBe(action.id);
     expect((await store.getActionExecution(action.id, tenant.id))?.providerStatus).toBe('dispatching');
     expect((await store.getActionExecution(action.id, tenant.id))?.attempt).toBe(1);
+    const retryClaim = await store.claimActionExecution({ id: randomUUID(), actionId: action.id, tenantId: tenant.id, workflowKey: action.workflowKey, catalogVersionId: null, providerStatus: 'dispatching', n8nExecutionRef: null, eventId: retried!.event.eventId, correlationId: retried!.event.correlationId, idempotencyKey: action.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() + 900_000).toISOString(), outcome: { eventId: retried!.event.eventId, correlationId: retried!.event.correlationId }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    expect(retryClaim.claimed).toBe(true);
+    const duplicateClaim = await store.claimActionExecution({ id: randomUUID(), actionId: action.id, tenantId: tenant.id, workflowKey: action.workflowKey, catalogVersionId: null, providerStatus: 'dispatching', n8nExecutionRef: null, eventId: retried!.event.eventId, correlationId: retried!.event.correlationId, idempotencyKey: action.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() + 900_000).toISOString(), outcome: { eventId: retried!.event.eventId, correlationId: retried!.event.correlationId }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    expect(duplicateClaim.claimed).toBe(false);
   });
 
   it('rejects an invalid lead route before PostgreSQL UUID parsing', async () => {
