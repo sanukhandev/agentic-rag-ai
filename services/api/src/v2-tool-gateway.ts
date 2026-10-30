@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { catalogNextFollowUpRequirement, catalogNextJourneyRequirement } from './intent-catalog.js';
 import { retrieveApprovedKnowledge } from './knowledge.js';
 import { sanitizeKnowledgeText } from './privacy.js';
+import { normalizeConversationQuery } from './model.js';
 import type { EmbeddingProvider } from './embedding.js';
 import type { IntentCatalogVersion, Session, Store } from './types.js';
 import { toolRequestSchema, type ToolRequestV2, type ToolResultV2 } from './python-model/v2-contracts.js';
@@ -150,9 +151,14 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
     }
     case 'search_knowledge': {
       const args = searchArguments.parse(request.arguments);
-      const evidence = await retrieveApprovedKnowledge(store, embedding, scope.tenantId, 'public', args.query, args.resultCount ?? 4);
-      const evidenceRefs = evidence.map((item) => digest(`${item.citation.sourceId}:${item.citation.versionId}:${item.citation.chunkId}`).slice(0, 32));
-      return result(request, 'ok', { evidence: evidence.map((item, index) => ({ citationId: evidenceRefs[index], text: bounded(sanitizeKnowledgeText(item.content), 1_500), title: bounded(item.citation.title, 200), locator: bounded(item.citation.locator, 200) })) }, sourceVersion, evidenceRefs);
+      const normalizedQuery = normalizeConversationQuery(args.query);
+      const evidence = await retrieveApprovedKnowledge(store, embedding, scope.tenantId, 'public', normalizedQuery, args.resultCount ?? 4);
+      const approved = (await Promise.all(evidence.map(async (item) => {
+        const source = await store.getSource(item.citation.sourceId);
+        return source && source.tenantId === scope.tenantId && source.status === 'active' && source.versionId === item.citation.versionId ? item : null;
+      }))).filter((item): item is NonNullable<typeof item> => Boolean(item));
+      const evidenceRefs = approved.map((item) => digest(`${item.citation.sourceId}:${item.citation.versionId}:${item.citation.chunkId}`).slice(0, 32));
+      return result(request, 'ok', { grounded: approved.length > 0, evidence: approved.map((item, index) => ({ citationId: evidenceRefs[index], text: bounded(sanitizeKnowledgeText(item.content), 1_500), title: bounded(item.citation.title, 200), locator: bounded(item.citation.locator, 200), sourceVersion: item.citation.versionId, approval: 'active', revocation: 'not_revoked' })) }, sourceVersion, evidenceRefs);
     }
     case 'get_journey_state':
       return result(request, 'ok', { activeIntentKey: intentKey, currentStage: state?.phase ?? null, pendingRequirementKey: state?.pendingPrompt?.requirementKey ?? null, contactConsent: state?.contactConsent ?? 'unknown', workflowStatus: state?.workflowStatus ?? 'none', opportunityBound: Boolean(scope.opportunityId && entry?.journeyId === scope.opportunityId) }, sourceVersion);

@@ -71,7 +71,7 @@ Each `goalProposal` key/weight/turn reference, required key and tool key is **un
 
 ## C. Node tool protocol
 
-- Node advertises capabilities derived from published catalog and current stage: `get_conversation_context`, `get_persona`, `get_intent_catalog`, `get_journey_state`, `get_missing_requirements`, `search_knowledge`, `get_available_packages`, `get_action_status`.
+- Node advertises capabilities derived from published catalog and current stage: `get_conversation_context`, `get_persona`, `get_intent_catalog`, `get_journey_state`, `get_missing_requirements`, `search_knowledge`, `get_available_packages`, `get_document_requirements`, `get_action_status`.
 - Python model may request tool calls. Each request must contain `toolCallId`, one listed `toolName`, typed `arguments`, `scopeRef`, expected `stateRevision` and deadline; Node validates names/arguments and authenticates service-level access independently.
 - Results return the exact `toolCallId`, `status` (`ok` / `temporarily_unavailable` / `not_authorized` / `invalid_args` / `stale_state`), bounded `result`, trusted `evidenceRefs`, `sourceVersion` and `stateRevision`.
 - Python feeds model function-call results correlated with the correct call ID. It cannot invent Node tool results, select arbitrary webhook URLs, use unrestricted Python execution or directly access CRM/DB.

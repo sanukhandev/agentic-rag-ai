@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { issueV2Scope, createV2ToolGateway, registerV2ToolGateway, verifyV2Scope, V2_TOOL_NAMES } from './v2-tool-gateway.js';
-import type { IntentCatalogVersion, PersonaVersion, Session, Store } from './types.js';
+import type { Chunk, IntentCatalogVersion, PersonaVersion, Session, Source, Store } from './types.js';
 
 const tenantId = 'tenant-12345678';
 const sessionId = 'session-12345678';
@@ -121,6 +121,32 @@ describe('v2 trusted Node tool gateway', () => {
     expect((await gateway.execute(requestFor(scope, { toolCallId: 'call-identity-1234', arguments: { tenantId: 'other-tenant-12345678' } }))).status).toBe('invalid_args');
     const stale = issueV2Scope({ tenantId, sessionId, opportunityId: null, catalogVersionId, personaVersionId, stateRevision: 2 }, serviceKey);
     expect((await gateway.execute(requestFor(stale, { expectedStateRevision: 2 }))).status).toBe('stale_state');
+  });
+
+  it('returns only active current-version tenant evidence after bounded normalization', async () => {
+    const source: Source = { id: 'source-12345678', tenantId, title: 'Approved guide', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'active', versionId: 'source-version-12345678', contentHash: 'a'.repeat(64), embeddingReady: true, createdAt: new Date().toISOString(), approvedAt: new Date().toISOString() };
+    const chunk: Chunk = { id: 'chunk-12345678', sourceId: source.id, tenantId, versionId: source.versionId, ordinal: 0, locator: 'section 1', content: 'Approved company setup fees for visas are 100 credits.', contentHash: 'b'.repeat(64), embedding: [1] };
+    let receivedQuery = '';
+    let embeddingQuery = '';
+    const store = { ...storeFor(), searchSearchableChunks: async (_tenantId: string, _audience: 'public' | 'internal', _embedding: number[], _limit: number, queryText = '') => { receivedQuery = queryText; return [{ source, chunk }]; }, listSearchableChunks: async () => [{ source, chunk }], getSource: async () => source } as unknown as Store;
+    const scope = issueV2Scope({ tenantId, sessionId, opportunityId: null, catalogVersionId, personaVersionId, stateRevision: 3 }, serviceKey);
+    const gateway = createV2ToolGateway({ store, embedding: { model: 'deterministic-test', dimension: 1, embed: async (text) => { embeddingQuery = text; return [1]; } }, serviceKey });
+    const response = await gateway.execute(requestFor(scope, { toolCallId: 'call-search-1234', toolName: 'search_knowledge', arguments: { query: 'I need three visas, do not invent fees', resultCount: 2 } }));
+    expect(response.status).toBe('ok');
+    expect(embeddingQuery).toContain('3');
+    expect(embeddingQuery).toContain('not');
+    expect(receivedQuery).toContain('need');
+    expect(response.result).toMatchObject({ grounded: true, evidence: [{ sourceVersion: source.versionId, approval: 'active', revocation: 'not_revoked' }] });
+  });
+
+  it('does not expose revoked evidence even when a retrieval adapter returns it', async () => {
+    const source: Source = { id: 'source-12345678', tenantId, title: 'Revoked guide', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'revoked', versionId: 'source-version-12345678', contentHash: 'a'.repeat(64), embeddingReady: true, createdAt: new Date().toISOString(), approvedAt: null };
+    const chunk: Chunk = { id: 'chunk-12345678', sourceId: source.id, tenantId, versionId: source.versionId, ordinal: 0, locator: 'section 1', content: 'Revoked price 999.', contentHash: 'b'.repeat(64), embedding: [1] };
+    const store = { ...storeFor(), searchSearchableChunks: async () => [{ source, chunk }], listSearchableChunks: async () => [{ source, chunk }], getSource: async () => source } as unknown as Store;
+    const scope = issueV2Scope({ tenantId, sessionId, opportunityId: null, catalogVersionId, personaVersionId, stateRevision: 3 }, serviceKey);
+    const gateway = createV2ToolGateway({ store, embedding: { model: 'deterministic-test', dimension: 1, embed: async () => [1] }, serviceKey });
+    const response = await gateway.execute(requestFor(scope, { toolCallId: 'call-revoked-1234', toolName: 'search_knowledge', arguments: { query: 'price', resultCount: 1 } }));
+    expect(response).toMatchObject({ status: 'ok', result: { grounded: false, evidence: [] } });
   });
 
   it('keeps the registry explicit and bounded', () => {

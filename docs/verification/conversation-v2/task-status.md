@@ -25,9 +25,9 @@ again from GitHub before each task.
 | #94 | P2-03 | CLOSED | `docs/verification/conversation-v2/V2-P2-03.md`; implementation `a08e32a8427a9a43c3ab0c6e139150f981f55d5e`; closure comment `https://github.com/sanukhandev/agentic-rag-ai/issues/94#issuecomment-6520128257` |
 | #95 | P2-04 | CLOSED | `docs/verification/conversation-v2/V2-P2-04.md`; implementation `7c0e684bdd144da7b8fc550f54ac9fd73219fd2d`; closure comment `https://github.com/sanukhandev/agentic-rag-ai/issues/95#issuecomment-6520288748` |
 | #96 | P2-05 | CLOSED | `docs/verification/conversation-v2/V2-P2-05.md`; implementation `78b671ca314ff9ba6d06c8964d4e17e1b674e8f9`; closure comment `https://github.com/sanukhandev/agentic-rag-ai/issues/96#issuecomment-6520345189` |
-| #97 | P3-01 | BLOCKED / OPEN | `docs/verification/conversation-v2/V2-P3-01.md`; depends on blocked #83 Azure deployment and private gateway configuration |
-| #98 | P3-02 | OPEN | Depends on #85 and #97 |
-| #99 | P3-03 | OPEN | Depends on #85 and #98 |
+| #97 | P3-01 | CLOSED | `docs/verification/conversation-v2/V2-P3-01.md`; remote commit `b0d514870cf287f9f72ea9e4883af35ca1364272` |
+| #98 | P3-02 | CLOSED | `docs/verification/conversation-v2/V2-P3-02.md`; remote commit `c23142638b20ffc1681c3237a3f8610fc79c0d7b` |
+| #99 | P3-03 | CLOSED | `docs/verification/conversation-v2/V2-P3-03.md`; remote commit `9255373cf5b9180679b9a9f0c82cabdb5295bf91` |
 | #100 | P3-04 | OPEN | Depends on #99 and catalog/RAG contracts |
 | #101 | P3-05 | OPEN | Depends on #92–#100 |
 | #102 | P3-06 | OPEN | Depends on #100–#101 |
