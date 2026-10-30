@@ -127,3 +127,7 @@ Issue #86 locks the seven ordered stages and their required evidence tiers in `s
 ## V2-P1-01 strict XLSX parser — 2026-10-30
 
 Issue #87 adds `tools/ingestion/ingestion/catalog_v2.py`, a dedicated openpyxl parser for the frozen 15-sheet v2 workbook. It rejects legacy/unversioned or unsafe workbooks, preserves source hash and tenant scope, and leaves the v1 parser/history path unchanged. Focused parser tests pass; Admin publication and runtime adoption remain later issues.
+
+## V2-P1-02 runtime policy validator — 2026-10-30
+
+Issue #88 adds the trusted published-catalog validator, stage eligibility evaluator and separate evidence/ambiguity/requirement/action-readiness scoring in `services/api/src/catalog-v2-runtime.ts`. The existing v1 resolver is preserved for rollback; v2 catalog adoption by Admin/runtime remains scoped to the subsequent publication and coordinator issues.
