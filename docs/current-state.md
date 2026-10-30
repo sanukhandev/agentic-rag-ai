@@ -370,3 +370,14 @@ Only a qualified result enables the later Account Creation gate. Document
 policies cannot satisfy or block Stage 2 qualification, and no provider action
 is created by the evaluator. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P6-02.md`.
+
+## V2-P6-03 OTP and Account/Contact/Opportunity boundary — 2026-10-30
+
+Issue #114 is verified for the Node-side contract. OTP challenges are hashed,
+tenant/session/opportunity/Lead-bound, expiring, retry-limited and one-time.
+Account conversion requires qualified Lead state, verified remote Lead
+identity, purpose consent, explicit customer confirmation and matching OTP
+verification. Provider results require exact correlation and independently
+verified evidence. The deterministic provider is mock-only; no Salesforce
+Account, Contact or Opportunity completion is claimed. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P6-03.md`.
