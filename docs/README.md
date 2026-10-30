@@ -1,44 +1,36 @@
-# Documentation index — current context
+# Documentation — current ANCFZ-focused upgrade
 
-**Start here for the active codebase.** Root [`AGENTS.md`](../AGENTS.md) contains engineering/security instructions; [`current-requirements.md`](current-requirements.md) is the single current requirements entry point. Runtime code, published catalog data and current provider evidence govern what has actually shipped. Old plans and past test reports are not current instructions.
+**Single source of current engineering context.** All documents in this section are dated 2026-10-30 and distinguish **TARGET** from **IMPLEMENTED**. The code and migrations remain authoritative for implemented behavior.
 
-## Read in this order
+| Read order | Document | Purpose |
+| --- | --- | --- |
+| 1 | [Current state and gaps](current-state.md) | Verified repository inventory, existing architecture, blockers and migration delta |
+| 2 | [Current requirements](requirements.md) | Tenant-neutral conversational goal, ANCFZ seven-stage acceptance |
+| 3 | [Target architecture](architecture.md) | Node / private Python GPT API / pgvector / catalog / n8n boundaries |
+| 4 | [Intent engine](intent-engine.md) | Phrase/keyword candidate scoring, structured AI interpretation, user confirmation |
+| 5 | [User Intent Document](user-intent-document.md) | Durable per-session/opportunity intent ledger, cache and concurrency semantics |
+| 6 | [Python model gateway](model-gateway.md) | Azure OpenAI Responses API, key, strict contracts, retries/rate limits |
+| 7 | [Journey orchestration](journey.md) | Exactly ordered stages, grounded response + next question, recovery |
+| 8 | [Catalog to n8n](n8n-workflows.md) | Allowlisted tool proposals, action gating, outbox and provider verification |
+| 9 | [Security/operations](security-operations.md) | Deferred advanced PII work, retained boundaries, deployment and telemetry |
+| 10 | [Migration plan](migration-plan.md) | Additive phases, no-code-rewrite shortcuts, safe rollback |
+| 11 | [Acceptance](acceptance.md) | One continuous real journey; no 25/200-message quota |
 
-| Document | Canonical purpose |
-| --- | --- |
-| [`current-requirements.md`](current-requirements.md) | Current ANCFZ seven-stage contract, tenant/persona scope, acceptance target |
-| [`02-system-architecture.md`](02-system-architecture.md) | Deployed logical boundaries, Foundry function loop, n8n workflow and provider evidence |
-| [`06-security-and-privacy.md`](06-security-and-privacy.md) | Trust, PII, source permissions, callback and provider security |
-| [`08-model-policy.md`](08-model-policy.md) | Foundry grounding, persona, version selection, application-managed tools |
-| [`20-intent-catalog.md`](20-intent-catalog.md) | Published catalog/version rules, resolution, requirements and workflow binding |
-| [`21-generic-journey-orchestration.md`](21-generic-journey-orchestration.md) | Opportunity-scoped durable journey reducer |
-| [`architecture/ANCFZ_DEDICATED_ARCHITECTURE.md`](architecture/ANCFZ_DEDICATED_ARCHITECTURE.md) | ANCFZ deployment and stage ownership |
-| [`foundry-local-development.md`](foundry-local-development.md) | Docker/Azure CLI, v4 stable and isolated v6 candidate |
-| [`10-developer-setup.md`](10-developer-setup.md) | Workspace, ingestion, Docker and infrastructure operations |
-| [`acceptance.md`](acceptance.md) | One continuous seven-stage journey, function-call and provider-proof release criteria |
+Read root [AGENTS.md](../AGENTS.md) for non-negotiable coding instructions, and root [README](../readme.md) for the entrypoint.
 
-## Supporting maintained references
+## Current versus target
 
-- [`04-ingestion-and-rag.md`](04-ingestion-and-rag.md) — source ingestion, approval and pgvector.
-- [`05-api-contracts.md`](05-api-contracts.md) and [`openapi.yaml`](openapi.yaml) — API contracts; compare against actual implemented schemas.
-- [`07-n8n-orchestration.md`](07-n8n-orchestration.md) — current transactional outbox/Redis/event-worker execution, callback behavior, and separately identified legacy polling compatibility.
-- [`11-quality-and-operations.md`](11-quality-and-operations.md) — redacted telemetry and operational practices.
-- [`19-data-model.md`](19-data-model.md) — current Foundry conversation bindings, opportunity facts, action/outbox and seven-stage lifecycle schema map (migrations remain authoritative).
-- [`21-omnichannel-connector-api-spec.md`](21-omnichannel-connector-api-spec.md) — additional channel integration.
-- [`security/ANCFZ_BOUNDARY_DECISIONS.md`](security/ANCFZ_BOUNDARY_DECISIONS.md) — specific ANCFZ security invariants.
+- **Current:** Node calls a named Microsoft Foundry **Agent** using `@azure/ai-projects` and Azure CLI. It has existing deterministic intent ranking, catalog continuity, read-only v6 candidate functions, durable Foundry conversation binding and an outbox/Redis/n8n execution path.
+- **Target:** Node calls a **private Python inference API**; Python invokes a GPT **model deployment** through Azure OpenAI Responses API with API key. Node remains business orchestrator and maintains a persistent **User Intent Document** plus per-turn scoring/cache and explicit intent confirmation.
+- **Not yet delivered:** Python inference service, new persisted intent ledger, full per-turn AI classification, catalog-defined end-to-end flow coverage, and provider-verified seven-stage completion.
+- **Current first external blocker:** latest focused run did not verify a Salesforce Lead result, and returned `reconcile_required` at Lead Generation. No later stage was completed in that one run.
 
-## Verification: dated evidence, not requirements
+## Historical evidence (not active requirements)
 
-- [`verification/ancfz-single-journey-tool-calling.md`](verification/ancfz-single-journey-tool-calling.md) — **latest focused** v6 candidate tool-cycle and blocked journey record.
-- [`verification/ancfz-stage-verification-matrix.md`](verification/ancfz-stage-verification-matrix.md) — per-stage verified / blocked distinction.
-- Other files under `verification/` are historical baselines or distinct runs; read their dates/branch/provider scopes before relying on them.
-- Machine-readable local results are under `artifacts/` and may include local-only/uncommitted files.
+Dated reports under `verification/`, the original `feature-specs/` proposal artifact, and old code migrations remain traceability only. Do not treat Foundry v4/v6 results, 25/200-message tests, obsolete Codex prompts or historical POC API assumptions as current acceptance requirements. The older active architecture/requirements Markdown files were retired from the documentation root; their content remains available in Git history.
 
-## Status as of 2026-10-30
+## Model API vendor sources
 
-- `agentic-rag-core-dev` v4 is the stable serving agent with **no hosted OpenAPI tool**; v6 is an explicitly invoked candidate with five Node-executed read-only functions. Do not promote or activate unreviewed tools implicitly.
-- v6 live function calling and existing Chat API compatibility were exercised. The latest single-journey verification is **not** seven-stage acceptance: Salesforce Lead lacked verified remote acknowledgment, so the first stage remained blocked in reconciliation.
-- **Current acceptance is one real customer session / opportunity covering seven ordered stages.** The old 25-turn/200-message and artificial commit-count requirements are superseded; targeted security/integration tests remain required.
-- No document can authorize production billing/signing or claim remote CRM success without verified provider evidence.
-
-Historical MVP plans, obsolete Codex master prompts, redundant data-model drafts and dated delivery status files have been retired from the active documentation tree. Do not re-add them as source-of-truth.
+- [Microsoft: Azure OpenAI Responses API](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/responses)
+- [Microsoft: switch OpenAI and Azure OpenAI endpoints with Python](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/switching-endpoints)
+- [Microsoft: Azure OpenAI quota, 429 and retry guidance](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/quota)

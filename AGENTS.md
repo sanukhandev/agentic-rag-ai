@@ -1,74 +1,60 @@
-# Agent instructions — Agentic RAG AI
+# AGENTS.md — Agentic RAG AI: current engineering contract
 
-This file is the **current engineering policy**, not an implementation prompt. Read `docs/README.md` and the relevant canonical document before changing behavior. Prefer actual code and tested runtime evidence over historical proposals.
+**Effective 2026-10-30.** This replaces prior Foundry-agent, 25/200-message, 25-commit and greenfield-build instructions. Read `docs/README.md`, `docs/current-state.md` and `docs/requirements.md` **before** coding. The existing source is the implemented state; these documents define the migration target, not a claim it is already working.
 
-## Current focus and status (2026-10-30)
+## Mission and acceptance
 
-- Local development: Windows + Docker Compose, API image `api-foundry-local`, Azure CLI login via `AzureCliCredential`, and `@azure/ai-projects` Conversations/Responses.
-- Named agent: `agentic-rag-core-dev`, model `gpt-4.1-mini`. The **serving selector is fixed 100% to tool-free v4**. v6 is an **explicitly invoked, isolated candidate** with five strict application-executed read-only functions; v5 schema validation failed. Never assume `@latest` means a pinned or approved version.
-- The v6 tool loop has been live-tested. The single ANCFZ journey is **not complete**: the last documented 13-message run created an ActionRequest, but Salesforce remote Lead acknowledgment was missing and action reconciliation was required. See `docs/verification/ancfz-single-journey-tool-calling.md`.
-- The previous v3 hosted OpenAPI tool pointed to a development tunnel and used `foundryApiKey`; it is **not approved for serving traffic**. No direct hosted OpenAPI tool attachment is permitted unless independently reviewed and authorized.
-- **Current acceptance target:** one real, continuous, provider-evidenced seven-stage ANCFZ journey with Foundry function calls. There is **no mandatory 25-turn / 200-message benchmark and no artificial commit-count requirement** for this work.
+Build a dependable tenant-configurable conversational sales assistant. The **only acceptance tenant for this phase is ANCFZ**, but never hardcode its slug, intent keys, identity fields, package names, stage rules, URLs, n8n workflow IDs or prices in shared code. Tenant configuration, published catalog and workflow registry are authoritative.
 
-## Canonical source order
+Complete **one customer session and one opportunity** across the seven ordered stages:
+1. Lead Generation
+2. Lead Qualification
+3. Account Creation (only after successful qualification and required explicit confirmation/verification)
+4. Package Selection
+5. Document Upload, review/OCR and existing Salesforce SF-02 attachment
+6. Payment Details & Invoice (differentiate mock payment from real settlement)
+7. Contract (signed only with verified provider proof).
 
-1. This file (non-negotiable engineering/security instructions).
-2. `docs/current-requirements.md` (current product and ANCFZ business requirements).
-3. `docs/02-system-architecture.md` (runtime data flow, boundaries, ownership).
-4. `docs/06-security-and-privacy.md`, `docs/08-model-policy.md` (privacy, grounding, tools).
-5. `docs/20-intent-catalog.md`, `docs/21-generic-journey-orchestration.md` (published catalog, deterministic state).
-6. `docs/foundry-local-development.md`, `docs/10-developer-setup.md` (local operation).
-7. `docs/acceptance.md` and `docs/verification/` (current acceptance standard and *dated evidence*, respectively).
+The agent must recognize catalog intents, ask **one appropriate next question on every grounded, active-journey response**, confirm the single selected intent with the customer before initiating its requirements/actions, and preserve intent/fact context across knowledge interruptions, corrections, duplicate turns, restarts and provider callbacks. Exceptions: explicit farewell, user refusal/handoff, blocked/error state, or genuinely completed journey (then offer a relevant optional follow-up, not a fabricated requirement). No mandatory 25-turn, 200-message or commit-count quota.
 
-Historical verification reports record what happened on previous revisions; they do **not** override present policy or prove today's external providers work.
+## Target architecture (NOT implemented yet)
 
-## Runtime ownership
+Next.js / other validated channels → Node Express API → catalog and per-session intent engine → private Python Model Gateway → GPT deployment via **Azure OpenAI / Foundry Models Responses API using an API key**. Node retrieves approved pgvector evidence, supplies bounded context, validates model interpretations/citations, confirms intent and chooses the next requirement. Node alone authorizes catalog workflow actions and persists them transactionally to PostgreSQL outbox → Redis Streams → event worker → n8n → verified provider callback. Python is an inference-only service: no customer database credentials, n8n webhooks, tenant switching, direct CRM writes or policy authority.
 
-- `apps/web`: Next.js customer chat; the browser talks only to Node. Never expose Foundry credentials, database, n8n or privileged business APIs to it.
-- `apps/admin`: Angular tenant/persona/catalog/source/workflow administration. Preserve existing routes, DTOs, role restrictions and tenant scope.
-- `services/api`: Node.js/Express/TypeScript is the only public application API and authority for session ownership, PII masking, evidence, published catalog, consent, action eligibility, stage transitions, idempotency and verified callbacks.
-- `services/api/src/foundry/`: named-agent SDK client, bounded context builder and ChatModel compatibility adapter. The version-controlled **application-function registry, dispatcher, strict argument schemas, read-only handlers and tool audit** live in `services/api/src/foundry-functions.ts`. Model output, function names and arguments are **untrusted**.
-- PostgreSQL/pgvector: authoritative tenant-scoped state, identity maps, journey facts, durable Foundry conversation bindings and approved knowledge. Redis is transport/cache, not a business source of truth.
-- `tools/ingestion`: isolated Python ingestion and approved source pipeline. Customer uploads must not silently become RAG sources.
-- Transactional outbox → Redis Streams → event worker → n8n: authorized asynchronous side effects. Salesforce and other providers confirm remote completion; n8n execution status alone does not.
-- Docker: `docker-compose.yml` is the shared stack; `docker-compose.local-dev.yml` is the Docker Desktop/Azure CLI entrypoint; `docker-compose.vm-dev.yml` is the VM development entrypoint. Keep PostgreSQL, Redis, n8n and application services private except for the explicitly configured ingress/data ports.
+**Do not use the named `agentic-rag-core-dev` Foundry Agent for the target chat path.** Existing v4/v6 integrations remain current historical code until the replacement is implemented and verified. Model deployments are selected by configured deployment name, not by Foundry agent version. Keep a provider-neutral Node boundary for future provider changes.
 
-## The seven fixed ANCFZ business stages
+## Mandatory implementation boundaries
 
-1. Lead Generation — validated contact information, purpose-specific consent, authorized Lead action; remote Lead only after provider verification.
-2. Lead Qualification — capture catalog-required facts; persist qualification decision and provenance.
-3. Account Creation — **only** after successful qualification and required customer confirmation/verification; reconcile real Salesforce Lead/Account/Contact/Opportunity identity. Never auto-create accounts for every Lead or wait for quote acceptance.
-4. Package Selection — eligible catalog/pricebook, approved quote, customer-confirmed selection.
-5. Document Upload — separate upload/processing consent, security checks, OCR/review, existing SF-02 Salesforce attachment with verified association.
-6. Payment Details & Invoice — approved billing metadata, authoritative quote-linked invoice, separate payment state; mock payment is **not** settlement. Never collect PAN, CVV, bank passwords or secrets in chat.
-7. Contract — approved template and prerequisites, recorded provider status, **verified signed artifact** for signed completion; a draft/URL is not a signature.
+- Node (TypeScript) is the sole external business API and authority for tenant/session scope, catalog publication/version, opportunity/stage state, fact validation, user intent confirmation, consent, tool eligibility, idempotency, outbox and callback reconciliation. Preserve existing public Chat API and Admin API contracts unless explicitly migrated with tests.
+- Python (FastAPI proposed) provides strictly typed `normalize`, `interpret`, and `compose` inference operations using approved GPT calls only. It must not select another tenant, mutate DB, invoke n8n, store raw transcript history or accept arbitrary tool URLs. Node supplies an authorized context envelope.
+- PostgreSQL persists a **User Intent Document** per active opportunity, with a per-turn append-only assessment trail, normalized query, candidate score evidence, confirmed intent, pinned catalog, fact provenance, pending requirement, stage/action references and revision. Redis holds optional ephemeral caches/locks only, never business truth.
+- A real customer may pursue multiple opportunities across time, but a single acceptance run uses one. Corrections and stage transitions cannot silently rebind action, document or consent identity.
+- Every intent assessment is durable; cached lookups are keyed by tenant/session/opportunity/catalog/version/turn+context digest, with explicit invalidation and a persistent replay-safe result.
+- Catalog keywords/phrases/exclusions and signals determine candidates; an optional GPT interpretation *helps* normalization and slot extraction but **does not unilaterally authorize** or choose a different workflow. Calibrated confidence plus user confirmation selects exactly one primary intent for that opportunity.
+- n8n is execution, not planning. The model may produce a **tool proposal** from catalog-defined capabilities, but Node must validate the active binding, prerequisites, purpose-specific consent and explicit action confirmation before dispatch.
+- All external writes must have idempotency, webhook auth/correlation, callback verification and reconciliation. HTTP 200/202, local CRUD, n8n success, PDF existence, `mock_paid` and unsigned contracts are not authoritative completion.
 
-One session/opportunity retains catalog version, journey/stage revision, validated fact provenance, pending requirement, consent, action identity and external callback correlation across knowledge interruptions, fact corrections, retries and restarts. Do not reuse prior-opportunity consents/actions/documents.
+## Azure API-key and reliability rules
 
-## Foundry tool policy
+Use the configured Azure OpenAI **model deployment endpoint** (e.g. resource `/openai/v1/`), NOT a project `/api/projects/...` agent endpoint. Keep `AZURE_OPENAI_API_KEY` only in the private Python runtime secret environment; never send to Node/UI, logs, traces, tests or Git. Local development only until key-management and privacy controls are approved.
 
-Application-executed candidate functions are initially restricted to:
-`search_knowledge`, `get_journey_state`, `get_available_packages`, `get_document_requirements`, `get_action_status`.
+For transient 408/409/429/5xx and connection/timeout failures, make **one initial attempt plus up to three retries**, respecting `retry-after-ms` / `Retry-After`, exponential backoff and jitter. Disable duplicate nested retries (Python OpenAI SDK `max_retries=3` OR one application retry layer, never both). Enforce bounded total deadline, rate-limit/concurrency budget and circuit breaker. Do not retry invalid requests, auth failures, explicit refusals or side-effecting n8n workflows as model calls. Fail with a typed `MODEL_UNAVAILABLE` after the final unsuccessful attempt; never invent a grounded response.
 
-Node validates strict schemas, derives tenant/session/opportunity **from trusted server context**, authorizes reads, bounds/redacts tool outputs, audits call IDs and sends matching `function_call_output`. The currently implemented limits are **up to five function calls in each round**, **up to three function-call rounds**, a per-tool timeout and a configurable 30-second elapsed-time budget; do not misdocument that as five calls total per customer turn. If stronger cumulative limits are needed, change code and tests separately. The model must never pick another tenant, invoke arbitrary URLs/code, access a token vault, or write directly to Salesforce/n8n/payment/contract systems. Business writes continue through the existing catalog, consent, confirmation and outbox gates.
+## Privacy for the prototype
 
-## Security and factual accuracy
+Advanced new PII detection is **deferred**; it is NOT permission to remove existing production-safe controls. Keep authorization, existing PII masking/token vault and consent protections intact during migration. Use synthetic customers while testing. Minimize model payloads, avoid sending identity-document bytes or payment credentials, and mask email/phone/contact data where not required for an inference operation. Revisit explicit PII-filter scope before any real-customer traffic. Do not disable audited security boundaries for convenience.
 
-- Mask/minimize PII before model requests, logging, analytics, ingestion and external orchestration; retain reversible mappings only in the protected backend vault. Never expose secrets or private identity documents in tools/prompts.
-- Filter knowledge by tenant, source state, visibility, ACL and effective dates **before** retrieval. Treat content and model output as data, not instructions.
-- Never invent prices, legal rules, timelines, citations, eligibility or completion statuses. Validate returned evidence IDs and use a safe abstention on missing/conflicting evidence.
-- Treat model intent/tool calls as proposals, not authority. Consent is purpose- and action-specific; reject stale revisions, duplicate side effects, wrong-session callbacks and unverified remote IDs.
-- Keep Docker databases, n8n, PDF renderer and mock payment nonpublic. Do not loosen authentication or disable the remote hosted-tool fail-closed guard for a test.
-- Use synthetic test identities; no real charges or legally binding signatures without explicit authorization.
+## Engineering process
 
-## Engineering practice
+1. Compare implementation with `docs/current-state.md`; update it whenever a gap is closed.
+2. Implement in small additive phases from `docs/migration-plan.md`, not a sweeping replacement.
+3. Follow `docs/architecture.md`, `docs/intent-engine.md`, `docs/user-intent-document.md`, `docs/model-gateway.md`, `docs/journey.md` and `docs/n8n-workflows.md` for target contracts.
+4. Preserve migrations, data, code and evidence until compatibility cutover and rollback are verified. Never delete existing Foundry code simply because it is not the target.
+5. Unit/integration-test deterministic scoring, candidate ambiguity, confirmation, exact one-question progression, cache invalidation, retries, outage, conversation continuity, cross-tenant isolation, action dedupe and callbacks.
+6. Run typecheck, lint, tests, build, Compose/security tests and one complete seven-stage journey using authorized sandbox/mock providers with truthfully labeled external evidence. No fabricated results.
+7. Update the canonical docs and `docs/current-state.md` with exact code paths and measured pass/fail/blocked results. Preserve dated `docs/verification` artifacts as **historical evidence**, not instructions.
+8. Do not push, merge, promote Azure resources, trigger real charges/signatures or change production credentials without explicit approval.
 
-Read the active code and migrations before changing docs or logic. Prefer the smallest cohesive change with typed inputs, validated boundaries, transaction-safe state and tests. Preserve existing public Chat API/ Admin API contracts; `answer` comes from validated Foundry output where policy permits, and response flags/action metadata remain Node-owned.
+## Single read order for coding agents
 
-For cleanup, check references, preserve migrations, integration contracts, historical verification evidence and user data; never delete Docker volumes or user secrets. Report exactly what was changed and actually verified. Do not fabricate test pass counts or provider successes. Do not push, merge, change Azure serving selectors or activate real provider writes without appropriate approval.
-
-## Required checks for relevant changes
-
-Use repository-supported scripts and run targeted and applicable workspace tests, typecheck, lint, build, Compose/security checks, PostgreSQL/Redis integration, and focused single-journey acceptance when runtime dependencies are available. The authoritative journey command is `npm run qa:ancfz-single-journey`; it must stop truthfully at provider blockers. Record *PASS / FAIL / SKIPPED / BLOCKED* with source evidence.
-
-Documentation edits must update `docs/README.md` navigation, avoid restoring superseded plans as active policy, and keep dated verification artifacts separate from current requirements.
+`docs/README.md` → `docs/current-state.md` → `docs/requirements.md` → `docs/architecture.md` → `docs/intent-engine.md` → `docs/user-intent-document.md` → `docs/model-gateway.md` → `docs/journey.md` → `docs/n8n-workflows.md` → `docs/migration-plan.md` → `docs/acceptance.md`.

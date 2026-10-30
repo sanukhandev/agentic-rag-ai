@@ -1,41 +1,46 @@
-# Active acceptance — one ANCFZ seven-stage journey
+# Acceptance — one continuous intent-driven seven-stage journey
 
-This is the active business acceptance contract, effective 2026-10-30. **Do not run a mandatory 25-turn or 200-message benchmark.** Those historical requirements are superseded. Targeted unit, integration and security tests still apply.
+**Status: TARGET; not yet passed.** The goal is **one reliable ANCFZ conversation**, not 25 turns, 200 messages or a fixed number of Foundry tool calls. The engine must remain reusable for another tenant via published catalog/configuration.
 
-## Acceptance run
+## Preconditions
 
-Command: `npm run qa:ancfz-single-journey`.
+- A private Python GPT model gateway is deployed and authenticated to an approved Azure OpenAI model deployment via API key. Verify exact deployment name, Responses API availability, quotas and retry configuration.
+- The existing Node Chat API response contract remains unchanged; existing tenant/admin policies and data are intact.
+- ANCFZ published catalog includes reviewed intent signals, confirmation prompt, validated requirements, seven active ordered stages and allowed tool/workflow bindings. No shared code contains ANCFZ-specific conditions.
+- Authorized sandbox/mocks for Salesforce, OCR/SF-02, invoicing, payment and contract are labeled explicitly; real payment and legally binding signing require separate consent/approval.
 
-Start with one unique synthetic ANCFZ customer, one application session, one business opportunity, one pinned catalog and a correctly scoped Foundry v6 candidate conversation. Avoid duplicate Salesforce identities between runs. Confirm the actual candidate served each tool-calling request and the v4 stable serving selector remained unchanged.
+## One run, one customer, one session, one opportunity
 
-Drive the existing Node Chat API, use reported pending requirements rather than fabricated assistant text, and handle confirmations/uploads through their existing authorized endpoints. Record redacted actual `function_call`, `call_id`, `function_call_output`, tool timing, session/opportunity hashes and provider callback evidence.
+Drive the **real Next.js/Node API** and the private Python model service rather than calling internal classifiers alone. Start with unique synthetic customer data; record session/opportunity ID hashes, pinned catalog version and User Intent Document revision. On every substantive turn verify stored classification assessment, cache key/hit, source evidence, intent status and pending question.
 
-Exercise one approved knowledge interruption, one fact correction, one duplicate-message retry, one API restart/recovery and one delayed callback where available. Verify these cannot reset the journey or authorize stale/wrong-opportunity actions.
+1. Initial company setup: correctly rank candidate intents and ask one intent confirmation. On confirmation, persist primary intent and its evidence separately from contact/CRM consent.
+2. Lead Generation: collect required contacts/consent, separate action approval, run Node outbox→n8n and prove remote Salesforce Lead or stop with exact blocker.
+3. Lead Qualification: ask only catalog-required questions, collect multiple explicit facts where safe; knowledge interruption must produce grounded citations **and one pending follow-up**, with no loss of intent. Correct a fact and verify invalidation and state revision.
+4. Account Creation: only after successful qualification, verified Lead identity and appropriate customer confirmation; verify Account/Contact/Opportunity relationships.
+5. Package Selection: retrieve eligible published package/price and quote, confirm customer choice and persist version/revision.
+6. Document Upload: secure upload, OCR/review and verified **SF-02** record association.
+7. Payment Details & Invoice: approved quote/billing/invoice; separately report real/mock payment; no card credentials.
+8. Contract: authorized template/provider flow, verified document/signature if claiming signed; end with a truthful summary.
 
-## Ordered stage gates
+## Required resilience and negative tests
 
-| Stage | Minimal trusted evidence |
-| --- | --- |
-| Lead Generation | Validated contact, scoped consent, proper ActionRequest; **remote Salesforce Lead ID + verified callback** to claim remote completion |
-| Lead Qualification | Catalog-required facts and verified qualification decision with provenance |
-| Account Creation | Successful qualification, applicable customer confirmation/email verification, reconciled Salesforce Account/Contact/Opportunity |
-| Package Selection | Eligible catalog package, approved quote and confirmed selection revision |
-| Document Upload | Upload consent, safe storage, OCR/review where required and SF-02 Salesforce attachment confirmation |
-| Payment Details & Invoice | Approved quote, verified invoice artifact/provider acknowledgment; real/mock payment states differentiated |
-| Contract | Approved template/parties and verified provider signing evidence, not just draft/URL |
+- Every grounded active-journey answer has exactly **one relevant, non-repeated follow-up question**; never invent a question in error/closed/opt-out state.
+- Duplicate clientMessageId returns original persisted response with **zero additional GPT/n8n calls**; modified payload under same key rejected.
+- One knowledge interruption, one fact correction, one API restart, an intent ambiguity, a user-confirmed intent change/new opportunity and a delayed callback.
+- Model 429 with Retry-After and success within up to three retries; persistent 429/5xx exhausts initial+3 and returns typed `MODEL_UNAVAILABLE` with no fake fact/action. Test 400/401 no-retry and budget/circuit breaker.
+- Two tenant-scoped sessions with different catalogs; no cross-tenant candidate cache, RAG, opportunity or provider reference.
+- Catalog republish does not change an active pinned opportunity; source revocation prevents answering from the revoked source.
+- A Salesforce/n8n timeout yields reconciliation, not duplicate write or stage completion.
+- Caller cannot override tenant/session/opportunity, execute arbitrary tool keys or skip confirmation/consent by prompt injection.
 
-A tool call, model statement, HTTP response or completed n8n execution does not fulfill an external stage without provider proof. If a provider is unavailable, stop at the **first true blocker**, preserve state and record exactly what was missing; never jump forward.
+## Stage acceptance evidence
 
-## Security/compatibility gates
+For **each** stage, report `stageKey`, catalog-version, input turn hashes, requirement keys, primary intent confirmed, action/confirmation references, durable stage state before/after, model calls/cache hits, n8n workflow/execution reference, provider ID/acknowledgment and callback verification. Do not join separate sandbox runs and claim a single completed journey.
 
-Preserve Admin API and Chat API contracts, strict tenant isolation, PII masking, catalog version pinning, consent, action identity, CAS/idempotency and callback signatures. Reject unknown/malformed tool calls, forged scope, repeated calls, ungrounded citations and tool-output exfiltration. Keep Hosted OpenAPI disabled for the v6 candidate and keep the stable v4 selector unchanged until promotion is separately approved.
+Success categories:
+- `SEVEN_STAGE_PROVIDER_VERIFIED` — all applicable real/sandbox provider completions verified and accurately labeled.
+- `SEVEN_STAGE_SIMULATED` — full sequence completed only with explicit mock providers.
+- `CONVERSATION_INTENT_AND_TOOLS_VERIFIED_INTEGRATIONS_BLOCKED` — conversation/model/intent flow correct but external gate not proven.
+- `PARTIAL` or `BLOCKED` with exact first failing boundary.
 
-Run actual available workspace typecheck/lint/build/test, Compose security checks, PostgreSQL/Redis integration, tool dispatcher and journey-security regression tests. Record true PASS/FAIL/SKIP/BLOCKED counts; tests unavailable for credentials/providers are BLOCKED, never PASS.
-
-## Current evidence and verdict
-
-The latest documented v6 run: **13 customer messages, 13 assistant messages, 22 passed assertions, 0 failed**, with a real read-only function call, one ActionRequest and an unresolved Salesforce Lead remote acknowledgment. End stage: `lead_generation`.
-
-Current verdict: **CONVERSATION AND TOOL CALLS VERIFIED — INTEGRATIONS BLOCKED**.
-
-Evidence: `verification/ancfz-single-journey-tool-calling.md`, `verification/ancfz-stage-verification-matrix.md`, and local `artifacts/ancfz-single-journey/` run records. Reassess only after new dated provider evidence.
+Tests must reflect **actual** available infrastructure; no fixed turn-count benchmark. Update `current-state.md` and store redacted reports under `docs/verification/` or generated `artifacts/`.
