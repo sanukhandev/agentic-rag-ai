@@ -1,6 +1,6 @@
 # Conversation Engine v2 — interface contracts and invariants
 
-**Status: PROPOSED IMPLEMENTATION CONTRACTS, NOT YET CODED.** API payloads below are versioned *illustrative types*. The implementation must produce typed Pydantic + TypeScript schemas from one source or contract-tested matching definitions. Do not treat these examples as an already-supported public API or catalog importer.
+**Status: P0 CONTRACT FROZEN by issue #85 on 2026-10-30.** The private v2 boundary schemas are implemented in `services/api/src/python-model/v2-contracts.ts` and `services/model-gateway/gateway/v2_contracts.py`, with strict negative tests. These contracts do not replace the public Node chat API, do not grant Python write access and do not claim the full runtime/tool loop is implemented; those are later issues.
 
 ## A. Envelope, revision and identity
 

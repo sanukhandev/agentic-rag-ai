@@ -115,3 +115,7 @@ The customer approved the **existing Azure GPT model deployment**, a **new v2-on
 ## V2-P0-03 strict catalog contract — 2026-10-30
 
 Issue #84 is implemented at the contract boundary: `services/api/src/catalog-v2.ts` strictly validates schema v2, required sheets, cross-references, stage order, tool gates and canonical catalog identity. The synthetic ANCFZ fixture and five focused tests pass. Existing v1 parser/data remain available for rollback; importer, Admin publication and runtime adoption are P1 work in #87–#91. No migration or catalog data was changed, and the full seven-stage acceptance remains reserved for #124.
+
+## V2-P0-04 private agent contracts — 2026-10-30
+
+Issue #85 freezes strict v2 TurnEnvelope, tool request/result, persona response and response-guard verdict boundaries in the TypeScript API and Python gateway. Scope, version pins, revisions, budgets, bounded output and unknown-key rejection are validated before later orchestration work. Python receives no database, CRM, n8n, payment or signing capability; the public Node chat contract and legacy adapter remain unchanged. Full model/tool execution is deferred to P3/P4 issues.
