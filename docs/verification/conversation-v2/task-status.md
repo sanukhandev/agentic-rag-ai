@@ -48,10 +48,10 @@ again from GitHub before each task.
 | #117 | P6-06 | CLOSED | `docs/verification/conversation-v2/V2-P6-06.md`; remote commit `a6eb7aaacb84631e9c66ca7811629dae4dba88f9`; real/sandbox payment remains blocked |
 | #118 | P6-07 | CLOSED | `docs/verification/conversation-v2/V2-P6-07.md`; remote commit `80d0ab620ce9ca2754dad06ef298beb6667aedac`; real/sandbox signing remains blocked |
 | #119 | P6-08 | CLOSED | `docs/verification/conversation-v2/V2-P6-08.md`; remote commit `91d4901e3ddfd3fd4bf658c848a32fed40a8d78d`; government registration lookup remains blocked |
-| #120 | P7-01 | VERIFIED | `docs/verification/conversation-v2/V2-P7-01.md`; pending commit/push and issue closure; CI-only Python/Postgres/Redis execution remains runner-scoped |
-| #121 | P7-02 | VERIFIED | `docs/verification/conversation-v2/V2-P7-02.md`; focused security/fault/budget suites pass; live provider and quota evidence intentionally not claimed |
-| #122 | P7-03 | VERIFIED | `docs/verification/conversation-v2/V2-P7-03.md`; manual-gated redacted seven-stage preflight and isolated tests pass; final journey intentionally not run |
-| #123 | P7-04 | VERIFIED | `docs/verification/conversation-v2/V2-P7-04.md`; rollout/rollback rehearsal and compatibility gates pass; flag remains unpromoted pending manual #124 |
+| #120 | P7-01 | CLOSED | `docs/verification/conversation-v2/V2-P7-01.md`; remote commit `76263c29c0142725b1d8e78de3e12ada3726acfa`; issue closed; CI-only Python/Postgres/Redis execution remains runner-scoped |
+| #121 | P7-02 | CLOSED | `docs/verification/conversation-v2/V2-P7-02.md`; remote commit `f1bfb3775e7f9d453e42327ee79b9a5d56cb200c`; focused security/fault/budget suites pass; live provider and quota evidence intentionally not claimed |
+| #122 | P7-03 | CLOSED | `docs/verification/conversation-v2/V2-P7-03.md`; remote commit `06815475d1701a2ad04f54ef1eec1cbf95d8f0b6`; manual-gated redacted seven-stage preflight and isolated tests pass; final journey intentionally not run |
+| #123 | P7-04 | CLOSED | `docs/verification/conversation-v2/V2-P7-04.md`; remote commit `573fde6b9cc8131ed9cf8dd2f4477e745af96650`; rollout/rollback rehearsal and compatibility gates pass; flag remains unpromoted pending manual #124 |
 | #124 | P7-05 | MANUAL HOLD | User-triggered final seven-stage acceptance only |
 
 ## Protocol
