@@ -422,3 +422,12 @@ artifact. Only a signed result with exact signatory correlation and a signed
 artifact is terminal; the deterministic adapter is mock-only and not legally
 binding. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P6-07.md`.
+
+## V2-P6-08 journey completion and legal registration — 2026-10-30
+
+Issue #119 is verified. A signed, independently evidenced contract can fulfill
+the seven-stage onboarding journey, but legal company registration remains a
+separate `not_verified`/`pending` state until an authoritative registration
+record is available. The v2 response guard blocks unsupported legal-registration
+claims. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P6-08.md`.

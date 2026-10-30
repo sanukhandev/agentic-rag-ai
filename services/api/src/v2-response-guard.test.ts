@@ -64,6 +64,13 @@ describe('guardV2Response', () => {
     expect(result.response.answer).not.toContain('payment is complete');
   });
 
+  it('blocks legal registration claims without authoritative registration evidence', () => {
+    const answer = response({ answer: 'Your company is legally registered.', citationIds: ['fact-12345678'] });
+    const evidence = [{ citationId: 'fact-12345678', text: 'The government registration record confirms the company is legally registered.', sourceVersion: 'provider-12345678', approved: true, revoked: false }];
+    expect(guardV2Response(answer, context({ evidence, legalRegistration: { status: 'not_verified', evidenceRef: null } })).verdict.reasonCode).toBe('unsupported_claim');
+    expect(guardV2Response(answer, context({ evidence, legalRegistration: { status: 'verified', evidenceRef: 'registration-record-1' } })).verdict.accepted).toBe(true);
+  });
+
   it('blocks a repeated or irrelevant question', () => {
     const result = guardV2Response(response({ answer: 'What is your activity?', nextQuestion: 'What is your activity?', nextQuestionKey: 'other_requirement', reasonNoQuestion: null }), context({ pendingRequirementKey: 'business_activity', lastQuestionKey: 'other_requirement', questionPolicy: 'required' }));
     expect(result.verdict.reasonCode).toBe('invalid_question');

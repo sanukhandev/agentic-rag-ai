@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { personaComposedResponseSchema, type PersonaComposedResponseV2, type ResponseGuardVerdictV2 } from './python-model/v2-contracts.js';
 import { verifyV2ResponseEvidence, type V2ApprovedEvidence, type V2ClaimProvenance, type V2VerifiedFact } from './v2-evidence.js';
 import { selectV2OfflineFallback, type V2ApprovedFallbackTemplateSet, type V2FallbackFamily } from './v2-fallbacks.js';
+import type { V2LegalRegistrationState } from './v2-registration.js';
 
 export type V2QuestionPolicy = 'required' | 'optional' | 'forbidden';
 
@@ -17,6 +18,7 @@ export interface V2ResponseGuardContext {
   fallbackAnswer?: string;
   fallbackTemplateVersion?: string;
   fallbackTemplates?: V2ApprovedFallbackTemplateSet;
+  legalRegistration?: V2LegalRegistrationState;
 }
 
 export interface V2GuardFeedback {
@@ -87,6 +89,10 @@ export const guardV2Response = (input: unknown, context: V2ResponseGuardContext)
   const questionReason = questionFailure(response, context);
   if (questionReason) return { verdict: rejected(questionReason), response: fallback(context, questionReason), claims: [], feedback: feedback(questionReason, input) };
   if (response.citationIds.length === 0 && /(?:payment|invoice|contract|signature|signed|account|opportunity|registration).{0,40}\b(?:complete|completed|success(?:ful)?|created|paid|signed|registered)\b/iu.test(response.answer)) {
+    const reasonCode: ResponseGuardVerdictV2['reasonCode'] = 'unsupported_claim';
+    return { verdict: rejected(reasonCode), response: fallback(context, reasonCode), claims: [], feedback: feedback(reasonCode, input) };
+  }
+  if ((context.legalRegistration?.status ?? 'not_verified') !== 'verified' && /\b(?:company|business|entity)\b.{0,40}\blegally\s+registered\b|\blegally\s+registered\b.{0,40}\b(?:company|business|entity)\b/iu.test(response.answer)) {
     const reasonCode: ResponseGuardVerdictV2['reasonCode'] = 'unsupported_claim';
     return { verdict: rejected(reasonCode), response: fallback(context, reasonCode), claims: [], feedback: feedback(reasonCode, input) };
   }
