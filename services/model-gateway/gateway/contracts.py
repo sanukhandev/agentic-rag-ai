@@ -29,6 +29,10 @@ class PlanResult(Strict):
     proposedToolKey: str | None = None
     conversationSummary: str = Field(default="", max_length=3000)
     confidenceBand: Literal["low", "medium", "high"]
+    candidateGoalKeys: list[str] = Field(default_factory=list, max_length=8)
+    matchedSignalIds: list[str] = Field(default_factory=list, max_length=32)
+    supportingTopicKeys: list[str] = Field(default_factory=list, max_length=16)
+    runnerUpScore: float | None = Field(default=None, ge=0, le=100)
     modelRequestId: str | None = None
 
 class NormalizeRequest(Strict):

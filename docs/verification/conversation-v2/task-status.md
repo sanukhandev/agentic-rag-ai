@@ -28,7 +28,7 @@ again from GitHub before each task.
 | #97 | P3-01 | CLOSED | `docs/verification/conversation-v2/V2-P3-01.md`; remote commit `b0d514870cf287f9f72ea9e4883af35ca1364272` |
 | #98 | P3-02 | CLOSED | `docs/verification/conversation-v2/V2-P3-02.md`; remote commit `c23142638b20ffc1681c3237a3f8610fc79c0d7b` |
 | #99 | P3-03 | CLOSED | `docs/verification/conversation-v2/V2-P3-03.md`; remote commit `9255373cf5b9180679b9a9f0c82cabdb5295bf91` |
-| #100 | P3-04 | OPEN | Depends on #99 and catalog/RAG contracts |
+| #100 | P3-04 | CLOSED | `docs/verification/conversation-v2/V2-P3-04.md`; remote commit `9dcb01b9ad24978613996b5d81f3e69c608bc0ac` |
 | #101 | P3-05 | OPEN | Depends on #92–#100 |
 | #102 | P3-06 | OPEN | Depends on #100–#101 |
 | #103 | P4-01 | OPEN | Depends on #98 and persona contract |

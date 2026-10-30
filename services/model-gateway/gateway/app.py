@@ -49,9 +49,13 @@ _PLAN_SCHEMA = {
         "nextQuestion": {"type": ["string", "null"]},
         "proposedToolKey": {"type": ["string", "null"]},
         "conversationSummary": {"type": "string"},
-        "confidenceBand": {"type": "string", "enum": ["low", "medium", "high"]}
+        "confidenceBand": {"type": "string", "enum": ["low", "medium", "high"]},
+        "candidateGoalKeys": {"type": "array", "items": {"type": "string"}, "maxItems": 8},
+        "matchedSignalIds": {"type": "array", "items": {"type": "string"}, "maxItems": 32},
+        "supportingTopicKeys": {"type": "array", "items": {"type": "string"}, "maxItems": 16},
+        "runnerUpScore": {"type": ["number", "null"], "minimum": 0, "maximum": 100}
     },
-    "required": ["answer", "citationIds", "turnCategory", "primaryGoalKey", "nextMove", "nextQuestion", "proposedToolKey", "conversationSummary", "confidenceBand"]
+    "required": ["answer", "citationIds", "turnCategory", "primaryGoalKey", "nextMove", "nextQuestion", "proposedToolKey", "conversationSummary", "confidenceBand", "candidateGoalKeys", "matchedSignalIds", "supportingTopicKeys", "runnerUpScore"]
 }
 
 _NORMALIZE_SCHEMA = {

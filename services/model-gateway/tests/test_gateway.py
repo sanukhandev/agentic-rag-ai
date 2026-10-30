@@ -23,7 +23,8 @@ def test_no_fabricated_knowledge_when_evidence_missing(client, monkeypatch):
           "turnCategory": "knowledge_advisory", "primaryGoalKey": None,
           "nextMove": "answer_knowledge", "nextQuestion": "What activity are you planning?",
           "proposedToolKey": None, "conversationSummary": "customer asks pricing",
-          "confidenceBand": "low"
+          "confidenceBand": "low", "candidateGoalKeys": [], "matchedSignalIds": [],
+          "supportingTopicKeys": [], "runnerUpScore": None
         }, "req-fake")
     monkeypatch.setattr(module, "_model", fake_model)
     res = client.post("/internal/v1/model/plan", headers={"X-Internal-Service-Key": "test-private-key"},

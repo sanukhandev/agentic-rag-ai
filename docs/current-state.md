@@ -227,3 +227,20 @@ Only the nine explicit read-only tools are available; results are bounded,
 sanitized and replay-safe by tool call ID. No CRM, n8n, payment, signing or
 arbitrary network operation is exposed. Focused evidence is recorded in
 `docs/verification/conversation-v2/V2-P3-03.md`.
+
+## V2-P3-04 authorized RAG and grounding — 2026-10-30
+
+Issue #100 is verified and closed. The v2 knowledge tool uses the existing
+tenant/source-filtered PostgreSQL/pgvector path, fact-preserving normalization
+and an active current-version recheck before returning bounded evidence. No
+evidence produces uncertainty; it never authorizes a business action. Evidence
+is recorded in `docs/verification/conversation-v2/V2-P3-04.md`.
+
+## V2-P3-05 bounded intent and stage planning — 2026-10-30
+
+Issue #101 is verified and closed. Structured Python planning proposals are
+validated by Node against the published catalog and current state for goal
+membership, signals, ambiguity, stage requirements and read-tool allowlists.
+Confirmed goals survive knowledge interruptions, and planning cannot authorize
+writes or transitions. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P3-05.md`.
