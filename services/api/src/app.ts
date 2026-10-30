@@ -67,7 +67,6 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 import { registerLifecycleRoutes } from './routes/lifecycle.js';
-import { foundryToolAuthOptionsFromEnv, FoundryToolAuth, registerFoundryToolRoutes, type FoundrySessionBindingResolver, type FoundryToolAuthOptions } from './routes/foundry-tools.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null; normalizationAttempts: number; normalizationFallbacks: number; normalizationFailures: number; normalizationLatencyMs: number };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -337,12 +336,6 @@ export interface AppDependencies {
   cache?: CacheStore;
   chatResponseCacheTtlSeconds?: number;
   catalogQueryNormalizationEnabled?: boolean;
-  foundryToolAuth?: FoundryToolAuthOptions;
-  foundrySessionBinding?: FoundrySessionBindingResolver;
-  foundryToolRateLimitMax?: number;
-  foundryToolRateLimitWindowMs?: number;
-  foundryToolTimeoutMs?: number;
-  foundryToolMaxResponseBytes?: number;
 }
 
 export const createApp = (dependencies: AppDependencies = {}) => {
@@ -558,8 +551,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const auth = new AuthService(store, jwtSecret);
   const gateway = new ActionGateway(store, workflow);
   const app = express();
-  const foundryToolAuthOptions = dependencies.foundryToolAuth ?? foundryToolAuthOptionsFromEnv(nodeEnv);
-  if (nodeEnv === 'production' && foundryToolAuthOptions.allowApiKey) throw new Error('Production Foundry tools cannot use the development API-key fallback.');
   const rateLimits = new Map<string, RateLimitEntry>();
   const newTelemetry = (): Telemetry => ({ requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null, chatResponses: 0, groundedResponses: 0, abstentions: 0, actionProposals: 0, estimatedInputTokens: 0, estimatedOutputTokens: 0, estimatedCostUsd: inputCostUsdPerMillion !== null && outputCostUsdPerMillion !== null ? 0 : null, normalizationAttempts: 0, normalizationFallbacks: 0, normalizationFailures: 0, normalizationLatencyMs: 0 });
   const telemetry = newTelemetry();
@@ -690,16 +681,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     embeddingConfigured: Boolean(dependencies.embedding),
   });
   registerLifecycleRoutes(app, { store, gateway, chatApi, routeParam, authorizeSession: authorizeChatSession });
-  registerFoundryToolRoutes(app, {
-    store,
-    embedding,
-    auth: new FoundryToolAuth(foundryToolAuthOptions),
-    ...(dependencies.foundrySessionBinding ? { sessionBinding: dependencies.foundrySessionBinding } : {}),
-    ...(dependencies.foundryToolRateLimitMax !== undefined ? { rateLimitMax: dependencies.foundryToolRateLimitMax } : {}),
-    ...(dependencies.foundryToolRateLimitWindowMs !== undefined ? { rateLimitWindowMs: dependencies.foundryToolRateLimitWindowMs } : {}),
-    ...(dependencies.foundryToolTimeoutMs !== undefined ? { timeoutMs: dependencies.foundryToolTimeoutMs } : {}),
-    ...(dependencies.foundryToolMaxResponseBytes !== undefined ? { maxResponseBytes: dependencies.foundryToolMaxResponseBytes } : {}),
-  });
   app.post('/api/v1/admin/ingestion-jobs', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
     try {
       const tenantId = await tenantForRequest(store, req);

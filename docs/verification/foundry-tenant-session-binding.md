@@ -7,7 +7,7 @@ Branch: `feat/open-foundry-agent-upgrade`
 
 ## Result
 
-The locally testable Node-side broker is implemented, with the existing hosted ANC OpenAPI tools preserved separately. The application broker is feature-flagged off by default. No Azure resource was changed and no live authenticated Foundry Responses API invocation was claimed.
+The locally testable Node-side broker is implemented. The application broker is feature-flagged off by default. No Azure resource was changed and no live authenticated Foundry Responses API invocation was claimed.
 
 ## Implemented boundary
 
@@ -18,7 +18,7 @@ The locally testable Node-side broker is implemented, with the existing hosted A
 - `search_knowledge` and `get_journey_state` are dispatched in Node with an immutable server-resolved tenant/session context. Model arguments cannot supply authoritative tenant or session identifiers.
 - The adapter now targets the saved agent endpoint at `/agents/agentic-rag-core-dev/endpoint/protocols/openai/...` and no longer sends the older project-level `agent_reference` request. There is no silent generic-model fallback.
 - Retrieval remains the existing PostgreSQL/pgvector path with approved-source filters, citations, ranking, and the shared safe full-text normalizer.
-- The hosted ANC OpenAPI route remains available for its isolated development test. Without a separately reviewed trusted hosted-session resolver, its journey operation safely returns `not_linked`.
+- The historical hosted ANC OpenAPI route was a separate compatibility surface; it is not part of the current application-mediated function-calling runtime.
 
 ## Changed files
 
@@ -32,7 +32,6 @@ The locally testable Node-side broker is implemented, with the existing hosted A
 - `services/api/src/foundry-application.test.ts`
 - `services/api/src/app.ts`
 - `docker-compose.yml`
-- `docs/foundry-agent-tools.md`
 
 The same working tree also contains the earlier full-text query and hosted-tool diagnostics changes. No commit, push, merge, public deployment, or Azure resource mutation was performed.
 

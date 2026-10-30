@@ -27,7 +27,6 @@ These documents describe the **target system**, not a completed implementation. 
 | [18-codex-master-prompt](18-codex-master-prompt.md) | Ready-to-copy implementation directive |
 | [20-intent-catalog](20-intent-catalog.md) | Excel catalog import, publish, resolution and n8n action contract |
 | [21-omnichannel-connector-api-spec](21-omnichannel-connector-api-spec.md) | Server URI, channel credentials, signed connector requests and async omnichannel usage |
-| [foundry-agent-tools](foundry-agent-tools.md) | Read-only Microsoft Foundry OpenAPI tool gateway, authentication, binding and setup |
 | [foundry-local-development](foundry-local-development.md) | Local Docker + Azure CLI named-agent runtime and unchanged Chat API contract |
 | [ancfz-stage-verification-matrix](verification/ancfz-stage-verification-matrix.md) | Evidence matrix for the seven ANCFZ lifecycle stages |
 | [ancfz-single-journey-tool-calling](verification/ancfz-single-journey-tool-calling.md) | Single-session Foundry function-calling acceptance and provider evidence |
