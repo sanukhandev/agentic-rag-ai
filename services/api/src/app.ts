@@ -26,6 +26,7 @@ import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, ha
 import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
+import { validateV2ProviderCorrelation, v2ProviderCorrelationSchema, type V2ProviderCorrelation } from './v2-provider-correlation.js';
 import type { ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, FollowUpOfferOption, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, Message, PendingFollowUpOffer, Session, SourceStatus, Store, SupportingDocument } from './types.js';
 import { HttpError, parse } from './http/errors.js';
 import {
@@ -429,9 +430,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const execution = await store.getActionExecution(action.id, action.tenantId);
     if (!execution || execution.eventId !== eventId || execution.correlationId !== correlationId || execution.attempt !== attempt || (execution.n8nExecutionRef && executionReference && execution.n8nExecutionRef !== executionReference)) throw new HttpError(409, 'WORKFLOW_CORRELATION_MISMATCH', 'The workflow completion does not match the current execution claim.');
   };
-  const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null, executionReference?: string, eventId?: string, correlationId?: string, attempt?: number): Promise<ActionRequest> => {
+  const assertV2ProviderCorrelation = async (action: ActionRequest, input: unknown): Promise<void> => {
+    if (!action.catalogVersionId || !await store.getIntentCatalogV2Version(action.tenantId, action.catalogVersionId)) return;
+    const parsed = v2ProviderCorrelationSchema.safeParse(input);
+    if (!parsed.success) throw new HttpError(409, 'V2_PROVIDER_CORRELATION_REQUIRED', 'A v2 provider callback must include its trusted session, opportunity, catalog and action revision.');
+    const reason = validateV2ProviderCorrelation(action, parsed.data);
+    if (reason) throw new HttpError(409, 'V2_PROVIDER_CORRELATION_MISMATCH', `The v2 provider callback correlation is invalid (${reason}).`);
+  };
+  const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null, executionReference?: string, eventId?: string, correlationId?: string, attempt?: number, providerCorrelation?: V2ProviderCorrelation): Promise<ActionRequest> => {
     const resolvingReconciliation = action.state === 'reconcile_required' && status === 'completed';
     const providerTerminal = actorId === null && ['completed', 'failed'].includes(status);
+    if (providerCorrelation || providerTerminal) await assertV2ProviderCorrelation(action, providerCorrelation);
     if (providerTerminal) await assertWorkflowExecution(action, executionReference, eventId, correlationId, attempt, true);
     else if (eventId || correlationId || executionReference) await assertWorkflowExecution(action, executionReference, eventId, correlationId, attempt, false);
     const resolvesReconciliation = resolvingReconciliation;
@@ -2146,7 +2155,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const input = parse(workflowCompletionSchema, req.body);
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(403, 'WORKFLOW_FORBIDDEN', 'Workflow completion does not match the authorized action.');
-      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt);
+      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt, input);
       res.json({ action: updated });
     } catch (error) { next(error); }
   });
@@ -2396,10 +2405,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const body = JSON.stringify(req.body);
       if (!verifyN8nPayload(n8nCallbackSecret, timestamp, nonce, body, signature)) throw new HttpError(401, 'INVALID_CALLBACK', 'Callback authentication failed.');
       if (!(await store.claimCallbackNonce(nonce, new Date(Date.now() + 300_000).toISOString()))) throw new HttpError(401, 'REPLAYED_CALLBACK', 'Callback replay rejected.');
-      const input = parse(z.object({ actionId: z.string().guid(), tenantId: z.string().guid(), state: z.enum(['completed', 'failed']), externalReference: z.string().refine(isSafeExternalReference, 'An opaque external reference is required.'), executionReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u), eventId: z.string().guid(), correlationId: z.string().guid(), attempt: z.number().int().min(1).max(100_000) }), req.body);
+      const input = parse(z.object({ actionId: z.string().guid(), tenantId: z.string().guid(), state: z.enum(['completed', 'failed']), externalReference: z.string().refine(isSafeExternalReference, 'An opaque external reference is required.'), executionReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u), eventId: z.string().guid(), correlationId: z.string().guid(), attempt: z.number().int().min(1).max(100_000), ...v2ProviderCorrelationSchema.shape }), req.body);
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
-      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt);
+      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt, input);
       await store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: `workflow.callback.${input.state}`, metadata: { actionId: action.id, executionReference: input.executionReference ?? null, eventId: input.eventId ?? null, correlationId: input.correlationId ?? null, attempt: input.attempt ?? null }, createdAt: new Date().toISOString() });
       res.json({ action: updated });
     } catch (error) { next(error); }

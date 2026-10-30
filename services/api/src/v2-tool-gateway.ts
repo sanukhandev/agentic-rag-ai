@@ -9,6 +9,7 @@ import type { EmbeddingProvider } from './embedding.js';
 import type { IntentCatalogVersion, Session, Store } from './types.js';
 import { toolRequestSchema, type ToolRequestV2, type ToolResultV2 } from './python-model/v2-contracts.js';
 import { HttpError } from './http/errors.js';
+import { deriveV2ProviderEvidenceStatus, v2StageCompletionEligible } from './v2-provider-evidence.js';
 
 export const V2_TOOL_NAMES = [
   'get_conversation_context',
@@ -174,7 +175,12 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
     case 'get_action_status': {
       const actions = await store.listActionsBySession(scope.sessionId, scope.tenantId);
       const scoped = actions.filter((action) => !scope.opportunityId || action.opportunityId === scope.opportunityId);
-      return result(request, 'ok', { actions: scoped.map((action) => ({ workflowKey: action.workflowKey, state: action.state, actionKey: action.actionKey ?? null, providerAcknowledged: Boolean(action.result?.externalReference) })) }, sourceVersion);
+      const status = await Promise.all(scoped.map(async (action) => {
+        const execution = await store.getActionExecution(action.id, scope.tenantId);
+        const evidenceStatus = deriveV2ProviderEvidenceStatus({ actionState: action.state, providerStatus: execution?.providerStatus ?? null, evidenceTier: execution?.outcome?.evidenceTier });
+        return { workflowKey: action.workflowKey, state: action.state, actionKey: action.actionKey ?? null, providerAcknowledged: Boolean(action.result?.externalReference), providerStatus: execution?.providerStatus ?? null, evidenceStatus, stageCompletionEligible: v2StageCompletionEligible(evidenceStatus) };
+      }));
+      return result(request, 'ok', { actions: status }, sourceVersion);
     }
   }
 };

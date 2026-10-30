@@ -154,6 +154,15 @@ describe('v2 trusted Node tool gateway', () => {
     expect(new Set(V2_TOOL_NAMES).size).toBe(V2_TOOL_NAMES.length);
   });
 
+  it('returns action evidence status without treating transport as provider verification', async () => {
+    const action = { id: 'action-12345678', tenantId, sessionId, workflowKey: 'crm.account.create', intentKey: 'anc.company_formation', catalogVersionId, opportunityId: 'opportunity-12345678', actionKey: 'account.propose_creation', actionRevision: 1, idempotencyKey: 'action-1', state: 'completed' as const, opaqueReference: 'opaque-action', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: { externalReference: 'provider-ref' } };
+    const store = { ...storeFor(), listActionsBySession: async () => [action], getActionExecution: async () => ({ id: 'execution-12345678', actionId: action.id, tenantId, workflowKey: action.workflowKey, catalogVersionId, providerStatus: 'completed', n8nExecutionRef: 'n8n-ref', idempotencyKey: action.idempotencyKey, attempt: 1, deadlineAt: null, outcome: { evidenceTier: 'mock_verified' }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }) } as unknown as Store;
+    const scope = issueV2Scope({ tenantId, sessionId, opportunityId: action.opportunityId, catalogVersionId, personaVersionId, stateRevision: 3 }, serviceKey);
+    const gateway = createV2ToolGateway({ store, embedding: { model: 'deterministic-test', dimension: 1, embed: async () => [1] }, serviceKey });
+    const response = await gateway.execute(requestFor(scope, { toolCallId: 'call-status-1234', toolName: 'get_action_status' }));
+    expect(response).toMatchObject({ status: 'ok', result: { actions: [{ evidenceStatus: 'mock_verified', stageCompletionEligible: true }] } });
+  });
+
   it('requires the private service key at the HTTP boundary', async () => {
     const app = express();
     app.use(express.json());

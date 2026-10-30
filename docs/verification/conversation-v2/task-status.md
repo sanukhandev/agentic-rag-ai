@@ -38,7 +38,7 @@ again from GitHub before each task.
 | #107 | P4-05 | OPEN | Depends on #103–#106 |
 | #108 | P5-01 | CLOSED | `V2-P5-01.md`; remote commit `810e78d09fe6f2529b9f95740277ff9ef0bef6bc` |
 | #109 | P5-02 | CLOSED | `V2-P5-02.md`; remote commit `f9343054b4ea33859a0274420b4b446520adb703` |
-| #110 | P5-03 | OPEN | Depends on #109 and callback policy |
+| #110 | P5-03 | OPEN | Implementation in `V2-P5-03.md`; pending commit/push/issue closure |
 | #111 | P5-04 | OPEN | Depends on #99–#110 |
 | #112 | P6-01 | OPEN | Depends on #108–#111 and provider inputs |
 | #113 | P6-02 | OPEN | Depends on #112 and catalog policy |

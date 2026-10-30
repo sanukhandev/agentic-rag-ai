@@ -129,6 +129,15 @@ dead-letter, reconciliation and accepted-state protection checks. In-memory
 outbox idempotency now matches PostgreSQL uniqueness semantics. No external
 provider write was executed.
 
+### Conversation Engine v2 P5-03 — signed callbacks and evidence tiers — 2026-10-30
+
+Issue #110 is implemented and verified in
+[`V2-P5-03`](verification/conversation-v2/V2-P5-03.md). v2 provider callbacks
+now require exact session, opportunity, catalog, action and revision
+correlation in addition to signed execution/event/attempt checks. The status
+tool distinguishes transport, dispatch, explicit provider/mock verification
+and reconciliation; only explicit verified evidence can satisfy a stage gate.
+
 ## P0 decisions, issue plan and manual final test — documentation only
 
 The customer approved the **existing Azure GPT model deployment**, a **new v2-only catalog** (no v1 import fallback in new engine, with legacy state preserved for rollback), **published Zara English** persona for ANCFZ, **sandbox/mock-first** seven-stage acceptance, and **Contract Stage 7 as journey completion** with legal company registration independently tracked. Development issues #82–#124 carry label `v2-feature`, and the implementation branch is `feat/conversation-engine-v2`. The [P0 decision register](conversation-engine-p0-signoff.md), [v2 catalog spec](catalog-v2-contract.md), [business/provider register](ancfz-business-provider-readiness.md), [issue index](conversation-v2-issue-index.md) and [Codex instructions](codex-v2-master-prompt.md) are **planning/specification only**. No new runtime implementation, Azure smoke, Salesforce provider verification or full seven-stage E2E is claimed. Final issue #124 is intentionally reserved for **explicit manual customer trigger** after all other implementation tasks are closed.
