@@ -267,6 +267,11 @@ describe('API vertical slice', () => {
     expect(grounded.body.citations).toHaveLength(1);
     expect(model.personaNames.at(-1)).toBe('Ava 2');
     expect(model.ownerNames.at(-1)).toBe('Tenant A');
+    const cachedGrounded = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-1' }).expect(200);
+    expect(cachedGrounded.body).toEqual(grounded.body);
+    expect((await runtime.store.listAudit(tenantA.body.tenant.id)).some((event) => event.eventName === 'chat.cache_hit')).toBe(true);
+    const responseAudit = (await runtime.store.listAudit(tenantA.body.tenant.id)).find((event) => event.eventName === 'chat.response' && event.metadata.messageDigest === contentHash(grounded.body.messageId).slice(0, 12));
+    expect(responseAudit?.metadata).toMatchObject({ personaVersionId: (await runtime.store.getSession(publicSession.body.sessionId))?.personaVersionId, language: 'en', grounded: true });
     const newerSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
     await api.post('/api/v1/chat/messages').send({ sessionId: newerSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-new-persona' }).expect(200);
     expect(model.personaNames.at(-1)).toBe('Ava New');

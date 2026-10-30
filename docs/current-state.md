@@ -191,3 +191,11 @@ invalidation, local singleflight for normalization and redacted cache-hit
 audits. Cache loss remains a graceful degradation path: durable PostgreSQL
 state, message replay and consent/action records remain authoritative. Evidence
 is recorded in `docs/verification/conversation-v2/V2-P2-04.md`.
+
+## V2-P2-05 published persona pin and response history — 2026-10-30
+
+Issue #96 keeps the published persona version pinned to each new chat session
+and records redacted response audit metadata for persona version, language,
+intent, grounding and response digest. Historic responses are replayed without
+recomposition after later persona publication. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P2-05.md`.

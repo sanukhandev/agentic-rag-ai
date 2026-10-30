@@ -2005,6 +2005,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const estimatedOutputTokens = estimateTokens(finalMaskedAnswer);
       await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: finalMaskedAnswer, citations: safeCitations, clientMessageId: null, response: { conversational, ...(pendingCatalogState ?? {}) }, createdAt: new Date().toISOString() });
       await store.updateMessage({ ...userMessage, response: persistedResponse });
+      await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'chat.response', metadata: { messageDigest: contentHash(response.messageId).slice(0, 12), responseDigest: contentHash(finalMaskedAnswer).slice(0, 12), personaVersionId: session.personaVersionId, language, intentKey: state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? null, grounded: safeGrounded, citationCount: safeCitations.length }, createdAt: new Date().toISOString() });
       await cache.set(responseCacheKey, { messageHash, response: persistedResponse }, chatResponseCacheTtlSeconds);
       recordChatOutcome(session.tenantId, safeGrounded, Boolean(actionForResponse), estimatedInputTokens, estimatedOutputTokens);
       res.json(response);
