@@ -30,6 +30,12 @@ Sources:
 - https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/switching-endpoints
 - https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/quota
 
+## Runtime decomposition and bounded model strategy
+
+This service is **one Python Conversation Agent Runtime**, with a logical Planning & Intent Engine (component 2) and a final Natural Persona Composer (component 3), rather than multiple competing customer agents. The runtime receives a session-pinned persona, compact authorized catalog, current verified state and latest customer text. It may make **bounded** function calls through Node's authenticated read-only Trusted Tool Gateway (component 6) before final composition; never execute unrestricted Python code from a customer prompt.
+
+The planned **internal v2 turn envelope** may wrap the existing `/internal/v1/model/plan`/`normalize` scaffold. Do not assume current methods implement the v2 contracts. Freeze Pydantic/TypeScript schema compatibility and tool call-ID correlation in P0. Enforce one global per-turn deadline and token/tool budget even though SDK `max_retries=3` is per model request; planning and composition can otherwise amplify quota/latency. See [contracts](conversation-engine-contracts.md) and [delivery roadmap](conversation-engine-delivery-plan.md).
+
 ## Private Python HTTP interface
 
 Proposed FastAPI internal-only routes, with strict request/response schema, `tenantScopeRef` opaque context resolved/authorized by Node, request correlation and `modelTaskVersion`:

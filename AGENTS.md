@@ -2,6 +2,16 @@
 
 **Effective 2026-10-30.** This replaces prior Foundry-agent, 25/200-message, 25-commit and greenfield-build instructions. Read `docs/README.md`, `docs/current-state.md` and `docs/requirements.md` **before** coding. The existing source is the implemented state; these documents define the migration target, not a claim it is already working.
 
+## Authoritative Conversation Engine v2 specification (planning, not current runtime)
+
+**Read [conversation engine architecture](docs/conversation-engine-architecture.md), [versioned contracts](docs/conversation-engine-contracts.md), [implementation roadmap](docs/conversation-engine-delivery-plan.md) and [evaluation matrix](docs/conversation-engine-evaluation.md) before implementing any new chat logic.** These documents define **seven logical components within one customer-facing agent**, not seven independent AI agents: (1) Python Conversation Agent, (2) GPT Planning & Intent Engine, (3) Natural Persona Composer, (4) Node Response Guard, (5) Node/PostgreSQL Session & Conversation Manager, (6) Node Trusted Tool Gateway, (7) Node/PostgreSQL/Redis/n8n Workflow & Event Engine.
+
+**Responsibility invariant:** Python chooses dialogue strategy, supporting turn intent and when to request evidence; the customer always hears the session's published tenant persona after model/tool continuation. Node loads/verifies persona and catalog, authorizes tools, validates source grounding and final response, persists state and confirms actions. Redis is queue/cache, PostgreSQL is source of truth; n8n is execution and provider verification is the stage gate. No Node heuristic may silently replace the Python intent plan, and no Python proposal may authorize a side-effect.
+
+**Design/implementation order is mandatory:** P0 contracts and catalog v2 freeze; P1 versioned workbook importer/validator/Admin; P2 durable intent/turn ledger; P3 Python agent + allowlisted Node read tools; P4 persona composition + guard; P5 action gateway/Redis/n8n; P6 seven provider adapters; P7 full acceptance/cutover. The current Python gateway is **scaffolding**, not completion. Prior working code, migrations and customer records must be preserved until verified replacement and rollback.
+
+**Design limitations:** an LLM cannot guarantee perfect goal recognition or meaningful factual entailment; citation IDs alone do not prove a prose claim. Use curated evidence, claim-aware checks, abstentions and human handoff for sensitive/uncertain business facts. Never claim company registration or signed contract without authoritative evidence. Do not require RAG for greetings/consent or force CRM on knowledge-only turns.
+
 ## Mission and acceptance
 
 Build a dependable tenant-configurable **LLM-led conversational sales advisor**. ANCFZ is the **only acceptance tenant for this phase**, not a hardcoded exception in shared code. The customer's **business goal** (e.g., company formation) is primary; **knowledge questions, requirement gathering, clarification, status and workflow execution** are supporting turn intents. **CRM Lead capture is a conditional workflow capability, never the universal primary customer intent.** The approved catalog defines valid goals, categories, requirements, questions, tool bindings, stage sequences and completion criteria. Tenant configuration, published catalog and workflow registry are authoritative.
@@ -67,4 +77,4 @@ Advanced new PII detection is **deferred**; it is NOT permission to remove exist
 
 ## Single read order for coding agents
 
-`docs/README.md` → `docs/current-state.md` → `docs/requirements.md` → `docs/persona-response-contract.md` → `docs/agent-tool-loop.md` → `docs/intent-taxonomy.md` → `docs/conversation-planner.md` → `docs/architecture.md` → `docs/intent-engine.md` → `docs/user-intent-document.md` → `docs/model-gateway.md` → `docs/journey.md` → `docs/n8n-workflows.md` → `docs/migration-plan.md` → `docs/acceptance.md`.
+`docs/README.md` → `docs/current-state.md` → `docs/requirements.md` → **`docs/conversation-engine-architecture.md` → `docs/conversation-engine-contracts.md` → `docs/conversation-engine-delivery-plan.md` → `docs/conversation-engine-evaluation.md`** → `docs/persona-response-contract.md` → `docs/agent-tool-loop.md` → `docs/intent-taxonomy.md` → `docs/conversation-planner.md` → `docs/architecture.md` → `docs/intent-engine.md` → `docs/user-intent-document.md` → `docs/model-gateway.md` → `docs/journey.md` → `docs/n8n-workflows.md` → `docs/migration-plan.md` → `docs/acceptance.md`.

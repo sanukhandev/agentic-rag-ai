@@ -2,6 +2,8 @@
 
 **Status: TARGET SPECIFICATION, NOT YET IMPLEMENTED.** Complements [persona response contract](persona-response-contract.md), [intent catalog](intent-engine.md), [architecture](architecture.md), and [n8n workflows](n8n-workflows.md).
 
+**Canonical interface:** [conversation-engine-contracts.md](conversation-engine-contracts.md) and [seven-component architecture](conversation-engine-architecture.md). Python may choose **multiple bounded read tools before one final answer**. Node must authenticate and independently validate each call; the model's tool preference is not authorization. The exact tool protocol and schema must be frozen in P0 before building server endpoints.
+
 ## Ownership
 
 **Python owns dialogue strategy and orchestration of model-assisted reasoning.** Node owns authorized tenant/session/opportunity context, catalog publication, persona version, fact/source provenance, tool execution, action gating, persistence and callbacks. The GPT model can propose one or more bounded **read-only tool calls before the customer reply**; Python dispatches those requests to a private Node tool gateway and supplies results back to the model by matching function call IDs. No direct Python database, n8n or CRM credentials.

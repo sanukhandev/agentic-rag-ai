@@ -2,6 +2,10 @@
 
 **Status: TARGET.** The **GPT planner drives conversation**, using the current User Intent Document and tenant-published catalog to decide what to do next. Node authorizes and persists business state. The seven ANCFZ stages are the **fulfillment plan for a confirmed company-formation goal**, not seven unrelated primary intents or a universal journey for every visitor. Other tenants/goals use their own catalog paths. Read [intent taxonomy](intent-taxonomy.md) and [conversation planner](conversation-planner.md).
 
+**Canonical stage contract:** [conversation-engine-contracts.md](conversation-engine-contracts.md) and [P6 provider integration gates](conversation-engine-delivery-plan.md). The seven ANCFZ stages belong to the tenant's published business-goal policy, not universal hardcoded Node conditions. **Discovery is a pre-stage**: grounded knowledge visits need no Lead creation. Once the company-formation goal is explicitly confirmed, each stage advances only after its own requirements and authorized provider evidence—not after the model narrates success.
+
+Every current-stage RAG answer, pending update, contact request, OTP prompt, document step and contract response must be delivered in the pinned tenant persona through the Node guard. A knowledge interruption or correction must not reset intent, repeat verified facts or bypass consent. Use [evaluation matrix](conversation-engine-evaluation.md) to prove behavior.
+
 ## Per-response conversation invariant
 
 On each meaningful turn, GPT should **understand the running conversation summary**, classify the turn intent (knowledge/requirement/status/navigation/execution), evaluate business goal confidence and requirement gaps, and choose the best next move based on **current catalog definitions**, not a fixed lead-capture script.

@@ -29,6 +29,12 @@ At external production readiness, complete privacy/data-processor review, opt-in
 - Model, RAG or tool failures must use **approved tenant-persona offline templates** with only verified state and no automatic CRM collection; never rely on a failed model to generate the fallback.
 - Log redacted personaVersionId, fallback version, guard verdict and tool evidence IDs; never log plaintext OTPs, identity documents, provider keys or private reasoning. Full spec: [persona-response-contract.md](persona-response-contract.md).
 
+## Seven-component architecture threat boundary
+
+The canonical [Conversation Engine v2](conversation-engine-architecture.md) separates **untrusted GPT/tool proposals** (Python) from **trusted session, catalog, authorization, response verification and side effects** (Node). Model tool calls use bounded typed schemas with Node-issued opaque scopes, correlating call IDs, ACL, prompt-injection handling and time budgets. Retrieved RAG text is data, not instructions; don't reveal private model chain-of-thought or execute model-provided code.
+
+Customer-visible factual answers require source provenance, and sensitive pricing/legal claims require **claim-level checks or approved factual templates**; citation-ID membership alone is insufficient. OTPs, payment details, identity docs, API credentials and raw PII are excluded from model context and most logs. Model/RAG outage uses approved offline persona templates, still guarded. Operational evidence must distinguish transport/n8n/provider success and callback reconciliation. [Contracts](conversation-engine-contracts.md) define failure states.
+
 ## Historical evidence separation
 
 Old Foundry v3/v4/v6 agent runs, old 25/200-message endurance results, historical diagrams and POC workflow proposals remain repository/Git evidence **only**; they are not active requirements and must not be used to claim the new Python GPT path is tested.

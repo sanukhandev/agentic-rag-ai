@@ -20,6 +20,14 @@
 10. [Migration stages](docs/migration-plan.md)
 11. [Single-journey acceptance](docs/acceptance.md)
 
+## Canonical Conversation Engine v2 implementation plan
+
+**Design complete as a planning blueprint, not implemented runtime.** The target uses **one Python Conversation Agent** with Planning & Intent and Natural Persona Composer; Node provides Response Guard, Session & Conversation Manager and Trusted Tool Gateway; the seventh logical component is Node/PostgreSQL/Redis/n8n Workflow & Event Engine. This system helps one named published tenant persona naturally guide knowledge-only visitors or confirmed ANCFZ company-formation customers through seven strictly ordered stages without inventing status or forcing CRM Leads.
+
+Read these **in order before coding**: [seven-component architecture](docs/conversation-engine-architecture.md), [typed engine contracts](docs/conversation-engine-contracts.md), [P0–P7 delivery roadmap](docs/conversation-engine-delivery-plan.md), [evaluation/acceptance scenarios](docs/conversation-engine-evaluation.md). The previous [migration plan](docs/migration-plan.md) is background where its sequencing differs.
+
+**Implementation rule:** Freeze contracts and executable catalog v2 before expanding the Python scaffold. Do not delete working Node action/session safeguards, migrations or data until the replacement passes full compatibility and rollback tests.
+
 ## Existing stack (retain)
 
 - Next.js/React customer chat; Angular Admin.
