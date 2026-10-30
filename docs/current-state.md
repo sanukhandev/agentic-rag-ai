@@ -18,6 +18,12 @@ The full seven-stage E2E remains intentionally NOT RUN and is reserved for
 manual issue #124. No migration, customer data, provider write or credential
 was changed.
 
+V2-P0-02 is currently **BLOCKED/OPEN**: the private Azure OpenAI `/openai/v1/`
+endpoint, deployment, API key and Node↔Python service key are absent from the
+local environment. The existing gateway's static retry/auth/structured-output
+boundary was reviewed, but no live Azure capability or quota result is claimed.
+See [`V2-P0-02`](verification/conversation-v2/V2-P0-02.md).
+
 ## Existing code topology — IMPLEMENTED
 
 | Responsibility | Verified location | What exists |

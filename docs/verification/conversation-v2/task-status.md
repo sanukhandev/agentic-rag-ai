@@ -11,7 +11,7 @@ again from GitHub before each task.
 | Issue | Phase | Status | Evidence / blocker |
 | ---: | --- | --- | --- |
 | #82 | P0-01 | CLOSED | `docs/verification/conversation-v2/V2-P0-01.md`; remote commit `983f105681db6d123eb0ca4cd8285fda9fd10b00` |
-| #83 | P0-02 | OPEN | Depends on baseline and approved Azure deployment access |
+| #83 | P0-02 | BLOCKED / OPEN | `docs/verification/conversation-v2/V2-P0-02.md`; Azure OpenAI endpoint, deployment, key and private gateway key absent |
 | #84 | P0-03 | OPEN | Depends on baseline; strict v2 catalog contract |
 | #85 | P0-04 | OPEN | Depends on P0 contract decisions |
 | #86 | P0-05 | OPEN | Depends on catalog/provider policy inputs |
