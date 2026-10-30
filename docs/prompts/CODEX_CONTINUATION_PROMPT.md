@@ -24,7 +24,7 @@ Add the supplied `ANCFZ_SEVEN_STAGE_IMPLEMENTATION_PLAN.md` to `docs/plans/ANCFZ
 
 ## Before writing code — ground yourself
 
-Read actual `AGENTS.md`, `readme.md`, `docs/README.md`, `docs/02-system-architecture.md`, `docs/07-n8n-orchestration.md`, `docs/20-intent-catalog.md`, `docs/continuous-lead-conversation-plan.md`, `docs/crm-qualification-and-reconciliation.md`, `docs/conversation-state-contract.md`, `docs/17-acceptance-test-matrix.md`, and tests. Audit these source files and related APIs:
+Read actual `AGENTS.md`, `readme.md`, `docs/README.md`, `docs/02-system-architecture.md`, `docs/07-n8n-orchestration.md`, `docs/20-intent-catalog.md`, `docs/21-generic-journey-orchestration.md`, `docs/crm-qualification-and-reconciliation.md`, `docs/conversation-state-contract.md`, `docs/17-acceptance-test-matrix.md`, and tests. Audit these source files and related APIs:
 
 - `services/api/src/app.ts`, `intent-journey.ts`, `conversation-state.ts`, `intent-catalog.ts`, `intent-catalog-xlsx.ts`, `actions.ts`, `agent-tools.ts` if integrated from PR #71, `event-worker.ts`, `event-relay.ts`, `store-memory.ts`, `store-postgres.ts`, `types.ts`, `routes/*`, `http/schemas.ts`
 - `infra/postgres/028*` through current migration tip; do not reuse migration numbers 044–052 already in PR #71 unless those migrations are integrated exactly once and verified.

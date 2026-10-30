@@ -8,7 +8,7 @@ TARGET: Dedicated ANCFZ (ANC Free Zone) customer journey, one managed organizati
 
 READ FIRST:
 - AGENTS.md, the architecture and security files, docs/README.md, docs/plans/ANCFZ_SEVEN_STAGE_IMPLEMENTATION_PLAN.md, docs/prompts/CODEX_CONTINUATION_PROMPT.md and this prompt.
-- docs/02-system-architecture.md; docs/07-n8n-orchestration.md; docs/20-intent-catalog.md; docs/continuous-lead-conversation-plan.md; docs/17-acceptance-test-matrix.md.
+- docs/02-system-architecture.md; docs/07-n8n-orchestration.md; docs/20-intent-catalog.md; docs/21-generic-journey-orchestration.md; docs/17-acceptance-test-matrix.md.
 - current repository, migrations, CI and all open PR work, especially PR #71, without assuming that unmerged PR content is live. Check git status, origin/main, branch HEAD and working tree before modification.
 - Prior starter package: ANCFZ_Dedicated_Seven_Stage_Starter_2026-10-29.zip. Find the locally downloaded copy in the repository, Downloads or an explicitly supplied local folder; do not pretend that a ChatGPT sandbox path is a Windows filesystem path. If available, unpack with directory-traversal, symlink and overwrite protections. Compare existing and supplied files; merge, do not blindly overwrite security or newer code. Import the proposed draft catalog, Python PDF renderer, mock payments service, n8n exports, ingestion preflight and documentation. The README inside the ZIP is a starter instruction, not implementation evidence. If the package is absent, implement the same scoped components from the checked-in source and explicitly record which supplied artifact was unavailable.
 

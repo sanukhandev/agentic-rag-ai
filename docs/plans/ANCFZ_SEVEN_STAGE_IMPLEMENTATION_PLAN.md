@@ -38,7 +38,7 @@ Main tree has Node/Express/TypeScript API, Next.js web, Angular admin, PostgreSQ
 - `AGENTS.md` (contains stale 15 October repo-reality paragraph; update with current truth)
 - `services/api/src/app.ts`, `types.ts`, `conversation-state.ts`, `intent-journey.ts`, `intent-catalog.ts`, `intent-catalog-xlsx.ts`, `actions.ts`, `event-worker.ts`, `store-postgres.ts`, `store-memory.ts`
 - `infra/postgres/028-043*.sql`; `infra/n8n/workflows/01-04*`, `CRM01*`, `CRM02*`, `CRM03*`, `DOC01*`, `INTENTancfzint*`
-- `docs/02-system-architecture.md`, `07-n8n-orchestration.md`, `20-intent-catalog.md`, `conversation-state-contract.md`, `crm-qualification-and-reconciliation.md`, `continuous-lead-conversation-plan.md`, `17-acceptance-test-matrix.md`, `implementation/*`
+- `docs/02-system-architecture.md`, `07-n8n-orchestration.md`, `20-intent-catalog.md`, `conversation-state-contract.md`, `crm-qualification-and-reconciliation.md`, `21-generic-journey-orchestration.md`, `17-acceptance-test-matrix.md`, `implementation/*`
 - `artifacts/anc-test/ANCFZ_Intent_Catalog_Updated.xlsx`, existing template generators and README.
 
 Existing evidence: baseline docs report prior local lead/OCR success, but that evidence is historical and not proof of the present live sandbox. `CRM02ContactUpsert.json` is explicitly an **inactive template** with a missing approved provider step. `03-anc-lead-capture-wf-1.json` contains an older env-dependent flow; inspect actual registered workflows and migrate toward managed credentials and uniform callback contracts. Some generated workflows are inactive by design.
