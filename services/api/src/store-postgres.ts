@@ -187,7 +187,13 @@ export class PostgresStore implements Store {
     try { await client.query('BEGIN'); const updated = await this.updateSessionOnClient(client, session); await client.query('COMMIT'); return updated; }
     catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
-  async addMessage(message: Message): Promise<Message> { await this.pool.query('INSERT INTO chat_messages (id,session_id,tenant_id,role,masked_content,citations,client_message_id,response) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [message.id, message.sessionId, message.tenantId, message.role, message.maskedContent, JSON.stringify(message.citations), message.clientMessageId, message.response ? JSON.stringify(message.response) : null]); return message; }
+  async addMessage(message: Message): Promise<Message> {
+    const inserted = await this.pool.query<MessageRow>('INSERT INTO chat_messages (id,session_id,tenant_id,role,masked_content,citations,client_message_id,response) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (session_id, client_message_id) DO NOTHING RETURNING *', [message.id, message.sessionId, message.tenantId, message.role, message.maskedContent, JSON.stringify(message.citations), message.clientMessageId, message.response ? JSON.stringify(message.response) : null]);
+    if (inserted.rows[0]) return this.message(inserted.rows[0]);
+    const existing = await this.pool.query<MessageRow>('SELECT * FROM chat_messages WHERE session_id=$1 AND client_message_id=$2', [message.sessionId, message.clientMessageId]);
+    if (!existing.rows[0]) throw new Error('Message insert was not committed and no existing message was found.');
+    return this.message(existing.rows[0]);
+  }
   async updateMessage(message: Message): Promise<Message> { await this.pool.query('UPDATE chat_messages SET response=$1 WHERE id=$2 AND tenant_id=$3', [message.response ? JSON.stringify(message.response) : null, message.id, message.tenantId]); return message; }
   async getMessageByClientId(sessionId: string, clientMessageId: string): Promise<Message | null> { const result = await this.pool.query('SELECT * FROM chat_messages WHERE session_id=$1 AND client_message_id=$2', [sessionId, clientMessageId]); return result.rows[0] ? this.message(result.rows[0]) : null; }
   async listMessages(sessionId: string, tenantId: string, limit?: number): Promise<Message[]> {

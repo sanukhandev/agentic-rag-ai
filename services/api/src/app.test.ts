@@ -101,6 +101,27 @@ class FailsOnceModel implements ChatModel {
   }
 }
 
+class DelayedCountingModel implements ChatModel {
+  public draftCalls = 0;
+  public readonly started: Promise<void>;
+  private readonly releasePromise: Promise<void>;
+  private releaseModel!: () => void;
+  private resolveStarted!: () => void;
+  constructor() {
+    this.started = new Promise((resolve) => { this.resolveStarted = resolve; });
+    this.releasePromise = new Promise((resolve) => { this.releaseModel = resolve; });
+  }
+  release(): void { this.releaseModel(); }
+  private async response(): Promise<ModelDraft> {
+    this.draftCalls += 1;
+    this.resolveStarted();
+    await this.releasePromise;
+    return { answer: 'Hello from the model.', citationIds: [], proposedIntent: null };
+  }
+  async draft(): Promise<ModelDraft> { return this.response(); }
+  async compose(): Promise<ModelDraft> { return this.response(); }
+}
+
 const seedWorkflowExecution = async (store: Store, action: Pick<ActionRequest, 'id' | 'tenantId' | 'workflowKey' | 'catalogVersionId' | 'idempotencyKey'>, providerStatus: string = 'dispatching') => {
   const eventId = randomUUID();
   const correlationId = randomUUID();
@@ -685,6 +706,28 @@ describe('API vertical slice', () => {
     expect((await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).expect(200)).body.messages.filter((message: { clientMessageId: string | null }) => message.clientMessageId === 'retry-message-1')).toHaveLength(1);
     const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Different retry content', clientMessageId: 'retry-message-1' }).expect(409);
     expect(duplicate.body.error.code).toBe('MESSAGE_ID_REUSED');
+  });
+
+  it('claims one concurrent client message and rejects the losing request before model work', async () => {
+    const model = new DelayedCountingModel();
+    const runtime = createApp({ nodeEnv: 'test', model });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-concurrent-message@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Concurrent Message Tenant', slug: `concurrent-message-${randomUUID()}`, adminEmail: 'admin-concurrent-message@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const body = { sessionId: session.body.sessionId, message: 'I need a demo', clientMessageId: 'concurrent-client-message' };
+    const first = api.post('/api/v1/chat/messages').send(body).then((response) => response);
+    await model.started;
+    const second = await api.post('/api/v1/chat/messages').send(body);
+    expect(second.status).toBe(409);
+    expect(second.body.error.code).toBe('MESSAGE_IN_PROGRESS');
+    model.release();
+    const firstResponse = await first;
+    expect(firstResponse.status).toBe(200);
+    expect(model.draftCalls).toBe(1);
+    const replay = await api.post('/api/v1/chat/messages').send(body).expect(200);
+    expect(replay.body).toEqual(firstResponse.body);
+    expect((await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).expect(200)).body.messages.filter((message: { clientMessageId: string | null }) => message.clientMessageId === body.clientMessageId)).toHaveLength(1);
   });
 
   it('stores a validated CRM lead and rehydrates it only for the tenant admin view', async () => {

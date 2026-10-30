@@ -164,3 +164,13 @@ revision CAS and replay-safe append semantics. Discovery may remain without an
 opportunity; tenant/session/opportunity scope and PII bounds are enforced.
 The public chat coordinator does not consume this projection yet; that remains
 later P2/P3 work. No live database migration was executed.
+
+## V2-P2-02 transactional turn claim — 2026-10-30
+
+Issue #93 adds an atomic client-message claim in both MemoryStore and
+PostgresStore. The Chat API now detects a concurrent winner before session
+mutation or model/business work, returns `MESSAGE_IN_PROGRESS` to the loser,
+and replays the exact persisted response for an identical completed retry.
+Changed message bodies remain `MESSAGE_ID_REUSED`; session revision CAS,
+action idempotency and outbox protections are unchanged. Evidence is recorded
+in `docs/verification/conversation-v2/V2-P2-02.md`.

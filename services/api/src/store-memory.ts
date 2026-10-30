@@ -381,7 +381,12 @@ export class MemoryStore implements Store {
     this.sessions.set(session.id, structuredClone(session));
     return session;
   }
-  async addMessage(message: Message): Promise<Message> { this.messages.set(message.id, message); return message; }
+  async addMessage(message: Message): Promise<Message> {
+    const existing = [...this.messages.values()].find((candidate) => candidate.sessionId === message.sessionId && candidate.clientMessageId === message.clientMessageId);
+    if (existing) return existing;
+    this.messages.set(message.id, message);
+    return message;
+  }
   async updateMessage(message: Message): Promise<Message> { this.messages.set(message.id, message); return message; }
   async listMessages(sessionId: string, tenantId: string, limit?: number): Promise<Message[]> {
     const messages = [...this.messages.values()].filter((message) => message.sessionId === sessionId && message.tenantId === tenantId).sort((left, right) => left.createdAt.localeCompare(right.createdAt));
