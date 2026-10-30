@@ -6,6 +6,11 @@
 | --- | --- | --- |
 | 1 | [Current state](current-state.md) | Source-verified implementation vs target |
 | 2 | [Product requirements](requirements.md) | Tenant-neutral RAG conversation and ANCFZ goal |
+| — | [**Approved P0 decisions**](conversation-engine-p0-signoff.md) | Five approved business/architecture decisions, readiness criteria |
+| — | [**V2-only catalog contract**](catalog-v2-contract.md) | Strict replacement-only new import, schema freeze, safe v1 history |
+| — | [**ANCFZ business/provider inputs**](ancfz-business-provider-readiness.md) | Remaining stage rules, sandbox/mock adapters and owner dependencies |
+| — | [**43 v2 feature issues**](conversation-v2-issue-index.md) | GitHub issue URLs, dependency-first execution and manual hold |
+| — | [**Codex master prompt**](codex-v2-master-prompt.md) | Task-by-task implementation, tests, commit/push/closure and final hold |
 | 3 | [**Canonical seven-component architecture**](conversation-engine-architecture.md) | One Python agent and deterministic Node/service responsibilities |
 | 4 | [**Typed interface contracts**](conversation-engine-contracts.md) | Turn envelope, planner, tools, persona, guard, state, catalog v2 |
 | 5 | [**Delivery roadmap**](conversation-engine-delivery-plan.md) | P0–P7 implementation dependencies, exit gates and rollback |
@@ -26,6 +31,12 @@
 | 19 | [Acceptance](acceptance.md) | Continuous goal and seven stages, truthful verdicts |
 
 Read root [AGENTS.md](../AGENTS.md) for non-negotiable coding instructions, and root [README](../readme.md) for the entrypoint.
+
+## P0 approved decisions, issue tracker and Codex implementation
+
+**P0 product decisions approved:** reuse existing Azure GPT deployment; **strictly v2-only** intent catalog format for the new engine; published **Zara, English only** for ANCFZ; **sandbox/mock-verified seven stages** as first-release goal; **contract-stage completion ends the seven-stage journey**, and legal company registration is independently tracked.
+
+Read [P0 sign-off](conversation-engine-p0-signoff.md), [v2-only catalog spec](catalog-v2-contract.md), [business/provider input register](ancfz-business-provider-readiness.md), [43 GitHub v2 issues](conversation-v2-issue-index.md) and [Codex master prompt](codex-v2-master-prompt.md). The dedicated branch is `feat/conversation-engine-v2`. **All normal task-level focused tests run as features develop; the final full seven-stage E2E stays on manual hold issue #124.** Product approval here is not provider confirmation or security/legal sign-off.
 
 ## Current versus target
 

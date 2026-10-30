@@ -4,6 +4,8 @@
 
 **Status: TARGET design, not yet implemented.** Applies to **every tenant's published catalog**. ANCFZ is the acceptance tenant, not a code-level rule. The catalog may define different goals, services, prompts, stages, requirements and actions per tenant.
 
+**P0 approved v2 catalog:** this taxonomy is part of a **strict v2-only replacement** for the new engine, not a backward-compatible extension of the old v1 importer. New v2 uploads must use [catalog-v2-contract.md](catalog-v2-contract.md); historical v1 data remains isolated solely for safe migration/rollback. ANCFZ English Zara and the seven-stage Contract completion policy belong to the published tenant configuration, with legal registration tracked separately.
+
 ## Distinguish three fundamentally different objects
 
 1. **Primary business goal** (`businessGoalKey`): a durable customer objective such as company formation. A customer confirms this goal; it anchors the opportunity and remains active across questions and stages.

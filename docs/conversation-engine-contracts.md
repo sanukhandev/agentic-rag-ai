@@ -123,9 +123,11 @@ Example server-only action lifecycle: `not_eligible → eligible → awaiting_ac
 
 **Evidence tiers:** user assertion, Node validated fact, provider transport acknowledgment, n8n execution result, authenticated provider record verification. Only the designated tier in a published stage policy may count as success. `HTTP 200`, payment PDF generation and `mock_paid` must not be silently interpreted as production completion.
 
+**Locked P0 catalog decision:** the new executable engine's importer/API/Admin/runtime is **v2-only** and rejects legacy v1/unversioned workbooks. Older v1 published catalog history is isolated for safe read/rollback and an explicit candidate conversion, not an alternate v2 import contract. See [catalog-v2-contract.md](catalog-v2-contract.md) and issue #84. **Legal company registration** is independently tracked after the Stage-7 contract journey, and **mock provider evidence** is separately labeled from real sandbox verification.
+
 ## G. Catalog v2 import/publish contract
 
-Existing parser `tools/ingestion/ingestion/intent_catalog.py` version 1.4.0 imports six required sheets and a limited set of optional sheets; the proposed v2 workbook's `BusinessGoals`, `IntentCategories`, `TurnIntents`, `RequirementPolicies`, `ToolBindings`, `FollowUpPolicies`, `ScoringPolicies`, `RemoteWorkflowRegistry` are not yet all consumable. Publishing the workbook **cannot activate the design** without a parser, shared schema/validator, Admin preview, import/export, version pinning and runtime contract migration.
+Existing parser `tools/ingestion/ingestion/intent_catalog.py` version 1.4.0 imports legacy v1 sheets only. **It must not be reused as the v2 importer.** The new v2-only contract requires a strict version-2 manifest, dedicated parser, shared schema/validator, Admin preview/import/export/publish, immutable version pinning and runtime migration. V1 workbooks are rejected by v2 and old records remain isolated/readable until audited migration/rollback.
 
 **Proposed source tables** (exact schema to be frozen in P0): `BusinessGoals`, `IntentCategories`, `TurnIntents`, `Signals`, `ScoringPolicies`, `RequirementPolicies`, `BusinessStages`, `ToolBindings`, `FollowUpPolicies`, `KnowledgeTopics`, `PersonaPolicies`, `WorkflowBindings`, `DocumentPolicies` plus migration-compatible existing sheets. Include stable keys, stage scope and requirement dependencies, supported languages, source-of-truth rules, confirmation/consent, allowed argument schemas, verification evidence and safe fallbacks.
 

@@ -28,6 +28,12 @@ Read these **in order before coding**: [seven-component architecture](docs/conve
 
 **Implementation rule:** Freeze contracts and executable catalog v2 before expanding the Python scaffold. Do not delete working Node action/session safeguards, migrations or data until the replacement passes full compatibility and rollback tests.
 
+## Approved P0 decisions and feature tracker (October 30, 2026)
+
+The customer approved: **reuse the current Azure GPT deployment**; a **strict v2-only intent catalog** for the new engine, keeping old records safe for migration; the **published ANCFZ Zara assistant in English only**; a **sandbox/mock-first seven-stage release**; and **journey completion at verified Stage-7 Contract**, while legal company registration remains separate. These decisions are now documented in [P0 sign-off](docs/conversation-engine-p0-signoff.md).
+
+**Implementation branch:** `feat/conversation-engine-v2`. **GitHub issues:** [all 43 detailed v2 tasks](docs/conversation-v2-issue-index.md). **Execution:** [Codex master prompt](docs/codex-v2-master-prompt.md) requires focused test validation, commit/push, remote proof and issue closure per task. **Do not automatically run the full seven-stage final E2E**; issue [#124](https://github.com/sanukhandev/agentic-rag-ai/issues/124) remains open until the user triggers it. See [strict v2 catalog contract](docs/catalog-v2-contract.md) and [business/provider readiness](docs/ancfz-business-provider-readiness.md).
+
 ## Existing stack (retain)
 
 - Next.js/React customer chat; Angular Admin.

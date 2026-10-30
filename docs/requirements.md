@@ -2,6 +2,12 @@
 
 **Status: TARGET, not current implementation.** Acceptance tenant is ANCFZ only. The product continues to be reusable for any tenant; no tenant slug, catalog intent, stage list, workflow or prompt is hardcoded in shared services. The generic engine derives all decisions from the tenant's **published and pinned** catalog.
 
+## Approved Conversation Engine v2 business scope
+
+Five decisions have user-level sign-off: reuse **existing Azure GPT deployment**, **new v2-only executable intent catalog contract** (legacy v1 data is preserved separately for rollback but cannot be silently accepted as v2), **ANCFZ published Zara persona in English only**, first release via **contract-verified sandbox/mock providers**, and **verified Contract Stage 7 marks the seven-stage journey fulfilled** while legal company registration remains a separate tracked outcome. See [P0 decision register](conversation-engine-p0-signoff.md) and [catalog v2](catalog-v2-contract.md).
+
+**Execution/testing scope:** P0–P7 implementation tasks are tracked in [v2 issue index](conversation-v2-issue-index.md). Focused per-task unit/contract/security tests are mandatory. **Final seven-stage end-to-end acceptance is manual-only** after the other 42 tasks finish; GitHub issue #124 is not automatically executed or closed. Business/provider inputs still needed are documented in [readiness register](ancfz-business-provider-readiness.md).
+
 ## Business objective and intent hierarchy
 
 The **customer's business outcome is the primary intent**, not a Salesforce Lead. A tenant catalog can define multiple business goals, knowledge-only services, follow-up requirements and authorized workflow capabilities. The LLM is the **conversation master**: on each substantive turn, it interprets the bounded conversation summary and catalog, identifies the current turn's intent category, proposes goal candidates and context-sensitive weights, chooses the next move and formulates a useful question. Node validates all proposals against the published catalog and existing authorization/consent before storing facts or dispatching actions.

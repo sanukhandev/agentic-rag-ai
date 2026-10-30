@@ -2,6 +2,12 @@
 
 **Status: PLANNED; no implementation tasks are marked complete in this document.** The preexisting Python gateway and Node adapter are unvalidated scaffolding. This is the execution blueprint for the new architecture, not an instruction to delete all legacy code at once. Source of truth: [architecture](conversation-engine-architecture.md), [contracts](conversation-engine-contracts.md), [evaluations](conversation-engine-evaluation.md).
 
+## Locked P0 development choices — apply throughout P0–P7
+
+**Customer-approved decisions (2026-10-30):** reuse **existing Azure GPT deployment**; **new strict v2-only catalog** for v2 importer/Admin/runtime, with old v1 records preserved separately for audit/rollback (not accepted by v2); published **Zara English-only** for ANCFZ; first release uses **verified sandbox/mock** provider contracts; the seven-stage **journey ends at verified Contract Stage 7**, whereas legal company registration remains a separate status. See [decision register](conversation-engine-p0-signoff.md), [v2 catalog](catalog-v2-contract.md) and [missing provider inputs](ancfz-business-provider-readiness.md).
+
+All implementation work is tracked in **43 labeled tasks [#82–#124](conversation-v2-issue-index.md)** on `feat/conversation-engine-v2`, with [Codex execution and closure protocol](codex-v2-master-prompt.md). Focused per-task validation is mandatory; **the final full seven-stage E2E must not be executed until the user manually triggers #124 after #82–#123 close**. Implementation may begin with P0 schema and P1–P4 synthetic work without live external integrations.
+
 ## Target and non-negotiable gates
 
 Build a tenant-configurable **Python Conversation Agent Runtime** with logical planning/intent, natural persona composition and a bounded Node tool-calling loop; **Node owns** session/intent persistence, deterministic policy/response guard and secure tools; **PostgreSQL owns** durable decisions; **Redis Streams + n8n** execute confirmed asynchronous actions.
@@ -14,19 +20,19 @@ Every phase must record code paths, migration IDs, test commands/result, status 
 
 **Scope**
 1. Freeze the seven-component architecture, typed TurnEnvelope, planner result, Node tool request/result, PersonaComposedResponse and Response Guard verdict. Agree one source of schema truth plus contract tests and strict error mapping.
-2. Freeze the **v2 workbook schema**: required/optional import sheets, stable goal/category/intent/stage/tool keys, requirement stage ownership, persona policies, weighting bounds, dependency and fallback rules. Specify importer v1.4 → v2 backward compatibility and invalid workbook rejection.
+2. Freeze the **strict v2-only workbook and runtime schema**: required/optional sheets, stable goal/category/intent/stage/tool keys, stage-scoped requirements, persona references, weight bounds and invalid workbook rejection. The new v2 importer rejects **v1/unversioned** workbooks. Preserve legacy v1 history in an **isolated audited migration/rollback path**, never silent fallback or in-place reinterpretation.
 3. Decide **model runtime capacity**: Azure deployment name, quota and supported Responses/tool schema, retries (initial + up to 3 transient retries per model call), shared budget, latency targets after measurement.
 4. Inspect published ANCFZ catalog and four existing n8n webhook-test contracts; identify exact missing provider operations and sandbox-safe verification methods.
 5. Capture clean `main` baseline and current Node API/CI/DB/Redis behavior. Classify old files as `retain`, `replace`, `delete-after-proven` and `history-only`, without deleting applied migrations/customer state.
-6. Establish review sign-off of model actions vs safe Node tools, PII boundaries, authoritative stage completion and whether company registration itself is provider-verifiable at the final outcome.
+6. Establish review sign-off of model actions vs safe Node tools, PII boundaries and authoritative stage completion. **Journey completion is approved at verified Contract Stage 7; legal company registration is separately tracked and must never be inferred from contract completion.**
 
 **Exit:** approved v2 schema, invalid/valid sample catalog fixtures, tool/response JSON schema fixtures, dependency matrix and test plan. **If unclear, do not start an irreversible runtime cutover.**
 
 ## P1 — Catalog importer, shared contracts and Admin publication
 
 **Changes**
-- Extend `tools/ingestion/ingestion/intent_catalog.py` parser and tests to import all v2 sheets. Preserve six legacy mandatory sheets or make a documented versioned import migration.
-- Update TypeScript `services/api/src/intent-catalog.ts`, API types, XLSX import/export/preview and Angular Admin validations. Do not silently discard unknown executable sheets, stage dependencies or workflow safety policy.
+- Implement a **new strict v2-only parser/validator** and tested schema; v2 upload/preview/publish/runtime accept only manifest version 2. Keep the former v1 parser isolated for legacy reads and explicit candidate conversion, not as a supported v2 import format.
+- Implement versioned Node/TypeScript catalog v2 types, XLSX import/export/preview and Angular Admin validations. Reject unknown executable sheets, stage dependencies or workflow safety omissions, while retaining non-destructive historical compatibility boundaries.
 - Publish immutable per-tenant catalog versions and persona versions. Explicitly distinguish `knowledge_only` from confirmed Business Goal, and action tool from intent.
 - Add static lints for orphan tools, inactive providers, stage requirement leakage, unsupported token/weight/schema types and forbidden ANCFZ hardcoding. Build approved synthetic catalog fixtures.
 
@@ -87,17 +93,21 @@ Every phase must record code paths, migration IDs, test commands/result, status 
 | 6 Payment Details & Invoice | Quote-linked verified invoice plus separate mock/real payment status | Mock PDF/payment ≠ real settlement |
 | 7 Contract | Approved template/provider state and verified signed status when claimed | Signing provider/callback incomplete |
 
-**Exit:** all seven stages in one synthetic sandbox session, with each provider evidence tier recorded; or truthful blocker state without skipped stage. "Company registered" is only allowed when actual authoritative company-registration proof exists, not solely CRM workflow completion.
+**Exit:** all seven **individual** stage adapters have contract-level sandbox/mock verification fixtures, provider evidence/status mappings and safe reconciliation tests, or truthful blockers. The complete seven-stage scenario itself is reserved for the user-triggered final issue #124; never claim legal company registration from a contract or CRM flow.
+
+### Manual acceptance sequencing constraint
+
+P6 develops and validates **individual stage adapters** and mock/sandbox provider contracts, but **must not execute the single complete seven-stage end-to-end journey automatically**. P7 task #122 prepares and unit-tests the final harness, task #123 prepares cutover/rollback, and **final issue #124 remains OPEN until the customer explicitly triggers** the complete journey. The old statement about doing the full journey as a P6 exit test is superseded by this manual gate.
 
 ## P7 — Integration acceptance, performance and cutover
 
-1. Run [evaluation suite](conversation-engine-evaluation.md): persona, grounding, intent, tool limits, security, latency, restart, contract compatibility and all stage gates.
+1. Run **focused** [evaluation scenarios](conversation-engine-evaluation.md) for persona, grounding, intent, tool limits, security, latency, restart and individual stage adapters. **Do not execute the full seven-stage end-to-end test** as part of P7 automation; prepare it under #122 and leave final #124 for a separate user-triggered run.
 2. Record each test: exact build/commit, fixture, model version, catalog/persona versions, simulated/real provider label, evidence refs, latency and verdict.
 3. Run API/UI/DB/Redis/Docker/CI suites. Verify Azure 429 response handling, shared turn deadline, cost/rate guard, source revocation and startup with/without Python overlay.
 4. Stage behind feature flag for the acceptance tenant, do not change other tenants. Prepare rollback to prior stable Node route with data compatibility, no history deletion, and operator reconciliation for in-flight writes.
 5. Only after real provider acceptance and security sign-off consider deleting legacy `app.ts` lead-first branches and old model compatibility shims. Removing historical SQL migrations or user data is prohibited.
 
-**Exit:** the exact provider-verified, simulated or blocked category from [acceptance](acceptance.md), not "it worked" without evidence.
+**Exit (pre-final):** all implementation issue-level tests and provider/mock contract tests pass, with the full seven-stage test **NOT RUN — manual hold #124**. Only the later user-triggered final run may produce a full seven-stage simulated/sandbox verdict.
 
 ## Workstream dependencies
 
