@@ -1,20 +1,21 @@
-# ANCFZ seven-stage verification matrix
+# ANCFZ seven-stage provider-verification matrix
 
-This matrix separates application behavior, local workflow execution, and independently verified external-provider evidence. A successful n8n execution is not treated as provider completion without a provider response and persisted Node-side evidence.
+**Most recent focused single-journey status (2026-10-30): CONVERSATION AND TOOL CALLS VERIFIED — INTEGRATIONS BLOCKED.** This matrix separates the current *one-session run* from earlier independent sandbox and unit checks. It does not aggregate separate runs into a fictional complete journey.
 
-| Stage | Implemented boundary | Verified evidence | Mocked or blocked | Status |
-|---|---|---|---|---|
-| Lead Generation | Node authorization, tenant/session scope, PII masking, intent/catalog gating, durable action and outbox; n8n lead-capture workflow uses the existing Salesforce OAuth credential. | Live local API session; approved action; outbox publication; n8n execution reference; remote CRM lead response or deduplicated association; workflow tests pass. | Local n8n/Salesforce sandbox only; no production CRM claim. | PASS — sandbox evidence |
-| Lead Qualification | Published intent catalog, required facts, consent gate, score/summary persistence and resume behavior remain Node-owned. | Live 20-turn qualification run persisted facts, consent, opportunity and pending requirement; n8n qualification gate and callback path exercised. | The QA runner previously joined only `crm_leads.action_id`; deduplicated runs use `crm_lead_associations`. The evidence query is corrected and must be rerun for a clean runner count. | PARTIAL — code and DB evidence |
-| Account Creation | Account action requires qualified lead, verified remote lead identity, applicable confirmation and CRM prerequisites. | Static workflow test confirms the verified-ID gate and conditional conversion. | `REMOTE_CRM_ACCOUNT_URL` is not configured; no live Account conversion was attempted. | BLOCKED — provider configuration |
-| Package Selection | Node journey/catalog state and pinned catalog data control package selection. | Existing journey and catalog regression coverage; no provider side effect is dispatched by Foundry text. | No live pricebook/provider acknowledgment in this run. | PARTIAL — application evidence |
-| Document Upload | Upload consent, OCR/review state, SF-02 association and Node authorization boundaries are present. | Existing document/API/security tests and workflow definitions inspected. | No live Salesforce SF-02 acknowledgment was available in this run. | PARTIAL — no provider evidence |
-| Payment Details & Invoice | Approved quotation/invoice state stays in Node; payment acknowledgment is separate from settlement. | Invoice workflow static test confirms bounded provider execution and reconciliation behavior. | `BILLING_INVOICE_URL` is not configured; development payment is mock-only; no payment was executed. | BLOCKED — provider configuration |
-| Contract | Node requires verified signing evidence before completion; n8n is only an executor. | Contract workflow static test confirms bounded provider execution and reconciliation behavior. | `CONTRACT_PROVIDER_URL` is not configured; no signature was requested or claimed. | BLOCKED — provider configuration |
+| Stage | Local capability / evidence | Latest single-journey proof | Required external evidence | Verdict for single journey |
+| --- | --- | --- | --- | --- |
+| 1. Lead Generation | Validated contact, consent, catalog action gate, ActionRequest, local n8n dispatch and outbox | 13-turn run created action; `reconcile_required`, no verified remote Lead | Salesforce Lead ID, matching original action/opportunity and authenticated reconciliation | **BLOCKED** |
+| 2. Lead Qualification | Published catalog, factual provenance, continuity and qualification gates tested separately | Not reached as completed stage | Complete catalog-required qualification facts and verified decision | **NOT REACHED** |
+| 3. Account Creation | Conditional action and provider workflow scaffolding | Not reached | Qualified verified Lead, required confirmation, Account/Contact/Opportunity association | **NOT REACHED** |
+| 4. Package Selection | Package/catalog/quote contracts and guarded routes | Not reached | Eligible package, accepted quote and selection revision | **NOT REACHED** |
+| 5. Document Upload | Upload, consent, OCR/review and SF-02 code paths | Not reached | Reviewed processing and provider-verified Salesforce attachment | **NOT REACHED** |
+| 6. Payment Details & Invoice | Invoice/billing workflow contracts and development mock | Not reached | Authoritative invoice artifact and separately verified payment/mock status | **NOT REACHED** |
+| 7. Contract | Draft/confirmation/status integration boundary | Not reached | Provider contract status and signed evidence if represented as signed | **NOT REACHED** |
 
-## Evidence scope
+## Evidence rules
 
-- Foundry conversational v4 remains frozen: named agent, tool-free serving version, Azure CLI credential, real Responses API output and continuity were verified separately.
-- The existing Chat API and Admin API were not changed for this lifecycle work.
-- No Salesforce, payment or contract completion is inferred from an n8n `success` status alone.
-- Provider IDs, tokens and customer PII are intentionally excluded from this checked-in matrix.
+- The real v6 candidate produced a `get_journey_state` `function_call`/`function_call_output`; serving traffic remained pinned to v4. Read-only function calling does not authorize business writes.
+- Earlier isolated Salesforce sandbox or static workflow results may be useful **historical evidence**; do not treat them as completion of this specific session/opportunity.
+- An HTTP 200/202, n8n success, local Lead ID, generated PDF, `mock_paid` or signing URL is not equivalent to a verified external completion.
+- Do not invent Salesforce IDs, bill customers or perform legally binding signatures in test runs.
+- Full run detail: [`ancfz-single-journey-tool-calling.md`](ancfz-single-journey-tool-calling.md).

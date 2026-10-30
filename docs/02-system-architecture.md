@@ -1,54 +1,63 @@
-# Architecture and data flow
+# Current architecture and trust boundaries
 
-## Logical components
+**Scope:** local Docker Foundry agent runtime and dedicated ANCFZ business-journey acceptance. Code is authoritative for implementation details; consult `current-requirements.md` and `verification/ancfz-single-journey-tool-calling.md` for what has and has not been verified.
+
+## Runtime components
 
 ```mermaid
-flowchart LR
-  WEB[Next.js web chat] --> API[Express / TypeScript API]
-  ADM[Angular admin] --> API
-  FUT[Future channel adapters] --> API
-  API --> PRIV[PII detector + token vault]
-  PRIV --> PG[(PostgreSQL application data)]
-  API --> RAG[Retrieval + policy]
-  RAG --> VEC[(PostgreSQL / pgvector)]
-  API --> LLM[Azure AI Foundry / GPT-4.1-mini]
-  API --> GATE[Server-side intent/action gateway]
-  GATE --> N8N[n8n private webhooks]
-  N8N --> EXT[Approved downstream systems]
-  DOCS[Approved source files] --> PY[Python ingestion venv]
-  PY --> EMB[Separate embedding deployment]
-  PY --> VEC
+flowchart TD
+  WEB[Next.js customer chat] --> API[Node Express API]
+  ADMIN[Angular admin] --> API
+  API --> AUTH[Tenant/session auth + PII vault]
+  AUTH --> STATE[Persona + published catalog + journey state]
+  STATE --> RAG[Approved RAG + citations]
+  RAG --> PG[(PostgreSQL + pgvector)]
+  STATE --> FCLIENT[Foundry SDK client]
+  RAG --> FCLIENT
+  FCLIENT <-->|AzureCliCredential / Responses| AGENT[Shared Foundry named agent]
+  AGENT -->|function_call v6 candidate| DISPATCH[Node function dispatcher]
+  DISPATCH -->|authorized read only| READ[Knowledge / catalog / journey / action status]
+  READ -->|bounded function_call_output| FCLIENT
+  FCLIENT --> VALID[Evidence + output + stage validation]
+  VALID --> API
+  STATE --> GATE[Consent + action eligibility]
+  GATE --> OUT[(Transactional outbox)]
+  OUT --> REDIS[Redis Streams / worker]
+  REDIS --> N8N[n8n provider adapters]
+  N8N --> CRM[Salesforce sandbox]
+  N8N --> DOC[OCR + SF-02 attachment]
+  N8N --> FIN[Invoice / payment mock]
+  N8N --> SIGN[Contract provider]
+  CRM --> CB[Authenticated callback / reconcile]
+  DOC --> CB
+  FIN --> CB
+  SIGN --> CB
+  CB --> PG
 ```
 
-## Trust zones
-1. **Untrusted edge**: web and future channels; all input considered adversarial. Channel authentication is required where a verified identity is claimed.
-2. **Trusted application boundary**: Node validates channel scope, masks PII, manages conversation state and resolves user/tenant authorization. No unrestricted access to masking keys in other services.
-3. **Business knowledge boundary**: files and vector chunks are *data*, never instructions. Apply tenant/source ACL before selecting context. Do not intermingle knowledge with customer identity.
-4. **External processor boundary**: Azure AI Foundry receives only masked, minimal prompts and source excerpts permitted for model processing. n8n receives only approved action DTOs, not arbitrary transcripts.
-5. **Protected data boundary**: PostgreSQL stores customer information and encrypted reversible mappings with separate roles, controls, audits and expiration.
+## Ownership of decisions
 
-## Web chat sequence
-1. Browser opens session through Node; Node establishes tenant and channel context without trusting client-supplied tenant IDs.
-2. Request is authenticated/rate-limited/validated; Node masks customer identifiers and applies a tenant-neutral deterministic cleanup. When the published catalog and active conversation make normalization useful, the model may rewrite only the masked query for spelling/wording correction; the server never treats that rewrite as authorization.
-3. Node stores scoped conversation state and masked turns. PII vault stores encrypted mappings separate from prompts and embeddings.
-4. Node creates a retrieval query from the normalized masked message and recent masked user turns; hybrid lexical/vector strategy may be used, always with SQL-level tenant/source/ACL filters.
-5. Node assembles limited evidence snippets with document IDs, stable chunk IDs, page/section, version and source validity.
-6. Node calls GPT-4.1-mini with policy, history and relevant snippets. Expected output includes answer, cited chunk IDs and a structured *intent proposal* when useful.
-7. Node verifies evidence IDs against supplied snippets and enforces confidence/claim checks. Unknown facts are not filled in by the model.
-8. Node checks action registry, user confirmation/consent, authorization and idempotency; catalog continuity keeps the selected primary intent stable across follow-ups while retaining secondary candidates. It alone calls n8n over an authenticated private link.
-9. Node validates workflow result, rehydrates only allowed approved tokens at the last delivery boundary, and responds to the same authorized recipient.
-10. Node emits a redacted audit event and operational metrics. Workflow failures are not disguised as success.
+1. **Node authorization boundary:** binds tenant and customer session, masks PII, selects approved knowledge and catalog version. A Foundry conversation ID is private server state in `foundry_conversation_bindings`; the browser cannot choose it.
+2. **Foundry:** produces conversational wording and may request strictly allowlisted read-only application functions. Version **v4** is stable serving, **v6** only explicitly invoked in isolated tests. An older v3 hosted OpenAPI dev tunnel is not trusted.
+3. **Node dispatcher:** validates the `function_call`, derives tenant/session/opportunity exclusively from authenticated application context, authorizes and audits the result, and sends `function_call_output` using the matching call ID. No direct provider writes.
+4. **Catalog and journey:** published pinned catalog defines requirements, eligible intents, workflow bindings and transitions; the model cannot grant eligibility or consent. Fact corrections, callbacks and concurrent turns use durable opportunity-scoped revisions.
+5. **External execution:** Node action gateway → PostgreSQL transactional outbox → Redis Streams/worker → n8n → provider. Providers return authenticated correlation/evidence; n8n completion by itself does not mean Salesforce Account, payment or signed contract exists.
+6. **Admin:** remains the existing authenticated Angular management API, not a direct Foundry administrative interface.
 
-## Ingestion sequence
-Admin uploads/approves source → encrypted private staging → file validation/malware scan → safe content extraction → PII/secret scan → normalization → source metadata/versioning → deterministic chunks → embedding deployment → pgvector upsert → retrieval quality test → atomic active-version promotion. Failed uploads remain excluded from retrieval. Deleted/revoked sources must be removed or disabled from future search promptly.
+## Existing customer response contract
 
-## Deployment note
-MVP uses one PostgreSQL/pgvector service with separate application and knowledge concerns; separate clusters may be adopted if required by compliance or load. The root `docker-compose.yml` provisions the local database, Redis, API, web/admin clients, n8n and an opt-in ingestion image.
+`POST /api/v1/chat/sessions` creates the authorized session; `POST /api/v1/chat/messages` returns the existing fields: `messageId`, `sessionId`, `answer`, `grounded`, `conversational`, `citations`, `actionProposal`, `pendingPromptId`, `pendingIntentKey`, `pendingRequirementKey`, `requestId`.
 
-## Failure modes
-- No matching authorized evidence → clearly say information is unavailable.
-- Model unavailable/timeouts → safe error; do not silently substitute ungrounded canned company facts.
-- Vector DB unavailable → explain temporary inability to verify.
-- n8n timeout → report pending/unknown unless a durable verified result exists; retry with same idempotency key.
-- Token vault unavailable → never expose raw tokens or hallucinated rehydration.
-- Untrusted prompt injection from a document → treat as text, not instruction, and report suspicious content where appropriate.
+`answer` uses validated Foundry `output_text` when permitted. All other fields reflect server-side policy and persisted state. Do not return raw Foundry objects, tool calls or conversation IDs to clients.
+
+## Data and retrieval boundary
+
+Approved DOCX/XLSX/TXT/PDF/HTTPS/other explicitly supported sources pass through private staging, validation, Python extraction, PII/secret checks, review and embeddings to PostgreSQL pgvector. Source ACL, tenant, publication status, visibility and effective-date filters are applied before the model receives snippets. Customer-uploaded onboarding documents remain private transactional artifacts, **not** automatic RAG sources.
+
+## Local and deployment boundaries
+
+`docker-compose.yml` is the base stack; `docker-compose.foundry.local.yml` adds development-only Azure CLI to the API container with a private credential volume. No host Azure account cache or token should be copied into images or Git. Production authentication/deployment requires separate approval; local interactive CLI is not a production auth pattern.
+
+## Verification boundary
+
+Live v6 function-call/output and 13-turn single-journey tests have passed their focused assertions, but the latest run was stopped in Lead Generation because an external Salesforce Lead acknowledgment could not be verified. See `docs/verification/ancfz-stage-verification-matrix.md`. A conversation, local ActionRequest, n8n execution or mocked payment is not seven-stage completion.
