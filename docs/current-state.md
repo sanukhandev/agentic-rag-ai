@@ -155,3 +155,12 @@ remote writes. Node Admin export is revalidated by the strict validator, and a
 reproducible generated workbook is accepted by the dedicated Python v2 parser.
 Provider evidence remains separately blocked until independent sandbox/mock
 acknowledgements exist; the full seven-stage test remains reserved for #124.
+
+## V2-P2-01 durable User Intent Document — 2026-10-30
+
+Issue #92 adds additive migration `056-user-intent-document.sql`, strict
+redacted projection/turn types, memory/PostgreSQL Store methods, expected
+revision CAS and replay-safe append semantics. Discovery may remain without an
+opportunity; tenant/session/opportunity scope and PII bounds are enforced.
+The public chat coordinator does not consume this projection yet; that remains
+later P2/P3 work. No live database migration was executed.
