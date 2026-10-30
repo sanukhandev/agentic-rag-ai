@@ -73,7 +73,8 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 import { registerLifecycleRoutes } from './routes/lifecycle.js';
-import { registerV2ToolGateway } from './v2-tool-gateway.js';
+import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './v2-tool-gateway.js';
+import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null; normalizationAttempts: number; normalizationFallbacks: number; normalizationFailures: number; normalizationLatencyMs: number };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -343,6 +344,7 @@ export interface AppDependencies {
   cache?: CacheStore;
   chatResponseCacheTtlSeconds?: number;
   catalogQueryNormalizationEnabled?: boolean;
+  v2Coordinator?: V2ConversationCoordinator;
 }
 
 export const createApp = (dependencies: AppDependencies = {}) => {
@@ -355,6 +357,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     await store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName, metadata: { keyDigest: contentHash(key).slice(0, 12) }, createdAt: new Date().toISOString() });
   };
   const model: ChatModel = dependencies.model ?? new DeterministicGroundedModel();
+  const v2Coordinator = dependencies.v2Coordinator;
   const workflow = dependencies.workflow;
   const nodeEnv = dependencies.nodeEnv ?? process.env.NODE_ENV ?? 'development';
   const jwtSecret = dependencies.jwtSecret ?? process.env.JWT_SECRET ?? 'local-development-only-change-me';
@@ -1668,7 +1671,40 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           return fallback;
         }
       };
-       if (!languageAllowed && !conversational) draft = { answer: permittedLanguageReply(language, persona?.permittedLanguages ?? []), citationIds: [], proposedIntent: null };
+       let v2Draft: ModelDraft | null = null;
+       if (v2Coordinator && conversationEngineV2EnabledForTenant(session.tenantId) && publishedCatalog && persona && session.personaVersionId
+         && !consentActionReady && !journeyConfirmationPending && !journeyOfferPending && !journeyDocumentPending) {
+         try {
+           const v2Scope = issueV2Scope({ tenantId: session.tenantId, sessionId: session.id, opportunityId: currentOpportunityId, catalogVersionId: publishedCatalog.id, personaVersionId: session.personaVersionId, stateRevision: session.stateVersion ?? 0, toolAllowlist: [...V2_TOOL_NAMES] }, process.env.MODEL_GATEWAY_SERVICE_KEY ?? '');
+           const v2 = await v2Coordinator.run({
+             envelope: {
+               schemaVersion: 2,
+               requestId: (req as AuthedRequest).requestId ?? randomUUID(),
+               clientMessageId: input.clientMessageId,
+               scopeRef: v2Scope,
+               sessionRevision: session.stateVersion ?? 0,
+               intentRevision: state.intentProgress?.journeyRevision ?? 0,
+               catalogVersionId: publishedCatalog.id,
+               personaVersionId: session.personaVersionId,
+               customerMessageMasked: maskedMessage,
+               latestTurns: conversation.slice(-8).map((turn) => ({ role: turn.role === 'user' ? 'customer' as const : 'assistant' as const, content: turn.content })),
+               persona: { personaVersionId: session.personaVersionId, assistantName: persona.name, assistantRole: 'AI assistant', permittedLanguages: persona.permittedLanguages, tone: persona.tone.split(/[,;]+/u).map((value) => value.trim()).filter(Boolean), speakingStyle: persona.speakingStyle, fallbackTemplateVersion: `fallback-${session.personaVersionId}` },
+               catalogDigest: contentHash(JSON.stringify(publishedCatalog.catalog)),
+               intentProjection: { primaryGoalKey: state.selectedIntentKey ?? state.activeFollowUpIntentKey ?? null, goalConfirmed: Boolean(state.selectedIntentKey ?? state.activeFollowUpIntentKey), currentStageKey: state.phase.toLocaleLowerCase('en-US'), pendingRequirementKey: journeyRequirement?.requirementKey ?? state.pendingPrompt?.requirementKey ?? null },
+               toolAllowlist: [...V2_TOOL_NAMES],
+               budgets: { maxModelRequests: 3, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + 90_000).toISOString() },
+             },
+             evidence: evidence.map((item) => ({ citationId: item.citation.chunkId, text: item.content, sourceVersion: item.citation.versionId, approved: true, revoked: false, sourceRef: item.citation.sourceId })),
+             questionPolicy: journeyRequirement?.required ? 'required' : 'optional',
+             lastQuestionKey: state.pendingPrompt?.requirementKey ?? null,
+           });
+           v2Draft = v2.draft;
+         } catch {
+           // Feature-flag rollback: an unavailable v2 turn falls back to the existing model path.
+         }
+       }
+       if (v2Draft) draft = v2Draft;
+       else if (!languageAllowed && !conversational) draft = { answer: permittedLanguageReply(language, persona?.permittedLanguages ?? []), citationIds: [], proposedIntent: null };
        else if (offerNeedsClarification && activeFollowUpOffer) draft = await composeGuidedDraft({ answer: `Which would you like to explore: ${activeFollowUpOffer.options.map((option) => option.label).join(' or ')}?`, citationIds: [], proposedIntent: null }, 'offer_clarification');
        else if (!postCaptureFollowUp && !knowledgeQuestion && catalogResolution?.ambiguous) draft = await composeGuidedDraft({ answer: 'I can help with that. Could you tell me a little more about what you need?', citationIds: [], proposedIntent: null }, 'intent_clarification');
        else if (!postCaptureFollowUp && !knowledgeQuestion && publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'below_threshold') draft = await composeGuidedDraft({ answer: catalogIntentClarification(publishedCatalog, catalogResolution.intentKey), citationIds: [], proposedIntent: null }, 'intent_clarification');

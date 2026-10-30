@@ -285,3 +285,16 @@ version, language and approved flag; unknown or unapproved sets fail closed.
 Selected fallback text passes the same response-evidence guard and contains no
 provider-completion claims or internal metadata. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P4-03.md`.
+
+## V2-P4-04 opt-in conversation coordinator — 2026-10-30
+
+Issue #106 is verified and closed. The private `V2ConversationCoordinator`
+connects a scoped Node turn envelope to the Python v2 agent, validates the
+typed agent result through the Node response guard, maps only an accepted or
+approved fallback response to the existing `ModelDraft` compatibility shape,
+and preserves tool traces for internal telemetry. The existing chat handler
+uses it only when `CONVERSATION_ENGINE_V2_ENABLED=true` and the tenant is in
+the explicit `CONVERSATION_ENGINE_V2_TENANTS` allowlist. Unavailable v2 turns
+roll back to the existing model path; Node action, consent, document and
+provider gates remain unchanged. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P4-04.md`.

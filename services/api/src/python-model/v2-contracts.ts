@@ -109,11 +109,27 @@ export const responseGuardVerdictSchema = z.object({
   response: personaComposedResponseSchema.nullable(),
 }).strict();
 
+const toolTraceSchema = z.object({
+  toolCallId: opaqueRef,
+  toolName: boundedKey,
+  status: z.enum(['ok', 'temporarily_unavailable', 'not_authorized', 'invalid_args', 'stale_state']),
+  resultDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+  elapsedMs: z.number().int().nonnegative().max(180_000),
+}).strict();
+
+export const agentTurnResultSchema = z.object({
+  response: personaComposedResponseSchema,
+  toolTrace: z.array(toolTraceSchema).max(12),
+  modelRequestCount: z.number().int().min(1).max(8),
+  toolCallCount: z.number().int().nonnegative().max(12),
+}).strict();
+
 export type TurnEnvelopeV2 = z.infer<typeof turnEnvelopeSchema>;
 export type ToolRequestV2 = z.infer<typeof toolRequestSchema>;
 export type ToolResultV2 = z.infer<typeof toolResultSchema>;
 export type PersonaComposedResponseV2 = z.infer<typeof personaComposedResponseSchema>;
 export type ResponseGuardVerdictV2 = z.infer<typeof responseGuardVerdictSchema>;
+export type AgentTurnResultV2 = z.infer<typeof agentTurnResultSchema>;
 
 export function validateToolRequest(
   input: unknown,
