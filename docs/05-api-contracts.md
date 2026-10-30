@@ -15,7 +15,7 @@ The local vertical slice implements these routes with runtime Zod validation and
 
 ## Omnichannel channel gateway
 
-For runnable VM examples and signing code, see [Omnichannel chat API](12-omnichannel-chat-api.md).
+For the maintained signed connector contract, see [Omnichannel connector API](21-omnichannel-connector-api-spec.md) and the implemented [OpenAPI document](openapi.yaml).
 
 Tenant admins issue one credential per channel through `POST /api/v1/admin/channels`. The response contains the generated secret once; the database stores only encrypted secret material. `GET /api/v1/admin/channels` returns metadata without secrets and `POST /api/v1/admin/channels/:id/revoke` immediately disables a credential.
 

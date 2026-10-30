@@ -1,6 +1,6 @@
 # Omnichannel connector API specification
 
-This document defines how server-side channel connectors use the Agentic RAG chat API. It is derived from [12-omnichannel-chat-api.md](12-omnichannel-chat-api.md) and is intended for WhatsApp, Telegram, email, CRM widgets, call-center adapters, and other channel services.
+This document defines how server-side channel connectors use the Agentic RAG chat API. It complements the maintained [API contract](05-api-contracts.md) and [OpenAPI document](openapi.yaml) for WhatsApp, Telegram, email, CRM widgets, call-center adapters, and other channel services.
 
 The connector talks only to the API server. It must not call PostgreSQL, n8n, Azure, or the browser chat service directly.
 

@@ -14,7 +14,7 @@ A local **privacy-first, multi-tenant, RAG-grounded sales assistant vertical sli
 | Relational store | PostgreSQL | Tenants, configuration, sessions, audit, masked customer records |
 | Knowledge store | PostgreSQL + pgvector | Source chunks and vector search |
 | Ingestion | Python, project venv | Extract, sanitize, chunk, embed and index files |
-| Generation | Azure AI Foundry, GPT-4.1-mini | Model-driven conversational generation and intent proposals |
+| Generation | Microsoft Foundry named agent, GPT-4.1-mini | Conversational wording and approved application-function requests |
 | Automation | n8n | Authorized workflows called by backend |
 
 **Important:** GPT-4.1-mini is not an embedding model. A **separate embedding deployment/model** must be selected and matched to pgvector dimensions before ingestion is built.
@@ -24,26 +24,27 @@ A local **privacy-first, multi-tenant, RAG-grounded sales assistant vertical sli
 1. Channel sends an authenticated or anonymous-scoped message to Node.
 2. Node validates and masks sensitive content; stores mappings in its protected data boundary.
 3. Node retrieves authorized knowledge from pgvector and constructs evidence with stable citations.
-4. Azure AI Foundry generates a grounded answer and optional structured intent proposal against *masked* context.
-5. Node validates sources, proposed intent, consent and authorization. Only Node may invoke allowlisted n8n workflows.
+4. The named Foundry agent generates a response from *masked* authorized context and may request an approved read-only application function.
+5. Node validates evidence, catalog intent, consent and authorization. Only Node may invoke allowlisted n8n workflows.
 6. Node rehydrates approved placeholders for the correct recipient, persists redacted history and returns the response.
 
 Unanswered/unsupported business questions are answered with a transparent knowledge gap—not a guess.
 
 ## Build specifications
-- [Complete multi-tenant feature brief](docs/15-complete-feature-brief.md)
-- [Autonomous Codex execution plan](docs/16-autonomous-codex-execution-plan.md)
-- [Acceptance test matrix](docs/17-acceptance-test-matrix.md)
-- [Codex master prompt](docs/18-codex-master-prompt.md)
+- [Current requirements](docs/current-requirements.md)
+- [Active acceptance contract](docs/acceptance.md)
+- [Foundry local development](docs/foundry-local-development.md)
+- [ANCFZ stage verification matrix](docs/verification/ancfz-stage-verification-matrix.md)
 
 **Critical:** tenant A data must never leak to tenant B. Public chat uses only knowledge explicitly classified and approved for external display; internal tenant documents remain inaccessible to visitors. Approved Azure AI processing is a separate external processor boundary, subject to minimization and policy.
 
 ## Start here
 - [Agent instructions](AGENTS.md)
 - [Documentation index](docs/README.md)
+- [Current requirements](docs/current-requirements.md)
 - [Architecture](docs/02-system-architecture.md)
 - [Security and privacy](docs/06-security-and-privacy.md)
-- [Delivery sequence](docs/12-delivery-roadmap.md)
+- [Acceptance contract](docs/acceptance.md)
 
 ## Existing Docker Compose
 The shared `docker-compose.yml` defines the full stack. Use `docker-compose.local-dev.yml` for Windows/Docker Desktop development with Foundry Azure CLI authentication, or `docker-compose.vm-dev.yml` for the VM development deployment. PostgreSQL, Redis, n8n, API, web and admin remain private behind Docker Nginx; local `data/` mounts persist state across rebuilds. This is still **not a production-ready platform** without TLS, identity, n8n hardening and operational controls. See [security hardening](docs/06-security-and-privacy.md) before controlled exposure.
@@ -86,4 +87,4 @@ The VM deployment uses `docker-compose.yml` plus `docker-compose.vm-dev.yml` for
 
 ## Current verification and limitations
 
-The verified local command is `npm run verify:local` (after PostgreSQL and the Python venv are prepared); it runs lint, typecheck, compose security-default and high-confidence repository secret checks, the PostgreSQL-backed workspace suite, builds, dependency audit, the clean-room acceptance journey and Python ingestion tests. GitHub Actions is intentionally not configured; verification is local-only. Azure GPT-4.1-mini chat has been smoke-tested with the supplied local credentials; the configured resource still lacks an embedding deployment, while production identity-provider and live n8n calls remain blockers. See [implementation progress](docs/implementation-progress.md).
+The verified local command is `npm run verify:local` (after PostgreSQL and the Python venv are prepared); it runs lint, typecheck, Compose security-default and high-confidence repository secret checks, the PostgreSQL-backed workspace suite, builds, dependency audit, the clean-room acceptance journey and all Python ingestion tests. GitHub Actions is intentionally not configured; verification is local-only. The active ANCFZ acceptance remains blocked on missing provider evidence; see [the active acceptance contract](docs/acceptance.md) and [current requirements](docs/current-requirements.md).

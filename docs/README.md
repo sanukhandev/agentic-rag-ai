@@ -1,36 +1,44 @@
-# Documentation map
+# Documentation index — current context
 
-These documents describe the **target system**, not a completed implementation. The canonical engineering policy is root [AGENTS.md](../AGENTS.md). Where documents and code disagree, inspect real code, record the gap, and escalate an architectural or security discrepancy rather than pretending a capability exists.
+**Start here for the active codebase.** Root [`AGENTS.md`](../AGENTS.md) contains engineering/security instructions; [`current-requirements.md`](current-requirements.md) is the single current requirements entry point. Runtime code, published catalog data and current provider evidence govern what has actually shipped. Old plans and past test reports are not current instructions.
 
-| File | Purpose |
+## Read in this order
+
+| Document | Canonical purpose |
 | --- | --- |
-| [01-product-scope](01-product-scope.md) | Product intent, personas, in/out of scope, MVP success |
-| [02-system-architecture](02-system-architecture.md) | Trust boundaries, request and data paths, sequencing |
-| [03-monorepo-conventions](03-monorepo-conventions.md) | Proposed folder layout, cross-app contracts, coding |
-| [04-ingestion-and-rag](04-ingestion-and-rag.md) | Source adapters, ingestion lifecycle, pgvector retrieval |
-| [05-api-contracts](05-api-contracts.md) | Draft endpoints, response shapes, validation/errors |
-| [06-security-and-privacy](06-security-and-privacy.md) | Masking/tokenization, AI isolation, n8n hardening, threats |
-| [07-n8n-orchestration](07-n8n-orchestration.md) | Deterministic action gateway and workflow conventions |
-| [08-model-policy](08-model-policy.md) | Grounding, prompting, intent boundaries, no-invention tests |
-| [09-data-model](09-data-model.md) | Conceptual schema, PII boundaries, indexing, deletion |
-| [10-developer-setup](10-developer-setup.md) | Local tooling, existing Compose, env contract, deployment |
-| [11-quality-and-operations](11-quality-and-operations.md) | Testing, telemetry, observability, incident handling |
-| [12-delivery-roadmap](12-delivery-roadmap.md) | Phase gates and implementation acceptance |
-| [13-decisions-and-open-questions](13-decisions-and-open-questions.md) | ADR-style baseline and explicit TBDs |
-| [14-feature-request-template](14-feature-request-template.md) | Reusable prompt for future scoped feature work |
+| [`current-requirements.md`](current-requirements.md) | Current ANCFZ seven-stage contract, tenant/persona scope, acceptance target |
+| [`02-system-architecture.md`](02-system-architecture.md) | Deployed logical boundaries, Foundry function loop, n8n workflow and provider evidence |
+| [`06-security-and-privacy.md`](06-security-and-privacy.md) | Trust, PII, source permissions, callback and provider security |
+| [`08-model-policy.md`](08-model-policy.md) | Foundry grounding, persona, version selection, application-managed tools |
+| [`20-intent-catalog.md`](20-intent-catalog.md) | Published catalog/version rules, resolution, requirements and workflow binding |
+| [`21-generic-journey-orchestration.md`](21-generic-journey-orchestration.md) | Opportunity-scoped durable journey reducer |
+| [`architecture/ANCFZ_DEDICATED_ARCHITECTURE.md`](architecture/ANCFZ_DEDICATED_ARCHITECTURE.md) | ANCFZ deployment and stage ownership |
+| [`foundry-local-development.md`](foundry-local-development.md) | Docker/Azure CLI, v4 stable and isolated v6 candidate |
+| [`10-developer-setup.md`](10-developer-setup.md) | Workspace, ingestion, Docker and infrastructure operations |
+| [`acceptance.md`](acceptance.md) | One continuous seven-stage journey, function-call and provider-proof release criteria |
 
-| [15-complete-feature-brief](15-complete-feature-brief.md) | Canonical multi-tenant admin, agent, sources and chat feature requirements |
-| [16-autonomous-codex-execution-plan](16-autonomous-codex-execution-plan.md) | Implementable P00–P10 phases and gates |
-| [17-acceptance-test-matrix](17-acceptance-test-matrix.md) | Required test scenarios and proof of completion |
-| [openapi](openapi.yaml) | Implemented local API endpoint contract |
-| [19-data-model](19-data-model.md) | Local tenant/source/chat/workflow ER model and invariants |
-| [18-codex-master-prompt](18-codex-master-prompt.md) | Ready-to-copy implementation directive |
-| [20-intent-catalog](20-intent-catalog.md) | Excel catalog import, publish, resolution and n8n action contract |
-| [21-omnichannel-connector-api-spec](21-omnichannel-connector-api-spec.md) | Server URI, channel credentials, signed connector requests and async omnichannel usage |
-| [foundry-local-development](foundry-local-development.md) | Local Docker + Azure CLI named-agent runtime and unchanged Chat API contract |
-| [ancfz-stage-verification-matrix](verification/ancfz-stage-verification-matrix.md) | Evidence matrix for the seven ANCFZ lifecycle stages |
-| [ancfz-single-journey-tool-calling](verification/ancfz-single-journey-tool-calling.md) | Single-session Foundry function-calling acceptance and provider evidence |
+## Supporting maintained references
 
-**Requirements precedence:** AGENTS.md security invariants + docs/15 feature brief govern new feature requirements; docs/16–18 govern execution/acceptance. Existing numbered docs describe background architecture. Resolve contradictions by tightening isolation, not by relaxing it, and update all affected documentation.
+- [`04-ingestion-and-rag.md`](04-ingestion-and-rag.md) — source ingestion, approval and pgvector.
+- [`05-api-contracts.md`](05-api-contracts.md) and [`openapi.yaml`](openapi.yaml) — API contracts; compare against actual implemented schemas.
+- [`07-n8n-orchestration.md`](07-n8n-orchestration.md) — authorized action/outbox and callback behavior.
+- [`11-quality-and-operations.md`](11-quality-and-operations.md) — redacted telemetry and operational practices.
+- [`19-data-model.md`](19-data-model.md) — current data model reference.
+- [`21-omnichannel-connector-api-spec.md`](21-omnichannel-connector-api-spec.md) — additional channel integration.
+- [`security/ANCFZ_BOUNDARY_DECISIONS.md`](security/ANCFZ_BOUNDARY_DECISIONS.md) — specific ANCFZ security invariants.
 
-Update the relevant sections in the same change that updates behavior. Never place actual PII, credentials, webhook signing secrets, connection strings or tenant tokens in documentation.
+## Verification: dated evidence, not requirements
+
+- [`verification/ancfz-single-journey-tool-calling.md`](verification/ancfz-single-journey-tool-calling.md) — **latest focused** v6 candidate tool-cycle and blocked journey record.
+- [`verification/ancfz-stage-verification-matrix.md`](verification/ancfz-stage-verification-matrix.md) — per-stage verified / blocked distinction.
+- Other files under `verification/` are historical baselines or distinct runs; read their dates/branch/provider scopes before relying on them.
+- Machine-readable local results are under `artifacts/` and may include local-only/uncommitted files.
+
+## Status as of 2026-10-30
+
+- `agentic-rag-core-dev` v4 is the stable serving agent with **no hosted OpenAPI tool**; v6 is an explicitly invoked candidate with five Node-executed read-only functions. Do not promote or activate unreviewed tools implicitly.
+- v6 live function calling and existing Chat API compatibility were exercised. The latest single-journey verification is **not** seven-stage acceptance: Salesforce Lead lacked verified remote acknowledgment, so the first stage remained blocked in reconciliation.
+- **Current acceptance is one real customer session / opportunity covering seven ordered stages.** The old 25-turn/200-message and artificial commit-count requirements are superseded; targeted security/integration tests remain required.
+- No document can authorize production billing/signing or claim remote CRM success without verified provider evidence.
+
+Historical MVP plans, obsolete Codex master prompts, redundant data-model drafts and dated delivery status files have been retired from the active documentation tree. Do not re-add them as source-of-truth.
