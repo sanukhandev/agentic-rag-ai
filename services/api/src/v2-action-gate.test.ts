@@ -32,6 +32,7 @@ describe('v2 catalog action gate', () => {
     expect(validateV2ActionProposal(proposal, catalog, baseContext({ verifiedRequirementKeys: [] })).reasons).toContain('requirements_missing');
     expect(validateV2ActionProposal(proposal, catalog, baseContext({ purposeConsentGranted: false, purposeConsentScope: null })).reasons).toContain('purpose_consent_required');
     expect(validateV2ActionProposal({ ...proposal, actionRevision: 2 }, catalog, baseContext()).reasons).toContain('action_revision_stale');
+    expect(validateV2ActionProposal({ ...proposal, arguments: { endpoint: 'https://attacker.invalid', authorization: 'Bearer secret' } }, catalog, baseContext()).reasons).toContain('arguments_not_catalog_scoped');
   });
 
   it('requires the exact pending action and trusted identity for confirmation', async () => {

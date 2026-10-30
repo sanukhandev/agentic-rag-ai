@@ -336,3 +336,15 @@ document review, invoice, contract, opt-out and outage fallback states. It
 checks one purposeful question, no repetition, language/persona pins, raw
 metadata rejection and no false provider completion. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P4-05.md`.
+
+## V2-P5-04 PII, credential and document boundary — 2026-10-30
+
+Issue #111 is verified and closed for the code and synthetic security gate.
+Credential-shaped values are removed before reversible PII token allocation and
+when composing document/CRM summaries. OTPs, payment credentials, provider
+secrets and model-selected provider endpoints are not exposed to the v2 model
+or public API. Existing tenant scope, document consent, source ACLs, HMAC
+n8n authentication, opaque references and audit boundaries remain unchanged.
+Owner-approved n8n secret rotation and production provider review remain
+operationally blocked; no credential value was read or changed. Evidence is
+recorded in `docs/verification/conversation-v2/V2-P5-04.md`.

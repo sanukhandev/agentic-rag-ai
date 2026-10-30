@@ -137,6 +137,11 @@ describe('action gateway', () => {
     fetchMock.mockRestore();
   });
 
+  it('does not allow a caller to select an insecure or credential-bearing webhook endpoint', () => {
+    expect(() => new HttpN8nWorkflowAdapter('http://n8n.internal', 'shared-secret')).not.toThrow();
+    expect(() => new HttpN8nWorkflowAdapter('https://user:password@n8n.internal', 'shared-secret')).toThrow('credentials');
+  });
+
   it('rejects external references that are not opaque identifiers', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ externalReference: 'alice@example.com' }), { status: 200 }));
     const adapter = new HttpN8nWorkflowAdapter('https://n8n.internal', 'shared-secret');

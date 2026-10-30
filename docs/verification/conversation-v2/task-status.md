@@ -35,11 +35,11 @@ again from GitHub before each task.
 | #104 | P4-02 | CLOSED | `docs/verification/conversation-v2/V2-P4-02.md`; remote commit `b351ce0d5ca0c4e624630ae96dbca2dd86899b58` |
 | #105 | P4-03 | CLOSED | `docs/verification/conversation-v2/V2-P4-03.md`; remote commit `9baf09b6d7ad8a05154fe974d85e1ea494a7cca2` |
 | #106 | P4-04 | CLOSED | `docs/verification/conversation-v2/V2-P4-04.md`; remote commit `4cf19d9cf7cce248e7e7a1c6b3407b2509a55c11` |
-| #107 | P4-05 | OPEN | Depends on #103–#106 |
+| #107 | P4-05 | CLOSED | `docs/verification/conversation-v2/V2-P4-05.md`; remote commit `738938a4c44210f4ea3e501e9533368d87d4c30a` |
 | #108 | P5-01 | CLOSED | `V2-P5-01.md`; remote commit `810e78d09fe6f2529b9f95740277ff9ef0bef6bc` |
 | #109 | P5-02 | CLOSED | `V2-P5-02.md`; remote commit `f9343054b4ea33859a0274420b4b446520adb703` |
 | #110 | P5-03 | CLOSED | `V2-P5-03.md`; remote commit `4572b9ffbc44d64a15fd944fb0da6d3cfb783d1d` |
-| #111 | P5-04 | OPEN | Depends on #99–#110 |
+| #111 | P5-04 | VERIFIED | `docs/verification/conversation-v2/V2-P5-04.md`; pending commit/push and issue closure |
 | #112 | P6-01 | OPEN | Depends on #108–#111 and provider inputs |
 | #113 | P6-02 | OPEN | Depends on #112 and catalog policy |
 | #114 | P6-03 | OPEN | Depends on #113 and verification inputs |
