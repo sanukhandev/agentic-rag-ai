@@ -37,7 +37,7 @@ again from GitHub before each task.
 | #106 | P4-04 | CLOSED | `docs/verification/conversation-v2/V2-P4-04.md`; remote commit `4cf19d9cf7cce248e7e7a1c6b3407b2509a55c11` |
 | #107 | P4-05 | OPEN | Depends on #103–#106 |
 | #108 | P5-01 | CLOSED | `V2-P5-01.md`; remote commit `810e78d09fe6f2529b9f95740277ff9ef0bef6bc` |
-| #109 | P5-02 | OPEN | Depends on #108 and existing outbox/event path |
+| #109 | P5-02 | OPEN | Implementation in `V2-P5-02.md`; pending commit/push/issue closure |
 | #110 | P5-03 | OPEN | Depends on #109 and callback policy |
 | #111 | P5-04 | OPEN | Depends on #99–#110 |
 | #112 | P6-01 | OPEN | Depends on #108–#111 and provider inputs |

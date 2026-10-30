@@ -661,7 +661,7 @@ export class MemoryStore implements Store {
   async createContract(contract: Contract): Promise<Contract> { this.contracts.set(contract.id, contract); return contract; }
   async getContract(id: string, tenantId: string): Promise<Contract | null> { const contract = this.contracts.get(id); return contract?.tenantId === tenantId ? contract : null; }
   async updateContract(contract: Contract): Promise<Contract> { this.contracts.set(contract.id, contract); return contract; }
-  async enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent> { const existing = this.outbox.get(event.eventId); if (existing) return existing; this.outbox.set(event.eventId, event); return event; }
+  async enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent> { const existing = [...this.outbox.values()].find((candidate) => candidate.stream === event.stream && candidate.idempotencyKey === event.idempotencyKey); if (existing) return existing; this.outbox.set(event.eventId, event); return event; }
   async claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]> {
     const current = Date.now();
     const claimed = [...this.outbox.values()].filter((event) => !event.publishedAt && !this.deadLetteredOutbox.has(event.eventId) && (!event.leaseExpiresAt || Date.parse(event.leaseExpiresAt) <= current)).sort((left, right) => left.occurredAt.localeCompare(right.occurredAt)).slice(0, limit).map((event) => ({ ...event, attempts: event.attempts + 1, leaseExpiresAt: new Date(current + leaseMs).toISOString() }));
