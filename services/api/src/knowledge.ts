@@ -3,8 +3,18 @@ import type { Chunk, Source, Store } from './types.js';
 import { contentHash } from './store-memory.js';
 import type { EmbeddingProvider } from './embedding.js';
 import type { ModelEvidence } from './model.js';
+import { normalizeFullTextQuery } from './search-query.js';
 
 export const EMBEDDING_MODEL = 'deterministic-demo-8d-v1';
+
+export type KnowledgeRetrievalFailureKind = 'embedding' | 'database';
+
+export class KnowledgeRetrievalError extends Error {
+  constructor(readonly kind: KnowledgeRetrievalFailureKind) {
+    super(`Knowledge ${kind} retrieval failed.`);
+    this.name = 'KnowledgeRetrievalError';
+  }
+}
 
 export const embedText = (text: string, dimension = 8): number[] => {
   const digest = createHash('sha256').update(text).digest();
@@ -129,20 +139,24 @@ const cosine = (left: number[], right: number[]): number => {
   return leftMagnitude && rightMagnitude ? dot / Math.sqrt(leftMagnitude * rightMagnitude) : 0;
 };
 
-const rankWithEmbedding = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit: number, semanticOnlyThreshold: number | null = null): T[] => {
-  const terms = query.toLowerCase().match(/[a-z0-9]{4,}/g) ?? [];
+const rankWithEmbedding = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit: number, semanticOnlyThreshold: number | null = null, relevanceQuery = query): T[] => {
+  const terms = relevanceQuery.toLowerCase().match(/[a-z0-9]{4,}/g) ?? [];
+  const genericRetrievalTerms = new Set(['about', 'after', 'also', 'approved', 'are', 'available', 'can', 'company', 'could', 'cost', 'costs', 'does', 'fee', 'fees', 'from', 'guarantee', 'guaranteed', 'have', 'here', 'how', 'information', 'long', 'many', 'much', 'owner', 'package', 'packages', 'please', 'policy', 'policies', 'price', 'prices', 'pricing', 'service', 'services', 'setup', 'tell', 'that', 'the', 'this', 'what', 'which', 'visa', 'visas', 'with', 'would', 'your']);
+  const specificTerms = terms.filter((term) => !genericRetrievalTerms.has(term));
+  const requiredSpecificOverlap = Math.min(2, specificTerms.length);
   const ranked = rows.map((row) => {
     const content = presentKnowledgeText(row.chunk.content).toLowerCase();
     const overlap = terms.filter((term) => content.includes(term)).length;
+    const specificOverlap = specificTerms.filter((term) => content.includes(term)).length;
     const topicBoost = /\b(?:step|steps|process|procedure|register|registration|formation|application)\b/u.test(query.toLowerCase()) && /\b(?:step|steps|process|procedure|register|registration|formation|application)\b/u.test(content)
       ? 0.3
       : /\b(?:package|packages|price|prices|cost|costs|fee|fees|visa|visas)\b/u.test(query.toLowerCase()) && /\b(?:package|packages|price|prices|cost|costs|fee|fees|visa|visas)\b/u.test(content)
         ? 0.3
         : 0;
-    return { row, score: cosine(queryEmbedding, row.chunk.embedding) + overlap * 0.1 + topicBoost, overlap };
+    return { row, score: cosine(queryEmbedding, row.chunk.embedding) + overlap * 0.1 + topicBoost, overlap, specificOverlap };
   })
     .sort((left, right) => right.score - left.score)
-    .filter(({ score, overlap }) => (semanticOnlyThreshold !== null && score >= semanticOnlyThreshold) || (overlap > 0 && (score >= 0.45 || overlap >= 2)));
+    .filter(({ score, overlap, specificOverlap }) => (semanticOnlyThreshold !== Number.POSITIVE_INFINITY && semanticOnlyThreshold !== null && score >= semanticOnlyThreshold) || (overlap > 0 && (score >= 0.45 || overlap >= 2)) && (semanticOnlyThreshold !== Number.POSITIVE_INFINITY || specificTerms.length === 0 || specificOverlap >= requiredSpecificOverlap));
   const seen = new Set<string>();
   return ranked.filter(({ row }) => {
     const key = presentKnowledgeText(row.chunk.content);
@@ -156,7 +170,7 @@ export const rankChunks = <T extends { chunk: { content: string; embedding: numb
 
 export const rankChunksWithEmbedding = async <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], provider: EmbeddingProvider, limit = 4): Promise<T[]> => rankWithEmbedding(query, rows, await provider.embed(query), limit);
 
-export const rankChunksWithVector = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit = 4, semanticOnlyThreshold: number | null = null): T[] => rankWithEmbedding(query, rows, queryEmbedding, limit, semanticOnlyThreshold);
+export const rankChunksWithVector = <T extends { chunk: { content: string; embedding: number[] } }>(query: string, rows: T[], queryEmbedding: number[], limit = 4, semanticOnlyThreshold: number | null = null, relevanceQuery = query): T[] => rankWithEmbedding(query, rows, queryEmbedding, limit, semanticOnlyThreshold, relevanceQuery);
 
 export const retrieveApprovedKnowledge = async (
   store: Pick<Store, 'searchSearchableChunks' | 'listSearchableChunks'>,
@@ -165,14 +179,36 @@ export const retrieveApprovedKnowledge = async (
   audience: 'public' | 'internal',
   query: string,
   limit = 4,
-  queryText = query,
+  queryText = normalizeFullTextQuery(query),
+  relevanceQuery = query,
 ): Promise<ModelEvidence[]> => {
-  const queryEmbedding = await embedding.embed(query);
-  const rows = await store.searchSearchableChunks(tenantId, audience, queryEmbedding, Math.min(24, Math.max(limit, 1) * 6), queryText);
-  let ranked = rankChunksWithVector(query, rows, queryEmbedding, limit, embedding.model.startsWith('deterministic-') ? null : 0.55);
-  if (ranked.length === 0 && !embedding.model.startsWith('deterministic-')) ranked = rankChunksWithVector(query, rows, queryEmbedding, limit);
-  if (ranked.length === 0) ranked = rankChunksWithVector(query, await store.listSearchableChunks(tenantId, audience), queryEmbedding, limit);
-  if (ranked.length === 0 && store.constructor.name === 'PostgresStore') ranked = rankChunksWithVector(query, await store.listSearchableChunks(tenantId, audience), queryEmbedding, limit, 0.35);
+  const deterministicEmbeddings = embedding.model.startsWith('deterministic-');
+  const strictLocalRelevance = deterministicEmbeddings && store.constructor.name === 'PostgresStore';
+  const rankRelevanceQuery = strictLocalRelevance ? relevanceQuery : query;
+  // Local deterministic vectors are placeholders, so they must never admit evidence on cosine score alone.
+  const semanticOnlyThreshold = strictLocalRelevance ? Number.POSITIVE_INFINITY : deterministicEmbeddings ? null : 0.55;
+  let queryEmbedding: number[];
+  try {
+    queryEmbedding = await embedding.embed(query);
+  } catch {
+    throw new KnowledgeRetrievalError('embedding');
+  }
+  let rows: Awaited<ReturnType<typeof store.searchSearchableChunks>>;
+  try {
+    rows = await store.searchSearchableChunks(tenantId, audience, queryEmbedding, Math.min(24, Math.max(limit, 1) * 6), normalizeFullTextQuery(queryText));
+  } catch {
+    throw new KnowledgeRetrievalError('database');
+  }
+  let ranked = rankChunksWithVector(query, rows, queryEmbedding, limit, semanticOnlyThreshold, rankRelevanceQuery);
+  if (ranked.length === 0 && !deterministicEmbeddings) ranked = rankChunksWithVector(query, rows, queryEmbedding, limit, null, rankRelevanceQuery);
+  if (ranked.length === 0) {
+    try {
+      ranked = rankChunksWithVector(query, await store.listSearchableChunks(tenantId, audience), queryEmbedding, limit, strictLocalRelevance ? Number.POSITIVE_INFINITY : null, rankRelevanceQuery);
+      if (ranked.length === 0 && store.constructor.name === 'PostgresStore') ranked = rankChunksWithVector(query, await store.listSearchableChunks(tenantId, audience), queryEmbedding, limit, strictLocalRelevance ? Number.POSITIVE_INFINITY : 0.35, rankRelevanceQuery);
+    } catch {
+      throw new KnowledgeRetrievalError('database');
+    }
+  }
   return ranked
     .map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: presentKnowledgeText(chunk.content) }))
     .filter((item) => item.content.length > 0);

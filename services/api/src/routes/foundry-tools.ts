@@ -2,11 +2,9 @@ import { createHash, createPublicKey, randomUUID, timingSafeEqual, type JsonWebK
 import type { Application, NextFunction, Request, Response } from 'express';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 import { z } from 'zod';
-import { hasConflictingEvidence, retrieveApprovedKnowledge } from '../knowledge.js';
 import type { EmbeddingProvider } from '../embedding.js';
-import { catalogNextJourneyRequirement, catalogRequirementLabel } from '../intent-catalog.js';
+import { FoundryFunctionDispatcher, KnowledgeRetrievalError } from '../foundry-functions.js';
 import { HttpError, parse } from '../http/errors.js';
-import { sanitizeKnowledgeText } from '../privacy.js';
 import type { Store } from '../types.js';
 
 const searchKnowledgeSchema = z.object({ query: z.string().trim().min(1).max(1_000), maxResults: z.coerce.number().int().min(1).max(8).default(4) }).strict();
@@ -182,7 +180,6 @@ export interface FoundryToolRouteDependencies {
 
 type RateLimitEntry = { count: number; resetAt: number };
 
-const notLinked = () => ({ status: 'not_linked' as const, currentStage: null, completedStages: [], nextRequirement: null });
 const withTimeout = async <T>(operation: Promise<T>, timeoutMs: number): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -190,10 +187,8 @@ const withTimeout = async <T>(operation: Promise<T>, timeoutMs: number): Promise
   } finally { if (timer) clearTimeout(timer); }
 };
 
-const redactedText = (value: string, maxLength: number): string => sanitizeKnowledgeText(value).replace(/\[(?:NAME|EMAIL|PHONE|ID)_\d+\]/gu, '[REDACTED_IDENTIFIER]').slice(0, maxLength);
 const identityHash = (identity: string): string => createHash('sha256').update(identity).digest('hex').slice(0, 16);
 const requestId = (req: Request): string => (req as Request & { requestId?: string }).requestId ?? 'unknown';
-const catalogStageKeys = (catalog: Awaited<ReturnType<Store['getPublishedIntentCatalog']>>): string[] => [...new Set([...(catalog?.catalog.businessStages ?? [])].filter((stage) => stage.status === 'ACTIVE').sort((left, right) => left.order - right.order).map((stage) => stage.stageKey))];
 
 const audit = async (store: Store, req: Request, context: FoundryAuthContext, operation: string, outcome: string): Promise<void> => {
   try {
@@ -201,13 +196,8 @@ const audit = async (store: Store, req: Request, context: FoundryAuthContext, op
   } catch { /* Security telemetry must not turn a read into a misleading provider failure. */ }
 };
 
-const boundedKnowledgeResponse = (evidence: Awaited<ReturnType<typeof retrieveApprovedKnowledge>>, maxResults: number, maxBytes: number) => {
-  const citations = evidence.slice(0, maxResults).map((item) => ({ sourceId: item.citation.sourceId, title: redactedText(item.citation.title, 200), chunkId: item.citation.chunkId, locator: redactedText(item.citation.locator, 200), excerpt: redactedText(item.content, 1_600) }));
-  const response = (status: 'grounded' | 'no_evidence', answer: string) => ({ status, answer: redactedText(answer, 6_000), citations });
-  let result = response('grounded', citations.map((citation) => citation.excerpt).filter(Boolean).join('\n\n'));
-  while (Buffer.byteLength(JSON.stringify(result), 'utf8') > maxBytes && result.citations.length > 1) result = { ...result, citations: result.citations.slice(0, -1) };
-  if (Buffer.byteLength(JSON.stringify(result), 'utf8') > maxBytes) result = { ...result, answer: result.answer.slice(0, Math.max(100, maxBytes - 1_000)), citations: result.citations.slice(0, 1).map((citation) => ({ ...citation, excerpt: citation.excerpt.slice(0, 600) })) };
-  return result;
+const logFoundryFailure = (req: Request, operation: string, category: string): void => {
+  console.error(JSON.stringify({ event: 'foundry.tool.failure', requestId: requestId(req), operation, category }));
 };
 
 export const registerFoundryToolRoutes = (app: Pick<Application, 'post'>, dependencies: FoundryToolRouteDependencies): void => {
@@ -216,6 +206,7 @@ export const registerFoundryToolRoutes = (app: Pick<Application, 'post'>, depend
   const rateLimitWindowMs = dependencies.rateLimitWindowMs ?? 60_000;
   const timeoutMs = dependencies.timeoutMs ?? 5_000;
   const maxResponseBytes = Math.max(1_024, dependencies.maxResponseBytes ?? 16_384);
+  const dispatcher = new FoundryFunctionDispatcher({ store: dependencies.store, embedding: dependencies.embedding, maxResponseBytes });
   const authenticateAndLimit = async (req: Request, res: Response): Promise<FoundryAuthContext> => {
     const context = await dependencies.auth.authenticate(req);
     const now = Date.now();
@@ -242,17 +233,19 @@ export const registerFoundryToolRoutes = (app: Pick<Application, 'post'>, depend
       context = await authenticateAndLimit(req, res);
       await activeTenant(context);
       const input = parse(searchKnowledgeSchema, req.body);
-      const evidence = await withTimeout(retrieveApprovedKnowledge(dependencies.store, dependencies.embedding, context.tenantId, context.allowInternalSources ? 'internal' : 'public', input.query, input.maxResults), timeoutMs);
-      const response = evidence.length === 0
-        ? { status: 'no_evidence' as const, answer: 'No approved source evidence was found for this query.', citations: [] }
-        : hasConflictingEvidence(evidence.map((item) => item.content))
-          ? { ...boundedKnowledgeResponse(evidence, input.maxResults, maxResponseBytes), status: 'no_evidence' as const, answer: 'Approved sources contain conflicting information, so no single answer is safe.' }
-          : boundedKnowledgeResponse(evidence, input.maxResults, maxResponseBytes);
-      await audit(dependencies.store, req, context, 'search_knowledge', response.status);
+      const response = await withTimeout(dispatcher.dispatch({ tenantId: context.tenantId, allowInternalSources: context.allowInternalSources }, 'search_knowledge', input), timeoutMs);
+      await audit(dependencies.store, req, context, 'search_knowledge', typeof response.status === 'string' ? response.status : 'completed');
       res.json(response);
     } catch (error) {
       if (context) await audit(dependencies.store, req, context, 'search_knowledge', error instanceof HttpError ? error.code : 'failed');
-      next(error instanceof HttpError ? error : new HttpError(503, 'FOUNDRY_KNOWLEDGE_UNAVAILABLE', 'Approved knowledge is temporarily unavailable.'));
+      if (error instanceof HttpError) {
+        if (error.code === 'FOUNDRY_TOOL_TIMEOUT') logFoundryFailure(req, 'search_knowledge', 'timeout');
+        next(error);
+      } else {
+        const category = error instanceof KnowledgeRetrievalError ? error.kind : 'unknown';
+        logFoundryFailure(req, 'search_knowledge', category);
+        next(new HttpError(503, category === 'embedding' ? 'FOUNDRY_EMBEDDING_UNAVAILABLE' : category === 'database' ? 'FOUNDRY_DATABASE_UNAVAILABLE' : 'FOUNDRY_KNOWLEDGE_UNAVAILABLE', 'Approved knowledge is temporarily unavailable.'));
+      }
     }
   });
 
@@ -262,30 +255,11 @@ export const registerFoundryToolRoutes = (app: Pick<Application, 'post'>, depend
       context = await authenticateAndLimit(req, res);
       await activeTenant(context);
       parse(journeyStateSchema, req.body);
-      if (!dependencies.sessionBinding) { const response = notLinked(); await audit(dependencies.store, req, context, 'get_journey_state', response.status); res.json(response); return; }
+      if (!dependencies.sessionBinding) { const response = await dispatcher.dispatch({ tenantId: context.tenantId }, 'get_journey_state', {}); await audit(dependencies.store, req, context, 'get_journey_state', 'not_linked'); res.json(response); return; }
       const sessionId = await withTimeout(dependencies.sessionBinding(context), timeoutMs);
-      if (!sessionId) { const response = notLinked(); await audit(dependencies.store, req, context, 'get_journey_state', response.status); res.json(response); return; }
-      const session = await withTimeout(dependencies.store.getSession(sessionId), timeoutMs);
-      if (!session || session.tenantId !== context.tenantId) { const response = notLinked(); await audit(dependencies.store, req, context, 'get_journey_state', response.status); res.json(response); return; }
-      const state = session.conversationState;
-      const activeIntentKey = state?.intentProgress?.activeIntentKey ?? state?.activeFollowUpIntentKey ?? state?.selectedIntentKey ?? null;
-      const entry = activeIntentKey && state?.intentProgress?.entries[activeIntentKey] ? state.intentProgress.entries[activeIntentKey] : null;
-      const lifecycle = entry?.lifecycle;
-      const catalog = state?.catalogVersionId ? await withTimeout(dependencies.store.getIntentCatalogVersion(context.tenantId, state.catalogVersionId), timeoutMs) : await withTimeout(dependencies.store.getPublishedIntentCatalog(context.tenantId), timeoutMs);
-      const requirement = catalog && activeIntentKey
-        ? catalog.catalog.journeyRequirements?.find((candidate) => candidate.requirementKey === entry?.currentRequirementKey && candidate.intentKey === activeIntentKey)
-          ?? catalogNextJourneyRequirement(catalog, activeIntentKey, { ...(state?.slotValues ?? {}), ...(entry?.slotValues ?? {}) }, entry?.completedRequirementKeys ?? [])
-        : null;
-      const authorizedStageKeys = catalogStageKeys(catalog);
-      const completedLifecycleStages = new Set(lifecycle ? Object.entries(lifecycle.stages).filter(([, stage]) => stage.status === 'completed').map(([stage]) => stage) : []);
-      const response = {
-        status: 'available' as const,
-        currentStage: lifecycle && authorizedStageKeys.includes(lifecycle.currentStage) ? lifecycle.currentStage : null,
-        completedStages: authorizedStageKeys.filter((stage) => completedLifecycleStages.has(stage)),
-        nextRequirement: requirement ? redactedText(catalogRequirementLabel(requirement), 240) : null,
-        revision: lifecycle?.revision ?? state?.intentProgress?.journeyRevision ?? 0,
-      };
-      await audit(dependencies.store, req, context, 'get_journey_state', response.status);
+      if (!sessionId) { const response = await dispatcher.dispatch({ tenantId: context.tenantId }, 'get_journey_state', {}); await audit(dependencies.store, req, context, 'get_journey_state', 'not_linked'); res.json(response); return; }
+      const response = await withTimeout(dispatcher.dispatch({ tenantId: context.tenantId, sessionId }, 'get_journey_state', {}), timeoutMs);
+      await audit(dependencies.store, req, context, 'get_journey_state', typeof response.status === 'string' ? response.status : 'completed');
       res.json(response);
     } catch (error) {
       if (context) await audit(dependencies.store, req, context, 'get_journey_state', error instanceof HttpError ? error.code : 'failed');

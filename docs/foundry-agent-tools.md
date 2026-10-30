@@ -7,6 +7,10 @@ The Node API exposes two read-only operations:
 
 The implementation is in `services/api/src/routes/foundry-tools.ts`. Knowledge retrieval reuses the existing tenant/source-filtered store queries and vector ranking in `services/api/src/knowledge.ts`; it does not create a second vector store or call n8n/CRM providers. The route writes only redacted audit metadata.
 
+Full-text query input is normalized centrally into safe `simple`-configuration terms before PostgreSQL `to_tsquery` is called. Raw input such as `company formation packages ANC` previously caused PostgreSQL to raise a tsquery syntax error; after normalization the gateway returns the normal grounded/no-evidence contract instead of a generic retrieval failure. The live database reports `vector(1536)` and its stored vectors are 1536-dimensional, matching `AZURE_AI_EMBEDDING_DIMENSION=1536` and the configured Azure embedding provider.
+
+The Foundry route timeout remains 5 seconds, while the Azure embedding adapter allows up to 60 seconds per request and retries throttling. A timeout is logged internally as `category: "timeout"` and returned as `FOUNDRY_TOOL_TIMEOUT`; embedding and database failures are logged separately as `embedding` or `database` without exposing provider details to clients. The observed failure was the PostgreSQL tsquery syntax error, not a timeout.
+
 ## Authentication
 
 The production contract is Microsoft Entra ID bearer-token validation:
@@ -26,24 +30,21 @@ Tenant scope is selected from server configuration, never from the request body 
 
 For controlled development only, set `FOUNDRY_TOOLS_ALLOW_API_KEY=true`, `FOUNDRY_TOOLS_API_KEY` (or comma-separated `FOUNDRY_TOOLS_API_KEYS` during rotation), and `FOUNDRY_TOOLS_API_KEY_TENANT_ID` outside source control. The API-key variant is in `openapi/foundry-agent-tools.api-key.openapi.json`; it is rejected by the application in production. Keep both old and new keys only for the overlap window, then remove the old key and restart the API.
 
-## Journey-state binding
+## Hosted tools and customer chat
 
-`get_journey_state` never accepts a session ID. It returns `not_linked` unless the application is constructed with a trusted `foundrySessionBinding` resolver. That resolver must derive a session binding from the verified integration identity and an approved server-side correlation, then return the session ID; it must not use model-supplied input. No live customer-session binding is configured by this change, so a real Foundry call will safely return `not_linked` until that boundary is implemented and reviewed.
+The two read-only routes in this document remain a separately authenticated Foundry OpenAPI tool gateway. They are not the customer chat generation path. Customer chat now calls the existing `POST /api/v1/chat/messages` route, which loads tenant-scoped persona/catalog/journey state and approved evidence in Node, then invokes the named `agentic-rag-core-dev` agent through the official SDK and Azure CLI. The adapter does not register or dispatch hosted tools, and it never sends tenant or session identifiers to the model.
+
+The local runtime configuration is documented in [foundry-local-development.md](foundry-local-development.md). Keep this hosted-tool authentication and its routes because existing Foundry tool integrations still reference them; remove or detach any unsafe remote OpenAPI attachment only through a separately authorized Foundry change.
 
 ## Foundry portal setup
 
-1. Deploy the Node API behind a verified HTTPS hostname. Do not expose localhost, HTTP, Postgres, Redis, n8n, or the mock payment service.
-2. Set the authentication environment values above, map the Foundry project identity to the approved development tenant, and restart the API. Obtain the real values from the Azure/Foundry operator; none are committed here.
-3. Open `agentic-rag-core-dev` in Microsoft Foundry.
-4. Select **Tools → Add → Custom → OpenAPI tool**.
-5. Use a tool name such as `agentic_rag_read_only` and import `openapi/foundry-agent-tools.openapi.json`; this checked-in development contract targets `https://c3srnt4h-80.inc1.devtunnels.ms`. Replace it with the final verified HTTPS origin before any non-development use.
-6. Select or create a project managed identity connection. Enter the API target URL and the exact registered Microsoft Entra Application ID URI as the audience; the audience is the target API resource, not the Foundry project endpoint. The current Foundry OpenAPI guidance keeps API key, bearer token, and project managed identity as separate variants and requires a project connection for each. See [Microsoft's OpenAPI tool guidance](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/tools/openapi?view=foundry).
-7. Ensure the API's allowed application/object identity configuration matches the managed identity token claims (`azp` and, when configured, `oid`). Do not use an administrator token or a connection that is not mapped to the approved tenant.
-8. Save and attach the tool. Test `search_knowledge` with `{ "query": "What company formation packages are available?", "maxResults": 4 }`.
-9. Test `get_journey_state` with `{}` and expect `not_linked` until the trusted session-binding resolver is configured.
-10. Review the Foundry trace and the API `x-request-id`; confirm the response contains only approved citations, no private tenant data, no customer PII, and no write/action calls.
+The customer-facing agent must not have the historical development-tunnel OpenAPI attachment. Keep the remote serving selector on the reviewed tool-free version, or independently validate an explicitly referenced candidate with only the application function schemas documented in [the single-journey verification](verification/ancfz-single-journey-tool-calling.md).
 
-The configured development hostname is `https://c3srnt4h-80.inc1.devtunnels.ms`. Foundry connection/resource IDs, audience, managed-identity claims, and live authenticated reachability remain Azure-side values that must be verified manually; no Azure resource was changed here.
+The checked-in OpenAPI contracts and their API-key/Entra authentication code remain compatibility-only because existing operator integrations still reference them. Do not attach `agentic_rag_knowledge`, a development tunnel, or `foundryApiKey` to the customer-facing agent. Any remote attachment change requires an authorized Foundry change, independent metadata verification, and a rollback version.
+
+For an authorized compatibility gateway test, deploy the Node API behind a verified HTTPS hostname, configure the authentication values above, and verify tenant mapping and redacted responses. Do not expose localhost, Postgres, Redis, n8n, or the mock payment service. Foundry connection/resource IDs, audience, managed-identity claims, and live reachability remain Azure-side values; none are committed here.
+
+For the application broker, the rollout order is: verify the Foundry project endpoint and managed-identity permissions; apply migration `054-foundry-conversation-bindings.sql`; set the feature flag only in the intended environment; create a session through the Node API; call the application route with its returned session token; then review the API request ID and Foundry trace. Do not reuse the hosted API key as the customer-session credential.
 
 ## Safe examples
 

@@ -4,6 +4,7 @@ import request from 'supertest';
 import jwt, { type SignOptions } from 'jsonwebtoken';
 import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
+import type { EmbeddingProvider } from './embedding.js';
 import { buildChunks } from './knowledge.js';
 import { newLifecycleState } from './lifecycle-state.js';
 import { newConversationState } from './conversation-state.js';
@@ -56,7 +57,7 @@ describe('Foundry read-only tool gateway', () => {
     await addSource(store, tenantB.id, 'Other Tenant company formation packages must never be returned.');
     await addSource(store, tenant.id, 'Tenant A internal company formation packages are confidential.', 'internal');
 
-    const response = await request(runtime.app).post('/api/v1/foundry/tools/search-knowledge').set('X-Foundry-Api-Key', key).send({ query: 'company formation packages', maxResults: 4 }).expect(200);
+    const response = await request(runtime.app).post('/api/v1/foundry/tools/search-knowledge').set('X-Foundry-Api-Key', key).send({ query: 'company formation packages ANC', maxResults: 4 }).expect(200);
 
     expect(response.body.status).toBe('grounded');
     expect(response.body.answer).toContain('Tenant A');
@@ -85,6 +86,24 @@ describe('Foundry read-only tool gateway', () => {
     const response = await request(runtime.app).post('/api/v1/foundry/tools/search-knowledge').set('X-Foundry-Api-Key', key).send({ query: 'packages' }).expect(503);
     expect(response.body.error.code).toBe('FOUNDRY_TOOL_TIMEOUT');
     expect(tenant.id).toEqual(expect.any(String));
+  });
+
+  it('distinguishes database retrieval failures from timeouts', async () => {
+    class FailingSearchStore extends MemoryStore {
+      async searchSearchableChunks(): Promise<never[]> { throw new Error('database unavailable'); }
+    }
+    const { runtime } = await makeRuntime({ store: new FailingSearchStore() });
+    const response = await request(runtime.app).post('/api/v1/foundry/tools/search-knowledge').set('X-Foundry-Api-Key', key).send({ query: 'packages' }).expect(503);
+    expect(response.body.error.code).toBe('FOUNDRY_DATABASE_UNAVAILABLE');
+  });
+
+  it('distinguishes embedding failures from database retrieval failures', async () => {
+    const embedding: EmbeddingProvider = { model: 'failing-test', dimension: 8, embed: async () => { throw new Error('embedding unavailable'); } };
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'Embedding Failure Tenant', slug: 'embedding-failure-tenant' });
+    const runtime = createApp({ store, embedding, nodeEnv: 'test', jwtSecret: 'foundry-test-jwt', foundryToolAuth: { apiKey: key, apiKeyTenantId: tenant.id, allowApiKey: true } });
+    const response = await request(runtime.app).post('/api/v1/foundry/tools/search-knowledge').set('X-Foundry-Api-Key', key).send({ query: 'packages' }).expect(503);
+    expect(response.body.error.code).toBe('FOUNDRY_EMBEDDING_UNAVAILABLE');
   });
 
   it('keeps grounded responses under the configured response byte budget', async () => {

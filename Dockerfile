@@ -14,6 +14,7 @@ COPY apps ./apps
 COPY packages ./packages
 COPY services ./services
 COPY docs ./docs
+COPY openapi ./openapi
 
 FROM node-source AS api-build
 RUN npm run build --workspace services/api
@@ -30,6 +31,16 @@ COPY --from=api-build /workspace/services/api/dist ./services/api/dist
 USER node
 EXPOSE 4000
 CMD ["node", "services/api/dist/index.js"]
+
+FROM api-runtime AS api-foundry-local
+USER root
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+  && curl -sL https://aka.ms/InstallAzureCLIDeb | bash \
+  && rm -rf /var/lib/apt/lists/*
+ENV AZURE_CONFIG_DIR=/home/node/.azure
+RUN mkdir -p /home/node/.azure && chown -R node:node /home/node/.azure
+USER node
 
 FROM node-source AS web-build
 ARG NEXT_PUBLIC_API_URL=/

@@ -7,6 +7,7 @@ const tenantSlug = process.env.TENANT_SLUG ?? 'anc';
 const outputDir = process.env.AGENTIC_E2E_OUTPUT ?? 'artifacts/agentic-e2e';
 const runId = crypto.randomUUID();
 const postgresContainer = process.env.POSTGRES_CONTAINER ?? 'agentic-postgres';
+const expectedAgentVersion = process.env.FOUNDRY_EXPECTED_AGENT_VERSION ?? '4';
 const scenarios = [
   { id: 'A', name: 'complete-new-company', activity: 'digital marketing agency', entity: 'a free-zone company', people: 'one shareholder', visas: 'two visas', workspace: 'a shared office', timeline: 'next month', budget: 'AED 25,000', correction: 'three visas' },
   { id: 'B', name: 'returning-customer', activity: 'e-commerce consultancy', entity: 'a limited liability company', people: 'two partners', visas: 'one visa', workspace: 'a flexi-desk', timeline: 'in six weeks', budget: 'AED 40,000', correction: 'two visas' },
@@ -70,6 +71,15 @@ const stateFor = (sessionId) => {
   } catch { return null; }
 };
 
+const bindingFor = (sessionId) => {
+  try {
+    const raw = execFileSync('docker', ['exec', postgresContainer, 'psql', '-U', 'agentic', '-d', 'agentic_rag', '-At', '-F', '|', '-c', `select foundry_agent_id,foundry_agent_version,status from foundry_conversation_bindings where session_id='${sessionId}' and status='active' order by last_used_at desc limit 1`], { encoding: 'utf8' }).trim();
+    if (!raw) return null;
+    const [agentName, agentVersion, status] = raw.split('|');
+    return { agentName, agentVersion, status };
+  } catch { return null; }
+};
+
 const assert = (assertions, passed, message) => assertions.push({ passed: Boolean(passed), message });
 const safe = (value) => String(value ?? '').replaceAll(/qa\+[^@]+@example\.test/giu, '[EMAIL_TEST]').replaceAll(/QA Company Setup [A-H] [a-f0-9]+/gu, '[NAME_TEST]').replaceAll(/\+971 555 \d{4}/gu, '[PHONE_TEST]');
 const normalTurnHasQuestion = (answer, message) => /\?\s*$/u.test(answer.trim()) || /\b(?:goodbye|bye|stop|unsubscribe|do not contact)\b/iu.test(message);
@@ -80,7 +90,7 @@ const report = { runId, startedAt, baseUrl, tenantSlug, scenarios: [], totals: {
 for (const scenario of scenarios) {
   const identityRef = `QA Company Setup ${scenario.id} ${runId.slice(0, 8)}`;
   const sessionResponse = await request('/api/v1/chat/sessions', { method: 'POST', body: { tenantSlug } });
-  const scenarioReport = { scenarioId: scenario.id, name: scenario.name, identityRef, sessionId: sessionResponse.body?.sessionId ?? null, turns: [], assertions: [], finalState: null, external: { salesforce: 'not_requested', n8n: 'not_requested', invoice: 'not_requested', contract: 'not_requested' } };
+  const scenarioReport = { scenarioId: scenario.id, name: scenario.name, identityRef, sessionId: sessionResponse.body?.sessionId ?? null, turns: [], assertions: [], finalState: null, foundry: null, external: { salesforce: 'not_requested', n8n: 'not_requested', invoice: 'not_requested', contract: 'not_requested' } };
   if (sessionResponse.status !== 201) {
     assert(scenarioReport.assertions, false, `session creation returned ${sessionResponse.status}`);
     report.scenarios.push(scenarioReport);
@@ -102,9 +112,11 @@ for (const scenario of scenarios) {
     if (response.status !== 200) break;
   }
   const lastState = stateFor(scenarioReport.sessionId);
+  scenarioReport.foundry = bindingFor(scenarioReport.sessionId);
   scenarioReport.finalState = lastState ? { selectedIntentKey: lastState.selectedIntentKey, activeIntentKey: lastState.intentProgress?.activeIntentKey ?? null, catalogVersionId: lastState.catalogVersionId, opportunityId: lastState.intentProgress?.entries?.['anc.setup.new_company']?.journeyId ?? null, slotKeys: Object.keys(lastState.slotValues ?? {}) } : null;
   assert(scenarioReport.assertions, scenarioReport.turns.length >= 25, 'scenario executed at least 25 actual customer messages');
   assert(scenarioReport.assertions, scenarioReport.turns.length === messagesFor(scenario).length, 'all planned customer messages received an assistant response');
+  assert(scenarioReport.assertions, scenarioReport.foundry?.agentName === 'agentic-rag-core-dev' && scenarioReport.foundry.agentVersion === expectedAgentVersion && scenarioReport.foundry.status === 'active', `scenario used the live Foundry agent version ${expectedAgentVersion}`);
   report.scenarios.push(scenarioReport);
   report.totals.customerMessages += scenarioReport.turns.length;
   report.totals.assistantResponses += scenarioReport.turns.filter((turn) => turn.status === 200).length;

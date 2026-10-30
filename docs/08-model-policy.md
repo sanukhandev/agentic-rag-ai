@@ -1,7 +1,7 @@
 # Model policy, grounding and intent extraction
 
 ## Model duties
-Use an **Azure AI Foundry GPT-4.1-mini deployment** for language understanding and response drafting. Never assume the deployment name, API version, model region, quotas or token limits; configure and verify them. Embeddings require an independent approved embedding deployment. Model output is untrusted and must pass server-side policy gates.
+Use the configured named Microsoft Foundry agent for customer-facing response wording. Local development authenticates with Azure CLI through `AzureCliCredential` and the official `@azure/ai-projects` Conversations/Responses client; it does not call Azure model chat-completions. Embeddings remain an independent approved deployment. Model output is untrusted and must pass server-side policy gates.
 
 ## System policy (implementation design)
 - You are a sales assistant using approved, retrieved, current, tenant-authorized business knowledge as the **only source of company/product/service factual claims**.

@@ -5,6 +5,9 @@
 ## Mission
 Build a source-grounded, privacy-preserving, omnichannel sales conversation platform. Start with a web channel; add channels incrementally through adapters. Node.js/Express/TypeScript owns the conversation, authorization, masking, retrieval orchestration, intent validation, and approved n8n tool execution. Azure AI Foundry GPT-4.1-mini is the **generation model**; PostgreSQL with pgvector stores knowledge embeddings. Python in an isolated venv performs document extraction, normalization, chunking, and ingestion. Never treat model output as verified business truth.
 
+### Current local Foundry runtime
+Local customer chat uses the named Microsoft Foundry agent `agentic-rag-core-dev` through `@azure/ai-projects` and `AzureCliCredential`. The Node API remains the only public trust boundary: it loads the tenant persona, pinned intent catalog, journey state and approved pgvector evidence, masks customer data, and maps the agent's `response.output_text` into the unchanged Chat API response. Admin authentication, tenant/session authorization, consent, token vault, action gating, callbacks and n8n/Salesforce credentials remain application concerns. No Azure model chat-completions or Foundry API-key provider is a customer-generation path. The local Docker override stores Azure CLI state in a private named volume; attached hosted tools must be independently reviewed before live use.
+
 ## Current repository reality and ANCFZ delivery
 The implementation now contains web/admin/API, ingestion, event delivery, PostgreSQL and n8n foundations. Verify all runtime capabilities against code and live tests; historical document plans are not execution proof. The current feature branch focuses on a dedicated ANCFZ deployment while retaining tenant-scoped security invariants.
 
@@ -107,6 +110,12 @@ A feature includes source-of-truth path, data-flow diagram (if new integration),
 - The LLM may interpret turns or phrase grounded answers; it cannot invoke a provider, satisfy a prerequisite, mark consent or stage, or claim a document/contract completed.
 - Stage state is durable and immutable under revision. Use opportunity ID, stage revision, catalog version, pending question, slot provenance, stage-scoped consent, action idempotency and external references. Enforce compare-and-swap/fencing and reconcile late callbacks.
 - Every provider acknowledgement is subject to verification: Salesforce Lead/Account/Contact/Opportunity IDs, package selection/quote, OCR+SF-02 attachment IDs, mock payment status, invoice PDF SHA, contract signed evidence. Missing IDs or ambiguous timeouts → `reconcile_required`, not green.
+
+## Foundry function-calling acceptance addendum
+
+- The stable customer runtime remains the named `agentic-rag-core-dev` agent pinned to the verified tool-free serving version 4. Candidate application-executed function tools are tested with an explicit `agent_reference`; they must never promote traffic implicitly through `@latest`.
+- The only approved initial functions are read-only `search_knowledge`, `get_journey_state`, `get_available_packages`, `get_document_requirements`, and `get_action_status`. Node validates strict schemas, derives tenant/session/opportunity scope, bounds and sanitizes results, and audits calls. The model cannot execute Salesforce, n8n, payment or contract writes.
+- For the focused single-journey feature acceptance, do not run the 200-message benchmark or impose a 25-turn minimum. Stop at a verified provider blocker and report it; never convert a fluent response, mock payment, n8n execution or generated contract into external completion evidence.
 
 ## Code boundaries and nonnegotiable rules
 

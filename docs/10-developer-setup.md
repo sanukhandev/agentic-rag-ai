@@ -97,7 +97,7 @@ docker compose exec -T postgres dropdb -U agentic agentic_rag_restore_check
 | Secret/config family | Consumer | Handling |
 | --- | --- | --- |
 | DATABASE_URL / separate role DSNs | Node and worker | Secret manager or gitignored env; TLS |
-| AZURE_AI_ENDPOINT, AZURE_AI_CHAT_DEPLOYMENT, API_VERSION | Node | Server only; verify specific Foundry route |
+| CHAT_MODEL_PROVIDER, FOUNDRY_PROJECT_ENDPOINT, FOUNDRY_AGENT_NAME, FOUNDRY_EXPECTED_AGENT_VERSION | Node local runtime | Named Foundry agent only; Azure CLI credential in the development Compose override |
 | AZURE_AI_EMBEDDING_DEPLOYMENT / dimensions | Python / retrieval adapter | Separate deployment and versioned index |
 | CATALOG_QUERY_NORMALIZATION_ENABLED | Node | Enables the bounded masked catalog-guided query normalizer; set `false` for deterministic-only rollback |
 | AZURE_CREDENTIAL / managed identity | Node / worker | Prefer managed identity; do not check in keys |

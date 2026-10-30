@@ -18,6 +18,7 @@
     "test": "npm run test --workspaces --if-present",
     "test:postgres:docker": "docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm api-test",
     "qa:agentic-e2e": "node tools/qa/agentic-e2e/run.mjs",
+    "qa:ancfz-single-journey": "node tools/qa/ancfz-single-journey.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "dev:api": "npm --workspace services/api run dev",

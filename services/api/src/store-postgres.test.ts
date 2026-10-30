@@ -28,6 +28,29 @@ class PostgresTestBus implements StreamBus {
 }
 
 describe.skipIf(!process.env.DATABASE_URL)('PostgresStore integration', () => {
+  it('normalizes raw multiword text queries without crossing tenant boundaries', async () => {
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const store = new PostgresStore(pool);
+    const tenant = await store.createTenant({ name: 'Search Tenant', slug: `search-tenant-${randomUUID()}` });
+    const otherTenant = await store.createTenant({ name: 'Other Search Tenant', slug: `other-search-tenant-${randomUUID()}` });
+    const createSource = async (tenantId: string, content: string) => {
+      const sourceId = randomUUID();
+      const versionId = randomUUID();
+      await store.createSource({ id: sourceId, tenantId, title: 'Approved search source', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'awaiting_review', embeddingReady: true, versionId, contentHash: randomUUID(), chunks: [{ id: randomUUID(), sourceId, tenantId, versionId, ordinal: 0, locator: 'section 1', content, contentHash: randomUUID(), embedding: postgresEmbedding }] });
+      await store.setSourceStatus(sourceId, tenantId, 'active');
+    };
+    try {
+      await createSource(tenant.id, 'Company formation packages for the authorized tenant.');
+      await createSource(otherTenant.id, 'Company formation packages for another tenant.');
+      const rows = await store.searchSearchableChunks(tenant.id, 'public', postgresEmbedding, 4, 'company formation packages ANC');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.source.tenantId).toBe(tenant.id);
+    } finally {
+      await pool.query('DELETE FROM tenants WHERE id = ANY($1::uuid[])', [[tenant.id, otherTenant.id]]);
+      await pool.end();
+    }
+  }, 20_000);
+
   it('atomically establishes a legacy journey and binds only the original pending action', async () => {
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     const store = new PostgresStore(pool);

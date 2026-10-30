@@ -1,17 +1,18 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { ActionGateway, isSafeExternalReference, leadQuality, verifyN8nPayload, type WorkflowAdapter } from './actions.js';
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
 import { cacheKey, createCache, type CacheStore } from './cache.js';
 import { channelAuthMiddleware, ChannelSecretVault, getChannel, type StaticChannelAuth } from './channel-auth.js';
-import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, retrieveApprovedKnowledge } from './knowledge.js';
+import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, KnowledgeRetrievalError, retrieveApprovedKnowledge } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
-import { classifyOfferReply, conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isGuidedResponse, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
+import { addressesKnowledgeQuestion, classifyOfferReply, conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isControlledKnowledgeAbstention, isGuidedResponse, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
 import { assertKnownTokens, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogIntentLabel, catalogNextFollowUpRequirement, catalogRequirementLabel, catalogSlotLabel, catalogSlotQuestion, isCrmWriteBinding, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
 import { reduceIntentJourney } from './intent-journey.js';
+import { normalizeFullTextQuery } from './search-query.js';
 import { exportIntentCatalogWorkbook } from './intent-catalog-xlsx.js';
 import { composeConversationSummary, consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState, phaseFor, prompt } from './conversation-state.js';
 import { createOutboxEvent } from './events.js';
@@ -587,7 +588,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (origin && !allowed.has(origin)) {
       try { if ((await store.listTenants()).some((tenant) => tenant.status === 'active' && tenant.publicChatEnabled && tenant.publicOrigin === origin)) allowed.add(origin); } catch { /* readiness endpoint reports store failures */ }
     }
-    if (origin && allowed.has(origin)) { res.setHeader('access-control-allow-origin', origin); res.setHeader('access-control-allow-headers', 'content-type,authorization,x-request-id,x-tenant-id,x-agentic-key-id,x-agentic-timestamp,x-agentic-nonce,x-agentic-signature'); res.setHeader('access-control-allow-methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS'); res.setHeader('vary', 'Origin'); }
+    if (origin && allowed.has(origin)) { res.setHeader('access-control-allow-origin', origin); res.setHeader('access-control-allow-headers', 'content-type,authorization,x-request-id,x-tenant-id,x-agentic-key-id,x-agentic-timestamp,x-agentic-nonce,x-agentic-signature,x-agentic-session-token'); res.setHeader('access-control-allow-methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS'); res.setHeader('vary', 'Origin'); }
     if (req.method === 'OPTIONS') { res.status(origin && allowed.has(origin) ? 204 : 403).end(); return; }
     next();
   });
@@ -693,7 +694,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     ...(dependencies.foundryToolTimeoutMs !== undefined ? { timeoutMs: dependencies.foundryToolTimeoutMs } : {}),
     ...(dependencies.foundryToolMaxResponseBytes !== undefined ? { maxResponseBytes: dependencies.foundryToolMaxResponseBytes } : {}),
   });
-
   app.post('/api/v1/admin/ingestion-jobs', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
     try {
       const tenantId = await tenantForRequest(store, req);
@@ -1127,7 +1127,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       enforcePublicChatEnabled(req, tenant);
       const publishedPersona = (await store.listPersonaVersions(tenant.id)).find((version) => version.status === 'published');
       const session = await store.createSession(tenant.id, publishedPersona?.id ?? null);
-      res.status(201).json({ sessionId: session.id, tenantId: tenant.id, createdAt: session.createdAt });
+      const sessionToken = randomBytes(32).toString('base64url');
+      await store.createSessionAccessToken({ sessionId: session.id, tokenHash: createHash('sha256').update(sessionToken).digest('hex'), expiresAt: new Date(Date.now() + chatSessionTtlMs).toISOString() });
+      res.status(201).json({ sessionId: session.id, sessionToken, tenantId: tenant.id, createdAt: session.createdAt });
     } catch (error) { next(error); }
   });
 
@@ -1243,7 +1245,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const postCaptureSlotRequirement = postCaptureFollowUp && publishedCatalog && activeCatalogIntent
         ? catalogNextFollowUpRequirement(publishedCatalog, activeCatalogIntent, pendingCatalogValues, state.intentProgress?.entries[activeCatalogIntent]?.completedRequirementKeys ?? [], journeyDocuments.map((document) => ({ intentKey: document.intentKey ?? null, catalogVersionId: document.catalogVersionId ?? null, requirementKey: document.requirementKey ?? null, expectedDocumentType: document.expectedDocumentType ?? null, status: document.status })))
         : null;
-      const pendingSlotKey = state.pendingPrompt?.slotKey
+      const pendingPromptRequirement = state.pendingPrompt?.requirementKey && publishedCatalog
+        ? (publishedCatalog.catalog.journeyRequirements ?? []).find((candidate) => candidate.intentKey === (pendingCatalogIntent ?? state.pendingPrompt?.intentKey) && candidate.requirementKey === state.pendingPrompt?.requirementKey) ?? null
+        : null;
+      const pendingSlotKey = pendingPromptRequirement?.requirementType === 'consent'
+        ? pendingPromptRequirement.slotKey ?? 'contact_consent'
+        : state.pendingPrompt?.slotKey
         ?? (postCaptureSlotRequirement?.requirementType === 'slot' ? postCaptureSlotRequirement.slotKey : null)
         ?? lastCatalogAssistant?.response?.catalogSlotKey;
       const pendingSlotIntent = pendingCatalogIntent ?? (postCaptureFollowUp ? activeCatalogIntent : null);
@@ -1262,7 +1269,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         return terms.filter((term) => message.includes(term)).length >= Math.min(2, terms.length);
       }));
       const pendingValue = pendingSlot && !pendingConsentSlot && !knowledgeQuestion && !pendingNameIsIntentPhrase && (!pendingTextRedirected || activitySignalMentioned) && !(continuationReply && pendingSlot.validationRule.startsWith('text:')) ? pendingContactKind ? pendingCatalogSlotValue(`token:${pendingContactKind}`, inputText, masked.masked, session, tokenVault) : catalogSlotValueForSlot(pendingSlot, inputText, masked.masked, session, tokenVault) : null;
-      const pendingConsentValue = state.pendingPrompt?.type === 'consent' && (!pendingSlot || pendingConsentSlot) && !knowledgeQuestion && (!activeFollowUpOffer || promptScopedReply)
+      const pendingConsentValue = (state.pendingPrompt?.type === 'consent' || pendingPromptRequirement?.requirementType === 'consent') && (!pendingSlot || pendingConsentSlot) && !knowledgeQuestion && (!activeFollowUpOffer || promptScopedReply)
         ? pendingCatalogSlotValue('boolean:explicit_opt_in', inputText, masked.masked, session, tokenVault)
         : null;
       const offerReplyOwnsTurn = Boolean(activeFollowUpOffer && !promptScopedReply && !pendingValue && !pendingConsentValue && ['accept', 'select_option', 'reject', 'clarify'].includes(offerReply?.action ?? ''));
@@ -1383,8 +1390,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const knowledgeRetrievalQuery = knowledgeQuestion
         ? [normalizedMessage, acceptedOfferOption && activeFollowUpOffer ? activeFollowUpOffer.sourceQuery : '', acceptedOfferOption?.label ?? '', ...knowledgeQueryHints, knowledgeIntentLabel, retrievalIntentKey ? `Active opportunity intent: ${retrievalIntentKey}` : '', ...knowledgeSlotContext].filter(Boolean).join('\n').slice(0, 2_000)
         : retrievalQuery;
-      const textSearchTerms = [knowledgeRetrievalQuery, ...knowledgeQueryHints].join(' ').toLocaleLowerCase('en-US').match(/[\p{L}\p{N}]{4,}/gu) ?? [];
-      const retrievalTextQuery = [...new Set(textSearchTerms.filter((term) => !['about', 'all', 'are', 'does', 'have', 'how', 'please', 'tell', 'that', 'the', 'this', 'what', 'which', 'with', 'your'].includes(term)))].slice(0, 40).join(' | ');
+      const retrievalTextQuery = normalizeFullTextQuery([knowledgeRetrievalQuery, ...knowledgeQueryHints].join(' '));
       const intentContextQuery = [normalizedMessage, ...intentContext].join('\n');
       const leadData = mergeLeadData(pendingCatalogValues as LeadData, currentLeadData);
       const catalogSlotValues: Record<string, string> = { ...pendingCatalogValues, ...(extractLeadData(maskedMessage) as Record<string, string>), ...inferredCatalogValueData, ...pendingCatalogValueData, ...currentCatalogSlotValues };
@@ -1465,7 +1471,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const journeyDocumentAwaiting = Boolean(journeyRequirement?.required && journeyRequirement.requirementType === 'document' && journeyDocuments.some((document) => ['uploaded', 'queued', 'processing', 'reconciliation'].includes(document.status) && journeyDocumentMatchesRequirement(journeyRequirement, { intentKey: document.intentKey ?? null, catalogVersionId: document.catalogVersionId ?? null, requirementKey: document.requirementKey ?? null, expectedDocumentType: document.expectedDocumentType ?? null, status: document.status }, publishedCatalog?.id)));
       const journeyDocumentPending = Boolean(journeyRequirement?.required && journeyRequirement.requirementType === 'document' && !journeyDocumentAwaiting);
       const journeyConfirmationPending = Boolean(journeyRequirement?.required && journeyRequirement.requirementType === 'confirmation');
-      const journeySlotKey = journeyRequirement && ['slot', 'consent'].includes(journeyRequirement.requirementType) ? journeyRequirement.slotKey : null;
+      const journeySlotKey = journeyRequirement && ['slot', 'consent'].includes(journeyRequirement.requirementType)
+        ? journeyRequirement.slotKey ?? (journeyRequirement.requirementType === 'consent' ? 'contact_consent' : null)
+        : null;
       const currentIntentKey = intentContinuity && ['matched', 'missing_slots'].includes(intentContinuity.current.reason) ? intentContinuity.current.intentKey : null;
       const detectedSecondaryIntentKey = currentIntentKey && currentIntentKey !== state.selectedIntentKey ? currentIntentKey : null;
       const slotCorrectionPrefix = /^(?:actually|my|our|the|now|still|please keep|update|change|i have|we have)\b/iu;
@@ -1561,7 +1569,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       else if (!postCaptureFollowUp && conversational && intent === 'greeting' && (language === 'ar' || /\bgood (?:morning|afternoon|evening)\b/iu.test(maskedMessage))) draft = { answer: language === 'ar' ? conversationalReply(intent, persona?.name ?? 'Sales assistant', language, tenant.name) : openingGreeting(persona?.greeting, persona?.name ?? 'Sales assistant'), citationIds: [], proposedIntent: null };
       else if (!postCaptureFollowUp && conversational && intent === 'identity') draft = { answer: conversationalReply(intent, persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
       else {
-        try { evidence = await retrieveApprovedKnowledge(store, embedding, session.tenantId, internal ? 'internal' : 'public', knowledgeRetrievalQuery, 4, retrievalTextQuery); } catch { throw new HttpError(503, 'EMBEDDING_UNAVAILABLE', 'The assistant is currently unable to search approved knowledge.'); }
+        try { evidence = await retrieveApprovedKnowledge(store, embedding, session.tenantId, internal ? 'internal' : 'public', knowledgeRetrievalQuery, 4, retrievalTextQuery, maskedMessage); } catch (error) {
+          const category = error instanceof KnowledgeRetrievalError ? error.kind : 'unknown';
+          console.error(JSON.stringify({ event: 'chat.knowledge_failure', requestId: (req as AuthedRequest).requestId ?? 'unknown', tenantHash: contentHash(session.tenantId).slice(0, 16), category }));
+          throw new HttpError(503, category === 'embedding' ? 'EMBEDDING_UNAVAILABLE' : 'KNOWLEDGE_STORE_UNAVAILABLE', 'The assistant is currently unable to search approved knowledge.');
+        }
         // The planner runs before retrieval so it can load scoped business state.
         // Bind the already tenant-filtered evidence to its planned read-only search result.
         if (agentToolResults.some((result) => result.name === 'search_approved_knowledge')) {
@@ -1594,7 +1606,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
             documentStatus: documents.map((document) => document.status),
             agentToolResults: agentToolResults.map(({ name, ok, data }) => ({ name, ok, data })),
           };
-          const modelInput = { maskedMessage, evidence, personaName: persona?.name ?? 'Sales assistant', ownerName: tenant.name, conversation, followUpContext };
+          const modelInput = { maskedMessage, evidence, personaName: persona?.name ?? 'Sales assistant', ownerName: tenant.name, conversation, followUpContext, trustedContext: { tenantId: session.tenantId, sessionId: session.id } };
           fallbackModelInput = persona ? { ...modelInput, persona } : modelInput;
           draft = await model.draft(fallbackModelInput);
           const structuredKnowledgeAvailable = knowledgeQuestion && agentToolResults.some((result) => result.ok
@@ -1642,12 +1654,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         }
       }
       const continuityFallback = continuityTurn && !continuityAnswer;
-      const safeGrounded = grounded && !continuityFallback;
-      const safeCitations = safeGrounded ? citations : [];
       const offerClarificationAnswer = offerNeedsClarification && Boolean(activeFollowUpOffer);
       const leadAnswer = !postCaptureFollowUp && !knowledgeQuestion && (leadCollection || (leadIntent && validatedLeadReady) || consentActionReady || catalogClarification || Boolean(catalogResolution?.actionAllowed)) || journeyDocumentPending || journeyDocumentAwaiting || journeyConfirmationPending || journeyOfferPending || Boolean(!knowledgeQuestion && journeyRequirement && journeySlotKey);
       const answer = !languageAllowed ? draft.answer : casualFallback || leadAnswer || continuityAnswer || knowledgeConflict ? draft.answer : grounded ? draft.answer : naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues });
       let safeAnswer = casualFallback || leadAnswer || continuityAnswer || offerClarificationAnswer ? draft.answer : continuityTurn ? conversationalReply('acknowledgement', persona?.name ?? 'Sales assistant', language, tenant.name) : answer;
+      const controlledFinalAbstention = knowledgeQuestion && isControlledKnowledgeAbstention(safeAnswer);
+      const safeGrounded = grounded && !continuityFallback && !(knowledgeQuestion && (isControlledKnowledgeAbstention(draft.answer) || controlledFinalAbstention)) && (store.constructor.name !== 'PostgresStore' || !knowledgeQuestion || addressesKnowledgeQuestion(maskedMessage, safeAnswer));
+      if (knowledgeQuestion && store.constructor.name === 'PostgresStore' && !safeGrounded && !controlledFinalAbstention) safeAnswer = naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues });
+      const safeCitations = safeGrounded ? citations : [];
       if (intent === 'farewell') session.closedAt = new Date().toISOString();
       const nextMissingSlot = crmContactMissing ?? journeySlotKey ?? catalogResolution?.missingSlots[0] ?? null;
       const endedConversation = conversational && intent === 'farewell';
@@ -1666,7 +1680,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : catalogResolution?.ambiguous || (catalogResolution?.reason === 'below_threshold')
         ? prompt('clarification', catalogResolution.intentKey, null)
         : nextMissingSlot
-          ? prompt(consentActionReady ? 'consent' : 'slot', journeyResult?.activeIntentKey ?? catalogResolution?.intentKey ?? pendingCatalogIntent ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey, nextMissingSlot, journeyRequirement?.requirementKey ?? null)
+          ? prompt(consentActionReady || journeyRequirement?.requirementType === 'consent' ? 'consent' : 'slot', journeyResult?.activeIntentKey ?? catalogResolution?.intentKey ?? pendingCatalogIntent ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey, nextMissingSlot, journeyRequirement?.requirementKey ?? null)
           : consentActionReady ? prompt('consent', catalogResolution?.intentKey ?? journeyResult?.activeIntentKey ?? state.selectedIntentKey, null, journeyRequirement?.requirementKey ?? null)
             : catalogResolution?.actionAllowed && !consentDenied && !journeyOfferPending && !declinedTransitionHold ? prompt('confirmation', catalogResolution.intentKey, null) : null;
       state.catalogVersionId = catalogResolution?.catalogVersionId ?? state.catalogVersionId;
@@ -1796,7 +1810,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         && (publishedCatalog
           ? candidate.catalogVersionId === publishedCatalog.id && candidate.intentKey === (pendingCatalogIntent ?? state.pendingPrompt?.intentKey) && actionMatchesTargetOpportunity(candidate, opportunityIdForAction)
           : !candidate.catalogVersionId));
-      const actionForResponse = action ?? ((!offerReplyOwnsTurn && (knowledgeQuestion || state.pendingPrompt?.type === 'consent' || awaitingConfirmationAction)) ? awaitingConfirmationAction ?? null : null);
+      const actionForResponse = action ?? ((!offerReplyOwnsTurn && (knowledgeQuestion || state.pendingPrompt?.type === 'consent' || pendingPromptRequirement?.requirementType === 'consent' || awaitingConfirmationAction)) ? awaitingConfirmationAction ?? null : null);
       const finalAnswer = resumedAction ? 'Thanks — I have the remaining details and your request is back in processing.' : safeAnswer;
       const finalMaskedAnswer = resumedAction ? maskPiiForSession(session, finalAnswer, tokenVault) : maskedAnswer;
       const pendingCatalogState = publishedCatalog && (catalogResolution?.intentKey || journeyResult?.activeIntentKey) && (catalogResolution?.missingSlots.length || nextPrompt || journeyDocumentPending) ? { catalogIntentKey: catalogResolution?.intentKey ?? journeyResult?.activeIntentKey ?? null, catalogVersionId: catalogResolution?.catalogVersionId ?? publishedCatalog.id, catalogOpportunityId: opportunityIdForAction, catalogSlotKey: nextPrompt && (nextPrompt.type === 'slot' || nextPrompt.type === 'consent') ? nextMissingSlot : null, catalogRequirementKey: nextPrompt?.requirementKey ?? journeyRequirement?.requirementKey ?? null, catalogSlotValues, pendingPromptId: nextPrompt?.id ?? null } : null;
