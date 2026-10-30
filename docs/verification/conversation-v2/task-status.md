@@ -20,7 +20,7 @@ again from GitHub before each task.
 | #89 | P1-03 | CLOSED | `docs/verification/conversation-v2/V2-P1-03.md`; remote commit `493e998c0857e5eaaae543628f4c7789209b7540` |
 | #90 | P1-04 | CLOSED | `docs/verification/conversation-v2/V2-P1-04.md`; remote commits `f45823ad2d2e1c935b5231a1cd1a5e6bd6fb494f`, `fc99f06d08a9c111f0e3ec4fc611dcbf5fc08ef6` |
 | #91 | P1-05 | CLOSED | `docs/verification/conversation-v2/V2-P1-05.md`; remote commit `0e3f211523311d27a1297c33e318028e9fdd2940` |
-| #92 | P2-01 | IN_PROGRESS | Durable User Intent Document projection and append-only ledger |
+| #92 | P2-01 | CLOSED | `docs/verification/conversation-v2/V2-P2-01.md`; remote commit `155174125ebc5b5e12b1c220cff45a06807dcc69` |
 | #93 | P2-02 | OPEN | Depends on #92 |
 | #94 | P2-03 | OPEN | Depends on #92–#93 |
 | #95 | P2-04 | OPEN | Depends on #92–#93 |
