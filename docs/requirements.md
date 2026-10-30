@@ -8,6 +8,18 @@ The **customer's business outcome is the primary intent**, not a Salesforce Lead
 
 Use six categories defined in [Intent taxonomy](intent-taxonomy.md): **Business Goal**, **Knowledge & Advisory**, **Qualification & Requirement**, **Service Execution**, **Service Status & Support**, and **Conversation Navigation**. These are **not six competing primary intents**; knowledge and requirements can be sub-intents serving one persistent business goal. CRM Lead creation is a supporting `ToolBinding` and never the forced primary intent.
 
+## Requirements ownership and priority
+
+- **P0:** One Python Conversation Agent is the central customer dialogue planner, with seven logical components (not seven separate AI agents). Node owns authenticated session, catalog/persona versions, trusted tools, action consent, response guard and business-state writes. See [canonical architecture](conversation-engine-architecture.md).
+- **P0:** Python may query Node's approved RAG, catalog, persona, journey, missing requirements, package and action-status tools **before responding**. Tool inputs/outputs follow [versioned private contracts](conversation-engine-contracts.md) and model call-ID correlation; no arbitrary code/network execution.
+- **P0:** All customer-visible messages are in the published, pinned tenant persona, never raw engine/JSON outputs. Natural response quality is a separate acceptance dimension from evidence, consent and business outcomes.
+- **P0:** The six categories classify a *turn* or support a business goal; **company formation** persists as the primary customer Business Goal, CRM Lead creation remains a stage capability. Knowledge-only users receive evidence-backed guidance without forced CRM capture.
+- **P0:** Seven ANCFZ stages are catalog-configured and strictly ordered, with stage-scoped requirements, explicit action consent and **provider-verified** completion. Discovery before goal confirmation is not a numbered stage.
+- **P1:** Support recovery from model/tool/Redis outages, retry exhaustion, fact corrections, duplicate/replayed messages, persona/source changes and provider reconciliation.
+- **P1:** Tenant-configurable shared code (no hardcoded Zara, ANCFZ activity/fees, stage gates or workflow URLs); preserve existing API, Admin and data during migration.
+
+Implementation dependencies and objective scenarios: [delivery roadmap](conversation-engine-delivery-plan.md), [evaluation matrix](conversation-engine-evaluation.md).
+
 ## Conversation requirements
 
 - **Per-turn comprehension:** Feed the LLM a concise current catalog digest (approved goals, descriptions, phrases, keywords, exclusions, requirements and capabilities), durable User Intent Document, existing question/answer summary, verified facts, corrections, stage status and pending requirements. Have it label each substantive turn and persist its reasoned decision.

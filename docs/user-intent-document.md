@@ -80,6 +80,12 @@ A mid-session persona change is not silently applied; either continue the pinned
 
 The Python agent receives this pinned context **before** tool calls and final composition. Node audits the final composed answer's persona/grounding verdict separately from internal model decision metadata.
 
+## Conversation Engine v2 persistence contract
+
+The session/conversation manager is **logical component 5** of the target architecture, owned by Node + PostgreSQL. Include authenticated tenant/session identity, optional discovery (pre-opportunity) state, pinned published persona and catalog versions, exact clientMessageId/messageHash, scope/consent, current stage, last valid question, bounded verified summary and pending provider actions. Store a **per-turn append-only assessment** and accepted customer-facing reply with schema and guard verdict. Duplicate delivery replays the same reply with **zero model or n8n effects**.
+
+Commit accepted model proposals under CAS with session-first locking. Stale planning, concurrent correction and delayed callback cannot silently replace the current opportunity or stage. Redis caches normalization/interpretation and carries events but must not be the durable primary goal record. Stage-specific requirements and facts retain evidence provenance, and action confirmation is never inferred from a model summary. Full typed transition design: [conversation-engine-contracts.md](conversation-engine-contracts.md).
+
 ## Cache design
 
 **Every evaluated turn must be recorded, even on a cache hit.**

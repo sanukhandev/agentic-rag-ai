@@ -2,6 +2,12 @@
 
 **Status: TARGET; not yet passed.** The goal is **one reliable ANCFZ company-formation conversation**, with GPT as the **primary dialogue planner**, not 25 turns, 200 messages, a fixed number of tool calls or forced CRM leads. The engine remains reusable for other tenants and **knowledge-only** intents through published catalog/configuration.
 
+## Conversation Engine v2 acceptance authority
+
+Required component-level tests and traceability are in [conversation-engine-evaluation.md](conversation-engine-evaluation.md). **Seven logical components are one system**, not seven independently deployed model agents. Before passing a full ANCFZ test, prove published tenant persona on **every** customer reply, pre-response Python↔Node read tools, Node guard, durable session and per-turn ledger, catalog v2 stage-scoped gating, replay/idempotency, source-backed facts and accurate asynchronous provider statuses.
+
+**Acceptance distinctions:** `CONVERSATION_ENGINE_VERIFIED` does not imply Salesforce/provider stages complete; `SEVEN_STAGE_SIMULATED` uses labeled mocks; `SEVEN_STAGE_PROVIDER_VERIFIED` requires actual provider acknowledgments. A final claim of legally registered company needs separate registration proof. No one may mark acceptance green based only on model text, a completed CRM Lead, HTTP 2xx, n8n success or signed-URL generation.
+
 ## Preconditions
 
 - A private Python GPT model gateway is deployed and authenticated to an approved Azure OpenAI model deployment via API key. Verify exact deployment name, Responses API availability, quotas and retry configuration.

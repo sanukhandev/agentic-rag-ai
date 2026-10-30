@@ -1,5 +1,7 @@
 # Intent engine — LLM-led, catalog-grounded goal recognition
 
+**Conversation Engine v2 alignment:** the Python Planning & Intent Engine is logical component 2 within **one** agent runtime. It may propose signal-specific evidence adjustments but cannot commit catalog scores, stage transitions, verified facts or actions; Node re-evaluates proposals using pinned catalog policies. Confidence, requirement coverage and action readiness are independent. Define typed proposals using [versioned contracts](conversation-engine-contracts.md) and implement them after [P1 catalog v2 and P2 durable state](conversation-engine-delivery-plan.md). The customer receives only a final approved persona-composed reply, not scoring metadata.
+
 **Status: TARGET.** The existing `services/api/src/intent-catalog.ts` uses weighted string matches, deterministic confidence and continuity heuristics. This spec defines the replacement **conversation-planner-assisted** reasoning design. Read [intent taxonomy](intent-taxonomy.md) and [conversation planner](conversation-planner.md) first.
 
 ## Primary principle

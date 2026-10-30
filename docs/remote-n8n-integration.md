@@ -11,6 +11,10 @@ Host configuration (not catalog-controlled): `https://ai.techcarrot.ae` with pri
 | 3. Account verification (check) | `verify_account_otp` / `anc.new_company.verify_account_otp` | `/n8n/webhook-test/verify-account-otp` | JSON `challengeId`, `otp` | Challenge bound to correct session/opportunity; provider-verified success, expiry and replay limits |
 | 5. Document Upload | `sf02_document_attach` / `anc.new_company.document_upload` | `/n8n/webhook-test/salesforce-document-upload` | Multipart `leadId`, binary `file` | Upload consent, approved document, verified Salesforce attachment ID and linked target |
 
+## Provider mapping in the canonical plan
+
+These reported paths are **configuration evidence**, not approved production endpoints; `webhook-test` requires a listening test workflow. The new seven-component conversation system keeps n8n **outside Python**. P5 verifies Node approval/outbox/event correlation and P6 individually validates provider records. OTP verification cannot complete Stage 3 without the separate Account creation/linkage operation. Invoice/quotation/contract must have independent verified adapters, with signed/paid status described only if proven. See [delivery plan](conversation-engine-delivery-plan.md) and [evaluation](conversation-engine-evaluation.md).
+
 ## Required implementation rules
 
 1. The current importer expects six mandatory workbook sheets (`README`, `Intents`, `Signals`, `Slots`, `Relations`, `WorkflowBindings`); proposed `ToolBindings`, stage-scoped requirements and other new planner sheets are **not** authoritative until the importer and TypeScript validator are extended. Use current architecture docs and a reviewed workbook version.

@@ -1,5 +1,7 @@
 # Intent taxonomy — customer outcome first, workflow actions second
 
+**Authoritative runtime separation:** a **Business Goal** is durable, six turn-intent categories describe the customer's current request, and **tool capabilities** are independently authorized business operations. Python can choose an intent and trusted Node retrieval tools, but Node controls stage prerequisites and side effects. [Seven logical components](conversation-engine-architecture.md) and [catalog v2 import contracts](conversation-engine-contracts.md) explain the ownership and migration; the source workbook cannot be treated as executable until importer/publisher changes pass tests.
+
 **Status: TARGET design, not yet implemented.** Applies to **every tenant's published catalog**. ANCFZ is the acceptance tenant, not a code-level rule. The catalog may define different goals, services, prompts, stages, requirements and actions per tenant.
 
 ## Distinguish three fundamentally different objects

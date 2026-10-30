@@ -2,6 +2,12 @@
 
 **Status: TARGET integration upgrade.** Existing repository has `ActionRequest`, PostgreSQL outbox, Redis Streams and n8n bridge; keep them. GPT is the **conversation planner** that selects the customer's Business Goal and proposes relevant catalog tools only when needed. A **Lead capture action is not the primary intent**. Python/LLM may propose a catalog tool, but can never call n8n directly.
 
+## Conversation Engine v2 action boundary
+
+The **Workflow & Event Engine is logical component 7**, not a separate conversational agent. Python's agent may request **read-only Node status/context tools** while planning, or return a **catalog action proposal**. The Node Action Gateway independently requires an authorized goal, correct stage-specific requirements, separate purpose-specific user consent/confirmation and stable idempotency before committing ActionRequest + outbox. Redis/n8n delivery, webhook 2xx and provider evidence are distinct progress levels. **Only verified provider-state policy can advance a stage**.
+
+Do not give Python n8n URLs, Salesforce credentials, uploaded passport bytes, OTP values, or direct write connections. Four reported ANCFZ `/webhook-test/` routes remain disabled pending auth, listener, response contract and callback verification. See [interfaces](conversation-engine-contracts.md), [P5–P6 integration plan](conversation-engine-delivery-plan.md) and [remote registry](remote-n8n-integration.md).
+
 ## Catalog-driven tool model
 
 Add or extend reviewed tenant-published catalog `ToolBindings` / stage action policies with:

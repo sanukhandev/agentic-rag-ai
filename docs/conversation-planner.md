@@ -2,6 +2,10 @@
 
 **Status: TARGET.** The model is the **primary conversational strategist**, not merely a text rewriter following hardcoded Node prompts. Node remains the trusted **executor and validator**. This division lets GPT direct the next conversational action without making unverified side effects or data changes.
 
+**Authoritative contracts:** [conversation-engine-contracts.md](conversation-engine-contracts.md) defines the proposed TurnEnvelope, plan, tool-result and persona output; [conversation-engine-architecture.md](conversation-engine-architecture.md) defines ownership and control flow. The model proposes intent signals and a question, but Node validates allowed keys/weights and does not treat confidence as permission to write.
+
+**Planner vs composer:** planning chooses intent, evidence/tool needs and next move; the final Persona Composer generates customer prose **after required read tools return**. These are logical operations inside one Python agent, not independent customer-facing agents. Enforce per-turn model/token/tool deadline budgets and provide an approved offline persona fallback for failures.
+
 ## Agent responsibilities
 
 For **each substantive customer turn** the LLM receives the **published, session-pinned persona envelope** (assistant identity/name, tone, permitted language and style), a compact trusted tenant catalog digest and the latest **User Intent Document** projection containing: confirmed/possible goal, prior decisions, validated facts (and provenance), missing requirements, answered questions, document statuses, stage/provider statuses, customer preferences, previous question and relevant conversation summary. The model then:

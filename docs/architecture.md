@@ -1,6 +1,8 @@
-# Target solution architecture — Node orchestration + Python GPT model API
+# Target solution architecture — Python Conversation Agent with Node trusted tools
 
 **Status: TARGET beyond existing scaffold.** The merged `main` contains an initial Python FastAPI gateway and Node adapter, while the monolithic Node chat handler still owns legacy conversation decisions; see `current-state.md`. This design uses a GPT **model deployment** (not saved Foundry Agent) with a private Python API. GPT is the **central dialogue strategist and intent planner**; Node remains the trusted validator and workflow executor. Distinguish persistent **Business Goal** from ephemeral **turn intent** and authorized **tool action**.
+
+**Architecture authority:** [Conversation Engine v2 canonical seven-component specification](conversation-engine-architecture.md) and [versioned interfaces and state machine](conversation-engine-contracts.md). This diagram is a presentation view of the same target, not a separate runtime architecture. [P0–P7 roadmap](conversation-engine-delivery-plan.md) defines the build and cutover sequence.
 
 ## End-to-end flow
 

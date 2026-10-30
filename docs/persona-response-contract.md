@@ -2,6 +2,10 @@
 
 **Status: TARGET ARCHITECTURE, NOT IMPLEMENTED.** This contract applies to every customer-visible message, including questions, RAG answers, verification prompts, queued/pending actions, errors, opt-outs, interruptions and completion. It must never be disabled to make a QA run pass. ANCFZ's acceptance persona is **Zara** only when Zara is the tenant's *published, selected persona version*; other tenants use their own approved names and identities.
 
+**Component alignment:** Persona Composer is logical **component 3** inside one Python Conversation Agent; Node Response Guard is **component 4**, a separate deterministic policy gate. The Session Manager (component 5) pins the persona version; Node's read-only tool gateway (component 6) provides approved context. See [canonical architecture](conversation-engine-architecture.md), [interfaces](conversation-engine-contracts.md) and [evaluation scenarios](conversation-engine-evaluation.md).
+
+The Node guard can enforce provenance/citation membership, verified structured claims and many policy invariants; **citation presence is not a proof that arbitrary generated prose is accurate**. High-impact business claims require claim-level evidence or safe approved factual templates. If uncertain, the assistant abstains in persona voice rather than fabricating.
+
 ## Goal
 
 Customers talk naturally with a consistent **named tenant assistant**, not with a classifier or workflow engine. The assistant understands the prior conversation, acknowledges known details, answers grounded questions as a helpful advisor, and chooses one useful next question. A natural conversational style does not imply human identity, private feelings, inaccessible reasoning or knowledge of facts/actions that have not been verified.

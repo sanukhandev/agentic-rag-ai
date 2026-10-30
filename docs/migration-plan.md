@@ -1,5 +1,7 @@
 # Implementation migration plan — current Node Foundry Agent to Node + Python GPT
 
+**Supersession note (2026-10-30):** This document retains the **earlier** high-level migration concepts but is **not the authoritative delivery order** for the unified seven-component architecture. Use the [P0–P7 Conversation Engine v2 implementation roadmap](conversation-engine-delivery-plan.md), [canonical architecture](conversation-engine-architecture.md), [typed contracts](conversation-engine-contracts.md) and [evaluation matrix](conversation-engine-evaluation.md) for all new implementation tickets, test gates and cutover. Any older sequence that attempts Python chat before catalog v2/contract freeze is superseded. Do not delete previously applied migrations or working business guards.
+
 **Status: TARGET PLAN; documentation does not execute these phases.** Build additive components and preserve current tested behavior until a staged cutover is proven. No arbitrary 25 commits/200 messages.
 
 ## Phase 0: snapshot and baseline
