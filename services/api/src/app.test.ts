@@ -6,6 +6,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp, isValidBase64 } from './app.js';
 import { MockWorkflowAdapter, signN8nPayload } from './actions.js';
+import { MemoryCache } from './cache.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import type { EmbeddingProvider } from './embedding.js';
 import type { ChatModel, ModelDraft, QueryNormalizationInput } from './model.js';
@@ -170,7 +171,7 @@ describe('API vertical slice', () => {
   it('onboards tenants, isolates sources, grounds answers, masks PII, and confirms one workflow', { timeout: 10_000 }, async () => {
     const model = new CapturingModel();
     const workflow = new MockWorkflowAdapter();
-    const runtime = createApp({ jwtSecret: 'test-secret', model, workflow, nodeEnv: 'test', n8nCallbackSecret: 'callback-secret', inputCostUsdPerMillion: 1, outputCostUsdPerMillion: 2 });
+    const runtime = createApp({ jwtSecret: 'test-secret', model, workflow, cache: new MemoryCache(), nodeEnv: 'test', n8nCallbackSecret: 'callback-secret', inputCostUsdPerMillion: 1, outputCostUsdPerMillion: 2 });
     const api = request(runtime.app);
     await api.get('/api/v1/admin/tenants').expect(401);
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform@example.test', password: 'Platform1Password' }).expect(201);

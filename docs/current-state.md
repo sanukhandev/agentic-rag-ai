@@ -183,3 +183,11 @@ when a validated business fact is explicitly corrected. The correction is
 audited with redacted identifiers; completed/provider-verified actions and
 unrelated opportunities are retained. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P2-03.md`.
+
+## V2-P2-04 tenant-scoped cache and invalidation — 2026-10-30
+
+Issue #95 extends the existing Redis cache with tenant-prefixed keys, scoped
+invalidation, local singleflight for normalization and redacted cache-hit
+audits. Cache loss remains a graceful degradation path: durable PostgreSQL
+state, message replay and consent/action records remain authoritative. Evidence
+is recorded in `docs/verification/conversation-v2/V2-P2-04.md`.

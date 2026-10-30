@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { ActionGateway, isSafeExternalReference, leadQuality, verifyN8nPayload, type WorkflowAdapter } from './actions.js';
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
-import { cacheKey, createCache, type CacheStore } from './cache.js';
+import { cacheKey, createCache, Singleflight, type CacheStore } from './cache.js';
 import { channelAuthMiddleware, ChannelSecretVault, getChannel, type StaticChannelAuth } from './channel-auth.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, KnowledgeRetrievalError, retrieveApprovedKnowledge } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
@@ -347,6 +347,12 @@ export interface AppDependencies {
 export const createApp = (dependencies: AppDependencies = {}) => {
   const store = dependencies.store ?? new MemoryStore();
   const cache = dependencies.cache ?? createCache(process.env.REDIS_URL);
+  const cacheFlights = new Singleflight();
+  const tenantCachePrefix = (tenantId: string): string => cacheKey('tenant', tenantId);
+  const invalidateTenantCache = async (tenantId: string): Promise<void> => { try { await cache.invalidate(tenantCachePrefix(tenantId)); } catch { /* cache invalidation must not block durable state */ } };
+  const auditCacheEvent = async (tenantId: string, eventName: string, key: string): Promise<void> => {
+    await store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName, metadata: { keyDigest: contentHash(key).slice(0, 12) }, createdAt: new Date().toISOString() });
+  };
   const model: ChatModel = dependencies.model ?? new DeterministicGroundedModel();
   const workflow = dependencies.workflow;
   const nodeEnv = dependencies.nodeEnv ?? process.env.NODE_ENV ?? 'development';
@@ -436,6 +442,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!committed) throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action and execution changed before this transition was committed.');
       await syncWorkflowState(committed.action, status);
       await store.addAudit({ id: randomUUID(), tenantId: committed.action.tenantId, actorId, eventName: `workflow.transition.${action.state}.${status}`, metadata: { actionId: committed.action.id, fromState: action.state, toState: status }, createdAt: new Date().toISOString() });
+      await invalidateTenantCache(committed.action.tenantId);
       return committed.action;
     }
     const executionContext = { ...(eventId ? { eventId } : {}), ...(correlationId ? { correlationId } : {}), ...(attempt !== undefined ? { expectedAttempt: attempt } : {}) };
@@ -449,6 +456,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     await syncWorkflowState(updated, status);
     await store.updateActionExecution({ actionId: updated.id, tenantId: updated.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: externalReference ? { externalReference } : null, resolveReconciliation: resolvesReconciliation, ...executionContext });
     await store.addAudit({ id: randomUUID(), tenantId: updated.tenantId, actorId, eventName: `workflow.transition.${action.state}.${status}`, metadata: { actionId: updated.id, fromState: action.state, toState: status }, createdAt: new Date().toISOString() });
+    await invalidateTenantCache(updated.tenantId);
     return updated;
   };
   const chatActionContext = async (req: Request, actionId: string): Promise<{ action: ActionRequest; session: Session; tenant: NonNullable<Awaited<ReturnType<typeof store.getTenant>>> }> => {
@@ -509,25 +517,28 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const normalizeCatalogQuery = async (tenantId: string, catalogVersionId: string, input: QueryNormalizationInput, fallback: string): Promise<{ value: string; usedFallback: boolean; failed: boolean }> => {
     const health = normalizerHealth.get(tenantId) ?? { failures: 0, blockedUntil: 0 };
     normalizerHealth.set(tenantId, health);
-    if (!model.normalizeQuery || !catalogQueryNormalizationEnabled || Date.now() < health.blockedUntil) return { value: fallback, usedFallback: true, failed: Date.now() < health.blockedUntil };
+    const normalizeQuery = model.normalizeQuery?.bind(model);
+    if (!normalizeQuery || !catalogQueryNormalizationEnabled || Date.now() < health.blockedUntil) return { value: fallback, usedFallback: true, failed: Date.now() < health.blockedUntil };
     const contextDigest = contentHash(JSON.stringify((input.conversation ?? []).slice(-8).map((turn) => ({ role: turn.role, content: turn.content.slice(-1_000) }))));
-    const key = cacheKey('catalog-normalized-query-v3', tenantId, catalogVersionId, input.selectedIntentKey ?? '', contextDigest, input.maskedMessage);
-    const cached = await cache.get<string>(key);
-    if (cached) return { value: cached, usedFallback: false, failed: false };
-    try {
-      const normalized = await model.normalizeQuery(input);
-      if (!normalized) throw new Error('normalization unavailable');
-      const safe = normalizeConversationQuery(normalized);
-      if (!preservesNormalizationFacts(input.maskedMessage, safe)) throw new Error('normalization changed protected facts');
-      health.failures = 0;
-      health.blockedUntil = 0;
-      await cache.set(key, safe, Math.min(300, Math.max(1, chatResponseCacheTtlSeconds)));
-      return { value: safe, usedFallback: false, failed: false };
-    } catch {
-      health.failures += 1;
-      if (health.failures >= 3) health.blockedUntil = Date.now() + 30_000;
-      return { value: fallback, usedFallback: true, failed: true };
-    }
+    const key = cacheKey('tenant', tenantId, 'catalog-normalized-query-v3', catalogVersionId, input.selectedIntentKey ?? '', contextDigest, input.maskedMessage);
+    return cacheFlights.run(key, async () => {
+      const cached = await cache.get<string>(key);
+      if (cached) return { value: cached, usedFallback: false, failed: false };
+      try {
+        const normalized = await normalizeQuery(input);
+        if (!normalized) throw new Error('normalization unavailable');
+        const safe = normalizeConversationQuery(normalized);
+        if (!preservesNormalizationFacts(input.maskedMessage, safe)) throw new Error('normalization changed protected facts');
+        health.failures = 0;
+        health.blockedUntil = 0;
+        await cache.set(key, safe, Math.min(300, Math.max(1, chatResponseCacheTtlSeconds)));
+        return { value: safe, usedFallback: false, failed: false };
+      } catch {
+        health.failures += 1;
+        if (health.failures >= 3) health.blockedUntil = Date.now() + 30_000;
+        return { value: fallback, usedFallback: true, failed: true };
+      }
+    });
   };
   const rateLimitMax = readRateLimit(dependencies.rateLimitMax, 'API_RATE_LIMIT_MAX', nodeEnv === 'development' || nodeEnv === 'test' ? 600 : 120, 100_000);
   const rateLimitWindowMs = readRateLimit(dependencies.rateLimitWindowMs, 'API_RATE_LIMIT_WINDOW_MS', 60_000, 3_600_000);
@@ -683,6 +694,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     telemetry,
     tenantTelemetry,
     cachePing: () => cache.ping(),
+    invalidateTenantCache,
     modelConfigured: Boolean(dependencies.model),
     embeddingConfigured: Boolean(dependencies.embedding),
   });
@@ -902,6 +914,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const version = await store.publishIntentCatalogVersion(tenantId, routeParam(req, 'id'));
       if (!version) throw new HttpError(404, 'INTENT_CATALOG_VERSION_NOT_FOUND', 'Intent catalog version not found.');
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog.published', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() });
+      await invalidateTenantCache(tenantId);
       res.json({ version });
     } catch (error) { next(error); }
   });
@@ -925,6 +938,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const source = await store.setSourceStatus(sourceId, tenantId, status);
       if (!source) throw new HttpError(409, status === 'active' ? 'SOURCE_REINDEX_REQUIRED' : 'SOURCE_STATUS_CONFLICT', 'The source status could not be changed.');
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: `source.${status}`, metadata: { sourceId: source.id }, createdAt: new Date().toISOString() });
+      await invalidateTenantCache(tenantId);
       res.json({ source });
     } catch (error) { next(error); }
   };
@@ -938,6 +952,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (source.status !== 'revoked') throw new HttpError(409, 'SOURCE_NOT_REVOKED', 'Revoke the source before purging it.');
       if (!(await store.purgeSource(source.id, tenantId))) throw new HttpError(404, 'SOURCE_NOT_FOUND', 'Source not found.');
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'source.purged', metadata: { sourceId: source.id }, createdAt: new Date().toISOString() });
+      await invalidateTenantCache(tenantId);
       res.status(204).send();
     } catch (error) { next(error); }
   });
@@ -961,6 +976,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const completed = await store.updateIngestionJob({ ...job, sourceId: updated.id, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
         await publishIngestionProgress(store, completed, 'completed', chunks.length, chunks.length, 'completed');
         await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'source.reindexed', metadata: { sourceId: source.id, jobId: job.id, versionId }, createdAt: new Date().toISOString() });
+        await invalidateTenantCache(tenantId);
         res.json({ job: completed, source: updated, ingestion: { status: 'awaiting_review', chunks: chunks.length } });
       } catch (error) {
         const errorCode = error instanceof HttpError ? error.code : 'INGESTION_FAILED';
@@ -1243,16 +1259,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       // Allocate input tokens against the session so assistant persona names cannot collide with visitor PII.
       const masked = { masked: maskPiiForSession(session, inputText, tokenVault) };
       const messageHash = contentHash(masked.masked);
-      const responseCacheKey = cacheKey('chat-response', session.tenantId, session.id, contentHash(input.clientMessageId));
+      const responseCacheKey = cacheKey('tenant', session.tenantId, 'chat-response', session.id, contentHash(input.clientMessageId));
       const cachedEntry = await cache.get<{ messageHash?: unknown; response?: Record<string, unknown> }>(responseCacheKey);
       if (cachedEntry?.response && typeof cachedEntry.response.answer === 'string') {
         if (cachedEntry.messageHash !== messageHash) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
+        await auditCacheEvent(session.tenantId, 'chat.cache_hit', responseCacheKey);
         res.json(rehydrateStoredResponse(session, cachedEntry.response)); return;
       }
       const durableDuplicate = await store.getMessageByClientId(session.id, input.clientMessageId);
       const retryableDuplicate = durableDuplicate?.response?.retryable === true;
       if (durableDuplicate && durableDuplicate.maskedContent !== masked.masked) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
-      if (durableDuplicate?.response && !retryableDuplicate) { res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
+      if (durableDuplicate?.response && !retryableDuplicate) { await auditCacheEvent(session.tenantId, 'chat.replay', responseCacheKey); res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
       if (durableDuplicate && !retryableDuplicate) throw new HttpError(409, 'MESSAGE_IN_PROGRESS', 'A request with this client message ID is already being processed.');
       const candidateMessage: Message = { id: randomUUID(), sessionId: session.id, tenantId: session.tenantId, role: 'user', maskedContent: masked.masked, citations: [], clientMessageId: input.clientMessageId, response: null, createdAt: new Date().toISOString() };
       let userMessage = durableDuplicate ?? await store.addMessage(candidateMessage);
@@ -1815,6 +1832,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           Object.assign(action, invalidated);
           await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'conversation.fact_correction.invalidated_action', metadata: { actionId: action.id, opportunityDigest: action.opportunityId ? contentHash(action.opportunityId).slice(0, 12) : null, correctedSlotKeys: JSON.stringify(correctedSlotKeys), priorActionRevision: action.actionRevision ?? 1 }, createdAt: new Date().toISOString() });
         }
+        await invalidateTenantCache(session.tenantId);
       }
       const persistedJourneyKey = journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey;
       if (persistedJourneyKey && state.intentProgress?.entries[persistedJourneyKey]) {
@@ -1865,6 +1883,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       state.pendingPrompt = nextPrompt;
       const nextContactConsent = catalogSlotValues.contact_consent === 'true' ? 'granted' : catalogSlotValues.contact_consent === 'false' ? 'denied' : state.contactConsent;
       if (nextContactConsent !== state.contactConsent) state.consentCapturedAt = nextContactConsent === 'unknown' ? null : new Date().toISOString();
+      if (nextContactConsent !== state.contactConsent) await invalidateTenantCache(session.tenantId);
       state.contactConsent = nextContactConsent;
       state.summaryRevision += 1;
       state.messageSequence += 1;
@@ -2027,6 +2046,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const confirmed = await gateway.confirm(action.id, action.tenantId, sessionForApproval);
       if (!['approved', 'processing', 'completed'].includes(confirmed.state)) throw new HttpError(409, 'ACTION_NOT_ACCEPTED', 'This request was not accepted. Please start a new request.');
       Object.assign(session, sessionForApproval);
+      await invalidateTenantCache(action.tenantId);
       res.json({ action: confirmed, message: null });
     } catch (error) { next(error); }
   });
