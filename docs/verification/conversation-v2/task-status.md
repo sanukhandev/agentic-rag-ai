@@ -1,7 +1,7 @@
 # Conversation Engine v2 task status
 
-Updated: 2026-10-30  
-Source of issue state: GitHub `v2-feature` issue state, fetched before issue #82 work.  
+Updated: 2026-10-30
+Source of issue state: GitHub `v2-feature` issue state, fetched before issue #82 work.
 Branch: `feat/conversation-engine-v2`
 
 `#124` is a manual hold and is never executed or closed automatically. All
