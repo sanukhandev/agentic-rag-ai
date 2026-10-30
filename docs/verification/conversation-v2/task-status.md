@@ -51,7 +51,7 @@ again from GitHub before each task.
 | #120 | P7-01 | VERIFIED | `docs/verification/conversation-v2/V2-P7-01.md`; pending commit/push and issue closure; CI-only Python/Postgres/Redis execution remains runner-scoped |
 | #121 | P7-02 | VERIFIED | `docs/verification/conversation-v2/V2-P7-02.md`; focused security/fault/budget suites pass; live provider and quota evidence intentionally not claimed |
 | #122 | P7-03 | VERIFIED | `docs/verification/conversation-v2/V2-P7-03.md`; manual-gated redacted seven-stage preflight and isolated tests pass; final journey intentionally not run |
-| #123 | P7-04 | OPEN | Depends on #120–#122 and rollback evidence |
+| #123 | P7-04 | VERIFIED | `docs/verification/conversation-v2/V2-P7-04.md`; rollout/rollback rehearsal and compatibility gates pass; flag remains unpromoted pending manual #124 |
 | #124 | P7-05 | MANUAL HOLD | User-triggered final seven-stage acceptance only |
 
 ## Protocol

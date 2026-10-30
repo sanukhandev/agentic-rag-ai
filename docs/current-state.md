@@ -467,3 +467,16 @@ runs, and accepts only mock or explicitly opted-in sandbox modes. The isolated
 preflight suite passed 4/4 tests and emitted a plan without provider calls.
 The complete seven-stage run remains reserved for manual issue #124.
 Evidence is recorded in `docs/verification/conversation-v2/V2-P7-03.md`.
+
+## V2-P7-04 rollout and rollback readiness — 2026-10-30
+
+Issue #123 is verified as preparation-only. The existing tenant allowlist flag
+keeps v2 disabled by default and provides rollback to the legacy Node path;
+session persona/catalog pins, public Chat API compatibility, durable outbox
+state, callback correlation and `reconcile_required` handling remain intact.
+Redacted model/tool/guard/provider telemetry is bounded to digests, statuses,
+latencies and evidence tiers. The five-file rehearsal passed 77 tests, with
+typecheck, lint, build, Compose and secret checks passing. The v2 flag remains
+unpromoted and release approval is blocked on the manually triggered #124
+acceptance.
+Evidence is recorded in `docs/verification/conversation-v2/V2-P7-04.md`.
