@@ -45,8 +45,8 @@ again from GitHub before each task.
 | #114 | P6-03 | CLOSED | `docs/verification/conversation-v2/V2-P6-03.md`; remote commit `965cc5e0bb5fea39aaaa5b759a3b8209d4ceb67b`; live Salesforce provider remains blocked |
 | #115 | P6-04 | CLOSED | `docs/verification/conversation-v2/V2-P6-04.md`; remote commit `d24b23f41682a5a2eee6beea5a07eb95ea80f2b2`; live pricebook provider remains blocked |
 | #116 | P6-05 | CLOSED | `docs/verification/conversation-v2/V2-P6-05.md`; remote commit `4b1366f2730e02df40e65eb76930879868f86332`; live SF-02 provider remains blocked |
-| #117 | P6-06 | VERIFIED | `docs/verification/conversation-v2/V2-P6-06.md`; pending commit/push and issue closure; real/sandbox payment remains blocked |
-| #118 | P6-07 | OPEN | Depends on #117 and signing evidence policy |
+| #117 | P6-06 | CLOSED | `docs/verification/conversation-v2/V2-P6-06.md`; remote commit `a6eb7aaacb84631e9c66ca7811629dae4dba88f9`; real/sandbox payment remains blocked |
+| #118 | P6-07 | VERIFIED | `docs/verification/conversation-v2/V2-P6-07.md`; pending commit/push and issue closure; real/sandbox signing remains blocked |
 | #119 | P6-08 | OPEN | Depends on #118; legal registration remains separate |
 | #120 | P7-01 | OPEN | Depends on implementation/test contracts |
 | #121 | P7-02 | OPEN | Depends on #120 and fault/security fixtures |

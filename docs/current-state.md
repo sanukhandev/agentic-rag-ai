@@ -412,3 +412,13 @@ payment statuses remain separate; deterministic settlement is explicitly
 `mock_paid`, never real settlement. Failed, stale, mismatched or incomplete
 provider evidence remains unverified. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P6-06.md`.
+
+## V2-P6-07 contract and signature boundary — 2026-10-30
+
+Issue #118 is verified for the Node-side contract boundary. Signing requests
+require confirmed package, paid invoice evidence, verified CRM records,
+explicit customer approval, an unexpired signing request and a bound contract
+artifact. Only a signed result with exact signatory correlation and a signed
+artifact is terminal; the deterministic adapter is mock-only and not legally
+binding. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P6-07.md`.
