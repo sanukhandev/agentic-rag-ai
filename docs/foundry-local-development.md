@@ -11,14 +11,14 @@ Node performs authorization, PII masking, retrieval, intent/catalog evaluation, 
 Start the local stack with the development-only API image:
 
 ```powershell
-docker compose -f docker-compose.yml -f docker-compose.foundry.local.yml up -d --build
-docker compose -f docker-compose.yml -f docker-compose.foundry.local.yml exec --user node api az login --use-device-code
-docker compose -f docker-compose.yml -f docker-compose.foundry.local.yml exec --user node api az account show
+docker compose -f docker-compose.yml -f docker-compose.local-dev.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.local-dev.yml exec --user node api az login --use-device-code
+docker compose -f docker-compose.yml -f docker-compose.local-dev.yml exec --user node api az account show
 ```
 
 The API image is `api-foundry-local`; the production `api-runtime` image has no Azure CLI. CLI state is stored in the private named volume `foundry-azure-cli-config` at `/home/node/.azure`. Tokens are not copied into the image, `.env`, logs or the repository.
 
-The override requires:
+The local-dev overlay configures:
 
 ```text
 CHAT_MODEL_PROVIDER=foundry-agent
@@ -50,7 +50,7 @@ npm test
 npm run lint
 npm run build
 npm run verify:compose
-docker compose -f docker-compose.yml -f docker-compose.foundry.local.yml config
+docker compose -f docker-compose.yml -f docker-compose.local-dev.yml config
 npm run qa:ancfz-single-journey
 ```
 

@@ -86,7 +86,7 @@ Host-run command after the hosted-tool gate is cleared:
 
 ```powershell
 $env:Path = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin;$env:Path"
-docker compose -f docker-compose.yml -f docker-compose.local-db.yml up -d postgres redis
+docker compose -f docker-compose.yml -f docker-compose.local-dev.yml up -d postgres redis
 Push-Location services/api
 $env:PORT = "4100"
 $env:STORE = "postgres"

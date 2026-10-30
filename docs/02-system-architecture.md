@@ -43,7 +43,7 @@ flowchart LR
 Admin uploads/approves source → encrypted private staging → file validation/malware scan → safe content extraction → PII/secret scan → normalization → source metadata/versioning → deterministic chunks → embedding deployment → pgvector upsert → retrieval quality test → atomic active-version promotion. Failed uploads remain excluded from retrieval. Deleted/revoked sources must be removed or disabled from future search promptly.
 
 ## Deployment note
-MVP uses one PostgreSQL/pgvector service with separate application and knowledge concerns; separate clusters may be adopted if required by compliance or load. The root `docker-compose.yml` provisions the local database, Redis, API, web/admin clients, n8n and an opt-in ingestion image.
+MVP uses one PostgreSQL/pgvector service with separate application and knowledge concerns; separate clusters may be adopted if required by compliance or load. The shared `docker-compose.yml` provisions the database, Redis, API, web/admin clients, n8n and ingestion image; the local-dev and VM-dev overlays select the appropriate host bindings and runtime target.
 
 ## Failure modes
 - No matching authorized evidence → clearly say information is unavailable.

@@ -6,7 +6,9 @@
 /
   AGENTS.md
   readme.md
-  docker-compose.yml            # master local stack and staged application builds
+  docker-compose.yml            # shared stack definition
+  docker-compose.local-dev.yml  # Docker Desktop + Azure CLI local entrypoint
+  docker-compose.vm-dev.yml     # VM development entrypoint
   apps/
     web/                       # Next.js / React / TS / Tailwind
     admin/                     # Angular / TS / Tailwind

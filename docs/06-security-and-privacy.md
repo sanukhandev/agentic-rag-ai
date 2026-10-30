@@ -33,7 +33,7 @@ Omnichannel clients must use a tenant/channel credential issued by the authentic
 | Supply chain compromise | Lockfiles, dependency audits, pinned images, automated scanning |
 
 ## Master Compose — deployment defaults
-The root `docker-compose.yml` keeps PostgreSQL, Redis, n8n and the application services on the private Compose network; the Docker Nginx reverse proxy is the only published listener and listens on port `3000`. Local bind mounts under `data/` preserve state across image rebuilds. The example environment uses localhost HTTP and `N8N_SECURE_COOKIE=false` because it has no TLS. These defaults are not a production security baseline.
+The shared `docker-compose.yml` keeps PostgreSQL, Redis, n8n and the application services on the private Compose network. The `docker-compose.vm-dev.yml` and `docker-compose.local-dev.yml` overlays publish only the required ingress/data ports: VM Nginx on the configured application port, or loopback-only Nginx/PostgreSQL/Redis for local development. Local bind mounts under `data/` preserve state across image rebuilds. The example environment uses localhost HTTP and `N8N_SECURE_COOKIE=false` because it has no TLS. These defaults are not a production security baseline.
 
 Before a public or real-customer rollout:
 - Keep the default private bind; for controlled staging, put n8n behind an authenticated HTTPS reverse proxy before changing the bind address.

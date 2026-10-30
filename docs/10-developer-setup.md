@@ -1,19 +1,19 @@
 # Developer environment and deployment
 
 ## Repository baseline
-The root `docker-compose.yml` is the single stack: PostgreSQL/pgvector, Redis, n8n, the API, Next web, Angular admin, ingestion and Docker Nginx. Docker Nginx is the only published listener on port `3000`; the other services are reachable only on the private Compose network. Persistent data stays under `data/` and is not removed by rebuilds.
+The shared `docker-compose.yml` contains PostgreSQL/pgvector, Redis, n8n, the API, Next web, Angular admin, ingestion and Docker Nginx. Use `docker-compose.local-dev.yml` for Docker Desktop development or `docker-compose.vm-dev.yml` for the VM development deployment. Persistent data stays under `data/` and is not removed by rebuilds.
 
 ## Intended workstation prerequisites
 Git, Docker Engine/Compose, Node.js 22+, npm, Python 3.x with venv, a PostgreSQL client and optional Azure credentials with an approved model deployment.
 
 ## Starting the master Compose stack
 ```sh
-docker compose --env-file .env config
-docker compose --env-file .env up -d --build
-docker compose ps
-docker compose logs --tail=100 api web admin redis postgres
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.local-dev.yml config
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.local-dev.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.local-dev.yml ps
+docker compose -f docker-compose.yml -f docker-compose.local-dev.yml logs --tail=100 api web admin redis postgres
 ```
-**Security:** `.env` is gitignored and is the only place for VM connection settings and secrets. Docker Nginx owns the only published port, `3000`; application and data services have no host port bindings. For the known VM, set the public origins and n8n URLs in the VM-only `.env`; keep SSH access restricted by the VM firewall and verified `known_hosts`. TLS, secure cookies, n8n authentication and operational controls are still required before real-customer traffic.
+**Security:** `.env` is gitignored and is the only place for VM connection settings and secrets. The VM overlay publishes only Docker Nginx; the local overlay publishes Nginx plus loopback-only PostgreSQL and Redis for host-run migrations/tests. For the known VM, set the public origins, n8n URLs, `APP_BIND_ADDRESS` and `APP_HOST_PORT` in the VM-only `.env`; keep SSH access restricted by the VM firewall and verified `known_hosts`. TLS, secure cookies, n8n authentication and operational controls are still required before real-customer traffic.
 
 ## VM deployment
 
@@ -23,7 +23,7 @@ From the checked-out repository on the VM:
 bash scripts/deploy-vm.sh
 ```
 
-The script refuses a dirty checkout, switches to `main`, fast-forwards from `origin/main`, validates the rendered Compose file, force-rebuilds every Dockerfile target with fresh base images and no cache, and recreates the services without deleting local volumes. Docker Nginx publishes port `3000`; no host Nginx installation is required. Do not use `docker compose down -v`; that removes persisted data.
+The script refuses a dirty checkout, switches to `main`, fast-forwards from `origin/main`, validates the shared stack plus VM overlay, force-rebuilds every Dockerfile target with fresh base images and no cache, and recreates the services without deleting local volumes. Docker Nginx publishes port `3000` by default; no host Nginx installation is required. Do not use `docker compose down -v`; that removes persisted data.
 
 ## Python venv convention
 ```sh
@@ -59,7 +59,7 @@ The API deletes the Node-side staged bytes after a successful or idempotent resu
 
 ## Redis cache
 
-Start the local cache with `docker compose up -d redis`. Set `REDIS_URL=redis://127.0.0.1:6379` in the ignored local `.env` before starting the API. The API keeps a bounded in-process LRU fallback and fails open when Redis is unavailable. Redis stores only masked, tenant/session/client-message-scoped response entries; passwords, bearer tokens, authorization sessions and reversible PII mappings are never cached. Production requires authenticated TLS Redis, restricted network access, encryption/backup policy and an explicit eviction/retention policy.
+Start the local cache with `docker compose -f docker-compose.yml -f docker-compose.local-dev.yml up -d redis`. Set `REDIS_URL=redis://127.0.0.1:6379` in the ignored local `.env` before starting a host-run API. The API keeps a bounded in-process LRU fallback and fails open when Redis is unavailable. Redis stores only masked, tenant/session/client-message-scoped response entries; passwords, bearer tokens, authorization sessions and reversible PII mappings are never cached. Production requires authenticated TLS Redis, restricted network access, encryption/backup policy and an explicit eviction/retention policy.
 
 ## Repeatable local verification
 
@@ -72,7 +72,7 @@ tools/ingestion/.venv/Scripts/python.exe -m pip install -r tools/ingestion/requi
 npm run verify:local
 ```
 
-`db:up` applies the opt-in `docker-compose.local-db.yml` override and exposes PostgreSQL only on `127.0.0.1:54329` for host-run migrations and tests. The normal `docker compose up` stack keeps PostgreSQL internal to the Compose network and does not publish a host database port.
+`db:up` applies the local-dev overlay and exposes PostgreSQL only on `127.0.0.1:54329` for host-run migrations and tests. The VM overlay keeps PostgreSQL internal to the Compose network and does not publish a host database port.
 
 `verify:local` requires the local venv, defaults `DATABASE_URL` to the private development database when it is not already set, runs lint/typecheck, the compose security-default and high-confidence repository secret checks, the PostgreSQL-backed workspace tests, production builds, the dependency audit, the clean-room acceptance journey and all Python ingestion tests. It does not start or deploy any VM service. The secret audit scans tracked and unignored files for private-key headers, common provider-token formats and populated local secret assignments; it is not a substitute for a production secret manager or provider-side scanning.
 
@@ -97,7 +97,7 @@ docker compose exec -T postgres dropdb -U agentic agentic_rag_restore_check
 | Secret/config family | Consumer | Handling |
 | --- | --- | --- |
 | DATABASE_URL / separate role DSNs | Node and worker | Secret manager or gitignored env; TLS |
-| CHAT_MODEL_PROVIDER, FOUNDRY_PROJECT_ENDPOINT, FOUNDRY_AGENT_NAME, FOUNDRY_EXPECTED_AGENT_VERSION | Node local runtime | Named Foundry agent only; Azure CLI credential in the development Compose override |
+| CHAT_MODEL_PROVIDER, FOUNDRY_PROJECT_ENDPOINT, FOUNDRY_AGENT_NAME, FOUNDRY_EXPECTED_AGENT_VERSION | Node local runtime | Named Foundry agent only; Azure CLI credential in the local-dev Compose overlay |
 | AZURE_AI_EMBEDDING_DEPLOYMENT / dimensions | Python / retrieval adapter | Separate deployment and versioned index |
 | CATALOG_QUERY_NORMALIZATION_ENABLED | Node | Enables the bounded masked catalog-guided query normalizer; set `false` for deterministic-only rollback |
 | AZURE_CREDENTIAL / managed identity | Node / worker | Prefer managed identity; do not check in keys |
@@ -110,7 +110,7 @@ No real IPs, tenant IDs, credentials, encryption keys or webhook secrets in docs
 
 ## Deployment topology
 
-Docker Nginx on port `3000` routes `/` to Next web, `/admin/` to Angular, `/api/` to Node and `/n8n/` to n8n over the private Compose network. Node/worker privately connect to PostgreSQL and Redis; the local data mounts retain database, workflow, upload and ingestion state. Provide backups, rotation, audit retention, health checks, tested restore and separated dev/staging/prod.
+Docker Nginx on the configured application port routes `/` to Next web, `/admin/` to Angular, `/api/` to Node and `/n8n/` to n8n over the private Compose network. Node/worker privately connect to PostgreSQL and Redis; the local data mounts retain database, workflow, upload and ingestion state. Provide backups, rotation, audit retention, health checks, tested restore and separated dev/staging/prod.
 
 ## Deployment readiness gate
 No real customer traffic until TLS everywhere relevant, protected n8n access, identity/authorization, PII isolation, model deployment data-region approval, backup restore, dependency vulnerability checks, logging redaction and adversarial AI tests pass.

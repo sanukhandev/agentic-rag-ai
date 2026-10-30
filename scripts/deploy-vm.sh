@@ -18,9 +18,10 @@ git switch main
 git pull --ff-only origin main
 
 # No service list: this deliberately builds every service with a Dockerfile target.
-docker compose --env-file .env config --quiet
-docker compose --env-file .env build --pull --no-cache
-docker compose --env-file .env up --detach --force-recreate --remove-orphans --wait
+COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.vm-dev.yml)
+docker compose --env-file .env "${COMPOSE_FILES[@]}" config --quiet
+docker compose --env-file .env "${COMPOSE_FILES[@]}" build --pull --no-cache
+docker compose --env-file .env "${COMPOSE_FILES[@]}" up --detach --force-recreate --remove-orphans --wait
 
 printf 'DEPLOYED_COMMIT=%s\n' "$(git rev-parse HEAD)"
-docker compose --env-file .env ps
+docker compose --env-file .env "${COMPOSE_FILES[@]}" ps

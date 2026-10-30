@@ -37,7 +37,7 @@ The implementation now contains web/admin/API, ingestion, event delivery, Postgr
 - tools/ingestion — Python + venv, file adapters/validators/chunking/embedding writes via controlled worker credentials.
 - packages/contracts — shared API schemas or generated clients, where compatible; no forced Angular/Next runtime coupling.
 - packages/config — optional shared lint/TS policy, when justified.
-- infra/ — versioned database migrations and static server config; root docker-compose.yml is the single local stack.
+- infra/ — versioned database migrations and static server config; root docker-compose.yml is the shared stack, with docker-compose.vm-dev.yml and docker-compose.local-dev.yml as the two supported entrypoint overlays.
 - docs/ — architecture, security, policies, contracts, ADRs, roadmap and runbooks.
 
 ## Ownership and dependency direction

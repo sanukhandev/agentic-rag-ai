@@ -1,0 +1,66 @@
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${LOCAL_POSTGRES_PORT:-54329}:5432"
+
+  redis:
+    ports:
+      - "127.0.0.1:${LOCAL_REDIS_PORT:-6379}:6379"
+
+  api:
+    build:
+      target: api-foundry-local
+    environment:
+      NODE_ENV: development
+      CHAT_MODEL_PROVIDER: foundry-agent
+      FOUNDRY_AUTH_MODE: azure-cli
+      FOUNDRY_PROJECT_ENDPOINT: https://foundry-aipoc-sc.services.ai.azure.com/api/projects/proj-ai-poc-sc
+      FOUNDRY_AGENT_NAME: agentic-rag-core-dev
+      FOUNDRY_EXPECTED_AGENT_VERSION: "4"
+      FOUNDRY_HOSTED_TOOLS_ENABLED: "false"
+      AZURE_CONFIG_DIR: /home/node/.azure
+      ANCFZ_PDF_INTERNAL_URL: ${ANCFZ_PDF_INTERNAL_URL:-http://ancfz-pdf:8097/v1/render}
+      MOCK_PAYMENT_INTERNAL_URL: ${MOCK_PAYMENT_INTERNAL_URL:-http://mock-payments:8098}
+      ANCFZ_PDF_API_KEY: ${ANCFZ_PDF_API_KEY:-}
+      MOCK_PAYMENT_API_KEY: ${MOCK_PAYMENT_API_KEY:-}
+    volumes:
+      - foundry-azure-cli-config:/home/node/.azure
+
+  nginx:
+    ports:
+      - "127.0.0.1:${LOCAL_APP_PORT:-3000}:80"
+
+  ancfz-pdf:
+    profiles: [ancfz]
+    build:
+      context: ./tools/anc/pdf_service
+    restart: unless-stopped
+    environment:
+      ANCFZ_PDF_ENABLED: "true"
+      ANCFZ_PDF_PRIVATE_DOCKER: "true"
+      ANCFZ_PDF_HOST: 0.0.0.0
+      ANCFZ_PDF_PORT: "8097"
+      ANCFZ_PDF_API_KEY: ${ANCFZ_PDF_API_KEY:-}
+      ANCFZ_PDF_OUTPUT_ROOT: /var/lib/ancfz-private
+    volumes:
+      - ancfz_mock_pdf_private:/var/lib/ancfz-private
+
+  mock-payments:
+    profiles: [ancfz]
+    build:
+      context: ./tools/anc/payment_mock
+    restart: unless-stopped
+    environment:
+      MOCK_PAYMENTS_ENABLED: "true"
+      MOCK_PAYMENT_PRIVATE_DOCKER: "true"
+      MOCK_PAYMENT_HOST: 0.0.0.0
+      MOCK_PAYMENT_PORT: "8098"
+      MOCK_PAYMENT_API_KEY: ${MOCK_PAYMENT_API_KEY:-}
+      MOCK_PAYMENT_DB: /var/lib/mockpay/mock-payments.sqlite3
+    volumes:
+      - ancfz_mock_payment_private:/var/lib/mockpay
+
+volumes:
+  foundry-azure-cli-config:
+  ancfz_mock_pdf_private:
+  ancfz_mock_payment_private:
