@@ -431,3 +431,13 @@ separate `not_verified`/`pending` state until an authoritative registration
 record is available. The v2 response guard blocks unsupported legal-registration
 claims. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P6-08.md`.
+
+## V2-P7-01 focused CI validation — 2026-10-30
+
+Issue #120 is verified. The v2 branch is now included in the existing CI
+workflow, which runs focused v2 contracts, Node static checks, disposable
+Postgres/Redis migrations, n8n contracts, Python model-gateway and ingestion
+tests, Compose configuration smoke validation and secret checks. Full
+seven-stage, 25-turn and 200-message acceptance commands are intentionally not
+part of CI. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P7-01.md`.

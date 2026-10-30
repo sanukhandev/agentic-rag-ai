@@ -14,7 +14,7 @@ on:
       - 'package*.json'
       - '.github/workflows/crm-v2-pr-validation.yml'
   push:
-    branches: [feature/crm-omnichannel-conversation-v2, feat/rag-v2-reliability-conversation-intelligence]
+    branches: [feature/crm-omnichannel-conversation-v2, feat/rag-v2-reliability-conversation-intelligence, feat/conversation-engine-v2]
 
 permissions:
   contents: read
@@ -80,8 +80,26 @@ jobs:
           done
       - name: Unit and integration tests
         run: npm test
+      - name: Conversation Engine v2 focused contract tests
+        working-directory: services/api
+        run: >-
+          npm exec vitest run
+          'src/v2-*.test.ts'
+          src/catalog-v2.test.ts
+          src/catalog-v2-runtime.test.ts
+          src/catalog-v2-admin.test.ts
+          src/catalog-v2-migration.test.ts
+          src/ancfz-provider-matrix.test.ts
+          src/agent-tools.test.ts
+          src/document-intake.test.ts
+          src/document-intake-api.test.ts
+          src/business-lifecycle.test.ts
+          src/lifecycle-provider-api.test.ts
+          --pool=forks --poolOptions.forks.singleFork=true --testTimeout=15000
       - name: Workflow JSON contract tests
         run: node --test infra/n8n/workflows/crm-v2-workflows.test.mjs
+      - name: Docker Compose configuration smoke
+        run: docker compose -f docker-compose.yml -f docker-compose.local-dev.yml config --quiet
       - name: Verify compose and secrets
         run: |
           npm run verify:compose
@@ -92,5 +110,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y tesseract-ocr
           python -m pip install -r tools/ingestion/requirements.txt
+          python -m pip install -r services/model-gateway/requirements-dev.txt
       - name: Python ingestion tests
         run: python -m unittest discover -s tools/ingestion -p 'test_*.py'
+      - name: Python model gateway tests
+        run: python -m pytest services/model-gateway/tests -q
