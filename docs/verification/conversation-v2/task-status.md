@@ -39,9 +39,9 @@ again from GitHub before each task.
 | #108 | P5-01 | CLOSED | `V2-P5-01.md`; remote commit `810e78d09fe6f2529b9f95740277ff9ef0bef6bc` |
 | #109 | P5-02 | CLOSED | `V2-P5-02.md`; remote commit `f9343054b4ea33859a0274420b4b446520adb703` |
 | #110 | P5-03 | CLOSED | `V2-P5-03.md`; remote commit `4572b9ffbc44d64a15fd944fb0da6d3cfb783d1d` |
-| #111 | P5-04 | VERIFIED | `docs/verification/conversation-v2/V2-P5-04.md`; pending commit/push and issue closure |
-| #112 | P6-01 | VERIFIED | `docs/verification/conversation-v2/V2-P6-01.md`; pending commit/push and issue closure; live Salesforce provider remains blocked |
-| #113 | P6-02 | OPEN | Depends on #112 and catalog policy |
+| #111 | P5-04 | CLOSED | `docs/verification/conversation-v2/V2-P5-04.md`; remote commit `4f853985303293ed10614e3f97d09d92b914fb20` |
+| #112 | P6-01 | CLOSED | `docs/verification/conversation-v2/V2-P6-01.md`; remote commit `1b14beed4a764ebe7fb133fa33c1fcea53757252`; live Salesforce provider remains blocked |
+| #113 | P6-02 | VERIFIED | `docs/verification/conversation-v2/V2-P6-02.md`; pending commit/push and issue closure |
 | #114 | P6-03 | OPEN | Depends on #113 and verification inputs |
 | #115 | P6-04 | OPEN | Depends on #114 and approved price source |
 | #116 | P6-05 | OPEN | Depends on #115 and SF-02 provider evidence |

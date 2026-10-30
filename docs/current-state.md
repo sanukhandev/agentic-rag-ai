@@ -360,3 +360,13 @@ mock is retry-idempotent and explicitly reports `mock_verified`. No live
 Salesforce credential or workflow binding was enabled, so no real Lead ID is
 claimed. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P6-01.md`.
+
+## V2-P6-02 deterministic Lead Qualification — 2026-10-30
+
+Issue #113 is verified. Node now evaluates the published catalog's
+qualification requirements deterministically and returns qualified,
+disqualified, unknown or manual-review outcomes with bounded fact provenance.
+Only a qualified result enables the later Account Creation gate. Document
+policies cannot satisfy or block Stage 2 qualification, and no provider action
+is created by the evaluator. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P6-02.md`.

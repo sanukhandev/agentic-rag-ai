@@ -84,6 +84,16 @@ const sheetSchemas = {
     promptKey: key,
     priority: z.number().int().min(0).max(10_000),
   }).strict()).max(500),
+  QualificationPolicies: z.array(z.object({
+    policyKey: key,
+    goalKey: key,
+    stageKey: key,
+    factKey: key,
+    operator: z.literal('equals'),
+    values: z.array(label).min(1).max(50),
+    outcome: z.enum(['disqualified', 'manual_review']),
+    active: z.boolean(),
+  }).strict()).max(200).default([]),
   BusinessStages: z.array(stage).max(100),
   ToolBindings: z.array(z.object({
     toolKey: key,

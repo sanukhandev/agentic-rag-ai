@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { catalogV2VersionRef } from './catalog-v2.js';
+import { catalogV2VersionRef, validateCatalogV2 } from './catalog-v2.js';
 import { evaluateCatalogV2Stage, scoreCatalogV2Turn, validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as Record<string, unknown>;
@@ -8,7 +8,9 @@ const catalog = fixture as never;
 
 describe('catalog v2 runtime policy', () => {
   it('accepts only the trusted published tenant and canonical version pin', () => {
-    const version = catalogV2VersionRef(fixture as never);
+    const validated = validateCatalogV2(fixture);
+    expect(validated.document).not.toBeNull();
+    const version = catalogV2VersionRef(validated.document!);
     expect(validatePublishedCatalogV2(fixture, { published: true, tenantScope: 'ancfz', pinnedVersionRef: version }).ok).toBe(true);
     expect(validatePublishedCatalogV2(fixture, { published: false, tenantScope: 'ancfz', pinnedVersionRef: version }).errors).toContain('Catalog is not published.');
     expect(validatePublishedCatalogV2(fixture, { published: true, tenantScope: 'other', pinnedVersionRef: version }).errors).toContain('Catalog tenant scope does not match the trusted tenant.');
