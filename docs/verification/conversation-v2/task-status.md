@@ -15,7 +15,7 @@ again from GitHub before each task.
 | #84 | P0-03 | CLOSED | `docs/verification/conversation-v2/V2-P0-03.md`; remote commit `76505897b6c11b881e3223206dc4203feb0324cc` |
 | #85 | P0-04 | CLOSED | `docs/verification/conversation-v2/V2-P0-04.md`; remote commit `a57885c7c676b5d9d94b7a691de805611d23f96e` |
 | #86 | P0-05 | CLOSED | `docs/verification/conversation-v2/V2-P0-05.md`; remote commit `a7e437f66e949ff03e3cbe5ce078b57f8d85f1c1` |
-| #87 | P1-01 | OPEN | Depends on #84 |
+| #87 | P1-01 | IN_PROGRESS | Depends on #84; strict v2 XLSX parser |
 | #88 | P1-02 | OPEN | Depends on #87 |
 | #89 | P1-03 | OPEN | Depends on #88 |
 | #90 | P1-04 | OPEN | Depends on #84 and #89 |

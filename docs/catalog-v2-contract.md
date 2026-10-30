@@ -32,7 +32,9 @@
 
 This is the frozen 15-sheet schema for the P0 contract. Changes to canonical column naming, list serialization, relation or completion-evidence representation require schema versioning and tests. Knowledge-only tenants can use appropriately empty stage/tool sheets. Required sheets must have valid headers even if no rows. Only documented optional extension sheets are accepted.
 
-The frozen JSON transport is `{ schemaVersion: 2, manifest, sheets }`. `manifest`
+The frozen JSON transport is `{ schemaVersion: 2, manifest, sheets }`. The
+dedicated workbook parser is `tools/ingestion/ingestion/catalog_v2.py`; the
+legacy v1 parser is not reused for v2 imports. `manifest`
 and every executable sheet row are strict objects; unknown sheet names and
 unknown row fields are rejected. Arrays preserve authored ordering, while the
 immutable catalog identity is the SHA-256 of canonical JSON with recursively

@@ -123,3 +123,7 @@ Issue #85 freezes strict v2 TurnEnvelope, tool request/result, persona response 
 ## V2-P0-05 ANCFZ policy/provider matrix — 2026-10-30
 
 Issue #86 locks the seven ordered stages and their required evidence tiers in `services/api/src/fixtures/ancfz-provider-matrix-v2.json`. Consent phrases are synthetic test-only placeholders pending owner approval. All stages remain blocked for real provider completion until the documented Salesforce, quote, SF-02, invoice/payment and signing evidence exists; legal registration is separately tracked. The full seven-stage run remains reserved for #124.
+
+## V2-P1-01 strict XLSX parser — 2026-10-30
+
+Issue #87 adds `tools/ingestion/ingestion/catalog_v2.py`, a dedicated openpyxl parser for the frozen 15-sheet v2 workbook. It rejects legacy/unversioned or unsafe workbooks, preserves source hash and tenant scope, and leaves the v1 parser/history path unchanged. Focused parser tests pass; Admin publication and runtime adoption remain later issues.
