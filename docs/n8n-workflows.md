@@ -73,3 +73,7 @@ The latest focused scenario created a local Lead ActionRequest and worker execut
 ## Required test suite
 
 Tool schema/allowlist, wrong stage, wrong tenant, stale intent document revision, missing consent, confirmation replay, incorrect n8n mapping, duplicate provider timeout, callback replay/late callback, provider ID verification and recovered action. Only an independently verified provider or explicitly labeled sandbox/mock may complete an external gate.
+
+## User-supplied remote workflow inventory
+
+Four n8n webhook-test paths (Lead creation, account verification send/check, Salesforce SF-02 document upload) are now mapped in [`remote-n8n-integration.md`](remote-n8n-integration.md). **Their IDs, auth and provider results are not verified, and no live calls were made.** Do not conflate OTP verification with Account creation or activate an unreviewed URL.
