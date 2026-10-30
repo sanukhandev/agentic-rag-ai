@@ -455,3 +455,15 @@ The focused evidence is 15 Node test files/133 tests and 21 Python tests with
 zero failures. No live provider quota measurement, payment, signing or full
 seven-stage acceptance is claimed; issue #124 remains a manual hold.
 Evidence is recorded in `docs/verification/conversation-v2/V2-P7-02.md`.
+
+## V2-P7-03 manual seven-stage acceptance preflight — 2026-10-30
+
+Issue #122 is verified with a manual-only, redacted final acceptance preflight
+(`npm run qa:ancfz-final-acceptance`). The command defines the exact seven
+ordered stages, one synthetic session/opportunity, continuity checks and
+evidence boundaries. Automated use is restricted to `--dry-run`; execution
+requires an explicit operator confirmation, is blocked in CI/Codex automatic
+runs, and accepts only mock or explicitly opted-in sandbox modes. The isolated
+preflight suite passed 4/4 tests and emitted a plan without provider calls.
+The complete seven-stage run remains reserved for manual issue #124.
+Evidence is recorded in `docs/verification/conversation-v2/V2-P7-03.md`.

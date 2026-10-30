@@ -50,7 +50,7 @@ again from GitHub before each task.
 | #119 | P6-08 | CLOSED | `docs/verification/conversation-v2/V2-P6-08.md`; remote commit `91d4901e3ddfd3fd4bf658c848a32fed40a8d78d`; government registration lookup remains blocked |
 | #120 | P7-01 | VERIFIED | `docs/verification/conversation-v2/V2-P7-01.md`; pending commit/push and issue closure; CI-only Python/Postgres/Redis execution remains runner-scoped |
 | #121 | P7-02 | VERIFIED | `docs/verification/conversation-v2/V2-P7-02.md`; focused security/fault/budget suites pass; live provider and quota evidence intentionally not claimed |
-| #122 | P7-03 | OPEN | Prepare only; do not run final seven-stage scenario |
+| #122 | P7-03 | VERIFIED | `docs/verification/conversation-v2/V2-P7-03.md`; manual-gated redacted seven-stage preflight and isolated tests pass; final journey intentionally not run |
 | #123 | P7-04 | OPEN | Depends on #120–#122 and rollback evidence |
 | #124 | P7-05 | MANUAL HOLD | User-triggered final seven-stage acceptance only |
 
