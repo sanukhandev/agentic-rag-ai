@@ -10,7 +10,7 @@ again from GitHub before each task.
 
 | Issue | Phase | Status | Evidence / blocker |
 | ---: | --- | --- | --- |
-| #82 | P0-01 | IN_PROGRESS | `docs/verification/conversation-v2/V2-P0-01.md` |
+| #82 | P0-01 | CLOSED | `docs/verification/conversation-v2/V2-P0-01.md`; remote commit `983f105681db6d123eb0ca4cd8285fda9fd10b00` |
 | #83 | P0-02 | OPEN | Depends on baseline and approved Azure deployment access |
 | #84 | P0-03 | OPEN | Depends on baseline; strict v2 catalog contract |
 | #85 | P0-04 | OPEN | Depends on P0 contract decisions |
