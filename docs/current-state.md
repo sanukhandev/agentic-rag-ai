@@ -392,3 +392,13 @@ services still own durable selection confirmation and quote storage. The
 deterministic quote adapter is mock-only, so no live pricebook or provider
 completion is claimed. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P6-04.md`.
+
+## V2-P6-05 document review and SF-02 boundary — 2026-10-30
+
+Issue #116 is verified for the Node-side document contract. SF-02 requests are
+allowed only for completed OCR/review, consented documents bound to the active
+tenant/session/Lead/opportunity and a verified Account/Contact/Opportunity
+target. Exact callback correlation is required; wrong-record or incomplete
+provider evidence remains reconciliation-required. The deterministic adapter
+is mock-only and no live attachment completion is claimed. Evidence is
+recorded in `docs/verification/conversation-v2/V2-P6-05.md`.
