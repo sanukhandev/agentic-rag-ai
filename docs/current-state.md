@@ -264,3 +264,13 @@ to masked context and approved observations, permits one relevant question or
 a legitimate no-question outcome, and rejects internal metadata, protocol
 terms and prompt leakage. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P4-01.md`.
+
+## V2-P4-02 deterministic Node response guard — 2026-10-30
+
+Issue #104 is verified and closed. The v2 Node guard now composes the existing
+claim/evidence verifier with persona and language pin checks, pending-question
+policy, repeated-question rejection, and explicit denial of uncited provider
+completion claims. Rejected model text is never returned as the customer
+response; the caller receives a bounded approved fallback and redacted
+feedback digest. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P4-02.md`.

@@ -42,9 +42,14 @@ const unsafeOutput = (answer: string): boolean => {
     || /https?:\/\/[^\s]+(?:webhook|callback)/iu.test(answer);
 };
 const uncitedConversation = (answer: string): boolean => /^(?:hi|hello|hey|thanks|thank you|you['’]?re welcome|nice to meet you|how can i help|what can i help with)[!.?,\s]/iu.test(answer.trim());
+const uncitedQuestion = (answer: string, nextQuestion: string | null): boolean => {
+  if (!nextQuestion) return false;
+  const prefix = answer.slice(0, Math.max(0, answer.length - nextQuestion.length)).trim();
+  return answer.trim().endsWith(nextQuestion.trim()) && /^(?:sure|okay|ok|of course|i can help(?: with that)?|to get started|thanks)?[.!?,\s]*$/iu.test(prefix);
+};
 const verdict = (accepted: boolean, reasonCode: ResponseGuardVerdictV2['reasonCode'], response: PersonaComposedResponseV2 | null): ResponseGuardVerdictV2 => ({ schemaVersion: 2, accepted, reasonCode, response });
 
-export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvidence[], facts: V2VerifiedFact[] = [], options: { conversational?: boolean } = {}): V2EvidenceDecision => {
+export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvidence[], facts: V2VerifiedFact[] = [], options: { conversational?: boolean; allowUncitedQuestion?: boolean } = {}): V2EvidenceDecision => {
   const parsed = personaComposedResponseSchema.safeParse(input);
   if (!parsed.success) return { verdict: verdict(false, 'metadata_leak', null), claims: [] };
   const response = parsed.data;
@@ -65,7 +70,7 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
   const trustedFacts = citedFacts.map((fact) => fact.text).join(' ');
   const citations = modelEvidence.map((item) => item.citation);
   const grounded = options.conversational === true && citationIds.length === 0
-    ? uncitedConversation(response.answer)
+    ? uncitedConversation(response.answer) || (options.allowUncitedQuestion === true && uncitedQuestion(response.answer, response.nextQuestion))
     : citationIds.length > 0 && hasSufficientEvidence(response.answer, modelEvidence, citations, trustedFacts);
   if (!grounded) return { verdict: verdict(false, citationIds.length === 0 ? 'unsupported_claim' : 'unsupported_claim', null), claims: [] };
   const sourceVersions = [...new Set([...citedEvidence.map((item) => item.sourceVersion), ...citedFacts.map((item) => item.sourceVersion)])];
