@@ -2,6 +2,22 @@
 
 **Current baseline:** `main` after merged PRs #79 and #78 (2026-10-30), containing the initial Python GPT gateway/Node adapter and retired Foundry-agent runtime files. This is **not** a tested seven-stage runtime; the original lead-first `app.ts` still controls the chat. This document records source inspection and target gaps, not live acceptance.
 
+## V2-P0-01 baseline audit — 2026-10-30
+
+The implementation branch `feat/conversation-engine-v2` starts at commit
+`7bbda9a868d21c8f891c264348f8a335cee55759`, on top of merged `main`
+`7e9212774c9de5ab93195c6f7d4fb408d08f146a`. The redacted baseline report is
+[`docs/verification/conversation-v2/V2-P0-01.md`](verification/conversation-v2/V2-P0-01.md).
+
+Measured baseline: Compose and secret checks pass; lint and all non-API
+workspace tests pass. The API suite has 208 passed, 1 failed and 12 skipped,
+with the deterministic 1536-dimension embedding test timing out. Typecheck and
+the production build fail on existing Python-model adapter typing errors. The
+Python gateway tests are blocked locally because `pytest` is not installed.
+The full seven-stage E2E remains intentionally NOT RUN and is reserved for
+manual issue #124. No migration, customer data, provider write or credential
+was changed.
+
 ## Existing code topology — IMPLEMENTED
 
 | Responsibility | Verified location | What exists |
