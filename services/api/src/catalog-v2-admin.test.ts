@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
 import { readFileSync } from 'node:fs';
 import { exportCatalogV2Workbook } from './catalog-v2-xlsx.js';
+import { validateCatalogV2 } from './catalog-v2.js';
 
 const catalog = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as Record<string, unknown>;
 
@@ -23,7 +24,9 @@ describe('catalog v2 Admin boundary', () => {
     const exported = await api.get('/api/v2/admin/intent-catalog/published/export').set(auth).expect(200);
     expect(exported.headers['content-type']).toMatch(/spreadsheetml\.sheet/u);
     expect(exportCatalogV2Workbook(catalog as never).subarray(0, 2).toString()).toBe('PK');
-    expect((await api.get('/api/v2/admin/intent-catalog/published/export.json').set(auth).expect(200)).body.schemaVersion).toBe(2);
+    const exportedJson = await api.get('/api/v2/admin/intent-catalog/published/export.json').set(auth).expect(200);
+    expect(exportedJson.body.schemaVersion).toBe(2);
+    expect(validateCatalogV2(exportedJson.body).ok).toBe(true);
   });
 
   it('does not allow another tenant to read or publish the version', async () => {

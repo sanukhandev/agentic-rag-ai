@@ -8,7 +8,12 @@
     "policyVersion": "ancfz-v2-p0"
   },
   "sheets": {
-    "README": [{ "key": "source", "value": "Reviewed synthetic ANCFZ v2 reference; no provider secrets." }],
+    "README": [
+      { "key": "source", "value": "Reviewed synthetic ANCFZ v2 reference; no provider secrets or live fees." },
+      { "key": "sample_utterance.company_setup", "value": "I want to register a company for technology consulting." },
+      { "key": "sample_utterance.knowledge_only", "value": "What documents are generally needed before I decide?" },
+      { "key": "sample_utterance.qualification_variant", "value": "We provide technology services, need three visas and want to start next quarter." }
+    ],
     "CatalogManifest": [{ "schemaVersion": 2, "catalogKey": "ancfz", "tenantScope": "ancfz", "revision": 1, "policyVersion": "ancfz-v2-p0" }],
     "BusinessGoals": [{ "businessGoalKey": "anc.company_formation", "name": "Company formation", "description": "Guide an approved customer through the configured company-formation journey.", "active": true, "confirmationRequired": true, "completionPolicyKey": "contract.verified" }],
     "IntentCategories": [
@@ -25,16 +30,23 @@
     ],
     "IntentSignals": [
       { "signalId": "signal.company.register", "targetKey": "goal.company_formation", "signalType": "phrase", "value": "register a company", "language": "en", "weight": 80, "minWeight": 60, "maxWeight": 100 },
-      { "signalId": "signal.setup.options", "targetKey": "knowledge.setup_options", "signalType": "keyword", "value": "options", "language": "en", "weight": 30, "minWeight": 0, "maxWeight": 60 }
+      { "signalId": "signal.setup.options", "targetKey": "knowledge.setup_options", "signalType": "keyword", "value": "options", "language": "en", "weight": 30, "minWeight": 0, "maxWeight": 60 },
+      { "signalId": "signal.activity.technology", "targetKey": "goal.company_formation", "signalType": "keyword", "value": "technology", "language": "en", "weight": 10, "minWeight": 0, "maxWeight": 20 },
+      { "signalId": "signal.activity.consulting", "targetKey": "goal.company_formation", "signalType": "keyword", "value": "consulting", "language": "en", "weight": 10, "minWeight": 0, "maxWeight": 20 },
+      { "signalId": "signal.visa.three", "targetKey": "goal.company_formation", "signalType": "keyword", "value": "three visas", "language": "en", "weight": 5, "minWeight": 0, "maxWeight": 10 },
+      { "signalId": "signal.visa.five", "targetKey": "goal.company_formation", "signalType": "keyword", "value": "five visas", "language": "en", "weight": 5, "minWeight": 0, "maxWeight": 10 }
     ],
     "ScoringPolicies": [{ "scoringPolicyKey": "score.company.formation", "businessGoalKey": "anc.company_formation", "threshold": 70, "ambiguityMargin": 15, "policyVersion": "ancfz-v2-p0" }],
     "RequirementPolicies": [
       { "requirementKey": "business_activity", "goalKey": "anc.company_formation", "stageKey": "lead_qualification", "type": "fact", "required": true, "dependencies": [], "validation": "catalog.activity", "sourceOfTruth": "customer", "promptKey": "ask.business_activity", "priority": 10 },
-      { "requirementKey": "account_confirmation", "goalKey": "anc.company_formation", "stageKey": "account_creation", "type": "confirmation", "required": true, "dependencies": ["business_activity"], "validation": "explicit.customer.confirmation", "sourceOfTruth": "node", "promptKey": "confirm.account_creation", "priority": 20 }
+      { "requirementKey": "account_confirmation", "goalKey": "anc.company_formation", "stageKey": "account_creation", "type": "confirmation", "required": true, "dependencies": ["business_activity"], "validation": "explicit.customer.confirmation", "sourceOfTruth": "node", "promptKey": "confirm.account_creation", "priority": 20 },
+      { "requirementKey": "entity_type", "goalKey": "anc.company_formation", "stageKey": "lead_qualification", "type": "fact", "required": true, "dependencies": ["business_activity"], "validation": "catalog.entity_type", "sourceOfTruth": "customer", "promptKey": "ask.entity_type", "priority": 20 },
+      { "requirementKey": "visa_count", "goalKey": "anc.company_formation", "stageKey": "lead_qualification", "type": "fact", "required": true, "dependencies": ["business_activity"], "validation": "integer.nonnegative", "sourceOfTruth": "customer", "promptKey": "ask.visa_count", "priority": 30 },
+      { "requirementKey": "timeline", "goalKey": "anc.company_formation", "stageKey": "lead_qualification", "type": "fact", "required": true, "dependencies": ["business_activity"], "validation": "catalog.timeline", "sourceOfTruth": "customer", "promptKey": "ask.timeline", "priority": 40 }
     ],
     "BusinessStages": [
       { "businessGoalKey": "anc.company_formation", "stageKey": "lead_generation", "stageOrder": 1, "entryRequirements": [], "completionEvidencePolicyKey": "lead.verified", "active": true },
-      { "businessGoalKey": "anc.company_formation", "stageKey": "lead_qualification", "stageOrder": 2, "entryRequirements": ["business_activity"], "completionEvidencePolicyKey": "qualification.node_verified", "active": true },
+      { "businessGoalKey": "anc.company_formation", "stageKey": "lead_qualification", "stageOrder": 2, "entryRequirements": ["business_activity", "entity_type", "visa_count", "timeline"], "completionEvidencePolicyKey": "qualification.node_verified", "active": true },
       { "businessGoalKey": "anc.company_formation", "stageKey": "account_creation", "stageOrder": 3, "entryRequirements": ["account_confirmation"], "completionEvidencePolicyKey": "account.provider_verified", "active": true },
       { "businessGoalKey": "anc.company_formation", "stageKey": "package_selection", "stageOrder": 4, "entryRequirements": [], "completionEvidencePolicyKey": "quote.accepted", "active": true },
       { "businessGoalKey": "anc.company_formation", "stageKey": "document_upload", "stageOrder": 5, "entryRequirements": [], "completionEvidencePolicyKey": "document.sf02_verified", "active": true },
@@ -43,9 +55,12 @@
     ],
     "ToolBindings": [
       { "toolKey": "knowledge.search", "goalKey": "anc.company_formation", "stageKey": "lead_generation", "sideEffectClass": "read_only", "argumentsSchemaRef": "tool.search-knowledge.v1", "requiredKeys": [], "consent": "none", "confirmation": "none", "registryKey": null, "enabled": true },
-      { "toolKey": "account.propose_creation", "goalKey": "anc.company_formation", "stageKey": "account_creation", "sideEffectClass": "proposal", "argumentsSchemaRef": "tool.account-proposal.v1", "requiredKeys": ["account_confirmation"], "consent": "purpose_specific", "confirmation": "explicit_customer", "registryKey": "crm.account.create", "enabled": true }
+      { "toolKey": "account.propose_creation", "goalKey": "anc.company_formation", "stageKey": "account_creation", "sideEffectClass": "proposal", "argumentsSchemaRef": "tool.account-proposal.v1", "requiredKeys": ["account_confirmation"], "consent": "purpose_specific", "confirmation": "explicit_customer", "registryKey": "crm.account.create", "enabled": false },
+      { "toolKey": "journey.read_state", "goalKey": "anc.company_formation", "stageKey": "lead_generation", "sideEffectClass": "read_only", "argumentsSchemaRef": "tool.journey-state.v1", "requiredKeys": [], "consent": "none", "confirmation": "none", "registryKey": null, "enabled": true },
+      { "toolKey": "package.read_available", "goalKey": "anc.company_formation", "stageKey": "package_selection", "sideEffectClass": "read_only", "argumentsSchemaRef": "tool.package-lookup.v1", "requiredKeys": [], "consent": "none", "confirmation": "none", "registryKey": null, "enabled": true },
+      { "toolKey": "document.read_requirements", "goalKey": "anc.company_formation", "stageKey": "document_upload", "sideEffectClass": "read_only", "argumentsSchemaRef": "tool.document-requirements.v1", "requiredKeys": [], "consent": "none", "confirmation": "none", "registryKey": null, "enabled": true }
     ],
-    "WorkflowBindings": [{ "workflowKey": "crm.account.create", "registryKey": "crm.account.create", "providerType": "salesforce_sandbox", "payloadSchemaRef": "crm.account.v1", "callbackSchemaRef": "crm.account.callback.v1", "evidencePolicyKey": "account.provider_verified", "enabled": true }],
+    "WorkflowBindings": [{ "workflowKey": "crm.account.create", "registryKey": "crm.account.create", "providerType": "salesforce_sandbox", "payloadSchemaRef": "crm.account.v1", "callbackSchemaRef": "crm.account.callback.v1", "evidencePolicyKey": "account.provider_verified", "enabled": false }],
     "FollowUpPolicies": [{ "policyKey": "followup.qualification", "goalKey": "anc.company_formation", "stageKey": "lead_qualification", "requirementKey": "business_activity", "priority": 10, "noQuestionReasons": ["farewell", "handoff", "action_pending"] }],
     "KnowledgeTopics": [{ "topicKey": "knowledge.company_setup", "goalKey": "anc.company_formation", "sourceScope": "tenant.public_for_chat", "citationRequired": true, "active": true }],
     "PersonaPolicies": [{ "personaPolicyKey": "persona.ancfz.zara.en", "personaVersionId": "published-zara-version", "permittedLanguages": ["en"], "fallbackTemplateRef": "fallback.zara.v2", "enabled": true }],

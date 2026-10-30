@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { catalogV2Sha256, catalogV2VersionRef, createLegacyCatalogMigrationCandidate, validateCatalogV2, type CatalogV2Document } from './catalog-v2.js';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as unknown;
+const scenarios = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2-scenarios.json', import.meta.url), 'utf8')) as { persona: { name: string; permittedLanguages: string[]; status: string }; qualificationVariants: Array<{ visaCount: number }>; remoteWritePolicy: { enabledToolCount: number; enabledWorkflowCount: number; providerEvidenceRequired: boolean } };
 
 describe('strict catalog v2 contract', () => {
   it('accepts the valid ANCFZ reference and produces a stable immutable version reference', () => {
@@ -14,6 +15,18 @@ describe('strict catalog v2 contract', () => {
     const hash = catalogV2Sha256(catalog);
     expect(hash).toMatch(/^[a-f0-9]{64}$/u);
     expect(catalogV2VersionRef(catalog)).toBe(`ancfz:r1:${hash}`);
+  });
+
+  it('covers the approved persona, qualification variants and disabled remote writes', () => {
+    const result = validateCatalogV2(fixture);
+    expect(result.ok).toBe(true);
+    expect(scenarios.persona).toEqual({ name: 'Zara', permittedLanguages: ['en'], status: 'published_reference_only' });
+    expect(scenarios.qualificationVariants.map((variant) => variant.visaCount)).toEqual([3, 5]);
+    expect(scenarios.remoteWritePolicy).toEqual({ enabledToolCount: 0, enabledWorkflowCount: 0, providerEvidenceRequired: true });
+    const catalog = result.document as CatalogV2Document;
+    expect(catalog.sheets.ToolBindings.filter((tool) => tool.enabled && tool.sideEffectClass !== 'read_only')).toHaveLength(0);
+    expect(catalog.sheets.WorkflowBindings.filter((binding) => binding.enabled)).toHaveLength(0);
+    expect(catalog.sheets.BusinessStages).toHaveLength(7);
   });
 
   it('rejects v1 and unversioned input at the v2 boundary', () => {

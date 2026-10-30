@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 2,
+  "catalogKey": "ancfz",
+  "persona": { "name": "Zara", "permittedLanguages": ["en"], "status": "published_reference_only" },
+  "knowledgeOnly": {
+    "message": "What documents are generally needed before I decide?",
+    "expectedCategory": "knowledge_advisory",
+    "mustNotCreateAction": true,
+    "mustNotCollectContact": true
+  },
+  "qualificationVariants": [
+    { "activity": "technology services", "entityType": "new company", "visaCount": 3, "timeline": "next quarter" },
+    { "activity": "consulting", "entityType": "new company", "visaCount": 5, "timeline": "in six months" }
+  ],
+  "conflictingGoals": {
+    "signals": ["register a company", "existing customer renewal"],
+    "expected": "ambiguous_until_customer_clarifies"
+  },
+  "stageScopedDocument": {
+    "stageKey": "document_upload",
+    "docType": "identity_document",
+    "mustNotBlockStage": "lead_generation"
+  },
+  "remoteWritePolicy": { "enabledToolCount": 0, "enabledWorkflowCount": 0, "providerEvidenceRequired": true },
+  "sampleUtterances": [
+    "I want to register a company for technology consulting.",
+    "I need three visas and want to start next quarter.",
+    "Which documents are needed after package selection?"
+  ]
+}

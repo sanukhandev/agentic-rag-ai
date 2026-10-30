@@ -145,3 +145,13 @@ v2 draft, and is linked to the source v1 version by an audit event. No v1
 catalog, session, action, lead, document, consent or provider identity is
 mutated or copied. The v2 runtime still requires a later explicit rollout;
 full seven-stage acceptance remains reserved for #124.
+
+## V2-P1-05 ANCFZ reference fixtures — 2026-10-30
+
+Issue #91 adds the strict ANCFZ v2 reference catalog and scenario fixtures:
+seven ordered stages, Zara English persona reference, qualification variants,
+knowledge-only and ambiguity cases, stage-scoped document policy and disabled
+remote writes. Node Admin export is revalidated by the strict validator, and a
+reproducible generated workbook is accepted by the dedicated Python v2 parser.
+Provider evidence remains separately blocked until independent sandbox/mock
+acknowledgements exist; the full seven-stage test remains reserved for #124.
