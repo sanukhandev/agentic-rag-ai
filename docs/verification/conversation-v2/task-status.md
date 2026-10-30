@@ -22,7 +22,7 @@ again from GitHub before each task.
 | #91 | P1-05 | CLOSED | `docs/verification/conversation-v2/V2-P1-05.md`; remote commit `0e3f211523311d27a1297c33e318028e9fdd2940` |
 | #92 | P2-01 | CLOSED | `docs/verification/conversation-v2/V2-P2-01.md`; remote commit `155174125ebc5b5e12b1c220cff45a06807dcc69` |
 | #93 | P2-02 | CLOSED | `docs/verification/conversation-v2/V2-P2-02.md`; implementation `52604ea`; closure comment `https://github.com/sanukhandev/agentic-rag-ai/issues/93#issuecomment-6519942894` |
-| #94 | P2-03 | OPEN | Depends on #92–#93 |
+| #94 | P2-03 | CLOSED | `docs/verification/conversation-v2/V2-P2-03.md`; implementation commit pending |
 | #95 | P2-04 | OPEN | Depends on #92–#93 |
 | #96 | P2-05 | OPEN | Depends on #92–#94 and persona publication |
 | #97 | P3-01 | OPEN | Depends on #83 and private gateway boundary |

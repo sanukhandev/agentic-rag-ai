@@ -1207,6 +1207,14 @@ describe('API vertical slice', () => {
     const visas = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: '3 visas', clientMessageId: 'journey-contract-4' }).expect(200);
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.visa_count).toBe('3');
     expect(visas.body.answer).not.toContain('company visas');
+    const preCorrectionState = await runtime.store.getSession(session.body.sessionId);
+    const preCorrectionOpportunityId = preCorrectionState?.conversationState?.intentProgress?.entries['company.setup']?.journeyId ?? null;
+    const pendingProposal = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'crm.lead.create', intentKey: 'company.setup', catalogVersionId: version.id, opportunityId: preCorrectionOpportunityId, actionKey: 'company.setup', actionRevision: 1, idempotencyKey: 'journey-correction-proposal', state: 'awaiting_confirmation', opaqueReference: 'journey-correction-proposal', payload: { contactConsent: false, slotValues: { visa_count: '3' } }, createdAt: new Date().toISOString(), result: null });
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Actually, make that 5 visas', clientMessageId: 'journey-contract-visa-correction' }).expect(200);
+    const correctedState = await runtime.store.getSession(session.body.sessionId);
+    expect(correctedState?.conversationState?.slotValues.visa_count).toBe('5');
+    expect(correctedState?.conversationState?.slotProvenance?.visa_count).toMatchObject({ corrected: true, source: 'visitor' });
+    expect((await runtime.store.getAction(pendingProposal.id))?.state).toBe('failed');
     const workspace = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'shared_office', clientMessageId: 'journey-contract-5' }).expect(200);
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.workspace_preference).toBe('shared_office');
     expect(workspace.body.pendingRequirementKey).toBeNull();

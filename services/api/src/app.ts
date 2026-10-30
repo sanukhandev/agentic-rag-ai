@@ -1575,11 +1575,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : null;
       const currentIntentKey = intentContinuity && ['matched', 'missing_slots'].includes(intentContinuity.current.reason) ? intentContinuity.current.intentKey : null;
       const detectedSecondaryIntentKey = currentIntentKey && currentIntentKey !== state.selectedIntentKey ? currentIntentKey : null;
+      const previousSlotValues = state.slotValues ?? {};
       const slotCorrectionPrefix = /^(?:actually|my|our|the|now|still|please keep|update|change|i have|we have)\b/iu;
       const structuredSlotCorrection = Boolean(publishedCatalog?.catalog.slots.some((slot) => {
         const terms = slot.slotKey.split(/[._-]+/u).filter((term) => term.length >= 4);
         return terms.some((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\b`, 'iu').test(maskedMessage)) && slotCorrectionPrefix.test(maskedMessage);
       }));
+      const correctedSlotKeys = Object.entries(catalogSlotValues).filter(([key, value]) => previousSlotValues[key] !== undefined && previousSlotValues[key] !== value).map(([key]) => key);
+      const correctionChanged = correctedSlotKeys.length > 0 && slotCorrectionPrefix.test(maskedMessage);
       const currentOpportunityCompleted = sessionActions.some((action) => actionMatchesOpportunity(action) && action.state === 'completed');
       if (!postCaptureFollowUp && structuredSlotCorrection && currentOpportunityCompleted) postCaptureFollowUp = true;
       const catalogSlotNonAnswer = Boolean(pendingSlot && isCatalogSlotNonAnswer(maskedMessage));
@@ -1797,13 +1800,21 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       state.candidateIntentKeys = [...new Set([...state.candidateIntentKeys, catalogResolution?.intentKey, catalogResolution?.runnerUpIntentKey, ...(intentContinuity?.secondaryIntentKeys ?? [])].filter((value): value is string => Boolean(value)))];
       state.intentEvidence = [...new Set([...(postCaptureFollowUp ? state.intentEvidence ?? [] : []), catalogResolution?.intentKey, detectedSecondaryIntentKey, ...(intentContinuity?.secondaryIntentKeys ?? [])].filter((value): value is string => Boolean(value)))];
-      const previousSlotValues = state.slotValues ?? {};
       state.slotValues = catalogSlotValues;
       state.slotProvenance = { ...(state.slotProvenance ?? {}) };
       const changedVisitorSlots = new Set([...Object.keys(extractLeadData(maskedMessage)), ...Object.keys(inferredCatalogValueData), ...Object.keys(pendingCatalogValueData)]);
       for (const slotKey of changedVisitorSlots) {
         const value = catalogSlotValues[slotKey];
         if (value) state.slotProvenance[slotKey] = { source: 'visitor', messageSequence: state.messageSequence + 1, capturedAt: new Date().toISOString(), corrected: Boolean(previousSlotValues[slotKey] && previousSlotValues[slotKey] !== value) };
+      }
+      if (correctionChanged) {
+        const correctionOpportunityIds = new Set(Object.values(state.intentProgress?.entries ?? {}).map((entry) => entry.journeyId).filter((value): value is string => Boolean(value)));
+        for (const action of sessionActions) {
+          if ((action.opportunityId !== null && action.opportunityId !== undefined && !correctionOpportunityIds.has(action.opportunityId)) || !['awaiting_confirmation', 'awaiting_customer'].includes(action.state)) continue;
+          const invalidated = await store.updateAction({ ...action, state: 'failed', result: null });
+          Object.assign(action, invalidated);
+          await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'conversation.fact_correction.invalidated_action', metadata: { actionId: action.id, opportunityDigest: action.opportunityId ? contentHash(action.opportunityId).slice(0, 12) : null, correctedSlotKeys: JSON.stringify(correctedSlotKeys), priorActionRevision: action.actionRevision ?? 1 }, createdAt: new Date().toISOString() });
+        }
       }
       const persistedJourneyKey = journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey;
       if (persistedJourneyKey && state.intentProgress?.entries[persistedJourneyKey]) {

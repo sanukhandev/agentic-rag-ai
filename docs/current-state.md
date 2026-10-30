@@ -174,3 +174,12 @@ and replays the exact persisted response for an identical completed retry.
 Changed message bodies remain `MESSAGE_ID_REUSED`; session revision CAS,
 action idempotency and outbox protections are unchanged. Evidence is recorded
 in `docs/verification/conversation-v2/V2-P2-02.md`.
+
+## V2-P2-03 discovery continuity and correction — 2026-10-30
+
+Issue #94 preserves knowledge-only discovery, catalog-pinned journey continuity
+and slot provenance while invalidating pending same-opportunity action proposals
+when a validated business fact is explicitly corrected. The correction is
+audited with redacted identifiers; completed/provider-verified actions and
+unrelated opportunities are retained. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P2-03.md`.
