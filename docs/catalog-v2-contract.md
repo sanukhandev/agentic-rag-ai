@@ -1,6 +1,6 @@
 # Intent Catalog v2 — strict replacement-only executable contract
 
-**Status:** P0 schema proposal guided by approved D2; exact headers to be frozen through GitHub issue #84 before runtime implementation. **Conversation Engine v2 accepts only new schema v2.** Existing v1 importer may remain isolated for legacy read/rollback but is never a fallback import format for v2. No silent coercion.
+**Status:** P0 schema frozen by GitHub issue #84 on 2026-10-30. The contract is implemented as the standalone strict validator at `services/api/src/catalog-v2.ts` with the ANCFZ reference fixture at `services/api/src/fixtures/ancfz-catalog-v2.json` and focused tests at `services/api/src/catalog-v2.test.ts`. **Conversation Engine v2 accepts only schema v2.** Existing v1 importer remains isolated for legacy read/rollback and is never a fallback import format for v2. No silent coercion.
 
 ## Contract and safe transition
 
@@ -10,7 +10,7 @@
 4. A v2 publication is immutable, tenant-scoped, version/hash-pinned and requires authorized Admin approval. Workflow registry paths and secrets remain server-side; workbook values are logical binding keys, not arbitrary URLs.
 5. Validate missing/orphan keys, stage dependency cycles, evidence policy, score ranges, tool argument schemas, persona references, source ACL and unknown executable fields. No enabled side-effect binding without authorized provider registry and completion rule.
 
-## Proposed v2 worksheet registry (P0 freeze candidate)
+## Frozen v2 worksheet registry
 
 | Sheet | Required policy fields | Validation purpose |
 | --- | --- | --- |
@@ -30,7 +30,23 @@
 | `PersonaPolicies` | personaPolicyKey, personaVersionId, permittedLanguages, fallbackTemplateRef, enabled | References Admin-published tenant persona; cannot override it |
 | `DocumentPolicies` | policyKey, goalKey, stageKey, docType, required, mimeTypes, reviewPolicy, retentionClass, enabled | Secure upload/SF-02 attachment and OCR |
 
-This is a **proposed** 15-sheet schema; issue #84 must approve canonical column naming, list serialization, relation and completion evidence representation. Changes to these details after freezing require schema versioning and tests. Knowledge-only tenants can use appropriately empty stage/tool sheets. Required sheets must have valid headers even if no rows. Only documented optional extension sheets are accepted.
+This is the frozen 15-sheet schema for the P0 contract. Changes to canonical column naming, list serialization, relation or completion-evidence representation require schema versioning and tests. Knowledge-only tenants can use appropriately empty stage/tool sheets. Required sheets must have valid headers even if no rows. Only documented optional extension sheets are accepted.
+
+The frozen JSON transport is `{ schemaVersion: 2, manifest, sheets }`. `manifest`
+and every executable sheet row are strict objects; unknown sheet names and
+unknown row fields are rejected. Arrays preserve authored ordering, while the
+immutable catalog identity is the SHA-256 of canonical JSON with recursively
+sorted object keys: `catalogKey:r<revision>:<sha256>`. The manifest is repeated
+as the single `CatalogManifest` row so workbook and JSON exports carry the same
+identity. `services/api/src/catalog-v2.ts` validates cross-sheet goal, stage,
+requirement, tool and workflow references, contiguous stage order, bounded
+weights and side-effect consent/confirmation gates.
+
+Legacy v1 input is never interpreted as executable v2 data. The review-only
+`createLegacyCatalogMigrationCandidate` record binds a source hash, requires
+human mapping review, never carries consent or publication state, and sets
+`autoPublish: false`. The importer/Admin publication path is a later P1 task;
+this P0 contract does not silently publish or mutate existing v1 records.
 
 **Six categories:** `business_goal`, `knowledge_advisory`, `qualification_requirement`, `service_execution`, `service_status_support`, `conversation_navigation`. **Example ANCFZ stage keys:** `lead_generation`, `lead_qualification`, `account_creation`, `package_selection`, `document_upload`, `payment_invoice`, `contract`. These are **tenant catalog data**, not generic source-code branching.
 
@@ -45,6 +61,6 @@ This is a **proposed** 15-sheet schema; issue #84 must approve canonical column 
 - Inactive remote n8n test endpoints stay inactive until intentionally configured and validated.
 - Two tenants sharing the same logical goal key cannot access each other's RAG/source/persona/workflow records.
 
-## P0 completion inputs
+## Deferred implementation work
 
-Canonical v2 JSON schema and Pydantic/TypeScript types, reference workbook with headers, invalid fixture suite, importer/export round-trip, explicit old→new migration mapping, immutable version/pin and Admin publication authorization need engineering validation. **A decision to use v2-only does not mean the schema is already implemented.**
+The strict TypeScript contract, reference JSON fixture, invalid cases, canonical hash and review-only legacy migration boundary are implemented for P0. The P1 importer/export round-trip, Admin preview/publication, runtime adapter and explicit workbook mapping remain separate implementation issues (#87–#91). Existing v1 records and parser remain readable for rollback; they are not accepted as v2 input.
