@@ -24,7 +24,7 @@ again from GitHub before each task.
 | #93 | P2-02 | CLOSED | `docs/verification/conversation-v2/V2-P2-02.md`; implementation `52604ea`; closure comment `https://github.com/sanukhandev/agentic-rag-ai/issues/93#issuecomment-6519942894` |
 | #94 | P2-03 | CLOSED | `docs/verification/conversation-v2/V2-P2-03.md`; implementation `a08e32a8427a9a43c3ab0c6e139150f981f55d5e`; closure comment `https://github.com/sanukhandev/agentic-rag-ai/issues/94#issuecomment-6520128257` |
 | #95 | P2-04 | CLOSED | `docs/verification/conversation-v2/V2-P2-04.md`; implementation `7c0e684bdd144da7b8fc550f54ac9fd73219fd2d`; closure comment `https://github.com/sanukhandev/agentic-rag-ai/issues/95#issuecomment-6520288748` |
-| #96 | P2-05 | CLOSED | `docs/verification/conversation-v2/V2-P2-05.md`; implementation commit pending |
+| #96 | P2-05 | CLOSED | `docs/verification/conversation-v2/V2-P2-05.md`; implementation `78b671ca314ff9ba6d06c8964d4e17e1b674e8f9`; closure comment `https://github.com/sanukhandev/agentic-rag-ai/issues/96#issuecomment-6520345189` |
 | #97 | P3-01 | OPEN | Depends on #83 and private gateway boundary |
 | #98 | P3-02 | OPEN | Depends on #85 and #97 |
 | #99 | P3-03 | OPEN | Depends on #85 and #98 |
