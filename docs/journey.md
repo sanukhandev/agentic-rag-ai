@@ -12,6 +12,20 @@ The LLM may choose clarification, company activity, eligibility, document upload
 
 When the **customer goal itself** is satisfied, stop requirement collection and ask **"Is there anything else I can help you with?"** For knowledge-only visitors, answer the question and offer related help; never force business setup or lead creation. Do not add artificial questions to a refusal, farewell, handoff, blocked/error response or an external pending state where no permitted next action exists.
 
+## Persona continuity through seven stages
+
+One new-company journey is experienced as **one continuing conversation with the tenant's named AI advisor**, not seven separate technical forms. ANCFZ uses **Zara only when the session has selected a published Zara persona**; never hardcode that name for other tenants.
+
+Python must understand the conversation summary and active goal, call approved Node tools for missing facts/RAG/status before replying, and **compose every customer-visible message** naturally in the pinned voice: knowledge response, clarification, consent, Lead/Account request, package recommendation, document question, invoice status, contract status, error, human handoff and completion. Node Response Guard checks truthfulness, citations, appropriate question and metadata non-leakage.
+
+- Explain a verified pending action in plain language, not `reconcile_required`, provider IDs or raw n8n responses.
+- Avoid repeated "I'm Zara" introductions and asking facts already provided.
+- Never say a customer is registered, paid or signed unless the authoritative provider confirms it.
+- If sources or GPT fail, send an approved tenant-persona fallback rather than fabricated facts or arbitrary CRM collection.
+- Respect one relevant question except opt-out, farewell, terminal error or a state where there is no legitimate next step.
+
+These are **release-blocking acceptance gates**. See [persona-response-contract.md](persona-response-contract.md).
+
 ## Journey state machine
 
 ```mermaid

@@ -15,6 +15,8 @@ For each authenticated `(tenantId, sessionId, opportunityId)` maintain one autho
   "sessionId": "authorized-session",
   "opportunityId": "active-opportunity",
   "catalogVersionId": "published-version-pinned-at-journey-start",
+  "personaVersionId": "session-pinned-published-version",
+  "personaFallbackTemplateVersion": "approved-template-version",
   "revision": 12,
   "state": "awaiting_requirement",
   "primaryBusinessGoalKey": "catalog-goal-key-or-null",
@@ -59,7 +61,7 @@ Do not store raw PII unnecessarily in this projection. Facts use schema-validate
 
 ### Every-turn assessment (append-only)
 
-Include `(tenant, session, opportunity, messageId, clientMessageId, catalogVersionId, documentRevisionBefore, documentRevisionAfter, messageHash)`; original and normalized query hashes; sanitized retrieval tokens; **turn category, primary goal and secondary sub-intents**, candidate keys/signal IDs, **LLM suggested weights, Node accepted weights, score/confidence/ambiguity and rationale**, model/task/schema/response provenance; **conversation summary revisions and planner chosen next move**, selected decision and goal confirmation; slots proposed/validated/rejected, corrections; knowledge interruption flag; pending/current question; response/citation IDs; tool/action proposal ID; model/cache hit or fallback; error code; timestamps. Record provenance for **every substantive intent-identification turn**, including no match/low-confidence, without blindly appending an unbounded plaintext transcript.
+Include `(tenant, session, opportunity, messageId, clientMessageId, catalogVersionId, documentRevisionBefore, documentRevisionAfter, messageHash)`; original and normalized query hashes; sanitized retrieval tokens; **turn category, primary goal and secondary sub-intents**, candidate keys/signal IDs, **LLM suggested weights, Node accepted weights, score/confidence/ambiguity and rationale**, model/task/schema/response provenance, **personaVersionId, response language, fallback template version and final Response Guard verdict**; **conversation summary revisions and planner chosen next move**, selected decision and goal confirmation; slots proposed/validated/rejected, corrections; knowledge interruption flag; pending/current question; response/citation IDs; tool/action proposal ID; model/cache hit or fallback; error code; timestamps. Record provenance for **every substantive intent-identification turn**, including no match/low-confidence, without blindly appending an unbounded plaintext transcript.
 
 ### Storage/transaction design
 
@@ -69,6 +71,14 @@ Include `(tenant, session, opportunity, messageId, clientMessageId, catalogVersi
 - Outbox and action confirmation must read the same pinned document revision and verify no stale facts/consents.
 - Backfill safely from existing journey records only where identity and catalog version are unambiguous. Mark uncertain legacy state for review; do not fabricate confirmations.
 - Keep bounded snapshots and secure retention of append-only assessments; deletion/retention must cascade by authorized tenant/session policy.
+
+## Versioned persona and final response continuity
+
+The authorized session binds the tenant's **published personaVersionId**, assistant identity, permitted language/style and **approved fallback template version**. Persist these references with the intent projection and every assistant response/turn assessment, including fallback replies. Never write unbounded persona prompts, full model private reasoning, raw tool results or customer OTPs into a summary.
+
+A mid-session persona change is not silently applied; either continue the pinned version or perform an explicit audited migration. Duplicate message replay must return the originally validated customer reply with the same persona version **without another GPT call**. On API restart, Redis eviction or model outage, a fallback must remain within the pinned persona and accurately report known state. Unknown/wrong-tenant persona must fail closed; never default another tenant to Zara.
+
+The Python agent receives this pinned context **before** tool calls and final composition. Node audits the final composed answer's persona/grounding verdict separately from internal model decision metadata.
 
 ## Cache design
 

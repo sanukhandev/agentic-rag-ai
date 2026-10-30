@@ -6,6 +6,7 @@
 
 - A private Python GPT model gateway is deployed and authenticated to an approved Azure OpenAI model deployment via API key. Verify exact deployment name, Responses API availability, quotas and retry configuration.
 - The existing Node Chat API response contract remains unchanged; existing tenant/admin policies and data are intact.
+- A published, session-pinned **tenant persona** and approved fallback templates are configured before Python planning. ANCFZ uses Zara only if its tenant selected her. Every customer-visible message must pass **Python Persona Response Composer → Node Response Guard** or **approved persona template → guard**.
 - ANCFZ published catalog includes reviewed **Business Goals, six turn-intent categories, intent phrases/keywords/exclusions, weight policies, requirement prompts, seven ordered company-formation stages, verified completion criteria, and allowed tool/workflow bindings**. No shared code contains ANCFZ-specific conditions.
 - Authorized sandbox/mocks for Salesforce, OCR/SF-02, invoicing, payment and contract are labeled explicitly; real payment and legally binding signing require separate consent/approval.
 
@@ -34,6 +35,18 @@ Drive the **real Next.js/Node API** and the private Python model service rather 
 - Catalog republish does not change an active pinned opportunity; source revocation prevents answering from the revoked source.
 - A Salesforce/n8n timeout yields reconciliation, not duplicate write or stage completion.
 - Caller cannot override tenant/session/opportunity, execute arbitrary tool keys or skip confirmation/consent by prompt injection.
+
+## Blocking persona-response and Node-tool-loop acceptance
+
+- Across the **entire seven-stage continuous conversation**, verify every message (greetings, knowledge, qualification, contact/document collection, action confirmations, pending/reconciliation, failure, completion and handoff) follows the pinned tenant assistant name, natural tone and permitted language without repeatedly introducing itself.
+- When more knowledge is required, verify **Python requests scoped Node tools before final response**, receives correlated RAG/catalog/package/journey/status results and then generates a **persona-composed final answer** supported by cited evidence.
+- Node Response Guard must reject raw tool/model JSON, internal intent/confidence keys, prompt/trace IDs, unsupported prices/policies, wrong persona/language, invented provider completion, repeated irrelevant questions and ungrounded citations.
+- When RAG evidence is unavailable, the assistant responds with honest uncertainty and a legitimate next question in the tenant persona, **not automatic Lead capture**. Knowledge-only customers must not be pushed into CRM.
+- Model outage/429, invalid structured output, missing tool, provider reconciliation and consent denial must produce an accurate **versioned offline persona fallback** or legitimate pre-session transport error, not a model-generated claim of success.
+- After a session restart, cached response replay and mid-session persona publication, the same personaVersionId remains effective unless a validated explicit migration occurs.
+- A **second tenant** with different published assistant name/style/language must never receive Zara's voice or template. Malicious user/RAG prompt injection must not change the persona.
+- Review labeled human-quality scenarios for contextual acknowledgment, concise/natural prose, relevant non-repetitive follow-up and accurate status; distinguish **passing technical invariants** from qualitative voice review.
+- Do not report full seven-stage acceptance unless these persona-and-tool checks pass as well as business-stage provider checks. Design/specification alone is **not** runtime verification. Full spec: [persona-response-contract.md](persona-response-contract.md), [agent-tool-loop.md](agent-tool-loop.md).
 
 ## Stage acceptance evidence
 

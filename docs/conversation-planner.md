@@ -4,7 +4,7 @@
 
 ## Agent responsibilities
 
-For **each substantive customer turn** the LLM receives a compact, trusted tenant catalog digest and the latest **User Intent Document** projection containing: confirmed/possible goal, prior decisions, validated facts (and provenance), missing requirements, answered questions, document statuses, stage/provider statuses, customer preferences, previous question and relevant conversation summary. The model then:
+For **each substantive customer turn** the LLM receives the **published, session-pinned persona envelope** (assistant identity/name, tone, permitted language and style), a compact trusted tenant catalog digest and the latest **User Intent Document** projection containing: confirmed/possible goal, prior decisions, validated facts (and provenance), missing requirements, answered questions, document statuses, stage/provider statuses, customer preferences, previous question and relevant conversation summary. The model then:
 
 1. **Understand and summarize:** maintain a structured, bounded running summary of customer objectives, exact facts, corrections, objections, answered questions, unresolved needs, promised next steps and stage outcomes. Classify the latest utterance without dropping the previous goal.
 2. **Identify category and candidates:** choose the turn-intent category, candidate catalog keys, evidence spans, exclusions, uncertainty and whether the turn is a knowledge interruption, requirement answer, new goal or action request.
@@ -15,6 +15,16 @@ For **each substantive customer turn** the LLM receives a compact, trusted tenan
 7. **Evaluate goal satisfaction:** when the business goal's published completion criteria are verified, stop unnecessary requirement collection, summarize accurately and ask if the customer needs more help. An answer to a single knowledge question does not terminate a separately active business goal.
 
 Node validates catalog key membership, source IDs, facts, allowable next moves, score bounds, version/tenant, current stage, prior response state, and confirmation before saving the model proposal. If invalid, preserve existing context and ask a safe catalog-appropriate clarification; never silently reset the conversation.
+
+## Persona-guided planning and final response composition
+
+The Python agent must **understand the customer in the persona's style throughout the turn**, not simply repaint technical output at the end. It can request the minimum approved **Node read tools** (RAG, catalog, persona, stage, missing facts, package or provider status) **before** the final answer. Tool results inform its decision but never become customer-facing raw JSON.
+
+After planning and tool continuation, the **Persona Response Composer is the last generative step**. It narrates verified facts naturally in the current tenant's assistant voice, acknowledges known details without repeating an interrogation, and asks **one relevant next question** (or returns an explicit valid exception). It must not display internal intent keys, score percentages, raw SQL, tool IDs or workflow statuses. The **Node Response Guard** then validates citations, persona, language, stage truth and question appropriateness.
+
+For ANCFZ, a published Zara persona might say: "I'll keep the three visas you mentioned in mind. [Grounded options and citations.] What business activity are you planning?" She must not invent options if RAG/packages are unavailable; she also must not repeatedly introduce herself. For another tenant, load that tenant's published voice instead of Zara. Natural replies do not imply human identity, internal private thoughts or invented provider results.
+
+On model/RAG/tool failure, the Node handler returns an **approved persona-versioned fallback** populated only with verified state, not a generic technical dump or a forced lead form. Full requirements: [persona-response-contract.md](persona-response-contract.md), [agent-tool-loop.md](agent-tool-loop.md).
 
 ## Proposed planner output (illustrative JSON; keys are not current code)
 
@@ -106,4 +116,4 @@ No CRM Lead submission is assumed for a knowledge-only visitor.
 
 Node writes one auditable planner assessment per evaluated turn, including model version, allowed candidates, suggested/accepted weights, summary revision, verified/unverified facts, chosen next move, one question key, RAG evidence and optional tool proposal. Replay or duplicate clientMessageId returns the saved decision/answer **without another GPT call or n8n side effect**. Redis accelerates scoped caching, PostgreSQL is source of truth.
 
-On model timeout / max retries, retain current intent and pending requirement; return a controlled model error or permitted non-factual clarification. Never mutate stage/confirmation based on an incomplete model response. Keep existing auth/PII vault/consent safeguards through this migration.
+On model timeout / max retries, retain the pinned persona, current goal and pending requirement; return an **approved and state-accurate tenant-persona fallback through Node Response Guard**, or a safe generic transport error if the tenant/session has not been established. Never mutate stage/confirmation based on an incomplete model response. Keep existing auth/PII vault/consent safeguards through this migration.

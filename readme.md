@@ -2,7 +2,7 @@
 
 **Current migration goal:** a **GPT-led, intent-focused customer conversation** driven by the customer's actual **Business Goal** (not automatic CRM Lead capture), with answers grounded in RAG, intelligent follow-up questions, and one continuous seven-stage ANCFZ company-formation journey when that goal is confirmed. The architecture is **tenant-configurable**; ANCFZ is the current acceptance tenant, not a hardcoded implementation.
 
-**Proposed runtime:** Next.js Chat → Node API (tenant/session + catalog/intent/journey/authorization) → private Python GPT model gateway (Azure OpenAI Responses API via API key) → Node RAG/response validation → approved catalog tool actions → PostgreSQL outbox → Redis Streams → n8n → Salesforce/OCR/invoice/contract provider callbacks.
+**Proposed runtime:** Next.js Chat → Node API (tenant/session/**published persona** + catalog) → Python **Conversation Agent Runtime** (GPT strategy and pre-response trusted Node read tools) → **Persona Response Composer** → **Node Response Guard** → customer. Authorized catalog actions are separately dispatched through PostgreSQL outbox → Redis Streams → n8n → verified provider callbacks. ANCFZ's Zara is tenant-configured, never hardcoded.
 
 **Current rewrite branch:** Python GPT gateway and Node adapter are added, and the Foundry Agent runtime is retired on this branch. **The existing monolithic Node `app.ts` still has legacy lead-first conversation logic**; the new User Intent Document, dynamic Node tool loop and goal-first coordinator are **not implemented**. Do not claim the seven-stage path is verified. Do not mistake this documentation update for code migration or a successfully verified seven-stage provider journey.
 
@@ -14,9 +14,11 @@
 4. [Current product requirements](docs/requirements.md)
 5. [Intent taxonomy](docs/intent-taxonomy.md)
 6. [GPT conversation planner](docs/conversation-planner.md)
-7. [Target architecture](docs/architecture.md)
-8. [Migration stages](docs/migration-plan.md)
-9. [Single-journey acceptance](docs/acceptance.md)
+7. [Mandatory tenant persona response contract](docs/persona-response-contract.md)
+8. [Python↔Node agent tool loop](docs/agent-tool-loop.md)
+9. [Target architecture](docs/architecture.md)
+10. [Migration stages](docs/migration-plan.md)
+11. [Single-journey acceptance](docs/acceptance.md)
 
 ## Existing stack (retain)
 
@@ -40,6 +42,6 @@ For Azure GPT-model API-key setup and the required initial+3 transient retry pol
 
 ## Acceptance
 
-One synthetic customer, one authorized session/opportunity, confirmed single intent, a durable per-turn User Intent Document/cache, grounded answers with exactly one relevant follow-up during the active journey, seven ordered catalog stages, and verified external action/callback evidence. No mandatory 25-turn or 200-message benchmark.
+One synthetic customer, one authorized session/opportunity, confirmed business goal, durable User Intent Document/cache and **session-pinned published assistant persona**. Python may call trusted Node tools **before** final generation; **every customer-visible message** passes the persona composer and Node guard (or approved persona fallback and guard), uses evidence-grounded facts and one purposeful follow-up when applicable, across seven business stages and verified callbacks. No mandatory 25-turn or 200-message benchmark.
 
 **Do not claim completed CRM, payment, document transfer or signing based solely on model text, local records, n8n execution, mock responses or generated PDFs.**

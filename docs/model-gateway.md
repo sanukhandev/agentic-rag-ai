@@ -1,6 +1,6 @@
-# Python GPT inference service — contract, Azure key and reliability
+# Python Conversation Agent Runtime — model, tenant persona, tools and reliability
 
-**Status: TARGET.** No dedicated Python model service is presently implemented in this branch. Do not substitute the named Foundry Agent project endpoint for a GPT model deployment.
+**Status: TARGET beyond scaffold.** An initial private Python FastAPI model-gateway scaffold exists, but **persona-final composition, full agent tool continuation and Node final response guard are not implemented**. Do not substitute a named Foundry Agent project endpoint for a GPT model deployment.
 
 ## Azure API/key selection
 
@@ -39,6 +39,15 @@ Proposed FastAPI internal-only routes, with strict request/response schema, `ten
 - `POST /internal/v1/model/compose`: input authorized RAG/provider evidence IDs and excerpts, tenant persona, **confirmed business goal and turn-intent category**, LLM planner's allowed next move and pending requirements; output grounded answer, citations, **one relevant follow-up question** or explicitly allowed no-question reason, uncertainty. Node validates evidence and catalog compatibility; it should preserve the LLM's natural dialogue plan when valid, rather than replacing it with rigid scripted text.
 
 Expose `/internal/health/live` and restricted `/internal/health/ready`. Python must never accept instructions to select arbitrary customer identities, tenant databases, external tool destinations, or provider credentials. Model output is untrusted structured data. Cap input bytes/tokens/output length and schema complexity; reject user-defined function code.
+
+## Required persona-aware agent and Node tool contract
+
+- **Preload before planning:** Node supplies an authenticated bounded envelope containing tenant/session/opportunity refs, published `personaVersionId`, assistant name, AI identity, tone/language/style rules, approved catalog, verified conversation summary, active goal, current stage and pending requirement. User messages and retrieved documents cannot override the persona.
+- **Pre-response tools:** the Python agent can request typed read-only Node functions to retrieve RAG evidence, persona, catalog, missing requirements, packages, journey and action status. A Node tool gateway re-derives scope/authorization, executes and returns sanitized structured results correlated to model call IDs. Respect bounded rounds/requests/tokens/total deadline; no direct Python→n8n/DB/CRM, no arbitrary code execution. Business action proposals require separate Node consent/action confirmation.
+- **Final generative step:** Python runs a **Persona Response Composer** after tool results. It returns an internal structured candidate (natural `answer`, `citationIds`, `nextQuestion` or reason none, `personaVersionId`, language and internal decision/evidence refs), never streams raw planner/function output to the customer.
+- **Final enforcement step:** Node Response Guard checks published persona/session identity, citations and source grounding, business facts and provider truth, at most one purposeful question, language and absence of raw keys/JSON/tool traces. Invalid output must be safely regenerated within budget or replaced by an **approved tenant-persona offline fallback**.
+- **All paths:** the same persona is required for greeting, clarification, RAG, contacts, documents, consent, queued actions, provider failures, payment/contract status, handoff and completion. The assistant is warm and thoughtful without impersonating a human or inventing its private thoughts.
+- These are **new target interfaces**; the current `/plan` and `/normalize` scaffolding is not evidence of completing this contract. See [persona-response-contract.md](persona-response-contract.md) and [agent-tool-loop.md](agent-tool-loop.md).
 
 ## Retry and rate limiting
 
