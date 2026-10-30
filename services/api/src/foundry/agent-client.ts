@@ -34,6 +34,7 @@ export interface FoundryAgentClientOptions {
   invocationVersion?: string;
   requireServingVersion?: boolean;
   allowApplicationTools?: boolean;
+  maxExecutionMs?: number;
 }
 
 export class FoundryAgentClient {
@@ -47,6 +48,9 @@ export class FoundryAgentClient {
     await this.versionCheck;
     const client = this.options.openAIClient;
     if (!client) throw new FoundryAgentError('configuration', 'Foundry OpenAI client is not configured.');
+    const startedAt = Date.now();
+    const budgetMs = this.options.maxExecutionMs ?? 30_000;
+    const withinBudget = (): boolean => Date.now() - startedAt <= budgetMs;
     let conversationId = input.conversationId;
     if (!conversationId) {
       try {
@@ -56,9 +60,11 @@ export class FoundryAgentClient {
       }
     }
     try {
+      if (!withinBudget()) throw new FoundryAgentError('protocol', 'Foundry function-calling budget exceeded.');
       let response = await this.createResponse(client, conversationId, input.message);
       const traces: FoundryResponseTrace[] = [];
       for (let round = 0; round < 3; round += 1) {
+        if (!withinBudget()) throw new FoundryAgentError('protocol', 'Foundry function-calling budget exceeded.');
         const output = response as unknown as { id?: unknown; output?: unknown; output_text?: unknown };
         const responseId = typeof output.id === 'string' ? output.id : 'unknown';
         const calls = Array.isArray(output.output)
@@ -73,6 +79,7 @@ export class FoundryAgentClient {
         if (!options.onToolCalls) throw new FoundryAgentError('protocol', 'Foundry requested a function but no trusted dispatcher is configured.');
         if (calls.length > 5) throw new FoundryAgentError('protocol', 'Foundry requested too many functions for one customer turn.');
         const results = await options.onToolCalls(calls);
+        if (!withinBudget()) throw new FoundryAgentError('protocol', 'Foundry function-calling budget exceeded.');
         response = await this.createResponse(client, conversationId, results.map((result) => ({ type: 'function_call_output', call_id: result.callId, output: JSON.stringify(result.output) })));
       }
       throw new FoundryAgentError('protocol', 'Foundry exceeded the function-calling round limit.');
@@ -138,5 +145,7 @@ export const foundryAgentClientFromEnv = (nodeEnv: string): { client: FoundryAge
   const openAIClient = projectClient.getOpenAIClient({ azureConfig: { allowPreview: true, agentName } });
   const candidate = process.env.FOUNDRY_APPLICATION_TOOLS_ENABLED === 'true';
   const invocationVersion = process.env.FOUNDRY_INVOCATION_VERSION?.trim() || undefined;
-  return { client: new FoundryAgentClient({ endpoint, agentName, expectedVersion: agentVersion, projectClient, openAIClient, allowApplicationTools: candidate, requireServingVersion: process.env.FOUNDRY_REQUIRE_SERVING_VERSION !== 'false', ...(invocationVersion ? { invocationVersion } : {}) }), agentName, agentVersion };
+  const configuredBudget = Number(process.env.FOUNDRY_TOOL_BUDGET_MS ?? 30_000);
+  const maxExecutionMs = Number.isFinite(configuredBudget) && configuredBudget > 0 ? configuredBudget : 30_000;
+  return { client: new FoundryAgentClient({ endpoint, agentName, expectedVersion: agentVersion, projectClient, openAIClient, allowApplicationTools: candidate, maxExecutionMs, requireServingVersion: process.env.FOUNDRY_REQUIRE_SERVING_VERSION !== 'false', ...(invocationVersion ? { invocationVersion } : {}) }), agentName, agentVersion };
 };
