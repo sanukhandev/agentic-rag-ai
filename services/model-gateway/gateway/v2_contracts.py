@@ -99,3 +99,18 @@ class ResponseGuardVerdictV2(StrictV2):
     accepted: bool
     reasonCode: Literal["accepted", "persona_mismatch", "invalid_citation", "unsupported_claim", "invalid_question", "metadata_leak", "stale_state", "policy_denied"]
     response: PersonaComposedResponseV2 | None
+
+
+class ToolTraceV2(StrictV2):
+    toolCallId: str = Field(min_length=8, max_length=256)
+    toolName: str = Field(min_length=1, max_length=128)
+    status: Literal["ok", "temporarily_unavailable", "not_authorized", "invalid_args", "stale_state"]
+    resultDigest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    elapsedMs: int = Field(ge=0, le=180_000)
+
+
+class AgentTurnResultV2(StrictV2):
+    response: PersonaComposedResponseV2
+    toolTrace: list[ToolTraceV2] = Field(default_factory=list, max_length=12)
+    modelRequestCount: int = Field(ge=1, le=8)
+    toolCallCount: int = Field(ge=0, le=12)

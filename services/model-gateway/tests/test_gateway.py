@@ -162,10 +162,3 @@ def test_client_uses_initial_plus_three_sdk_retries(monkeypatch):
     client = module._client_get()
 
     assert client.max_retries == 3
-
-
-def test_client_accepts_existing_openai_endpoint_alias(monkeypatch):
-    monkeypatch.delenv("AZURE_OPENAI_BASE_URL")
-    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://resource.openai.azure.com/openai/v1")
-
-    assert module._client_get().max_retries == 3

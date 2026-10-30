@@ -13,7 +13,9 @@ from openai import AsyncOpenAI
 from pydantic import ValidationError
 
 from .contracts import PlanRequest, PlanResult, NormalizeRequest, NormalizeResult
+from .agent import BoundedConversationAgent, HttpToolGateway
 from .reliability import BudgetExceeded, CircuitBreaker, RateLimitExceeded, SlidingWindowRateLimiter, TurnBudget
+from .v2_contracts import AgentTurnResultV2, TurnEnvelopeV2
 
 app = FastAPI(title="Private Conversation Model Gateway", docs_url=None, redoc_url=None, openapi_url=None)
 _limit = asyncio.Semaphore(max(1, min(4, int(os.getenv("MODEL_MAX_CONCURRENCY", "2")))))
@@ -156,6 +158,19 @@ async def ready(x_internal_service_key: str | None = Header(default=None)) -> di
     await _auth(x_internal_service_key)
     _client_get()
     return {"status": "configured"}
+
+
+@app.post("/internal/v2/conversation/turn", response_model=AgentTurnResultV2)
+async def agent_turn(body: TurnEnvelopeV2, x_internal_service_key: str | None = Header(default=None)) -> AgentTurnResultV2:
+    await _auth(x_internal_service_key)
+    gateway_url = os.getenv("NODE_TOOL_GATEWAY_URL", "")
+    if not gateway_url:
+        raise HTTPException(status_code=503, detail={"code": "TOOL_GATEWAY_NOT_CONFIGURED"})
+    try:
+        agent = BoundedConversationAgent(_client_get(), HttpToolGateway(gateway_url, os.getenv("MODEL_GATEWAY_SERVICE_KEY", "")), os.environ["AZURE_OPENAI_DEPLOYMENT"])
+        return await agent.run(body)
+    except ValueError as error:
+        raise HTTPException(status_code=503, detail={"code": "TOOL_GATEWAY_NOT_CONFIGURED"}) from error
 
 @app.post("/internal/v1/model/plan", response_model=PlanResult)
 async def plan(body: PlanRequest, x_internal_service_key: str | None = Header(default=None)) -> PlanResult:
