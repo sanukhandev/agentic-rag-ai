@@ -348,3 +348,15 @@ n8n authentication, opaque references and audit boundaries remain unchanged.
 Owner-approved n8n secret rotation and production provider review remain
 operationally blocked; no credential value was read or changed. Evidence is
 recorded in `docs/verification/conversation-v2/V2-P5-04.md`.
+
+## V2-P6-01 Stage 1 Lead provider contract — 2026-10-30
+
+Issue #112 is verified with deterministic mock evidence. Node now has a strict
+v2 Lead create-or-dedupe contract that binds tenant, session, opportunity,
+catalog, action revision and idempotency, carries only an opaque payload
+reference, requires explicit contact consent and classifies ambiguous or
+uncorrelated provider results as reconciliation-required. The deterministic
+mock is retry-idempotent and explicitly reports `mock_verified`. No live
+Salesforce credential or workflow binding was enabled, so no real Lead ID is
+claimed. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P6-01.md`.

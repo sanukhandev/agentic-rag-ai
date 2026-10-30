@@ -40,7 +40,7 @@ again from GitHub before each task.
 | #109 | P5-02 | CLOSED | `V2-P5-02.md`; remote commit `f9343054b4ea33859a0274420b4b446520adb703` |
 | #110 | P5-03 | CLOSED | `V2-P5-03.md`; remote commit `4572b9ffbc44d64a15fd944fb0da6d3cfb783d1d` |
 | #111 | P5-04 | VERIFIED | `docs/verification/conversation-v2/V2-P5-04.md`; pending commit/push and issue closure |
-| #112 | P6-01 | OPEN | Depends on #108–#111 and provider inputs |
+| #112 | P6-01 | VERIFIED | `docs/verification/conversation-v2/V2-P6-01.md`; pending commit/push and issue closure; live Salesforce provider remains blocked |
 | #113 | P6-02 | OPEN | Depends on #112 and catalog policy |
 | #114 | P6-03 | OPEN | Depends on #113 and verification inputs |
 | #115 | P6-04 | OPEN | Depends on #114 and approved price source |
