@@ -18,11 +18,13 @@ The full seven-stage E2E remains intentionally NOT RUN and is reserved for
 manual issue #124. No migration, customer data, provider write or credential
 was changed.
 
-V2-P0-02 is currently **BLOCKED/OPEN**: the private Azure OpenAI `/openai/v1/`
-endpoint, deployment, API key and Node↔Python service key are absent from the
-local environment. The existing gateway's static retry/auth/structured-output
-boundary was reviewed, but no live Azure capability or quota result is claimed.
-See [`V2-P0-02`](verification/conversation-v2/V2-P0-02.md).
+V2-P0-02 is **VERIFIED for the configured local development deployment**:
+the private Azure OpenAI `/openai/v1/` endpoint, deployment, API key and
+Node↔Python service key were present through the local endpoint compatibility
+mapping. Live structured Responses output, strict JSON and a direct function
+capability probe succeeded. Azure CLI quota metadata was not available on the
+host; application budgets are verified. See
+[`V2-P0-02`](verification/conversation-v2/V2-P0-02.md).
 
 ## Existing code topology — IMPLEMENTED
 
@@ -31,7 +33,7 @@ See [`V2-P0-02`](verification/conversation-v2/V2-P0-02.md).
 | Customer HTTP API | `services/api/src/app.ts`, `services/api/src/http/schemas.ts` | Session and message routes, message idempotency, per-turn catalog/RAG/response orchestration; unchanged public JSON response |
 | Catalog | `services/api/src/intent-catalog.ts`, `intent-catalog-xlsx.ts` | Published XLSX catalog, weighted signals (phrases/keywords/exclusions), score/confidence/ambiguity, slot and journey rules; optional `BusinessStages` plus other catalog extensions |
 | Continuity | `services/api/src/intent-journey.ts`, `journey-engine.ts`, `conversation-state.ts` | Active intent, opportunity identity, pending requirement, fact/confirmation state and transition handling |
-| Selected model | `services/api/src/python-model/chat-model-adapter.ts`, `services/model-gateway/gateway/app.py` | New private Node→Python GPT adapter and Azure OpenAI Responses API-key gateway, initial structured planning and normalization (not yet live verified) |
+| Selected model | `services/api/src/python-model/chat-model-adapter.ts`, `services/model-gateway/gateway/app.py` | Private Node→Python GPT adapter and Azure OpenAI Responses API-key gateway, live structured planning/function capability and bounded resilience controls verified |
 | Model tools | `services/api/src/agent-tools.ts`, existing ActionGateway | Legacy Node read-only services and authorized outbox operations remain; Python↔Node catalog-v2 dynamic tool-call cycle is **not yet implemented** |
 | Inference interface | `services/api/src/model.ts` | Existing `ChatModel` abstraction and deterministic fallback/normalization helpers |
 | Retrieval | `services/api/src/knowledge.ts`, retrieval/search modules | Tenant/source-filtered PostgreSQL pgvector knowledge, citations and extractive fallback |
@@ -52,7 +54,7 @@ See [`V2-P0-02`](verification/conversation-v2/V2-P0-02.md).
 6. **Action planning:** catalog `WorkflowBindings` and Node action path exist, but the current flow risks treating lead/CRM capture as the implicit primary goal. Named Foundry read-only function tools are separate from n8n writes. The new design must treat **CRM Lead capture as a conditional Service Execution capability**, not universal intent completion. Need a tenant-neutral catalog `ToolBindings`/action specification and server-side interpretation → user intent confirmation → prerequisite/consent → transactional outbox.
 7. **One-question continuity:** pending requirements and source-grounded responses exist, but there is no unified invariant to guarantee one relevant follow-up after every successful grounded active-journey answer, especially through knowledge interruptions and stage handoff.
 8. **Provider blocker:** latest documented v6 13-turn run created an eligible ActionRequest and dispatched local lead, then set `reconcile_required` without a verified Salesforce remote Lead. Qualification/Account/Package/Documents/Invoice/Contract were not completed in that run.
-9. **Python retry/rate limits:** initial FastAPI/SDK client now exists and configures SDK `max_retries=3`, but Azure live retry, 429 throttling, shared turn deadlines and circuit breaker have **not** been acceptance-tested.
+9. **Python retry/rate limits:** SDK `max_retries=3`, local 429 `Retry-After`, shared turn deadlines, bounded concurrency/pacing, circuit breaker and redacted observability are implemented and focused-tested. Provider RPM/TPM quota metadata remains an operational follow-up because Azure CLI is unavailable on the host.
 10. **Privacy deferral conflict:** existing Node masking/token vault and scope restrictions are implemented. Advanced PII-filter changes can be deferred, but directly disabling these guards would require a separate privacy/security decision; not part of a documentation-only migration.
 
 ## Current dangerous assumptions to avoid

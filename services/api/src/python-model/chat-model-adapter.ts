@@ -48,7 +48,10 @@ export class PythonChatModelAdapter implements ChatModel {
       citationId: citation.chunkId,
       content: bounded(content, 3_600),
     }));
-    const context = input.followUpContext ?? {};
+    const context: NonNullable<DraftInput['followUpContext']> = input.followUpContext ?? {
+      leadCaptured: false,
+      primaryIntentKey: null,
+    };
     const persona = input.persona;
     const result = await this.request<ModelGatewayResult>('/internal/v1/model/plan', {
       requestId: randomUUID(),

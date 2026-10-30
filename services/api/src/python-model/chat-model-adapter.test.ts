@@ -28,7 +28,7 @@ describe('PythonChatModelAdapter', () => {
       maskedMessage: 'New company',
       evidence: [{ citation: { chunkId: 'chunk-1' } as never, content: 'Approved service details.' }],
       personaName: 'Advisor',
-      followUpContext: { primaryIntentKey: 'anc.setup.new_company' },
+      followUpContext: { leadCaptured: false, primaryIntentKey: 'anc.setup.new_company' },
     });
     expect(result.proposedIntent).toBeNull();
     expect(result.citationIds).toEqual(['chunk-1']);

@@ -17,6 +17,7 @@ class PlanRequest(Strict):
     catalog: dict[str, Any] = Field(default_factory=dict)
     evidence: list[Evidence] = Field(default_factory=list, max_length=12)
     responseMode: str = Field(default="dialogue", max_length=80)
+    deadlineAt: str | None = Field(default=None, max_length=80)
 
 class PlanResult(Strict):
     answer: str = Field(min_length=1, max_length=12000)
@@ -35,6 +36,7 @@ class NormalizeRequest(Strict):
     message: str = Field(max_length=4000)
     conversationSummary: str = Field(default="", max_length=2000)
     catalog: dict[str, Any] = Field(default_factory=dict)
+    deadlineAt: str | None = Field(default=None, max_length=80)
 
 class NormalizeResult(Strict):
     normalizedQuery: str = Field(max_length=4000)
