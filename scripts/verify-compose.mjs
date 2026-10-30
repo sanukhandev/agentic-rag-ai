@@ -44,10 +44,16 @@ for (const serviceName of ['postgres', 'redis', 'n8n', 'api', 'web', 'admin']) i
 const local = loadConfig(['docker-compose.yml', 'docker-compose.local-dev.yml']);
 validateShared(local);
 const localServices = local.services ?? {};
-if (localServices.api?.build?.target !== 'api-foundry-local') throw new Error('Local development must use the Azure CLI Foundry API target.');
-if (localServices.api?.environment?.FOUNDRY_AUTH_MODE !== 'azure-cli' || localServices.api?.environment?.FOUNDRY_HOSTED_TOOLS_ENABLED !== 'false') throw new Error('Local Foundry authentication/tool settings are not fail-closed.');
-if (!localServices.api?.volumes?.some((volume) => String(volume.source ?? volume).includes('foundry-azure-cli-config'))) throw new Error('Local development must persist Azure CLI credentials in its private named volume.');
+if (localServices.api?.build?.target !== 'api-runtime') throw new Error('Local development must use the minimal Node API runtime.');
+if (Object.keys(localServices.api?.environment ?? {}).some((name) => name.startsWith('FOUNDRY_'))) throw new Error('Local API must not inject legacy Foundry Agent configuration.');
 for (const serviceName of ['postgres', 'redis', 'nginx']) if (!localServices[serviceName]?.ports?.length) throw new Error(`${serviceName} must publish its local development port.`);
 for (const serviceName of ['api', 'web', 'admin', 'n8n']) if (localServices[serviceName]?.ports?.length) throw new Error(`${serviceName} must remain private in local development.`);
 
-console.log('Compose deployment targets passed: shared stack, VM development ingress, local Foundry/Azure CLI runtime, private application services and persistent data volumes.');
+const python = loadConfig(['docker-compose.yml', 'docker-compose.local-dev.yml', 'docker-compose.python-gpt.yml']);
+validateShared(python);
+const pythonServices = python.services ?? {};
+if (!pythonServices['model-gateway']?.build || !pythonServices['model-gateway']?.healthcheck) throw new Error('Private Python gateway build/health must be configured.');
+if (pythonServices['model-gateway']?.ports?.length) throw new Error('Model gateway must never publish a host port.');
+if (pythonServices.api?.environment?.CHAT_MODEL_PROVIDER !== 'python-gpt') throw new Error('Python overlay must select python-gpt provider.');
+if (pythonServices.api?.environment?.PYTHON_MODEL_URL !== 'http://model-gateway:8088') throw new Error('Node must target the private model service.');
+console.log('Compose deployment targets passed: shared stack, VM development ingress, private Python GPT local runtime and persistent data volumes.');

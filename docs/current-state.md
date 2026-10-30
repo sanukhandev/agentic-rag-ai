@@ -1,6 +1,6 @@
 # Current code state and migration gaps — 2026-10-30
 
-**Branch reviewed:** `feat/foundry-single-journey-tool-orchestration` at SHA `8efe09b620a48c31cc7e4daab974638baf938134` (baseline for this documentation rewrite). This is a source inspection, **not** a new live end-to-end run. Subsequent commits must update this file when implementation changes.
+**Baseline originally reviewed:** `feat/foundry-single-journey-tool-orchestration`. **Current rewrite branch:** `refactor/python-conversation-core-v2`. Legacy Foundry agent source/runtime and Azure CLI image have been replaced in the rewritten tree with a Python GPT gateway and a Node adapter, but this is **not** a tested seven-stage runtime and the original lead-first `app.ts` is still active. This is source inspection, not live acceptance.
 
 ## Existing code topology — IMPLEMENTED
 
@@ -9,8 +9,8 @@
 | Customer HTTP API | `services/api/src/app.ts`, `services/api/src/http/schemas.ts` | Session and message routes, message idempotency, per-turn catalog/RAG/response orchestration; unchanged public JSON response |
 | Catalog | `services/api/src/intent-catalog.ts`, `intent-catalog-xlsx.ts` | Published XLSX catalog, weighted signals (phrases/keywords/exclusions), score/confidence/ambiguity, slot and journey rules; optional `BusinessStages` plus other catalog extensions |
 | Continuity | `services/api/src/intent-journey.ts`, `journey-engine.ts`, `conversation-state.ts` | Active intent, opportunity identity, pending requirement, fact/confirmation state and transition handling |
-| Current model | `services/api/src/foundry/agent-client.ts`, `chat-model-adapter.ts`, `context.ts` | Named Foundry Agent client, AzureCliCredential, Conversations/Responses, v4 serving and v6 candidate, local agent version + hosted tool validation |
-| Current function calling | `services/api/src/foundry-functions.ts` | Five read-only Foundry functions, bounded per-round tool calls and strict authorized lookups |
+| Selected model | `services/api/src/python-model/chat-model-adapter.ts`, `services/model-gateway/gateway/app.py` | New private Node→Python GPT adapter and Azure OpenAI Responses API-key gateway, initial structured planning and normalization (not yet live verified) |
+| Model tools | `services/api/src/agent-tools.ts`, existing ActionGateway | Legacy Node read-only services and authorized outbox operations remain; Python↔Node catalog-v2 dynamic tool-call cycle is **not yet implemented** |
 | Inference interface | `services/api/src/model.ts` | Existing `ChatModel` abstraction and deterministic fallback/normalization helpers |
 | Retrieval | `services/api/src/knowledge.ts`, retrieval/search modules | Tenant/source-filtered PostgreSQL pgvector knowledge, citations and extractive fallback |
 | Outbox/workflows | `services/api/src/actions.ts`, `events.ts`, `event-relay.ts`, `event-bus.ts`, `event-worker.ts` | Action proposals, transactional outbox, Redis Streams, worker→n8n, retries/reconciliation |
@@ -18,11 +18,11 @@
 | Persistence | `services/api/src/store-postgres.ts`, `infra/postgres/001..054` | Durable tenant/session/journey/actions/business artifacts and Foundry conversation bindings |
 | One-journey QA | `tools/qa/ancfz-single-journey.mjs` | One synthetic session, idempotency and some continuity assertions; stops at real provider blocker |
 | Admin and web | `apps/admin`, `apps/web` | Existing Angular Admin and Next.js web chat; not redesigned by this task |
-| Python | `tools/ingestion`, `tools/anc/pdf_service`, `tools/anc/payment_mock` | Ingestion/OCR/PDF/payment mock. **No dedicated GPT inference gateway** exists yet |
+| Python | `services/model-gateway/`, `tools/ingestion`, `tools/anc/pdf_service`, `tools/anc/payment_mock` | New FastAPI model gateway is added but unverified; ingestion/OCR/PDF/payment mock remain separate services |
 
 ## Deficiencies versus target
 
-1. **Wrong model service boundary:** current Node Foundry Agent SDK is not the proposed Python API-key model gateway. No private `/v1/model/normalize`, `/interpret` and `/compose` service or typed Node adapter.
+1. **Initial model boundary exists, but orchestration is incomplete:** private Python `/internal/v1/model/plan` and `/normalize` plus Node adapter are added, with an opt-in Compose overlay. Current `app.ts` still routes through lead-first branches and does not pass the full published catalog and User Intent Document into the planner; structured plan is not yet allowed to trigger a business tool.
 2. **Intent-score semantics:** `intent-catalog.ts` derives `confidence = score / 100` from weighted keyword/phrase scores; this is a heuristic score, not a measured probability. The current engine has no **goal-first six-category taxonomy** and no **GPT-led adaptive conversation strategy** that weighs full conversation summary, requirements and competing business goals on every substantive turn. Model intent interpretations and signal evidence are not systematically fused/validated per turn. Cross-intent ambiguity needs explicit user selection.
 3. **No dedicated User Intent Document:** current `conversation_state`, `intentProgress`, `journey_instances`, `journey_facts`, messages and audit are useful foundations but no independently versioned, reconstructible per-turn intent decision ledger exists with **primary Business Goal distinct from per-turn intent category**, LLM-generated structured conversation summary, candidate signal **and adaptive weight** evidence, confirmed goal, model provenance and cache invalidation guarantees.
 4. **Normalization is conditional:** `app.ts` builds a deterministic query and gates model normalization on global/tenant flags for particular uncertain turns. Target: use a bounded AI normalization call when retrieval needs it, then cache and validate its facts, negation, tokens and source/tenant scope.
@@ -69,3 +69,11 @@
 ## Reported remote workflow inventory (unverified)
 
 Four n8n webhook-test paths have been supplied for Salesforce Lead creation, account OTP send/verify and Salesforce document upload. This is **configuration evidence only**: no calls were executed, no actual n8n workflow IDs/response contracts were fetched, and no Salesforce record was verified from them. Lead and upload request samples omit auth headers; a pasted account-verification API key must be rotated. Account OTP verification does not create a Salesforce Account. Full safe integration requirements: [`remote-n8n-integration.md`](remote-n8n-integration.md). This inventory does **not** resolve the latest `reconcile_required` Lead blocker.
+
+## Rewrite branch — explicit removal boundary
+
+Retired from the rewrite branch: eight Foundry-only SDK/tool source and test files, the Azure CLI Docker build target, and the local Foundry overlay configuration. Preserved: all PostgreSQL migrations (including the historical Foundry conversation bindings), public Chat/Admin API, Redis/outbox/n8n, auth, privacy, catalog, lifecycle, Next.js, Angular, local data and dated verification.
+
+New initial code: `services/model-gateway/` (API-key Azure GPT model, typed plan/normalize, at most three SDK transient retries, private HTTP authentication) and `services/api/src/python-model/chat-model-adapter.ts` (compatibility adapter, not a full User Intent Document engine). Deployment is opt-in through `docker-compose.python-gpt.yml`. **No live Azure model call, runtime build, provider workflow or seven-stage acceptance was executed in this GitHub editing session.**
+
+Next: implement a modular Node ConversationCoordinator, catalog-v2 stage-scoped requirements, durable User Intent Document/CAS, and model-proposed read-only tools plus separately confirmed async provider actions; then replace the monolithic chat orchestration. See [rewrite safety manifest](rewrite-safety-manifest.md).

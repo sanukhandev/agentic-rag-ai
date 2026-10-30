@@ -4,7 +4,7 @@
 
 **Proposed runtime:** Next.js Chat → Node API (tenant/session + catalog/intent/journey/authorization) → private Python GPT model gateway (Azure OpenAI Responses API via API key) → Node RAG/response validation → approved catalog tool actions → PostgreSQL outbox → Redis Streams → n8n → Salesforce/OCR/invoice/contract provider callbacks.
 
-**Current implementation differs:** the repository still uses a Node `@azure/ai-projects` named Foundry Agent client with Azure CLI. The Python GPT service, User Intent Document and new intent confirmation/scoring workflow are **not implemented**. Do not mistake this documentation update for code migration or a successfully verified seven-stage provider journey.
+**Current rewrite branch:** Python GPT gateway and Node adapter are added, and the Foundry Agent runtime is retired on this branch. **The existing monolithic Node `app.ts` still has legacy lead-first conversation logic**; the new User Intent Document, dynamic Node tool loop and goal-first coordinator are **not implemented**. Do not claim the seven-stage path is verified. Do not mistake this documentation update for code migration or a successfully verified seven-stage provider journey.
 
 ## Start here
 
@@ -32,7 +32,7 @@ The target Python model gateway is an **additional isolated service**, not a rep
 
 ## Current local development
 
-Existing Docker Desktop files: `docker-compose.yml`, `docker-compose.local-dev.yml`, plus VM overlay `docker-compose.vm-dev.yml`. Existing API and Foundry v4 stable runtime can be checked using repository scripts. Do not change the `CHAT_MODEL_PROVIDER` value to the proposed `python-gpt` until the adapter and private service are implemented.
+Existing Docker Desktop files: `docker-compose.yml`, `docker-compose.local-dev.yml`, plus VM overlay `docker-compose.vm-dev.yml`. Add `docker-compose.python-gpt.yml` **as an opt-in third overlay** for the private GPT gateway; do not expose the Python service publicly. The `python-gpt` provider is wired at bootstrap, but live use still requires Azure model credentials, running gateway and validation of the legacy conversation flow. It is not a seven-stage acceptance release.
 
 Use `npm run test`, `npm run typecheck`, `npm run lint`, `npm run build` and `npm run verify:compose` as applicable. Existing `npm run qa:ancfz-single-journey` tests the **old Foundry runtime** until migrated; it is not evidence for the new Python gateway. The seven-stage acceptance is currently blocked on independently verified Salesforce Lead completion.
 

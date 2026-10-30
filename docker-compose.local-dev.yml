@@ -9,22 +9,15 @@ services:
 
   api:
     build:
-      target: api-foundry-local
+      target: api-runtime
     environment:
       NODE_ENV: development
-      CHAT_MODEL_PROVIDER: foundry-agent
-      FOUNDRY_AUTH_MODE: azure-cli
-      FOUNDRY_PROJECT_ENDPOINT: https://foundry-aipoc-sc.services.ai.azure.com/api/projects/proj-ai-poc-sc
-      FOUNDRY_AGENT_NAME: agentic-rag-core-dev
-      FOUNDRY_EXPECTED_AGENT_VERSION: "4"
-      FOUNDRY_HOSTED_TOOLS_ENABLED: "false"
-      AZURE_CONFIG_DIR: /home/node/.azure
+      # Add docker-compose.python-gpt.yml to enable the private Python gateway.
+      CHAT_MODEL_PROVIDER: ${CHAT_MODEL_PROVIDER:-deterministic}
       ANCFZ_PDF_INTERNAL_URL: ${ANCFZ_PDF_INTERNAL_URL:-http://ancfz-pdf:8097/v1/render}
       MOCK_PAYMENT_INTERNAL_URL: ${MOCK_PAYMENT_INTERNAL_URL:-http://mock-payments:8098}
       ANCFZ_PDF_API_KEY: ${ANCFZ_PDF_API_KEY:-}
       MOCK_PAYMENT_API_KEY: ${MOCK_PAYMENT_API_KEY:-}
-    volumes:
-      - foundry-azure-cli-config:/home/node/.azure
 
   nginx:
     ports:
@@ -61,6 +54,5 @@ services:
       - ancfz_mock_payment_private:/var/lib/mockpay
 
 volumes:
-  foundry-azure-cli-config:
   ancfz_mock_pdf_private:
   ancfz_mock_payment_private:

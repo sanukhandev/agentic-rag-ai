@@ -23,9 +23,9 @@ Read root [AGENTS.md](../AGENTS.md) for non-negotiable coding instructions, and 
 
 ## Current versus target
 
-- **Current:** Node calls a named Microsoft Foundry **Agent** using `@azure/ai-projects` and Azure CLI. It has existing deterministic intent ranking, catalog continuity, read-only v6 candidate functions, durable Foundry conversation binding and an outbox/Redis/n8n execution path.
+- **Current on `refactor/python-conversation-core-v2`:** the Node API bootstrap can select a private Python GPT model adapter; a new FastAPI model gateway and Compose overlay have been added. The old Foundry Agent source/runtime and Azure CLI Docker stage are retired on this isolated rewrite branch (historical verification remains). The **legacy `app.ts` lead-first conversation logic and deterministic catalog remain operational compatibility code**, so the new goal-first planner does not yet own the session.
 - **Target:** GPT through private Python model API acts as the **primary conversation planner**, maintaining a catalog-grounded **Business Goal** independently from ephemeral knowledge/requirement/status/execution turn intents. It summarizes context, weighs catalog signals within approved bounds, selects the best question/action, and offers more help after the **customer goal** is actually satisfied. Node validates decisions and executes only explicitly approved workflows.
-- **Not yet delivered:** Python inference service, **goal-first intent taxonomy and GPT planner**, new persisted intent ledger, full per-turn structured decisions/adaptive weighting, catalog-defined tool coverage, and provider-verified seven-stage completion.
+- **Not yet delivered:** integration of a **goal-first Node conversation coordinator**, durable per-turn intent ledger, full catalog-v2 context/weight validation, Python↔Node tool-execution loop, provider-verified seven-stage completion and live test evidence. The Python gateway/adapter are an initial code slice only.
 - **Current first external blocker:** latest focused run did not verify a Salesforce Lead result, and returned `reconcile_required` at Lead Generation. No later stage was completed in that one run.
 
 ## Historical evidence (not active requirements)
