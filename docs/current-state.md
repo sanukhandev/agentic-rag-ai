@@ -130,4 +130,8 @@ Issue #87 adds `tools/ingestion/ingestion/catalog_v2.py`, a dedicated openpyxl p
 
 ## V2-P1-02 runtime policy validator — 2026-10-30
 
-Issue #88 adds the trusted published-catalog validator, stage eligibility evaluator and separate evidence/ambiguity/requirement/action-readiness scoring in `services/api/src/catalog-v2-runtime.ts`. The existing v1 resolver is preserved for rollback; v2 catalog adoption by Admin/runtime remains scoped to the subsequent publication and coordinator issues.
+Issue #88 adds the trusted published-catalog validator, stage eligibility evaluator and separate evidence/ambiguity/requirement/action-readiness scoring in `services/api/src/catalog-v2-runtime.ts`. The existing v1 resolver is preserved for rollback; v2 catalog adoption by the conversation coordinator remains later work.
+
+## V2-P1-03 Admin v2 catalog publication — 2026-10-30
+
+Issue #89 adds a separate tenant-scoped v2 catalog store/API, strict preview and explicit publication, plus canonical JSON and XLSX export. The existing v1 Admin routes/storage remain unchanged. Migration `055-catalog-v2-versions.sql` is added but was not applied in this focused memory-store verification; the v2 conversational runtime is not switched by publication.

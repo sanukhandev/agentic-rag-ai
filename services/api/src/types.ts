@@ -371,6 +371,20 @@ export interface IntentCatalogVersion {
   publishedAt: string | null;
 }
 
+export interface IntentCatalogV2Version {
+  id: string;
+  tenantId: string;
+  version: number;
+  status: IntentCatalogStatus;
+  sourceFileName: string;
+  sourceHash: string;
+  parserVersion: string;
+  catalog: CatalogV2Document;
+  catalogVersionRef: string;
+  createdAt: string;
+  publishedAt: string | null;
+}
+
 export interface Tenant {
   id: string;
   name: string;
@@ -828,6 +842,10 @@ export interface Store {
   getIntentCatalogVersion(tenantId: string, versionId: string): Promise<IntentCatalogVersion | null>;
   getPublishedIntentCatalog(tenantId: string): Promise<IntentCatalogVersion | null>;
   publishIntentCatalogVersion(tenantId: string, versionId: string): Promise<IntentCatalogVersion | null>;
+  createIntentCatalogV2Version(input: Omit<IntentCatalogV2Version, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<IntentCatalogV2Version>;
+  listIntentCatalogV2Versions(tenantId: string): Promise<IntentCatalogV2Version[]>;
+  getIntentCatalogV2Version(tenantId: string, versionId: string): Promise<IntentCatalogV2Version | null>;
+  publishIntentCatalogV2Version(tenantId: string, versionId: string): Promise<IntentCatalogV2Version | null>;
   createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion>;
   listPersonaVersions(tenantId: string): Promise<PersonaVersion[]>;
   getPersonaVersion(tenantId: string, versionId: string): Promise<PersonaVersion | null>;
@@ -951,3 +969,4 @@ export interface Store {
   listAudit(tenantId: string): Promise<AuditEvent[]>;
   getTenantStats(tenantId: string): Promise<TenantStats>;
 }
+import type { CatalogV2Document } from './catalog-v2.js';

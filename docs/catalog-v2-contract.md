@@ -47,8 +47,10 @@ weights and side-effect consent/confirmation gates.
 Legacy v1 input is never interpreted as executable v2 data. The review-only
 `createLegacyCatalogMigrationCandidate` record binds a source hash, requires
 human mapping review, never carries consent or publication state, and sets
-`autoPublish: false`. The importer/Admin publication path is a later P1 task;
-this P0 contract does not silently publish or mutate existing v1 records.
+`autoPublish: false`. The dedicated importer and Admin publication path are
+implemented by P1 issues #87 and #89; the v2 runtime must still be explicitly
+adopted by later coordinator work. This contract does not silently publish or
+mutate existing v1 records.
 
 **Six categories:** `business_goal`, `knowledge_advisory`, `qualification_requirement`, `service_execution`, `service_status_support`, `conversation_navigation`. **Example ANCFZ stage keys:** `lead_generation`, `lead_qualification`, `account_creation`, `package_selection`, `document_upload`, `payment_invoice`, `contract`. These are **tenant catalog data**, not generic source-code branching.
 
@@ -65,4 +67,4 @@ this P0 contract does not silently publish or mutate existing v1 records.
 
 ## Deferred implementation work
 
-The strict TypeScript contract, reference JSON fixture, invalid cases, canonical hash and review-only legacy migration boundary are implemented for P0. The P1 importer/export round-trip, Admin preview/publication, runtime adapter and explicit workbook mapping remain separate implementation issues (#87–#91). Existing v1 records and parser remain readable for rollback; they are not accepted as v2 input.
+The strict TypeScript contract, reference JSON fixture, invalid cases, canonical hash, dedicated XLSX parser/export and review-only legacy migration boundary are implemented in #84, #87 and #89. Runtime adoption and explicit workbook mapping beyond this boundary remain separate work. Existing v1 records and parser remain readable for rollback; they are not accepted as v2 input.

@@ -11,9 +11,12 @@ import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedd
 import { addressesKnowledgeQuestion, classifyOfferReply, conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isControlledKnowledgeAbstention, isGuidedResponse, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
 import { assertKnownTokens, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogIntentLabel, catalogNextFollowUpRequirement, catalogRequirementLabel, catalogSlotLabel, catalogSlotQuestion, isCrmWriteBinding, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
+import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './catalog-v2.js';
+import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 import { reduceIntentJourney } from './intent-journey.js';
 import { normalizeFullTextQuery } from './search-query.js';
 import { exportIntentCatalogWorkbook } from './intent-catalog-xlsx.js';
+import { exportCatalogV2Workbook } from './catalog-v2-xlsx.js';
 import { composeConversationSummary, consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState, phaseFor, prompt } from './conversation-state.js';
 import { createOutboxEvent } from './events.js';
 import { MemoryStore, contentHash } from './store-memory.js';
@@ -53,6 +56,7 @@ import {
   ingestionResultSchema,
   intentCatalogEditSchema,
   intentCatalogResultSchema,
+  intentCatalogV2Schema,
   intentCatalogUploadSchema,
   messageSchema,
   sessionSchema,
@@ -778,6 +782,62 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
     } catch (error) { next(error); }
   });
+  app.post('/api/v2/admin/intent-catalog/preview', protectedApi, requireRoles('platform_admin', 'tenant_admin', 'tenant_editor'), async (req, res, next) => {
+    try {
+      const tenant = await activeTenant(store, await tenantForRequest(store, req));
+      const input = parse(intentCatalogV2Schema, req.body);
+      const validation = validateCatalogV2(input.catalog);
+      if (!validation.document) throw new HttpError(422, 'CATALOG_V2_VALIDATION_FAILED', validation.errors.join(' '));
+      if (validation.document.manifest.tenantScope !== tenant.slug) throw new HttpError(422, 'CATALOG_TENANT_MISMATCH', 'The catalog tenant scope does not match the selected tenant.');
+      res.json({ valid: true, catalogVersionRef: catalogV2VersionRef(validation.document), sourceHash: input.sourceHash ?? catalogV2Sha256(validation.document), catalog: validation.document });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v2/admin/intent-catalog/versions', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenant = await activeTenant(store, await tenantForRequest(store, req));
+      const input = parse(intentCatalogV2Schema, req.body);
+      const validation = validateCatalogV2(input.catalog);
+      if (!validation.document) throw new HttpError(422, 'CATALOG_V2_VALIDATION_FAILED', validation.errors.join(' '));
+      if (validation.document.manifest.tenantScope !== tenant.slug) throw new HttpError(422, 'CATALOG_TENANT_MISMATCH', 'The catalog tenant scope does not match the selected tenant.');
+      const version = await store.createIntentCatalogV2Version({ tenantId: tenant.id, status: 'draft', sourceFileName: input.sourceFileName, sourceHash: input.sourceHash ?? catalogV2Sha256(validation.document), parserVersion: 'intent-catalog-v2-admin-1.0.0', catalog: validation.document, catalogVersionRef: catalogV2VersionRef(validation.document) });
+      await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog_v2.draft_created', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() });
+      res.status(201).json({ version });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v2/admin/intent-catalog/versions', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listIntentCatalogV2Versions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.post('/api/v2/admin/intent-catalog/versions/:id/publish', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const version = await store.getIntentCatalogV2Version(tenantId, routeParam(req, 'id'));
+      if (!version) throw new HttpError(404, 'INTENT_CATALOG_V2_VERSION_NOT_FOUND', 'Intent catalog v2 version not found.');
+      const validation = validatePublishedCatalogV2(version.catalog, { published: true, tenantScope: (await activeTenant(store, tenantId)).slug, pinnedVersionRef: version.catalogVersionRef });
+      if (!validation.ok) throw new HttpError(422, 'CATALOG_V2_PUBLICATION_FAILED', validation.errors.join(' '));
+      const published = await store.publishIntentCatalogV2Version(tenantId, version.id);
+      if (!published) throw new HttpError(404, 'INTENT_CATALOG_V2_VERSION_NOT_FOUND', 'Intent catalog v2 version not found.');
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog_v2.published', metadata: { versionId: published.id, version: published.version }, createdAt: new Date().toISOString() });
+      res.json({ version: published });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v2/admin/intent-catalog/published/export', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const version = (await store.listIntentCatalogV2Versions(tenantId)).find((candidate) => candidate.status === 'published');
+      if (!version) throw new HttpError(404, 'PUBLISHED_INTENT_CATALOG_V2_NOT_FOUND', 'No published v2 intent catalog is available for this tenant.');
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog_v2.exported', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() });
+      const workbook = exportCatalogV2Workbook(version.catalog);
+      res.setHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('content-disposition', `attachment; filename="${(await activeTenant(store, tenantId)).slug}-intent-catalog-v2-${version.version}.xlsx"`);
+      res.send(workbook);
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v2/admin/intent-catalog/published/export.json', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const version = (await store.listIntentCatalogV2Versions(tenantId)).find((candidate) => candidate.status === 'published');
+      if (!version) throw new HttpError(404, 'PUBLISHED_INTENT_CATALOG_V2_NOT_FOUND', 'No published v2 intent catalog is available for this tenant.');
+      res.json(version.catalog);
+    } catch (error) { next(error); }
+  });
   app.get('/api/v1/admin/intent-catalog/versions', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listIntentCatalogVersions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/intent-catalog/published/export', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
     try {
@@ -957,6 +1017,27 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (job.mimeType === 'application/vnd.agentic.intent-catalog+excel') {
         try {
           const input = parse(intentCatalogResultSchema, req.body);
+          if (input.catalog && typeof input.catalog === 'object' && !Array.isArray(input.catalog) && (input.catalog as { schemaVersion?: unknown }).schemaVersion === 2) {
+            const validation = validateCatalogV2(input.catalog);
+            if (!validation.document) throw new HttpError(422, 'CATALOG_V2_VALIDATION_FAILED', validation.errors.join(' '));
+            const tenant = await store.getTenant(job.tenantId);
+            if (validation.document.manifest.tenantScope !== tenant?.slug) throw new HttpError(422, 'CATALOG_TENANT_MISMATCH', 'The workbook tenant scope does not match the target tenant.');
+            const existing = (await store.listIntentCatalogV2Versions(job.tenantId)).find((version) => version.sourceHash === input.sourceHash);
+            if (existing) {
+              const completed = await store.updateIngestionJob({ ...job, status: 'completed', errorDetail: null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+              await ingestionStaging.purge(job.id, job.mimeType);
+              await publishIngestionProgress(store, completed, 'completed', 1, 1, 'completed');
+              res.status(200).json({ job: completed, version: existing, idempotent: true });
+              return;
+            }
+            const version = await store.createIntentCatalogV2Version({ tenantId: job.tenantId, status: 'draft', sourceFileName: job.title, sourceHash: input.sourceHash, parserVersion: input.parserVersion, catalog: validation.document, catalogVersionRef: catalogV2VersionRef(validation.document) });
+            const completed = await store.updateIngestionJob({ ...job, status: 'completed', errorDetail: null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+            await ingestionStaging.purge(job.id, job.mimeType);
+            await publishIngestionProgress(store, completed, 'completed', 1, 1, 'completed');
+            await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'intent_catalog_v2.imported', metadata: { versionId: version.id, version: version.version, jobId: job.id }, createdAt: new Date().toISOString() });
+            res.status(201).json({ job: completed, version });
+            return;
+          }
           const validation = validateIntentCatalog(input.catalog);
           if (!validation.catalog) throw new HttpError(422, 'CATALOG_VALIDATION_FAILED', validation.errors.join(' '));
           const tenant = await store.getTenant(job.tenantId);

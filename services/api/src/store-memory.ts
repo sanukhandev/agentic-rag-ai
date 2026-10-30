@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, FoundryConversationBinding, IngestionJob, IntentCatalogVersion, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
+import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, FoundryConversationBinding, IngestionJob, IntentCatalogV2Version, IntentCatalogVersion, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
@@ -19,6 +19,7 @@ export class MemoryStore implements Store {
   private readonly channelCredentials = new Map<string, ChannelCredential>();
   private readonly personas = new Map<string, Persona>();
   private readonly intentCatalogVersions = new Map<string, IntentCatalogVersion[]>();
+  private readonly intentCatalogV2Versions = new Map<string, IntentCatalogV2Version[]>();
   private readonly personaVersions = new Map<string, PersonaVersion[]>();
   private readonly sources = new Map<string, Source>();
   private readonly sourceVersions = new Map<string, SourceVersion[]>();
@@ -129,6 +130,22 @@ export class MemoryStore implements Store {
     const publishedAt = now();
     const updated = versions.map((version) => ({ ...version, status: version.id === versionId ? 'published' as const : 'draft' as const, publishedAt: version.id === versionId ? publishedAt : version.publishedAt }));
     this.intentCatalogVersions.set(tenantId, updated);
+    return updated.find((version) => version.id === versionId) ?? null;
+  }
+  async createIntentCatalogV2Version(input: Omit<IntentCatalogV2Version, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<IntentCatalogV2Version> {
+    const versions = this.intentCatalogV2Versions.get(input.tenantId) ?? [];
+    const version: IntentCatalogV2Version = { ...input, id: randomUUID(), version: versions.length + 1, createdAt: now(), publishedAt: null };
+    this.intentCatalogV2Versions.set(input.tenantId, [...versions, version]);
+    return version;
+  }
+  async listIntentCatalogV2Versions(tenantId: string): Promise<IntentCatalogV2Version[]> { return [...(this.intentCatalogV2Versions.get(tenantId) ?? [])].sort((left, right) => right.version - left.version); }
+  async getIntentCatalogV2Version(tenantId: string, versionId: string): Promise<IntentCatalogV2Version | null> { return (this.intentCatalogV2Versions.get(tenantId) ?? []).find((version) => version.id === versionId) ?? null; }
+  async publishIntentCatalogV2Version(tenantId: string, versionId: string): Promise<IntentCatalogV2Version | null> {
+    const versions = this.intentCatalogV2Versions.get(tenantId) ?? [];
+    if (!versions.some((version) => version.id === versionId)) return null;
+    const publishedAt = now();
+    const updated = versions.map((version) => ({ ...version, status: version.id === versionId ? 'published' as const : 'draft' as const, publishedAt: version.id === versionId ? publishedAt : version.publishedAt }));
+    this.intentCatalogV2Versions.set(tenantId, updated);
     return updated.find((version) => version.id === versionId) ?? null;
   }
   async createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion> {

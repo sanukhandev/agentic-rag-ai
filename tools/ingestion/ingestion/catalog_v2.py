@@ -31,7 +31,7 @@ HEADERS: dict[str, tuple[str, ...]] = {
     "TurnIntents": ("turn_intent_key", "category_key", "business_goal_key", "active"),
     "IntentSignals": ("signal_id", "target_key", "signal_type", "value", "language", "weight", "min_weight", "max_weight"),
     "ScoringPolicies": ("scoring_policy_key", "business_goal_key", "threshold", "ambiguity_margin", "policy_version"),
-    "RequirementPolicies": ("requirement_key", "goal_key", "stage_key", "type", "required", "dependencies", "validation", "source_of_truth"),
+    "RequirementPolicies": ("requirement_key", "goal_key", "stage_key", "type", "required", "dependencies", "validation", "source_of_truth", "prompt_key", "priority"),
     "BusinessStages": ("business_goal_key", "stage_key", "stage_order", "entry_requirements", "completion_evidence_policy_key", "active"),
     "ToolBindings": ("tool_key", "goal_key", "stage_key", "side_effect_class", "arguments_schema_ref", "required_keys", "consent", "confirmation", "registry_key", "enabled"),
     "WorkflowBindings": ("workflow_key", "registry_key", "provider_type", "payload_schema_ref", "callback_schema_ref", "evidence_policy_key", "enabled"),

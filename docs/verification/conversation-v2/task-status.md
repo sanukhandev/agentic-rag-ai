@@ -17,8 +17,7 @@ again from GitHub before each task.
 | #86 | P0-05 | CLOSED | `docs/verification/conversation-v2/V2-P0-05.md`; remote commit `a7e437f66e949ff03e3cbe5ce078b57f8d85f1c1` |
 | #87 | P1-01 | CLOSED | `docs/verification/conversation-v2/V2-P1-01.md`; remote commit `7a949994072df407023af1e528ea7b76637c536c` |
 | #88 | P1-02 | CLOSED | `docs/verification/conversation-v2/V2-P1-02.md`; remote commit `052c5bb5f8ef95ad456ec9d8df34f1a85942c94b` |
-| #88 | P1-02 | OPEN | Depends on #87 |
-| #89 | P1-03 | OPEN | Depends on #88 |
+| #89 | P1-03 | IN_PROGRESS | Depends on #87 and #88; v2 Admin preview/publication/export |
 | #90 | P1-04 | OPEN | Depends on #84 and #89 |
 | #91 | P1-05 | OPEN | Depends on #87–#90 |
 | #92 | P2-01 | OPEN | Depends on P0/P1 contracts |
