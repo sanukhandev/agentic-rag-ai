@@ -20,6 +20,12 @@ docs/feature-specs
 *.xlsx
 **__pycache__/
 
+# Local or generated artifacts that are not application inputs.
+/baseline.md
+/DELIVERY_MANIFEST.json
+/outputs/
+*.inspect.ndjson
+
 # Local acceptance-run output; committed historical reports remain tracked.
 /artifacts/agentic-e2e/run-*.json
 /artifacts/ancfz-sandbox*/
