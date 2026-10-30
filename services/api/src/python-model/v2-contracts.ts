@@ -4,6 +4,7 @@ export const V2_SCHEMA_VERSION = 2 as const;
 
 const boundedKey = z.string().trim().regex(/^[a-z][a-z0-9._:-]{0,127}$/u);
 const opaqueRef = z.string().trim().regex(/^[A-Za-z0-9._:-]{8,256}$/u);
+const scopeRef = z.string().trim().regex(/^[A-Za-z0-9._:-]{8,2048}$/u);
 const boundedText = z.string().trim().max(5_000);
 
 const persona = z.object({
@@ -39,7 +40,7 @@ export const turnEnvelopeSchema = z.object({
   schemaVersion: z.literal(V2_SCHEMA_VERSION),
   requestId: opaqueRef,
   clientMessageId: opaqueRef,
-  scopeRef: opaqueRef,
+  scopeRef,
   sessionRevision: z.number().int().nonnegative(),
   intentRevision: z.number().int().nonnegative(),
   catalogVersionId: opaqueRef,
@@ -74,7 +75,7 @@ export const toolRequestSchema = z.object({
   toolCallId: opaqueRef,
   toolName: boundedKey,
   arguments: safeArguments,
-  scopeRef: opaqueRef,
+  scopeRef,
   expectedStateRevision: z.number().int().nonnegative(),
   deadlineAt: z.string().datetime({ offset: true }),
 }).strict();

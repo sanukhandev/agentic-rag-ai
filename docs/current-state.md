@@ -204,7 +204,26 @@ recomposition after later persona publication. Evidence is recorded in
 
 ## V2-P3-01 Azure model resilience — 2026-10-30
 
-Issue #97 remains BLOCKED/OPEN because the authorized Azure OpenAI deployment
-and private model-gateway credentials required by P0-02 are unavailable. No
-live provider call or resilience success was claimed. Evidence is recorded in
-`docs/verification/conversation-v2/V2-P3-01.md`.
+Issue #97 is verified and closed. The private Python gateway has bounded Azure
+retry, shared turn deadlines, application rate limits, circuit breaking and
+redacted observability. Live deployment connectivity and structured Responses
+output were verified with the configured development environment. Evidence is
+recorded in `docs/verification/conversation-v2/V2-P3-01.md`.
+
+## V2-P3-02 bounded Python conversation agent — 2026-10-30
+
+Issue #98 is verified and closed. The internal coordinator uses the frozen v2
+envelope, the nine-function strict read-only registry, correlated function-call
+outputs and bounded model/tool execution. It is not a public Chat API or a
+provider-side business-action executor. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P3-02.md`.
+
+## V2-P3-03 authenticated Node trusted tool gateway — 2026-10-30
+
+Issue #99 adds the private Node tool boundary used by the Python coordinator.
+Node verifies a short-lived signed scope, the private service key, tenant and
+session ownership, pinned catalog/persona revisions and session state revision.
+Only the nine explicit read-only tools are available; results are bounded,
+sanitized and replay-safe by tool call ID. No CRM, n8n, payment, signing or
+arbitrary network operation is exposed. Focused evidence is recorded in
+`docs/verification/conversation-v2/V2-P3-03.md`.

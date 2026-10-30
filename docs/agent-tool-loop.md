@@ -23,6 +23,7 @@ Node authenticates, deduplicates `clientMessageId`, binds tenant/session/opportu
 | `search_knowledge` | Tenant/source-approved pgvector retrieval | Bounded evidence IDs, excerpt, source/title/version, citation refs |
 | `get_missing_requirements` | Current confirmed goal and stage | Unanswered validated requirement keys and collection order/dependencies |
 | `get_available_packages` | Authorized package data/eligibility/pricing | Catalog-versioned structured results and provenance |
+| `get_document_requirements` | Authorized document requirements for the current package/stage | Bounded requirement types and review status, never document contents |
 | `get_action_status` | Existing action/provider results | Verified status, external references only where permitted |
 
 `propose_catalog_action` is a **separate Node business proposal gate**, not a read-only model function. It can create a pending proposal only after Node validates current goal, stage, facts and purpose-specific consent requirements. It does not dispatch a write until the customer confirms that specific action. Confirmed operations use existing PostgreSQL outbox → Redis Streams → n8n and authenticated callback/reconciliation.
