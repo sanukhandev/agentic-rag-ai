@@ -381,3 +381,14 @@ verification. Provider results require exact correlation and independently
 verified evidence. The deterministic provider is mock-only; no Salesforce
 Account, Contact or Opportunity completion is claimed. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P6-03.md`.
+
+## V2-P6-04 package eligibility and quote boundary — 2026-10-30
+
+Issue #115 is verified for the Node-side package contract. Package requests
+are bound to the active opportunity and catalog version and require approved
+eligibility, an active authoritative price and versioned source references.
+Quote results are exact-correlation checked and idempotent; existing lifecycle
+services still own durable selection confirmation and quote storage. The
+deterministic quote adapter is mock-only, so no live pricebook or provider
+completion is claimed. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P6-04.md`.

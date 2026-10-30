@@ -42,8 +42,8 @@ again from GitHub before each task.
 | #111 | P5-04 | CLOSED | `docs/verification/conversation-v2/V2-P5-04.md`; remote commit `4f853985303293ed10614e3f97d09d92b914fb20` |
 | #112 | P6-01 | CLOSED | `docs/verification/conversation-v2/V2-P6-01.md`; remote commit `1b14beed4a764ebe7fb133fa33c1fcea53757252`; live Salesforce provider remains blocked |
 | #113 | P6-02 | CLOSED | `docs/verification/conversation-v2/V2-P6-02.md`; remote commit `bd95ccea8ad2e6976273fd04186510411917fdb6` |
-| #114 | P6-03 | VERIFIED | `docs/verification/conversation-v2/V2-P6-03.md`; pending commit/push and issue closure; live Salesforce provider remains blocked |
-| #115 | P6-04 | OPEN | Depends on #114 and approved price source |
+| #114 | P6-03 | CLOSED | `docs/verification/conversation-v2/V2-P6-03.md`; remote commit `965cc5e0bb5fea39aaaa5b759a3b8209d4ceb67b`; live Salesforce provider remains blocked |
+| #115 | P6-04 | VERIFIED | `docs/verification/conversation-v2/V2-P6-04.md`; pending commit/push and issue closure; live pricebook provider remains blocked |
 | #116 | P6-05 | OPEN | Depends on #115 and SF-02 provider evidence |
 | #117 | P6-06 | OPEN | Depends on #115–#116 and mock/sandbox policy |
 | #118 | P6-07 | OPEN | Depends on #117 and signing evidence policy |
