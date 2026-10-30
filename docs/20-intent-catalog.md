@@ -2,20 +2,20 @@
 
 The intent catalog is an internal, tenant-scoped reference for deterministic intent scoring and approved workflow selection. It is not a replacement for source-grounded RAG answers.
 
-## Flow
+## Published catalog → authorized action flow
 
-1. A tenant administrator uploads the reviewed `.xlsx` workbook through `POST /api/v1/admin/intent-catalog/upload`.
-2. The private Python worker parses the required `README`, `Intents`, `Signals`, `Slots`, `Relations`, and `WorkflowBindings` sheets plus the optional `QualityRules`, `JourneyRequirements` and `JourneyTransitions` sheets. Formulas, external links, unsupported files and malformed rows are rejected.
-3. The API validates the normalized result, checks tenant scope, stores a draft version and records an audit event. Re-uploading the same source hash is idempotent.
-4. A tenant administrator publishes one version through `POST /api/v1/admin/intent-catalog/versions/:id/publish`. Only the published version is used at chat time.
-5. Node scores the masked conversation against the published catalog. A signal candidate below its score/confidence threshold gets a catalog-derived clarification question before PII slot collection; once the intent qualifies, required slots are requested in collection order. An `alternative_group` requires one value from that group. Only after the threshold/confidence, active allowlisted binding and required slots pass does Node create a confirmation-gated action. The model never authorizes the action.
-6. Node changes the action to `approved` but never calls n8n. The scheduled n8n lead workflow polls the authenticated claim endpoint, which atomically changes claimed actions to `processing` and returns masked conversation data plus the published catalog metadata.
-7. n8n validates the catalog binding, writes the CRM lead through Node, and executes the separate quality workflow. That workflow calculates the score from `QualityRules` and slot `quality_weight` values, then stores the score and deterministic summary through Node.
-8. The CRM write is an upsert: the tenant-scoped HMAC of the normalized email (or phone fallback) prevents repeated submissions from creating another lead. Chat retries and n8n claims are idempotent.
+1. A tenant administrator uploads the reviewed workbook to `POST /api/v1/admin/intent-catalog/upload`. The private Python worker validates the required `README`, `Intents`, `Signals`, `Slots`, `Relations` and `WorkflowBindings` sheets and supported optional extensions. The API stages, validates, audits and stores a **draft** catalog for its tenant.
+2. Authorized tenant administration publishes a version through `POST /api/v1/admin/intent-catalog/versions/:id/publish`. Active journeys remain pinned to their selected version; later publications govern new journeys.
+3. Node evaluates masked customer turns against the **published, pinned** intent catalog. Signal scores, confidence/ambiguity, active workflow binding, required slot values, validation rules, `JourneyRequirements`, `JourneyTransitions` and `BusinessStages` constrain the next permitted operation.
+4. The existing catalog and journey engine preserve the active intent, pending requirement and opportunity through multi-turn fact collection, knowledge interruptions, corrections, retries and new agent responses. Foundry may phrase answers or request read-only lookup functions; it cannot authorize a workflow or fulfill a business stage.
+5. When action prerequisites genuinely pass, Node produces an opportunity- and revision-scoped `ActionRequest` / `actionProposal`. Purpose-specific consent and confirmation remain mandatory. Duplicate and stale requests are rejected or idempotently associated.
+6. An authorized confirmation records the action and an outbox event transactionally. The outbox relay publishes to Redis Streams; the event worker makes an authenticated minimal-data call to n8n. Any old scheduled polling/claim workflows are compatibility paths, **not the primary route**.
+7. n8n invokes the configured provider using approved credentials; Node validates external callbacks, provider identifiers and reconciliation outcomes before marking a business step completed. A model statement, queued action, local CRM record or n8n execution alone is not verified Salesforce completion.
+8. For the current ANCFZ focus, preserve **Lead Generation → Lead Qualification → Account Creation → Package Selection → Document Upload (OCR + SF-02) → Payment Details & Invoice → Contract**. Never create an Account for an unqualified Lead or bypass configured confirmation/email verification.
 
 ## Post-capture conversation
 
-After a confirmed CRM action is queued, the conversation remains active. A later visitor turn is treated as a post-capture follow-up rather than another lead-collection turn. Node keeps the published primary intent and sends the masked conversation, the latest question and the tenant's enabled document policies through the normal retrieval and LLM path.
+After a confirmed CRM action is queued, the conversation remains active while Node awaits its authoritative provider outcome; the stage must not be marked complete merely because dispatch succeeded. A later visitor turn is treated as a post-capture follow-up rather than another lead-collection turn. Node keeps the published primary intent and sends the masked conversation, the latest question and the tenant's enabled document policies through the normal retrieval and LLM path.
 
 The model may explain packages, requirements, steps or timelines only when the approved tenant sources support them. It may offer the next document upload action only when the published document policy allows it, and it must ask one question at a time. It must not repeat contact collection, create a second lead, invent a requirement or claim that a document was received before the document event is completed.
 
@@ -41,17 +41,17 @@ CRM actions require a valid name, email and phone, plus the normal catalog, cons
 
 `README` is a two-column key/value sheet and must include a tenant scope when the workbook is tenant-specific. The other sheets use the headers in the sample workbook. Intent and workflow keys are stable identifiers; scores and confidence thresholds are server-validated.
 
-The current sample workbook is [crm-lead-capture-intent-catalog.xlsx](../examples/crm-lead-capture-intent-catalog.xlsx). It enables `crm.lead.create` and `crm.lead.quality.score`; `QualityRules` defines a 60% intent, 20% confidence and 20% contact-completeness score with hot/warm/nurture thresholds. The appointment binding remains inactive until its consent, slot validation and calendar destination are reviewed.
+The **historical generic sample** workbook is [crm-lead-capture-intent-catalog.xlsx](../examples/crm-lead-capture-intent-catalog.xlsx). It enables `crm.lead.create` and `crm.lead.quality.score`; `QualityRules` defines a 60% intent, 20% confidence and 20% contact-completeness score with hot/warm/nurture thresholds. The appointment binding remains inactive until its consent, slot validation and calendar destination are reviewed.
 
 The admin Intent Catalog view displays the loaded version's intents, thresholds, signals and workflow bindings. Uploading another `.xlsx` creates a new draft; publishing that draft replaces the active catalog. Tenant admins and platform admins with a selected tenant can use **Edit catalog** to change the JSON contract; `POST /api/v1/admin/intent-catalog/versions/:id/drafts` validates the complete catalog and creates a new draft without mutating the published version. The **Export published Excel** action downloads the selected tenant's currently published version through `GET /api/v1/admin/intent-catalog/published/export`; the server enforces tenant scope, published status and admin authorization, and records an audit event. Load and ingestion failures are shown inline with the API error and a retry action.
 
 `QualityRules` is the only source for lead-quality weights and thresholds. Code validates that the selected quality workflow is active and catalog-bound, but does not select or invoke a workflow.
 
-The existing `webhook_path` column remains a stable workflow-registry identifier for compatibility; the sample n8n flow is schedule-triggered and the API never posts to that path.
+The existing `webhook_path` column remains a stable workflow-registry identifier for compatibility; sample scheduled polling workflows are not the authoritative event-driven dispatch path.
 
-## CRM lead-capture catalog
+## Historical generic lead-capture example (not the active ANCFZ requirements)
 
-The smallest useful catalog for this workflow is:
+This minimal demo is retained only for workbook compatibility and should **not** be published in place of the current ANCFZ catalog. The old sample is:
 
 | Intent | Display name / CRM interest | Signals | Required slots | Workflow |
 | --- | --- | --- | --- | --- |
@@ -65,6 +65,6 @@ Node copies the published display name into the lead as the controlled `interest
 - Catalog text is configuration, not executable instructions.
 - PII stays tokenized inside the backend boundary; only masked values and opaque IDs cross to n8n.
 - A proposed intent without required slots, threshold, confidence, active binding or explicit confirmation produces no side effect.
-- This local workflow set is a smoke-test/demo configuration, not approval for production n8n exposure or external CRM credentials.
+- The generic sample/polling workflow is a smoke-test/demo configuration, not the ANCFZ production catalog and not approval for public n8n exposure or external CRM credentials.
 
 During multi-turn collection, Node stores only masked slot values and the pending catalog intent in the backend session history. A standalone answer such as `Alice` is accepted only for the catalog's supported `token:NAME` slot; unsupported slot validation rules remain unfilled rather than being sent to a workflow as unvalidated text.

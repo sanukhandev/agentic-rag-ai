@@ -4,7 +4,7 @@ The customer path is:
 
 `Customer → Node Chat API → tenant persona/catalog/journey + approved pgvector evidence → named Foundry agent → existing Chat API response`
 
-Node performs authorization, PII masking, retrieval, intent/catalog evaluation, journey gates, response validation and action authorization. The agent only supplies conversational wording. Admin and customer APIs are unchanged; Foundry conversation IDs are stored only in the tenant/session-scoped `foundry_conversation_bindings` table.
+Node performs authorization, PII masking, retrieval, intent/catalog evaluation, journey gates, response validation and action authorization. The agent supplies conversational wording and, **only in an explicitly enabled candidate**, requests approved Node-executed read-only functions. It never authorizes business writes. Admin and customer APIs are unchanged; Foundry conversation IDs are stored only in the tenant/session-scoped `foundry_conversation_bindings` table.
 
 ## Docker and Azure CLI
 
@@ -40,7 +40,7 @@ The API verifies the expected agent version with the Foundry project client befo
 
 The context sent to Foundry is bounded and contains the configured persona, latest masked message, rolling masked summary, current catalog/journey requirement, validated masked facts and approved evidence with citation IDs. Intent selection, stage transitions, consent and n8n/Salesforce actions remain deterministic server behavior.
 
-When a candidate agent emits a Responses `function_call`, Node validates the function name and strict JSON arguments, derives tenant/session/opportunity scope from PostgreSQL, executes only the read-only registry handler, bounds and sanitizes the result, records a redacted audit event, and sends a `function_call_output` on the same Foundry conversation. The loop is bounded to five calls per turn, three rounds, five-second per-call timeouts and the configurable 30-second total budget. The current registry is `search_knowledge`, `get_journey_state`, `get_available_packages`, `get_document_requirements`, and `get_action_status`. No function accepts a model-supplied tenant, session, opportunity, provider, payment or contract identifier.
+When a candidate agent emits a Responses `function_call`, Node validates the function name and strict JSON arguments, derives tenant/session/opportunity scope from PostgreSQL, executes only the read-only registry handler, bounds and sanitizes the result, records a redacted audit event, and sends a `function_call_output` on the same Foundry conversation. The loop is bounded to **five calls per round**, **three function-call rounds**, five-second per-call timeouts and the configurable 30-second total execution budget (potentially more than five calls across one customer turn). The current registry is `search_knowledge`, `get_journey_state`, `get_available_packages`, `get_document_requirements`, and `get_action_status`. No function accepts a model-supplied tenant, session, opportunity, provider, payment or contract identifier.
 
 ## Verification
 

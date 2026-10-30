@@ -29,7 +29,7 @@ On Responses `function_call`, Node must:
 2. Derive scope from the authenticated server session, current opportunity, source ACL and pinned catalog.
 3. Execute a read-only handler with bounded timeout and output, redact sensitive values, audit the call without PII.
 4. Send matching `function_call_output` and continue the **same** Foundry conversation.
-5. Enforce configured five-calls/three-rounds limits and the 30-second total execution budget (or tighter current limits). Reject unknown tools and loops.
+5. Enforce **at most five function calls per round** across **at most three function-call rounds**, the configured per-tool timeout, and the 30-second total execution-time budget (or tighter configuration). The current code does **not** enforce a separate five-call cumulative total across all rounds; do not claim otherwise. Reject unknown tools and loops.
 
 Tool requests and generated intent proposals are not authorizations. Node independently enforces confirmation, consent, outbox, idempotency and callbacks for all writes.
 

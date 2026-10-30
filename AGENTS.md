@@ -27,7 +27,7 @@ Historical verification reports record what happened on previous revisions; they
 - `apps/web`: Next.js customer chat; the browser talks only to Node. Never expose Foundry credentials, database, n8n or privileged business APIs to it.
 - `apps/admin`: Angular tenant/persona/catalog/source/workflow administration. Preserve existing routes, DTOs, role restrictions and tenant scope.
 - `services/api`: Node.js/Express/TypeScript is the only public application API and authority for session ownership, PII masking, evidence, published catalog, consent, action eligibility, stage transitions, idempotency and verified callbacks.
-- `services/api/src/foundry/`: named-agent client, bounded context, compatibility adapter and application-managed function calling. Model output and tool arguments are **untrusted**.
+- `services/api/src/foundry/`: named-agent SDK client, bounded context builder and ChatModel compatibility adapter. The version-controlled **application-function registry, dispatcher, strict argument schemas, read-only handlers and tool audit** live in `services/api/src/foundry-functions.ts`. Model output, function names and arguments are **untrusted**.
 - PostgreSQL/pgvector: authoritative tenant-scoped state, identity maps, journey facts, durable Foundry conversation bindings and approved knowledge. Redis is transport/cache, not a business source of truth.
 - `tools/ingestion`: isolated Python ingestion and approved source pipeline. Customer uploads must not silently become RAG sources.
 - Transactional outbox → Redis Streams → event worker → n8n: authorized asynchronous side effects. Salesforce and other providers confirm remote completion; n8n execution status alone does not.
@@ -50,7 +50,7 @@ One session/opportunity retains catalog version, journey/stage revision, validat
 Application-executed candidate functions are initially restricted to:
 `search_knowledge`, `get_journey_state`, `get_available_packages`, `get_document_requirements`, `get_action_status`.
 
-Node validates strict schemas, derives tenant/session/opportunity **from trusted server context**, authorizes reads, bounds/redacts tool outputs, audits call IDs and sends matching `function_call_output`. Preserve bounded tool calls, rounds and time budgets. The model must never pick another tenant, invoke arbitrary URLs/code, access a token vault, or write directly to Salesforce/n8n/payment/contract systems. Business writes continue through the existing catalog, consent, confirmation and outbox gates.
+Node validates strict schemas, derives tenant/session/opportunity **from trusted server context**, authorizes reads, bounds/redacts tool outputs, audits call IDs and sends matching `function_call_output`. The currently implemented limits are **up to five function calls in each round**, **up to three function-call rounds**, a per-tool timeout and a configurable 30-second elapsed-time budget; do not misdocument that as five calls total per customer turn. If stronger cumulative limits are needed, change code and tests separately. The model must never pick another tenant, invoke arbitrary URLs/code, access a token vault, or write directly to Salesforce/n8n/payment/contract systems. Business writes continue through the existing catalog, consent, confirmation and outbox gates.
 
 ## Security and factual accuracy
 

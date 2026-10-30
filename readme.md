@@ -2,7 +2,7 @@
 
 A local **privacy-first, multi-tenant, RAG-grounded sales assistant vertical slice**. Platform admins onboard organizations; tenant admins manage approved Word/Excel/CSV/JSON/text/PDF/URL knowledge and individual agent names, tone, languages and styles. Angular admins monitor service health through Node APIs; website visitors use a Next.js tenant-scoped, source-grounded chat. The first client channel is a web chat; the architecture allows additional sales channels via validated channel adapters.
 
-**Status: local MVP vertical slice in progress.** The repository now contains the Next.js customer chat, Angular admin surface, Node/Express API, typed contracts, deterministic source-grounded retrieval, encrypted session PII vault, PostgreSQL/pgvector schema/adapter, Python ingestion tool, and guarded mock/private workflow adapters. Production identity, live Azure calls and live private n8n calls remain explicitly blocked until their contracts and credentials are approved.
+**Status: local Foundry conversation and application-managed read-only function calling verified; seven-stage provider integration not yet accepted.** The repository includes Next.js chat, Angular Admin, Node/Express, tenant/catalog/journey controls, encrypted PII vault, PostgreSQL/pgvector, Python ingestion and guarded outbox/Redis/n8n workflows. The named Foundry agent `agentic-rag-core-dev` responded successfully through the Azure CLI-authenticated local API: **v4** remains pinned for stable serving, while **v6** is an explicit isolated function-calling candidate. The last documented one-session ANCFZ journey stopped safely after local Lead action dispatch because the remote Salesforce Lead acknowledgment was not verified. Production exposure, billing and contract-signing integrations remain separate approval/verification gates.
 
 ## Target stack
 
@@ -25,7 +25,7 @@ A local **privacy-first, multi-tenant, RAG-grounded sales assistant vertical sli
 2. Node validates and masks sensitive content; stores mappings in its protected data boundary.
 3. Node retrieves authorized knowledge from pgvector and constructs evidence with stable citations.
 4. The named Foundry agent generates a response from *masked* authorized context and may request an approved read-only application function.
-5. Node validates evidence, catalog intent, consent and authorization. Only Node may invoke allowlisted n8n workflows.
+5. Node validates evidence, catalog intent, consent and authorization. Authorized business actions are persisted to PostgreSQL outbox, then dispatched by Redis Streams/event worker to allowlisted n8n workflows; Foundry does not directly write to providers.
 6. Node rehydrates approved placeholders for the correct recipient, persists redacted history and returns the response.
 
 Unanswered/unsupported business questions are answered with a transparent knowledge gap—not a guess.
@@ -87,4 +87,4 @@ The VM deployment uses `docker-compose.yml` plus `docker-compose.vm-dev.yml` for
 
 ## Current verification and limitations
 
-The verified local command is `npm run verify:local` (after PostgreSQL and the Python venv are prepared); it runs lint, typecheck, Compose security-default and high-confidence repository secret checks, the PostgreSQL-backed workspace suite, builds, dependency audit, the clean-room acceptance journey and all Python ingestion tests. GitHub Actions is intentionally not configured; verification is local-only. The active ANCFZ acceptance remains blocked on missing provider evidence; see [the active acceptance contract](docs/acceptance.md) and [current requirements](docs/current-requirements.md).
+For repeatable local verification, use `npm run verify:local` when its PostgreSQL and Python prerequisites are available; run `npm run qa:ancfz-single-journey` for the **single continuous seven-stage ANCFZ journey** (no 25-turn or 200-message benchmark). Live Foundry v6 tool calls and local API continuity were verified in previous evidence, not revalidated by this README change. The current journey remains blocked at external Salesforce Lead verification; consult [the acceptance contract](docs/acceptance.md) and [the dated run evidence](docs/verification/ancfz-single-journey-tool-calling.md).

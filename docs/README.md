@@ -21,9 +21,9 @@
 
 - [`04-ingestion-and-rag.md`](04-ingestion-and-rag.md) — source ingestion, approval and pgvector.
 - [`05-api-contracts.md`](05-api-contracts.md) and [`openapi.yaml`](openapi.yaml) — API contracts; compare against actual implemented schemas.
-- [`07-n8n-orchestration.md`](07-n8n-orchestration.md) — authorized action/outbox and callback behavior.
+- [`07-n8n-orchestration.md`](07-n8n-orchestration.md) — current transactional outbox/Redis/event-worker execution, callback behavior, and separately identified legacy polling compatibility.
 - [`11-quality-and-operations.md`](11-quality-and-operations.md) — redacted telemetry and operational practices.
-- [`19-data-model.md`](19-data-model.md) — current data model reference.
+- [`19-data-model.md`](19-data-model.md) — current Foundry conversation bindings, opportunity facts, action/outbox and seven-stage lifecycle schema map (migrations remain authoritative).
 - [`21-omnichannel-connector-api-spec.md`](21-omnichannel-connector-api-spec.md) — additional channel integration.
 - [`security/ANCFZ_BOUNDARY_DECISIONS.md`](security/ANCFZ_BOUNDARY_DECISIONS.md) — specific ANCFZ security invariants.
 

@@ -8,6 +8,17 @@ Use the existing Node/Express TypeScript platform, Next.js customer chat and Ang
 
 Local development uses Docker and Azure CLI inside the API development image. The shared named Foundry agent `agentic-rag-core-dev` generates conversational wording from masked, authorized context. Node owns factual grounding, catalog selection, journey facts, consent, authorization, external operations and response validation.
 
+## Broader platform contract (retained alongside dedicated ANCFZ delivery)
+
+The ANCFZ focus narrows the current **acceptance journey**, not the platform's foundational product goal:
+
+- **Multi-tenant and roles:** a platform administrator can onboard and manage organizations; tenant administrators/editors can manage only assigned tenant configuration. Preserve authenticated roles, membership, domains, source ACLs, tenant-specific personas, published catalogs, sessions and redacted audit events.
+- **Admin application:** retain the Angular management interface and Node Admin API for onboarding, controlled persona publishing, source upload/approval, ingestion status, catalog version publishing, workflow review, CRM summaries and health/usage monitoring. Do not rebuild these in Foundry.
+- **Customer channels:** Next.js web chat is the first-party channel; future channel adapters must use signed, scoped contracts and the existing Chat API. No browser directly calls Foundry, PostgreSQL, Redis, n8n or privileged Admin APIs.
+- **Knowledge lifecycle:** approved file/HTTPS ingestion uses safe staging, extraction, sanitization, embeddings, source/version review, tenant/visibility filters, revocation and auditable citations. Supported formats are defined by the implementation; uploads are not automatically public or searchable.
+- **Personas and languages:** each published tenant persona sets name, greeting, permitted languages and tone as **presentation only**. Platform privacy, source constraints and catalog gates take precedence. English-only voice support, if enabled, is a separate channel capability, not a change to chat language permissions.
+- **Operations:** consent, retention/deletion, stable request/audit correlation, idempotency, provider reconciliation and observability remain mandatory. Local Foundry verification is not production go-live clearance.
+
 ## Exact business sequence
 
 | # | Stage | Required completion proof |

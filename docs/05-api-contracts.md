@@ -67,44 +67,42 @@ The signature is calculated over `METHOD\nREQUEST_TARGET\nTIMESTAMP\nNONCE\nJSON
 
 Enforce server-side RBAC/ABAC for each handler. Browser cannot choose an arbitrary tenant or receive a vault mapping.
 
-## Suggested message request example
+## Chat message request (current Node Zod contract)
+
+`POST /api/v1/chat/messages` parses `services/api/src/http/schemas.ts` `messageSchema`. `sessionId` must be an authorized UUID and `clientMessageId` is mandatory for message idempotency. The optional `type` defaults to `text` (`text`, `postback`, `attachment`); `message` defaults to an empty string but is required for non-postback turns. `postbackValue` and `replyToPromptId` apply where relevant. Do **not** put a `channel` selector in the request body: channel authentication/context comes from the verified request origin or signed channel credential.
+
 ```json
 {
-  "sessionId": "opaque-session-id",
+  "sessionId": "00000000-0000-4000-8000-000000000001",
+  "type": "text",
   "message": "What services are available?",
-  "clientMessageId": "idempotent-client-turn-id",
-  "channel": "web"
+  "clientMessageId": "synthetic-message-001"
 }
 ```
 
-Action confirmation requests must include the originating `sessionId` alongside `confirmed: true`; Node verifies that the action and session belong together before executing it.
+Action confirmation uses the existing `POST /api/v1/chat/actions/:id/confirm` endpoint with the originating `sessionId` and `confirmed: true`; Node verifies the authenticated session, action/opportunity identity, consent, revision and current state.
 
-CRM summary writes are backend-normalized before persistence. `PUT /api/v1/internal/crm/leads/:id/summary` and the qualification/document summary paths validate the supplied text, remove control characters, deduplicate repeated values, and store a stable `CRM Opportunity Specification` document with qualification, requirements, contact, document and engagement sections. The admin CRM view renders this stored backend document; it does not summarize or reinterpret the content in the browser.
+CRM summary writes remain backend-normalized and sanitized. They do not grant action or provider status.
 
-Async side effects are emitted from the backend through a transactional PostgreSQL outbox and Redis Streams. Chat turns remain synchronous; action confirmation and document upload return immediately after the durable state/outbox transaction. Redis events contain opaque IDs and routing metadata only. Provider completion is reported separately from accepted/started status.
+## Chat response (existing public contract)
 
-## Suggested response shape
 ```json
 {
-  "messageId": "opaque-server-id",
+  "messageId": "opaque-message-id",
   "sessionId": "opaque-session-id",
-  "answer": "Only an evidence-grounded answer is returned here.",
-  "grounded": true,
-  "conversational": false,
-  "citations": [
-    {
-      "sourceId": "approved-source-id",
-      "versionId": "approved-version-id",
-      "chunkId": "authorized-chunk-id",
-      "locator": "page 2",
-      "title": "Approved brochure"
-    }
-  ],
+  "answer": "An authorized source-grounded response, follow-up, or safe abstention.",
+  "grounded": false,
+  "conversational": true,
+  "citations": [],
   "actionProposal": null,
-  "requestId": "trace-correlation-id"
+  "pendingPromptId": null,
+  "pendingIntentKey": null,
+  "pendingRequirementKey": null,
+  "requestId": "opaque-request-correlation-id"
 }
 ```
-Examples illustrate schema only; they are not live data and do not imply a shipped API.
+
+**Schema illustration only:** the example flags, null fields and IDs are placeholders, not asserted results. The response fields and types must remain unchanged. When allowed, `answer` comes from validated Foundry `response.output_text`; Node calculates citation, action, grounding and pending-requirement metadata. A Foundry conversation ID or function-call trace is never a public response field. The API remains synchronous for message replies; confirmed business actions are dispatched asynchronously via the **PostgreSQL transactional outbox → Redis Streams → event worker → n8n** path. Provider completion is reported separately from accepted/queued state.
 
 ## Response and action semantics
 - **answer** is user-safe text; may include a disclosure when evidence is missing; **grounded=false** must not imply factual business assertions. **conversational=true** identifies a short greeting answered from the tenant persona when no matching approved evidence exists. If matching evidence exists, the response is grounded and reported with `conversational=false` and validated citations.
