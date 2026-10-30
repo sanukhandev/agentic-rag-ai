@@ -21,6 +21,14 @@ At external production readiness, complete privacy/data-processor review, opt-in
 - For event worker/n8n timeout, retain action and reconciliation status; do not retry ambiguous external side effects blindly.
 - Retain redacted audit history for intent confirmation, fact provenance, action confirmation, callback outcomes, catalog publication and admin changes. Cache entries expire and never substitute for durable ledger.
 
+## Persona and tool-result security target
+
+- The published tenant persona is scoped and **pinned to the authorized session**. User messages, RAG passages and tool output are untrusted data; none may modify identity, language, consent or persona instructions.
+- Python function/tool requests are untrusted proposals. Node validates exact allowlisted name, typed arguments, tenant/opportunity/catalog revision, source ACLs, timeouts and correlated result IDs. Never return model-selected arbitrary webhooks, shell code or Python execution.
+- A **mandatory Node Response Guard** inspects every customer-visible response after Python Persona Response Composer (or an approved offline persona template), rejecting unsupported facts/action claims and raw JSON, tool payloads, IDs, traceback text or internal chain-of-thought.
+- Model, RAG or tool failures must use **approved tenant-persona offline templates** with only verified state and no automatic CRM collection; never rely on a failed model to generate the fallback.
+- Log redacted personaVersionId, fallback version, guard verdict and tool evidence IDs; never log plaintext OTPs, identity documents, provider keys or private reasoning. Full spec: [persona-response-contract.md](persona-response-contract.md).
+
 ## Historical evidence separation
 
 Old Foundry v3/v4/v6 agent runs, old 25/200-message endurance results, historical diagrams and POC workflow proposals remain repository/Git evidence **only**; they are not active requirements and must not be used to claim the new Python GPT path is tested.

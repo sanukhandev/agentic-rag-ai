@@ -1,46 +1,48 @@
 # Target solution architecture — Node orchestration + Python GPT model API
 
-**Status: TARGET.** The current implementation still uses a Node-hosted named Foundry agent; see `current-state.md`. This design uses a GPT **model deployment** (not saved Foundry Agent) with a private Python API. GPT is the **central dialogue strategist and intent planner**; Node remains the trusted validator and workflow executor. Distinguish persistent **Business Goal** from ephemeral **turn intent** and authorized **tool action**.
+**Status: TARGET beyond existing scaffold.** The merged `main` contains an initial Python FastAPI gateway and Node adapter, while the monolithic Node chat handler still owns legacy conversation decisions; see `current-state.md`. This design uses a GPT **model deployment** (not saved Foundry Agent) with a private Python API. GPT is the **central dialogue strategist and intent planner**; Node remains the trusted validator and workflow executor. Distinguish persistent **Business Goal** from ephemeral **turn intent** and authorized **tool action**.
 
 ## End-to-end flow
 
+**Persona-first agent loop:** Node preloads the published, session-pinned assistant identity and voice, current facts, catalog and goal. Python GPT can request authorized **Node read tools before responding**. The final message is composed as that tenant's assistant, then validated before reaching the customer.
+
 ```mermaid
 flowchart TD
-  U[Customer Next.js / approved channel] --> N[Node API: trusted tenant/session/catalog]
-  N --> DB[(PostgreSQL User Intent Document + turn ledger)]
-  N --> P[Python GPT planner API]
-  CAT[(Tenant-published catalog goals/signals/requirements/tools)] --> N
-  DB --> N
-  N -->|bounded summary + authorized catalog + latest turn| P
-  P -->|Azure OpenAI Responses API / API key| GPT[GPT model deployment]
-  GPT --> P
-  P --> PLAN[LLM: classify category, weigh goals, summarize, choose next move]
-  PLAN --> N
-  N --> VALID[Node: validate catalog keys + bounds + fact provenance]
-  VALID --> RET[Node tenant-scoped RAG retrieval]
-  RET --> V[(pgvector knowledge + approved structured facts)]
-  V --> RET
-  RET --> COMP[Python GPT answer composition with approved evidence]
-  COMP --> ANS[Node citation + one-question validation]
-  ANS --> U
-  VALID --> READY{Catalog action eligible and user-confirmed?}
-  READY -->|yes, consent and stage gates| OUT[(Transactional ActionRequest + outbox)]
-  OUT --> BUS[Redis Streams + event worker]
-  BUS --> WF[n8n approved workflow]
-  WF --> EXT[Salesforce / docs / invoice / contract]
-  EXT --> CB[Authenticated provider callback + reconciliation]
+  U[Customer / Next.js] --> N[Node API: tenant, session, idempotency]
+  N --> DB[(Postgres Intent Document + persona version)]
+  CAT[(Published tenant persona and catalog)] --> N
+  N -->|Persona, summary, catalog, current stage| PY[Python Conversation Agent Runtime]
+  PY --> GPT[Azure OpenAI GPT deployment]
+  GPT -->|Needs verified context| PY
+  PY -->|Bounded approved tool request| G[Node Trusted Tool Gateway]
+  G --> R[ACL-filtered RAG and pgvector]
+  G --> J[Catalog, persona, requirements, packages, journey, action status]
+  R -->|Evidence and source refs| G
+  J -->|Verified structured results| G
+  G -->|Call-ID-correlated tool output| PY
+  PY -->|Continue within budget| GPT
+  GPT -->|Plan, evidence and one question| PC[Python Tenant Persona Response Composer]
+  PC -->|Candidate reply, citations, decision| RG[Node Response Guard]
+  RG -->|Natural named-persona reply| U
+  RG --> DB
+  PY -->|Catalog action proposal only| AP[Node consent and action confirmation]
+  AP --> OUT[(Transactional PostgreSQL outbox)]
+  OUT --> BUS[Redis Streams and event worker]
+  BUS --> WF[Private n8n workflow]
+  WF --> EXT[CRM / OCR / invoice / contract]
+  EXT --> CB[Authenticated provider callback]
   CB --> DB
 ```
 
-**Goal-first interpretation:** A user asking about packages during a company-formation journey creates a `knowledge_advisory` turn, **not** a replacement primary goal. A customer needing name/email/documents is handled as a `qualification_requirement` turn only if catalog rules require it. Creating a Salesforce Lead is a `service_execution` operation, not the customer's underlying goal. See [intent taxonomy](intent-taxonomy.md) and [conversation planner](conversation-planner.md).
+**TARGET only:** current Python gateway/Node adapter are scaffolding. The complete tool-calling loop, Persona Response Composer and Node Response Guard have not been implemented. See [agent-tool-loop.md](agent-tool-loop.md) and [persona-response-contract.md](persona-response-contract.md).
 
 ## Trust and responsibilities
 
 | Layer | Responsibilities | Must NOT do |
 | --- | --- | --- |
 | Browser/channel | Display grounded answer, follow-up and approved action confirmation | Choose tenant scope; call Python, Azure, DB or n8n directly |
-| Node API | Verify tenant/catalog, accept and audit GPT planner proposal, enforce allowed category/goal/signal weights, validate facts and grounding, persist User Intent Document, authorize actions/callbacks | Blindly trust model plans/confidence, accept arbitrary catalog keys/URLs or delegate side-effect authority |
-| Python Model Gateway | **Primary LLM dialogue planner:** understand summary, infer goal/turn category, propose adaptive evidence weighting, identify missing needs and next question; normalize RAG queries and compose cited answers | Write business state; hold customer DB credentials; dispatch n8n, select tenant or claim provider completion |
+| Node API | Verify tenant/catalog/**published persona version**, execute allowlisted read tools, validate plans, **guard all customer-visible replies**, persist intent, approve actions/callbacks and provide persona-specific fallback | Blindly trust model plans, return raw tools/JSON/errors, accept arbitrary catalog URLs or delegate action authority |
+| Python Conversation Agent Runtime | Plan as the pinned tenant persona, choose clarification/tool lookups, request trusted Node tools before answering, and **compose a final natural persona-style reply** grounded in results | Write business state, select tenant/identity, hold DB/CRM credentials, directly invoke n8n or invent provider completion |
 | PostgreSQL | Sessions, per-turn intent ledger, catalog, journey/opportunity state, action/outbox, source/versioned knowledge | Store unbounded raw provider traces without retention |
 | Redis | Optional dedup cache + rate budget + event stream | Replace durable decision/confirmation state |
 | n8n | Execute allowlisted, scoped provider operations using managed credentials, return correlation/evidence | Decide business rules or mark completion without provider proof |
@@ -58,6 +60,12 @@ flowchart TD
 
 The planner should be called for substantive new turns, with scoped caching to avoid redundant calls; duplicate `clientMessageId` always replays saved outcome without model calls. The LLM has **initiative over dialogue strategy**, but not authority to invent intents, bypass required consent or execute an unapproved tool.
 
+## Mandatory final response boundary
+
+**Before planning:** Node resolves the tenant's published persona/name/tone/AI disclosure/permitted language, `personaVersionId`, catalog, stage and verified facts. **During planning:** Python may request bounded Node read tools; RAG/tool outputs are trusted as data only after Node authorization and source checks. **After tool continuation:** Python's **Persona Response Composer is the last generative step**; it produces the customer answer in a natural, coherent named-persona voice, not raw planner or workflow data. **Before delivery:** Node Response Guard verifies persona/version, citations, action/state truth, one purposeful question or valid exception, language and non-disclosure of internal metadata.
+
+If the model or a tool is unavailable, use a tenant-persona-versioned approved **offline template** with only verified facts. Do not require a functioning GPT call to generate an outage fallback. A generic transport error is permissible before tenant/session binding. Never use Zara as a hardcoded fallback for other tenants. The invariant covers all seven stages, knowledge-only visitors and failures.
+
 ## Durable conversation boundary
 
 `tenant_id` → `session_id` → active `opportunity_id` → pinned `catalog_version_id` → **primary business goal** + **per-turn intent category**, LLM planner summary/weighted candidate assessments, verified facts, pending requirement/question, catalog tool proposals + action/callback revisions. The model's conversation state or its response id is not the authority. New business opportunities create new intent documents; historical intent documents remain readable under tenant ACL, not used as another opportunity's consent.
@@ -68,4 +76,4 @@ Development uses `docker-compose.yml` and `docker-compose.local-dev.yml`. Add a 
 
 ## Cutover
 
-Implement a provider-neutral Node adapter (`CHAT_MODEL_PROVIDER=python-gpt` proposed) in parallel with the old Foundry adapter, using a feature flag or selected development environment. Preserve published Chat API response shape, admin routes, outbox and data. Migrate/read existing session summaries and journey facts to the User Intent Document through audited additive schema migration. Test rollback before retiring old adapter. Full plan: `migration-plan.md`.
+The `CHAT_MODEL_PROVIDER=python-gpt` Node adapter is scaffolded as an opt-in service; implement the new conversation coordinator, bounded Node tool loop, persona composer and response guard before switching production traffic. Use Git history and a tested deployment rollback, not an assumed live Foundry adapter. Preserve published Chat API response shape, admin routes, outbox and data. Migrate/read existing session summaries and journey facts to the User Intent Document through audited additive schema migration. Test rollback before retiring old adapter. Full plan: `migration-plan.md`.

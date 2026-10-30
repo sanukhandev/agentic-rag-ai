@@ -4,28 +4,30 @@
 
 | Read order | Document | Purpose |
 | --- | --- | --- |
-| 1 | [Current state and gaps](current-state.md) | Verified repository inventory, existing architecture, blockers and migration delta |
-| 2 | [Current requirements](requirements.md) | Tenant-neutral conversational goal, ANCFZ seven-stage acceptance |
-| 3 | [Target architecture](architecture.md) | Node / private Python GPT API / pgvector / catalog / n8n boundaries |
-| 4 | [Intent taxonomy](intent-taxonomy.md) | Six categories; business outcome versus knowledge/requirements/CRM actions |
-| 5 | [LLM conversation planner](conversation-planner.md) | GPT interprets full summary, weighs goals, chooses next move/question, determines satisfaction |
-| 6 | [Intent engine](intent-engine.md) | Catalog-supported candidate weights, goal confirmation and per-turn decisions |
-| 7 | [User Intent Document](user-intent-document.md) | Durable per-session/opportunity intent ledger, cache and concurrency semantics |
-| 8 | [Python model gateway](model-gateway.md) | Azure OpenAI Responses API, key, strict contracts, retries/rate limits |
-| 9 | [Journey orchestration](journey.md) | Exactly ordered stages, grounded response + next question, recovery |
-| 10 | [Catalog to n8n](n8n-workflows.md) | Allowlisted tool proposals, action gating, outbox and provider verification |
-| — | [Supplied remote n8n inventory](remote-n8n-integration.md) | Four real webhook paths, unverified contracts, security prerequisites and test sequence |
-| 11 | [Security/operations](security-operations.md) | Deferred advanced PII work, retained boundaries, deployment and telemetry |
-| 12 | [Migration plan](migration-plan.md) | Additive phases, no-code-rewrite shortcuts, safe rollback |
-| 13 | [Acceptance](acceptance.md) | One continuous real journey; no 25/200-message quota |
+| 1 | [Current state and gaps](current-state.md) | Existing code vs target contracts |
+| 2 | [Requirements](requirements.md) | ANCFZ and generic tenant behavior |
+| 3 | [Tenant persona response contract](persona-response-contract.md) | **Mandatory** natural named-persona voice on all replies and offline fallbacks |
+| 4 | [Python↔Node tool loop](agent-tool-loop.md) | Trusted pre-response Node tools and model continuation |
+| 5 | [Target architecture](architecture.md) | Python agent, RAG/tools, Node guard and n8n boundaries |
+| 6 | [Intent taxonomy](intent-taxonomy.md) | Business Goal vs supporting turn intents |
+| 7 | [Conversation planner](conversation-planner.md) | LLM decides goal, tool retrieval and next question |
+| 8 | [Intent engine](intent-engine.md) | Catalog-supported goal weighting and confirmation |
+| 9 | [User Intent Document](user-intent-document.md) | Durable intent facts and pinned persona |
+| 10 | [Python model runtime](model-gateway.md) | Azure GPT calls, persona composition, retries |
+| 11 | [Journey orchestration](journey.md) | Seven stages, natural dialogue, recovery |
+| 12 | [Catalog to n8n](n8n-workflows.md) | Action gating and verified provider callbacks |
+| — | [Remote n8n inventory](remote-n8n-integration.md) | Supplied but unverified webhook mappings |
+| 13 | [Security](security-operations.md) | Tenant isolation, prompt/tool boundaries |
+| 14 | [Migration plan](migration-plan.md) | Phased build and persona release gate |
+| 15 | [Acceptance](acceptance.md) | One journey and cross-tenant persona QA |
 
 Read root [AGENTS.md](../AGENTS.md) for non-negotiable coding instructions, and root [README](../readme.md) for the entrypoint.
 
 ## Current versus target
 
 - **Current on `refactor/python-conversation-core-v2`:** the Node API bootstrap can select a private Python GPT model adapter; a new FastAPI model gateway and Compose overlay have been added. The old Foundry Agent source/runtime and Azure CLI Docker stage are retired on this isolated rewrite branch (historical verification remains). The **legacy `app.ts` lead-first conversation logic and deterministic catalog remain operational compatibility code**, so the new goal-first planner does not yet own the session.
-- **Target:** GPT through private Python model API acts as the **primary conversation planner**, maintaining a catalog-grounded **Business Goal** independently from ephemeral knowledge/requirement/status/execution turn intents. It summarizes context, weighs catalog signals within approved bounds, selects the best question/action, and offers more help after the **customer goal** is actually satisfied. Node validates decisions and executes only explicitly approved workflows.
-- **Not yet delivered:** integration of a **goal-first Node conversation coordinator**, durable per-turn intent ledger, full catalog-v2 context/weight validation, Python↔Node tool-execution loop, provider-verified seven-stage completion and live test evidence. The Python gateway/adapter are an initial code slice only.
+- **Target:** GPT through a private Python **Conversation Agent Runtime** plans the dialogue, uses approved Node tools before responding and manages a catalog-grounded Business Goal. **Every reply is composed in the published, session-pinned tenant persona** (ANCFZ: Zara only if selected), with Node grounding/response guards and approved persona-specific offline fallbacks.
+- **Not yet delivered:** a full goal-first coordinator, intent ledger, catalog-v2 validation, **Python↔Node tool loop, Persona Response Composer, Node Response Guard, offline persona fallbacks**, provider-verified seven-stage completion and live tests. The gateway/adapter are scaffolding.
 - **Current first external blocker:** latest focused run did not verify a Salesforce Lead result, and returned `reconcile_required` at Lead Generation. No later stage was completed in that one run.
 
 ## Historical evidence (not active requirements)

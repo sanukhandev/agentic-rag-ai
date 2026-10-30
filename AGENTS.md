@@ -34,6 +34,16 @@ Next.js / other validated channels → Node Express API → catalog and per-sess
 - n8n is execution, not planning. The model may produce a **tool proposal** from catalog-defined capabilities, but Node must validate the active binding, prerequisites, purpose-specific consent and explicit action confirmation before dispatch.
 - All external writes must have idempotency, webhook auth/correlation, callback verification and reconciliation. HTTP 200/202, local CRUD, n8n success, PDF existence, `mock_paid` and unsigned contracts are not authoritative completion.
 
+## Mandatory persona-first response boundary (TARGET; not implemented yet)
+
+**Every customer-visible chat reply must use the session-pinned published tenant persona**, including first contact, RAG answers, clarifications, requirements, document requests, action confirmation, queued/pending states, errors, opt-outs, handoff and completion. **ANCFZ uses Zara only when Zara is the tenant's published and selected persona version.** Never hardcode her name, voice or language into shared services. Introduce the assistant naturally when appropriate, not in every message; disclose AI identity if asked, and do not impersonate a human.
+
+Node sends the authorized `personaVersionId`, assistant name/role, permitted language/tone/style, persona rules, validated conversation summary, pinned catalog and current journey **before Python agent planning**. Python may request bounded approved **read-only Node tools** to retrieve RAG evidence, catalog requirements, persona context, package choices, journey state and provider status **before replying**. Node validates every tool request and correlates the result. See [agent-tool-loop.md](docs/agent-tool-loop.md).
+
+After all needed tool results, the **Python Persona Response Composer is the final generative step**. It produces one natural, context-aware and grounded reply in the tenant's voice, with one purposeful follow-up when appropriate. **Node Response Guard is the final enforcement step**: reject raw planner JSON, tool payloads, internal keys/confidence scores, UUIDs/tracebacks, wrong persona/language, unsupported facts, misleading workflow success and inappropriate/duplicate questions. No tool/model output may bypass it.
+
+If generation, a tool or RAG is unavailable, use only **approved tenant-persona fallback templates** filled from verified state and passed through the guard. Pre-session generic transport errors are allowed. Never silently use Zara as another tenant's fallback. Do not invent private feelings or human identity; natural, thoughtful responses use context and accurate facts. **All seven stages and knowledge-only conversations require persona-consistency testing.** Contract: [persona-response-contract.md](docs/persona-response-contract.md).
+
 ## Azure API-key and reliability rules
 
 Use the configured Azure OpenAI **model deployment endpoint** (e.g. resource `/openai/v1/`), NOT a project `/api/projects/...` agent endpoint. Keep `AZURE_OPENAI_API_KEY` only in the private Python runtime secret environment; never send to Node/UI, logs, traces, tests or Git. Local development only until key-management and privacy controls are approved.
@@ -50,11 +60,11 @@ Advanced new PII detection is **deferred**; it is NOT permission to remove exist
 2. Implement in small additive phases from `docs/migration-plan.md`, not a sweeping replacement.
 3. Follow `docs/architecture.md`, `docs/intent-taxonomy.md`, `docs/conversation-planner.md`, `docs/intent-engine.md`, `docs/user-intent-document.md`, `docs/model-gateway.md`, `docs/journey.md` and `docs/n8n-workflows.md` for target contracts.
 4. Preserve migrations, data, code and evidence until compatibility cutover and rollback are verified. Never delete existing Foundry code simply because it is not the target.
-5. Unit/integration-test deterministic scoring, candidate ambiguity, confirmation, exact one-question progression, cache invalidation, retries, outage, conversation continuity, cross-tenant isolation, action dedupe and callbacks.
+5. Unit/integration-test deterministic scoring, candidate ambiguity, confirmation, one purposeful follow-up, **persona consistency on all customer-visible paths**, pinned persona after restart, offline persona fallbacks, **Python↔Node tool loop**, Node Response Guard, cache invalidation, retries, cross-tenant isolation, action dedupe and callbacks.
 6. Run typecheck, lint, tests, build, Compose/security tests and one complete seven-stage journey using authorized sandbox/mock providers with truthfully labeled external evidence. No fabricated results.
 7. Update the canonical docs and `docs/current-state.md` with exact code paths and measured pass/fail/blocked results. Preserve dated `docs/verification` artifacts as **historical evidence**, not instructions.
 8. Do not push, merge, promote Azure resources, trigger real charges/signatures or change production credentials without explicit approval.
 
 ## Single read order for coding agents
 
-`docs/README.md` → `docs/current-state.md` → `docs/requirements.md` → `docs/intent-taxonomy.md` → `docs/conversation-planner.md` → `docs/architecture.md` → `docs/intent-engine.md` → `docs/user-intent-document.md` → `docs/model-gateway.md` → `docs/journey.md` → `docs/n8n-workflows.md` → `docs/migration-plan.md` → `docs/acceptance.md`.
+`docs/README.md` → `docs/current-state.md` → `docs/requirements.md` → `docs/persona-response-contract.md` → `docs/agent-tool-loop.md` → `docs/intent-taxonomy.md` → `docs/conversation-planner.md` → `docs/architecture.md` → `docs/intent-engine.md` → `docs/user-intent-document.md` → `docs/model-gateway.md` → `docs/journey.md` → `docs/n8n-workflows.md` → `docs/migration-plan.md` → `docs/acceptance.md`.
