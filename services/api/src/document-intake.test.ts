@@ -15,6 +15,8 @@ describe('supporting document intake', () => {
     expect(documentSha256(pdf)).toHaveLength(64);
     const document: SupportingDocument = { id: '55555555-5555-4555-8555-555555555555', tenantId: lead.tenantId, sessionId: lead.sessionId, leadId: lead.id, fileName: 'requirements.pdf', mimeType: 'application/pdf', sizeBytes: pdf.length, sha256: documentSha256(pdf), storageKey: `${lead.tenantId}/55555555-5555-4555-8555-555555555555.pdf`, status: 'completed', workflowKey: 'anc.document.ocr.extract', storeExtractedText: true, extractedText: '[EMAIL_1]', summary: 'OCR extracted business requirements', errorCode: null, consentAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     expect(composeDocumentSummary(lead, [document])).toContain('Supporting documents: requirements.pdf: OCR extracted business requirements');
+    expect(composeDocumentSummary(lead, [{ ...document, summary: 'OTP: 123456 and card number 4111 1111 1111 1111' }])).not.toContain('123456');
+    expect(composeDocumentSummary(lead, [{ ...document, summary: 'OTP: 123456 and card number 4111 1111 1111 1111' }])).not.toContain('4111');
   });
 
   it('keeps files private and rejects traversal keys', async () => {

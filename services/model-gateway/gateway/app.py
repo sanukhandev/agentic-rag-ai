@@ -1,6 +1,9 @@
 """Stateless, private GPT gateway. No DB, n8n, Salesforce or CRM credentials."""
 import asyncio
+import hashlib
 import json
+import logging
+import math
 import os
 import secrets
 import time
@@ -10,12 +13,29 @@ from openai import AsyncOpenAI
 from pydantic import ValidationError
 
 from .contracts import PlanRequest, PlanResult, NormalizeRequest, NormalizeResult
+from .agent import BoundedConversationAgent, HttpToolGateway
+from .reliability import BudgetExceeded, CircuitBreaker, RateLimitExceeded, SlidingWindowRateLimiter, TurnBudget
+from .v2_contracts import AgentTurnResultV2, TurnEnvelopeV2
 
 app = FastAPI(title="Private Conversation Model Gateway", docs_url=None, redoc_url=None, openapi_url=None)
 _limit = asyncio.Semaphore(max(1, min(4, int(os.getenv("MODEL_MAX_CONCURRENCY", "2")))))
 _pacing_lock = asyncio.Lock()
 _next_call_at = 0.0
 _client: AsyncOpenAI | None = None
+_logger = logging.getLogger("model-gateway")
+_rate_limiter = SlidingWindowRateLimiter(int(os.getenv("MODEL_MAX_REQUESTS_PER_MINUTE", "60")))
+_circuit = CircuitBreaker(
+    failure_threshold=int(os.getenv("MODEL_CIRCUIT_BREAKER_FAILURES", "3")),
+    cooldown_seconds=float(os.getenv("MODEL_CIRCUIT_BREAKER_COOLDOWN_SECONDS", "30")),
+)
+
+
+def _request_digest(payload: dict) -> str:
+    return hashlib.sha256(str(payload.get("requestId", "")).encode()).hexdigest()[:12]
+
+
+def _log_event(event: str, payload: dict, **fields: object) -> None:
+    _logger.info(json.dumps({"event": event, "requestDigest": _request_digest(payload), **fields}, sort_keys=True))
 
 _PLAN_SCHEMA = {
     "type": "object",
@@ -29,9 +49,13 @@ _PLAN_SCHEMA = {
         "nextQuestion": {"type": ["string", "null"]},
         "proposedToolKey": {"type": ["string", "null"]},
         "conversationSummary": {"type": "string"},
-        "confidenceBand": {"type": "string", "enum": ["low", "medium", "high"]}
+        "confidenceBand": {"type": "string", "enum": ["low", "medium", "high"]},
+        "candidateGoalKeys": {"type": "array", "items": {"type": "string"}, "maxItems": 8},
+        "matchedSignalIds": {"type": "array", "items": {"type": "string"}, "maxItems": 32},
+        "supportingTopicKeys": {"type": "array", "items": {"type": "string"}, "maxItems": 16},
+        "runnerUpScore": {"type": ["number", "null"], "minimum": 0, "maximum": 100}
     },
-    "required": ["answer", "citationIds", "turnCategory", "primaryGoalKey", "nextMove", "nextQuestion", "proposedToolKey", "conversationSummary", "confidenceBand"]
+    "required": ["answer", "citationIds", "turnCategory", "primaryGoalKey", "nextMove", "nextQuestion", "proposedToolKey", "conversationSummary", "confidenceBand", "candidateGoalKeys", "matchedSignalIds", "supportingTopicKeys", "runnerUpScore"]
 }
 
 _NORMALIZE_SCHEMA = {
@@ -73,38 +97,61 @@ def _client_get() -> AsyncOpenAI:
                               max_retries=3)
     return _client
 
-async def _model(system: str, payload: dict, schema: dict, name: str) -> tuple[dict, str | None]:
+async def _model(system: str, payload: dict, schema: dict, name: str, deadline_at: str | None = None) -> tuple[dict, str | None]:
     global _next_call_at
+    started = time.monotonic()
+    budget = TurnBudget.from_deadline(deadline_at, float(os.getenv("MODEL_TURN_TIMEOUT_SECONDS", "90")))
+    if not _circuit.allow():
+        _log_event("model.circuit_open", payload, operation=name)
+        raise HTTPException(status_code=503, detail={"code": "MODEL_CIRCUIT_OPEN"})
     client = _client_get()
-    deployment = os.environ["AZURE_OPENAI_DEPLOYMENT"]
-    async with _limit:
+    acquired = False
+    try:
+        await _rate_limiter.acquire(budget)
+        await asyncio.wait_for(_limit.acquire(), timeout=max(0.001, budget.remaining()))
+        acquired = True
         async with _pacing_lock:
             now = time.monotonic()
             delay = max(0.0, _next_call_at - now)
-            if delay:
-                await asyncio.sleep(delay)
+            await budget.sleep(delay)
             _next_call_at = time.monotonic() + max(0.2, float(os.getenv("MODEL_MIN_CALL_INTERVAL_SECONDS", "0.7")))
-        try:
-            # SDK owns the complete initial + 3 transient retry policy.
-            # No outer retry loop, particularly for 429 responses.
-            response = await asyncio.wait_for(
-                client.responses.create(
-                    model=deployment,
-                    instructions=system,
-                    input=json.dumps(payload, ensure_ascii=False),
-                    text={"format": {"type": "json_schema", "name": name, "strict": True, "schema": schema}},
-                    max_output_tokens=1700,
-                    store=False,
-                ),
-                timeout=78.0,
-            )
-            if not response.output_text:
-                raise ValueError("No structured model output")
-            result = json.loads(response.output_text)
-            return result, getattr(response, "_request_id", None)
-        except Exception:
-            # Never return raw prompts, provider errors, or secrets to clients.
-            raise HTTPException(status_code=503, detail={"code": "MODEL_UNAVAILABLE"})
+        timeout = min(78.0, budget.remaining())
+        if timeout <= 0:
+            raise BudgetExceeded("turn deadline exceeded")
+        response = await asyncio.wait_for(
+            client.responses.create(
+                model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
+                instructions=system,
+                input=json.dumps(payload, ensure_ascii=False),
+                text={"format": {"type": "json_schema", "name": name, "strict": True, "schema": schema}},
+                max_output_tokens=1700,
+                store=False,
+            ),
+            timeout=timeout,
+        )
+        if not response.output_text:
+            raise ValueError("No structured model output")
+        result = json.loads(response.output_text)
+        _circuit.success()
+        _log_event("model.completed", payload, operation=name, latencyMs=round((time.monotonic() - started) * 1000), outputLength=len(response.output_text))
+        return result, getattr(response, "_request_id", None)
+    except HTTPException:
+        raise
+    except RateLimitExceeded as error:
+        _log_event("model.rate_limited", payload, operation=name, retryAfterSeconds=round(error.retry_after, 3))
+        raise HTTPException(status_code=429, detail={"code": "MODEL_RATE_LIMITED"}, headers={"retry-after": str(max(1, math.ceil(error.retry_after)))}) from error
+    except (BudgetExceeded, asyncio.TimeoutError) as error:
+        _circuit.failure()
+        _log_event("model.deadline", payload, operation=name, latencyMs=round((time.monotonic() - started) * 1000))
+        raise HTTPException(status_code=503, detail={"code": "MODEL_DEADLINE_EXCEEDED"}) from error
+    except Exception as error:
+        _circuit.failure()
+        status = getattr(error, "status_code", None)
+        _log_event("model.failed", payload, operation=name, latencyMs=round((time.monotonic() - started) * 1000), providerStatus=status if isinstance(status, int) else None)
+        raise HTTPException(status_code=503, detail={"code": "MODEL_UNAVAILABLE"}) from error
+    finally:
+        if acquired:
+            _limit.release()
 
 @app.get("/internal/health/live")
 async def live() -> dict:
@@ -116,12 +163,28 @@ async def ready(x_internal_service_key: str | None = Header(default=None)) -> di
     _client_get()
     return {"status": "configured"}
 
+
+@app.post("/internal/v2/conversation/turn", response_model=AgentTurnResultV2)
+async def agent_turn(body: TurnEnvelopeV2, x_internal_service_key: str | None = Header(default=None)) -> AgentTurnResultV2:
+    await _auth(x_internal_service_key)
+    gateway_url = os.getenv("NODE_TOOL_GATEWAY_URL", "")
+    if not gateway_url:
+        raise HTTPException(status_code=503, detail={"code": "TOOL_GATEWAY_NOT_CONFIGURED"})
+    try:
+        agent = BoundedConversationAgent(_client_get(), HttpToolGateway(gateway_url, os.getenv("MODEL_GATEWAY_SERVICE_KEY", "")), os.environ["AZURE_OPENAI_DEPLOYMENT"])
+        return await agent.run(body)
+    except ValueError as error:
+        raise HTTPException(status_code=503, detail={"code": "TOOL_GATEWAY_NOT_CONFIGURED"}) from error
+
 @app.post("/internal/v1/model/plan", response_model=PlanResult)
 async def plan(body: PlanRequest, x_internal_service_key: str | None = Header(default=None)) -> PlanResult:
     await _auth(x_internal_service_key)
     payload = body.model_dump()
     payload["evidence"] = [e.model_dump() for e in body.evidence]
-    raw, provider_id = await _model(_SYSTEM, payload, _PLAN_SCHEMA, "conversation_plan")
+    if body.deadlineAt is None:
+        raw, provider_id = await _model(_SYSTEM, payload, _PLAN_SCHEMA, "conversation_plan")
+    else:
+        raw, provider_id = await _model(_SYSTEM, payload, _PLAN_SCHEMA, "conversation_plan", body.deadlineAt)
     try:
         validated = PlanResult.model_validate({**raw, "modelRequestId": provider_id})
     except ValidationError:
@@ -149,10 +212,11 @@ async def plan(body: PlanRequest, x_internal_service_key: str | None = Header(de
 @app.post("/internal/v1/model/normalize", response_model=NormalizeResult)
 async def normalize(body: NormalizeRequest, x_internal_service_key: str | None = Header(default=None)) -> NormalizeResult:
     await _auth(x_internal_service_key)
-    raw, _ = await _model(
+    model_args = (
         "Rewrite the customer question into compact retrieval keywords. Preserve all numbers, dates, names, negations and quoted values. Do not add facts. Return JSON only.",
-        body.model_dump(), _NORMALIZE_SCHEMA, "rag_normalization"
+        body.model_dump(), _NORMALIZE_SCHEMA, "rag_normalization",
     )
+    raw, _ = await _model(*model_args, **({"deadline_at": body.deadlineAt} if body.deadlineAt is not None else {}))
     try:
         return NormalizeResult.model_validate(raw)
     except ValidationError:

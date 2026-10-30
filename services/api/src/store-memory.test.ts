@@ -77,6 +77,17 @@ describe('MemoryStore tenant and lifecycle boundaries', () => {
     expect((await store.getSession(session.id))?.conversationState?.selectedIntentKey).toBe('lead.capture');
   });
 
+  it('returns the existing message for an idempotent client message insert', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'Message Tenant', slug: `message-${randomUUID()}` });
+    const session = await store.createSession(tenant.id);
+    const first = { id: randomUUID(), sessionId: session.id, tenantId: tenant.id, role: 'user' as const, maskedContent: 'Hello', citations: [], clientMessageId: 'same-client-message', response: null, createdAt: new Date().toISOString() };
+    const inserted = await store.addMessage(first);
+    const replay = await store.addMessage({ ...first, id: randomUUID() });
+    expect(replay).toEqual(inserted);
+    expect(await store.listMessages(session.id, tenant.id)).toHaveLength(1);
+  });
+
   it('persists pending prompts and consent state with the session', async () => {
     const store = new MemoryStore();
     const tenant = await store.createTenant({ name: 'Prompt Tenant', slug: `prompt-${randomUUID()}` });

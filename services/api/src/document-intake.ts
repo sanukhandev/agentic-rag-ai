@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join, posix } from 'node:path';
+import { sanitizeSensitiveText } from './privacy.js';
 import type { CrmLead, LeadConversationMessage, SupportingDocument } from './types.js';
 
 export const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
@@ -67,11 +68,11 @@ export class PrivateDocumentStorage {
 export const composeDocumentSummary = (lead: CrmLead, documents: SupportingDocument[]): string => {
   const conversation = lead.conversation
     .filter((message: LeadConversationMessage) => message.role === 'user')
-    .map((message) => message.content.replace(/\[(?:NAME|EMAIL|PHONE)_\d+\]/gu, '[visitor detail]').trim())
+    .map((message) => sanitizeSensitiveText(message.content.replace(/\[(?:NAME|EMAIL|PHONE)_\d+\]/gu, '[visitor detail]').trim()))
     .filter(Boolean)
     .slice(-12);
   const excerpts = documents.filter((document) => document.status === 'completed' && document.summary)
-    .map((document) => `${document.fileName}: ${document.summary}`)
+    .map((document) => `${document.fileName}: ${sanitizeSensitiveText(document.summary!)}`)
     .slice(-5);
   const parts = [`Intent: ${lead.intent}`, conversation.length ? `Visitor requirements: ${conversation.join(' | ')}` : '', excerpts.length ? `Supporting documents: ${excerpts.join(' | ')}` : ''].filter(Boolean);
   return parts.join('\n').slice(0, 20_000);

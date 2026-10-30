@@ -6,6 +6,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp, isValidBase64 } from './app.js';
 import { MockWorkflowAdapter, signN8nPayload } from './actions.js';
+import { MemoryCache } from './cache.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import type { EmbeddingProvider } from './embedding.js';
 import type { ChatModel, ModelDraft, QueryNormalizationInput } from './model.js';
@@ -101,6 +102,27 @@ class FailsOnceModel implements ChatModel {
   }
 }
 
+class DelayedCountingModel implements ChatModel {
+  public draftCalls = 0;
+  public readonly started: Promise<void>;
+  private readonly releasePromise: Promise<void>;
+  private releaseModel!: () => void;
+  private resolveStarted!: () => void;
+  constructor() {
+    this.started = new Promise((resolve) => { this.resolveStarted = resolve; });
+    this.releasePromise = new Promise((resolve) => { this.releaseModel = resolve; });
+  }
+  release(): void { this.releaseModel(); }
+  private async response(): Promise<ModelDraft> {
+    this.draftCalls += 1;
+    this.resolveStarted();
+    await this.releasePromise;
+    return { answer: 'Hello from the model.', citationIds: [], proposedIntent: null };
+  }
+  async draft(): Promise<ModelDraft> { return this.response(); }
+  async compose(): Promise<ModelDraft> { return this.response(); }
+}
+
 const seedWorkflowExecution = async (store: Store, action: Pick<ActionRequest, 'id' | 'tenantId' | 'workflowKey' | 'catalogVersionId' | 'idempotencyKey'>, providerStatus: string = 'dispatching') => {
   const eventId = randomUUID();
   const correlationId = randomUUID();
@@ -149,7 +171,7 @@ describe('API vertical slice', () => {
   it('onboards tenants, isolates sources, grounds answers, masks PII, and confirms one workflow', { timeout: 10_000 }, async () => {
     const model = new CapturingModel();
     const workflow = new MockWorkflowAdapter();
-    const runtime = createApp({ jwtSecret: 'test-secret', model, workflow, nodeEnv: 'test', n8nCallbackSecret: 'callback-secret', inputCostUsdPerMillion: 1, outputCostUsdPerMillion: 2 });
+    const runtime = createApp({ jwtSecret: 'test-secret', model, workflow, cache: new MemoryCache(), nodeEnv: 'test', n8nCallbackSecret: 'callback-secret', inputCostUsdPerMillion: 1, outputCostUsdPerMillion: 2 });
     const api = request(runtime.app);
     await api.get('/api/v1/admin/tenants').expect(401);
     const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform@example.test', password: 'Platform1Password' }).expect(201);
@@ -245,6 +267,11 @@ describe('API vertical slice', () => {
     expect(grounded.body.citations).toHaveLength(1);
     expect(model.personaNames.at(-1)).toBe('Ava 2');
     expect(model.ownerNames.at(-1)).toBe('Tenant A');
+    const cachedGrounded = await api.post('/api/v1/chat/messages').send({ sessionId: publicSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-1' }).expect(200);
+    expect(cachedGrounded.body).toEqual(grounded.body);
+    expect((await runtime.store.listAudit(tenantA.body.tenant.id)).some((event) => event.eventName === 'chat.cache_hit')).toBe(true);
+    const responseAudit = (await runtime.store.listAudit(tenantA.body.tenant.id)).find((event) => event.eventName === 'chat.response' && event.metadata.messageDigest === contentHash(grounded.body.messageId).slice(0, 12));
+    expect(responseAudit?.metadata).toMatchObject({ personaVersionId: (await runtime.store.getSession(publicSession.body.sessionId))?.personaVersionId, language: 'en', grounded: true });
     const newerSession = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'tenant-a' }).expect(201);
     await api.post('/api/v1/chat/messages').send({ sessionId: newerSession.body.sessionId, message: 'What is the pricing?', clientMessageId: 'pricing-new-persona' }).expect(200);
     expect(model.personaNames.at(-1)).toBe('Ava New');
@@ -685,6 +712,28 @@ describe('API vertical slice', () => {
     expect((await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).expect(200)).body.messages.filter((message: { clientMessageId: string | null }) => message.clientMessageId === 'retry-message-1')).toHaveLength(1);
     const duplicate = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Different retry content', clientMessageId: 'retry-message-1' }).expect(409);
     expect(duplicate.body.error.code).toBe('MESSAGE_ID_REUSED');
+  });
+
+  it('claims one concurrent client message and rejects the losing request before model work', async () => {
+    const model = new DelayedCountingModel();
+    const runtime = createApp({ nodeEnv: 'test', model });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'platform-concurrent-message@example.test', password: 'Platform1Password' }).expect(201);
+    const tenant = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Concurrent Message Tenant', slug: `concurrent-message-${randomUUID()}`, adminEmail: 'admin-concurrent-message@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenant.body.tenant.slug }).expect(201);
+    const body = { sessionId: session.body.sessionId, message: 'I need a demo', clientMessageId: 'concurrent-client-message' };
+    const first = api.post('/api/v1/chat/messages').send(body).then((response) => response);
+    await model.started;
+    const second = await api.post('/api/v1/chat/messages').send(body);
+    expect(second.status).toBe(409);
+    expect(second.body.error.code).toBe('MESSAGE_IN_PROGRESS');
+    model.release();
+    const firstResponse = await first;
+    expect(firstResponse.status).toBe(200);
+    expect(model.draftCalls).toBe(1);
+    const replay = await api.post('/api/v1/chat/messages').send(body).expect(200);
+    expect(replay.body).toEqual(firstResponse.body);
+    expect((await api.get(`/api/v1/chat/sessions/${session.body.sessionId}`).expect(200)).body.messages.filter((message: { clientMessageId: string | null }) => message.clientMessageId === body.clientMessageId)).toHaveLength(1);
   });
 
   it('stores a validated CRM lead and rehydrates it only for the tenant admin view', async () => {
@@ -1164,6 +1213,14 @@ describe('API vertical slice', () => {
     const visas = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: '3 visas', clientMessageId: 'journey-contract-4' }).expect(200);
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.visa_count).toBe('3');
     expect(visas.body.answer).not.toContain('company visas');
+    const preCorrectionState = await runtime.store.getSession(session.body.sessionId);
+    const preCorrectionOpportunityId = preCorrectionState?.conversationState?.intentProgress?.entries['company.setup']?.journeyId ?? null;
+    const pendingProposal = await runtime.store.createAction({ id: randomUUID(), tenantId: tenant.body.tenant.id, sessionId: session.body.sessionId, workflowKey: 'crm.lead.create', intentKey: 'company.setup', catalogVersionId: version.id, opportunityId: preCorrectionOpportunityId, actionKey: 'company.setup', actionRevision: 1, idempotencyKey: 'journey-correction-proposal', state: 'awaiting_confirmation', opaqueReference: 'journey-correction-proposal', payload: { contactConsent: false, slotValues: { visa_count: '3' } }, createdAt: new Date().toISOString(), result: null });
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Actually, make that 5 visas', clientMessageId: 'journey-contract-visa-correction' }).expect(200);
+    const correctedState = await runtime.store.getSession(session.body.sessionId);
+    expect(correctedState?.conversationState?.slotValues.visa_count).toBe('5');
+    expect(correctedState?.conversationState?.slotProvenance?.visa_count).toMatchObject({ corrected: true, source: 'visitor' });
+    expect((await runtime.store.getAction(pendingProposal.id))?.state).toBe('failed');
     const workspace = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'shared_office', clientMessageId: 'journey-contract-5' }).expect(200);
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.workspace_preference).toBe('shared_office');
     expect(workspace.body.pendingRequirementKey).toBeNull();

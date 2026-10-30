@@ -6,7 +6,7 @@ import type {
 } from './types.js';
 
 type CellValue = boolean | number | string | null | undefined;
-type SheetDefinition = { name: string; headers: string[]; rows: CellValue[][] };
+export type SheetDefinition = { name: string; headers: string[]; rows: CellValue[][] };
 
 const escapeXml = (value: string): string => value
   .replace(/&/gu, '&amp;')
@@ -197,8 +197,7 @@ const catalogSheets = (version: IntentCatalogVersion, tenantSlug: string): Sheet
   return sheets;
 };
 
-export const exportIntentCatalogWorkbook = (version: IntentCatalogVersion, tenantSlug: string): Buffer => {
-  const sheets = catalogSheets(version, tenantSlug);
+export const exportWorkbookSheets = (sheets: SheetDefinition[]): Buffer => {
   const sheetNames = sheets.map((item) => item.name);
   const entries = [
     { name: '[Content_Types].xml', data: contentTypesXml(sheets.length) },
@@ -210,3 +209,5 @@ export const exportIntentCatalogWorkbook = (version: IntentCatalogVersion, tenan
   ];
   return zip(entries);
 };
+
+export const exportIntentCatalogWorkbook = (version: IntentCatalogVersion, tenantSlug: string): Buffer => exportWorkbookSheets(catalogSheets(version, tenantSlug));

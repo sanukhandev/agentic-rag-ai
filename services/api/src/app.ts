@@ -4,16 +4,20 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { ActionGateway, isSafeExternalReference, leadQuality, verifyN8nPayload, type WorkflowAdapter } from './actions.js';
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
-import { cacheKey, createCache, type CacheStore } from './cache.js';
+import { cacheKey, createCache, Singleflight, type CacheStore } from './cache.js';
 import { channelAuthMiddleware, ChannelSecretVault, getChannel, type StaticChannelAuth } from './channel-auth.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, KnowledgeRetrievalError, retrieveApprovedKnowledge } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { addressesKnowledgeQuestion, classifyOfferReply, conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isControlledKnowledgeAbstention, isGuidedResponse, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
 import { assertKnownTokens, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogIntentLabel, catalogNextFollowUpRequirement, catalogRequirementLabel, catalogSlotLabel, catalogSlotQuestion, isCrmWriteBinding, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
+import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './catalog-v2.js';
+import { auditLegacyCatalogVersion, createLegacyCatalogV2Candidate } from './catalog-v2-migration.js';
+import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 import { reduceIntentJourney } from './intent-journey.js';
 import { normalizeFullTextQuery } from './search-query.js';
 import { exportIntentCatalogWorkbook } from './intent-catalog-xlsx.js';
+import { exportCatalogV2Workbook } from './catalog-v2-xlsx.js';
 import { composeConversationSummary, consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState, phaseFor, prompt } from './conversation-state.js';
 import { createOutboxEvent } from './events.js';
 import { MemoryStore, contentHash } from './store-memory.js';
@@ -22,6 +26,7 @@ import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, ha
 import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
+import { validateV2ProviderCorrelation, v2ProviderCorrelationSchema, type V2ProviderCorrelation } from './v2-provider-correlation.js';
 import type { ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, FollowUpOfferOption, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, Message, PendingFollowUpOffer, Session, SourceStatus, Store, SupportingDocument } from './types.js';
 import { HttpError, parse } from './http/errors.js';
 import {
@@ -53,6 +58,8 @@ import {
   ingestionResultSchema,
   intentCatalogEditSchema,
   intentCatalogResultSchema,
+  intentCatalogV2Schema,
+  intentCatalogV2MigrationSchema,
   intentCatalogUploadSchema,
   messageSchema,
   sessionSchema,
@@ -67,6 +74,8 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 import { registerLifecycleRoutes } from './routes/lifecycle.js';
+import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './v2-tool-gateway.js';
+import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null; normalizationAttempts: number; normalizationFallbacks: number; normalizationFailures: number; normalizationLatencyMs: number };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -336,12 +345,20 @@ export interface AppDependencies {
   cache?: CacheStore;
   chatResponseCacheTtlSeconds?: number;
   catalogQueryNormalizationEnabled?: boolean;
+  v2Coordinator?: V2ConversationCoordinator;
 }
 
 export const createApp = (dependencies: AppDependencies = {}) => {
   const store = dependencies.store ?? new MemoryStore();
   const cache = dependencies.cache ?? createCache(process.env.REDIS_URL);
+  const cacheFlights = new Singleflight();
+  const tenantCachePrefix = (tenantId: string): string => cacheKey('tenant', tenantId);
+  const invalidateTenantCache = async (tenantId: string): Promise<void> => { try { await cache.invalidate(tenantCachePrefix(tenantId)); } catch { /* cache invalidation must not block durable state */ } };
+  const auditCacheEvent = async (tenantId: string, eventName: string, key: string): Promise<void> => {
+    await store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName, metadata: { keyDigest: contentHash(key).slice(0, 12) }, createdAt: new Date().toISOString() });
+  };
   const model: ChatModel = dependencies.model ?? new DeterministicGroundedModel();
+  const v2Coordinator = dependencies.v2Coordinator;
   const workflow = dependencies.workflow;
   const nodeEnv = dependencies.nodeEnv ?? process.env.NODE_ENV ?? 'development';
   const jwtSecret = dependencies.jwtSecret ?? process.env.JWT_SECRET ?? 'local-development-only-change-me';
@@ -413,9 +430,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const execution = await store.getActionExecution(action.id, action.tenantId);
     if (!execution || execution.eventId !== eventId || execution.correlationId !== correlationId || execution.attempt !== attempt || (execution.n8nExecutionRef && executionReference && execution.n8nExecutionRef !== executionReference)) throw new HttpError(409, 'WORKFLOW_CORRELATION_MISMATCH', 'The workflow completion does not match the current execution claim.');
   };
-  const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null, executionReference?: string, eventId?: string, correlationId?: string, attempt?: number): Promise<ActionRequest> => {
+  const assertV2ProviderCorrelation = async (action: ActionRequest, input: unknown): Promise<void> => {
+    if (!action.catalogVersionId || !await store.getIntentCatalogV2Version(action.tenantId, action.catalogVersionId)) return;
+    const parsed = v2ProviderCorrelationSchema.safeParse(input);
+    if (!parsed.success) throw new HttpError(409, 'V2_PROVIDER_CORRELATION_REQUIRED', 'A v2 provider callback must include its trusted session, opportunity, catalog and action revision.');
+    const reason = validateV2ProviderCorrelation(action, parsed.data);
+    if (reason) throw new HttpError(409, 'V2_PROVIDER_CORRELATION_MISMATCH', `The v2 provider callback correlation is invalid (${reason}).`);
+  };
+  const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null, executionReference?: string, eventId?: string, correlationId?: string, attempt?: number, providerCorrelation?: V2ProviderCorrelation): Promise<ActionRequest> => {
     const resolvingReconciliation = action.state === 'reconcile_required' && status === 'completed';
     const providerTerminal = actorId === null && ['completed', 'failed'].includes(status);
+    if (providerCorrelation || providerTerminal) await assertV2ProviderCorrelation(action, providerCorrelation);
     if (providerTerminal) await assertWorkflowExecution(action, executionReference, eventId, correlationId, attempt, true);
     else if (eventId || correlationId || executionReference) await assertWorkflowExecution(action, executionReference, eventId, correlationId, attempt, false);
     const resolvesReconciliation = resolvingReconciliation;
@@ -430,6 +455,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!committed) throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action and execution changed before this transition was committed.');
       await syncWorkflowState(committed.action, status);
       await store.addAudit({ id: randomUUID(), tenantId: committed.action.tenantId, actorId, eventName: `workflow.transition.${action.state}.${status}`, metadata: { actionId: committed.action.id, fromState: action.state, toState: status }, createdAt: new Date().toISOString() });
+      await invalidateTenantCache(committed.action.tenantId);
       return committed.action;
     }
     const executionContext = { ...(eventId ? { eventId } : {}), ...(correlationId ? { correlationId } : {}), ...(attempt !== undefined ? { expectedAttempt: attempt } : {}) };
@@ -443,6 +469,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     await syncWorkflowState(updated, status);
     await store.updateActionExecution({ actionId: updated.id, tenantId: updated.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: externalReference ? { externalReference } : null, resolveReconciliation: resolvesReconciliation, ...executionContext });
     await store.addAudit({ id: randomUUID(), tenantId: updated.tenantId, actorId, eventName: `workflow.transition.${action.state}.${status}`, metadata: { actionId: updated.id, fromState: action.state, toState: status }, createdAt: new Date().toISOString() });
+    await invalidateTenantCache(updated.tenantId);
     return updated;
   };
   const chatActionContext = async (req: Request, actionId: string): Promise<{ action: ActionRequest; session: Session; tenant: NonNullable<Awaited<ReturnType<typeof store.getTenant>>> }> => {
@@ -503,25 +530,28 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const normalizeCatalogQuery = async (tenantId: string, catalogVersionId: string, input: QueryNormalizationInput, fallback: string): Promise<{ value: string; usedFallback: boolean; failed: boolean }> => {
     const health = normalizerHealth.get(tenantId) ?? { failures: 0, blockedUntil: 0 };
     normalizerHealth.set(tenantId, health);
-    if (!model.normalizeQuery || !catalogQueryNormalizationEnabled || Date.now() < health.blockedUntil) return { value: fallback, usedFallback: true, failed: Date.now() < health.blockedUntil };
+    const normalizeQuery = model.normalizeQuery?.bind(model);
+    if (!normalizeQuery || !catalogQueryNormalizationEnabled || Date.now() < health.blockedUntil) return { value: fallback, usedFallback: true, failed: Date.now() < health.blockedUntil };
     const contextDigest = contentHash(JSON.stringify((input.conversation ?? []).slice(-8).map((turn) => ({ role: turn.role, content: turn.content.slice(-1_000) }))));
-    const key = cacheKey('catalog-normalized-query-v3', tenantId, catalogVersionId, input.selectedIntentKey ?? '', contextDigest, input.maskedMessage);
-    const cached = await cache.get<string>(key);
-    if (cached) return { value: cached, usedFallback: false, failed: false };
-    try {
-      const normalized = await model.normalizeQuery(input);
-      if (!normalized) throw new Error('normalization unavailable');
-      const safe = normalizeConversationQuery(normalized);
-      if (!preservesNormalizationFacts(input.maskedMessage, safe)) throw new Error('normalization changed protected facts');
-      health.failures = 0;
-      health.blockedUntil = 0;
-      await cache.set(key, safe, Math.min(300, Math.max(1, chatResponseCacheTtlSeconds)));
-      return { value: safe, usedFallback: false, failed: false };
-    } catch {
-      health.failures += 1;
-      if (health.failures >= 3) health.blockedUntil = Date.now() + 30_000;
-      return { value: fallback, usedFallback: true, failed: true };
-    }
+    const key = cacheKey('tenant', tenantId, 'catalog-normalized-query-v3', catalogVersionId, input.selectedIntentKey ?? '', contextDigest, input.maskedMessage);
+    return cacheFlights.run(key, async () => {
+      const cached = await cache.get<string>(key);
+      if (cached) return { value: cached, usedFallback: false, failed: false };
+      try {
+        const normalized = await normalizeQuery(input);
+        if (!normalized) throw new Error('normalization unavailable');
+        const safe = normalizeConversationQuery(normalized);
+        if (!preservesNormalizationFacts(input.maskedMessage, safe)) throw new Error('normalization changed protected facts');
+        health.failures = 0;
+        health.blockedUntil = 0;
+        await cache.set(key, safe, Math.min(300, Math.max(1, chatResponseCacheTtlSeconds)));
+        return { value: safe, usedFallback: false, failed: false };
+      } catch {
+        health.failures += 1;
+        if (health.failures >= 3) health.blockedUntil = Date.now() + 30_000;
+        return { value: fallback, usedFallback: true, failed: true };
+      }
+    });
   };
   const rateLimitMax = readRateLimit(dependencies.rateLimitMax, 'API_RATE_LIMIT_MAX', nodeEnv === 'development' || nodeEnv === 'test' ? 600 : 120, 100_000);
   const rateLimitWindowMs = readRateLimit(dependencies.rateLimitWindowMs, 'API_RATE_LIMIT_WINDOW_MS', 60_000, 3_600_000);
@@ -551,6 +581,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const auth = new AuthService(store, jwtSecret);
   const gateway = new ActionGateway(store, workflow);
   const app = express();
+  registerV2ToolGateway(app, { store, embedding, serviceKey: process.env.MODEL_GATEWAY_SERVICE_KEY ?? '' });
   const rateLimits = new Map<string, RateLimitEntry>();
   const newTelemetry = (): Telemetry => ({ requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null, chatResponses: 0, groundedResponses: 0, abstentions: 0, actionProposals: 0, estimatedInputTokens: 0, estimatedOutputTokens: 0, estimatedCostUsd: inputCostUsdPerMillion !== null && outputCostUsdPerMillion !== null ? 0 : null, normalizationAttempts: 0, normalizationFallbacks: 0, normalizationFailures: 0, normalizationLatencyMs: 0 });
   const telemetry = newTelemetry();
@@ -677,6 +708,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     telemetry,
     tenantTelemetry,
     cachePing: () => cache.ping(),
+    invalidateTenantCache,
     modelConfigured: Boolean(dependencies.model),
     embeddingConfigured: Boolean(dependencies.embedding),
   });
@@ -778,6 +810,86 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
     } catch (error) { next(error); }
   });
+  app.post('/api/v2/admin/intent-catalog/preview', protectedApi, requireRoles('platform_admin', 'tenant_admin', 'tenant_editor'), async (req, res, next) => {
+    try {
+      const tenant = await activeTenant(store, await tenantForRequest(store, req));
+      const input = parse(intentCatalogV2Schema, req.body);
+      const validation = validateCatalogV2(input.catalog);
+      if (!validation.document) throw new HttpError(422, 'CATALOG_V2_VALIDATION_FAILED', validation.errors.join(' '));
+      if (validation.document.manifest.tenantScope !== tenant.slug) throw new HttpError(422, 'CATALOG_TENANT_MISMATCH', 'The catalog tenant scope does not match the selected tenant.');
+      res.json({ valid: true, catalogVersionRef: catalogV2VersionRef(validation.document), sourceHash: input.sourceHash ?? catalogV2Sha256(validation.document), catalog: validation.document });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v2/admin/intent-catalog/versions', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenant = await activeTenant(store, await tenantForRequest(store, req));
+      const input = parse(intentCatalogV2Schema, req.body);
+      const validation = validateCatalogV2(input.catalog);
+      if (!validation.document) throw new HttpError(422, 'CATALOG_V2_VALIDATION_FAILED', validation.errors.join(' '));
+      if (validation.document.manifest.tenantScope !== tenant.slug) throw new HttpError(422, 'CATALOG_TENANT_MISMATCH', 'The catalog tenant scope does not match the selected tenant.');
+      const version = await store.createIntentCatalogV2Version({ tenantId: tenant.id, status: 'draft', sourceFileName: input.sourceFileName, sourceHash: input.sourceHash ?? catalogV2Sha256(validation.document), parserVersion: 'intent-catalog-v2-admin-1.0.0', catalog: validation.document, catalogVersionRef: catalogV2VersionRef(validation.document) });
+      await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog_v2.draft_created', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() });
+      res.status(201).json({ version });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v2/admin/intent-catalog/versions', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listIntentCatalogV2Versions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.get('/api/v2/admin/intent-catalog/legacy/versions', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      res.json({ items: (await store.listIntentCatalogVersions(tenantId)).map(auditLegacyCatalogVersion) });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v2/admin/intent-catalog/legacy/versions/:id/migration-candidate', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const tenant = await activeTenant(store, tenantId);
+      const legacyVersion = await store.getIntentCatalogVersion(tenantId, routeParam(req, 'id'));
+      if (!legacyVersion) throw new HttpError(404, 'INTENT_CATALOG_VERSION_NOT_FOUND', 'Legacy intent catalog version not found.');
+      const input = parse(intentCatalogV2MigrationSchema, req.body);
+      let candidate: ReturnType<typeof createLegacyCatalogV2Candidate>;
+      try {
+        candidate = createLegacyCatalogV2Candidate({ legacyVersion, tenantScope: tenant.slug, proposedCatalog: input.catalog });
+      } catch (error) {
+        throw new HttpError(422, 'CATALOG_V2_MIGRATION_FAILED', error instanceof Error ? error.message : 'The v1 catalog mapping is not a valid v2 candidate.');
+      }
+      const version = await store.createIntentCatalogV2Version({ tenantId, status: 'draft', sourceFileName: input.sourceFileName ?? `migration-${legacyVersion.sourceFileName}`, sourceHash: catalogV2Sha256(candidate.catalog), parserVersion: 'intent-catalog-v1-migration-review-1.0.0', catalog: candidate.catalog, catalogVersionRef: candidate.catalogVersionRef });
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog_v2.legacy_migration_candidate_created', metadata: { sourceVersionId: legacyVersion.id, sourceHash: legacyVersion.sourceHash, candidateId: candidate.candidateId, versionId: version.id, autoPublished: false }, createdAt: new Date().toISOString() });
+      res.status(201).json({ audit: auditLegacyCatalogVersion(legacyVersion), candidate: { ...candidate, catalog: undefined }, version });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v2/admin/intent-catalog/versions/:id/publish', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const version = await store.getIntentCatalogV2Version(tenantId, routeParam(req, 'id'));
+      if (!version) throw new HttpError(404, 'INTENT_CATALOG_V2_VERSION_NOT_FOUND', 'Intent catalog v2 version not found.');
+      const validation = validatePublishedCatalogV2(version.catalog, { published: true, tenantScope: (await activeTenant(store, tenantId)).slug, pinnedVersionRef: version.catalogVersionRef });
+      if (!validation.ok) throw new HttpError(422, 'CATALOG_V2_PUBLICATION_FAILED', validation.errors.join(' '));
+      const published = await store.publishIntentCatalogV2Version(tenantId, version.id);
+      if (!published) throw new HttpError(404, 'INTENT_CATALOG_V2_VERSION_NOT_FOUND', 'Intent catalog v2 version not found.');
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog_v2.published', metadata: { versionId: published.id, version: published.version }, createdAt: new Date().toISOString() });
+      res.json({ version: published });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v2/admin/intent-catalog/published/export', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const version = (await store.listIntentCatalogV2Versions(tenantId)).find((candidate) => candidate.status === 'published');
+      if (!version) throw new HttpError(404, 'PUBLISHED_INTENT_CATALOG_V2_NOT_FOUND', 'No published v2 intent catalog is available for this tenant.');
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog_v2.exported', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() });
+      const workbook = exportCatalogV2Workbook(version.catalog);
+      res.setHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('content-disposition', `attachment; filename="${(await activeTenant(store, tenantId)).slug}-intent-catalog-v2-${version.version}.xlsx"`);
+      res.send(workbook);
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v2/admin/intent-catalog/published/export.json', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const version = (await store.listIntentCatalogV2Versions(tenantId)).find((candidate) => candidate.status === 'published');
+      if (!version) throw new HttpError(404, 'PUBLISHED_INTENT_CATALOG_V2_NOT_FOUND', 'No published v2 intent catalog is available for this tenant.');
+      res.json(version.catalog);
+    } catch (error) { next(error); }
+  });
   app.get('/api/v1/admin/intent-catalog/versions', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listIntentCatalogVersions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/intent-catalog/published/export', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
     try {
@@ -816,6 +928,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const version = await store.publishIntentCatalogVersion(tenantId, routeParam(req, 'id'));
       if (!version) throw new HttpError(404, 'INTENT_CATALOG_VERSION_NOT_FOUND', 'Intent catalog version not found.');
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog.published', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() });
+      await invalidateTenantCache(tenantId);
       res.json({ version });
     } catch (error) { next(error); }
   });
@@ -839,6 +952,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const source = await store.setSourceStatus(sourceId, tenantId, status);
       if (!source) throw new HttpError(409, status === 'active' ? 'SOURCE_REINDEX_REQUIRED' : 'SOURCE_STATUS_CONFLICT', 'The source status could not be changed.');
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: `source.${status}`, metadata: { sourceId: source.id }, createdAt: new Date().toISOString() });
+      await invalidateTenantCache(tenantId);
       res.json({ source });
     } catch (error) { next(error); }
   };
@@ -852,6 +966,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (source.status !== 'revoked') throw new HttpError(409, 'SOURCE_NOT_REVOKED', 'Revoke the source before purging it.');
       if (!(await store.purgeSource(source.id, tenantId))) throw new HttpError(404, 'SOURCE_NOT_FOUND', 'Source not found.');
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'source.purged', metadata: { sourceId: source.id }, createdAt: new Date().toISOString() });
+      await invalidateTenantCache(tenantId);
       res.status(204).send();
     } catch (error) { next(error); }
   });
@@ -875,6 +990,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const completed = await store.updateIngestionJob({ ...job, sourceId: updated.id, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
         await publishIngestionProgress(store, completed, 'completed', chunks.length, chunks.length, 'completed');
         await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'source.reindexed', metadata: { sourceId: source.id, jobId: job.id, versionId }, createdAt: new Date().toISOString() });
+        await invalidateTenantCache(tenantId);
         res.json({ job: completed, source: updated, ingestion: { status: 'awaiting_review', chunks: chunks.length } });
       } catch (error) {
         const errorCode = error instanceof HttpError ? error.code : 'INGESTION_FAILED';
@@ -957,6 +1073,27 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (job.mimeType === 'application/vnd.agentic.intent-catalog+excel') {
         try {
           const input = parse(intentCatalogResultSchema, req.body);
+          if (input.catalog && typeof input.catalog === 'object' && !Array.isArray(input.catalog) && (input.catalog as { schemaVersion?: unknown }).schemaVersion === 2) {
+            const validation = validateCatalogV2(input.catalog);
+            if (!validation.document) throw new HttpError(422, 'CATALOG_V2_VALIDATION_FAILED', validation.errors.join(' '));
+            const tenant = await store.getTenant(job.tenantId);
+            if (validation.document.manifest.tenantScope !== tenant?.slug) throw new HttpError(422, 'CATALOG_TENANT_MISMATCH', 'The workbook tenant scope does not match the target tenant.');
+            const existing = (await store.listIntentCatalogV2Versions(job.tenantId)).find((version) => version.sourceHash === input.sourceHash);
+            if (existing) {
+              const completed = await store.updateIngestionJob({ ...job, status: 'completed', errorDetail: null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+              await ingestionStaging.purge(job.id, job.mimeType);
+              await publishIngestionProgress(store, completed, 'completed', 1, 1, 'completed');
+              res.status(200).json({ job: completed, version: existing, idempotent: true });
+              return;
+            }
+            const version = await store.createIntentCatalogV2Version({ tenantId: job.tenantId, status: 'draft', sourceFileName: job.title, sourceHash: input.sourceHash, parserVersion: input.parserVersion, catalog: validation.document, catalogVersionRef: catalogV2VersionRef(validation.document) });
+            const completed = await store.updateIngestionJob({ ...job, status: 'completed', errorDetail: null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+            await ingestionStaging.purge(job.id, job.mimeType);
+            await publishIngestionProgress(store, completed, 'completed', 1, 1, 'completed');
+            await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'intent_catalog_v2.imported', metadata: { versionId: version.id, version: version.version, jobId: job.id }, createdAt: new Date().toISOString() });
+            res.status(201).json({ job: completed, version });
+            return;
+          }
           const validation = validateIntentCatalog(input.catalog);
           if (!validation.catalog) throw new HttpError(422, 'CATALOG_VALIDATION_FAILED', validation.errors.join(' '));
           const tenant = await store.getTenant(job.tenantId);
@@ -1136,20 +1273,26 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       // Allocate input tokens against the session so assistant persona names cannot collide with visitor PII.
       const masked = { masked: maskPiiForSession(session, inputText, tokenVault) };
       const messageHash = contentHash(masked.masked);
-      const responseCacheKey = cacheKey('chat-response', session.tenantId, session.id, contentHash(input.clientMessageId));
+      const responseCacheKey = cacheKey('tenant', session.tenantId, 'chat-response', session.id, contentHash(input.clientMessageId));
       const cachedEntry = await cache.get<{ messageHash?: unknown; response?: Record<string, unknown> }>(responseCacheKey);
       if (cachedEntry?.response && typeof cachedEntry.response.answer === 'string') {
         if (cachedEntry.messageHash !== messageHash) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
+        await auditCacheEvent(session.tenantId, 'chat.cache_hit', responseCacheKey);
         res.json(rehydrateStoredResponse(session, cachedEntry.response)); return;
       }
       const durableDuplicate = await store.getMessageByClientId(session.id, input.clientMessageId);
       const retryableDuplicate = durableDuplicate?.response?.retryable === true;
       if (durableDuplicate && durableDuplicate.maskedContent !== masked.masked) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
-      if (durableDuplicate?.response && !retryableDuplicate) { res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
+      if (durableDuplicate?.response && !retryableDuplicate) { await auditCacheEvent(session.tenantId, 'chat.replay', responseCacheKey); res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
       if (durableDuplicate && !retryableDuplicate) throw new HttpError(409, 'MESSAGE_IN_PROGRESS', 'A request with this client message ID is already being processed.');
+      const candidateMessage: Message = { id: randomUUID(), sessionId: session.id, tenantId: session.tenantId, role: 'user', maskedContent: masked.masked, citations: [], clientMessageId: input.clientMessageId, response: null, createdAt: new Date().toISOString() };
+      let userMessage = durableDuplicate ?? await store.addMessage(candidateMessage);
+      const racedDuplicate = userMessage.id !== candidateMessage.id;
+      if (racedDuplicate && userMessage.maskedContent !== masked.masked) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
+      if (racedDuplicate && userMessage.response && userMessage.response.retryable !== true) { res.json(rehydrateStoredResponse(session, userMessage.response)); return; }
+      if (racedDuplicate && !userMessage.response) throw new HttpError(409, 'MESSAGE_IN_PROGRESS', 'A request with this client message ID is already being processed.');
       session.lastActivityAt = new Date().toISOString();
       await updateSessionSafely(session, false);
-      let userMessage = durableDuplicate ?? await store.addMessage({ id: randomUUID(), sessionId: session.id, tenantId: session.tenantId, role: 'user', maskedContent: masked.masked, citations: [], clientMessageId: input.clientMessageId, response: null, createdAt: new Date().toISOString() });
       pendingMessage = userMessage;
       const internal = ensureTenant(req, session.tenantId) && getAuth(req)?.role !== undefined;
       const persona = session.personaVersionId
@@ -1463,11 +1606,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : null;
       const currentIntentKey = intentContinuity && ['matched', 'missing_slots'].includes(intentContinuity.current.reason) ? intentContinuity.current.intentKey : null;
       const detectedSecondaryIntentKey = currentIntentKey && currentIntentKey !== state.selectedIntentKey ? currentIntentKey : null;
+      const previousSlotValues = state.slotValues ?? {};
       const slotCorrectionPrefix = /^(?:actually|my|our|the|now|still|please keep|update|change|i have|we have)\b/iu;
       const structuredSlotCorrection = Boolean(publishedCatalog?.catalog.slots.some((slot) => {
         const terms = slot.slotKey.split(/[._-]+/u).filter((term) => term.length >= 4);
         return terms.some((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\b`, 'iu').test(maskedMessage)) && slotCorrectionPrefix.test(maskedMessage);
       }));
+      const correctedSlotKeys = Object.entries(catalogSlotValues).filter(([key, value]) => previousSlotValues[key] !== undefined && previousSlotValues[key] !== value).map(([key]) => key);
+      const correctionChanged = correctedSlotKeys.length > 0 && slotCorrectionPrefix.test(maskedMessage);
       const currentOpportunityCompleted = sessionActions.some((action) => actionMatchesOpportunity(action) && action.state === 'completed');
       if (!postCaptureFollowUp && structuredSlotCorrection && currentOpportunityCompleted) postCaptureFollowUp = true;
       const catalogSlotNonAnswer = Boolean(pendingSlot && isCatalogSlotNonAnswer(maskedMessage));
@@ -1534,7 +1680,40 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           return fallback;
         }
       };
-       if (!languageAllowed && !conversational) draft = { answer: permittedLanguageReply(language, persona?.permittedLanguages ?? []), citationIds: [], proposedIntent: null };
+       let v2Draft: ModelDraft | null = null;
+       if (v2Coordinator && conversationEngineV2EnabledForTenant(session.tenantId) && publishedCatalog && persona && session.personaVersionId
+         && !consentActionReady && !journeyConfirmationPending && !journeyOfferPending && !journeyDocumentPending) {
+         try {
+           const v2Scope = issueV2Scope({ tenantId: session.tenantId, sessionId: session.id, opportunityId: currentOpportunityId, catalogVersionId: publishedCatalog.id, personaVersionId: session.personaVersionId, stateRevision: session.stateVersion ?? 0, toolAllowlist: [...V2_TOOL_NAMES] }, process.env.MODEL_GATEWAY_SERVICE_KEY ?? '');
+           const v2 = await v2Coordinator.run({
+             envelope: {
+               schemaVersion: 2,
+               requestId: (req as AuthedRequest).requestId ?? randomUUID(),
+               clientMessageId: input.clientMessageId,
+               scopeRef: v2Scope,
+               sessionRevision: session.stateVersion ?? 0,
+               intentRevision: state.intentProgress?.journeyRevision ?? 0,
+               catalogVersionId: publishedCatalog.id,
+               personaVersionId: session.personaVersionId,
+               customerMessageMasked: maskedMessage,
+               latestTurns: conversation.slice(-8).map((turn) => ({ role: turn.role === 'user' ? 'customer' as const : 'assistant' as const, content: turn.content })),
+               persona: { personaVersionId: session.personaVersionId, assistantName: persona.name, assistantRole: 'AI assistant', permittedLanguages: persona.permittedLanguages, tone: persona.tone.split(/[,;]+/u).map((value) => value.trim()).filter(Boolean), speakingStyle: persona.speakingStyle, fallbackTemplateVersion: `fallback-${session.personaVersionId}` },
+               catalogDigest: contentHash(JSON.stringify(publishedCatalog.catalog)),
+               intentProjection: { primaryGoalKey: state.selectedIntentKey ?? state.activeFollowUpIntentKey ?? null, goalConfirmed: Boolean(state.selectedIntentKey ?? state.activeFollowUpIntentKey), currentStageKey: state.phase.toLocaleLowerCase('en-US'), pendingRequirementKey: journeyRequirement?.requirementKey ?? state.pendingPrompt?.requirementKey ?? null },
+               toolAllowlist: [...V2_TOOL_NAMES],
+               budgets: { maxModelRequests: 3, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + 90_000).toISOString() },
+             },
+             evidence: evidence.map((item) => ({ citationId: item.citation.chunkId, text: item.content, sourceVersion: item.citation.versionId, approved: true, revoked: false, sourceRef: item.citation.sourceId })),
+             questionPolicy: journeyRequirement?.required ? 'required' : 'optional',
+             lastQuestionKey: state.pendingPrompt?.requirementKey ?? null,
+           });
+           v2Draft = v2.draft;
+         } catch {
+           // Feature-flag rollback: an unavailable v2 turn falls back to the existing model path.
+         }
+       }
+       if (v2Draft) draft = v2Draft;
+       else if (!languageAllowed && !conversational) draft = { answer: permittedLanguageReply(language, persona?.permittedLanguages ?? []), citationIds: [], proposedIntent: null };
        else if (offerNeedsClarification && activeFollowUpOffer) draft = await composeGuidedDraft({ answer: `Which would you like to explore: ${activeFollowUpOffer.options.map((option) => option.label).join(' or ')}?`, citationIds: [], proposedIntent: null }, 'offer_clarification');
        else if (!postCaptureFollowUp && !knowledgeQuestion && catalogResolution?.ambiguous) draft = await composeGuidedDraft({ answer: 'I can help with that. Could you tell me a little more about what you need?', citationIds: [], proposedIntent: null }, 'intent_clarification');
        else if (!postCaptureFollowUp && !knowledgeQuestion && publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'below_threshold') draft = await composeGuidedDraft({ answer: catalogIntentClarification(publishedCatalog, catalogResolution.intentKey), citationIds: [], proposedIntent: null }, 'intent_clarification');
@@ -1685,13 +1864,22 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       state.candidateIntentKeys = [...new Set([...state.candidateIntentKeys, catalogResolution?.intentKey, catalogResolution?.runnerUpIntentKey, ...(intentContinuity?.secondaryIntentKeys ?? [])].filter((value): value is string => Boolean(value)))];
       state.intentEvidence = [...new Set([...(postCaptureFollowUp ? state.intentEvidence ?? [] : []), catalogResolution?.intentKey, detectedSecondaryIntentKey, ...(intentContinuity?.secondaryIntentKeys ?? [])].filter((value): value is string => Boolean(value)))];
-      const previousSlotValues = state.slotValues ?? {};
       state.slotValues = catalogSlotValues;
       state.slotProvenance = { ...(state.slotProvenance ?? {}) };
       const changedVisitorSlots = new Set([...Object.keys(extractLeadData(maskedMessage)), ...Object.keys(inferredCatalogValueData), ...Object.keys(pendingCatalogValueData)]);
       for (const slotKey of changedVisitorSlots) {
         const value = catalogSlotValues[slotKey];
         if (value) state.slotProvenance[slotKey] = { source: 'visitor', messageSequence: state.messageSequence + 1, capturedAt: new Date().toISOString(), corrected: Boolean(previousSlotValues[slotKey] && previousSlotValues[slotKey] !== value) };
+      }
+      if (correctionChanged) {
+        const correctionOpportunityIds = new Set(Object.values(state.intentProgress?.entries ?? {}).map((entry) => entry.journeyId).filter((value): value is string => Boolean(value)));
+        for (const action of sessionActions) {
+          if ((action.opportunityId !== null && action.opportunityId !== undefined && !correctionOpportunityIds.has(action.opportunityId)) || !['awaiting_confirmation', 'awaiting_customer'].includes(action.state)) continue;
+          const invalidated = await store.updateAction({ ...action, state: 'failed', result: null });
+          Object.assign(action, invalidated);
+          await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'conversation.fact_correction.invalidated_action', metadata: { actionId: action.id, opportunityDigest: action.opportunityId ? contentHash(action.opportunityId).slice(0, 12) : null, correctedSlotKeys: JSON.stringify(correctedSlotKeys), priorActionRevision: action.actionRevision ?? 1 }, createdAt: new Date().toISOString() });
+        }
+        await invalidateTenantCache(session.tenantId);
       }
       const persistedJourneyKey = journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey;
       if (persistedJourneyKey && state.intentProgress?.entries[persistedJourneyKey]) {
@@ -1742,6 +1930,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       state.pendingPrompt = nextPrompt;
       const nextContactConsent = catalogSlotValues.contact_consent === 'true' ? 'granted' : catalogSlotValues.contact_consent === 'false' ? 'denied' : state.contactConsent;
       if (nextContactConsent !== state.contactConsent) state.consentCapturedAt = nextContactConsent === 'unknown' ? null : new Date().toISOString();
+      if (nextContactConsent !== state.contactConsent) await invalidateTenantCache(session.tenantId);
       state.contactConsent = nextContactConsent;
       state.summaryRevision += 1;
       state.messageSequence += 1;
@@ -1863,6 +2052,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const estimatedOutputTokens = estimateTokens(finalMaskedAnswer);
       await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: finalMaskedAnswer, citations: safeCitations, clientMessageId: null, response: { conversational, ...(pendingCatalogState ?? {}) }, createdAt: new Date().toISOString() });
       await store.updateMessage({ ...userMessage, response: persistedResponse });
+      await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'chat.response', metadata: { messageDigest: contentHash(response.messageId).slice(0, 12), responseDigest: contentHash(finalMaskedAnswer).slice(0, 12), personaVersionId: session.personaVersionId, language, intentKey: state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? null, grounded: safeGrounded, citationCount: safeCitations.length }, createdAt: new Date().toISOString() });
       await cache.set(responseCacheKey, { messageHash, response: persistedResponse }, chatResponseCacheTtlSeconds);
       recordChatOutcome(session.tenantId, safeGrounded, Boolean(actionForResponse), estimatedInputTokens, estimatedOutputTokens);
       res.json(response);
@@ -1904,6 +2094,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const confirmed = await gateway.confirm(action.id, action.tenantId, sessionForApproval);
       if (!['approved', 'processing', 'completed'].includes(confirmed.state)) throw new HttpError(409, 'ACTION_NOT_ACCEPTED', 'This request was not accepted. Please start a new request.');
       Object.assign(session, sessionForApproval);
+      await invalidateTenantCache(action.tenantId);
       res.json({ action: confirmed, message: null });
     } catch (error) { next(error); }
   });
@@ -1964,7 +2155,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const input = parse(workflowCompletionSchema, req.body);
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(403, 'WORKFLOW_FORBIDDEN', 'Workflow completion does not match the authorized action.');
-      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt);
+      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt, input);
       res.json({ action: updated });
     } catch (error) { next(error); }
   });
@@ -2214,10 +2405,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const body = JSON.stringify(req.body);
       if (!verifyN8nPayload(n8nCallbackSecret, timestamp, nonce, body, signature)) throw new HttpError(401, 'INVALID_CALLBACK', 'Callback authentication failed.');
       if (!(await store.claimCallbackNonce(nonce, new Date(Date.now() + 300_000).toISOString()))) throw new HttpError(401, 'REPLAYED_CALLBACK', 'Callback replay rejected.');
-      const input = parse(z.object({ actionId: z.string().guid(), tenantId: z.string().guid(), state: z.enum(['completed', 'failed']), externalReference: z.string().refine(isSafeExternalReference, 'An opaque external reference is required.'), executionReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u), eventId: z.string().guid(), correlationId: z.string().guid(), attempt: z.number().int().min(1).max(100_000) }), req.body);
+      const input = parse(z.object({ actionId: z.string().guid(), tenantId: z.string().guid(), state: z.enum(['completed', 'failed']), externalReference: z.string().refine(isSafeExternalReference, 'An opaque external reference is required.'), executionReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u), eventId: z.string().guid(), correlationId: z.string().guid(), attempt: z.number().int().min(1).max(100_000), ...v2ProviderCorrelationSchema.shape }), req.body);
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
-      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt);
+      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt, input);
       await store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: `workflow.callback.${input.state}`, metadata: { actionId: action.id, executionReference: input.executionReference ?? null, eventId: input.eventId ?? null, correlationId: input.correlationId ?? null, attempt: input.attempt ?? null }, createdAt: new Date().toISOString() });
       res.json({ action: updated });
     } catch (error) { next(error); }

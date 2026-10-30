@@ -371,6 +371,20 @@ export interface IntentCatalogVersion {
   publishedAt: string | null;
 }
 
+export interface IntentCatalogV2Version {
+  id: string;
+  tenantId: string;
+  version: number;
+  status: IntentCatalogStatus;
+  sourceFileName: string;
+  sourceHash: string;
+  parserVersion: string;
+  catalog: CatalogV2Document;
+  catalogVersionRef: string;
+  createdAt: string;
+  publishedAt: string | null;
+}
+
 export interface Tenant {
   id: string;
   name: string;
@@ -785,6 +799,70 @@ export interface AuditEvent {
   createdAt: string;
 }
 
+export type IntentFactSource = 'visitor' | 'catalog' | 'node' | 'provider';
+
+export interface UserIntentFact {
+  maskedValue: string;
+  source: IntentFactSource;
+  messageSequence: number;
+  evidenceRefs: string[];
+  corrected: boolean;
+}
+
+export interface ApprovedIntentResponse {
+  answer: string;
+  grounded: boolean;
+  citationRefs: string[];
+  pendingRequirementKey: string | null;
+}
+
+export interface UserIntentDocument {
+  id: string;
+  tenantId: string;
+  sessionId: string;
+  opportunityId: string | null;
+  catalogSource: 'legacy_v1' | 'v2';
+  catalogVersionRef: string;
+  personaVersionId: string | null;
+  businessGoalKey: string | null;
+  turnIntentKey: string | null;
+  currentStageKey: string | null;
+  stageRevision: number;
+  goalConfirmed: boolean;
+  verifiedFacts: Record<string, UserIntentFact>;
+  pendingRequirementKey: string | null;
+  lastQuestion: string | null;
+  approvedResponse: ApprovedIntentResponse | null;
+  toolRefs: string[];
+  sourceRefs: string[];
+  summary: string;
+  summaryRevision: number;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IntentTurnAssessment {
+  id: string;
+  documentId: string;
+  tenantId: string;
+  sessionId: string;
+  opportunityId: string | null;
+  turnSequence: number;
+  clientMessageId: string;
+  messageHash: string;
+  businessGoalKey: string | null;
+  turnIntentKey: string | null;
+  intentCategory: string | null;
+  verifiedFactPatch: Record<string, UserIntentFact>;
+  pendingRequirementKey: string | null;
+  lastQuestion: string | null;
+  approvedResponse: ApprovedIntentResponse | null;
+  toolRefs: string[];
+  sourceRefs: string[];
+  createdAt: string;
+}
+
 export interface TenantStats {
   sourceCounts: Record<SourceStatus, number>;
   ingestionJobs: Record<IngestionJobStatus, number>;
@@ -828,6 +906,15 @@ export interface Store {
   getIntentCatalogVersion(tenantId: string, versionId: string): Promise<IntentCatalogVersion | null>;
   getPublishedIntentCatalog(tenantId: string): Promise<IntentCatalogVersion | null>;
   publishIntentCatalogVersion(tenantId: string, versionId: string): Promise<IntentCatalogVersion | null>;
+  createIntentCatalogV2Version(input: Omit<IntentCatalogV2Version, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<IntentCatalogV2Version>;
+  listIntentCatalogV2Versions(tenantId: string): Promise<IntentCatalogV2Version[]>;
+  getIntentCatalogV2Version(tenantId: string, versionId: string): Promise<IntentCatalogV2Version | null>;
+  publishIntentCatalogV2Version(tenantId: string, versionId: string): Promise<IntentCatalogV2Version | null>;
+  createUserIntentDocument(document: UserIntentDocument): Promise<UserIntentDocument>;
+  getUserIntentDocument(tenantId: string, sessionId: string): Promise<UserIntentDocument | null>;
+  updateUserIntentDocument(input: { document: UserIntentDocument; expectedRevision: number }): Promise<UserIntentDocument | null>;
+  appendIntentTurn(assessment: IntentTurnAssessment): Promise<IntentTurnAssessment>;
+  listIntentTurns(tenantId: string, sessionId: string, limit?: number): Promise<IntentTurnAssessment[]>;
   createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion>;
   listPersonaVersions(tenantId: string): Promise<PersonaVersion[]>;
   getPersonaVersion(tenantId: string, versionId: string): Promise<PersonaVersion | null>;
@@ -951,3 +1038,4 @@ export interface Store {
   listAudit(tenantId: string): Promise<AuditEvent[]>;
   getTenantStats(tenantId: string): Promise<TenantStats>;
 }
+import type { CatalogV2Document } from './catalog-v2.js';

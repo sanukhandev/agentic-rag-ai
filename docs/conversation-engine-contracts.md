@@ -1,6 +1,6 @@
 # Conversation Engine v2 — interface contracts and invariants
 
-**Status: PROPOSED IMPLEMENTATION CONTRACTS, NOT YET CODED.** API payloads below are versioned *illustrative types*. The implementation must produce typed Pydantic + TypeScript schemas from one source or contract-tested matching definitions. Do not treat these examples as an already-supported public API or catalog importer.
+**Status: P0 CONTRACT FROZEN by issue #85 on 2026-10-30.** The private v2 boundary schemas are implemented in `services/api/src/python-model/v2-contracts.ts` and `services/model-gateway/gateway/v2_contracts.py`, with strict negative tests. These contracts do not replace the public Node chat API, do not grant Python write access and do not claim the full runtime/tool loop is implemented; those are later issues.
 
 ## A. Envelope, revision and identity
 
@@ -71,7 +71,7 @@ Each `goalProposal` key/weight/turn reference, required key and tool key is **un
 
 ## C. Node tool protocol
 
-- Node advertises capabilities derived from published catalog and current stage: `get_conversation_context`, `get_persona`, `get_intent_catalog`, `get_journey_state`, `get_missing_requirements`, `search_knowledge`, `get_available_packages`, `get_action_status`.
+- Node advertises capabilities derived from published catalog and current stage: `get_conversation_context`, `get_persona`, `get_intent_catalog`, `get_journey_state`, `get_missing_requirements`, `search_knowledge`, `get_available_packages`, `get_document_requirements`, `get_action_status`.
 - Python model may request tool calls. Each request must contain `toolCallId`, one listed `toolName`, typed `arguments`, `scopeRef`, expected `stateRevision` and deadline; Node validates names/arguments and authenticates service-level access independently.
 - Results return the exact `toolCallId`, `status` (`ok` / `temporarily_unavailable` / `not_authorized` / `invalid_args` / `stale_state`), bounded `result`, trusted `evidenceRefs`, `sourceVersion` and `stateRevision`.
 - Python feeds model function-call results correlated with the correct call ID. It cannot invent Node tool results, select arbitrary webhook URLs, use unrestricted Python execution or directly access CRM/DB.
@@ -123,9 +123,11 @@ Example server-only action lifecycle: `not_eligible → eligible → awaiting_ac
 
 **Evidence tiers:** user assertion, Node validated fact, provider transport acknowledgment, n8n execution result, authenticated provider record verification. Only the designated tier in a published stage policy may count as success. `HTTP 200`, payment PDF generation and `mock_paid` must not be silently interpreted as production completion.
 
+**Locked P0 catalog decision:** the new executable engine's importer/API/Admin/runtime is **v2-only** and rejects legacy v1/unversioned workbooks. Older v1 published catalog history is isolated for safe read/rollback and an explicit candidate conversion, not an alternate v2 import contract. See [catalog-v2-contract.md](catalog-v2-contract.md) and issue #84. **Legal company registration** is independently tracked after the Stage-7 contract journey, and **mock provider evidence** is separately labeled from real sandbox verification.
+
 ## G. Catalog v2 import/publish contract
 
-Existing parser `tools/ingestion/ingestion/intent_catalog.py` version 1.4.0 imports six required sheets and a limited set of optional sheets; the proposed v2 workbook's `BusinessGoals`, `IntentCategories`, `TurnIntents`, `RequirementPolicies`, `ToolBindings`, `FollowUpPolicies`, `ScoringPolicies`, `RemoteWorkflowRegistry` are not yet all consumable. Publishing the workbook **cannot activate the design** without a parser, shared schema/validator, Admin preview, import/export, version pinning and runtime contract migration.
+Existing parser `tools/ingestion/ingestion/intent_catalog.py` version 1.4.0 imports legacy v1 sheets only. **It must not be reused as the v2 importer.** The new v2-only contract requires a strict version-2 manifest, dedicated parser, shared schema/validator, Admin preview/import/export/publish, immutable version pinning and runtime migration. V1 workbooks are rejected by v2 and old records remain isolated/readable until audited migration/rollback.
 
 **Proposed source tables** (exact schema to be frozen in P0): `BusinessGoals`, `IntentCategories`, `TurnIntents`, `Signals`, `ScoringPolicies`, `RequirementPolicies`, `BusinessStages`, `ToolBindings`, `FollowUpPolicies`, `KnowledgeTopics`, `PersonaPolicies`, `WorkflowBindings`, `DocumentPolicies` plus migration-compatible existing sheets. Include stable keys, stage scope and requirement dependencies, supported languages, source-of-truth rules, confirmation/consent, allowed argument schemas, verification evidence and safe fallbacks.
 

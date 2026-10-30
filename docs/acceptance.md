@@ -16,6 +16,12 @@ Required component-level tests and traceability are in [conversation-engine-eval
 - ANCFZ published catalog includes reviewed **Business Goals, six turn-intent categories, intent phrases/keywords/exclusions, weight policies, requirement prompts, seven ordered company-formation stages, verified completion criteria, and allowed tool/workflow bindings**. No shared code contains ANCFZ-specific conditions.
 - Authorized sandbox/mocks for Salesforce, OCR/SF-02, invoicing, payment and contract are labeled explicitly; real payment and legally binding signing require separate consent/approval.
 
+## Signed-off P0 release scope and manually triggered final validation
+
+The user selected the **existing Azure GPT deployment**, **v2-only catalog**, **published ANCFZ Zara English-only** persona, **sandbox/mock-first** stage adapters and **verified Contract Stage 7 as journey completion**. Official legal registration is tracked separately. Every stage's provider evidence must be accurately labeled as mock vs independently verified sandbox record. No production Salesforce/payment/signature action is authorized by this planning decision.
+
+**The complete seven-stage end-to-end test is NOT to be run now or by Codex's automatic task loop.** Implement and verify the component tasks #82–#123 with focused unit/integration/negative/contract tests; keep final [manual issue #124](https://github.com/sanukhandev/agentic-rag-ai/issues/124) OPEN until the user explicitly triggers that run. See [P0 decision register](conversation-engine-p0-signoff.md) and [issue index](conversation-v2-issue-index.md).
+
 ## One run, one customer, one session, one opportunity
 
 Drive the **real Next.js/Node API** and the private Python model service rather than calling internal classifiers alone. Start with unique synthetic customer data; record session/opportunity ID hashes, pinned catalog version and User Intent Document revision. On every substantive turn verify stored classification assessment, cache key/hit, source evidence, intent status and pending question.
@@ -59,8 +65,9 @@ Drive the **real Next.js/Node API** and the private Python model service rather 
 For **each** stage, report `stageKey`, catalog-version, input turn hashes, requirement keys, primary intent confirmed, action/confirmation references, durable stage state before/after, model calls/cache hits, n8n workflow/execution reference, provider ID/acknowledgment and callback verification. Do not join separate sandbox runs and claim a single completed journey.
 
 Success categories:
-- `SEVEN_STAGE_PROVIDER_VERIFIED` — all applicable real/sandbox provider completions verified and accurately labeled.
-- `SEVEN_STAGE_SIMULATED` — full sequence completed only with explicit mock providers.
+- `SEVEN_STAGE_PROVIDER_VERIFIED` — independently verified real provider completions, correctly scoped and labeled (separate later authorization).
+- `SEVEN_STAGE_SANDBOX_VERIFIED` — all seven stages independently verified using approved sandbox provider state, with no local mocks.
+- `SEVEN_STAGE_SIMULATED` — full sequence completed with one or more labeled, contract-verifiable local mocks, even if some stages also use sandbox providers.
 - `CONVERSATION_INTENT_AND_TOOLS_VERIFIED_INTEGRATIONS_BLOCKED` — conversation/model/intent flow correct but external gate not proven.
 - `PARTIAL` or `BLOCKED` with exact first failing boundary.
 

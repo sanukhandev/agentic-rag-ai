@@ -1,6 +1,6 @@
 # Python conversation agent ↔ Node trusted tools — pre-response planning loop
 
-**Status: TARGET SPECIFICATION, NOT YET IMPLEMENTED.** Complements [persona response contract](persona-response-contract.md), [intent catalog](intent-engine.md), [architecture](architecture.md), and [n8n workflows](n8n-workflows.md).
+**Status: Python bounded coordinator implemented by V2-P3-02; Node trusted-tool gateway remains the next issue.** Complements [persona response contract](persona-response-contract.md), [intent catalog](intent-engine.md), [architecture](architecture.md), and [n8n workflows](n8n-workflows.md).
 
 **Canonical interface:** [conversation-engine-contracts.md](conversation-engine-contracts.md) and [seven-component architecture](conversation-engine-architecture.md). Python may choose **multiple bounded read tools before one final answer**. Node must authenticate and independently validate each call; the model's tool preference is not authorization. The exact tool protocol and schema must be frozen in P0 before building server endpoints.
 
@@ -23,6 +23,7 @@ Node authenticates, deduplicates `clientMessageId`, binds tenant/session/opportu
 | `search_knowledge` | Tenant/source-approved pgvector retrieval | Bounded evidence IDs, excerpt, source/title/version, citation refs |
 | `get_missing_requirements` | Current confirmed goal and stage | Unanswered validated requirement keys and collection order/dependencies |
 | `get_available_packages` | Authorized package data/eligibility/pricing | Catalog-versioned structured results and provenance |
+| `get_document_requirements` | Authorized document requirements for the current package/stage | Bounded requirement types and review status, never document contents |
 | `get_action_status` | Existing action/provider results | Verified status, external references only where permitted |
 
 `propose_catalog_action` is a **separate Node business proposal gate**, not a read-only model function. It can create a pending proposal only after Node validates current goal, stage, facts and purpose-specific consent requirements. It does not dispatch a write until the customer confirms that specific action. Confirmed operations use existing PostgreSQL outbox → Redis Streams → n8n and authenticated callback/reconciliation.
@@ -55,4 +56,4 @@ Customer asks if their submitted application is finished. The agent requests `ge
 
 ## Acceptance gates
 
-The bounded tool loop, read scope, correlation IDs, no arbitrary side effects, tool-error resilience, RAG grounding, proper persona composition, one relevant question, continuity and offline persona fallback must all pass before replacing legacy chat behavior. The current scaffold does **not** yet implement this full loop.
+The bounded Python loop, read scope, correlation IDs, no arbitrary side effects, tool-error resilience and persona pin checks are implemented and focused-tested. Node still must provide the authenticated trusted-tool gateway and final response guard before replacing legacy chat behavior.

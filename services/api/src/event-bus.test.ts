@@ -35,6 +35,15 @@ class AcceptancePersistenceFailStore extends MemoryStore {
   async claimActionExecution(): Promise<never> { throw new Error('postgres unavailable before workflow dispatch'); }
 }
 
+class MarkPublishedCrashStore extends MemoryStore {
+  private crashed = false;
+  override async markOutboxPublished(eventId: string): Promise<void> {
+    if (!this.crashed) { this.crashed = true; throw new Error('relay crashed after Redis append'); }
+    await super.markOutboxPublished(eventId);
+  }
+  override async releaseOutboxEvent(eventId: string, error: string, _retryAt: string): Promise<void> { await super.releaseOutboxEvent(eventId, error, new Date(Date.now() - 1).toISOString()); }
+}
+
 describe('Redis event orchestration primitives', () => {
   it('publishes an outbox event once and leaves the durable row marked', async () => {
     const store = new MemoryStore();
@@ -44,6 +53,33 @@ describe('Redis event orchestration primitives', () => {
     expect(await relay.runOnce()).toBe(1);
     expect(await relay.runOnce()).toBe(0);
     expect(bus.appended).toHaveLength(1);
+  });
+
+  it('deduplicates the same durable stream/idempotency event before relay publication', async () => {
+    const store = new MemoryStore();
+    const bus = new FakeBus();
+    const tenantId = randomUUID();
+    const first = createOutboxEvent({ eventId: randomUUID(), eventType: 'conversation.notification.requested.v1', tenantId, aggregateId: randomUUID(), payloadRef: 'session-ref', idempotencyKey: 'same-event' });
+    const duplicate = createOutboxEvent({ eventId: randomUUID(), eventType: 'conversation.notification.requested.v1', tenantId, aggregateId: first.aggregateId, payloadRef: first.payloadRef, idempotencyKey: first.idempotencyKey });
+    await store.enqueueOutboxEvent(first);
+    await store.enqueueOutboxEvent(duplicate);
+    expect(await new OutboxRelay(store, bus).runOnce()).toBe(1);
+    expect(bus.appended).toHaveLength(1);
+    expect(bus.appended[0]?.eventId).toBe(first.eventId);
+  });
+
+  it('replays a relay append safely after a crash between Redis append and durable publish marking', async () => {
+    const store = new MarkPublishedCrashStore();
+    const bus = new FakeBus();
+    const event = createOutboxEvent({ eventId: randomUUID(), eventType: 'conversation.notification.requested.v1', tenantId: randomUUID(), aggregateId: randomUUID(), payloadRef: 'session-ref', idempotencyKey: 'relay-crash' });
+    await store.enqueueOutboxEvent(event);
+    expect(await new OutboxRelay(store, bus, 0).runOnce()).toBe(0);
+    expect(await new OutboxRelay(store, bus, 0).runOnce()).toBe(1);
+    expect(bus.appended).toHaveLength(2);
+    bus.pending.push({ id: 'crash-1', event }, { id: 'crash-2', event });
+    const consumer = new EventConsumer(store, bus, new N8nEventBridge(store, 'https://n8n.example', 'secret'));
+    expect(await consumer.runOnce('rag:v2:notifications', 'crash-workers', 0)).toBe(1);
+    expect(bus.acknowledged).toEqual(['crash-1', 'crash-2']);
   });
 
   it('deduplicates a successfully handled stream event before acknowledgement', async () => {

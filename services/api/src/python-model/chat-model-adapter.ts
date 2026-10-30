@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ChatModel, ModelDraft, ModelEvidence, QueryNormalizationInput } from '../model.js';
+import type { CatalogV2Document } from '../catalog-v2.js';
+import { validateV2PlanningProposal, type V2PlanningContext, type V2PlanningDecision } from '../v2-planning.js';
 
 type DraftInput = Parameters<ChatModel['draft']>[0];
 type ComposeInput = Parameters<NonNullable<ChatModel['compose']>>[0];
@@ -12,6 +14,10 @@ type ModelGatewayResult = {
   proposedToolKey: string | null;
   turnCategory: string;
   confidenceBand: string;
+  candidateGoalKeys?: string[];
+  matchedSignalIds?: string[];
+  supportingTopicKeys?: string[];
+  runnerUpScore?: number | null;
 };
 
 const bounded = (value: string, max: number): string => value.slice(0, max);
@@ -48,7 +54,10 @@ export class PythonChatModelAdapter implements ChatModel {
       citationId: citation.chunkId,
       content: bounded(content, 3_600),
     }));
-    const context = input.followUpContext ?? {};
+    const context: NonNullable<DraftInput['followUpContext']> = input.followUpContext ?? {
+      leadCaptured: false,
+      primaryIntentKey: null,
+    };
     const persona = input.persona;
     const result = await this.request<ModelGatewayResult>('/internal/v1/model/plan', {
       requestId: randomUUID(),
@@ -90,6 +99,35 @@ export class PythonChatModelAdapter implements ChatModel {
 
   async compose(input: ComposeInput): Promise<ModelDraft> {
     return this.generate(input, input.followUpContext?.responseMode ?? 'compose');
+  }
+
+  async planV2(input: { maskedMessage: string; conversationSummary?: string; catalog: CatalogV2Document; context: V2PlanningContext }): Promise<V2PlanningDecision> {
+    const result = await this.request<ModelGatewayResult>('/internal/v1/model/plan', {
+      requestId: randomUUID(),
+      message: bounded(input.maskedMessage, 5_000),
+      conversationSummary: bounded(input.conversationSummary ?? '', 4_000),
+      responseMode: 'v2_planning',
+      context: { confirmedGoalKey: input.context.confirmedGoalKey, currentStageKey: input.context.currentStageKey, verifiedRequirementKeys: input.context.verifiedRequirementKeys, goalConfirmed: input.context.goalConfirmed },
+      catalog: {
+        businessGoalKeys: input.catalog.sheets.BusinessGoals.filter(goal => goal.active).map(goal => goal.businessGoalKey),
+        signalIds: input.catalog.sheets.IntentSignals.map(signal => signal.signalId),
+        supportingTopicKeys: input.catalog.sheets.KnowledgeTopics.filter(topic => topic.active).map(topic => topic.topicKey),
+        availableToolKeys: input.context.allowedToolKeys,
+      },
+      evidence: [],
+    });
+    return validateV2PlanningProposal({
+      turnCategory: result.turnCategory,
+      primaryGoalKey: result.primaryGoalKey,
+      candidateGoalKeys: result.candidateGoalKeys ?? [],
+      matchedSignalIds: result.matchedSignalIds ?? [],
+      supportingTopicKeys: result.supportingTopicKeys ?? [],
+      runnerUpScore: result.runnerUpScore ?? null,
+      nextMove: result.nextMove,
+      nextQuestion: result.nextQuestion,
+      proposedToolKey: result.proposedToolKey,
+      confidenceBand: result.confidenceBand,
+    }, input.catalog, input.context);
   }
 
   async normalizeQuery(input: QueryNormalizationInput): Promise<string | null> {

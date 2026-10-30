@@ -2,6 +2,8 @@
 
 **Status: TEST DESIGN, NOT EXECUTED.** Applies to ANCFZ and at least one contrasting tenant persona. All examples use synthetic data. Tests must exercise public Node API, private Python gateway, real or mock Node tools, PostgreSQL persistence, Redis/n8n where appropriate. A prompt-only demonstration is **not** end-to-end acceptance.
 
+**Signed-off first-release testing:** ANCFZ uses the published **Zara English-only** persona, strict **v2-only catalog**, existing Azure GPT deployment and contract-verified **sandbox/mock** providers. The **seven-stage journey ends on verified Stage-7 contract**, with legal registration tracked separately. Per-task focused checks may run automatically; the **full seven-stage E2E is reserved for manual issue #124**, not an automatic P6/P7 test. Refer to [P0 decisions](conversation-engine-p0-signoff.md) and [issue index](conversation-v2-issue-index.md).
+
 ## Outcome metrics
 
 Report objective pass/fail per scenario and supporting evidence, not a single uncalibrated "agent quality score".
@@ -66,7 +68,7 @@ Human reviewers sample first contact, knowledge-only, ambiguous goal, correction
 
 ## Acceptance scenario harness
 
-1. Use a realistic multi-turn script, **not an arbitrary fixed turn count**, with one synthetic customer and distinct contact values on every full run to prevent CRM duplicates.
+1. **Prepare but do not automatically execute** the full realistic multi-turn seven-stage script; use a fresh synthetic customer with unique contact values when the user manually triggers final issue #124. Normal tasks may run individual isolated scenario/contract tests.
 2. Exercise the actual customer-facing API and the selected Python model through Node; tool stub tests alone are insufficient.
 3. Each tool call has request/result call IDs, tenant/catalog/persona versions and provenance; redact raw PII from reports.
 4. Track every model request, SDK retries, tool rounds, latency and final response guard decision. Include negative-path fixtures.
@@ -77,7 +79,8 @@ Human reviewers sample first contact, knowledge-only, ambiguous goal, correction
 ## Verdict categories
 
 - `CONVERSATION_ENGINE_VERIFIED`: planner, Node tools, persona, grounding, guard, durable state and safety tests pass; external integrations may remain blocked.
-- `SEVEN_STAGE_SIMULATED`: all stage gates pass using fully labeled sandbox/mock provider evidence.
+- `SEVEN_STAGE_SIMULATED`: all stage gates pass with at least one explicitly identified local mock and verified callback/contract fixture; no mock is described as a live sandbox record.
+- `SEVEN_STAGE_SANDBOX_VERIFIED`: all seven stages have independently verified records/evidence from approved sandbox providers with no local mock substitution.
 - `SEVEN_STAGE_PROVIDER_VERIFIED`: the seven stages have actual approved provider verifications, including contract state; legal company registration status must be separately evidenced if claimed.
 - `INTEGRATIONS_BLOCKED`: conversational flow passed but external operations needed for next stage not configured or not verified.
 - `FAILED` / `PARTIAL`: report the first failed invariant, exact scenario and remedy.
