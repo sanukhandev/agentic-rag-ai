@@ -274,3 +274,14 @@ completion claims. Rejected model text is never returned as the customer
 response; the caller receives a bounded approved fallback and redacted
 feedback digest. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P4-02.md`.
+
+## V2-P4-03 versioned offline persona fallbacks — 2026-10-30
+
+Issue #105 is verified and closed. Node now supports approved, pinned fallback
+families for missing knowledge, invalid model output, rate limiting, tool
+outage, action processing, reconciliation, declined consent and human
+handoff. Fallback selection requires the exact persona version, template
+version, language and approved flag; unknown or unapproved sets fail closed.
+Selected fallback text passes the same response-evidence guard and contains no
+provider-completion claims or internal metadata. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P4-03.md`.

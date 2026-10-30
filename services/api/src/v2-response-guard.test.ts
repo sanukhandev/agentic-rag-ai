@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { guardV2Response, type V2ResponseGuardContext } from './v2-response-guard.js';
+import { guardV2OfflineFallback, guardV2Response, type V2ResponseGuardContext } from './v2-response-guard.js';
+import type { V2ApprovedFallbackTemplateSet } from './v2-fallbacks.js';
 
 const context = (overrides: Partial<V2ResponseGuardContext> = {}): V2ResponseGuardContext => ({
   personaVersionId: 'persona-12345678',
@@ -22,6 +23,23 @@ const response = (overrides: Record<string, unknown> = {}) => ({
   reasonNoQuestion: 'greeting',
   decisionRef: 'decision-12345678',
   ...overrides,
+});
+
+const fallbackTemplates = (): V2ApprovedFallbackTemplateSet => ({
+  approved: true,
+  personaVersionId: 'persona-12345678',
+  templateVersion: 'fallback-12345678',
+  language: 'en',
+  templates: {
+    missing_knowledge: 'I do not have a verified answer for that detail yet.',
+    invalid_model: 'I could not produce a verified response just now.',
+    rate_limited: 'I need a moment before I can continue with verified information.',
+    tool_unavailable: 'The approved information service is temporarily unavailable.',
+    action_processing: 'Your approved request is still being processed.',
+    reconciliation: 'I need to verify the request status before I confirm the outcome.',
+    consent_declined: 'Understood. I will not proceed with that action.',
+    human_handoff: 'I am connecting this request to a human advisor for review.',
+  },
 });
 
 describe('guardV2Response', () => {
@@ -54,5 +72,19 @@ describe('guardV2Response', () => {
   it('allows a pending requirement only when the question is the approved next question', () => {
     const result = guardV2Response(response({ answer: 'I can help with that. What is your activity?', nextQuestion: 'What is your activity?', nextQuestionKey: 'business_activity', reasonNoQuestion: null }), context({ pendingRequirementKey: 'business_activity', questionPolicy: 'required' }));
     expect(result.verdict.accepted).toBe(true);
+  });
+
+  it('delivers every approved outage fallback family through the same guard', () => {
+    for (const family of Object.keys(fallbackTemplates().templates) as Array<keyof V2ApprovedFallbackTemplateSet['templates']>) {
+      const result = guardV2OfflineFallback(family, context({ fallbackTemplates: fallbackTemplates(), fallbackTemplateVersion: 'fallback-12345678' }));
+      expect(result.verdict.accepted).toBe(true);
+      expect(result.response?.reasonNoQuestion).toBe(family);
+    }
+  });
+
+  it('fails closed for an unknown or unapproved fallback set', () => {
+    const result = guardV2OfflineFallback('tool_unavailable', context({ fallbackTemplates: { ...fallbackTemplates(), approved: false }, fallbackTemplateVersion: 'fallback-12345678' }));
+    expect(result.response).toBeNull();
+    expect(result.verdict.reasonCode).toBe('policy_denied');
   });
 });

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { personaComposedResponseSchema, type PersonaComposedResponseV2, type ResponseGuardVerdictV2 } from './python-model/v2-contracts.js';
 import { verifyV2ResponseEvidence, type V2ApprovedEvidence, type V2ClaimProvenance, type V2VerifiedFact } from './v2-evidence.js';
+import { selectV2OfflineFallback, type V2ApprovedFallbackTemplateSet, type V2FallbackFamily } from './v2-fallbacks.js';
 
 export type V2QuestionPolicy = 'required' | 'optional' | 'forbidden';
 
@@ -14,6 +15,8 @@ export interface V2ResponseGuardContext {
   verifiedFacts?: V2VerifiedFact[];
   conversational?: boolean;
   fallbackAnswer?: string;
+  fallbackTemplateVersion?: string;
+  fallbackTemplates?: V2ApprovedFallbackTemplateSet;
 }
 
 export interface V2GuardFeedback {
@@ -26,6 +29,12 @@ export interface V2ResponseGuardDecision {
   verdict: ResponseGuardVerdictV2;
   response: PersonaComposedResponseV2;
   claims: V2ClaimProvenance[];
+  feedback: V2GuardFeedback | null;
+}
+
+export interface V2OfflineFallbackDecision {
+  verdict: ResponseGuardVerdictV2;
+  response: PersonaComposedResponseV2 | null;
   feedback: V2GuardFeedback | null;
 }
 
@@ -86,4 +95,20 @@ export const guardV2Response = (input: unknown, context: V2ResponseGuardContext)
   const evidence = verifyV2ResponseEvidence(response, context.evidence ?? [], context.verifiedFacts ?? [], evidenceOptions);
   if (!evidence.verdict.accepted) return { verdict: evidence.verdict, response: fallback(context, evidence.verdict.reasonCode), claims: [], feedback: feedback(evidence.verdict.reasonCode, input) };
   return { verdict: evidence.verdict, response, claims: evidence.claims, feedback: null };
+};
+
+export const guardV2OfflineFallback = (family: V2FallbackFamily, context: V2ResponseGuardContext): V2OfflineFallbackDecision => {
+  const response = selectV2OfflineFallback({
+    personaVersionId: context.personaVersionId,
+    templateVersion: context.fallbackTemplateVersion ?? '',
+    language: context.permittedLanguages[0] ?? 'en',
+    family,
+  }, context.fallbackTemplates);
+  if (!response) {
+    const reasonCode: ResponseGuardVerdictV2['reasonCode'] = 'policy_denied';
+    return { verdict: rejected(reasonCode), response: null, feedback: feedback(reasonCode, { family, personaVersionId: context.personaVersionId }) };
+  }
+  const evidence = verifyV2ResponseEvidence(response, [], [], { allowApprovedFallback: true });
+  if (!evidence.verdict.accepted) return { verdict: evidence.verdict, response: null, feedback: feedback(evidence.verdict.reasonCode, response) };
+  return { verdict: evidence.verdict, response, feedback: null };
 };

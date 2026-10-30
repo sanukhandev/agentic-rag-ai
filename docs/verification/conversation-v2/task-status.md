@@ -32,7 +32,7 @@ again from GitHub before each task.
 | #101 | P3-05 | CLOSED | `docs/verification/conversation-v2/V2-P3-05.md`; remote commit `5f60fd062393d110ecda3261c85e3406a782d798` |
 | #102 | P3-06 | CLOSED | `docs/verification/conversation-v2/V2-P3-06.md`; remote commit `e4da25e5913f57328d405bdee99252e752db6054` |
 | #103 | P4-01 | CLOSED | `docs/verification/conversation-v2/V2-P4-01.md`; remote commit `ccc709d16bad08fa6257b9cb6b82caf24e554bdc` |
-| #104 | P4-02 | OPEN | Depends on #103 |
+| #104 | P4-02 | CLOSED | `docs/verification/conversation-v2/V2-P4-02.md`; remote commit `b351ce0d5ca0c4e624630ae96dbca2dd86899b58` |
 | #105 | P4-03 | OPEN | Depends on #104 |
 | #106 | P4-04 | OPEN | Depends on #92–#105 |
 | #107 | P4-05 | OPEN | Depends on #103–#106 |

@@ -49,7 +49,7 @@ const uncitedQuestion = (answer: string, nextQuestion: string | null): boolean =
 };
 const verdict = (accepted: boolean, reasonCode: ResponseGuardVerdictV2['reasonCode'], response: PersonaComposedResponseV2 | null): ResponseGuardVerdictV2 => ({ schemaVersion: 2, accepted, reasonCode, response });
 
-export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvidence[], facts: V2VerifiedFact[] = [], options: { conversational?: boolean; allowUncitedQuestion?: boolean } = {}): V2EvidenceDecision => {
+export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvidence[], facts: V2VerifiedFact[] = [], options: { conversational?: boolean; allowUncitedQuestion?: boolean; allowApprovedFallback?: boolean } = {}): V2EvidenceDecision => {
   const parsed = personaComposedResponseSchema.safeParse(input);
   if (!parsed.success) return { verdict: verdict(false, 'metadata_leak', null), claims: [] };
   const response = parsed.data;
@@ -69,7 +69,9 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
   ];
   const trustedFacts = citedFacts.map((fact) => fact.text).join(' ');
   const citations = modelEvidence.map((item) => item.citation);
-  const grounded = options.conversational === true && citationIds.length === 0
+  const grounded = options.allowApprovedFallback === true && citationIds.length === 0
+    ? true
+    : options.conversational === true && citationIds.length === 0
     ? uncitedConversation(response.answer) || (options.allowUncitedQuestion === true && uncitedQuestion(response.answer, response.nextQuestion))
     : citationIds.length > 0 && hasSufficientEvidence(response.answer, modelEvidence, citations, trustedFacts);
   if (!grounded) return { verdict: verdict(false, citationIds.length === 0 ? 'unsupported_claim' : 'unsupported_claim', null), claims: [] };
