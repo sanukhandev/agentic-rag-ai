@@ -54,6 +54,18 @@ The runner creates one synthetic session, uses the API-reported pending requirem
 
 The acceptance verdict is provider-verified only when all required evidence exists. Missing Salesforce, invoice or signing-provider acknowledgments are recorded as blockers; no remote IDs are fabricated.
 
+## Focused regression evidence — 2026-10-30
+
+The failed seven-message run used published catalog version `fd9c22b6-c2d1-47ab-ab2c-8d7255a67954` for tenant `techcarrot.ae`. The catalog resolved `anc.setup.new_company` to `anc.crm.lead.capture` with score `77` and confidence `0.77`; the binding was active. After `name`, `email`, `phone` and explicit consent were captured, `actionAllowed=true`, but `validatedContactFields.name=false`. The runner had generated `Codex Journey <hex digits>`, while the existing CRM policy intentionally accepts letters and spaces only. No ActionRequest was created. This was category G, an acceptance-runner fixture defect; no gate was bypassed.
+
+The corrected fixture uses a policy-valid synthetic name and unique email/phone pair. The next run created one ActionRequest in `awaiting_confirmation`; the authorized local Lead sandbox confirmation returned HTTP 200 and dispatched through `anc.crm.lead.capture`. The event worker created a local lead and outbox/execution record, but there was no remote Salesforce Lead identity. Reconciliation therefore moved the action to `reconcile_required` (`n8n_execution_ref=8284` in the run evidence, with no provider ID), and the journey stopped truthfully at `lead_generation`.
+
+The live catalog then exposed a separate slot-validation defect: `workspace_preference` uses `enum:shared_office|private_office|none`, while Node only handled `enum:catalog_value`. The validator now canonicalizes explicit enum-list values; the focused API regression covers `shared_office`. This is a category B slot-continuity correction and does not alter consent, qualification, or action gates.
+
+Diagnostic evidence is persisted as redacted `ancfz.action_gate.diagnostic` audit events. It records catalog/version keys, resolution reason/score/confidence, binding state, missing slots, journey requirement, contact-field validity booleans, consent state, all action-gate predicates, revision/duplicate checks, and hashed action/opportunity identities. No raw PII, tokens or provider secrets are included.
+
+Final focused live run: `artifacts/ancfz-single-journey/022dc7d3-b907-4576-ab63-3819f423d42b.json` — 13 customer messages, 13 assistant responses, 22 assertions passed, 0 failed; one real v6 `get_journey_state` function call/output cycle; one ActionRequest; one durable duplicate retry; and no public response-schema changes. The final stage is `lead_generation`, with the next blocker being missing verified Salesforce acknowledgment. The 25-turn and 200-message suites were not run.
+
 ## Security and recovery checks
 
 Unit coverage verifies unknown function rejection, strict argument rejection, server-derived scope, bounded execution, audit recording and same-conversation output handling. The existing tenant/session authorization, PII masking, action idempotency, stale-revision and callback reconciliation tests remain in force. API restart recovery uses the durable Foundry binding; candidate test sessions must not reuse v3/v4 conversations.

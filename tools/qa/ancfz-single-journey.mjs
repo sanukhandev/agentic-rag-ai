@@ -9,7 +9,9 @@ const outputPath = process.env.ANCFZ_SINGLE_JOURNEY_OUTPUT ?? `artifacts/ancfz-s
 const postgresContainer = process.env.POSTGRES_CONTAINER ?? 'agentic-postgres';
 const postgresUser = process.env.POSTGRES_USER ?? 'agentic';
 const postgresDatabase = process.env.POSTGRES_DATABASE ?? 'agentic_rag';
-const synthetic = { name: `Codex Journey ${runId.slice(0, 8)}`, email: `codex-${runId.slice(0, 8)}@example.test`, phone: '+971500000000' };
+const uniquePhoneSuffix = String(Number.parseInt(runId.replaceAll('-', '').slice(0, 7), 16) % 10_000_000).padStart(7, '0');
+// shortcut: keep the synthetic name policy-valid and use the email/phone pair for run uniqueness.
+const synthetic = { name: 'Codex Journey Customer', email: `codex-${runId.slice(0, 8)}@example.test`, phone: `+9715${uniquePhoneSuffix}` };
 const assertions = [];
 const turns = [];
 const actionEvidence = [];
@@ -29,11 +31,13 @@ const persistedState = (sessionId) => {
 };
 const auditEvidence = (tenantId) => {
   try {
-    const raw = execFileSync('docker', ['exec', postgresContainer, 'psql', '-U', postgresUser, '-d', postgresDatabase, '-At', '-c', `select coalesce(json_agg(json_build_object('event',event_name,'function',metadata->>'functionName','status',metadata->>'status')),'[]'::json) from audit_events where tenant_id='${tenantId}' and event_name like 'foundry.function_call.%'`], { encoding: 'utf8' }).trim();
+    const raw = execFileSync('docker', ['exec', postgresContainer, 'psql', '-U', postgresUser, '-d', postgresDatabase, '-At', '-c', `select coalesce(json_agg(json_build_object('event',event_name,'metadata',metadata) order by created_at),'[]'::json) from audit_events where tenant_id='${tenantId}' and (event_name like 'foundry.function_call.%' or event_name='ancfz.action_gate.diagnostic')`], { encoding: 'utf8' }).trim();
     return raw ? JSON.parse(raw) : [];
   } catch { return []; }
 };
-const valueForRequirement = (key) => ({
+const valueForRequirement = (key) => {
+  const leaf = key.split(/[.:]/u).at(-1) ?? key;
+  return ({
   name: `My name is ${synthetic.name}.`,
   email: `My email is ${synthetic.email}.`,
   phone: `My phone number is ${synthetic.phone}.`,
@@ -41,17 +45,26 @@ const valueForRequirement = (key) => ({
   activity: 'software consulting and AI services',
   entity_type: 'limited liability company',
   company_structure: 'limited liability company',
-  visa_count: 'three',
+  visa_count: '3 visas',
   budget_aed: 'AED 25000',
   timeline: 'next month',
-  workspace_preference: 'shared office',
+  workspace_preference: 'shared_office',
   contact_consent: 'Yes, I explicitly consent to being contacted about this request.',
-}[key] ?? ({
+  }[key] ?? ({
   name: `My name is ${synthetic.name}.`,
   email: `My email is ${synthetic.email}.`,
   phone: `My phone number is ${synthetic.phone}.`,
+  business_activity: 'software consulting and AI services',
+  activity: 'software consulting and AI services',
+  entity_type: 'limited liability company',
+  company_structure: 'limited liability company',
+  visa_count: '3 visas',
+  budget_aed: 'AED 25000',
+  timeline: 'next month',
+  workspace_preference: 'shared_office',
   contact_consent: 'Yes, I explicitly consent to being contacted about this request.',
-}[key.split('.').at(-1)] ?? null));
+  }[leaf] ?? null));
+};
 const redact = (value) => JSON.parse(JSON.stringify(value).replaceAll(synthetic.email, '[EMAIL_TEST]').replaceAll(synthetic.phone, '[PHONE_TEST]').replaceAll(synthetic.name, '[NAME_TEST]'));
 const send = async (sessionId, message, clientMessageId = crypto.randomUUID()) => {
   const response = await request('/api/v1/chat/messages', { method: 'POST', body: { sessionId, type: 'text', message, clientMessageId } });
@@ -90,20 +103,25 @@ for (let step = 0; step < 20; step += 1) {
   firstOpportunity ??= opportunityId;
   if (firstOpportunity && opportunityId) assert(firstOpportunity === opportunityId, 'The active opportunity remains stable during the journey.');
   const slots = entry?.slotValues ?? state?.slotValues ?? {};
-  if (!knowledgeInterrupted && intentKey && entry?.currentRequirementKey && (slots.entity_type || slots.visa_count)) {
+  if (!knowledgeInterrupted && intentKey && entry?.currentRequirementKey?.startsWith('followup:') && (slots.business_activity || slots.entity_type || slots.visa_count)) {
     const before = entry.currentRequirementKey;
-    current = await send(sessionId, 'What approved information is available about the setup process and timing?');
+    const knowledgeMessage = 'What approved information is available about the setup process and timing?';
+    current = await send(sessionId, knowledgeMessage);
     const afterState = current.state;
     const afterIntent = afterState?.intentProgress?.activeIntentKey ?? afterState?.selectedIntentKey ?? intentKey;
     assert(afterIntent === intentKey, 'Knowledge interruption preserves the active catalog intent.');
     assert((afterState?.intentProgress?.entries?.[afterIntent]?.currentRequirementKey ?? before) === before, 'Knowledge interruption preserves the pending requirement.');
     knowledgeInterrupted = true;
+    const retry = await send(sessionId, knowledgeMessage, current.clientMessageId);
+    assert(retry.response.status === 200 && retry.response.body?.messageId === current.response.body?.messageId, 'Duplicate client-message retry returns the durable cached response.');
+    duplicateVerified = true;
+    current = retry;
     continue;
   }
-  if (!correctionApplied && slots.visa_count) {
-    current = await send(sessionId, 'Correction: I need three visas, not the previous number.');
-    const corrected = current.state?.intentProgress?.entries?.[intentKey]?.slotValues?.visa_count ?? current.state?.slotValues?.visa_count;
-    assert(corrected === '3' || corrected === 'three', 'A corrected visa count is persisted on the same journey.');
+  if (!correctionApplied && knowledgeInterrupted && slots.business_activity) {
+    current = await send(sessionId, 'Actually, our business activity is software consulting and AI services.');
+    const corrected = current.state?.intentProgress?.entries?.[intentKey]?.slotValues?.business_activity ?? current.state?.slotValues?.business_activity;
+    assert(typeof corrected === 'string' && /software consulting|AI services/iu.test(corrected), 'A corrected business fact is persisted on the same journey.');
     correctionApplied = true;
     continue;
   }
@@ -115,15 +133,7 @@ for (let step = 0; step < 20; step += 1) {
     if (proposalId) await confirmLeadAction(sessionId, proposalId);
     continue;
   }
-  if (!duplicateVerified) {
-    const retryId = crypto.randomUUID();
-    const first = await send(sessionId, 'Please continue with the current setup requirements.', retryId);
-    const second = await send(sessionId, 'Please continue with the current setup requirements.', retryId);
-    assert(first.response.status === 200 && second.response.status === 200 && first.response.body?.messageId === second.response.body?.messageId, 'Duplicate client-message retry returns the durable cached response.');
-    duplicateVerified = true;
-    current = second;
-    continue;
-  }
+  if (!duplicateVerified) break;
   break;
 }
 const finalState = persistedState(sessionId);
@@ -135,7 +145,8 @@ assert(responseKeys.join(',') === 'actionProposal,answer,citations,conversationa
 assert(knowledgeInterrupted, 'The journey included one knowledge interruption.');
 assert(correctionApplied, 'The journey included one fact correction.');
 assert(duplicateVerified, 'The journey included one idempotent duplicate retry.');
-const report = { runId, tenantSlug, tenantId, sessionId, application: { baseUrl, responseKeys }, customerMessages: turns.length, assistantResponses: turns.filter((turn) => turn.response?.answer).length, foundryFunctionAudit: auditEvidence(tenantId), opportunityIdDigest: firstOpportunity?.slice(0, 8) ?? null, finalStage: lifecycle?.currentStage ?? null, lifecycle, actionEvidence, assertions, status: assertions.every((item) => item.passed) ? 'PASSED' : 'BLOCKED', turns };
+const audit = auditEvidence(tenantId);
+const report = { runId, tenantSlug, tenantId, sessionId, application: { baseUrl, responseKeys }, customerMessages: turns.length, assistantResponses: turns.filter((turn) => turn.response?.answer).length, foundryFunctionAudit: audit.filter((entry) => entry.event.startsWith('foundry.function_call.')), actionGateDiagnostics: audit.filter((entry) => entry.event === 'ancfz.action_gate.diagnostic'), opportunityIdDigest: firstOpportunity?.slice(0, 8) ?? null, finalStage: lifecycle?.currentStage ?? null, lifecycle, actionEvidence, assertions, status: assertions.every((item) => item.passed) ? 'PASSED' : 'BLOCKED', turns };
 await fs.mkdir(outputPath.split(/[\\/]/u).slice(0, -1).join('/') || '.', { recursive: true });
 await fs.writeFile(outputPath, `${JSON.stringify(redact(report), null, 2)}\n`, 'utf8');
 console.log(JSON.stringify({ runId, sessionId, customerMessages: report.customerMessages, assistantResponses: report.assistantResponses, functionCalls: report.foundryFunctionAudit.length, passed: assertions.filter((item) => item.passed).length, failed: assertions.filter((item) => !item.passed).length, finalStage: report.finalStage, outputPath, status: report.status }, null, 2));

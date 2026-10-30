@@ -237,6 +237,12 @@ const pendingCatalogSlotValue = (validationRule: string, rawInput: string, maske
   if (validationRule === 'number:positive') return numberValue && Number(numberValue) > 0 ? numberValue : null;
   if (validationRule === 'number:nonnegative') return numberValue && Number(numberValue) >= 0 ? numberValue : null;
   if (validationRule === 'money:nonnegative') return /\d/u.test(rawInput) && !/^-\s*/u.test(rawInput) ? maskedInput.trim() : null;
+  const enumRule = validationRule.match(/^enum:(.+)$/u)?.[1];
+  if (enumRule && enumRule !== 'catalog_value') {
+    const normalizedInput = rawInput.trim().toLocaleLowerCase('en-US').replace(/[\s-]+/gu, '_');
+    const value = enumRule.split('|').find((candidate) => candidate.toLocaleLowerCase('en-US') === normalizedInput);
+    return value ?? null;
+  }
   if (validationRule === 'enum:catalog_value') return maskedInput.trim() && !/^(?:yes|no|ok|okay|sure|confirm|nope)$/iu.test(rawInput.trim()) ? maskedInput.trim() : null;
   return null;
 };
@@ -1803,6 +1809,62 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const intentActionAlreadySubmitted = Boolean(catalogResolution?.intentKey && sessionActions.some((candidate) => actionMatchesTargetOpportunity(candidate, opportunityIdForAction) && (candidate.intentKey ?? candidate.workflowKey) === catalogResolution.intentKey && ['awaiting_confirmation', 'awaiting_customer', 'approved', 'processing', 'completed'].includes(candidate.state)));
       const sameWorkflowOpportunityExists = Boolean(opportunityIdForAction && catalogResolution?.workflowKey && sessionActions.some((candidate) => candidate.opportunityId === opportunityIdForAction && candidate.workflowKey === catalogResolution.workflowKey && ['awaiting_confirmation', 'awaiting_customer', 'approved', 'processing', 'completed'].includes(candidate.state)));
       const shouldProposeAction = !resumedAction && !sameWorkflowOpportunityExists && !postCaptureFollowUp && !knowledgeQuestion && !offerReplyOwnsTurn && !journeyOfferPending && !transitionDenied && !declinedTransitionHold && (catalogResolution ? catalogSlotsReady && !intentActionAlreadySubmitted && !actionAlreadySubmitted && !consentDenied && !crmContactMissing && (catalogResolution.actionAllowed || consentActionReady) : draft.proposedIntent === 'lead.capture' && leadIntent && validatedLeadReady);
+      if (process.env.ANCFZ_DIAGNOSTICS === 'true') {
+        const gateReasons: string[] = [];
+        if (!catalogResolution) gateReasons.push('catalog_resolution_missing');
+        else if (catalogResolution.missingSlots.length > 0 && !consentActionReady) gateReasons.push('missing_required_slots');
+        if (journeyBlocksAction) gateReasons.push('journey_requirement_pending');
+        if (!workflowBinding) gateReasons.push('workflow_binding_missing');
+        else if (!workflowBinding.active) gateReasons.push('workflow_binding_inactive');
+        if (crmContactMissing) gateReasons.push('validated_contact_missing');
+        if (consentRequirementPending && !consentActionReady && catalogSlotValues.contact_consent !== 'true') gateReasons.push('consent_not_ready');
+        if (consentDenied) gateReasons.push('consent_denied');
+        if (intentActionAlreadySubmitted) gateReasons.push('intent_action_duplicate');
+        if (sameWorkflowOpportunityExists) gateReasons.push('same_workflow_opportunity');
+        if (actionAlreadySubmitted) gateReasons.push('action_already_submitted');
+        if (postCaptureFollowUp) gateReasons.push('post_capture_follow_up');
+        if (knowledgeQuestion) gateReasons.push('knowledge_turn');
+        if (offerReplyOwnsTurn) gateReasons.push('offer_reply');
+        if (journeyOfferPending) gateReasons.push('journey_offer_pending');
+        if (transitionDenied || declinedTransitionHold) gateReasons.push('transition_denied');
+        if (catalogResolution && !catalogResolution.actionAllowed && !consentActionReady) gateReasons.push('no_action_permission');
+        if (shouldProposeAction) gateReasons.push('eligible');
+        await store.addAudit({
+          id: randomUUID(),
+          tenantId: session.tenantId,
+          actorId: null,
+          eventName: 'ancfz.action_gate.diagnostic',
+          metadata: {
+            messageSequence: state.messageSequence,
+            catalogVersionId: publishedCatalog?.id ?? null,
+            activeIntentKey: journeyResult?.activeIntentKey ?? state.intentProgress?.activeIntentKey ?? null,
+            selectedIntentKey: state.selectedIntentKey ?? null,
+            selectedJourney: journeyResult?.activeIntentKey ?? state.selectedIntentKey ?? null,
+            catalogResolution: JSON.stringify(catalogResolution ? { intentKey: catalogResolution.intentKey, workflowKey: catalogResolution.workflowKey, reason: catalogResolution.reason, score: catalogResolution.score, confidence: catalogResolution.confidence, actionAllowed: catalogResolution.actionAllowed, missingSlots: catalogResolution.missingSlots } : null),
+            workflowKey: catalogResolution?.workflowKey ?? null,
+            workflowBindingActive: workflowBinding?.active ?? null,
+            workflowBindingSideEffectClass: workflowBinding?.sideEffectClass ?? null,
+            pendingJourneyRequirement: JSON.stringify(journeyRequirement ? { requirementKey: journeyRequirement.requirementKey, requirementType: journeyRequirement.requirementType, required: journeyRequirement.required, slotKey: journeySlotKey } : null),
+            missingRequiredSlots: JSON.stringify(catalogResolution?.missingSlots ?? []),
+            validatedContactFields: JSON.stringify({ name: validLeadName, email: validLeadEmail, phone: validLeadPhone }),
+            explicitConsent: state.contactConsent,
+            actionAllowed: catalogResolution?.actionAllowed ?? false,
+            catalogSlotsReady,
+            journeyBlocksAction,
+            consentActionReady,
+            shouldProposeAction,
+            actionAlreadySubmitted,
+            intentActionAlreadySubmitted,
+            sameWorkflowOpportunityExists,
+            actionRevisionForProposal,
+            opportunityDigest: opportunityIdForAction ? contentHash(opportunityIdForAction).slice(0, 12) : null,
+            existingActionIdentities: JSON.stringify(sessionActions.map((candidate) => ({ idDigest: contentHash(candidate.id).slice(0, 12), state: candidate.state, workflowKey: candidate.workflowKey, intentKey: candidate.intentKey ?? null, catalogVersionId: candidate.catalogVersionId ?? null, opportunityDigest: candidate.opportunityId ? contentHash(candidate.opportunityId).slice(0, 12) : null, actionRevision: candidate.actionRevision ?? null }))),
+            reasonCodes: JSON.stringify(gateReasons),
+            finalReason: gateReasons.at(-1) ?? 'not_eligible',
+          },
+          createdAt: new Date().toISOString(),
+        });
+      }
       const action = resumedAction ?? (shouldProposeAction ? await gateway.propose(session.tenantId, session.id, input.clientMessageId, actionLeadData, catalogResolution ? { workflowKey: catalogResolution.workflowKey ?? 'lead.capture', intentKey: catalogResolution.intentKey ?? 'lead.capture', actionKey: actionKeyForProposal, actionRevision: actionRevisionForProposal, opportunityId: opportunityIdForAction, intentScore: catalogResolution.score, intentConfidence: catalogResolution.confidence, catalogVersionId: catalogResolution.catalogVersionId, webhookPath: publishedCatalog?.catalog.workflowBindings.find((binding) => binding.workflowKey === catalogResolution.workflowKey)?.webhookPath ?? 'lead-capture' } : undefined) : null);
       const awaitingConfirmationAction = sessionActions.find((candidate) => candidate.state === 'awaiting_confirmation'
         && candidate.payload.contactConsent !== true
