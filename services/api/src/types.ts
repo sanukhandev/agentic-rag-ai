@@ -426,6 +426,7 @@ export interface Source {
   versionId: string;
   contentHash: string;
   embeddingReady: boolean;
+  chunkCount?: number;
   createdAt: string;
   approvedAt: string | null;
 }
@@ -506,6 +507,23 @@ export interface Session {
   tokenMap: Map<string, string>;
   conversationState?: ConversationState;
   stateVersion?: number;
+}
+
+export type FoundryConversationBindingStatus = 'active' | 'expired' | 'revoked';
+
+export interface FoundryConversationBinding {
+  id: string;
+  tenantId: string;
+  sessionId: string;
+  foundryConversationId: string;
+  foundryAgentId: string;
+  foundryAgentVersion: string | null;
+  status: FoundryConversationBindingStatus;
+  revision: number;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
 }
 
 export interface Message {
@@ -833,7 +851,14 @@ export interface Store {
   listSearchableChunks(tenantId: string, audience: Audience): Promise<Array<{ source: Source; chunk: Chunk }>>;
   searchSearchableChunks(tenantId: string, audience: Audience, queryEmbedding: number[], limit: number, queryText?: string): Promise<Array<{ source: Source; chunk: Chunk }>>;
   createSession(tenantId: string, personaVersionId?: string | null): Promise<Session>;
+  createSessionAccessToken(input: { sessionId: string; tokenHash: string; expiresAt: string }): Promise<void>;
+  verifySessionAccessToken(sessionId: string, tokenHash: string): Promise<boolean>;
+  revokeSessionAccessToken(sessionId: string): Promise<void>;
   getSession(id: string): Promise<Session | null>;
+  getFoundryConversationBinding(tenantId: string, sessionId: string, foundryAgentId: string): Promise<FoundryConversationBinding | null>;
+  createFoundryConversationBinding(binding: FoundryConversationBinding): Promise<FoundryConversationBinding>;
+  touchFoundryConversationBinding(input: { id: string; tenantId: string; sessionId: string; lastUsedAt: string; expiresAt: string }): Promise<FoundryConversationBinding | null>;
+  revokeFoundryConversationBinding(id: string, tenantId: string, sessionId: string): Promise<FoundryConversationBinding | null>;
   listExpiredSupportingDocuments(tenantId: string, before: string): Promise<SupportingDocument[]>;
   purgeExpiredSessions(tenantId: string, before: string): Promise<number>;
   updateSession(session: Session): Promise<Session>;

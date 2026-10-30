@@ -27,7 +27,13 @@ test('binds remote CRM OAuth to the n8n credential store', async () => {
   assert.equal(workflow.connections['Fetch Authorized Remote CRM Payload'].main[0][0].node, 'Existing Remote CRM Identity?');
   assert.equal(workflow.connections['Existing Remote CRM Identity?'].main[0][0].node, 'Reconcile Existing CRM Lead');
   assert.equal(workflow.connections['Existing Remote CRM Identity?'].main[1][0].node, 'Remote CRM Create Lead');
+  const existingIdentity = workflow.nodes.find((node) => node.name === 'Existing Remote CRM Identity?');
+  assert.equal(existingIdentity?.parameters.conditions.string?.[0]?.operation, 'equals');
+  assert.equal(existingIdentity?.parameters.conditions.string?.[0]?.value2, 'true');
   assert.equal(workflow.connections['Reconcile Existing CRM Lead'].main[0][0].node, 'Complete Async Registration');
+  const completedResponse = workflow.nodes.find((node) => node.name === 'Return Completed Registration')?.parameters.jsCode ?? '';
+  assert.match(completedResponse, /isExecuted/);
+  assert.match(completedResponse, /externalLeadId/);
   assert.doesNotMatch(text, /REMOTE_CRM_TOKEN_URL|REMOTE_CRM_GRANT_TYPE|REMOTE_CRM_CLIENT_ID|REMOTE_CRM_CLIENT_SECRET/);
   assert.doesNotMatch(text, /techcarrot4--realforce|salesforce\.com|remote\/sync/iu);
   const internalCompletion = workflow.nodes.find((node) => node.name === 'Complete Internal Registration');

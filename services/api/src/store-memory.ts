@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, IngestionJob, IntentCatalogVersion, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
+import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, FoundryConversationBinding, IngestionJob, IntentCatalogVersion, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
@@ -25,6 +25,8 @@ export class MemoryStore implements Store {
   private readonly ingestionJobs = new Map<string, IngestionJob>();
   private readonly chunks = new Map<string, Chunk>();
   private readonly sessions = new Map<string, Session>();
+  private readonly sessionAccessTokens = new Map<string, { tokenHash: string; expiresAt: string; revokedAt: string | null }>();
+  private readonly foundryBindings = new Map<string, FoundryConversationBinding>();
   private readonly messages = new Map<string, Message>();
   private readonly actions = new Map<string, ActionRequest>();
   private readonly crmLeads = new Map<string, CrmLead>();
@@ -157,7 +159,7 @@ export class MemoryStore implements Store {
   }
   async getSource(id: string): Promise<Source | null> { return this.sources.get(id) ?? null; }
   async findSourceByHash(tenantId: string, hash: string): Promise<Source | null> { return [...this.sources.values()].find((source) => source.tenantId === tenantId && source.contentHash === hash) ?? null; }
-  async listSources(tenantId: string): Promise<Source[]> { return [...this.sources.values()].filter((source) => source.tenantId === tenantId); }
+  async listSources(tenantId: string): Promise<Source[]> { return [...this.sources.values()].filter((source) => source.tenantId === tenantId).map((source) => ({ ...source, chunkCount: [...this.chunks.values()].filter((chunk) => chunk.sourceId === source.id && chunk.versionId === source.versionId).length })); }
   async setSourceStatus(id: string, tenantId: string, status: SourceStatus): Promise<Source | null> {
     const source = this.sources.get(id);
     if (!source || source.tenantId !== tenantId) return null;
@@ -241,7 +243,52 @@ export class MemoryStore implements Store {
     this.sessions.set(session.id, session);
     return session;
   }
+  async createSessionAccessToken(input: { sessionId: string; tokenHash: string; expiresAt: string }): Promise<void> {
+    if (!this.sessions.has(input.sessionId)) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+    this.sessionAccessTokens.set(input.sessionId, { tokenHash: input.tokenHash, expiresAt: input.expiresAt, revokedAt: null });
+  }
+  async verifySessionAccessToken(sessionId: string, tokenHash: string): Promise<boolean> {
+    const credential = this.sessionAccessTokens.get(sessionId);
+    return Boolean(credential && !credential.revokedAt && Date.parse(credential.expiresAt) > Date.now() && credential.tokenHash === tokenHash);
+  }
+  async revokeSessionAccessToken(sessionId: string): Promise<void> {
+    const credential = this.sessionAccessTokens.get(sessionId);
+    if (credential) this.sessionAccessTokens.set(sessionId, { ...credential, revokedAt: now() });
+  }
   async getSession(id: string): Promise<Session | null> { const existing = this.sessions.get(id); return existing ? structuredClone(existing) : null; }
+  async getFoundryConversationBinding(tenantId: string, sessionId: string, foundryAgentId: string): Promise<FoundryConversationBinding | null> {
+    const binding = [...this.foundryBindings.values()].find((candidate) => candidate.tenantId === tenantId && candidate.sessionId === sessionId && candidate.foundryAgentId === foundryAgentId && candidate.status === 'active');
+    if (!binding) return null;
+    if (Date.parse(binding.expiresAt) <= Date.now()) {
+      this.foundryBindings.set(binding.id, { ...binding, status: 'expired' });
+      return null;
+    }
+    return structuredClone(binding);
+  }
+  async createFoundryConversationBinding(binding: FoundryConversationBinding): Promise<FoundryConversationBinding> {
+    const session = this.sessions.get(binding.sessionId);
+    if (!session || session.tenantId !== binding.tenantId) throw new HttpError(403, 'FOUNDRY_SESSION_FORBIDDEN', 'Foundry session access denied.');
+    const conversationOwner = [...this.foundryBindings.values()].find((candidate) => candidate.foundryConversationId === binding.foundryConversationId && candidate.id !== binding.id);
+    if (conversationOwner) throw new HttpError(409, 'FOUNDRY_CONVERSATION_BOUND', 'Foundry conversation is already bound.');
+    const existing = await this.getFoundryConversationBinding(binding.tenantId, binding.sessionId, binding.foundryAgentId);
+    if (existing) return existing;
+    this.foundryBindings.set(binding.id, structuredClone(binding));
+    return structuredClone(binding);
+  }
+  async touchFoundryConversationBinding(input: { id: string; tenantId: string; sessionId: string; lastUsedAt: string; expiresAt: string }): Promise<FoundryConversationBinding | null> {
+    const binding = this.foundryBindings.get(input.id);
+    if (!binding || binding.tenantId !== input.tenantId || binding.sessionId !== input.sessionId || binding.status !== 'active' || Date.parse(binding.expiresAt) <= Date.now()) return null;
+    const updated = { ...binding, lastUsedAt: input.lastUsedAt, expiresAt: input.expiresAt };
+    this.foundryBindings.set(binding.id, updated);
+    return structuredClone(updated);
+  }
+  async revokeFoundryConversationBinding(id: string, tenantId: string, sessionId: string): Promise<FoundryConversationBinding | null> {
+    const binding = this.foundryBindings.get(id);
+    if (!binding || binding.tenantId !== tenantId || binding.sessionId !== sessionId) return null;
+    const updated = { ...binding, status: 'revoked' as const, revokedAt: now() };
+    this.foundryBindings.set(id, updated);
+    return structuredClone(updated);
+  }
   async listExpiredSupportingDocuments(tenantId: string, before: string): Promise<SupportingDocument[]> {
     const cutoff = Date.parse(before);
     const leadSessionIds = new Set([...this.crmLeads.values()].map((lead) => lead.sessionId));

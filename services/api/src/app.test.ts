@@ -205,6 +205,7 @@ describe('API vertical slice', () => {
     expect((await api.get('/api/v1/admin/persona').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.persona.name).toBe('Ava 2');
     const source = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${adminToken}`).send({ title: 'Tenant A Catalog', mimeType: 'text/plain', audience: 'public', content: 'Hello. Tenant A pricing is 100 credits per month. Contact support for approved details.' }).expect(201);
     expect(source.body.ingestion.status).toBe('completed');
+    expect((await api.get('/api/v1/admin/sources').set('Authorization', `Bearer ${adminToken}`).expect(200)).body.items.find((item: { id: string }) => item.id === source.body.source.id)).toMatchObject({ chunkCount: 1 });
     expect((await api.get(`/api/v1/admin/ingestion-jobs/${source.body.ingestion.jobId}`).set('Authorization', `Bearer ${adminToken}`).expect(200)).body.job).toMatchObject({ id: source.body.ingestion.jobId, tenantId: tenantA.body.tenant.id, sourceId: source.body.source.id, status: 'completed', attempts: 1 });
     await api.get(`/api/v1/admin/ingestion-jobs/${source.body.ingestion.jobId}`).set('Authorization', `Bearer ${adminBToken}`).expect(404);
     const duplicateSource = await api.post('/api/v1/admin/sources').set('Authorization', `Bearer ${adminToken}`).send({ title: 'Retry of catalog', mimeType: 'text/plain', audience: 'public', content: 'Hello. Tenant A pricing is 100 credits per month. Contact support for approved details.' }).expect(200);
@@ -1125,6 +1126,7 @@ describe('API vertical slice', () => {
         { intentKey: 'company.setup', slotKey: 'business_activity', dataType: 'text', required: true, alternativeGroup: null, collectionOrder: 1, promptKey: 'company.ask_activity', validationRule: 'text:business_activity', retentionClass: 'business' },
         { intentKey: 'company.setup', slotKey: 'company_structure', dataType: 'enum', required: true, alternativeGroup: null, collectionOrder: 2, promptKey: 'company.ask_structure', validationRule: 'enum:catalog_value', retentionClass: 'business' },
         { intentKey: 'company.setup', slotKey: 'visa_count', dataType: 'integer', required: true, alternativeGroup: null, collectionOrder: 3, promptKey: 'company.ask_visas', validationRule: 'integer:0-10', retentionClass: 'business' },
+        { intentKey: 'company.setup', slotKey: 'workspace_preference', dataType: 'enum', required: true, alternativeGroup: null, collectionOrder: 4, promptKey: 'company.ask_workspace', validationRule: 'enum:shared_office|private_office|none', retentionClass: 'business' },
       ],
       relations: [],
       workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'journey-contract', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
@@ -1132,6 +1134,7 @@ describe('API vertical slice', () => {
         { intentKey: 'company.setup', requirementKey: 'company.activity', requirementType: 'slot' as const, required: true, collectionOrder: 1, promptKey: 'company.ask_activity', validationRule: 'text:business_activity', slotKey: 'business_activity', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
         { intentKey: 'company.setup', requirementKey: 'company.structure', requirementType: 'slot' as const, required: true, collectionOrder: 2, promptKey: 'company.ask_structure', validationRule: 'enum:catalog_value', slotKey: 'company_structure', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
         { intentKey: 'company.setup', requirementKey: 'company.visas', requirementType: 'slot' as const, required: true, collectionOrder: 3, promptKey: 'company.ask_visas', validationRule: 'integer:0-10', slotKey: 'visa_count', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
+        { intentKey: 'company.setup', requirementKey: 'company.workspace', requirementType: 'slot' as const, required: true, collectionOrder: 4, promptKey: 'company.ask_workspace', validationRule: 'enum:shared_office|private_office|none', slotKey: 'workspace_preference', documentType: null, fulfillmentMode: 'conversation_ready' as const, sourceOfTruth: 'tenant_catalog', notes: '' },
       ],
     } satisfies IntentCatalog;
     const version = await runtime.store.createIntentCatalogVersion({ tenantId: tenant.body.tenant.id, status: 'published', sourceFileName: 'journey.xlsx', sourceHash: 'j'.repeat(64), parserVersion: 'test', catalog });
@@ -1161,6 +1164,9 @@ describe('API vertical slice', () => {
     const visas = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: '3 visas', clientMessageId: 'journey-contract-4' }).expect(200);
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.visa_count).toBe('3');
     expect(visas.body.answer).not.toContain('company visas');
+    const workspace = await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'shared_office', clientMessageId: 'journey-contract-5' }).expect(200);
+    expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues.workspace_preference).toBe('shared_office');
+    expect(workspace.body.pendingRequirementKey).toBeNull();
   });
 
   it('keeps transition offers in the chat API scoped, declines once, and activates only after approval', async () => {

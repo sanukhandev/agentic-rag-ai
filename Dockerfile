@@ -14,6 +14,7 @@ COPY apps ./apps
 COPY packages ./packages
 COPY services ./services
 COPY docs ./docs
+COPY openapi ./openapi
 
 FROM node-source AS api-build
 RUN npm run build --workspace services/api

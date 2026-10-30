@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { DeterministicEmbeddingProvider } from './embedding.js';
 import { contentHash } from './store-memory.js';
-import { buildChunks, buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, chunkText, embedText, hasConflictingEvidence, presentKnowledgeText, rankChunks, rankChunksWithEmbedding, rankChunksWithVector } from './knowledge.js';
+import { buildChunks, buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, chunkText, embedText, hasConflictingEvidence, presentKnowledgeText, rankChunks, rankChunksWithEmbedding, rankChunksWithVector, retrieveApprovedKnowledge } from './knowledge.js';
+import { normalizeFullTextQuery } from './search-query.js';
+import type { Source } from './types.js';
 
 describe('knowledge pipeline primitives', () => {
   it('chunks deterministically and emits the configured local vector dimension', () => {
@@ -43,6 +45,28 @@ describe('knowledge pipeline primitives', () => {
     expect(await rankChunksWithEmbedding('What is the pricing?', rows, provider)).toHaveLength(1);
     expect(rankChunksWithVector('What is the pricing?', rows, await provider.embed('What is the pricing?'))).toHaveLength(1);
     expect(rankChunks('What is the pricing?', rows)).toHaveLength(1);
+  });
+
+  it('does not fall back to unrelated evidence with deterministic local vectors', async () => {
+    const provider = new DeterministicEmbeddingProvider();
+    const source = { id: 'source', tenantId: 'tenant', versionId: 'version' };
+    const chunks = await buildChunksWithEmbeddings(source, 'Approved company packages and visa pricing.', provider);
+    const sourceRecord: Source = { id: 'source', tenantId: 'tenant', title: 'Catalog', mimeType: 'text/plain', sourceUrl: null, audience: 'public', status: 'active', versionId: 'version', contentHash: 'hash', embeddingReady: true, createdAt: new Date().toISOString(), approvedAt: new Date().toISOString() };
+    const rows = [{ source: sourceRecord, chunk: chunks[0]! }];
+    const PostgresStore = class PostgresStore { searchSearchableChunks = async () => rows; listSearchableChunks = async () => rows; };
+    const store = new PostgresStore();
+    await expect(retrieveApprovedKnowledge(store, provider, 'tenant', 'public', 'approved owner guaranteed price for a fictional moon permit lottery', 4, 'approved owner guaranteed price package pricing fees', 'fictional moon permit lottery')).resolves.toHaveLength(0);
+  });
+
+  it('passes a safe full-text expression to the shared retrieval store', async () => {
+    let receivedQuery = '';
+    const provider = new DeterministicEmbeddingProvider();
+    const store = {
+      searchSearchableChunks: async (_tenantId: string, _audience: 'public' | 'internal', _embedding: number[], _limit: number, queryText = '') => { receivedQuery = queryText; return []; },
+      listSearchableChunks: async () => [],
+    };
+    await retrieveApprovedKnowledge(store, provider, 'tenant-a', 'public', 'company formation packages ANC');
+    expect(receivedQuery).toBe(normalizeFullTextQuery('company formation packages ANC'));
   });
 
   it('preserves worker locators and ordinals while embedding chunks', async () => {

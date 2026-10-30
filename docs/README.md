@@ -1,33 +1,39 @@
-# Documentation map
+# Documentation — current ANCFZ-focused upgrade
 
-These documents describe the **target system**, not a completed implementation. The canonical engineering policy is root [AGENTS.md](../AGENTS.md). Where documents and code disagree, inspect real code, record the gap, and escalate an architectural or security discrepancy rather than pretending a capability exists.
+**Single source of current engineering context.** All documents in this section are dated 2026-10-30 and distinguish **TARGET** from **IMPLEMENTED**. The code and migrations remain authoritative for implemented behavior.
 
-| File | Purpose |
-| --- | --- |
-| [01-product-scope](01-product-scope.md) | Product intent, personas, in/out of scope, MVP success |
-| [02-system-architecture](02-system-architecture.md) | Trust boundaries, request and data paths, sequencing |
-| [03-monorepo-conventions](03-monorepo-conventions.md) | Proposed folder layout, cross-app contracts, coding |
-| [04-ingestion-and-rag](04-ingestion-and-rag.md) | Source adapters, ingestion lifecycle, pgvector retrieval |
-| [05-api-contracts](05-api-contracts.md) | Draft endpoints, response shapes, validation/errors |
-| [06-security-and-privacy](06-security-and-privacy.md) | Masking/tokenization, AI isolation, n8n hardening, threats |
-| [07-n8n-orchestration](07-n8n-orchestration.md) | Deterministic action gateway and workflow conventions |
-| [08-model-policy](08-model-policy.md) | Grounding, prompting, intent boundaries, no-invention tests |
-| [09-data-model](09-data-model.md) | Conceptual schema, PII boundaries, indexing, deletion |
-| [10-developer-setup](10-developer-setup.md) | Local tooling, existing Compose, env contract, deployment |
-| [11-quality-and-operations](11-quality-and-operations.md) | Testing, telemetry, observability, incident handling |
-| [12-delivery-roadmap](12-delivery-roadmap.md) | Phase gates and implementation acceptance |
-| [13-decisions-and-open-questions](13-decisions-and-open-questions.md) | ADR-style baseline and explicit TBDs |
-| [14-feature-request-template](14-feature-request-template.md) | Reusable prompt for future scoped feature work |
+| Read order | Document | Purpose |
+| --- | --- | --- |
+| 1 | [Current state and gaps](current-state.md) | Verified repository inventory, existing architecture, blockers and migration delta |
+| 2 | [Current requirements](requirements.md) | Tenant-neutral conversational goal, ANCFZ seven-stage acceptance |
+| 3 | [Target architecture](architecture.md) | Node / private Python GPT API / pgvector / catalog / n8n boundaries |
+| 4 | [Intent taxonomy](intent-taxonomy.md) | Six categories; business outcome versus knowledge/requirements/CRM actions |
+| 5 | [LLM conversation planner](conversation-planner.md) | GPT interprets full summary, weighs goals, chooses next move/question, determines satisfaction |
+| 6 | [Intent engine](intent-engine.md) | Catalog-supported candidate weights, goal confirmation and per-turn decisions |
+| 7 | [User Intent Document](user-intent-document.md) | Durable per-session/opportunity intent ledger, cache and concurrency semantics |
+| 8 | [Python model gateway](model-gateway.md) | Azure OpenAI Responses API, key, strict contracts, retries/rate limits |
+| 9 | [Journey orchestration](journey.md) | Exactly ordered stages, grounded response + next question, recovery |
+| 10 | [Catalog to n8n](n8n-workflows.md) | Allowlisted tool proposals, action gating, outbox and provider verification |
+| — | [Supplied remote n8n inventory](remote-n8n-integration.md) | Four real webhook paths, unverified contracts, security prerequisites and test sequence |
+| 11 | [Security/operations](security-operations.md) | Deferred advanced PII work, retained boundaries, deployment and telemetry |
+| 12 | [Migration plan](migration-plan.md) | Additive phases, no-code-rewrite shortcuts, safe rollback |
+| 13 | [Acceptance](acceptance.md) | One continuous real journey; no 25/200-message quota |
 
-| [15-complete-feature-brief](15-complete-feature-brief.md) | Canonical multi-tenant admin, agent, sources and chat feature requirements |
-| [16-autonomous-codex-execution-plan](16-autonomous-codex-execution-plan.md) | Implementable P00–P10 phases and gates |
-| [17-acceptance-test-matrix](17-acceptance-test-matrix.md) | Required test scenarios and proof of completion |
-| [openapi](openapi.yaml) | Implemented local API endpoint contract |
-| [19-data-model](19-data-model.md) | Local tenant/source/chat/workflow ER model and invariants |
-| [18-codex-master-prompt](18-codex-master-prompt.md) | Ready-to-copy implementation directive |
-| [20-intent-catalog](20-intent-catalog.md) | Excel catalog import, publish, resolution and n8n action contract |
-| [21-omnichannel-connector-api-spec](21-omnichannel-connector-api-spec.md) | Server URI, channel credentials, signed connector requests and async omnichannel usage |
+Read root [AGENTS.md](../AGENTS.md) for non-negotiable coding instructions, and root [README](../readme.md) for the entrypoint.
 
-**Requirements precedence:** AGENTS.md security invariants + docs/15 feature brief govern new feature requirements; docs/16–18 govern execution/acceptance. Existing numbered docs describe background architecture. Resolve contradictions by tightening isolation, not by relaxing it, and update all affected documentation.
+## Current versus target
 
-Update the relevant sections in the same change that updates behavior. Never place actual PII, credentials, webhook signing secrets, connection strings or tenant tokens in documentation.
+- **Current on `refactor/python-conversation-core-v2`:** the Node API bootstrap can select a private Python GPT model adapter; a new FastAPI model gateway and Compose overlay have been added. The old Foundry Agent source/runtime and Azure CLI Docker stage are retired on this isolated rewrite branch (historical verification remains). The **legacy `app.ts` lead-first conversation logic and deterministic catalog remain operational compatibility code**, so the new goal-first planner does not yet own the session.
+- **Target:** GPT through private Python model API acts as the **primary conversation planner**, maintaining a catalog-grounded **Business Goal** independently from ephemeral knowledge/requirement/status/execution turn intents. It summarizes context, weighs catalog signals within approved bounds, selects the best question/action, and offers more help after the **customer goal** is actually satisfied. Node validates decisions and executes only explicitly approved workflows.
+- **Not yet delivered:** integration of a **goal-first Node conversation coordinator**, durable per-turn intent ledger, full catalog-v2 context/weight validation, Python↔Node tool-execution loop, provider-verified seven-stage completion and live test evidence. The Python gateway/adapter are an initial code slice only.
+- **Current first external blocker:** latest focused run did not verify a Salesforce Lead result, and returned `reconcile_required` at Lead Generation. No later stage was completed in that one run.
+
+## Historical evidence (not active requirements)
+
+Dated reports under `verification/`, the original `feature-specs/` proposal artifact, and old code migrations remain traceability only. Do not treat Foundry v4/v6 results, 25/200-message tests, obsolete Codex prompts or historical POC API assumptions as current acceptance requirements. The older active architecture/requirements Markdown files were retired from the documentation root; their content remains available in Git history.
+
+## Model API vendor sources
+
+- [Microsoft: Azure OpenAI Responses API](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/responses)
+- [Microsoft: switch OpenAI and Azure OpenAI endpoints with Python](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/switching-endpoints)
+- [Microsoft: Azure OpenAI quota, 429 and retry guidance](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/quota)

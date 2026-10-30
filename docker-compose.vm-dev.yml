@@ -1,0 +1,4 @@
+services:
+  nginx:
+    ports:
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_HOST_PORT:-3000}:80"
