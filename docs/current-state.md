@@ -253,3 +253,14 @@ revoked/conflicting/injected/unsupported claims, and returns typed guard
 verdicts with redacted claim provenance. It does not authorize business
 actions. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P3-06.md`.
+
+## V2-P4-01 natural persona composer — 2026-10-30
+
+Issue #103 is verified and closed. The private Python conversation agent now
+builds final-response instructions from the session-pinned tenant persona and
+validates the composed response against that persona version and permitted
+language before it crosses the runtime boundary. The composer is constrained
+to masked context and approved observations, permits one relevant question or
+a legitimate no-question outcome, and rejects internal metadata, protocol
+terms and prompt leakage. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P4-01.md`.

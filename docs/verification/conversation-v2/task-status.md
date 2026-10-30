@@ -30,7 +30,7 @@ again from GitHub before each task.
 | #99 | P3-03 | CLOSED | `docs/verification/conversation-v2/V2-P3-03.md`; remote commit `9255373cf5b9180679b9a9f0c82cabdb5295bf91` |
 | #100 | P3-04 | CLOSED | `docs/verification/conversation-v2/V2-P3-04.md`; remote commit `9dcb01b9ad24978613996b5d81f3e69c608bc0ac` |
 | #101 | P3-05 | CLOSED | `docs/verification/conversation-v2/V2-P3-05.md`; remote commit `5f60fd062393d110ecda3261c85e3406a782d798` |
-| #102 | P3-06 | OPEN | Depends on #100–#101 |
+| #102 | P3-06 | CLOSED | `docs/verification/conversation-v2/V2-P3-06.md`; remote commit `e4da25e5913f57328d405bdee99252e752db6054` |
 | #103 | P4-01 | OPEN | Depends on #98 and persona contract |
 | #104 | P4-02 | OPEN | Depends on #103 |
 | #105 | P4-03 | OPEN | Depends on #104 |
