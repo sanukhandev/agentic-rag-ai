@@ -199,3 +199,10 @@ and records redacted response audit metadata for persona version, language,
 intent, grounding and response digest. Historic responses are replayed without
 recomposition after later persona publication. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P2-05.md`.
+
+## V2-P3-01 Azure model resilience — 2026-10-30
+
+Issue #97 remains BLOCKED/OPEN because the authorized Azure OpenAI deployment
+and private model-gateway credentials required by P0-02 are unavailable. No
+live provider call or resilience success was claimed. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P3-01.md`.
