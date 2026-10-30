@@ -402,3 +402,13 @@ target. Exact callback correlation is required; wrong-record or incomplete
 provider evidence remains reconciliation-required. The deterministic adapter
 is mock-only and no live attachment completion is claimed. Evidence is
 recorded in `docs/verification/conversation-v2/V2-P6-05.md`.
+
+## V2-P6-06 invoice and payment boundary — 2026-10-30
+
+Issue #117 is verified for the Node-side invoice/payment contract. Payment
+requests require a quote-linked pending invoice, matching approved amount and
+currency, hosted payment metadata and an invoice artifact hash. Invoice and
+payment statuses remain separate; deterministic settlement is explicitly
+`mock_paid`, never real settlement. Failed, stale, mismatched or incomplete
+provider evidence remains unverified. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P6-06.md`.
