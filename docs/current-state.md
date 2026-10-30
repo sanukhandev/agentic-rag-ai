@@ -298,3 +298,13 @@ the explicit `CONVERSATION_ENGINE_V2_TENANTS` allowlist. Unavailable v2 turns
 roll back to the existing model path; Node action, consent, document and
 provider gates remain unchanged. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P4-04.md`.
+
+## V2-P4-05 persona quality and tenant isolation — 2026-10-30
+
+Issue #107 is verified and closed. The synthetic quality matrix evaluates the
+same guard contract for published English Zara and a separate tenant persona
+across greeting, remembered qualification, correction, consent, action status,
+document review, invoice, contract, opt-out and outage fallback states. It
+checks one purposeful question, no repetition, language/persona pins, raw
+metadata rejection and no false provider completion. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P4-05.md`.
