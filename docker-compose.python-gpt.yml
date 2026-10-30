@@ -1,0 +1,31 @@
+# Opt-in replacement architecture overlay. Never expose model-gateway to the host.
+services:
+  model-gateway:
+    build:
+      context: .
+      dockerfile: services/model-gateway/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8088"
+    environment:
+      AZURE_OPENAI_BASE_URL: ${AZURE_OPENAI_BASE_URL:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      MODEL_GATEWAY_SERVICE_KEY: ${MODEL_GATEWAY_SERVICE_KEY:-}
+      MODEL_MAX_CONCURRENCY: ${MODEL_MAX_CONCURRENCY:-2}
+      MODEL_MIN_CALL_INTERVAL_SECONDS: ${MODEL_MIN_CALL_INTERVAL_SECONDS:-0.7}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/internal/health/live',timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    depends_on:
+      model-gateway:
+        condition: service_healthy
+    environment:
+      CHAT_MODEL_PROVIDER: python-gpt
+      PYTHON_MODEL_URL: http://model-gateway:8088
+      MODEL_GATEWAY_SERVICE_KEY: ${MODEL_GATEWAY_SERVICE_KEY:-}
+      PYTHON_MODEL_TIMEOUT_MS: ${PYTHON_MODEL_TIMEOUT_MS:-90000}

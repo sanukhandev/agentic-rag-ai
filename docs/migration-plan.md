@@ -8,14 +8,14 @@
 - Run existing Node API, PostgreSQL/Redis, catalog, outbox and security tests; capture one current Chat API response contract and latest seven-stage provider state.
 - Confirm actual Azure **model deployment** endpoint, deployment name, API-key availability, quotas, region, Responses API support and restricted secret storage (not the Foundry Agent project URL).
 - Enumerate published catalog and ANCFZ workflow bindings; identify missing provider credentials/acknowledgments.
-- Freeze the old Foundry Agent serving setup as a rollback option; do not delete existing code or DB columns now.
+- Use the preserved parent branch and Git history as rollback for retired Foundry Agent runtime code. Do not remove historical database migrations or customer records.
 
 ## Phase 1: private Python GPT gateway
 
-- Create `services/model-gateway/` (proposed) using Python 3.x, FastAPI/Pydantic, pinned OpenAI SDK, health endpoint and private Compose service.
+- Initial slice created: `services/model-gateway/` using Python 3.12 FastAPI/Pydantic, an API-key OpenAI SDK client, structured plan/normalization, health checks and a private Compose overlay. **Not yet exercised against a live deployment; retry/circuit-breaker acceptance remains pending.**
 - Implement `normalize`, `interpret`, `compose`, typed errors and authenticated Node client; Azure model API key only inside gateway.
 - Configure exactly initial request + up to **3 retries** for transient errors; 429 header adherence, rate limiter, one request deadline, circuit breaker, cost telemetry and mock tests. Avoid double retry.
-- Add `ChatModel`-compatible Node adapter with feature flag (`CHAT_MODEL_PROVIDER=python-gpt` proposed) while existing provider remains available for rollback; do not change public Chat API shape.
+- Initial slice created: `ChatModel`-compatible Node adapter and opt-in `CHAT_MODEL_PROVIDER=python-gpt` overlay, while retaining the existing public API shape. Old Foundry Agent code is removed from this isolated branch; rollback is via Git branch, not a runtime feature flag.
 
 ## Phase 2: persisted User Intent Document and cache
 

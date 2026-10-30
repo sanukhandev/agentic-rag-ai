@@ -21,7 +21,7 @@ The **GPT conversation planner is the master of conversation delivery**: each su
 
 Next.js / other validated channels → Node Express API → catalog and per-session intent engine → private Python Model Gateway → GPT deployment via **Azure OpenAI / Foundry Models Responses API using an API key**. Node retrieves approved pgvector evidence, supplies bounded context, validates model interpretations/citations, confirms intent and chooses the next requirement. Node alone authorizes catalog workflow actions and persists them transactionally to PostgreSQL outbox → Redis Streams → event worker → n8n → verified provider callback. Python is an inference-only service: no customer database credentials, n8n webhooks, tenant switching, direct CRM writes or policy authority.
 
-**Do not use the named `agentic-rag-core-dev` Foundry Agent for the target chat path.** Existing v4/v6 integrations remain current historical code until the replacement is implemented and verified. Model deployments are selected by configured deployment name, not by Foundry agent version. Keep a provider-neutral Node boundary for future provider changes.
+**Do not use the named `agentic-rag-core-dev` Foundry Agent for the new chat path.** Its SDK/tool source was retired in `refactor/python-conversation-core-v2`; historical PostgreSQL migration and verification evidence remain untouched. The Python gateway and Node compatibility adapter are the first slice only—the new goal-first conversation coordinator is not yet implemented. Model deployments are selected by configured deployment name, not by Foundry agent version. Keep a provider-neutral Node boundary for future provider changes.
 
 ## Mandatory implementation boundaries
 

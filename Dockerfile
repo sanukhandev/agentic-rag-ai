@@ -32,16 +32,6 @@ USER node
 EXPOSE 4000
 CMD ["node", "services/api/dist/index.js"]
 
-FROM api-runtime AS api-foundry-local
-USER root
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
-  && curl -sL https://aka.ms/InstallAzureCLIDeb | bash \
-  && rm -rf /var/lib/apt/lists/*
-ENV AZURE_CONFIG_DIR=/home/node/.azure
-RUN mkdir -p /home/node/.azure && chown -R node:node /home/node/.azure
-USER node
-
 FROM node-source AS web-build
 ARG NEXT_PUBLIC_API_URL=/
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
