@@ -119,3 +119,7 @@ Issue #84 is implemented at the contract boundary: `services/api/src/catalog-v2.
 ## V2-P0-04 private agent contracts — 2026-10-30
 
 Issue #85 freezes strict v2 TurnEnvelope, tool request/result, persona response and response-guard verdict boundaries in the TypeScript API and Python gateway. Scope, version pins, revisions, budgets, bounded output and unknown-key rejection are validated before later orchestration work. Python receives no database, CRM, n8n, payment or signing capability; the public Node chat contract and legacy adapter remain unchanged. Full model/tool execution is deferred to P3/P4 issues.
+
+## V2-P0-05 ANCFZ policy/provider matrix — 2026-10-30
+
+Issue #86 locks the seven ordered stages and their required evidence tiers in `services/api/src/fixtures/ancfz-provider-matrix-v2.json`. Consent phrases are synthetic test-only placeholders pending owner approval. All stages remain blocked for real provider completion until the documented Salesforce, quote, SF-02, invoice/payment and signing evidence exists; legal registration is separately tracked. The full seven-stage run remains reserved for #124.

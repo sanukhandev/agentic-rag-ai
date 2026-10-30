@@ -1,6 +1,6 @@
 # ANCFZ business policies and sandbox/mock provider readiness
 
-**Status:** REQUIRED INPUT REGISTER, NOT PROVIDER VERIFICATION. Customer has approved P0 decisions in [P0 sign-off](conversation-engine-p0-signoff.md). Do not request those five decisions again. External dependencies must not stall independent P0–P4 engineering with approved synthetic fixtures.
+**Status:** REQUIRED INPUT REGISTER and source for the locked P0-05 matrix; NOT PROVIDER VERIFICATION. Customer has approved P0 decisions in [P0 sign-off](conversation-engine-p0-signoff.md). Do not request those five decisions again. External dependencies must not stall independent P0–P4 engineering with approved synthetic fixtures.
 
 ## Business input by fulfillment stage
 
