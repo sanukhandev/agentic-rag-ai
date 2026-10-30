@@ -110,6 +110,16 @@ The **target** requires a session-pinned published tenant persona **before** Pyt
 
 The authoritative proposed design now has **seven logical components**: Python Conversation Agent; Planning & Intent Engine; Natural Persona Composer; Node Response Guard; Node/PostgreSQL Session & Conversation Manager; Node Trusted Tool Gateway; and Node/PostgreSQL/Redis/n8n Workflow & Event Engine. These are not seven autonomous GPT agents. The target includes catalog v2 parser/publisher, per-turn User Intent Document, authorized RAG/requirements/status Node tools called **before** persona composition, guard-validated customer replies and separately authorized provider actions. **No new runtime implementation or seven-stage verification is claimed** by this design update. Read [architecture](conversation-engine-architecture.md), [contracts](conversation-engine-contracts.md), [P0–P7 delivery plan](conversation-engine-delivery-plan.md) and [evaluation matrix](conversation-engine-evaluation.md). Current blockers remain a lead provider acknowledgment and unverified/missing Account creation, quotation, invoice and contract integrations.
 
+### Conversation Engine v2 P5-01 — catalog-authorized action gate — 2026-10-30
+
+Issue #108 is implemented and focused-tested in
+[`V2-P5-01`](verification/conversation-v2/V2-P5-01.md). Node now validates
+untrusted v2 action proposals against the pinned catalog, current goal/stage,
+verified requirements, purpose-specific consent and action revision before it
+can create a pending `ActionRequest`. Exact customer confirmation remains a
+separate trusted gate and reuses the existing ActionGateway/outbox boundary.
+No provider operation or final journey acceptance is claimed.
+
 ## P0 decisions, issue plan and manual final test — documentation only
 
 The customer approved the **existing Azure GPT model deployment**, a **new v2-only catalog** (no v1 import fallback in new engine, with legacy state preserved for rollback), **published Zara English** persona for ANCFZ, **sandbox/mock-first** seven-stage acceptance, and **Contract Stage 7 as journey completion** with legal company registration independently tracked. Development issues #82–#124 carry label `v2-feature`, and the implementation branch is `feat/conversation-engine-v2`. The [P0 decision register](conversation-engine-p0-signoff.md), [v2 catalog spec](catalog-v2-contract.md), [business/provider register](ancfz-business-provider-readiness.md), [issue index](conversation-v2-issue-index.md) and [Codex instructions](codex-v2-master-prompt.md) are **planning/specification only**. No new runtime implementation, Azure smoke, Salesforce provider verification or full seven-stage E2E is claimed. Final issue #124 is intentionally reserved for **explicit manual customer trigger** after all other implementation tasks are closed.
