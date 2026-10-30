@@ -4,7 +4,7 @@
 
 ## Purpose
 
-For each authenticated `(tenantId, sessionId, opportunityId)` maintain one authoritative **current projection** and a durable append-only history of **every evaluated user turn**. Store a durable record before returning a customer response; if processing fails, record an error/retry decision without applying half-validated facts. Do not use Redis, a Python process, an LLM response ID or Foundry conversation as the truth.
+For each authenticated `(tenantId, sessionId, opportunityId)` maintain one authoritative **current projection** and a durable append-only history of **every evaluated user turn**. The projection stores a **durable primary business goal** independently from transient knowledge, clarification, requirement, status, navigation or execution turn intents. The goal is the customer's desired outcome, **not** a CRM Lead record. Store a durable record before returning a customer response; if processing fails, record an error/retry decision without applying half-validated facts. Do not use Redis, a Python process, an LLM response ID or Foundry conversation as the truth.
 
 ### Suggested logical projection
 
@@ -17,10 +17,18 @@ For each authenticated `(tenantId, sessionId, opportunityId)` maintain one autho
   "catalogVersionId": "published-version-pinned-at-journey-start",
   "revision": 12,
   "state": "awaiting_requirement",
-  "primaryIntentKey": "confirmed-intent-or-null",
+  "primaryBusinessGoalKey": "catalog-goal-key-or-null",
+  "primaryBusinessGoalStatus": "candidate-or-confirmed-or-fulfilled-or-blocked",
+  "currentTurnIntentCategory": "knowledge_advisory",
+  "currentTurnIntentKey": "catalog-turn-intent-key-or-null",
   "intentConfirmedBy": "customer-turn-id-or-null",
   "intentConfirmedAt": null,
   "candidateIntentKeys": [],
+  "llmSuggestedSignalWeights": {},
+  "acceptedScoringPolicyVersion": "published-version",
+  "goalConfidenceBand": "medium",
+  "requirementCoverage": {},
+  "actionEligibility": {"ready": false, "reason": "requirements_pending"},
   "facts": {},
   "pendingRequirementKey": "catalog-defined-key-or-null",
   "lastQuestionKey": "catalog-defined-key-or-null",
@@ -30,7 +38,17 @@ For each authenticated `(tenantId, sessionId, opportunityId)` maintain one autho
   "consentRefs": [],
   "actionRefs": [],
   "providerCorrelationRefs": [],
-  "summary": "bounded non-sensitive contextual summary",
+  "conversationSummary": {
+    "customerGoal": "bounded verified objective",
+    "knownFacts": {},
+    "answeredQuestions": [],
+    "openQuestions": [],
+    "recentCorrections": [],
+    "customerPreferences": [],
+    "lastModelPlanReason": "bounded"
+  },
+  "plannerNextMove": "collect_requirement",
+  "goalCompletionEvidenceRefs": [],
   "lastEvaluatedTurnId": "turn-id",
   "lastNormalizedQueryDigest": "sha256",
   "updatedAt": "timestamp"
@@ -41,7 +59,7 @@ Do not store raw PII unnecessarily in this projection. Facts use schema-validate
 
 ### Every-turn assessment (append-only)
 
-Include `(tenant, session, opportunity, messageId, clientMessageId, catalogVersionId, documentRevisionBefore, documentRevisionAfter, messageHash)`; original and normalized query hashes; sanitized retrieval tokens; candidate keys/signal IDs/weighted scores; model/task/schema/response provenance; selected decision and confirmation; slots proposed/validated/rejected, corrections; knowledge interruption flag; pending/current question; response/citation IDs; tool/action proposal ID; model/cache hit or fallback; error code; timestamps. Record provenance for **every substantive intent-identification turn**, including no match/low-confidence, without blindly appending an unbounded plaintext transcript.
+Include `(tenant, session, opportunity, messageId, clientMessageId, catalogVersionId, documentRevisionBefore, documentRevisionAfter, messageHash)`; original and normalized query hashes; sanitized retrieval tokens; **turn category, primary goal and secondary sub-intents**, candidate keys/signal IDs, **LLM suggested weights, Node accepted weights, score/confidence/ambiguity and rationale**, model/task/schema/response provenance; **conversation summary revisions and planner chosen next move**, selected decision and goal confirmation; slots proposed/validated/rejected, corrections; knowledge interruption flag; pending/current question; response/citation IDs; tool/action proposal ID; model/cache hit or fallback; error code; timestamps. Record provenance for **every substantive intent-identification turn**, including no match/low-confidence, without blindly appending an unbounded plaintext transcript.
 
 ### Storage/transaction design
 
@@ -66,7 +84,7 @@ Include `(tenant, session, opportunity, messageId, clientMessageId, catalogVersi
 
 ## Continuity policy
 
-A knowledge question temporarily suspends the requirement but never changes `primaryIntentKey`, `opportunityId` or pending question. A fact correction records a new provenance entry, revisits relevant gates, cancels stale proposals and increments revision. Explicit new intent is confirmed and creates/transitions an opportunity under catalog rules; historical journey remains auditable.
+A knowledge question temporarily suspends the requirement but never changes `primaryBusinessGoalKey`, `opportunityId` or pending question. A contact/CRM action is not the primary intent. The LLM can suggest updating weights or next steps each turn, but confirmed goal and validated facts are not silently replaced by its summary. A fact correction records a new provenance entry, revisits relevant gates, cancels stale proposals and increments revision. Explicit new intent is confirmed and creates/transitions an opportunity under catalog rules; historical journey remains auditable.
 
 ## Recovery and verification
 

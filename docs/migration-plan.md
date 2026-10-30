@@ -25,10 +25,10 @@
 
 ## Phase 3: catalog/intent engine and response question
 
-- Refactor current catalog ranking into a reusable Node pipeline that combines weighted signals, optional structured Python language interpretation, score evidence and explicit customer intent confirmation.
+- Introduce six tenant-configurable **intent categories** and separate durable Business Goal, turn intent and ToolBinding keys; remove the conceptual assumption that `lead.capture` is the primary intent. The LLM must be the **primary conversational planner**: structured summary, goal candidates, bounded adaptive signal weighting, ambiguity, clarification, best next move and customer goal confirmation. Node validates and persists the accepted plan.
 - Extend catalog schema safely for synonym/exclusion policy, `ToolBindings` and stage-specific action confirmation requirements; publish via existing Admin APIs; no ANCFZ-specific branching in Node.
-- Integrate query normalization and RAG retrieval; preserve authorized source/citation policy.
-- Compose a grounded response and enforce **one non-redundant follow-up question** for each active successful grounded response. Use current pending requirement; knowledge interruptions must not erase it.
+- Integrate planner-assisted RAG query normalization and retrieval. For every factual answer use approved citations or verified structured provider/catalog facts; preserve tenant/source policies.
+- Compose grounded answers in the LLM's chosen conversation direction and validate **one purposeful, non-redundant follow-up question** (clarification, missing business fact/document, contact only if required, next permitted stage) for each active successful grounded response. Use current pending requirement; knowledge interruptions must not erase it.
 - Add evaluation fixtures measuring intent precision, ambiguity and state continuity before switching default provider.
 
 ## Phase 4: catalog-driven n8n tool actions

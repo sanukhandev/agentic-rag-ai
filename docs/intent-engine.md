@@ -1,72 +1,55 @@
-# Intent identification, confidence and explicit customer confirmation
+# Intent engine — LLM-led, catalog-grounded goal recognition
 
-**Status: TARGET.** Node owns intent interpretation and final decisions; Python proposes structured language interpretations. Every tenant has a reviewed, published, **version-pinned** catalog. ANCFZ is the first acceptance tenant only.
+**Status: TARGET.** The existing `services/api/src/intent-catalog.ts` uses weighted string matches, deterministic confidence and continuity heuristics. This spec defines the replacement **conversation-planner-assisted** reasoning design. Read [intent taxonomy](intent-taxonomy.md) and [conversation planner](conversation-planner.md) first.
 
-## Per-turn pipeline
+## Primary principle
 
-1. Load current User Intent Document, active opportunity, pending requirement and tenant catalog version.
-2. **Capture turn identity** (`clientMessageId`, message hash, session/version). Return previously persisted response and decision if already processed.
-3. Deterministically normalize superficial spelling/whitespace and score catalog candidates using phrase, keyword, synonym, exclusion, relation and recent confirmed-intent signals. Inspect whole phrases; avoid substring false positives and negated matches.
-4. When semantic ambiguity is material, ask private Python `/interpret` for strict JSON: normalized wording, explicitly observed intent keys from the allowed candidate list, evidence spans, extracted facts, negation, corrections, follow-up/knowledge question classification, and uncertainty. The model must not invent unseen catalog IDs or provider URLs.
-5. For RAG questions, Python `/normalize` may generate search query/tokens without changing quantities, negation, business activity, entity type, dates, or recognized identity/intent context. Node checks the rewrite and can fall back to deterministic original input.
-6. Node merges deterministic evidence and validated model suggestions, computes scored candidates, persists all candidate decisions in the User Intent Document, then selects/retains/clarifies **one** primary intent.
-7. If no current intent is confirmed and a candidate passes calibrated selection policy, **ask the customer to confirm** the visible intent title; do not immediately collect action-specific requirements unless catalog explicitly defines permitted pre-confirmation discovery. Confirmation is separate from processing consent.
-8. Once confirmed, keep this intent until explicit switch, terminal completion or approved catalog transition; return to the pending requirement after a knowledge interruption. Ask exactly one next relevant question. If candidate confidence falls, clarify before changing intent; do not silently reset the opportunity.
-9. Only Node's catalog/side-effect gate authorizes an eligible workflow proposal; intent confidence does not authorize data transfer or payment.
+**An intent is not synonymous with capturing a CRM Lead.** The persistent object is the **customer's business goal** (e.g., company setup). On each customer turn the LLM also classifies the **turn intent category** (knowledge, requirement, service operation, status, navigation). These can coexist without switching the primary goal. Creating a CRM Lead is only one catalog-approved side-effect capability when prerequisites and consent are satisfied.
 
-## Score design
+## Inputs to each substantive turn
 
-Persist a breakdown instead of a fake single model probability:
+- Latest user text and bounded sanitized history; exact current pending question and customer replies.
+- Persisted versioned **User Intent Document**: goal status, confirmed/unconfirmed/alternative candidates, per-turn evidence, validated facts, corrections, known answers, remaining requirements, stage, workflow/action status, and concise conversation summary.
+- Published catalog digest scoped to the tenant: `BusinessGoals`, `IntentCategories`, `Intents`, `Signals` (phrases/keywords/exclusions), `Relations`, `Requirements`, `BusinessStages`, `ToolBindings`, user-visible prompts and completion criteria.
+- Approved RAG topics/citations and provider status **only after authorized retrieval**, never arbitrary model knowledge.
+- Model task/prompt/policy/catalog versions and runtime budget.
 
-- `signalScore`: weighted positive phrase/keyword matches, with negative/exclusion penalties.
-- `contextScore`: validated prior confirmed intent and current pending-requirement continuity. Do not let accumulated history falsely dominate a clear new explicit request.
-- `factCompleteness`: validated catalog slot coverage (reported separately; do not use to imply semantic certainty).
-- `modelSupport`: normalized observation consistency and evidence spans, not uncalibrated self-declared probability.
-- `selectionScore`: bounded, documented combination using catalog-defined weighting and thresholds.
-- `confidenceBand`: `high`, `medium`, `low` from empirically evaluated thresholds; separate `modelReportedConfidence` is optional/diagnostic and is **never** authorization.
-- `ambiguityMargin`: top-two score difference, exclusions, conflicting evidence and negations.
-- `decision`: `candidate`, `clarify`, `await_intent_confirmation`, `confirmed`, `continuation`, `knowledge_interruption`, `switch_requested`, `rejected`, `no_match`.
+## LLM-driven per-turn cycle
 
-Thresholds and scoring weights must come from catalog/policy version, not Python/model invention. Tune with synthetic labeled utterances and check precision/recall/confusion metrics; test false positives on ambiguous "yes", "no", "start company", visa/package queries and negated intent. Stop classification when catalog disallows a candidate.
+1. **Understand** the message in context. Distinguish a direct answer to the pending question, a new question, correction, opt-out, status check, new goal or request for action.
+2. **Classify turn intent category** from the six-category taxonomy. Knowledge/advisory or requirement sub-intents normally do not replace the current business goal.
+3. **Rank goal candidates** by interpreting catalog phrase/keyword matches, exclusions, customer wording and running summary. LLM proposes which signals matter and optional bounded weight adjustments, with evidence spans and uncertainty. Node recomputes and validates score bounds and membership in the pinned catalog.
+4. **Assess three axes separately**: (a) semantic identification confidence in one goal, (b) verified requirements coverage, (c) deterministic action readiness. Score changes per turn, including new facts, corrections, priorities and exclusions. Track top-two ambiguity margin.
+5. **Select next move**. No goal → clarify; strong candidate → explicitly confirm goal; goal confirmed → answer knowledge or ask the highest-value missing requirement; action ready → propose catalog tool and separate confirmation; provider pending → report actual status; goal fully achieved → summarize and ask if more help needed.
+6. **Normalize query for RAG** when useful, preserving negation, prices/visa counts, dates and verified facts. Retrieve evidence and answer from approved sources; then ask one purposeful follow-up. Do not invent facts or pretend a missing document was submitted.
+7. **Persist** accepted decision, candidate weight evidence, LLM summary, turn category, fact provenance, pending question, cache status and action reference. Use revision-aware transaction and append-only assessment.
+8. **Continue context** across interruptions, replies such as "yes", corrections, n8n callbacks and restarts without re-asking already fulfilled requirements.
 
-## Structured example (illustrative)
+## Example score model — adapt to evidence, not fake probability
 
-```json
-{
-  "catalogVersionId": "opaque-pinned-version",
-  "turnId": "opaque-turn",
-  "normalizedUserUtterance": "I want to register a company with two visas",
-  "candidates": [
-    {
-      "intentKey": "catalog-approved-key",
-      "matchedSignalIds": ["signal-1", "signal-2"],
-      "signalScore": 72,
-      "contextScore": 8,
-      "selectionScore": 80,
-      "confidenceBand": "high",
-      "ambiguityMargin": 24,
-      "missingRequiredFactKeys": ["catalog-fact-key"]
-    }
-  ],
-  "primaryIntentKey": "catalog-approved-key",
-  "status": "await_intent_confirmation",
-  "nextQuestionKey": "confirm-intent:catalog-approved-key",
-  "source": "node-validator"
-}
-```
+For each catalog goal candidate persist:
+- `catalogSignalEvidence`: matched phrase/keyword IDs, negated/excluded signals and positive/negative reasoning.
+- `llmProposedWeights`: contextual relative importance per published signal, **bounded by `ScoringPolicies`**; include reason tied to actual user words.
+- `effectiveEvidenceScore`: Node-validated and normalized selection ranking; cannot invent signal IDs or exceed catalog bounds.
+- `semanticConfidenceBand` and `ambiguityMargin`: require calibration against labeled tenant examples. Model self-rated confidence is only a hint, not a probability.
+- `requirementCoverage`: separately evaluated verified slots/documents/approval coverage.
+- `actionEligible`: separate Boolean from catalog prerequisite, consent, confirmation, stage and active workflow binding checks.
 
-Use real repository types and migrations when implementing, not this example's literals.
+**Do not** increase semantic confidence purely because the visitor provided a phone number. Do not switch a confirmed company-formation goal when the visitor asks "What documents are needed?" or "What is the invoice status?"
 
-## Normalization safeguards
+## Question selection
 
-A normalization is successful only if it retains all explicitly provided numbers, dates, negations, visa counts, package names, legal structure distinctions, and previous validated business facts. Normalization must not add a price or stage rule or mutate an intent from "I do not want" to "I want". Record the original and normalized digest, tokens, model/schema version, and fallback reason. Normalization is for **retrieval**, not consent or authority.
+The LLM chooses the **one highest information-gain question** among allowed unanswered catalog requirements. It may ask for a clarification, company type, activity, budget, timeline, visa count, document, contact, or action confirmation **only if required**. Respect customer preference and previous answer; do not ask for a document or personal information simply to generate a lead.
 
-## Confirmation and follow-up priorities
+If the customer asks a factual question, answer first from approved RAG or verified structured data. During an active goal, append one relevant unresolved requirement question. If only a knowledge question exists, ask whether they would like additional help. If a goal is complete, confirm customer satisfaction and ask if another service is needed.
 
-`external action pending` → accurate status (no advancement), `unconfirmed intent` → one intent confirmation, `pending prerequisite` → one catalog question, `knowledge interruption` → grounded answer + resume question, `ready for action` → one explicit action confirmation, `verified stage completion` → one next-stage question, `terminal` → concise recap with optional non-coercive next step.
+## User confirmation and switching
 
-If information is unavailable, answer transparently with no fabricated citation. Do not ask the same fulfilled question repeatedly. After an explicit opt-out, do not push next-stage workflow actions.
+- Explicit customer confirmation establishes the active **business goal**; it does **not** approve CRM submission, payment, document transfer or signing.
+- Active goal remains pinned through supporting intents until explicitly replaced, completed, or a catalog-approved transition occurs.
+- Goal switching uses a new/approved opportunity identity and **new** purpose-based consent; never reuse predecessor documents, action idempotency or stale requirements.
+- Negative responses and corrections override prior assumptions and recalculate dependent recommendations.
 
-## Tests
+## Testing and metrics
 
-Single- and multi-turn multilingual wording (when enabled), exact phrase and keyword boundaries, exclusions, ambiguous intents, pending answer "yes"/"no", co-occurring intents, fact correction, intent switch/new opportunity, two-tenant catalog isolation, cached result reuse, invalidation after catalog/slot revision, API restart and model failure.
+Test knowledge-only with **zero CRM calls**, two similar business goals, unclear "yes/no", conflicting context, corrected visa count, repeated questions avoided, document-dependent goals, personal-details-only-when-required, missing RAG abstention, intent-category accuracy, model weighting bounds, cached replay, two-tenant isolation, consent denial, goal completion and next-service inquiry. Measure goal precision/recall, wrong-goal confirmations, requirement redundancy, high-information question usefulness and stage completion—**not just number of leads captured**.

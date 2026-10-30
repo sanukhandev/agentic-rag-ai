@@ -1,20 +1,20 @@
 # Intent-catalog tool bindings → authorized n8n execution
 
-**Status: TARGET integration upgrade.** Existing repository has `ActionRequest`, PostgreSQL outbox, Redis Streams and n8n bridge; keep them. Python/LLM **may propose** an intent or catalog tool, but can never call n8n directly.
+**Status: TARGET integration upgrade.** Existing repository has `ActionRequest`, PostgreSQL outbox, Redis Streams and n8n bridge; keep them. GPT is the **conversation planner** that selects the customer's Business Goal and proposes relevant catalog tools only when needed. A **Lead capture action is not the primary intent**. Python/LLM may propose a catalog tool, but can never call n8n directly.
 
 ## Catalog-driven tool model
 
 Add or extend reviewed tenant-published catalog `ToolBindings` / stage action policies with:
 
-- `intentKey`, `stageKey`, `toolKey`, `workflowKey` and version.
+- **`businessGoalKey` + supporting `turnIntentCategory`**, `intentKey`, `stageKey`, `toolKey`, `workflowKey` and published version. Tool activation depends on goal, stage and current user request, not the mere occurrence of a keyword.
 - `toolDescription` and allowed **structured** argument schema; no arbitrary URL or code.
 - `sideEffectClass` (`read_only`, `crm_write`, `document_transfer`, `invoice_create`, `payment_initiate`, `contract_create`, etc.).
 - Required validated fact keys, permitted source scopes, purpose-specific consent and explicit action confirmation policy.
 - Allowed from/to stage, required previous provider evidence, dedupe/idempotency template, correlation and callback contract.
 - n8n workflow registry reference, provider configuration and authorized status reconciliation mapping.
-- If no approved active binding exists, return `TOOL_NOT_AVAILABLE`; never invent a generic fallback workflow.
+- If no approved active binding exists, return `TOOL_NOT_AVAILABLE`; never invent a generic fallback workflow. **Some goals require only a grounded answer or clarification, not a document, contact record or n8n workflow.**
 
-Allow model proposals only for advertised tool keys within the **current pinned** catalog. Keep read-only information lookups inside Node when possible; expensive reasoning calls use Python model gateway but never execute side effects.
+Allow model proposals only for advertised tool keys within the **current pinned** catalog. The GPT planner may choose **no tool call** if it should answer a question, clarify business activity, gather a missing document or offer customer guidance first. Keep read-only information lookups inside Node when possible; expensive reasoning calls use Python model gateway but never execute side effects.
 
 ## Proposed flow matrix (keys are placeholders; published catalog is authoritative)
 
@@ -32,8 +32,8 @@ Not every "stage" requires an n8n write (e.g. qualification may be deterministic
 
 ## Two confirmation boundaries
 
-1. **Intent confirmation:** user confirms the single intended service/journey. This allows catalog-defined fact collection only.
-2. **Business-action confirmation/consent:** after prerequisites and scope-specific consent, user explicitly approves each eligible external side effect. This controls action execution. Never infer permission from `yes` when the pending prompt belongs to another stage, old journey or ambiguous question.
+1. **Business goal confirmation:** user confirms the primary outcome sought (e.g. company formation). This does **not** imply consent for CRM Lead creation and does not itself activate a workflow. Knowledge-only users can receive answers without this business-goal confirmation.
+2. **Business-action confirmation/consent:** after the LLM identifies a useful next catalog action and Node verifies its prerequisites and purpose-specific consent, the user explicitly approves each eligible external side effect. This controls action execution. Never infer permission from `yes` when the pending prompt belongs to another stage, old journey or ambiguous question.
 
 ## Orchestration sequence
 

@@ -1,34 +1,50 @@
 # Journey runtime — seven-stage ANCFZ acceptance, reusable tenant engine
 
-**Status: TARGET.** Generic Node engine operates entirely on tenant-published catalog requirements and stage transitions. The ANCFZ seven-stage sequence is **data**, not a switch over the tenant slug.
+**Status: TARGET.** The **GPT planner drives conversation**, using the current User Intent Document and tenant-published catalog to decide what to do next. Node authorizes and persists business state. The seven ANCFZ stages are the **fulfillment plan for a confirmed company-formation goal**, not seven unrelated primary intents or a universal journey for every visitor. Other tenants/goals use their own catalog paths. Read [intent taxonomy](intent-taxonomy.md) and [conversation planner](conversation-planner.md).
 
 ## Per-response conversation invariant
 
-For **each successful grounded response during an active journey**, the assistant provides a natural answer with approved citation(s), then **one relevant next question** derived from the durable pending requirement. If a knowledge question interrupts the flow, answer it and re-ask **only the still-unanswered requirement** using natural wording; do not repeat already fulfilled fields. If an intent has not been confirmed, ask confirmation before starting its gated workflow requirements. Exceptions: customer refusal/handoff, unavailable provider/error, explicit close and terminally completed journey; give a truthful status and an optional helpful next step, never manufacture a required question.
+On each meaningful turn, GPT should **understand the running conversation summary**, classify the turn intent (knowledge/requirement/status/navigation/execution), evaluate business goal confidence and requirement gaps, and choose the best next move based on **current catalog definitions**, not a fixed lead-capture script.
+
+For each active-journey **grounded factual answer**, answer using approved tenant RAG citations or verified structured provider/catalog facts and append **one useful question** that reduces remaining goal uncertainty or fulfills the highest-priority unmet requirement. Select the question through the LLM planner, validate it against the published catalog and stored facts in Node. **Do not repeat** already answered questions.
+
+The LLM may choose clarification, company activity, eligibility, document upload, personal/contact details, quote approval or workflow confirmation **only when that requirement belongs to the customer's confirmed business goal and the current stage**. It must not request identity data to force a CRM Lead.
+
+When the **customer goal itself** is satisfied, stop requirement collection and ask **"Is there anything else I can help you with?"** For knowledge-only visitors, answer the question and offer related help; never force business setup or lead creation. Do not add artificial questions to a refusal, farewell, handoff, blocked/error response or an external pending state where no permitted next action exists.
 
 ## Journey state machine
 
 ```mermaid
 flowchart TD
-  TURN[Customer turn] --> KNOW{Information question?}
-  KNOW -->|yes| RAG[Authorized RAG + evidence]
-  RAG --> RESUME[Preserve primary intent and pending requirement]
-  KNOW -->|no| SCORE[Rank tenant-catalog intent candidates]
-  SCORE --> CONFIRM{Single intent confirmed by customer?}
-  CONFIRM -->|no| ASK[Ask one intent confirmation/clarification]
-  CONFIRM -->|yes| REQ[Evaluate catalog next requirement]
-  RESUME --> REQ
-  REQ --> MISSING{Required fact/consent/document?}
-  MISSING -->|yes| QUESTION[Ask exactly one missing requirement]
-  MISSING -->|no| ACTION{External action needed?}
-  ACTION -->|yes| CUSTOMER[Request explicit action confirmation]
-  CUSTOMER --> OUTBOX[Node outbox → Redis → n8n]
+  IN[Customer turn + intent document] --> PLAN[GPT: summarize + identify turn category + weigh goal candidates]
+  PLAN --> NODE[Node validates goal/weights, stage, facts and catalog keys]
+  NODE --> KNOW{Knowledge question?}
+  KNOW -->|yes| RAG[Authorized RAG evidence + citations]
+  RAG --> ANSWER[GPT grounded answer + one approved pending question]
+  KNOW -->|no| GOAL{Primary business goal confirmed?}
+  GOAL -->|no| CLARIFY[GPT asks one goal clarification/confirmation]
+  GOAL -->|yes| REQ{Goal requirements fulfilled?}
+  REQ -->|no| ASK[GPT chooses one relevant fact/document/contact clarification]
+  REQ -->|yes| ACTION{Approved catalog action required?}
+  ACTION -->|yes| CONFIRM[Separate consent + action confirmation]
+  CONFIRM --> OUTBOX[Node outbox → Redis → n8n]
   OUTBOX --> PROVIDER{Verified provider completion?}
-  PROVIDER -->|no| PENDING[Pending / reconcile_required; no stage advance]
-  PROVIDER -->|yes| ADVANCE[Persist verified stage completion]
-  ACTION -->|no| ADVANCE
-  ADVANCE --> NEXT[Ask next catalog stage question or recap]
+  PROVIDER -->|no| STATUS[Report pending/reconciliation; preserve goal]
+  PROVIDER -->|yes| STAGE[Node persists completed stage + next allowed stage]
+  ACTION -->|no| STAGE
+  STAGE --> DONE{Published business outcome achieved?}
+  DONE -->|no| NEXT[GPT chooses next allowed high-value question]
+  DONE -->|yes| MORE[Summarize verified outcome; ask if more help is needed]
+  NODE --> SAVE[(Versioned User Intent Document + turn assessments)]
+  ANSWER --> SAVE
+  CLARIFY --> SAVE
+  ASK --> SAVE
+  STATUS --> SAVE
+  NEXT --> SAVE
+  MORE --> SAVE
 ```
+
+A **knowledge subintent** never resets the confirmed business goal. A **service-execution subintent** proposes only approved catalog operations; it is not automatically the customer's goal. A callback supplies authoritative stage completion, not GPT's interpretation of success.
 
 ## Seven ANCFZ business stages
 
@@ -46,12 +62,12 @@ Stage 3 never auto-runs for every Lead and is not postponed to quote acceptance.
 
 ## Detailed continuous example (synthetic, illustrative)
 
-1. Customer asks to start a company. Node presents the top single catalog intent with one confirmation question. User confirms that *intent*.
+1. Customer asks to start a company. GPT weighs the catalog's Business Goal candidates using the conversation summary and asks one natural confirmation of the **company-formation goal**; the customer confirms. No CRM action is implied by that confirmation.
 2. Collect one missing Lead requirement at a time; validated contact and purpose-specific consent; issue separate Lead action confirmation; send via outbox/n8n; wait for verified Salesforce Lead before advancing.
 3. Qualification asks only missing catalog facts, answering interruptions through RAG with citations + the pending follow-up; correcting visas/budget recomputes dependent facts/proposals.
 4. Qualified customer explicitly approves Account Creation and identity verification if required; verified CRM result advances stage.
 5. Package discovery uses approved RAG/catalog and a confirmed quote, then collects only catalog-required documents securely through OCR/SF-02, invoice/payment, and contract.
-6. Final summary lists provider-verified records and any pending tasks. At every step, preserve **same session and active opportunity** until the intended journey terminates.
+6. When the published company-formation goal actually reaches its verified outcome, GPT summarizes completed work and asks **if the customer needs any more help**. On knowledge-only sessions, use the same courteous follow-up without forcing a Lead. At every step preserve **same session and active opportunity** until the intended goal terminates.
 
 ## Interruption and external callback invariants
 

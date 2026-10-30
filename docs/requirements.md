@@ -2,20 +2,25 @@
 
 **Status: TARGET, not current implementation.** Acceptance tenant is ANCFZ only. The product continues to be reusable for any tenant; no tenant slug, catalog intent, stage list, workflow or prompt is hardcoded in shared services. The generic engine derives all decisions from the tenant's **published and pinned** catalog.
 
-## Business objective
+## Business objective and intent hierarchy
 
-A customer should be able to ask open-ended questions, receive approved RAG-grounded answers, and naturally progress through a **single confirmed primary intent** and every published stage/requirement to an independently verified terminal outcome. The assistant follows the active intent even when the customer digresses or corrects facts. It never jumps stages based solely on a model sentence.
+The **customer's business outcome is the primary intent**, not a Salesforce Lead. A tenant catalog can define multiple business goals, knowledge-only services, follow-up requirements and authorized workflow capabilities. The LLM is the **conversation master**: on each substantive turn, it interprets the bounded conversation summary and catalog, identifies the current turn's intent category, proposes goal candidates and context-sensitive weights, chooses the next move and formulates a useful question. Node validates all proposals against the published catalog and existing authorization/consent before storing facts or dispatching actions.
 
-## Conversation contract
+Use six categories defined in [Intent taxonomy](intent-taxonomy.md): **Business Goal**, **Knowledge & Advisory**, **Qualification & Requirement**, **Service Execution**, **Service Status & Support**, and **Conversation Navigation**. These are **not six competing primary intents**; knowledge and requirements can be sub-intents serving one persistent business goal. CRM Lead creation is a supporting `ToolBinding` and never the forced primary intent.
 
-- Interpret each substantive user turn against current catalog phrases, keywords, negative signals, relations and approved synonyms/normalizations. Do not claim confidence from pure model self-rating.
-- For every active-journey grounded answer, include **one contextually relevant next question** generated from the authoritative pending requirement or a purposeful next-step confirmation. Do not ask multiple questions or repeat confirmed facts. On blocked/error/completed/opt-out, provide a truthful next action rather than an artificial question.
-- Maintain one active primary intent per opportunity. Keep secondary candidates but ask an explicit clarification when ambiguous; **confirm the intent in user-visible language** before commencing intent-specific requirements/workflow proposals. Intent confirmation is separate from consent and final action confirmation.
-- Collect slots progressively with schema validation, extract multiple facts when safely explicit, respect corrections and provenance, and recompute invalidated downstream decisions when facts change.
-- Knowledge interruption: answer with approved citations; preserve current intent, stage, pending question and opportunity identity.
-- Durable resume: duplicate `clientMessageId` returns the same saved response; after API restart or new worker the same session/opportunity/intent document is loaded. Delayed provider callbacks reconcile to the correct tenant/opportunity/action revision.
-- Session history and an explicit **User Intent Document** are stored durably; classification assessment and normalized retrieval tokens on **every substantive intent-evaluation turn** have stable lineage and cache/replay semantics.
-- When knowledge lacks evidence, abstain rather than inventing prices, regulations, visa rules, package data or timelines.
+## Conversation requirements
+
+- **Per-turn comprehension:** Feed the LLM a concise current catalog digest (approved goals, descriptions, phrases, keywords, exclusions, requirements and capabilities), durable User Intent Document, existing question/answer summary, verified facts, corrections, stage status and pending requirements. Have it label each substantive turn and persist its reasoned decision.
+- **Intelligent weighting:** The LLM suggests which signals and prior responses are relevant and how to weight them **within catalog policy bounds**; Node validates and persists the effective evidence score, confidence band, ambiguity margin and provenance. Goal identification confidence is **distinct** from missing-requirement coverage and deterministic action eligibility.
+- **Intent discovery:** The LLM may decide to clarify an ambiguous goal, confirm a high-confidence goal, answer a knowledge question, collect a business requirement, request a document, ask for personal/contact details *only when required by the selected intent*, check status, request permitted action confirmation or complete the goal. Ask one high-value question, not a scripted stack of questions.
+- **Explicit goal confirmation:** A newly selected primary business goal is customer-confirmed before initiating its side-effectful workflow. A knowledge question must not automatically create a Lead or start company formation. Intent confirmation and data-processing consent are different decisions.
+- **Grounded answers and next question:** Every factual service/policy/pricing answer uses approved tenant RAG evidence or verified catalog/provider data. Where the conversation remains active, deliver a natural answer with **one relevant follow-up question** that reduces uncertainty or progresses a required next step; never repeat an answered question. On unsupported questions, abstain and ask a safe clarification or offer human help.
+- **Multi-turn continuity:** Questions about visas, licensing, prices, or required documents can interrupt but **not overwrite** a confirmed company-formation goal. Preserve known information, confirmed intent, pending question, action and stage revision through interruptions, fact corrections, duplicate turns, restarts and delayed callbacks.
+- **Durable user intent:** Store a per-opportunity structured summary and an assessment **for every evaluated substantive turn**, including category, goal candidates and weight evidence, clarified/confirmed goal, remaining information, normalized RAG tokens, suggested next move, one question and cache lineage. Cache expensive operations by scoped catalog/summary/state versions; duplicates produce zero new GPT/n8n work.
+- **Personal information and documents:** Whether name, email, phone, passports or other evidence is required is **intent- and stage-dependent**. Never collect it merely to record CRM leads or because the assistant wants a higher lead score. Preserve existing consent and secure handling.
+- **Completion:** A knowledge-only request is satisfied when the grounded question is answered; an active business goal is satisfied only when its catalog-defined outcome is complete and all mandatory external gates are verified. Then ask **whether the user needs more help**, without forcing additional CRM capture or creating an unrequested opportunity.
+
+Implementation detail: [Conversation planner](conversation-planner.md), [Intent engine](intent-engine.md), [User Intent Document](user-intent-document.md).
 
 ## ANCFZ acceptance stage contract (configurable catalog data)
 
@@ -33,7 +38,7 @@ Stage transitions happen only after server-side completion gates, not at the mod
 
 ## Tool and workflow behavior
 
-- Published catalog defines tool capability, bound workflow, input contract, required facts/consent, allowed stage, confirmation policy, timeout/retry classification, callback verification and next transition.
+- Published catalog ties the customer's confirmed **business goal**, supporting intent category and stage to permitted tools, requirements (including optional contact/documents), workflow binding, confirmation/consent, callback verification and completion criteria.
 - Inference may propose a catalog key and sanitized tool arguments; Node independently validates tenant/session/opportunity and published binding, confirms user intent, verifies requirements, obtains consent and **separately confirms side effects**. All state-changing tool calls go via Node ActionRequest → outbox → Redis worker → private n8n. Read-only Node lookups are not external writes.
 - No arbitrary n8n URL or workflow key from the model. No direct model-to-Salesforce, payment, contract or tenant-data access.
 - External acknowledgment and provider identity are mandatory for a remotely completed stage; fallback to reconciliation when ambiguous.
