@@ -28,5 +28,13 @@ docs/feature-specs
 
 # Local acceptance-run output; committed historical reports remain tracked.
 /artifacts/agentic-e2e/run-*.json
+/artifacts/agentic-e2e/final-report.md
+/artifacts/agentic-e2e/final-scorecard.json
+/artifacts/agentic-e2e/latest.*
 /artifacts/ancfz-sandbox*/
 /artifacts/ancfz-single-journey/*.json
+/artifacts/ANCFZ_Intent_Catalog_Executable_Proposal_*.json
+/artifacts/ancfz-catalog-executable-proposal-*.json
+/artifacts/api-conversation-evidence-*.md
+/artifacts/live-api-conversation-validation-*.json
+/artifacts/live-api-conversation-validation-*.md
