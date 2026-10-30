@@ -41,6 +41,7 @@ export const intentCatalogUploadSchema = z.object({ fileName: z.string().trim().
 export const intentCatalogEditSchema = z.object({ catalog: z.unknown() });
 export const intentCatalogResultSchema = z.object({ sourceHash: z.string().regex(/^[a-f0-9]{64}$/), parserVersion: z.string().trim().min(1).max(120), catalog: z.unknown() });
 export const intentCatalogV2Schema = z.object({ sourceFileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), catalog: z.unknown() }).strict();
+export const intentCatalogV2MigrationSchema = z.object({ sourceFileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/).optional(), catalog: z.unknown() }).strict();
 export const ingestionRequestSchema = sourceSchema.omit({ content: true });
 export const ingestionResultSchema = z.object({
   normalizedContent: z.string().min(1).refine((value) => Buffer.byteLength(value, 'utf8') <= MAX_INGESTION_RESULT_BYTES, 'Normalized ingestion output exceeds the configured byte budget; split the source into smaller files.'),

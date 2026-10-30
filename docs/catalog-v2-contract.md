@@ -47,10 +47,14 @@ weights and side-effect consent/confirmation gates.
 Legacy v1 input is never interpreted as executable v2 data. The review-only
 `createLegacyCatalogMigrationCandidate` record binds a source hash, requires
 human mapping review, never carries consent or publication state, and sets
-`autoPublish: false`. The dedicated importer and Admin publication path are
+`autoPublish: false`. The v2 Admin boundary also exposes a read-only legacy
+audit and an explicit migration-candidate endpoint. A candidate must provide a
+complete strict v2 mapping with the trusted tenant scope; it is stored as an
+unpublished v2 draft with a source-version audit link. It never mutates v1
+records or copies v1 sessions, consent, actions or provider IDs, and it cannot
+be auto-published. The dedicated importer and Admin publication path are
 implemented by P1 issues #87 and #89; the v2 runtime must still be explicitly
-adopted by later coordinator work. This contract does not silently publish or
-mutate existing v1 records.
+adopted by later coordinator work.
 
 **Six categories:** `business_goal`, `knowledge_advisory`, `qualification_requirement`, `service_execution`, `service_status_support`, `conversation_navigation`. **Example ANCFZ stage keys:** `lead_generation`, `lead_qualification`, `account_creation`, `package_selection`, `document_upload`, `payment_invoice`, `contract`. These are **tenant catalog data**, not generic source-code branching.
 

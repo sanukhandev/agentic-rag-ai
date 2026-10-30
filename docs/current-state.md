@@ -135,3 +135,13 @@ Issue #88 adds the trusted published-catalog validator, stage eligibility evalua
 ## V2-P1-03 Admin v2 catalog publication — 2026-10-30
 
 Issue #89 adds a separate tenant-scoped v2 catalog store/API, strict preview and explicit publication, plus canonical JSON and XLSX export. The existing v1 Admin routes/storage remain unchanged. Migration `055-catalog-v2-versions.sql` is added but was not applied in this focused memory-store verification; the v2 conversational runtime is not switched by publication.
+
+## V2-P1-04 audited legacy catalog migration — 2026-10-30
+
+Issue #90 adds metadata-only, tenant-scoped auditing of v1 catalog history and
+an explicit reviewed v1→v2 candidate endpoint. A candidate must pass the
+strict v2 contract and trusted tenant-scope check, is stored as an unpublished
+v2 draft, and is linked to the source v1 version by an audit event. No v1
+catalog, session, action, lead, document, consent or provider identity is
+mutated or copied. The v2 runtime still requires a later explicit rollout;
+full seven-stage acceptance remains reserved for #124.

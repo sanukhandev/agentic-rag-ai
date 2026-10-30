@@ -12,6 +12,7 @@ import { addressesKnowledgeQuestion, classifyOfferReply, conversationalIntent, c
 import { assertKnownTokens, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogIntentLabel, catalogNextFollowUpRequirement, catalogRequirementLabel, catalogSlotLabel, catalogSlotQuestion, isCrmWriteBinding, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
 import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './catalog-v2.js';
+import { auditLegacyCatalogVersion, createLegacyCatalogV2Candidate } from './catalog-v2-migration.js';
 import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 import { reduceIntentJourney } from './intent-journey.js';
 import { normalizeFullTextQuery } from './search-query.js';
@@ -57,6 +58,7 @@ import {
   intentCatalogEditSchema,
   intentCatalogResultSchema,
   intentCatalogV2Schema,
+  intentCatalogV2MigrationSchema,
   intentCatalogUploadSchema,
   messageSchema,
   sessionSchema,
@@ -805,6 +807,30 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     } catch (error) { next(error); }
   });
   app.get('/api/v2/admin/intent-catalog/versions', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listIntentCatalogV2Versions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.get('/api/v2/admin/intent-catalog/legacy/versions', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      res.json({ items: (await store.listIntentCatalogVersions(tenantId)).map(auditLegacyCatalogVersion) });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v2/admin/intent-catalog/legacy/versions/:id/migration-candidate', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const tenant = await activeTenant(store, tenantId);
+      const legacyVersion = await store.getIntentCatalogVersion(tenantId, routeParam(req, 'id'));
+      if (!legacyVersion) throw new HttpError(404, 'INTENT_CATALOG_VERSION_NOT_FOUND', 'Legacy intent catalog version not found.');
+      const input = parse(intentCatalogV2MigrationSchema, req.body);
+      let candidate: ReturnType<typeof createLegacyCatalogV2Candidate>;
+      try {
+        candidate = createLegacyCatalogV2Candidate({ legacyVersion, tenantScope: tenant.slug, proposedCatalog: input.catalog });
+      } catch (error) {
+        throw new HttpError(422, 'CATALOG_V2_MIGRATION_FAILED', error instanceof Error ? error.message : 'The v1 catalog mapping is not a valid v2 candidate.');
+      }
+      const version = await store.createIntentCatalogV2Version({ tenantId, status: 'draft', sourceFileName: input.sourceFileName ?? `migration-${legacyVersion.sourceFileName}`, sourceHash: catalogV2Sha256(candidate.catalog), parserVersion: 'intent-catalog-v1-migration-review-1.0.0', catalog: candidate.catalog, catalogVersionRef: candidate.catalogVersionRef });
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog_v2.legacy_migration_candidate_created', metadata: { sourceVersionId: legacyVersion.id, sourceHash: legacyVersion.sourceHash, candidateId: candidate.candidateId, versionId: version.id, autoPublished: false }, createdAt: new Date().toISOString() });
+      res.status(201).json({ audit: auditLegacyCatalogVersion(legacyVersion), candidate: { ...candidate, catalog: undefined }, version });
+    } catch (error) { next(error); }
+  });
   app.post('/api/v2/admin/intent-catalog/versions/:id/publish', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
     try {
       const tenantId = await tenantForRequest(store, req);
