@@ -244,3 +244,12 @@ membership, signals, ambiguity, stage requirements and read-tool allowlists.
 Confirmed goals survive knowledge interruptions, and planning cannot authorize
 writes or transitions. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P3-05.md`.
+
+## V2-P3-06 claim provenance and evidence verification — 2026-10-30
+
+Issue #102 is verified and closed. The private v2 response verifier maps
+claims to active approved evidence or verified structured facts, rejects
+revoked/conflicting/injected/unsupported claims, and returns typed guard
+verdicts with redacted claim provenance. It does not authorize business
+actions. Evidence is recorded in
+`docs/verification/conversation-v2/V2-P3-06.md`.
