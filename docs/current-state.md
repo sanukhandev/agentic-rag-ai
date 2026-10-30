@@ -441,3 +441,17 @@ tests, Compose configuration smoke validation and secret checks. Full
 seven-stage, 25-turn and 200-message acceptance commands are intentionally not
 part of CI. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P7-01.md`.
+
+## V2-P7-02 cross-tenant, fault and budget validation — 2026-10-30
+
+Issue #121 is verified with synthetic, side-effect-free security and resilience
+coverage. The existing Node tests cover tenant/source/persona isolation,
+prompt-injection and credential redaction, stale CAS and callback correlation,
+concurrent turn claims, action idempotency, Redis outbox crash replay and
+provider evidence truth. The Python gateway tests cover strict function-call
+boundaries, duplicate call suppression, shared deadlines, 429 handling,
+circuit breaking, structured-output failure and bounded model/tool budgets.
+The focused evidence is 15 Node test files/133 tests and 21 Python tests with
+zero failures. No live provider quota measurement, payment, signing or full
+seven-stage acceptance is claimed; issue #124 remains a manual hold.
+Evidence is recorded in `docs/verification/conversation-v2/V2-P7-02.md`.
