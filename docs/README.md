@@ -14,6 +14,7 @@
 | 8 | [Python model gateway](model-gateway.md) | Azure OpenAI Responses API, key, strict contracts, retries/rate limits |
 | 9 | [Journey orchestration](journey.md) | Exactly ordered stages, grounded response + next question, recovery |
 | 10 | [Catalog to n8n](n8n-workflows.md) | Allowlisted tool proposals, action gating, outbox and provider verification |
+| — | [Supplied remote n8n inventory](remote-n8n-integration.md) | Four real webhook paths, unverified contracts, security prerequisites and test sequence |
 | 11 | [Security/operations](security-operations.md) | Deferred advanced PII work, retained boundaries, deployment and telemetry |
 | 12 | [Migration plan](migration-plan.md) | Additive phases, no-code-rewrite shortcuts, safe rollback |
 | 13 | [Acceptance](acceptance.md) | One continuous real journey; no 25/200-message quota |
