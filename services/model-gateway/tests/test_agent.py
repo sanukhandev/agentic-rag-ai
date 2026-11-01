@@ -33,6 +33,10 @@ def final_response(answer="Approved answer"):
     return json.dumps({"schemaVersion": 2, "personaVersionId": "persona-12345678", "language": "en", "answer": answer, "citationIds": [], "nextQuestion": None, "nextQuestionKey": None, "reasonNoQuestion": "complete", "decisionRef": "decision-12345678"})
 
 
+def grounded_response():
+    return json.dumps({"schemaVersion": 2, "personaVersionId": "persona-12345678", "language": "en", "answer": "The approved package costs 42 credits.", "citationIds": ["citation-1"], "nextQuestion": None, "nextQuestionKey": None, "reasonNoQuestion": "complete", "decisionRef": "decision-12345678"})
+
+
 class FakeClient:
     def __init__(self, responses):
         self._queue = list(responses)
@@ -76,6 +80,24 @@ def test_valid_function_call_continues_with_correlated_output():
     assert client.calls[1]["input"][1]["type"] == "function_call"
     assert client.calls[1]["input"][2]["type"] == "function_call_output"
     assert client.calls[1]["input"][2]["call_id"] == "call-12345678"
+
+
+def test_search_tool_evidence_is_returned_with_its_trace():
+    client = FakeClient([SimpleNamespace(id="response-12345678", output=[function_call()]), SimpleNamespace(id="response-22345678", output=[], output_text=grounded_response())])
+
+    class EvidenceGateway(FakeGateway):
+        async def execute(self, request):
+            self.requests.append(request)
+            return ToolResultV2(
+                schemaVersion=2, toolCallId=request.toolCallId, status="ok",
+                result={"evidence": [{"citationId": "citation-1", "text": "The approved package costs 42 credits.", "sourceVersion": "version-12345678", "approved": True, "revoked": False, "sourceRef": "source-12345678"}]},
+                evidenceRefs=["citation-1"], sourceVersion="catalog-12345678", stateRevision=request.expectedStateRevision,
+            )
+
+    result = asyncio.run(BoundedConversationAgent(client, EvidenceGateway(), "deployment").run(envelope()))
+
+    assert result.approvedEvidence[0].citationId == "citation-1"
+    assert result.toolTrace[0].evidenceRefs == ["citation-1"]
 
 
 def test_unknown_tool_is_denied_without_gateway_execution():

@@ -322,8 +322,9 @@ typed agent result through the Node response guard, maps only an accepted or
 approved fallback response to the existing `ModelDraft` compatibility shape,
 and preserves tool traces for internal telemetry. The existing chat handler
 uses it only when `CONVERSATION_ENGINE_V2_ENABLED=true` and the tenant is in
-the explicit `CONVERSATION_ENGINE_V2_TENANTS` allowlist. Unavailable v2 turns
-roll back to the existing model path; Node action, consent, document and
+the explicit `CONVERSATION_ENGINE_V2_TENANTS` allowlist. An attempted V2 turn
+now fails closed with deterministic abstention instead of silently rolling
+back through the legacy model path; Node action, consent, document and
 provider gates remain unchanged. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P4-04.md`.
 
@@ -336,6 +337,21 @@ document review, invoice, contract, opt-out and outage fallback states. It
 checks one purposeful question, no repetition, language/persona pins, raw
 metadata rejection and no false provider completion. Evidence is recorded in
 `docs/verification/conversation-v2/V2-P4-05.md`.
+
+## V2-P4-06 fail-closed LangGraph and trusted-tool hardening — 2026-11-01
+
+The V2 coordinator now requires `CONVERSATION_ENGINE_V2_ENABLED=true` and a
+non-empty tenant allowlist; the Python gateway defaults
+`LANGGRAPH_CONVERSATION_ENABLED` to false. Once a V2 turn is attempted, model
+or guard failure produces deterministic abstention and cannot silently enter
+the legacy model path. Successful `search_knowledge` results carry bounded
+approved evidence and trace references into the Node guard, which accepts only
+evidence correlated to a successful read-only tool call. Action status returns
+no opportunity-specific history without a pinned opportunity. Grounding checks
+now reject negation contradictions and unsupported claims joined to a supported
+claim. Focused verification: Node V2 tests 36 passed; Python LangGraph/agent
+tests 20 passed. Full live Azure/provider and seven-stage acceptance remain
+unverified.
 
 ## V2-P5-04 PII, credential and document boundary — 2026-10-30
 

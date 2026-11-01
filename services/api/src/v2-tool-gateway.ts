@@ -159,7 +159,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         return source && source.tenantId === scope.tenantId && source.status === 'active' && source.versionId === item.citation.versionId ? item : null;
       }))).filter((item): item is NonNullable<typeof item> => Boolean(item));
       const evidenceRefs = approved.map((item) => digest(`${item.citation.sourceId}:${item.citation.versionId}:${item.citation.chunkId}`).slice(0, 32));
-      return result(request, 'ok', { grounded: approved.length > 0, evidence: approved.map((item, index) => ({ citationId: evidenceRefs[index], text: bounded(sanitizeKnowledgeText(item.content), 1_500), title: bounded(item.citation.title, 200), locator: bounded(item.citation.locator, 200), sourceVersion: item.citation.versionId, approval: 'active', revocation: 'not_revoked' })) }, sourceVersion, evidenceRefs);
+      return result(request, 'ok', { grounded: approved.length > 0, evidence: approved.map((item, index) => ({ citationId: evidenceRefs[index], text: bounded(sanitizeKnowledgeText(item.content), 1_500), sourceVersion: item.citation.versionId, approved: true, revoked: false, sourceRef: item.citation.sourceId })) }, sourceVersion, evidenceRefs);
     }
     case 'get_journey_state':
       return result(request, 'ok', { activeIntentKey: intentKey, currentStage: state?.phase ?? null, pendingRequirementKey: state?.pendingPrompt?.requirementKey ?? null, contactConsent: state?.contactConsent ?? 'unknown', workflowStatus: state?.workflowStatus ?? 'none', opportunityBound: Boolean(scope.opportunityId && entry?.journeyId === scope.opportunityId) }, sourceVersion);
@@ -187,8 +187,9 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       }, sourceVersion);
     }
     case 'get_action_status': {
+      if (!scope.opportunityId) return result(request, 'ok', { actions: [] }, sourceVersion);
       const actions = await store.listActionsBySession(scope.sessionId, scope.tenantId);
-      const scoped = actions.filter((action) => !scope.opportunityId || action.opportunityId === scope.opportunityId);
+      const scoped = actions.filter((action) => action.opportunityId === scope.opportunityId);
       const status = await Promise.all(scoped.map(async (action) => {
         const execution = await store.getActionExecution(action.id, scope.tenantId);
         const evidenceStatus = deriveV2ProviderEvidenceStatus({ actionState: action.state, providerStatus: execution?.providerStatus ?? null, evidenceTier: execution?.outcome?.evidenceTier });

@@ -8,7 +8,7 @@ from gateway.graph import LangGraphConversationAgent
 from gateway.v2_contracts import ToolResultV2, TurnEnvelopeV2
 
 
-def envelope(**budget_changes):
+def envelope(tool_allowlist=None, **budget_changes):
     budgets = {
         "maxModelRequests": 3, "maxToolCalls": 4, "maxToolRounds": 2,
         "deadlineAt": (datetime.now(timezone.utc) + timedelta(seconds=20)).isoformat(),
@@ -33,7 +33,7 @@ def envelope(**budget_changes):
             "primaryGoalKey": "anc.company_formation", "goalConfirmed": True,
             "currentStageKey": "document_upload", "pendingRequirementKey": None,
         },
-        "toolAllowlist": ["get_document_requirements"], "budgets": budgets,
+        "toolAllowlist": tool_allowlist or ["get_document_requirements"], "budgets": budgets,
     })
 
 
@@ -92,6 +92,32 @@ def test_graph_executes_approved_tool_and_replays_stateless_items():
     assert "previous_response_id" not in model.calls[1]
     assert model.calls[1]["input"][1]["type"] == "function_call"
     assert model.calls[1]["input"][2]["type"] == "function_call_output"
+
+
+def test_graph_returns_search_evidence_only_from_the_tool_result():
+    model = Model([
+        SimpleNamespace(output=[call("search_knowledge")], output_text=""),
+        SimpleNamespace(output=[], output_text=json.dumps({
+            "schemaVersion": 2, "personaVersionId": "persona-12345678", "language": "en",
+            "answer": "The approved package costs 42 credits.", "citationIds": ["citation-1"],
+            "nextQuestion": None, "nextQuestionKey": None, "reasonNoQuestion": "complete",
+            "decisionRef": "decision-12345678",
+        })),
+    ])
+
+    class EvidenceTools(Tools):
+        async def execute(self, request):
+            self.calls.append(request)
+            return ToolResultV2(
+                schemaVersion=2, toolCallId=request.toolCallId, status="ok",
+                result={"evidence": [{"citationId": "citation-1", "text": "The approved package costs 42 credits.", "sourceVersion": "version-12345678", "approved": True, "revoked": False, "sourceRef": "source-12345678"}]},
+                evidenceRefs=["citation-1"], sourceVersion="catalog-12345678", stateRevision=request.expectedStateRevision,
+            )
+
+    answer = asyncio.run(LangGraphConversationAgent(model, EvidenceTools(), "gpt-5.4").run(envelope(tool_allowlist=["search_knowledge"])))
+
+    assert answer.approvedEvidence[0].citationId == "citation-1"
+    assert answer.toolTrace[0].evidenceRefs == ["citation-1"]
 
 
 def test_graph_denies_unknown_tool():

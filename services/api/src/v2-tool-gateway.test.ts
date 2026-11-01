@@ -146,7 +146,7 @@ describe('v2 trusted Node tool gateway', () => {
     expect(embeddingQuery).toContain('3');
     expect(embeddingQuery).toContain('not');
     expect(receivedQuery).toContain('need');
-    expect(response.result).toMatchObject({ grounded: true, evidence: [{ sourceVersion: source.versionId, approval: 'active', revocation: 'not_revoked' }] });
+    expect(response.result).toMatchObject({ grounded: true, evidence: [{ citationId: expect.any(String), sourceVersion: source.versionId, approved: true, revoked: false, sourceRef: source.id }] });
   });
 
   it('does not expose revoked evidence even when a retrieval adapter returns it', async () => {
@@ -190,6 +190,15 @@ describe('v2 trusted Node tool gateway', () => {
     const gateway = createV2ToolGateway({ store, embedding: { model: 'deterministic-test', dimension: 1, embed: async () => [1] }, serviceKey });
     const response = await gateway.execute(requestFor(scope, { toolCallId: 'call-status-1234', toolName: 'get_action_status' }));
     expect(response).toMatchObject({ status: 'ok', result: { actions: [{ evidenceStatus: 'mock_verified', stageCompletionEligible: true }] } });
+  });
+
+  it('does not return action status without an opportunity scope', async () => {
+    const action = { id: 'action-12345678', tenantId, sessionId, workflowKey: 'crm.account.create', intentKey: 'anc.company_formation', catalogVersionId, opportunityId: 'opportunity-12345678', actionKey: 'account.propose_creation', actionRevision: 1, idempotencyKey: 'action-1', state: 'completed' as const, opaqueReference: 'opaque-action', payload: {}, createdAt: new Date().toISOString(), result: { externalReference: 'provider-ref' } };
+    const store = { ...storeFor(), listActionsBySession: async () => [action] } as unknown as Store;
+    const gateway = createV2ToolGateway({ store, embedding: { model: 'deterministic-test', dimension: 1, embed: async () => [1] }, serviceKey });
+    const scope = issueV2Scope({ tenantId, sessionId, opportunityId: null, catalogVersionId, personaVersionId, stateRevision: 3 }, serviceKey);
+    const response = await gateway.execute(requestFor(scope, { toolCallId: 'call-status-unbound', toolName: 'get_action_status' }));
+    expect(response).toMatchObject({ status: 'ok', result: { actions: [] } });
   });
 
   it('requires the private service key at the HTTP boundary', async () => {

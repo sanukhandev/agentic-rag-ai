@@ -49,10 +49,30 @@ const fallbackFamilyFor = (reason: string): V2FallbackFamily => reason === 'stal
 const toDraft = (response: PersonaComposedResponseV2): ModelDraft => ({ answer: response.answer, citationIds: response.citationIds, proposedIntent: null });
 
 export const conversationEngineV2EnabledForTenant = (tenantId: string, env: NodeJS.ProcessEnv = process.env): boolean => {
-  if (env.CONVERSATION_ENGINE_V2_ENABLED === 'false' || !tenantId) return false;
+  if (env.CONVERSATION_ENGINE_V2_ENABLED !== 'true' || !tenantId) return false;
   const tenants = new Set((env.CONVERSATION_ENGINE_V2_TENANTS ?? '').split(',').map(value => value.trim()).filter(Boolean));
-  // Blank allowlist means enabled by default; a populated allowlist scopes rollout to named tenants.
-  return tenants.size === 0 || tenants.has(tenantId);
+  return tenants.size > 0 && tenants.has(tenantId);
+};
+
+const sameEvidence = (left: V2ApprovedEvidence, right: V2ApprovedEvidence): boolean => left.citationId === right.citationId
+  && left.text === right.text
+  && left.sourceVersion === right.sourceVersion
+  && left.approved === right.approved
+  && left.revoked === right.revoked
+  && left.sourceRef === right.sourceRef;
+
+const evidenceFromTrustedToolTrace = (result: AgentTurnResultV2): V2ApprovedEvidence[] => result.approvedEvidence
+  .filter((item) => result.toolTrace.some((trace) => trace.toolName === 'search_knowledge' && trace.status === 'ok' && trace.evidenceRefs.includes(item.citationId)))
+  .map((item): V2ApprovedEvidence => ({ citationId: item.citationId, text: item.text, sourceVersion: item.sourceVersion, approved: true, revoked: false, sourceRef: item.sourceRef }));
+
+const mergeEvidence = (requestEvidence: V2ApprovedEvidence[], result: AgentTurnResultV2): V2ApprovedEvidence[] => {
+  const merged = new Map(requestEvidence.map((item) => [item.citationId, item]));
+  for (const item of evidenceFromTrustedToolTrace(result)) {
+    const existing = merged.get(item.citationId);
+    if (existing && !sameEvidence(existing, item)) throw new Error('V2_EVIDENCE_CONFLICT');
+    merged.set(item.citationId, item);
+  }
+  return [...merged.values()];
 };
 
 /** A deterministic no-evidence reply: acknowledge uncertainty and continue the dialogue,
@@ -103,7 +123,7 @@ export class V2ConversationCoordinator {
       pendingRequirementKey: envelope.intentProjection.pendingRequirementKey,
       lastQuestionKey: request.lastQuestionKey ?? null,
       questionPolicy: request.questionPolicy ?? (envelope.intentProjection.pendingRequirementKey ? 'required' : 'optional'),
-      evidence: request.evidence ?? [],
+      evidence: mergeEvidence(request.evidence ?? [], agentResult),
       verifiedFacts: request.verifiedFacts ?? [],
       conversational: envelope.intentProjection.primaryGoalKey === null,
       fallbackTemplateVersion: envelope.persona.fallbackTemplateVersion,

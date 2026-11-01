@@ -16,7 +16,7 @@ from langgraph.graph import END, START, StateGraph
 from .agent import BoundedConversationAgent, FunctionCall
 from .reliability import BudgetExceeded, TurnBudget
 from .persona_composer import validate_composed_response
-from .v2_contracts import AgentTurnResultV2, ToolResultV2, ToolTraceV2, TurnEnvelopeV2
+from .v2_contracts import AgentTurnResultV2, ApprovedEvidenceV2, ToolResultV2, ToolTraceV2, TurnEnvelopeV2
 
 
 class GraphTurnState(TypedDict, total=False):
@@ -26,6 +26,7 @@ class GraphTurnState(TypedDict, total=False):
     latest_response: Any
     calls: list[FunctionCall]
     seen: dict[str, ToolResultV2]
+    approved_evidence: dict[str, ApprovedEvidenceV2]
     traces: list[ToolTraceV2]
     model_count: int
     tool_count: int
@@ -53,6 +54,7 @@ class LangGraphConversationAgent(BoundedConversationAgent):
         return AgentTurnResultV2(
             response=answer,
             toolTrace=state["traces"],
+            approvedEvidence=list(state.get("approved_evidence", {}).values()),
             modelRequestCount=max(1, state["model_count"]),
             toolCallCount=state["tool_count"],
         )
@@ -107,6 +109,8 @@ class LangGraphConversationAgent(BoundedConversationAgent):
             result, trace = await self._execute(envelope, call, seen)
             seen[call.call_id] = result
             traces.append(trace)
+            for item in self._evidence_from_result(call, result):
+                state.setdefault("approved_evidence", {})[item.citationId] = item
             output.append({
                 "type": "function_call_output",
                 "call_id": call.call_id,
@@ -132,6 +136,7 @@ class LangGraphConversationAgent(BoundedConversationAgent):
             "budget": TurnBudget.from_deadline(envelope.budgets.deadlineAt, 90),
             "history": [{"role": "user", "content": self._input(envelope)}],
             "calls": [], "seen": {}, "traces": [],
+            "approved_evidence": {},
             "model_count": 0, "tool_count": 0, "round_count": 0,
         }
         try:

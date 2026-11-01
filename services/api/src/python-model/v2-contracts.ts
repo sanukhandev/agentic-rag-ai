@@ -115,11 +115,22 @@ const toolTraceSchema = z.object({
   status: z.enum(['ok', 'temporarily_unavailable', 'not_authorized', 'invalid_args', 'stale_state']),
   resultDigest: z.string().regex(/^[a-f0-9]{64}$/u),
   elapsedMs: z.number().int().nonnegative().max(180_000),
+  evidenceRefs: z.array(opaqueRef).max(32).default([]),
+}).strict();
+
+const approvedEvidenceSchema = z.object({
+  citationId: opaqueRef,
+  text: z.string().trim().min(1).max(1_500),
+  sourceVersion: opaqueRef,
+  approved: z.literal(true),
+  revoked: z.literal(false),
+  sourceRef: opaqueRef,
 }).strict();
 
 export const agentTurnResultSchema = z.object({
   response: personaComposedResponseSchema,
   toolTrace: z.array(toolTraceSchema).max(12),
+  approvedEvidence: z.array(approvedEvidenceSchema).max(32).default([]),
   modelRequestCount: z.number().int().min(1).max(8),
   toolCallCount: z.number().int().nonnegative().max(12),
 }).strict();
@@ -130,6 +141,7 @@ export type ToolResultV2 = z.infer<typeof toolResultSchema>;
 export type PersonaComposedResponseV2 = z.infer<typeof personaComposedResponseSchema>;
 export type ResponseGuardVerdictV2 = z.infer<typeof responseGuardVerdictSchema>;
 export type AgentTurnResultV2 = z.infer<typeof agentTurnResultSchema>;
+export type V2ApprovedEvidence = z.infer<typeof approvedEvidenceSchema>;
 
 export function validateToolRequest(
   input: unknown,

@@ -16,7 +16,7 @@ const store = pool ? new PostgresStore(pool) : new MemoryStore();
 const cache = createCache(process.env.REDIS_URL);
 const embedding = process.env.AZURE_AI_ENDPOINT && process.env.AZURE_AI_EMBEDDING_DEPLOYMENT && process.env.AZURE_AI_API_KEY && process.env.AZURE_AI_API_VERSION ? new AzureEmbeddingProvider(process.env.AZURE_AI_ENDPOINT, process.env.AZURE_AI_EMBEDDING_DEPLOYMENT, process.env.AZURE_AI_API_KEY, process.env.AZURE_AI_API_VERSION, Number(process.env.AZURE_AI_EMBEDDING_DIMENSION ?? 1536)) : undefined;
 const model = pythonChatModelFromEnv();
-const v2Coordinator = process.env.CONVERSATION_ENGINE_V2_ENABLED !== 'false' && process.env.PYTHON_MODEL_URL && process.env.MODEL_GATEWAY_SERVICE_KEY
+const v2Coordinator = process.env.CONVERSATION_ENGINE_V2_ENABLED === 'true' && process.env.PYTHON_MODEL_URL && process.env.MODEL_GATEWAY_SERVICE_KEY
   ? new V2ConversationCoordinator(new HttpV2ConversationAgent(process.env.PYTHON_MODEL_URL, process.env.MODEL_GATEWAY_SERVICE_KEY, Number(process.env.PYTHON_MODEL_TIMEOUT_MS ?? 90_000)))
   : undefined;
 const { app } = createApp({ store, cache, nodeEnv, ...(model ? { model } : {}), ...(embedding ? { embedding } : {}), ...(v2Coordinator ? { v2Coordinator } : {}) });

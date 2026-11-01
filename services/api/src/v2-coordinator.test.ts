@@ -7,16 +7,16 @@ const envelope = (): TurnEnvelopeV2 => ({
   persona: { personaVersionId: 'persona-12345678', assistantName: 'Tenant Assistant', assistantRole: 'Advisor', permittedLanguages: ['en'], tone: ['warm'], speakingStyle: 'Clear', fallbackTemplateVersion: 'fallback-12345678' }, catalogDigest: 'a'.repeat(64), intentProjection: { primaryGoalKey: null, goalConfirmed: false, currentStageKey: null, pendingRequirementKey: null }, toolAllowlist: [], budgets: { maxModelRequests: 2, maxToolCalls: 0, maxToolRounds: 0, deadlineAt: new Date(Date.now() + 10_000).toISOString() },
 });
 
-const result = (answer: string) => ({ response: { schemaVersion: 2, personaVersionId: 'persona-12345678', language: 'en', answer, citationIds: [], nextQuestion: null, nextQuestionKey: null, reasonNoQuestion: 'greeting', decisionRef: 'decision-12345678' }, toolTrace: [], modelRequestCount: 1, toolCallCount: 0 });
+const result = (answer: string, overrides: Record<string, unknown> = {}) => ({ response: { schemaVersion: 2, personaVersionId: 'persona-12345678', language: 'en', answer, citationIds: [], nextQuestion: null, nextQuestionKey: null, reasonNoQuestion: 'greeting', decisionRef: 'decision-12345678' }, toolTrace: [], approvedEvidence: [], modelRequestCount: 1, toolCallCount: 0, ...overrides });
 
 const fallbackTemplates = { approved: true, personaVersionId: 'persona-12345678', templateVersion: 'fallback-12345678', language: 'en', templates: { invalid_model: 'I could not verify that response just now.', tool_unavailable: 'The approved information service is temporarily unavailable.', reconciliation: 'I need to verify the request status before I confirm the outcome.' } };
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('V2ConversationCoordinator', () => {
-  it('is on by default, preserves tenant allowlists, and supports explicit rollback', () => {
-    expect(conversationEngineV2EnabledForTenant('tenant-a', {})).toBe(true);
-    expect(conversationEngineV2EnabledForTenant('tenant-b', { CONVERSATION_ENGINE_V2_ENABLED: 'true', CONVERSATION_ENGINE_V2_TENANTS: '' })).toBe(true);
+  it('is off by default and requires an explicit tenant allowlist', () => {
+    expect(conversationEngineV2EnabledForTenant('tenant-a', {})).toBe(false);
+    expect(conversationEngineV2EnabledForTenant('tenant-b', { CONVERSATION_ENGINE_V2_ENABLED: 'true', CONVERSATION_ENGINE_V2_TENANTS: '' })).toBe(false);
     expect(conversationEngineV2EnabledForTenant('tenant-a', { CONVERSATION_ENGINE_V2_ENABLED: 'true', CONVERSATION_ENGINE_V2_TENANTS: 'tenant-a' })).toBe(true);
     expect(conversationEngineV2EnabledForTenant('tenant-b', { CONVERSATION_ENGINE_V2_ENABLED: 'true', CONVERSATION_ENGINE_V2_TENANTS: 'tenant-a' })).toBe(false);
     expect(conversationEngineV2EnabledForTenant('tenant-a', { CONVERSATION_ENGINE_V2_ENABLED: 'false', CONVERSATION_ENGINE_V2_TENANTS: 'tenant-a' })).toBe(false);
@@ -75,5 +75,30 @@ describe('V2ConversationCoordinator', () => {
     }));
     const agent = new HttpV2ConversationAgent('http://model-gateway:8088', 'private-key');
     await expect(agent.turn(envelope())).resolves.toMatchObject({ modelRequestCount: 1, toolCallCount: 0 });
+  });
+
+  it('accepts only evidence correlated to a successful search tool trace', async () => {
+    const coordinator = new V2ConversationCoordinator({
+      turn: async () => result('The approved package costs 42 credits.', {
+        response: { ...result('The approved package costs 42 credits.').response, citationIds: ['search-source'] },
+        approvedEvidence: [{ citationId: 'search-source', text: 'The approved package costs 42 credits.', sourceVersion: 'version-12345678', approved: true, revoked: false, sourceRef: 'source-12345678' }],
+        toolTrace: [{ toolCallId: 'call-12345678', toolName: 'search_knowledge', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: ['search-source'] }],
+      }),
+    });
+    const output = await coordinator.run({ envelope: envelope(), fallbackTemplates, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted');
+    expect(output.response.citationIds).toEqual(['search-source']);
+  });
+
+  it('rejects tool evidence that is not correlated to a successful search trace', async () => {
+    const coordinator = new V2ConversationCoordinator({
+      turn: async () => result('The approved package costs 42 credits.', {
+        response: { ...result('The approved package costs 42 credits.').response, citationIds: ['untrusted-source'] },
+        approvedEvidence: [{ citationId: 'untrusted-source', text: 'The approved package costs 42 credits.', sourceVersion: 'version-12345678', approved: true, revoked: false, sourceRef: 'source-12345678' }],
+      }),
+    });
+    const output = await coordinator.run({ envelope: envelope(), fallbackTemplates, questionPolicy: 'optional' });
+    expect(output.response.answer).toBe(fallbackTemplates.templates.invalid_model);
+    expect(output.guardReason).toBe('invalid_citation');
   });
 });

@@ -1707,11 +1707,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
              evidence: evidence.map((item) => ({ citationId: item.citation.chunkId, text: item.content, sourceVersion: item.citation.versionId, approved: true, revoked: false, sourceRef: item.citation.sourceId })),
              questionPolicy: journeyRequirement?.required ? 'required' : 'optional',
              lastQuestionKey: state.pendingPrompt?.requirementKey ?? null,
-           });
+         });
            v2Draft = v2.draft;
            v2NoEvidenceDialogue = v2.guardReason === 'safe_no_evidence_dialogue';
          } catch {
-           // Feature-flag rollback: an unavailable v2 turn falls back to the existing model path.
+           // An attempted V2 turn must fail closed; never bypass its guard through legacy generation.
+           v2Draft = { answer: naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues }), citationIds: [], proposedIntent: null };
+           v2NoEvidenceDialogue = false;
          }
        }
        if (v2Draft) draft = v2Draft;

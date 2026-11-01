@@ -107,10 +107,21 @@ class ToolTraceV2(StrictV2):
     status: Literal["ok", "temporarily_unavailable", "not_authorized", "invalid_args", "stale_state"]
     resultDigest: str = Field(pattern=r"^[a-f0-9]{64}$")
     elapsedMs: int = Field(ge=0, le=180_000)
+    evidenceRefs: list[str] = Field(default_factory=list, max_length=32)
+
+
+class ApprovedEvidenceV2(StrictV2):
+    citationId: str = Field(min_length=8, max_length=256)
+    text: str = Field(min_length=1, max_length=1_500)
+    sourceVersion: str = Field(min_length=8, max_length=256)
+    approved: Literal[True]
+    revoked: Literal[False]
+    sourceRef: str = Field(min_length=8, max_length=256)
 
 
 class AgentTurnResultV2(StrictV2):
     response: PersonaComposedResponseV2
     toolTrace: list[ToolTraceV2] = Field(default_factory=list, max_length=12)
+    approvedEvidence: list[ApprovedEvidenceV2] = Field(default_factory=list, max_length=32)
     modelRequestCount: int = Field(ge=1, le=8)
     toolCallCount: int = Field(ge=0, le=12)
