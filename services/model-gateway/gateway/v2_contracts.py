@@ -17,11 +17,19 @@ class PersonaEnvelopeV2(StrictV2):
     fallbackTemplateVersion: str = Field(min_length=8, max_length=256)
 
 
+class ConfirmedCustomerFactsV2(StrictV2):
+    business_activity: str | None = Field(default=None, max_length=180)
+    entity_type: str | None = Field(default=None, max_length=80)
+    visa_count: str | None = Field(default=None, max_length=12)
+    timeline: str | None = Field(default=None, max_length=100)
+
+
 class IntentProjectionV2(StrictV2):
     primaryGoalKey: str | None
     goalConfirmed: bool
     currentStageKey: str | None
     pendingRequirementKey: str | None
+    confirmedCustomerFacts: ConfirmedCustomerFactsV2 | None = None
 
 
 class BudgetsV2(StrictV2):
