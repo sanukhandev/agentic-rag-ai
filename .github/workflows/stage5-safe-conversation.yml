@@ -1,0 +1,45 @@
+name: Stage 1-5 Safe Conversation Review
+on:
+  pull_request:
+    branches: [feat/conversation-engine-v2]
+    paths:
+      - 'services/model-gateway/**'
+      - 'services/api/src/v2-tool-gateway*'
+      - 'tools/qa/stage5-preflight*'
+      - '.github/workflows/stage5-safe-conversation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-code-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/model-gateway/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install isolated test dependencies
+        run: |
+          python -m pip install -r services/model-gateway/requirements-dev.txt
+          npm ci
+      - name: Compile gateway (no provider calls)
+        run: python -m compileall -q services/model-gateway/gateway
+      - name: Python conversation and graph tests
+        run: PYTHONPATH=services/model-gateway python -m pytest -q services/model-gateway/tests
+      - name: Five-stage catalog static preflight
+        run: |
+          node --test tools/qa/stage5-preflight.test.mjs
+          node tools/qa/stage5-preflight.mjs
+      - name: Focused Node gateway tests
+        run: npx vitest run services/api/src/v2-tool-gateway.test.ts
+      - name: TypeScript contracts
+        run: npm run typecheck

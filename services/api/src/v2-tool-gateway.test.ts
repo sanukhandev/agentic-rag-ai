@@ -101,6 +101,16 @@ describe('v2 trusted Node tool gateway', () => {
     expect(verifyV2Scope(scope, serviceKey, Date.now() + 6 * 60_000)).toBeNull();
   });
 
+  it('rejects expired per-turn tool deadlines without contacting the store', async () => {
+    const scope = issueV2Scope({ tenantId, sessionId, opportunityId: null, catalogVersionId, personaVersionId, stateRevision: 3 }, serviceKey);
+    let queried = false;
+    const store = { ...storeFor(), getSession: async () => { queried = true; return session; } } as unknown as Store;
+    const gateway = createV2ToolGateway({ store, embedding: { model: 'deterministic-test', dimension: 1, embed: async () => [1] }, serviceKey });
+    const expired = await gateway.execute(requestFor(scope, { deadlineAt: new Date(Date.now() - 5000).toISOString() }));
+    expect(expired).toMatchObject({ status: 'temporarily_unavailable', result: { code: 'TOOL_DEADLINE_EXCEEDED' } });
+    expect(queried).toBe(false);
+  });
+
   it('returns a scoped sanitized read result and replays an identical tool call safely', async () => {
     const scope = issueV2Scope({ tenantId, sessionId, opportunityId: 'opportunity-12345678', catalogVersionId, personaVersionId, stateRevision: 3 }, serviceKey);
     const gateway = createV2ToolGateway({ store: storeFor(), embedding: { model: 'deterministic-test', dimension: 1, embed: async () => [1] }, serviceKey });

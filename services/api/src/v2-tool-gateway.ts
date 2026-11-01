@@ -201,6 +201,8 @@ export const createV2ToolGateway = ({ store, embedding, serviceKey }: V2ToolGate
     const parsed = toolRequestSchema.safeParse(input);
     if (!parsed.success) return sanitizedToolError({ schemaVersion: 2, toolCallId: 'invalid-call', toolName: 'invalid', arguments: {}, scopeRef: 'invalid-scope', expectedStateRevision: 0, deadlineAt: new Date().toISOString() } as ToolRequestV2, 'invalid_args', 'INVALID_TOOL_REQUEST');
     const request = parsed.data;
+    const requestDeadline = Date.parse(request.deadlineAt);
+    if (!Number.isFinite(requestDeadline) || requestDeadline <= Date.now()) return sanitizedToolError(request, 'temporarily_unavailable', 'TOOL_DEADLINE_EXCEEDED');
     const scope = verifyV2Scope(request.scopeRef, serviceKey);
     if (!scope) return sanitizedToolError(request, 'not_authorized', 'SCOPE_INVALID');
     const cacheKey = `${request.scopeRef}:${request.toolCallId}`;
