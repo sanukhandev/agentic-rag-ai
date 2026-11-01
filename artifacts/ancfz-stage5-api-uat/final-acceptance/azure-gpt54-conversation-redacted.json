@@ -1,0 +1,8 @@
+{
+  "status": "BLOCKED",
+  "classification": "BLOCKED_MODEL_NOT_CONFIGURED",
+  "deployment": "gpt-5.4",
+  "modelRequests": 0,
+  "modelTurns": 0,
+  "note": "The disposable gateway had no configured Azure endpoint and API key; no Azure conversation was claimed."
+}

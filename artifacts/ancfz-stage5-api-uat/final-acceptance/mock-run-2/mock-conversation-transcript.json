@@ -1,0 +1,345 @@
+{
+  "runId": "ref-06d28a22d732",
+  "mode": "mock",
+  "scenarios": [
+    {
+      "name": "A-happy-path",
+      "status": "PASSED",
+      "turns": 25
+    },
+    {
+      "name": "B-empty-rag",
+      "status": "PASSED",
+      "turns": 3
+    },
+    {
+      "name": "C-security-recovery",
+      "status": "PASSED"
+    }
+  ],
+  "primary": {
+    "turns": [
+      {
+        "message": "Hi Zara, I’m thinking about starting a software consulting company in the UAE.",
+        "clientMessageId": "a3fc1876",
+        "status": 200,
+        "latencyMs": 316,
+        "answer": "To continue, could you share your business activity?",
+        "pendingRequirementKey": "business_activity",
+        "actionProposal": null
+      },
+      {
+        "message": "Could you explain the general formation process and what information you need from me?",
+        "clientMessageId": "838f69a1",
+        "status": 200,
+        "latencyMs": 243,
+        "answer": "I’m keeping your company-formation request moving. What business activity are you planning?",
+        "pendingRequirementKey": "business_activity",
+        "actionProposal": null
+      },
+      {
+        "message": "The business activity is software consulting and AI services.",
+        "clientMessageId": "e4c26909",
+        "status": 200,
+        "latencyMs": 227,
+        "answer": "I can help you work through that. What company structure are you considering?",
+        "pendingRequirementKey": "entity_type",
+        "actionProposal": null
+      },
+      {
+        "message": "I am leaning toward an LLC for the company structure.",
+        "clientMessageId": "20b855af",
+        "status": 200,
+        "latencyMs": 227,
+        "answer": "I can help you work through that. How many visas do you expect to need?",
+        "pendingRequirementKey": "visa_count",
+        "actionProposal": null
+      },
+      {
+        "message": "I expect to need 3 visas at the start.",
+        "clientMessageId": "9dd6e849",
+        "status": 200,
+        "latencyMs": 224,
+        "answer": "I can help you work through that. When are you hoping to get started?",
+        "pendingRequirementKey": "timeline",
+        "actionProposal": null
+      },
+      {
+        "message": "I would like to get started next month.",
+        "clientMessageId": "d6b791c3",
+        "status": 200,
+        "latencyMs": 215,
+        "answer": "I can help you work through that. What email address should we use for this request?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null
+      },
+      {
+        "message": "Correction: the business activity is software consulting and AI services, and the timeline is next month.",
+        "clientMessageId": "ab0aed0a",
+        "status": 200,
+        "latencyMs": 220,
+        "answer": "I don’t have a verified answer to that specific detail yet, so I don’t want to guess. What email address should we use for this request?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null
+      },
+      {
+        "message": "Before we continue, what can you tell me about eligibility?",
+        "clientMessageId": "20d3c706",
+        "status": 200,
+        "latencyMs": 217,
+        "answer": "I’ve kept your company-formation request in view. What email address should I use?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null
+      },
+      {
+        "message": "Please tell me which requirement is still missing for my company-formation request.",
+        "clientMessageId": "ddbabd6f",
+        "status": 200,
+        "latencyMs": 213,
+        "answer": "I’m keeping your company-formation request moving. What email address should we use for this request?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null
+      },
+      {
+        "message": "Actually, I may need 5 visas rather than 3.",
+        "clientMessageId": "c6fcb38b",
+        "status": 200,
+        "latencyMs": 216,
+        "answer": "I’ve kept your company-formation request in view. What email address should I use?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null
+      },
+      {
+        "message": "Correction: please keep the visa count at 3.",
+        "clientMessageId": "58e3e81b",
+        "status": 200,
+        "latencyMs": 231,
+        "answer": "I’m keeping your company-formation request moving. What email address should we use for this request?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null
+      },
+      {
+        "message": "Can you confirm that you kept my LLC structure and software consulting activity?",
+        "clientMessageId": "21b4bafb",
+        "status": 200,
+        "latencyMs": 199,
+        "answer": "I’ve kept your company-formation request in view. What email address should I use?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null
+      },
+      {
+        "message": "I am ready to provide the contact details needed for this request.",
+        "clientMessageId": "833409cf",
+        "status": 200,
+        "latencyMs": 252,
+        "answer": "I’m keeping your company-formation request moving. What email address should we use for this request?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null
+      },
+      {
+        "message": "My name is [NAME_REDACTED] and my email is [EMAIL_REDACTED].",
+        "clientMessageId": "d243bc66",
+        "status": 200,
+        "latencyMs": 195,
+        "answer": "I can help you work through that. What phone number should we use for this request?",
+        "pendingRequirementKey": "phone",
+        "actionProposal": null
+      },
+      {
+        "message": "My phone number is [PHONE_REDACTED].",
+        "clientMessageId": "94a6fe55",
+        "status": 200,
+        "latencyMs": 195,
+        "answer": "I have the details needed. Please approve the consent action below to register your request. To continue, could you share your contact consent?",
+        "pendingRequirementKey": "contact_consent",
+        "actionProposal": {
+          "id": "77bfe26e",
+          "intent": "crm.lead.create",
+          "consentRequired": true
+        }
+      },
+      {
+        "message": "Yes, I explicitly consent to being contacted about this request.",
+        "clientMessageId": "62b11001",
+        "status": 200,
+        "latencyMs": 231,
+        "answer": "To continue, could you share your contact consent?",
+        "pendingRequirementKey": "contact_consent",
+        "actionProposal": {
+          "id": "77bfe26e",
+          "intent": "crm.lead.create",
+          "consentRequired": true
+        }
+      },
+      {
+        "message": "What happens after my request is registered?",
+        "clientMessageId": "213166dd",
+        "status": 200,
+        "latencyMs": 206,
+        "answer": "Your qualified request is preserved, and Account creation is the next verified step. Would you like me to prepare the Account creation request for this qualified journey?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "Please keep the same company-formation request active while I ask a couple of questions.",
+        "clientMessageId": "96f2c90e",
+        "status": 200,
+        "latencyMs": 200,
+        "answer": "I’m keeping the same qualified request in view while Account creation remains pending. Would you like me to prepare the Account creation request for this qualified journey?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "Can you explain the next Account step without claiming it is complete?",
+        "clientMessageId": "27b16b96",
+        "status": 200,
+        "latencyMs": 208,
+        "answer": "Your qualified request is preserved, and Account creation is the next verified step. Would you like me to prepare the Account creation request for this qualified journey?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "I do not want to change the business activity or company structure.",
+        "clientMessageId": "298d4a56",
+        "status": 200,
+        "latencyMs": 211,
+        "answer": "I’m keeping the same qualified request in view while Account creation remains pending. Would you like me to prepare the Account creation request for this qualified journey?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "What information will I review before choosing a package?",
+        "clientMessageId": "56cb2795",
+        "status": 200,
+        "latencyMs": 208,
+        "answer": "Account creation is still the next verified step; package selection follows provider evidence. Would you like me to prepare the Account creation request for this qualified journey?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "How will the required business document be handled after package confirmation?",
+        "clientMessageId": "976ca376",
+        "status": 200,
+        "latencyMs": 217,
+        "answer": "Account creation is still the next verified step; document handling follows package confirmation. Would you like me to prepare the Account creation request for this qualified journey?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "Please confirm that the visa count is still 3 and the target is next month.",
+        "clientMessageId": "92e1fb50",
+        "status": 200,
+        "latencyMs": 209,
+        "answer": "Your verified qualification facts remain in view while Account creation is still pending. Would you like me to prepare the Account creation request for this qualified journey?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "What is the next verified action for this opportunity?",
+        "clientMessageId": "df584cfb",
+        "status": 200,
+        "latencyMs": 206,
+        "answer": "Your qualified request is preserved, and Account creation is the next verified step. Would you like me to prepare the Account creation request for this qualified journey?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "I will wait for verified evidence rather than assuming the Account is complete.",
+        "clientMessageId": "9cb1734c",
+        "status": 200,
+        "latencyMs": 213,
+        "answer": "I can help you work through that. Would you like me to prepare the Account creation request for this qualified journey?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      }
+    ],
+    "actions": [
+      {
+        "id": "77bfe26e",
+        "state": "completed",
+        "workflowKey": "crm.lead.create"
+      },
+      {
+        "id": "793a2214",
+        "state": "completed",
+        "workflowKey": "crm.account.convert"
+      }
+    ],
+    "stage": {
+      "stages": {
+        "contract": {
+          "stage": "contract",
+          "status": "not_started",
+          "evidence": {},
+          "revision": 0,
+          "completedAt": null
+        },
+        "billing_invoice": {
+          "stage": "billing_invoice",
+          "status": "awaiting_customer",
+          "evidence": {},
+          "revision": 0,
+          "completedAt": null
+        },
+        "document_upload": {
+          "stage": "document_upload",
+          "status": "completed",
+          "evidence": {
+            "ocrStatus": "completed",
+            "documentId": "ref-0770245bfe8c",
+            "documentSetComplete": true,
+            "sf02AttachmentVerified": false,
+            "localProcessingVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-01T21:08:25.291Z"
+        },
+        "lead_generation": {
+          "stage": "lead_generation",
+          "status": "completed",
+          "evidence": {
+            "actionId": "ref-7922874ab756",
+            "providerVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-01T21:08:22.574Z"
+        },
+        "account_creation": {
+          "stage": "account_creation",
+          "status": "completed",
+          "evidence": {
+            "actionId": "ref-aed8efbddc75",
+            "providerVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-01T21:08:25.028Z"
+        },
+        "package_selection": {
+          "stage": "package_selection",
+          "status": "completed",
+          "evidence": {
+            "quoteId": "ref-94552b19c0ba",
+            "selectionId": "ref-17726516a0ef",
+            "packageConfirmed": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-01T21:08:25.102Z"
+        },
+        "lead_qualification": {
+          "stage": "lead_qualification",
+          "status": "completed",
+          "evidence": {
+            "actionId": "ref-7922874ab756",
+            "qualificationVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-01T21:08:22.580Z"
+        }
+      },
+      "lastCompletedStage": "document_upload",
+      "currentActiveStage": "billing_invoice",
+      "nextPendingStage": "billing_invoice",
+      "intentionalStopStage": "document_upload"
+    }
+  }
+}

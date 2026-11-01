@@ -1,0 +1,77 @@
+{
+  "lastCompletedStage": "document_upload",
+  "currentActiveStage": "billing_invoice",
+  "nextPendingStage": "billing_invoice",
+  "intentionalStopStage": "document_upload",
+  "stages": {
+    "contract": {
+      "stage": "contract",
+      "status": "not_started",
+      "evidence": {},
+      "revision": 0,
+      "completedAt": null
+    },
+    "billing_invoice": {
+      "stage": "billing_invoice",
+      "status": "awaiting_customer",
+      "evidence": {},
+      "revision": 0,
+      "completedAt": null
+    },
+    "document_upload": {
+      "stage": "document_upload",
+      "status": "completed",
+      "evidence": {
+        "ocrStatus": "completed",
+        "documentId": "ref-ee8687e04b1f",
+        "documentSetComplete": true,
+        "sf02AttachmentVerified": true,
+        "localProcessingVerified": true
+      },
+      "revision": 1,
+      "completedAt": "2026-11-01T21:09:15.913Z"
+    },
+    "lead_generation": {
+      "stage": "lead_generation",
+      "status": "completed",
+      "evidence": {
+        "actionId": "ref-742c30d49b57",
+        "providerVerified": true
+      },
+      "revision": 1,
+      "completedAt": "2026-11-01T21:09:12.771Z"
+    },
+    "account_creation": {
+      "stage": "account_creation",
+      "status": "completed",
+      "evidence": {
+        "actionId": "ref-4fb88c22664f",
+        "providerVerified": true
+      },
+      "revision": 1,
+      "completedAt": "2026-11-01T21:09:15.247Z"
+    },
+    "package_selection": {
+      "stage": "package_selection",
+      "status": "completed",
+      "evidence": {
+        "quoteId": "ref-1c399c081c2a",
+        "selectionId": "ref-42f63e2615be",
+        "packageConfirmed": true
+      },
+      "revision": 1,
+      "completedAt": "2026-11-01T21:09:15.336Z"
+    },
+    "lead_qualification": {
+      "stage": "lead_qualification",
+      "status": "completed",
+      "evidence": {
+        "actionId": "ref-742c30d49b57",
+        "qualificationVerified": true
+      },
+      "revision": 1,
+      "completedAt": "2026-11-01T21:09:12.777Z"
+    }
+  },
+  "noInvoiceOrContractSideEffect": true
+}

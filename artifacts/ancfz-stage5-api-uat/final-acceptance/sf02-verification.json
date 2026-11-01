@@ -1,0 +1,9 @@
+{
+  "status": "SF02_MOCK_VERIFIED",
+  "providerType": "deterministic_mock",
+  "evidence": {
+    "event": "document.sf02_attachment_verified",
+    "count": 1
+  },
+  "sandbox": "SF02_SANDBOX_BLOCKED_NOT_CONFIGURED"
+}

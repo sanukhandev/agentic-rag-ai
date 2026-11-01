@@ -1,0 +1,179 @@
+{
+  "status": "PARTIALLY_VERIFIED_BLOCKERS_REMAIN",
+  "generatedAt": "2026-11-01T21:13:10.005Z",
+  "sourceCommit": "cc161d410a5974176f998ed2e9d1d66ac61945d4",
+  "branch": "feat/conversation-v2-langgraph-stage5-safe",
+  "composeProject": "anc-mock-uat",
+  "apiBase": "http://127.0.0.1:4100",
+  "tenantSlug": "anc",
+  "syntheticOnly": true,
+  "gates": {
+    "gate1Security": "GATE_1_SECURITY_VERIFIED",
+    "gate2AzureGpt54": "BLOCKED_MODEL_NOT_CONFIGURED",
+    "gate3Lifecycle": "GATE_3_LIFECYCLE_VERIFIED",
+    "gate4Sf02Mock": "GATE_4_SF02_MOCK_VERIFIED",
+    "gate4Sf02Sandbox": "SF02_SANDBOX_BLOCKED_NOT_CONFIGURED"
+  },
+  "scenarios": {
+    "mockConversation": {
+      "status": "PASSED",
+      "assertions": "39/39",
+      "customerTurns": 25,
+      "lastCompletedStage": "document_upload",
+      "currentActiveStage": "billing_invoice",
+      "nextPendingStage": "billing_invoice",
+      "documentUploadVerified": true,
+      "sf02Verified": true
+    },
+    "emptyRag": {
+      "name": "B-empty-rag",
+      "status": "PASSED",
+      "turns": 3
+    },
+    "security": {
+      "status": "PASSED",
+      "checks": 9,
+      "passed": 9
+    },
+    "azureGpt54": {
+      "status": "BLOCKED",
+      "classification": "BLOCKED_MODEL_NOT_CONFIGURED",
+      "deployment": "gpt-5.4",
+      "modelRequests": 0,
+      "modelTurns": 0,
+      "note": "The disposable gateway had no configured Azure endpoint and API key; no Azure conversation was claimed."
+    }
+  },
+  "qualification": {
+    "business_activity": "software consulting and AI services",
+    "entity_type": "LLC",
+    "visa_count": "3",
+    "timeline": "next month",
+    "invalidCrossSlotContamination": false
+  },
+  "modelAndToolMetrics": {
+    "mock": {
+      "modelTurns": 22,
+      "modelRequests": 44,
+      "trustedToolCalls": 22,
+      "successfulTrustedToolReads": 22,
+      "acceptedModelDialogue": 0,
+      "safeNoEvidenceDialogue": 22,
+      "guardRejected": 0,
+      "providerErrors": 0,
+      "averageLatencyMs": 220,
+      "maximumLatencyMs": 325,
+      "repeatedResponseIncidents": 0,
+      "unsupportedClaimIncidents": 0
+    },
+    "azure": {
+      "status": "BLOCKED",
+      "classification": "BLOCKED_MODEL_NOT_CONFIGURED",
+      "deployment": "gpt-5.4",
+      "modelRequests": 0,
+      "modelTurns": 0,
+      "note": "The disposable gateway had no configured Azure endpoint and API key; no Azure conversation was claimed."
+    }
+  },
+  "lifecycle": {
+    "lastCompletedStage": "document_upload",
+    "currentActiveStage": "billing_invoice",
+    "nextPendingStage": "billing_invoice",
+    "intentionalStopStage": "document_upload",
+    "stages": {
+      "contract": {
+        "stage": "contract",
+        "status": "not_started",
+        "evidence": {},
+        "revision": 0,
+        "completedAt": null
+      },
+      "billing_invoice": {
+        "stage": "billing_invoice",
+        "status": "awaiting_customer",
+        "evidence": {},
+        "revision": 0,
+        "completedAt": null
+      },
+      "document_upload": {
+        "stage": "document_upload",
+        "status": "completed",
+        "evidence": {
+          "ocrStatus": "completed",
+          "documentId": "ref-ee8687e04b1f",
+          "documentSetComplete": true,
+          "sf02AttachmentVerified": true,
+          "localProcessingVerified": true
+        },
+        "revision": 1,
+        "completedAt": "2026-11-01T21:09:15.913Z"
+      },
+      "lead_generation": {
+        "stage": "lead_generation",
+        "status": "completed",
+        "evidence": {
+          "actionId": "ref-742c30d49b57",
+          "providerVerified": true
+        },
+        "revision": 1,
+        "completedAt": "2026-11-01T21:09:12.771Z"
+      },
+      "account_creation": {
+        "stage": "account_creation",
+        "status": "completed",
+        "evidence": {
+          "actionId": "ref-4fb88c22664f",
+          "providerVerified": true
+        },
+        "revision": 1,
+        "completedAt": "2026-11-01T21:09:15.247Z"
+      },
+      "package_selection": {
+        "stage": "package_selection",
+        "status": "completed",
+        "evidence": {
+          "quoteId": "ref-1c399c081c2a",
+          "selectionId": "ref-42f63e2615be",
+          "packageConfirmed": true
+        },
+        "revision": 1,
+        "completedAt": "2026-11-01T21:09:15.336Z"
+      },
+      "lead_qualification": {
+        "stage": "lead_qualification",
+        "status": "completed",
+        "evidence": {
+          "actionId": "ref-742c30d49b57",
+          "qualificationVerified": true
+        },
+        "revision": 1,
+        "completedAt": "2026-11-01T21:09:12.777Z"
+      }
+    },
+    "noInvoiceOrContractSideEffect": true
+  },
+  "evidence": {
+    "localUpload": true,
+    "localOcr": true,
+    "allRequiredDocuments": true,
+    "sf02Mock": true,
+    "sf02AuditEvent": {
+      "event": "document.sf02_attachment_verified",
+      "count": 1
+    }
+  },
+  "regression": {
+    "nodeApi": "341 passed / 12 skipped",
+    "pythonGateway": "31 passed",
+    "secrets": "2 passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "composeConfig": "passed",
+    "multiDocumentGate": "passed in document-stage-evidence.test.ts and API document-scope tests"
+  },
+  "knownBlockers": [
+    "The disposable gateway had no configured Azure endpoint and API key; no Azure conversation was claimed.",
+    "Salesforce sandbox was not contacted because sandbox credentials and endpoint were not configured."
+  ]
+}
