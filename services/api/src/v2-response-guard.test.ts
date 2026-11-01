@@ -95,6 +95,16 @@ describe('guardV2Response', () => {
       context({ lastQuestionKey: 'business_activity', pendingRequirementKey: null })).verdict.reasonCode).toBe('invalid_question');
   });
 
+  it('allows current active stage guidance after a repeated knowledge detour', () => {
+    const question = 'Would you like to prepare the Account creation request?';
+    const candidate = response({ answer: `I can help you work through that. ${question}`,
+      nextQuestion: question, nextQuestionKey: 'stage:account_creation', reasonNoQuestion: null });
+    expect(guardV2Response(candidate, context({ pendingRequirementKey: null, activeStageKey: 'account_creation',
+      lastQuestionKey: 'stage:account_creation', questionPolicy: 'optional', allowNonFactualDialogue: true })).verdict.accepted).toBe(true);
+    expect(guardV2Response(candidate, context({ pendingRequirementKey: null, activeStageKey: 'package_selection',
+      lastQuestionKey: 'stage:account_creation', questionPolicy: 'optional', allowNonFactualDialogue: true })).verdict.reasonCode).toBe('invalid_question');
+  });
+
   it('allows a pending requirement only when the question is the approved next question', () => {
     const result = guardV2Response(response({ answer: 'I can help with that. What is your activity?', nextQuestion: 'What is your activity?', nextQuestionKey: 'business_activity', reasonNoQuestion: null }), context({ pendingRequirementKey: 'business_activity', questionPolicy: 'required' }));
     expect(result.verdict.accepted).toBe(true);
