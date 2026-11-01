@@ -50,7 +50,16 @@ describe('supporting document API', () => {
       const contentBase64 = Buffer.from('%PDF-1.7 business requirements').toString('base64');
       await api.post(`/api/v1/chat/sessions/${sessionId}/documents`).send({ fileName: 'before-package.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(409).expect(({ body }) => expect(body.error.code).toBe('DOCUMENT_PACKAGE_NOT_CONFIRMED'));
       const offering = await store.createPackageOffering({ id: randomUUID(), tenantId: tenant.id, catalogVersionId: catalogVersion.id, packageKey: 'sandbox-document', name: 'Sandbox document package', eligibleEntityTypes: [], eligibleActivities: [], includedVisaQuantity: 1, officeRequirement: null, inclusions: [], priceMinor: 100, currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [], processingTime: null, requiredDocuments: ['trade_license'], exclusions: [], availability: 'development_only', approvalStatus: 'approved', sourceRefs: ['test-fixture'], createdAt: timestamp });
-      await store.createPackageSelection({ id: randomUUID(), tenantId: tenant.id, sessionId, opportunityId, packageOfferingId: offering.id, quoteId: randomUUID(), status: 'confirmed', confirmedAt: timestamp, createdAt: timestamp, updatedAt: timestamp });
+      const makeApprovedQuote = async (forOpportunity: string): Promise<string> => {
+        const quote = await store.createQuote({
+          id: randomUUID(), tenantId: tenant.id, opportunityId: forOpportunity,
+          packageOfferingId: offering.id, amountMinor: 100, currency: 'AED',
+          validUntil: new Date(Date.now() + 86_400_000).toISOString(),
+          status: 'approved', sourceRefs: ['test-fixture'], createdAt: timestamp,
+        });
+        return quote.id;
+      };
+      await store.createPackageSelection({ id: randomUUID(), tenantId: tenant.id, sessionId, opportunityId, packageOfferingId: offering.id, quoteId: await makeApprovedQuote(opportunityId), status: 'confirmed', confirmedAt: timestamp, createdAt: timestamp, updatedAt: timestamp });
       const lead: CrmLead = { id: randomUUID(), tenantId: tenant.id, actionId: randomUUID(), sessionId, intent: 'anc.document.supporting_upload', intentScore: 80, intentConfidence: 0.9, catalogVersionId: null, score: 80, validationPass: true, leadData: {}, conversation: [], summary: 'Existing conversation summary', summaryStatus: 'completed', createdAt: timestamp, updatedAt: timestamp };
       await store.createCrmLead(lead);
       await api.post(`/api/v1/chat/sessions/${sessionId}/documents`).send({ fileName: 'license.pdf', mimeType: 'application/pdf', contentBase64 }).expect(422);
@@ -72,7 +81,7 @@ describe('supporting document API', () => {
         },
       };
       await store.updateSession(scopedSession!);
-      await store.createPackageSelection({ id: randomUUID(), tenantId: tenant.id, sessionId, opportunityId: otherOpportunityId, packageOfferingId: offering.id, quoteId: randomUUID(), status: 'confirmed', confirmedAt: timestamp, createdAt: timestamp, updatedAt: timestamp });
+      await store.createPackageSelection({ id: randomUUID(), tenantId: tenant.id, sessionId, opportunityId: otherOpportunityId, packageOfferingId: offering.id, quoteId: await makeApprovedQuote(otherOpportunityId), status: 'confirmed', confirmedAt: timestamp, createdAt: timestamp, updatedAt: timestamp });
       const otherScope = await api.post(`/api/v1/chat/sessions/${sessionId}/documents`).send({ fileName: 'license-other-intent.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true, primaryIntentKey: 'other.intent' }).expect(202);
       expect(otherScope.body.idempotent).not.toBe(true);
       expect((await store.listSupportingDocuments(tenant.id, sessionId))).toHaveLength(2);
@@ -95,7 +104,7 @@ describe('supporting document API', () => {
       const retryOpportunityId = randomUUID();
       retrySession.conversationState = { ...(retrySession.conversationState!), selectedIntentKey: 'anc.document.supporting_upload', candidateIntentKeys: ['anc.document.supporting_upload'], intentProgress: { ...newIntentProgress(), activeIntentKey: 'anc.document.supporting_upload', entries: { 'anc.document.supporting_upload': { intentKey: 'anc.document.supporting_upload', journeyId: retryOpportunityId, status: 'active', completedRequirementKeys: [], currentRequirementKey: 'document_upload', slotValues: {}, slotProvenance: {}, revision: 1 } } } };
       await store.updateSession(retrySession);
-      await store.createPackageSelection({ id: randomUUID(), tenantId: tenant.id, sessionId: retrySession.id, opportunityId: retryOpportunityId, packageOfferingId: offering.id, quoteId: randomUUID(), status: 'confirmed', confirmedAt: timestamp, createdAt: timestamp, updatedAt: timestamp });
+      await store.createPackageSelection({ id: randomUUID(), tenantId: tenant.id, sessionId: retrySession.id, opportunityId: retryOpportunityId, packageOfferingId: offering.id, quoteId: await makeApprovedQuote(retryOpportunityId), status: 'confirmed', confirmedAt: timestamp, createdAt: timestamp, updatedAt: timestamp });
       const retryUpload = await api.post(`/api/v1/chat/sessions/${retrySession.id}/documents`).send({ fileName: 'retry.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(202);
       const retryDocument = await store.getSupportingDocument(retryUpload.body.document.id, tenant.id);
       const retryJob = await store.getDocumentProcessingJob(retryUpload.body.jobId, tenant.id);
@@ -111,7 +120,7 @@ describe('supporting document API', () => {
       const expiredOpportunityId = randomUUID();
       expiredSession.conversationState = { ...(expiredSession.conversationState!), selectedIntentKey: 'anc.document.supporting_upload', candidateIntentKeys: ['anc.document.supporting_upload'], intentProgress: { ...newIntentProgress(), activeIntentKey: 'anc.document.supporting_upload', entries: { 'anc.document.supporting_upload': { intentKey: 'anc.document.supporting_upload', journeyId: expiredOpportunityId, status: 'active', completedRequirementKeys: [], currentRequirementKey: 'document_upload', slotValues: {}, slotProvenance: {}, revision: 1 } } } };
       await store.updateSession(expiredSession);
-      await store.createPackageSelection({ id: randomUUID(), tenantId: tenant.id, sessionId: expiredSession.id, opportunityId: expiredOpportunityId, packageOfferingId: offering.id, quoteId: randomUUID(), status: 'confirmed', confirmedAt: timestamp, createdAt: timestamp, updatedAt: timestamp });
+      await store.createPackageSelection({ id: randomUUID(), tenantId: tenant.id, sessionId: expiredSession.id, opportunityId: expiredOpportunityId, packageOfferingId: offering.id, quoteId: await makeApprovedQuote(expiredOpportunityId), status: 'confirmed', confirmedAt: timestamp, createdAt: timestamp, updatedAt: timestamp });
       const expiredUpload = await api.post(`/api/v1/chat/sessions/${expiredSession.id}/documents`).send({ fileName: 'expired.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(202);
       const expiredDocument = await store.getSupportingDocument(expiredUpload.body.document.id, tenant.id);
       expect(expiredDocument).not.toBeNull();
