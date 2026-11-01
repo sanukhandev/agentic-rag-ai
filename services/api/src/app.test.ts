@@ -131,6 +131,26 @@ const seedWorkflowExecution = async (store: Store, action: Pick<ActionRequest, '
 };
 
 describe('API vertical slice', () => {
+  it('denies document session endpoints to an authenticated user from another tenant', async () => {
+    const runtime = createApp({ nodeEnv: 'test', sessionAccessTokenRequired: true });
+    const api = request(runtime.app);
+    const platform = await api.post('/api/v1/auth/register-platform').send({ email: 'document-isolation-platform@example.test', password: 'Platform1Password' }).expect(201);
+    const tenantA = await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Document Tenant A', slug: 'document-tenant-a', adminEmail: 'document-tenant-a@example.test', adminPassword: 'TenantA1Password' }).expect(201);
+    await api.post('/api/v1/admin/tenants').set('Authorization', `Bearer ${platform.body.token}`).send({ name: 'Document Tenant B', slug: 'document-tenant-b', adminEmail: 'document-tenant-b@example.test', adminPassword: 'TenantB1Password' }).expect(201);
+    const adminA = await api.post('/api/v1/auth/login').send({ email: 'document-tenant-a@example.test', password: 'TenantA1Password' }).expect(200);
+    const adminB = await api.post('/api/v1/auth/login').send({ email: 'document-tenant-b@example.test', password: 'TenantB1Password' }).expect(200);
+    const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: tenantA.body.tenant.slug }).expect(201);
+    const id = session.body.sessionId;
+    const upload = { fileName: 'synthetic.pdf', mimeType: 'application/pdf', contentBase64: Buffer.from('%PDF-1.4 test').toString('base64'), processingConsent: true };
+    for (const route of [`/api/v1/chat/sessions/${id}/documents/config`, `/api/v1/chat/sessions/${id}/documents`]) {
+      await api.get(route).set('Authorization', `Bearer ${adminB.body.token}`).expect(403);
+    }
+    await api.post(`/api/v1/chat/sessions/${id}/documents`).set('Authorization', `Bearer ${adminB.body.token}`).send(upload).expect(403);
+    await api.get(`/api/v1/chat/sessions/${id}/documents`).set('Authorization', `Bearer ${adminA.body.token}`).expect(200);
+    await api.get(`/api/v1/chat/sessions/${id}/documents`).expect(401);
+    await api.get(`/api/v1/chat/sessions/${id}/documents`).set('x-agentic-session-token', session.body.sessionToken).expect(200);
+  });
+
   it('enforces the returned session token when strict session access is enabled', async () => {
     const runtime = createApp({ nodeEnv: 'test', sessionAccessTokenRequired: true });
     await runtime.store.createTenant({ name: 'Token UAT', slug: 'token-uat' });
