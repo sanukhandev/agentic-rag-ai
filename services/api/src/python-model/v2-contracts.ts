@@ -27,6 +27,13 @@ const intentProjection = z.object({
   goalConfirmed: z.boolean(),
   currentStageKey: boundedKey.nullable(),
   pendingRequirementKey: boundedKey.nullable(),
+  /** Server-validated, non-PII customer facts only; not pricing or provider claims. */
+  confirmedCustomerFacts: z.object({
+    business_activity: z.string().trim().min(1).max(180).optional(),
+    entity_type: z.string().trim().min(1).max(80).optional(),
+    visa_count: z.string().trim().min(1).max(12).optional(),
+    timeline: z.string().trim().min(1).max(100).optional(),
+  }).strict().optional(),
 }).strict();
 
 const budgets = z.object({
