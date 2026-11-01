@@ -14,7 +14,7 @@ const fallbackTemplates = { approved: true, personaVersionId: 'persona-12345678'
 afterEach(() => vi.unstubAllGlobals());
 
 describe('V2ConversationCoordinator', () => {
-  it('defaults on only with a configured private gateway and tenant allowlist', () => {
+  it('defaults on with a private gateway, supports an optional tenant allowlist', () => {
     const configured = { PYTHON_MODEL_URL: 'http://model-gateway:8088', MODEL_GATEWAY_SERVICE_KEY: 'private-key', CONVERSATION_ENGINE_V2_TENANTS: 'tenant-a' };
     expect(conversationEngineV2EnabledForTenant('tenant-a', configured)).toBe(true);
     expect(conversationEngineV2EnabledForTenant('tenant-a', { ...configured, CONVERSATION_ENGINE_V2_ENABLED: 'true' })).toBe(true);
@@ -22,7 +22,7 @@ describe('V2ConversationCoordinator', () => {
     expect(conversationEngineV2EnabledForTenant('tenant-b', configured)).toBe(false);
     expect(conversationEngineV2EnabledForTenant('tenant-a', { ...configured, MODEL_GATEWAY_SERVICE_KEY: '' })).toBe(false);
     expect(conversationEngineV2EnabledForTenant('tenant-a', { ...configured, PYTHON_MODEL_URL: '' })).toBe(false);
-    expect(conversationEngineV2EnabledForTenant('tenant-a', { ...configured, CONVERSATION_ENGINE_V2_TENANTS: '' })).toBe(false);
+    expect(conversationEngineV2EnabledForTenant('tenant-a', { ...configured, CONVERSATION_ENGINE_V2_TENANTS: '' })).toBe(true);
   });
 
   it('fails production startup clearly when v2 is enabled without a private gateway', () => {
