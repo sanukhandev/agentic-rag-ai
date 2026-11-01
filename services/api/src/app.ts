@@ -408,7 +408,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const readRateLimit = (value: number | undefined, name: string, fallback: number, max: number): number => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return fallback; const parsed = Number(raw); if (!Number.isInteger(parsed) || parsed < 1 || parsed > max) throw new Error(`${name} must be an integer between 1 and ${max}.`); return parsed; };
   const chatResponseCacheTtlSeconds = readCacheTtl(dependencies.chatResponseCacheTtlSeconds, 'CHAT_RESPONSE_CACHE_TTL_SECONDS', 60, 300);
   const catalogQueryNormalizationEnabled = dependencies.catalogQueryNormalizationEnabled ?? process.env.CATALOG_QUERY_NORMALIZATION_ENABLED === 'true';
-  const sessionAccessTokenRequired = dependencies.sessionAccessTokenRequired ?? process.env.CHAT_SESSION_TOKEN_REQUIRED === 'true';
+  const sessionAccessTokenRequired = nodeEnv === 'production' || (dependencies.sessionAccessTokenRequired ?? process.env.CHAT_SESSION_TOKEN_REQUIRED === 'true');
   const updateSessionSafely = async (session: Session, preserveConcurrentState: boolean, conflictMerge: 'conversation' | 'workflow' = 'conversation'): Promise<Session> => {
     let candidate = session;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -2522,12 +2522,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     try {
       const session = await store.getSession(routeParam(req, 'id'));
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
-      ensureLiveSession(session.lastActivityAt, session.closedAt);
-      const tenant = await activeTenant(store, session.tenantId);
-      await authorizeSessionAccessToken(req, session);
-      const channel = getChannel(req);
-      if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
-      if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
+      await authorizeChatSession(req, session);
       res.json(await documentConfig(session.tenantId));
     } catch (error) { next(error); }
   });
@@ -2535,12 +2530,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     try {
       const session = await store.getSession(routeParam(req, 'id'));
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
-      ensureLiveSession(session.lastActivityAt, session.closedAt);
-      const tenant = await activeTenant(store, session.tenantId);
-      await authorizeSessionAccessToken(req, session);
-      const channel = getChannel(req);
-      if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
-      if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
+      await authorizeChatSession(req, session);
       const input = parse(documentUploadSchema, req.body);
       const existingLead = await store.getCrmLeadBySessionId(session.id, session.tenantId);
       const conversationState = session.conversationState ?? newConversationState();
@@ -2612,12 +2602,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     try {
       const session = await store.getSession(routeParam(req, 'id'));
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
-      ensureLiveSession(session.lastActivityAt, session.closedAt);
-      const tenant = await activeTenant(store, session.tenantId);
-      await authorizeSessionAccessToken(req, session);
-      const channel = getChannel(req);
-      if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
-      if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
+      await authorizeChatSession(req, session);
       res.json({ items: (await store.listSupportingDocuments(session.tenantId, session.id)).map(publicDocument) });
     } catch (error) { next(error); }
   });
