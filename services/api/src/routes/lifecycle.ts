@@ -1,5 +1,5 @@
 import type { Application, NextFunction, Request, RequestHandler, Response } from 'express';
-import type { Session, Store } from '../types.js';
+import type { LifecycleStage, Session, Store } from '../types.js';
 import type { ActionGateway } from '../actions.js';
 import { parse, HttpError } from '../http/errors.js';
 import { lifecycleAccountProposalSchema, lifecycleContractSchema, lifecycleInvoiceSchema, lifecyclePackageProposalSchema, lifecycleQuoteSchema, lifecycleSelectionConfirmationSchema } from '../http/schemas.js';
@@ -11,6 +11,7 @@ export interface LifecycleRouteDependencies {
   chatApi: RequestHandler;
   routeParam: (req: Request, name: string) => string;
   authorizeSession: (req: Request, session: Session) => Promise<void>;
+  advanceLifecycleStage: (session: Session, stage: LifecycleStage, evidence: Record<string, string | number | boolean>) => Promise<void>;
 }
 
 export const registerLifecycleRoutes = (app: Pick<Application, 'get' | 'post'>, dependencies: LifecycleRouteDependencies): void => {
@@ -30,7 +31,7 @@ export const registerLifecycleRoutes = (app: Pick<Application, 'get' | 'post'>, 
     try { const session = await loadSession(req); const input = parse(lifecycleQuoteSchema, req.body); const quote = await createApprovedQuote(dependencies.store, session, input.opportunityId, input.packageOfferingId); res.status(201).json({ quote }); } catch (error) { next(error); }
   });
   app.post('/api/v1/chat/sessions/:id/packages/selections/:selectionId/confirm', dependencies.chatApi, async (req: Request, res: Response, next: NextFunction) => {
-    try { const session = await loadSession(req); const input = parse(lifecycleSelectionConfirmationSchema, req.body); const selection = await confirmPackageSelection(dependencies.store, session, dependencies.routeParam(req, 'selectionId'), input.quoteId); res.json({ selection }); } catch (error) { next(error); }
+    try { const session = await loadSession(req); const input = parse(lifecycleSelectionConfirmationSchema, req.body); const selection = await confirmPackageSelection(dependencies.store, session, dependencies.routeParam(req, 'selectionId'), input.quoteId); await dependencies.advanceLifecycleStage(session, 'package_selection', { selectionId: selection.id, quoteId: input.quoteId, packageConfirmed: true }); res.json({ selection }); } catch (error) { next(error); }
   });
   app.post('/api/v1/chat/sessions/:id/accounts/proposals', dependencies.chatApi, async (req: Request, res: Response, next: NextFunction) => {
     try {

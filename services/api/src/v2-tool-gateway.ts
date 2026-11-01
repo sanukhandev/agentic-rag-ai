@@ -214,7 +214,10 @@ export const createV2ToolGateway = ({ store, embedding, serviceKey }: V2ToolGate
   };
   const execute = async (input: unknown): Promise<ToolResultV2> => {
     const parsed = toolRequestSchema.safeParse(input);
-    if (!parsed.success) return sanitizedToolError({ schemaVersion: 2, toolCallId: 'invalid-call', toolName: 'invalid', arguments: {}, scopeRef: 'invalid-scope', expectedStateRevision: 0, deadlineAt: new Date().toISOString() } as ToolRequestV2, 'invalid_args', 'INVALID_TOOL_REQUEST');
+    if (!parsed.success) {
+      console.error(JSON.stringify({ event: 'v2.tool.invalid_request', issues: parsed.error.issues.map((issue) => ({ code: issue.code, path: issue.path })) }));
+      return sanitizedToolError({ schemaVersion: 2, toolCallId: 'invalid-call', toolName: 'invalid', arguments: {}, scopeRef: 'invalid-scope', expectedStateRevision: 0, deadlineAt: new Date().toISOString() } as ToolRequestV2, 'invalid_args', 'INVALID_TOOL_REQUEST');
+    }
     const request = parsed.data;
     const requestDeadline = Date.parse(request.deadlineAt);
     if (!Number.isFinite(requestDeadline) || requestDeadline <= Date.now()) return sanitizedToolError(request, 'temporarily_unavailable', 'TOOL_DEADLINE_EXCEEDED');

@@ -131,6 +131,17 @@ const seedWorkflowExecution = async (store: Store, action: Pick<ActionRequest, '
 };
 
 describe('API vertical slice', () => {
+  it('enforces the returned session token when strict session access is enabled', async () => {
+    const runtime = createApp({ nodeEnv: 'test', sessionAccessTokenRequired: true });
+    await runtime.store.createTenant({ name: 'Token UAT', slug: 'token-uat' });
+    const api = request(runtime.app);
+    const created = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'token-uat' }).expect(201);
+
+    await api.post('/api/v1/chat/messages').send({ sessionId: created.body.sessionId, message: 'Hello', clientMessageId: 'token-test-missing' }).expect(401);
+    await api.post('/api/v1/chat/messages').set('x-agentic-session-token', 'invalid-token').send({ sessionId: created.body.sessionId, message: 'Hello', clientMessageId: 'token-test-invalid' }).expect(401);
+    await api.post('/api/v1/chat/messages').set('x-agentic-session-token', created.body.sessionToken).send({ sessionId: created.body.sessionId, message: 'Hello', clientMessageId: 'token-test-valid' }).expect(200);
+  });
+
   it('refuses production startup with local model, embedding, workflow or worker fallbacks', () => {
     expect(() => createApp({ nodeEnv: 'production', jwtSecret: 'production-jwt-secret', tokenVault: new TokenVault('production-vault-secret') })).toThrow('Production Azure, embedding, n8n polling and ingestion adapters are required.');
   });

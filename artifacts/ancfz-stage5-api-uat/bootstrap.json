@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-11-01T19:23:00.653Z",
+  "apiBase": "http://127.0.0.1:4100",
+  "project": "anc-mock-uat",
+  "modelMode": "mock",
+  "tenantIds": {
+    "anc": "110a38e2-a3d2-4a4f-b9c1-9d431dc86ac6",
+    "anc-empty": "21226a2e-9e9a-4d95-b86b-d11669f09685"
+  },
+  "catalogIds": {
+    "anc": "10000000-0000-4000-8000-000000000001",
+    "anc-empty": "10000000-0000-4000-8000-000000000002"
+  },
+  "v2VersionIds": {
+    "anc": "f1875855-e9ce-45f5-8f45-0520910b81c5",
+    "anc-empty": "8c31ff1e-f16f-4818-9ceb-5e7a3fcbacbc"
+  },
+  "syntheticOnly": true,
+  "sf02Verified": false
+}

@@ -1,0 +1,217 @@
+name: anc-mock-uat
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
+    container_name: anc-mock-uat-postgres
+    environment:
+      POSTGRES_DB: anc_mock_uat
+      POSTGRES_USER: anc_mock_uat
+      POSTGRES_PASSWORD: anc_mock_uat_db_only
+    expose:
+      - "5432"
+    volumes:
+      - anc-mock-uat-postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U anc_mock_uat -d anc_mock_uat"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  redis:
+    image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    container_name: anc-mock-uat-redis
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    expose:
+      - "6379"
+    volumes:
+      - anc-mock-uat-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  model-gateway:
+    build:
+      context: .
+      dockerfile: services/model-gateway/Dockerfile
+    container_name: anc-mock-uat-model-gateway
+    environment:
+      MODEL_MODE: mock
+      AZURE_OPENAI_DEPLOYMENT: anc-mock-model
+      MODEL_GATEWAY_SERVICE_KEY: anc-mock-gateway-service-key
+      NODE_TOOL_GATEWAY_URL: http://api:4000
+      LANGGRAPH_CONVERSATION_ENABLED: "true"
+      MODEL_MAX_CONCURRENCY: "2"
+      MODEL_MIN_CALL_INTERVAL_SECONDS: "0"
+    expose:
+      - "8088"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/internal/health/live', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api-runtime
+    container_name: anc-mock-uat-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      model-gateway:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:4100:4000"
+    environment:
+      NODE_ENV: development
+      PORT: "4000"
+      STORE: postgres
+      DATABASE_URL: postgres://anc_mock_uat:anc_mock_uat_db_only@postgres:5432/anc_mock_uat
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: anc-mock-uat-jwt-secret-only
+      CHANNEL_CREDENTIAL_KEY: anc-mock-uat-channel-key-only
+      PII_VAULT_KEY: anc-mock-uat-pii-vault-key-only
+      WEB_ORIGIN: http://127.0.0.1:4100
+      ADMIN_ORIGIN: http://127.0.0.1:4100
+      AZURE_AI_ENDPOINT: ""
+      AZURE_AI_EMBEDDING_DEPLOYMENT: ""
+      AZURE_AI_API_KEY: ""
+      AZURE_AI_API_VERSION: ""
+      CHAT_MODEL_PROVIDER: python-gpt
+      PYTHON_MODEL_URL: http://model-gateway:8088
+      MODEL_GATEWAY_SERVICE_KEY: anc-mock-gateway-service-key
+      PYTHON_MODEL_TIMEOUT_MS: "20000"
+      LANGGRAPH_CONVERSATION_ENABLED: "true"
+      CONVERSATION_ENGINE_V2_ENABLED: "true"
+      CONVERSATION_ENGINE_V2_TENANTS: "${CONVERSATION_ENGINE_V2_TENANTS:-}"
+      CHAT_SESSION_TOKEN_REQUIRED: "true"
+      N8N_INTERNAL_URL: http://mock-provider:8090
+      N8N_WEBHOOK_SECRET: anc-mock-uat-n8n-secret
+      INGESTION_WORKER_SECRET: anc-mock-uat-worker-secret
+      SUPPORTING_DOCUMENT_ROOT: /app/data/supporting-documents
+      INGESTION_STAGING_ROOT: /app/data/ingestion-staging
+      REMOTE_CRM_PROVIDER: deterministic_mock
+      CHAT_RESPONSE_CACHE_TTL_SECONDS: "60"
+      CATALOG_QUERY_NORMALIZATION_ENABLED: "false"
+      CHAT_SESSION_TTL_MS: "3600000"
+      API_RATE_LIMIT_MAX: "1200"
+      API_RATE_LIMIT_WINDOW_MS: "60000"
+    volumes:
+      - anc-mock-uat-documents:/app/data/supporting-documents
+      - anc-mock-uat-ingestion:/app/data/ingestion-staging
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/v1/health/live').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  storage-init:
+    image: node:22-bookworm-slim
+    container_name: anc-mock-uat-storage-init
+    user: "0:0"
+    command: ["sh", "-c", "mkdir -p /app/data/supporting-documents /app/data/ingestion-staging && chown -R 1000:1000 /app/data"]
+    volumes:
+      - anc-mock-uat-documents:/app/data/supporting-documents
+      - anc-mock-uat-ingestion:/app/data/ingestion-staging
+
+  mock-provider:
+    image: node:22-bookworm-slim
+    container_name: anc-mock-uat-provider
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://api:4000
+      N8N_WEBHOOK_SECRET: anc-mock-uat-n8n-secret
+      INGESTION_WORKER_SECRET: anc-mock-uat-worker-secret
+      MOCK_PROVIDER_MODE: deterministic
+    expose:
+      - "8090"
+    volumes:
+      - .:/workspace:ro
+    working_dir: /workspace
+    command: ["node", "tools/qa/anc-mock-provider-server.mjs"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  event-relay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api-runtime
+    container_name: anc-mock-uat-event-relay
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://anc_mock_uat:anc_mock_uat_db_only@postgres:5432/anc_mock_uat
+      REDIS_URL: redis://redis:6379
+    command: ["node", "services/api/dist/event-relay.js"]
+
+  event-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api-runtime
+    container_name: anc-mock-uat-event-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mock-provider:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://anc_mock_uat:anc_mock_uat_db_only@postgres:5432/anc_mock_uat
+      REDIS_URL: redis://redis:6379
+      N8N_INTERNAL_URL: http://mock-provider:8090
+      N8N_WEBHOOK_SECRET: anc-mock-uat-n8n-secret
+      N8N_COMPLETION_DEADLINE_MS: "120000"
+      EVENT_WORKER_STREAMS: rag:v2:crm,rag:v2:documents,rag:v2:actions
+    command: ["node", "services/api/dist/event-worker.js"]
+
+  test-runner:
+    image: node:22-bookworm-slim
+    container_name: anc-mock-uat-test-runner
+    profiles: ["test"]
+    depends_on:
+      api:
+        condition: service_healthy
+      event-worker:
+        condition: service_started
+    environment:
+      API_BASE_URL: http://api:4000
+      TENANT_SLUG: anc
+      MODEL_MODE: mock
+      OUTPUT_DIR: /workspace/artifacts/ancfz-stage5-api-uat
+    volumes:
+      - .:/workspace:ro
+      - ./artifacts/ancfz-stage5-api-uat:/workspace/artifacts/ancfz-stage5-api-uat:rw
+    working_dir: /workspace
+    command: ["node", "tools/qa/ancfz-stage5-api-conversation.mjs", "--strict"]
+
+volumes:
+  anc-mock-uat-postgres-data:
+    name: anc-mock-uat-postgres-data
+  anc-mock-uat-redis-data:
+    name: anc-mock-uat-redis-data
+  anc-mock-uat-documents:
+    name: anc-mock-uat-documents
+  anc-mock-uat-ingestion:
+    name: anc-mock-uat-ingestion

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
+import { newConversationState, newIntentProgress } from './conversation-state.js';
 import { PrivateDocumentStorage } from './document-intake.js';
 import { MemoryStore } from './store-memory.js';
 import type { CrmLead } from './types.js';
@@ -15,24 +16,63 @@ describe('supporting document API', () => {
     const store = new MemoryStore();
     const tenant = await store.createTenant({ name: 'ANC Test', slug: 'anc-test' });
     const catalog = { tenantScope: 'anc-test', intents: [{ intentKey: 'anc.document.supporting_upload', displayName: 'Upload a document', description: 'supporting document', category: 'support', workflowKey: 'anc.document.ocr.extract', minimumScore: 0, confidenceThreshold: 0, confirmationRequired: true, active: true, priority: 1, versionNote: '' }], signals: [], slots: [], relations: [], qualityRules: [], workflowBindings: [{ workflowKey: 'anc.document.ocr.extract', n8nWorkflowId: 'ocr-test', webhookPath: 'anc-test-document-ocr-wf-1', payloadContract: 'anc-document-ocr-v1', sideEffectClass: 'document_processing', active: true }], documentSettings: { schemaVersion: 'anc-document-policy-v1', enabled: true, storageBackend: 'local_private_volume', processingProvider: 'python_pytesseract', workflowKey: 'anc.document.ocr.extract', requireUploadConsent: true, maxFileBytes: 15 * 1024 * 1024, maxFilesPerRequest: 1, maxPdfPages: 20, ocrLanguages: ['eng'], allowedMimeTypes: ['application/pdf'], retentionPolicy: 'tenant_configured', allowPublicDocumentUrls: false, allowAutomaticKnowledgeIngestion: false, allowPersonalIdentityDocumentsByDefault: false, summaryRendering: 'conversation_plus_redacted_document_excerpts', notes: '' }, documentPolicies: [{ intentKey: 'anc.document.supporting_upload', enabled: true, workflowKey: 'anc.document.ocr.extract', requestMode: 'explicit_upload' as const, required: false, requestPromptKey: 'document.ask_supporting', allowedDocumentTypes: ['trade_license'], allowUserInitiated: true, consentRequired: true, preservePrimaryIntent: true, storeExtractedText: false, summaryTarget: 'crm_leads.summary', autoCreateLead: false, autoIndexInRag: false, notes: '' }] };
-    await store.createIntentCatalogVersion({ tenantId: tenant.id, status: 'published', sourceFileName: 'ocr.json', sourceHash: 'a'.repeat(64), parserVersion: 'test', catalog });
+    const catalogVersion = await store.createIntentCatalogVersion({ tenantId: tenant.id, status: 'published', sourceFileName: 'ocr.json', sourceHash: 'a'.repeat(64), parserVersion: 'test', catalog });
     const runtime = createApp({ store, nodeEnv: 'test', jwtSecret: 'document-test-secret', n8nCallbackSecret: 'document-n8n-secret', ingestionWorkerSecret: 'document-worker-secret', documentStorageRoot: root });
     const api = request(runtime.app);
     try {
       const session = await api.post('/api/v1/chat/sessions').send({ tenantSlug: 'anc-test' }).expect(201);
       const sessionId = session.body.sessionId as string;
+      const opportunityId = randomUUID();
+      const sessionState = await store.getSession(sessionId);
+      sessionState!.conversationState = {
+        ...newConversationState(),
+        catalogVersionId: catalogVersion.id,
+        selectedIntentKey: 'anc.document.supporting_upload',
+        intentProgress: {
+          ...newIntentProgress(),
+          activeIntentKey: 'anc.document.supporting_upload',
+          entries: {
+            'anc.document.supporting_upload': {
+              intentKey: 'anc.document.supporting_upload',
+              journeyId: opportunityId,
+              status: 'active',
+              completedRequirementKeys: [],
+              currentRequirementKey: 'document_upload',
+              slotValues: {},
+              slotProvenance: {},
+              revision: 1,
+            },
+          },
+        },
+      };
+      await store.updateSession(sessionState!);
       const timestamp = new Date().toISOString();
+      const contentBase64 = Buffer.from('%PDF-1.7 business requirements').toString('base64');
+      await api.post(`/api/v1/chat/sessions/${sessionId}/documents`).send({ fileName: 'before-package.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(409).expect(({ body }) => expect(body.error.code).toBe('DOCUMENT_PACKAGE_NOT_CONFIRMED'));
+      const offering = await store.createPackageOffering({ id: randomUUID(), tenantId: tenant.id, catalogVersionId: catalogVersion.id, packageKey: 'sandbox-document', name: 'Sandbox document package', eligibleEntityTypes: [], eligibleActivities: [], includedVisaQuantity: 1, officeRequirement: null, inclusions: [], priceMinor: 100, currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [], processingTime: null, requiredDocuments: ['trade_license'], exclusions: [], availability: 'development_only', approvalStatus: 'approved', sourceRefs: ['test-fixture'], createdAt: timestamp });
+      await store.createPackageSelection({ id: randomUUID(), tenantId: tenant.id, sessionId, opportunityId, packageOfferingId: offering.id, quoteId: randomUUID(), status: 'confirmed', confirmedAt: timestamp, createdAt: timestamp, updatedAt: timestamp });
       const lead: CrmLead = { id: randomUUID(), tenantId: tenant.id, actionId: randomUUID(), sessionId, intent: 'anc.document.supporting_upload', intentScore: 80, intentConfidence: 0.9, catalogVersionId: null, score: 80, validationPass: true, leadData: {}, conversation: [], summary: 'Existing conversation summary', summaryStatus: 'completed', createdAt: timestamp, updatedAt: timestamp };
       await store.createCrmLead(lead);
-      const contentBase64 = Buffer.from('%PDF-1.7 business requirements').toString('base64');
       await api.post(`/api/v1/chat/sessions/${sessionId}/documents`).send({ fileName: 'license.pdf', mimeType: 'application/pdf', contentBase64 }).expect(422);
       const upload = await api.post(`/api/v1/chat/sessions/${sessionId}/documents`).send({ fileName: 'license.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(202);
       expect(upload.body.document.leadId).toBe(lead.id);
       const duplicate = await api.post(`/api/v1/chat/sessions/${sessionId}/documents`).send({ fileName: 'license-copy.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(202);
       expect(duplicate.body.idempotent).toBe(true);
       const scopedSession = await store.getSession(sessionId);
-      scopedSession!.conversationState = { ...(scopedSession!.conversationState!), candidateIntentKeys: [...(scopedSession!.conversationState?.candidateIntentKeys ?? []), 'other.intent'] };
+      const otherOpportunityId = randomUUID();
+      scopedSession!.conversationState = {
+        ...(scopedSession!.conversationState!),
+        candidateIntentKeys: [...(scopedSession!.conversationState?.candidateIntentKeys ?? []), 'other.intent'],
+        intentProgress: {
+          ...(scopedSession!.conversationState?.intentProgress!),
+          entries: {
+            ...(scopedSession!.conversationState?.intentProgress?.entries ?? {}),
+            'other.intent': { intentKey: 'other.intent', journeyId: otherOpportunityId, status: 'active', completedRequirementKeys: [], currentRequirementKey: null, slotValues: {}, slotProvenance: {}, revision: 1 },
+          },
+        },
+      };
       await store.updateSession(scopedSession!);
+      await store.createPackageSelection({ id: randomUUID(), tenantId: tenant.id, sessionId, opportunityId: otherOpportunityId, packageOfferingId: offering.id, quoteId: randomUUID(), status: 'confirmed', confirmedAt: timestamp, createdAt: timestamp, updatedAt: timestamp });
       const otherScope = await api.post(`/api/v1/chat/sessions/${sessionId}/documents`).send({ fileName: 'license-other-intent.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true, primaryIntentKey: 'other.intent' }).expect(202);
       expect(otherScope.body.idempotent).not.toBe(true);
       expect((await store.listSupportingDocuments(tenant.id, sessionId))).toHaveLength(2);
@@ -52,8 +92,10 @@ describe('supporting document API', () => {
       expect(updatedLead?.summary).toContain('OCR completed');
 
       const retrySession = await store.createSession(tenant.id);
-      retrySession.conversationState = { ...(retrySession.conversationState!), selectedIntentKey: 'anc.document.supporting_upload', candidateIntentKeys: ['anc.document.supporting_upload'] };
+      const retryOpportunityId = randomUUID();
+      retrySession.conversationState = { ...(retrySession.conversationState!), selectedIntentKey: 'anc.document.supporting_upload', candidateIntentKeys: ['anc.document.supporting_upload'], intentProgress: { ...newIntentProgress(), activeIntentKey: 'anc.document.supporting_upload', entries: { 'anc.document.supporting_upload': { intentKey: 'anc.document.supporting_upload', journeyId: retryOpportunityId, status: 'active', completedRequirementKeys: [], currentRequirementKey: 'document_upload', slotValues: {}, slotProvenance: {}, revision: 1 } } } };
       await store.updateSession(retrySession);
+      await store.createPackageSelection({ id: randomUUID(), tenantId: tenant.id, sessionId: retrySession.id, opportunityId: retryOpportunityId, packageOfferingId: offering.id, quoteId: randomUUID(), status: 'confirmed', confirmedAt: timestamp, createdAt: timestamp, updatedAt: timestamp });
       const retryUpload = await api.post(`/api/v1/chat/sessions/${retrySession.id}/documents`).send({ fileName: 'retry.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(202);
       const retryDocument = await store.getSupportingDocument(retryUpload.body.document.id, tenant.id);
       const retryJob = await store.getDocumentProcessingJob(retryUpload.body.jobId, tenant.id);
@@ -66,8 +108,10 @@ describe('supporting document API', () => {
       expect((await store.getDocumentProcessingJob(retried.body.jobId, tenant.id))?.status).toBe('queued');
 
       const expiredSession = await store.createSession(tenant.id);
-      expiredSession.conversationState = { ...(expiredSession.conversationState!), selectedIntentKey: 'anc.document.supporting_upload', candidateIntentKeys: ['anc.document.supporting_upload'] };
+      const expiredOpportunityId = randomUUID();
+      expiredSession.conversationState = { ...(expiredSession.conversationState!), selectedIntentKey: 'anc.document.supporting_upload', candidateIntentKeys: ['anc.document.supporting_upload'], intentProgress: { ...newIntentProgress(), activeIntentKey: 'anc.document.supporting_upload', entries: { 'anc.document.supporting_upload': { intentKey: 'anc.document.supporting_upload', journeyId: expiredOpportunityId, status: 'active', completedRequirementKeys: [], currentRequirementKey: 'document_upload', slotValues: {}, slotProvenance: {}, revision: 1 } } } };
       await store.updateSession(expiredSession);
+      await store.createPackageSelection({ id: randomUUID(), tenantId: tenant.id, sessionId: expiredSession.id, opportunityId: expiredOpportunityId, packageOfferingId: offering.id, quoteId: randomUUID(), status: 'confirmed', confirmedAt: timestamp, createdAt: timestamp, updatedAt: timestamp });
       const expiredUpload = await api.post(`/api/v1/chat/sessions/${expiredSession.id}/documents`).send({ fileName: 'expired.pdf', mimeType: 'application/pdf', contentBase64, processingConsent: true }).expect(202);
       const expiredDocument = await store.getSupportingDocument(expiredUpload.body.document.id, tenant.id);
       expect(expiredDocument).not.toBeNull();

@@ -15,6 +15,7 @@ import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './catal
 import { auditLegacyCatalogVersion, createLegacyCatalogV2Candidate } from './catalog-v2-migration.js';
 import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 import { reduceIntentJourney } from './intent-journey.js';
+import { completeLifecycleStage, newLifecycleState } from './lifecycle-state.js';
 import { normalizeFullTextQuery } from './search-query.js';
 import { exportIntentCatalogWorkbook } from './intent-catalog-xlsx.js';
 import { exportCatalogV2Workbook } from './catalog-v2-xlsx.js';
@@ -27,7 +28,7 @@ import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLea
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
 import { validateV2ProviderCorrelation, v2ProviderCorrelationSchema, type V2ProviderCorrelation } from './v2-provider-correlation.js';
-import type { ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, FollowUpOfferOption, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, Message, PendingFollowUpOffer, Session, SourceStatus, Store, SupportingDocument } from './types.js';
+import type { ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, FollowUpOfferOption, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, LifecycleStage, Message, PendingFollowUpOffer, Session, SourceStatus, Store, SupportingDocument } from './types.js';
 import { HttpError, parse } from './http/errors.js';
 import {
   DEFAULT_CONTEXT_WINDOW_MESSAGES,
@@ -345,6 +346,7 @@ export interface AppDependencies {
   cache?: CacheStore;
   chatResponseCacheTtlSeconds?: number;
   catalogQueryNormalizationEnabled?: boolean;
+  sessionAccessTokenRequired?: boolean;
   v2Coordinator?: V2ConversationCoordinator;
 }
 
@@ -390,6 +392,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const readRateLimit = (value: number | undefined, name: string, fallback: number, max: number): number => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return fallback; const parsed = Number(raw); if (!Number.isInteger(parsed) || parsed < 1 || parsed > max) throw new Error(`${name} must be an integer between 1 and ${max}.`); return parsed; };
   const chatResponseCacheTtlSeconds = readCacheTtl(dependencies.chatResponseCacheTtlSeconds, 'CHAT_RESPONSE_CACHE_TTL_SECONDS', 60, 300);
   const catalogQueryNormalizationEnabled = dependencies.catalogQueryNormalizationEnabled ?? process.env.CATALOG_QUERY_NORMALIZATION_ENABLED === 'true';
+  const sessionAccessTokenRequired = dependencies.sessionAccessTokenRequired ?? process.env.CHAT_SESSION_TOKEN_REQUIRED === 'true';
   const updateSessionSafely = async (session: Session, preserveConcurrentState: boolean, conflictMerge: 'conversation' | 'workflow' = 'conversation'): Promise<Session> => {
     let candidate = session;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -415,15 +418,44 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     }
     throw new HttpError(409, 'SESSION_STATE_CONFLICT', 'Another message changed this conversation. Retry with the latest prompt.');
   };
-  const syncWorkflowState = async (action: Pick<ActionRequest, 'id' | 'tenantId' | 'sessionId' | 'intentKey' | 'catalogVersionId'>, status: ActionState): Promise<void> => {
+  const advanceLifecycleStage = async (session: Session, stage: LifecycleStage, evidence: Record<string, string | number | boolean>): Promise<void> => {
+    const current = await store.getSession(session.id);
+    if (!current || current.tenantId !== session.tenantId) return;
+    const state = current.conversationState ?? newConversationState();
+    const intentKey = state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey;
+    const entry = intentKey ? state.intentProgress?.entries[intentKey] : null;
+    if (!entry || !entry.journeyId || !entry.lifecycle) return;
+    if (entry.lifecycle.stages[stage]?.status === 'completed') return;
+    if (entry.lifecycle.currentStage !== stage) return;
+    const lifecycle = completeLifecycleStage(entry.lifecycle ?? newLifecycleState(), stage, evidence);
+    const nextEntry = { ...entry, lifecycle, revision: entry.revision + 1 };
+    const nextProgress = { ...(state.intentProgress!), entries: { ...(state.intentProgress?.entries ?? {}), [intentKey!]: nextEntry }, journeys: { ...(state.intentProgress?.journeys ?? {}), [entry.journeyId]: nextEntry }, journeyRevision: Math.max(state.intentProgress?.journeyRevision ?? 0, lifecycle.revision) };
+    await updateSessionSafely({ ...current, conversationState: { ...state, intentProgress: nextProgress } }, true, 'workflow');
+  };
+  const syncWorkflowState = async (action: Pick<ActionRequest, 'id' | 'tenantId' | 'sessionId' | 'intentKey' | 'catalogVersionId' | 'workflowKey' | 'opportunityId'>, status: ActionState): Promise<void> => {
     const session = await store.getSession(action.sessionId);
     if (!session || session.tenantId !== action.tenantId) return;
     const currentState = session.conversationState;
-    if (currentState && action.intentKey && currentState.selectedIntentKey && currentState.selectedIntentKey !== action.intentKey) return;
+    const lifecycleIntentTransition = action.workflowKey === 'crm.account.convert' && action.intentKey === 'account.registration';
+    if (currentState && action.intentKey && currentState.selectedIntentKey && currentState.selectedIntentKey !== action.intentKey && !lifecycleIntentTransition) return;
     if (currentState && action.catalogVersionId && currentState.catalogVersionId && currentState.catalogVersionId !== action.catalogVersionId) return;
     const workflowStatus = status === 'completed' ? 'succeeded' : status === 'reconcile_required' ? 'reconcile_required' : status === 'human_review' ? 'human_review' : status === 'failed' ? 'failed' : status === 'awaiting_customer' ? 'awaiting_customer' : 'processing';
     const phase = status === 'completed' ? 'SUCCEEDED' : status === 'reconcile_required' ? 'RECONCILE_REQUIRED' : status === 'human_review' ? 'HUMAN_REVIEW' : status === 'failed' ? 'FAILED' : status === 'awaiting_customer' ? 'SLOT_COLLECTION' : 'QUEUED';
     await updateSessionSafely({ ...session, conversationState: { ...(currentState ?? newConversationState()), workflowStatus, phase, pendingPrompt: null } }, true, 'workflow');
+    if (status === 'completed' && action.opportunityId) {
+      const refreshed = await store.getSession(action.sessionId);
+      if (refreshed) {
+        if (action.workflowKey === 'crm.lead.create') {
+          await advanceLifecycleStage(refreshed, 'lead_generation', { actionId: action.id, providerVerified: true });
+          const lead = await store.getCrmLeadByActionId(action.id, action.tenantId);
+          if (lead?.qualificationStatus === 'qualified') {
+            await advanceLifecycleStage(refreshed, 'lead_qualification', { actionId: action.id, qualificationVerified: true });
+          }
+        } else if (action.workflowKey === 'crm.account.convert') {
+          await advanceLifecycleStage(refreshed, 'account_creation', { actionId: action.id, providerVerified: true });
+        }
+      }
+    }
   };
   const assertWorkflowExecution = async (action: ActionRequest, executionReference: string | undefined, eventId: string | undefined, correlationId: string | undefined, attempt: number | undefined, requireReference: boolean): Promise<void> => {
     if (!eventId || !correlationId || attempt === undefined || (requireReference && !executionReference)) throw new HttpError(409, 'WORKFLOW_CORRELATION_REQUIRED', 'A verified workflow event, correlation, attempt and execution reference are required.');
@@ -483,6 +515,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (!session || session.tenantId !== action.tenantId || !tenant || (channel && channel.tenantId !== action.tenantId)) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
     if (!tenant) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
     ensureLiveSession(session.lastActivityAt, session.closedAt);
+    await authorizeSessionAccessToken(req, session);
     if (!getAuth(req) && !channel) {
       if (!tenant.publicChatEnabled) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
       enforcePublicOrigin(req, tenant, nodeEnv);
@@ -581,7 +614,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const auth = new AuthService(store, jwtSecret);
   const gateway = new ActionGateway(store, workflow);
   const app = express();
-  registerV2ToolGateway(app, { store, embedding, serviceKey: process.env.MODEL_GATEWAY_SERVICE_KEY ?? '' });
   const rateLimits = new Map<string, RateLimitEntry>();
   const newTelemetry = (): Telemetry => ({ requests: 0, serverErrors: 0, totalLatencyMs: 0, lastRequestAt: null, chatResponses: 0, groundedResponses: 0, abstentions: 0, actionProposals: 0, estimatedInputTokens: 0, estimatedOutputTokens: 0, estimatedCostUsd: inputCostUsdPerMillion !== null && outputCostUsdPerMillion !== null ? 0 : null, normalizationAttempts: 0, normalizationFallbacks: 0, normalizationFailures: 0, normalizationLatencyMs: 0 });
   const telemetry = newTelemetry();
@@ -622,6 +654,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
   // shortcut: one bounded JSON parser supports local 20 MiB base64 uploads; replace with streaming/object storage before production.
   app.use(express.json({ limit: '30mb' }));
+  registerV2ToolGateway(app, { store, embedding, serviceKey: process.env.MODEL_GATEWAY_SERVICE_KEY ?? '' });
   app.use((req, res, next) => { const started = Date.now(); res.once('finish', () => { const elapsed = Date.now() - started; const failed = res.statusCode >= 500 ? 1 : 0; const timestamp = new Date().toISOString(); telemetry.requests += 1; telemetry.serverErrors += failed; telemetry.totalLatencyMs += elapsed; telemetry.lastRequestAt = timestamp; const tenantId = (req as AuthedRequest).auth?.tenantId; if (tenantId) { const scoped = tenantTelemetry.get(tenantId) ?? newTelemetry(); scoped.requests += 1; scoped.serverErrors += failed; scoped.totalLatencyMs += elapsed; scoped.lastRequestAt = timestamp; tenantTelemetry.set(tenantId, scoped); } }); next(); });
   app.use((req, res, next) => {
     if (!req.path.startsWith('/api/')) { next(); return; }
@@ -675,8 +708,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       void channelApi(req, res, next).catch(next);
     });
   };
+  const authorizeSessionAccessToken = async (req: Request, session: Session): Promise<void> => {
+    if (getAuth(req)) return;
+    const token = req.header('x-agentic-session-token');
+    if (!sessionAccessTokenRequired && !token) return;
+    if (!token || !(await store.verifySessionAccessToken(session.id, createHash('sha256').update(token).digest('hex')))) {
+      throw new HttpError(401, token ? 'SESSION_TOKEN_INVALID' : 'SESSION_TOKEN_REQUIRED', 'A valid session access token is required.');
+    }
+  };
   const authorizeChatSession = async (req: Request, session: Session): Promise<void> => {
     ensureLiveSession(session.lastActivityAt, session.closedAt);
+    await authorizeSessionAccessToken(req, session);
     const tenant = await activeTenant(store, session.tenantId);
     const channel = getChannel(req);
     if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
@@ -712,7 +754,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     modelConfigured: Boolean(dependencies.model),
     embeddingConfigured: Boolean(dependencies.embedding),
   });
-  registerLifecycleRoutes(app, { store, gateway, chatApi, routeParam, authorizeSession: authorizeChatSession });
+  registerLifecycleRoutes(app, { store, gateway, chatApi, routeParam, authorizeSession: authorizeChatSession, advanceLifecycleStage });
   app.post('/api/v1/admin/ingestion-jobs', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
     try {
       const tenantId = await tenantForRequest(store, req);
@@ -1217,6 +1259,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const completedJob = await store.updateDocumentProcessingJob({ ...job, status: 'completed', leaseExpiresAt: null, executionReference: input.executionReference ?? job.executionReference, updatedAt: new Date().toISOString() });
       if (document.leadId) { const lead = await store.getCrmLead(document.leadId, input.tenantId); if (lead) { const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id); const composed = [lead.summary, composeDocumentSummary(lead, documents)].filter(Boolean).join('\n').slice(0, 20_000); await store.updateCrmLeadSummary(lead.id, lead.tenantId, composed, 'completed'); } }
       await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'document.completed', metadata: { documentId: document.id, jobId: job.id, status: 'completed' }, createdAt: new Date().toISOString() });
+      if (document.opportunityId) await advanceLifecycleStage(session, 'document_upload', { documentId: document.id, ocrStatus: 'completed', providerVerified: true });
       res.json({ document: publicDocument(completedDocument), job: completedJob });
     } catch (error) { next(error); }
   });
@@ -1267,6 +1310,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
       ensureLiveSession(session.lastActivityAt, session.closedAt);
       const tenant = await activeTenant(store, session.tenantId);
+      await authorizeSessionAccessToken(req, session);
       if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
       enforcePublicChatEnabled(req, tenant);
       if ((channel && channel.tenantId !== session.tenantId) || (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin')) throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.');
@@ -1710,6 +1754,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
          });
            v2Draft = v2.draft;
            v2NoEvidenceDialogue = v2.guardReason === 'safe_no_evidence_dialogue';
+           await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.turn', metadata: { sessionId: session.id, modelRequestCount: v2.modelRequestCount, toolCallCount: v2.toolCallCount, guardReason: v2.guardReason, executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
          } catch {
            // An attempted V2 turn must fail closed; never bypass its guard through legacy generation.
            v2Draft = { answer: naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues }), citationIds: [], proposedIntent: null };
@@ -2079,6 +2124,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!session || session.tenantId !== action.tenantId || !tenant || (channel && channel.tenantId !== action.tenantId) || (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== action.tenantId)) throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.');
       if (!getAuth(req) && !channel) { enforcePublicOrigin(req, tenant, nodeEnv); enforcePublicChatEnabled(req, tenant); }
       ensureLiveSession(session.lastActivityAt, session.closedAt);
+      await authorizeSessionAccessToken(req, session);
       await activeTenant(store, action.tenantId);
       const confirmationState = session.conversationState ?? newConversationState();
       const confirmationIntentKey = confirmationState.activeFollowUpIntentKey ?? confirmationState.intentProgress?.activeIntentKey ?? confirmationState.selectedIntentKey;
@@ -2220,7 +2266,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       assertKnownTokens(session, JSON.stringify({ leadData, conversation }), tokenVault);
       const existing = await store.getCrmLeadByActionId(input.actionId, input.tenantId);
       if (existing) {
-        if (input.completeAction && action.state !== 'completed') await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${existing.id}` } });
+        if (input.completeAction && action.state !== 'completed') {
+          const completedAction = await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${existing.id}` } });
+          await syncWorkflowState(completedAction, 'completed');
+        }
         res.json({ lead: existing, externalReference: `crm-lead-${existing.id}` }); return;
       }
       const lead: CrmLead = { id: randomUUID(), tenantId: input.tenantId, actionId: input.actionId, sessionId: input.sessionId, intent: authorizedIntent, secondaryIntentKeys: (session.conversationState?.candidateIntentKeys ?? []).filter((key) => key !== authorizedIntent), intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: action.catalogVersionId ?? null, score, contactCompletenessScore: contactCompletenessScore({ validName, validEmail: Boolean(rehydratedEmail && isValidLeadEmail(rehydratedEmail)), validPhone: Boolean(rehydratedPhone && isValidLeadPhone(rehydratedPhone)) }), validationPass, leadData, conversation, summary: null, summaryStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
@@ -2232,7 +2281,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       await store.createCrmLeadAssociation({ id: randomUUID(), tenantId: input.tenantId, crmLeadId: created.id, actionId: input.actionId, sessionId: input.sessionId, opportunityId: action.opportunityId ?? null, associationType: 'canonical', createdAt: new Date().toISOString() });
       await store.linkSessionDocuments(created.sessionId, created.tenantId, created.id);
-      if (input.completeAction) await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${created.id}` } });
+      if (input.completeAction) {
+        const completedAction = await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${created.id}` } });
+        await syncWorkflowState(completedAction, 'completed');
+      }
       session.conversationState = { ...(session.conversationState ?? newConversationState()), workflowStatus: 'queued', phase: 'QUEUED', pendingPrompt: null };
       await updateSessionSafely(session, true);
       await store.addAudit({ id: randomUUID(), tenantId: created.tenantId, actorId: null, eventName: 'crm.lead_created', metadata: { leadId: created.id, intent: created.intent, score: created.score, validationPass: created.validationPass }, createdAt: new Date().toISOString() });
@@ -2265,6 +2317,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const summarized = scored ? await store.updateCrmLeadSummary(scored.id, input.tenantId, composed, 'completed') : null;
       const updated = summarized ? await store.updateCrmLeadQualification(summarized.id, input.tenantId, input.status, input.evidence) : null;
       if (!updated) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
+      const action = await store.getAction(updated.actionId);
+      if (action?.state === 'completed') await syncWorkflowState(action, 'completed');
       res.json({ lead: updated });
     } catch (error) { next(error); }
   });
@@ -2424,6 +2478,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
       ensureLiveSession(session.lastActivityAt, session.closedAt);
       const tenant = await activeTenant(store, session.tenantId);
+      await authorizeSessionAccessToken(req, session);
       const channel = getChannel(req);
       if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
       if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
@@ -2436,6 +2491,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
       ensureLiveSession(session.lastActivityAt, session.closedAt);
       const tenant = await activeTenant(store, session.tenantId);
+      await authorizeSessionAccessToken(req, session);
       const channel = getChannel(req);
       if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
       if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
@@ -2454,6 +2510,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const policy = version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === requestedIntentKey) ?? version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === 'anc.document.supporting_upload');
       const journeyRequirement = version?.catalog.journeyRequirements?.find((candidate) => candidate.intentKey === requestedIntentKey && candidate.requirementKey === input.requirementKey && candidate.requirementType === 'document') ?? null;
       if (input.requirementKey && (!journeyRequirement || !journeyRequirement.documentType || !policy?.allowedDocumentTypes.includes(journeyRequirement.documentType))) throw new HttpError(409, 'DOCUMENT_REQUIREMENT_NOT_ACTIVE', 'The requested document requirement is not active for this conversation.');
+      const documentOpportunityId = conversationState.intentProgress?.entries[requestedIntentKey]?.journeyId ?? null;
+      if (!documentOpportunityId) throw new HttpError(409, 'DOCUMENT_PACKAGE_NOT_CONFIRMED', 'A confirmed package selection is required before document upload.');
+      const confirmedPackage = (await store.listPackageSelections(session.tenantId, documentOpportunityId)).find((selection) => selection.status === 'confirmed');
+      const packageOffering = confirmedPackage ? await store.getPackageOffering(confirmedPackage.packageOfferingId, session.tenantId) : null;
+      if (!confirmedPackage || !packageOffering) throw new HttpError(409, 'DOCUMENT_PACKAGE_NOT_CONFIRMED', 'A confirmed package selection is required before document upload.');
+      if (journeyRequirement?.documentType && !packageOffering.requiredDocuments.includes(journeyRequirement.documentType)) throw new HttpError(409, 'DOCUMENT_NOT_REQUIRED_BY_PACKAGE', 'This document is not required by the confirmed package.');
       if (!settings?.enabled || !binding || !policy?.enabled || !policy.allowUserInitiated || !policy.consentRequired) throw new HttpError(409, 'DOCUMENT_WORKFLOW_NOT_AVAILABLE', 'Supporting document intake is not enabled for this tenant yet.');
       if (!settings.allowedMimeTypes.includes(input.mimeType) || !DEFAULT_DOCUMENT_MIME_TYPES.includes(input.mimeType)) throw new HttpError(422, 'DOCUMENT_TYPE_NOT_ALLOWED', 'This document type is not allowed by the published catalog.');
       if (!isValidBase64(input.contentBase64)) throw new HttpError(422, 'DOCUMENT_ENCODING_INVALID', 'The document encoding is invalid.');
@@ -2462,7 +2524,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (content.length === 0 || content.length > maxBytes) throw new HttpError(413, 'DOCUMENT_TOO_LARGE', 'The document exceeds the published size limit.');
       if (!hasSupportingDocumentSignature(input.mimeType, content)) throw new HttpError(422, 'DOCUMENT_SIGNATURE_INVALID', 'The document content does not match its declared type.');
       const sha256 = documentSha256(content);
-      const documentOpportunityId = conversationState.intentProgress?.entries[requestedIntentKey]?.journeyId ?? null;
       const duplicate = (await store.listSupportingDocuments(session.tenantId, session.id)).find((candidate) => candidate.sha256 === sha256
         && (candidate.opportunityId ?? null) === documentOpportunityId
         && candidate.intentKey === requestedIntentKey
@@ -2507,6 +2568,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
       ensureLiveSession(session.lastActivityAt, session.closedAt);
       const tenant = await activeTenant(store, session.tenantId);
+      await authorizeSessionAccessToken(req, session);
       const channel = getChannel(req);
       if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
       if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
@@ -2523,7 +2585,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.setHeader('content-type', document.mimeType); res.setHeader('content-disposition', `attachment; filename="${document.fileName.replace(/["\\\r\n]/gu, '_')}"`); res.send(content);
     } catch (error) { next(error); }
   });
-  app.get('/api/v1/chat/sessions/:id', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const session = await store.getSession(routeParam(req, 'id')); if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); ensureLiveSession(session.lastActivityAt, session.closedAt); const tenant = await store.getTenant(session.tenantId); if (!tenant) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (!getAuth(req) && !channel) { if (tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.'); const { limit } = parse(historyQuerySchema, req.query); res.json({ sessionId: session.id, tenantId: session.tenantId, createdAt: session.createdAt, messages: (await store.listMessages(session.id, session.tenantId, limit)).map((message) => ({ id: message.id, role: message.role, content: message.role === 'assistant' ? rehydrateForSession(session, message.maskedContent, tokenVault) : message.maskedContent, citations: message.citations, conversational: message.response?.conversational === true, pendingIntentKey: typeof message.response?.catalogIntentKey === 'string' ? message.response.catalogIntentKey : null, pendingRequirementKey: typeof message.response?.catalogRequirementKey === 'string' ? message.response.catalogRequirementKey : null, clientMessageId: message.clientMessageId, createdAt: message.createdAt })) }); } catch (error) { next(error); } });
+  app.get('/api/v1/chat/sessions/:id', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const session = await store.getSession(routeParam(req, 'id')); if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); ensureLiveSession(session.lastActivityAt, session.closedAt); await authorizeSessionAccessToken(req, session); const tenant = await store.getTenant(session.tenantId); if (!tenant) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (!getAuth(req) && !channel) { if (tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.'); const { limit } = parse(historyQuerySchema, req.query); res.json({ sessionId: session.id, tenantId: session.tenantId, createdAt: session.createdAt, messages: (await store.listMessages(session.id, session.tenantId, limit)).map((message) => ({ id: message.id, role: message.role, content: message.role === 'assistant' ? rehydrateForSession(session, message.maskedContent, tokenVault) : message.maskedContent, citations: message.citations, conversational: message.response?.conversational === true, pendingIntentKey: typeof message.response?.catalogIntentKey === 'string' ? message.response.catalogIntentKey : null, pendingRequirementKey: typeof message.response?.catalogRequirementKey === 'string' ? message.response.catalogRequirementKey : null, clientMessageId: message.clientMessageId, createdAt: message.createdAt })) }); } catch (error) { next(error); } });
 
   app.get('/api/v1/admin/workflow-runs', protectedApi, async (req, res, next) => {
     try {

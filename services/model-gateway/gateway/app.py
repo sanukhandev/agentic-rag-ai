@@ -7,6 +7,7 @@ import math
 import os
 import secrets
 import time
+from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
 from openai import AsyncOpenAI
@@ -15,6 +16,7 @@ from pydantic import ValidationError
 from .contracts import PlanRequest, PlanResult, NormalizeRequest, NormalizeResult
 from .agent import BoundedConversationAgent, HttpToolGateway
 from .graph import LangGraphConversationAgent
+from .mock_model import MockResponsesClient
 from .reliability import BudgetExceeded, CircuitBreaker, RateLimitExceeded, SlidingWindowRateLimiter, TurnBudget
 from .v2_contracts import AgentTurnResultV2, TurnEnvelopeV2
 
@@ -22,7 +24,7 @@ app = FastAPI(title="Private Conversation Model Gateway", docs_url=None, redoc_u
 _limit = asyncio.Semaphore(max(1, min(4, int(os.getenv("MODEL_MAX_CONCURRENCY", "2")))))
 _pacing_lock = asyncio.Lock()
 _next_call_at = 0.0
-_client: AsyncOpenAI | None = None
+_client: Any | None = None
 _logger = logging.getLogger("model-gateway")
 _rate_limiter = SlidingWindowRateLimiter(int(os.getenv("MODEL_MAX_REQUESTS_PER_MINUTE", "60")))
 _circuit = CircuitBreaker(
@@ -86,8 +88,12 @@ async def _auth(x_internal_service_key: str | None) -> None:
     if not secret or not x_internal_service_key or not secrets.compare_digest(secret, x_internal_service_key):
         raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED"})
 
-def _client_get() -> AsyncOpenAI:
+def _client_get() -> Any:
     global _client
+    if os.getenv("MODEL_MODE", "azure").lower() == "mock":
+        if _client is None or not isinstance(_client, MockResponsesClient):
+            _client = MockResponsesClient()
+        return _client
     if _client is None:
         key = os.getenv("AZURE_OPENAI_API_KEY", "")
         endpoint = os.getenv("AZURE_OPENAI_BASE_URL", "")

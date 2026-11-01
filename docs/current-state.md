@@ -496,3 +496,19 @@ typecheck, lint, build, Compose and secret checks passing. The v2 flag remains
 unpromoted and release approval is blocked on the manually triggered #124
 acceptance.
 Evidence is recorded in `docs/verification/conversation-v2/V2-P7-04.md`.
+
+## Disposable ANC Stage 5 API UAT — 2026-11-01
+
+The implementation now includes an isolated Compose project in
+`docker-compose.anc-mock-uat.yml`, a deterministic local model running through
+the real LangGraph path, a synthetic ANC bootstrap, and an HTTP-only UAT
+runner. The disposable stack uses its own PostgreSQL, Redis and document
+volumes and binds only `127.0.0.1:4100`; the populated operational environment
+was not used or modified. Strict execution passed the happy-path,
+empty-retrieval and security/recovery scenarios with 34/34 assertions, and
+reached durable local document OCR completion at `document_upload`.
+
+This evidence is limited to deterministic mock-provider execution. SF-02
+external attachment verification and the Azure deployment run remain blocked;
+the journey intentionally stops before payment/invoice. Reports are emitted to
+`artifacts/ancfz-stage5-api-uat/`.

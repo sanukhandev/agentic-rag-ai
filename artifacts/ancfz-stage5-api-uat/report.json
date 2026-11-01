@@ -1,0 +1,1062 @@
+{
+  "runId": "af57026d-2a12-4dc2-af70-7a22744c896b",
+  "startedAt": "2026-11-01T19:44:08.047Z",
+  "endedAt": "2026-11-01T19:44:15.943Z",
+  "branch": "feat/conversation-v2-langgraph-stage5-safe",
+  "commit": "da6744de6a53e444858e3c8d4c563bbe7a2f1168",
+  "apiBase": "http://127.0.0.1:4100",
+  "project": "anc-mock-uat",
+  "model": {
+    "mode": "mock",
+    "deployment": null
+  },
+  "tenantSlug": "anc",
+  "syntheticOnly": true,
+  "scenarios": [
+    {
+      "name": "A-happy-path",
+      "status": "PASSED",
+      "turns": 25
+    },
+    {
+      "name": "B-empty-rag",
+      "status": "PASSED",
+      "turns": 3
+    },
+    {
+      "name": "C-security-recovery",
+      "status": "PASSED"
+    }
+  ],
+  "assertions": [
+    {
+      "passed": true,
+      "message": "Session created for anc.",
+      "status": 201
+    },
+    {
+      "passed": true,
+      "message": "Knowledge interruption preserved the pending qualification requirement."
+    },
+    {
+      "passed": true,
+      "message": "Duplicate clientMessageId replay returned the durable cached response."
+    },
+    {
+      "passed": true,
+      "message": "Customer correction remained on the same opportunity."
+    },
+    {
+      "passed": true,
+      "message": "Explicit action confirmation was accepted by the API.",
+      "status": 200
+    },
+    {
+      "passed": true,
+      "message": "Primary conversation included a customer correction."
+    },
+    {
+      "passed": true,
+      "message": "Primary conversation included a knowledge question."
+    },
+    {
+      "passed": true,
+      "message": "Primary conversation included a duplicate message retry."
+    },
+    {
+      "passed": true,
+      "message": "Primary conversation established one stable opportunity."
+    },
+    {
+      "passed": true,
+      "message": "Document upload before package confirmation was rejected.",
+      "status": 409,
+      "code": "DOCUMENT_PACKAGE_NOT_CONFIRMED"
+    },
+    {
+      "passed": true,
+      "message": "Account proposal was accepted only after verified qualification.",
+      "status": 202
+    },
+    {
+      "passed": true,
+      "message": "Explicit action confirmation was accepted by the API.",
+      "status": 200
+    },
+    {
+      "passed": true,
+      "message": "Mock Account action reached a durable completed state.",
+      "state": "completed"
+    },
+    {
+      "passed": true,
+      "message": "Mock Account is durably verified.",
+      "status": 200
+    },
+    {
+      "passed": true,
+      "message": "Approved package options were returned from the tenant catalog.",
+      "status": 200
+    },
+    {
+      "passed": true,
+      "message": "Package selection and approved quote used the published fixture price.",
+      "proposalStatus": 201,
+      "quoteStatus": 201
+    },
+    {
+      "passed": true,
+      "message": "Package selection was explicitly confirmed and persisted.",
+      "status": 200
+    },
+    {
+      "passed": true,
+      "message": "Document policy was read from the published catalog.",
+      "status": 200
+    },
+    {
+      "passed": true,
+      "message": "Invalid document MIME/signature was rejected.",
+      "status": 422,
+      "code": "DOCUMENT_TYPE_NOT_ALLOWED"
+    },
+    {
+      "passed": true,
+      "message": "Synthetic PDF was accepted and queued for processing.",
+      "status": 202
+    },
+    {
+      "passed": true,
+      "message": "Document OCR processing reached a durable completed state."
+    },
+    {
+      "passed": true,
+      "message": "Duplicate document upload was idempotent.",
+      "status": 202
+    },
+    {
+      "passed": true,
+      "message": "Primary scenario reached the minimum of 25 customer turns.",
+      "turns": 25
+    },
+    {
+      "passed": true,
+      "message": "Primary scenario reached the document stage in durable state.",
+      "currentStage": null
+    },
+    {
+      "passed": true,
+      "message": "Primary journey stopped before payment/invoice execution."
+    },
+    {
+      "passed": true,
+      "message": "Session created for anc-empty.",
+      "status": 201
+    },
+    {
+      "passed": true,
+      "message": "Empty-RAG scenario did not invent prices or policy claims."
+    },
+    {
+      "passed": true,
+      "message": "Empty-RAG scenario avoided the generic no-grounded-response loop."
+    },
+    {
+      "passed": true,
+      "message": "Empty-RAG scenario preserved the goal or asked a relevant next question."
+    },
+    {
+      "passed": true,
+      "message": "Reusing a clientMessageId with different content was rejected.",
+      "status": 409
+    },
+    {
+      "passed": true,
+      "message": "Session created for anc.",
+      "status": 201
+    },
+    {
+      "passed": true,
+      "message": "Cross-session action confirmation was rejected.",
+      "status": 404
+    },
+    {
+      "passed": true,
+      "message": "Session created for anc.",
+      "status": 201
+    },
+    {
+      "passed": true,
+      "message": "Account creation before qualification was rejected.",
+      "status": 409,
+      "code": "OPPORTUNITY_NOT_ACTIVE"
+    }
+  ],
+  "failedAssertions": [],
+  "primary": {
+    "sessionId": "98da0d4c-771c-4200-87f1-e35b6a5d6dd7",
+    "tenantId": "110a38e2-a3d2-4a4f-b9c1-9d431dc86ac6",
+    "turns": [
+      {
+        "message": "Hi Zara, I’m thinking about starting a software consulting company in the UAE.",
+        "clientMessageId": "904e915a",
+        "status": 200,
+        "answer": "To continue, could you share your entity type?",
+        "pendingRequirementKey": "entity_type",
+        "actionProposal": null
+      },
+      {
+        "message": "Could you explain the general company formation process and what is still needed?",
+        "clientMessageId": "ba6a3f60",
+        "status": 200,
+        "answer": "I can help you work through that.",
+        "pendingRequirementKey": "entity_type",
+        "actionProposal": null
+      },
+      {
+        "message": "Could you explain the general company formation process and what is still needed?",
+        "clientMessageId": "ba6a3f60",
+        "status": 200,
+        "answer": "I can help you work through that.",
+        "pendingRequirementKey": "entity_type",
+        "actionProposal": null
+      },
+      {
+        "message": "Correction: the business activity is software consulting and AI services.",
+        "clientMessageId": "a63feaa5",
+        "status": 200,
+        "answer": "To continue, could you share your entity type?",
+        "pendingRequirementKey": "entity_type",
+        "actionProposal": null
+      },
+      {
+        "message": "LLC",
+        "clientMessageId": "79a42612",
+        "status": 200,
+        "answer": "To continue, could you share your visa count?",
+        "pendingRequirementKey": "visa_count",
+        "actionProposal": null
+      },
+      {
+        "message": "3",
+        "clientMessageId": "8143d83b",
+        "status": 200,
+        "answer": "To continue, could you share your name?",
+        "pendingRequirementKey": "name",
+        "actionProposal": null
+      },
+      {
+        "message": "My name is [NAME_REDACTED].",
+        "clientMessageId": "32953909",
+        "status": 200,
+        "answer": "To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null
+      },
+      {
+        "message": "My email is [EMAIL_REDACTED].",
+        "clientMessageId": "2f3ccec9",
+        "status": 200,
+        "answer": "To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "phone",
+        "actionProposal": null
+      },
+      {
+        "message": "My phone number is [PHONE_REDACTED].",
+        "clientMessageId": "760d032e",
+        "status": 200,
+        "answer": "I have the details needed. Please approve the consent action below to register your request. To continue, could you share your contact consent?",
+        "pendingRequirementKey": "contact_consent",
+        "actionProposal": {
+          "id": "13d50879",
+          "intent": "crm.lead.create",
+          "consentRequired": true
+        }
+      },
+      {
+        "message": "Yes, I explicitly consent to being contacted about this request.",
+        "clientMessageId": "e6e840c5",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "Please keep my company formation request moving and tell me the next verified requirement.",
+        "clientMessageId": "8b06c497",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "What should I prepare next for this company formation request?",
+        "clientMessageId": "ed5220eb",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "Please keep my company formation request moving and tell me the next verified requirement.",
+        "clientMessageId": "ff823f8d",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "What should I prepare next for this company formation request?",
+        "clientMessageId": "06ee0ee7",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "Please keep my company formation request moving and tell me the next verified requirement.",
+        "clientMessageId": "90f6fc59",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "What should I prepare next for this company formation request?",
+        "clientMessageId": "ba85d442",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "Please keep my company formation request moving and tell me the next verified requirement.",
+        "clientMessageId": "f7e33285",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "What should I prepare next for this company formation request?",
+        "clientMessageId": "7c95ad46",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "Please keep my company formation request moving and tell me the next verified requirement.",
+        "clientMessageId": "404ec39f",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "What should I prepare next for this company formation request?",
+        "clientMessageId": "b1cf0fdc",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "Please keep my company formation request moving and tell me the next verified requirement.",
+        "clientMessageId": "cdfb5c5e",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "What should I prepare next for this company formation request?",
+        "clientMessageId": "b823e9bb",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "Please keep my company formation request moving and tell me the next verified requirement.",
+        "clientMessageId": "17b48e96",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "What should I prepare next for this company formation request?",
+        "clientMessageId": "398893df",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "Please keep my company formation request moving and tell me the next verified requirement.",
+        "clientMessageId": "b74f1fc4",
+        "status": 200,
+        "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      },
+      {
+        "message": "This message ID is intentionally reused with different content.",
+        "clientMessageId": "904e915a",
+        "status": 409,
+        "answer": null,
+        "pendingRequirementKey": null,
+        "actionProposal": null
+      }
+    ],
+    "actions": [
+      {
+        "id": "13d50879",
+        "state": "completed",
+        "workflowKey": "crm.lead.create"
+      },
+      {
+        "id": "c9c73c72",
+        "state": "completed",
+        "workflowKey": "crm.account.convert"
+      }
+    ],
+    "persisted": {
+      "state": {
+        "phase": "SUCCEEDED",
+        "lastTurnAt": "2026-11-01T19:44:13.640Z",
+        "slotValues": {
+          "name": "[NAME_1]",
+          "email": "[EMAIL_1]",
+          "phone": "[PHONE_1]",
+          "timeline": "Correction: the business activity is software consulting and AI services.",
+          "visa_count": "3",
+          "entity_type": "LLC",
+          "contact_consent": "true",
+          "business_activity": "Correction: the business activity is software consulting and AI services."
+        },
+        "intentScore": 50,
+        "pendingPrompt": null,
+        "consentVersion": "contact-v1:10000000-0000-4000-8000-000000000001:account.registration",
+        "contactConsent": "granted",
+        "intentEvidence": [
+          "anc.company_formation"
+        ],
+        "intentProgress": {
+          "entries": {
+            "anc.company_formation": {
+              "status": "fulfilled",
+              "revision": 29,
+              "intentKey": "anc.company_formation",
+              "journeyId": "cce5eb08-5bc9-4f88-8250-720b993add19",
+              "lifecycle": {
+                "stages": {
+                  "contract": {
+                    "stage": "contract",
+                    "status": "not_started",
+                    "evidence": {},
+                    "revision": 0,
+                    "completedAt": null
+                  },
+                  "billing_invoice": {
+                    "stage": "billing_invoice",
+                    "status": "awaiting_customer",
+                    "evidence": {},
+                    "revision": 0,
+                    "completedAt": null
+                  },
+                  "document_upload": {
+                    "stage": "document_upload",
+                    "status": "completed",
+                    "evidence": {
+                      "ocrStatus": "completed",
+                      "documentId": "b733f699-9401-423a-af2a-c2f879db91b8",
+                      "providerVerified": true
+                    },
+                    "revision": 1,
+                    "completedAt": "2026-11-01T19:44:14.994Z"
+                  },
+                  "lead_generation": {
+                    "stage": "lead_generation",
+                    "status": "completed",
+                    "evidence": {
+                      "actionId": "13d50879-139c-4b01-b0b8-ee4e69ef2888",
+                      "providerVerified": true
+                    },
+                    "revision": 1,
+                    "completedAt": "2026-11-01T19:44:10.496Z"
+                  },
+                  "account_creation": {
+                    "stage": "account_creation",
+                    "status": "completed",
+                    "evidence": {
+                      "actionId": "c9c73c72-f04b-421d-80ff-c7af92ae80e1",
+                      "providerVerified": true
+                    },
+                    "revision": 1,
+                    "completedAt": "2026-11-01T19:44:14.402Z"
+                  },
+                  "package_selection": {
+                    "stage": "package_selection",
+                    "status": "completed",
+                    "evidence": {
+                      "quoteId": "a6e8def9-fcd8-41f4-a8c7-032bf1562e0e",
+                      "selectionId": "962c8cb1-570b-4600-851c-510d4a94704e",
+                      "packageConfirmed": true
+                    },
+                    "revision": 1,
+                    "completedAt": "2026-11-01T19:44:14.434Z"
+                  },
+                  "lead_qualification": {
+                    "stage": "lead_qualification",
+                    "status": "completed",
+                    "evidence": {
+                      "actionId": "13d50879-139c-4b01-b0b8-ee4e69ef2888",
+                      "qualificationVerified": true
+                    },
+                    "revision": 1,
+                    "completedAt": "2026-11-01T19:44:10.502Z"
+                  }
+                },
+                "revision": 5,
+                "currentStage": "billing_invoice"
+              },
+              "slotValues": {
+                "name": "[NAME_1]",
+                "email": "[EMAIL_1]",
+                "phone": "[PHONE_1]",
+                "timeline": "Correction: the business activity is software consulting and AI services.",
+                "visa_count": "3",
+                "entity_type": "LLC",
+                "contact_consent": "true",
+                "business_activity": "Correction: the business activity is software consulting and AI services."
+              },
+              "slotProvenance": {
+                "name": {
+                  "source": "visitor",
+                  "corrected": false,
+                  "capturedAt": "2026-11-01T19:44:09.376Z",
+                  "messageSequence": 6
+                },
+                "email": {
+                  "source": "visitor",
+                  "corrected": false,
+                  "capturedAt": "2026-11-01T19:44:09.587Z",
+                  "messageSequence": 7
+                },
+                "phone": {
+                  "source": "visitor",
+                  "corrected": false,
+                  "capturedAt": "2026-11-01T19:44:09.765Z",
+                  "messageSequence": 8
+                },
+                "timeline": {
+                  "source": "visitor",
+                  "corrected": false,
+                  "capturedAt": "2026-11-01T19:44:08.750Z",
+                  "messageSequence": 3
+                },
+                "visa_count": {
+                  "source": "visitor",
+                  "corrected": false,
+                  "capturedAt": "2026-11-01T19:44:09.183Z",
+                  "messageSequence": 5
+                },
+                "entity_type": {
+                  "source": "visitor",
+                  "corrected": false,
+                  "capturedAt": "2026-11-01T19:44:08.972Z",
+                  "messageSequence": 4
+                },
+                "business_activity": {
+                  "source": "visitor",
+                  "corrected": true,
+                  "capturedAt": "2026-11-01T19:44:08.750Z",
+                  "messageSequence": 3
+                }
+              },
+              "currentRequirementKey": null,
+              "completedRequirementKeys": [
+                "business_activity",
+                "timeline",
+                "entity_type",
+                "visa_count",
+                "name",
+                "email",
+                "phone",
+                "contact_consent"
+              ]
+            }
+          },
+          "version": 1,
+          "journeys": {
+            "cce5eb08-5bc9-4f88-8250-720b993add19": {
+              "status": "fulfilled",
+              "revision": 29,
+              "intentKey": "anc.company_formation",
+              "journeyId": "cce5eb08-5bc9-4f88-8250-720b993add19",
+              "lifecycle": {
+                "stages": {
+                  "contract": {
+                    "stage": "contract",
+                    "status": "not_started",
+                    "evidence": {},
+                    "revision": 0,
+                    "completedAt": null
+                  },
+                  "billing_invoice": {
+                    "stage": "billing_invoice",
+                    "status": "awaiting_customer",
+                    "evidence": {},
+                    "revision": 0,
+                    "completedAt": null
+                  },
+                  "document_upload": {
+                    "stage": "document_upload",
+                    "status": "completed",
+                    "evidence": {
+                      "ocrStatus": "completed",
+                      "documentId": "b733f699-9401-423a-af2a-c2f879db91b8",
+                      "providerVerified": true
+                    },
+                    "revision": 1,
+                    "completedAt": "2026-11-01T19:44:14.994Z"
+                  },
+                  "lead_generation": {
+                    "stage": "lead_generation",
+                    "status": "completed",
+                    "evidence": {
+                      "actionId": "13d50879-139c-4b01-b0b8-ee4e69ef2888",
+                      "providerVerified": true
+                    },
+                    "revision": 1,
+                    "completedAt": "2026-11-01T19:44:10.496Z"
+                  },
+                  "account_creation": {
+                    "stage": "account_creation",
+                    "status": "completed",
+                    "evidence": {
+                      "actionId": "c9c73c72-f04b-421d-80ff-c7af92ae80e1",
+                      "providerVerified": true
+                    },
+                    "revision": 1,
+                    "completedAt": "2026-11-01T19:44:14.402Z"
+                  },
+                  "package_selection": {
+                    "stage": "package_selection",
+                    "status": "completed",
+                    "evidence": {
+                      "quoteId": "a6e8def9-fcd8-41f4-a8c7-032bf1562e0e",
+                      "selectionId": "962c8cb1-570b-4600-851c-510d4a94704e",
+                      "packageConfirmed": true
+                    },
+                    "revision": 1,
+                    "completedAt": "2026-11-01T19:44:14.434Z"
+                  },
+                  "lead_qualification": {
+                    "stage": "lead_qualification",
+                    "status": "completed",
+                    "evidence": {
+                      "actionId": "13d50879-139c-4b01-b0b8-ee4e69ef2888",
+                      "qualificationVerified": true
+                    },
+                    "revision": 1,
+                    "completedAt": "2026-11-01T19:44:10.502Z"
+                  }
+                },
+                "revision": 5,
+                "currentStage": "billing_invoice"
+              },
+              "slotValues": {
+                "name": "[NAME_1]",
+                "email": "[EMAIL_1]",
+                "phone": "[PHONE_1]",
+                "timeline": "Correction: the business activity is software consulting and AI services.",
+                "visa_count": "3",
+                "entity_type": "LLC",
+                "contact_consent": "true",
+                "business_activity": "Correction: the business activity is software consulting and AI services."
+              },
+              "slotProvenance": {
+                "name": {
+                  "source": "visitor",
+                  "corrected": false,
+                  "capturedAt": "2026-11-01T19:44:09.376Z",
+                  "messageSequence": 6
+                },
+                "email": {
+                  "source": "visitor",
+                  "corrected": false,
+                  "capturedAt": "2026-11-01T19:44:09.587Z",
+                  "messageSequence": 7
+                },
+                "phone": {
+                  "source": "visitor",
+                  "corrected": false,
+                  "capturedAt": "2026-11-01T19:44:09.765Z",
+                  "messageSequence": 8
+                },
+                "timeline": {
+                  "source": "visitor",
+                  "corrected": false,
+                  "capturedAt": "2026-11-01T19:44:08.750Z",
+                  "messageSequence": 3
+                },
+                "visa_count": {
+                  "source": "visitor",
+                  "corrected": false,
+                  "capturedAt": "2026-11-01T19:44:09.183Z",
+                  "messageSequence": 5
+                },
+                "entity_type": {
+                  "source": "visitor",
+                  "corrected": false,
+                  "capturedAt": "2026-11-01T19:44:08.972Z",
+                  "messageSequence": 4
+                },
+                "business_activity": {
+                  "source": "visitor",
+                  "corrected": true,
+                  "capturedAt": "2026-11-01T19:44:08.750Z",
+                  "messageSequence": 3
+                }
+              },
+              "currentRequirementKey": null,
+              "completedRequirementKeys": [
+                "business_activity",
+                "timeline",
+                "entity_type",
+                "visa_count",
+                "name",
+                "email",
+                "phone",
+                "contact_consent"
+              ]
+            }
+          },
+          "activeIntentKey": "anc.company_formation",
+          "journeyRevision": 24,
+          "pausedIntentKeys": [],
+          "visitedIntentKeys": [
+            "anc.company_formation"
+          ],
+          "fulfilledIntentKeys": [
+            "anc.company_formation"
+          ],
+          "lastTransitionReason": "intent_fulfilled"
+        },
+        "rollingSummary": "Primary intent: anc.company_formation (50% confidence). Visitor-provided requirements: name=[NAME_1], email=[EMAIL_1], phone=[PHONE_1], timeline=Correction: the business activity is software consulting and AI services., visa_count=3, entity_type=LLC, business_activity=Correction: the business activity is software consulting and AI services.. Consent: granted. Workflow: succeeded. Next question: none. Latest visitor message: Please keep my company formation request moving and tell me the next verified requirement.",
+        "slotProvenance": {
+          "name": {
+            "source": "visitor",
+            "corrected": false,
+            "capturedAt": "2026-11-01T19:44:09.376Z",
+            "messageSequence": 6
+          },
+          "email": {
+            "source": "visitor",
+            "corrected": false,
+            "capturedAt": "2026-11-01T19:44:09.587Z",
+            "messageSequence": 7
+          },
+          "phone": {
+            "source": "visitor",
+            "corrected": false,
+            "capturedAt": "2026-11-01T19:44:09.765Z",
+            "messageSequence": 8
+          },
+          "timeline": {
+            "source": "visitor",
+            "corrected": false,
+            "capturedAt": "2026-11-01T19:44:08.750Z",
+            "messageSequence": 3
+          },
+          "visa_count": {
+            "source": "visitor",
+            "corrected": false,
+            "capturedAt": "2026-11-01T19:44:09.183Z",
+            "messageSequence": 5
+          },
+          "entity_type": {
+            "source": "visitor",
+            "corrected": false,
+            "capturedAt": "2026-11-01T19:44:08.972Z",
+            "messageSequence": 4
+          },
+          "business_activity": {
+            "source": "visitor",
+            "corrected": true,
+            "capturedAt": "2026-11-01T19:44:08.750Z",
+            "messageSequence": 3
+          }
+        },
+        "workflowStatus": "succeeded",
+        "messageSequence": 24,
+        "summaryRevision": 24,
+        "catalogVersionId": "10000000-0000-4000-8000-000000000001",
+        "intentConfidence": 0.5,
+        "consentCapturedAt": "2026-11-01T19:44:13.857Z",
+        "selectedIntentKey": "anc.company_formation",
+        "candidateIntentKeys": [
+          "anc.company_formation"
+        ],
+        "pendingFollowUpOffer": null,
+        "activeFollowUpIntentKey": null
+      },
+      "actions": [
+        {
+          "id": "13d50879-139c-4b01-b0b8-ee4e69ef2888",
+          "workflowKey": "crm.lead.create",
+          "state": "completed",
+          "opportunityId": "cce5eb08-5bc9-4f88-8250-720b993add19",
+          "actionRevision": 1
+        },
+        {
+          "id": "c9c73c72-f04b-421d-80ff-c7af92ae80e1",
+          "workflowKey": "crm.account.convert",
+          "state": "completed",
+          "opportunityId": "cce5eb08-5bc9-4f88-8250-720b993add19",
+          "actionRevision": 1
+        }
+      ],
+      "leads": 1,
+      "accounts": 1,
+      "selections": 1,
+      "documents": [
+        {
+          "id": "b733f699-9401-423a-af2a-c2f879db91b8",
+          "status": "completed",
+          "opportunityId": "cce5eb08-5bc9-4f88-8250-720b993add19",
+          "requirementKey": "business_supporting_document"
+        }
+      ],
+      "auditEvents": [
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        },
+        {
+          "event": "v2.model.turn"
+        }
+      ]
+    },
+    "finalVerifiedStage": "document_upload",
+    "documentCollectionReached": true,
+    "actualDocumentUploadVerified": true,
+    "sf02Verified": false,
+    "audit": [
+      {
+        "event": "chat.cache_hit",
+        "count": 9
+      },
+      {
+        "event": "chat.response",
+        "count": 251
+      },
+      {
+        "event": "crm.account.remote_verified",
+        "count": 11
+      },
+      {
+        "event": "crm.lead_created",
+        "count": 11
+      },
+      {
+        "event": "crm.lead.remote_linked",
+        "count": 11
+      },
+      {
+        "event": "document.completed",
+        "count": 10
+      },
+      {
+        "event": "document.uploaded",
+        "count": 10
+      },
+      {
+        "event": "intent_catalog_v2.draft_created",
+        "count": 1
+      },
+      {
+        "event": "intent_catalog_v2.published",
+        "count": 1
+      },
+      {
+        "event": "tenant.channel_updated",
+        "count": 1
+      },
+      {
+        "event": "tenant.created",
+        "count": 1
+      },
+      {
+        "event": "v2.model.turn",
+        "count": 46
+      },
+      {
+        "event": "v2.tool.read",
+        "count": 67
+      },
+      {
+        "event": "workflow.approved",
+        "count": 22
+      },
+      {
+        "event": "workflow.consent_granted",
+        "count": 11
+      },
+      {
+        "event": "workflow.dispatch_accepted",
+        "count": 25
+      },
+      {
+        "event": "workflow.failed",
+        "count": 1
+      },
+      {
+        "event": "workflow.reconcile_required",
+        "count": 5
+      },
+      {
+        "event": "workflow.transition.processing.completed",
+        "count": 10
+      }
+    ]
+  },
+  "dockerImages": [
+    {
+      "Containers": "1",
+      "CreatedAt": "2026-11-01 23:41:13 +0400 +04",
+      "CreatedSince": "3 minutes ago",
+      "Digest": "<none>",
+      "ID": "5388f00310c7",
+      "Repository": "anc-mock-uat-api",
+      "SharedSize": "N/A",
+      "Size": "1.2GB",
+      "Tag": "latest",
+      "UniqueSize": "N/A"
+    },
+    {
+      "Containers": "1",
+      "CreatedAt": "2026-11-01 23:33:19 +0400 +04",
+      "CreatedSince": "10 minutes ago",
+      "Digest": "<none>",
+      "ID": "37a144f3041c",
+      "Repository": "anc-mock-uat-event-worker",
+      "SharedSize": "N/A",
+      "Size": "1.2GB",
+      "Tag": "latest",
+      "UniqueSize": "N/A"
+    },
+    {
+      "Containers": "1",
+      "CreatedAt": "2026-11-01 23:33:19 +0400 +04",
+      "CreatedSince": "10 minutes ago",
+      "Digest": "<none>",
+      "ID": "15805e66e51e",
+      "Repository": "anc-mock-uat-event-relay",
+      "SharedSize": "N/A",
+      "Size": "1.2GB",
+      "Tag": "latest",
+      "UniqueSize": "N/A"
+    },
+    {
+      "Containers": "1",
+      "CreatedAt": "2026-11-01 23:26:30 +0400 +04",
+      "CreatedSince": "17 minutes ago",
+      "Digest": "<none>",
+      "ID": "4425c2a14dbe",
+      "Repository": "anc-mock-uat-model-gateway",
+      "SharedSize": "N/A",
+      "Size": "306MB",
+      "Tag": "latest",
+      "UniqueSize": "N/A"
+    }
+  ],
+  "toolExecutionEvidence": [
+    {
+      "event": "v2.model.turn",
+      "count": 46
+    },
+    {
+      "event": "v2.tool.read",
+      "count": 67
+    },
+    {
+      "event": "workflow.dispatch_accepted",
+      "count": 25
+    },
+    {
+      "event": "workflow.transition.processing.completed",
+      "count": 10
+    }
+  ],
+  "knownBlockers": [
+    "SF-02 external attachment was not claimed; only local OCR completion was tested.",
+    "Azure GPT integration mode was not executed in deterministic mock mode."
+  ],
+  "status": "PASSED"
+}
