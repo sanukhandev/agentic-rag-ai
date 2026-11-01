@@ -1836,7 +1836,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
          });
            v2Draft = v2.draft;
            v2AllowedUncitedDialogue = v2.guardReason === 'safe_no_evidence_dialogue' || v2.guardReason === 'accepted_model_dialogue';
-           await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.turn', metadata: { sessionId: session.id, modelRequestCount: v2.modelRequestCount, toolCallCount: v2.toolCallCount, guardReason: v2.guardReason, executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
+           await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.turn', metadata: { sessionId: session.id, modelRequestCount: v2.modelRequestCount, toolCallCount: v2.toolCallCount, guardReason: v2.guardReason, candidateGuardReason: v2.candidateGuardReason, modelResponseAccepted: v2.guardReason === 'accepted_model_dialogue' || v2.guardReason === 'accepted', executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
          } catch {
            // An attempted V2 turn must fail closed; never bypass its guard through legacy generation.
            v2Draft = { answer: naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues }), citationIds: [], proposedIntent: null };
