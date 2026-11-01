@@ -1681,6 +1681,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         }
       };
        let v2Draft: ModelDraft | null = null;
+       let v2NoEvidenceDialogue = false;
        if (v2Coordinator && conversationEngineV2EnabledForTenant(session.tenantId) && publishedCatalog && persona && session.personaVersionId
          && !consentActionReady && !journeyConfirmationPending && !journeyOfferPending && !journeyDocumentPending) {
          try {
@@ -1708,6 +1709,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
              lastQuestionKey: state.pendingPrompt?.requirementKey ?? null,
            });
            v2Draft = v2.draft;
+           v2NoEvidenceDialogue = v2.guardReason === 'safe_no_evidence_dialogue';
          } catch {
            // Feature-flag rollback: an unavailable v2 turn falls back to the existing model path.
          }
@@ -1800,7 +1802,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       let citations = validateCitations(draft, evidence);
       const trustedToolFacts = JSON.stringify(agentToolResults.filter((result) => result.ok).map((result) => ({ name: result.name, data: result.data })));
-      const casualFallback = conversational && (evidence.length === 0 || intent === 'identity');
+      const casualFallback = v2NoEvidenceDialogue || (conversational && (evidence.length === 0 || intent === 'identity'));
       const continuityAnswer = continuityTurn && isSafeContinuityAnswer(draft.answer, citations);
       const toolBackedKnowledge = knowledgeQuestion && agentToolResults.some((result) => result.ok
         && ['get_available_packages', 'get_authoritative_pricing', 'get_setup_requirements', 'get_package_document_requirements'].includes(result.name)
@@ -1826,7 +1828,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       let safeAnswer = casualFallback || leadAnswer || continuityAnswer || offerClarificationAnswer ? draft.answer : continuityTurn ? conversationalReply('acknowledgement', persona?.name ?? 'Sales assistant', language, tenant.name) : answer;
       const controlledFinalAbstention = knowledgeQuestion && isControlledKnowledgeAbstention(safeAnswer);
       const safeGrounded = grounded && !continuityFallback && !(knowledgeQuestion && (isControlledKnowledgeAbstention(draft.answer) || controlledFinalAbstention)) && (store.constructor.name !== 'PostgresStore' || !knowledgeQuestion || addressesKnowledgeQuestion(maskedMessage, safeAnswer));
-      if (knowledgeQuestion && store.constructor.name === 'PostgresStore' && !safeGrounded && !controlledFinalAbstention) safeAnswer = naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues });
+      if (knowledgeQuestion && store.constructor.name === 'PostgresStore' && !v2NoEvidenceDialogue && !safeGrounded && !controlledFinalAbstention) safeAnswer = naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues });
       const safeCitations = safeGrounded ? citations : [];
       if (intent === 'farewell') session.closedAt = new Date().toISOString();
       const nextMissingSlot = crmContactMissing ?? journeySlotKey ?? catalogResolution?.missingSlots[0] ?? null;

@@ -55,6 +55,39 @@ export const conversationEngineV2EnabledForTenant = (tenantId: string, env: Node
   return tenants.size === 0 || tenants.has(tenantId);
 };
 
+/** A deterministic no-evidence reply: acknowledge uncertainty and continue the dialogue,
+ * without asking the model to invent factual claims or alter any journey/action state. */
+const noEvidenceReply = (envelope: TurnEnvelopeV2, previousQuestionKey: string | null): PersonaComposedResponseV2 => {
+  const message = envelope.customerMessageMasked.toLocaleLowerCase('en-US');
+  const specificFactsRequested = /\b(?:price|pricing|cost|fees?|aed|eligib\w*|licen[cs]e|how long|timeline|policy|regulation|law|how much)\b/u.test(message);
+  const goal = envelope.intentProjection.primaryGoalKey;
+  const pending = envelope.intentProjection.pendingRequirementKey;
+  const questionByRequirement: Record<string, string> = {
+    business_activity: 'What business activity are you planning?',
+    entity_type: 'What company structure are you considering?',
+    visa_count: 'How many visas do you expect to need?',
+    timeline: 'When are you hoping to get started?',
+    business_structure: 'What company structure are you considering?',
+  };
+  const repeated = Boolean(pending && pending === previousQuestionKey);
+  const questionKey = repeated ? null : pending ?? 'conversation_focus';
+  const question = repeated ? null : pending ? (questionByRequirement[pending] ?? 'Could you tell me more about that requirement?') : goal ? 'Which part of your setup would you like to discuss first?' : 'What would you like help with?';
+  const prefix = specificFactsRequested
+    ? 'I don’t have a verified answer to that specific detail yet, so I don’t want to guess.'
+    : 'I can help you work through that.';
+  return {
+    schemaVersion: 2,
+    personaVersionId: envelope.personaVersionId,
+    language: envelope.persona.permittedLanguages[0] ?? 'en',
+    answer: question ? `${prefix} ${question}` : prefix,
+    citationIds: [],
+    nextQuestion: question,
+    nextQuestionKey: questionKey,
+    reasonNoQuestion: question ? null : 'awaiting_previous_requirement',
+    decisionRef: `no-evidence-${envelope.requestId.slice(0, 80)}`,
+  };
+};
+
 export class V2ConversationCoordinator {
   constructor(private readonly agent: V2ConversationAgent) {}
 
@@ -78,6 +111,26 @@ export class V2ConversationCoordinator {
     };
     const guarded = guardV2Response(agentResult.response, guardContext);
     if (guarded.verdict.accepted) return { response: guarded.response, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted' };
+    // A missing RAG source must not block conversation. Never use this path when
+    // evidence exists, citations are invalid, or the model/tool failed.
+    const unverifiedActionOutcome = /\b(?:payment|invoice|contract|signature|account|registration|lead|document upload)\b.{0,50}\b(?:complete|completed|successful|created|paid|signed|registered|uploaded)\b/iu.test(agentResult.response.answer);
+    if (['unsupported_claim', 'invalid_question'].includes(guarded.verdict.reasonCode)
+      && !unverifiedActionOutcome
+      && agentResult.response.citationIds.length === 0
+      && (request.evidence?.length ?? 0) === 0
+      && !agentResult.response.decisionRef.startsWith('fallback-')) {
+      const natural = noEvidenceReply(envelope, request.lastQuestionKey ?? null);
+      const safe = guardV2Response(natural, {
+        ...guardContext,
+        questionPolicy: natural.nextQuestion ? guardContext.questionPolicy : 'optional',
+        approvedNoEvidenceAnswer: natural.answer,
+      });
+      if (safe.verdict.accepted) return {
+        response: safe.response, draft: toDraft(safe.response), toolTrace: agentResult.toolTrace,
+        modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
+        guardReason: 'safe_no_evidence_dialogue',
+      };
+    }
     const fallback = guardV2OfflineFallback(fallbackFamilyFor(guarded.verdict.reasonCode), guardContext);
     if (!fallback.verdict.accepted || !fallback.response) throw new Error('V2_RESPONSE_REJECTED');
     return { response: fallback.response, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: guarded.verdict.reasonCode };

@@ -19,6 +19,8 @@ export interface V2ResponseGuardContext {
   fallbackTemplateVersion?: string;
   fallbackTemplates?: V2ApprovedFallbackTemplateSet;
   legalRegistration?: V2LegalRegistrationState;
+  /** Only set for a deterministic, server-authored no-evidence response. Never use for model output. */
+  approvedNoEvidenceAnswer?: string;
 }
 
 export interface V2GuardFeedback {
@@ -96,7 +98,12 @@ export const guardV2Response = (input: unknown, context: V2ResponseGuardContext)
     const reasonCode: ResponseGuardVerdictV2['reasonCode'] = 'unsupported_claim';
     return { verdict: rejected(reasonCode), response: fallback(context, reasonCode), claims: [], feedback: feedback(reasonCode, input) };
   }
-  const evidenceOptions: { conversational?: boolean; allowUncitedQuestion: boolean } = { allowUncitedQuestion: context.questionPolicy === 'required' };
+  const approvedNoEvidenceAnswer = context.approvedNoEvidenceAnswer === response.answer
+    && response.citationIds.length === 0
+    && (context.evidence?.length ?? 0) === 0
+    && (context.verifiedFacts?.length ?? 0) === 0;
+  const evidenceOptions: { conversational?: boolean; allowUncitedQuestion: boolean; allowApprovedFallback?: boolean } = { allowUncitedQuestion: context.questionPolicy === 'required' };
+  if (approvedNoEvidenceAnswer) evidenceOptions.allowApprovedFallback = true;
   if (context.conversational !== undefined) evidenceOptions.conversational = context.conversational;
   const evidence = verifyV2ResponseEvidence(response, context.evidence ?? [], context.verifiedFacts ?? [], evidenceOptions);
   if (!evidence.verdict.accepted) return { verdict: evidence.verdict, response: fallback(context, evidence.verdict.reasonCode), claims: [], feedback: feedback(evidence.verdict.reasonCode, input) };

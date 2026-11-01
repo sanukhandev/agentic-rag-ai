@@ -58,6 +58,15 @@ describe('guardV2Response', () => {
     expect(result.feedback?.responseDigest).toMatch(/^[a-f0-9]{32}$/u);
   });
 
+  it('accepts a server-authored no-evidence question but never automatically trusts model claims', () => {
+    const answer = 'I can help you work through that. What business activity are you planning?';
+    const candidate = response({ answer, nextQuestion: 'What business activity are you planning?', nextQuestionKey: 'business_activity', reasonNoQuestion: null });
+    const scope = context({ conversational: false, pendingRequirementKey: 'business_activity', questionPolicy: 'required', approvedNoEvidenceAnswer: answer });
+    expect(guardV2Response(candidate, scope).verdict.accepted).toBe(true);
+    const wrong = response({ ...candidate, answer: 'It costs AED 999. What business activity are you planning?' });
+    expect(guardV2Response(wrong, scope).verdict.reasonCode).toBe('unsupported_claim');
+  });
+
   it('blocks invented payment completion without approved evidence', () => {
     const result = guardV2Response(response({ answer: 'Your payment is complete.' }), context({ conversational: false }));
     expect(result.verdict.reasonCode).toBe('unsupported_claim');

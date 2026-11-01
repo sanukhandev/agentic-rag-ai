@@ -1,15 +1,16 @@
 # Stage 1–5 LangGraph UAT: safe integration notes
 
-Status: **CODE CHANGES COMMITTED; LIVE FIVE-STAGE CONVERSATION NOT ACCEPTED**. This branch is deliberately opt-in and does not merge into `main` or alter the local database.
+Status: **CODE CHANGES COMMITTED; LIVE FIVE-STAGE CONVERSATION NOT ACCEPTED**. The engine defaults to on when the Python gateway/model are configured, but this branch does not merge into `main` or alter the local database.
 
 ## Scope / safety boundary
 
 - Branch: `feat/conversation-v2-langgraph-stage5-safe`, based on `feat/conversation-engine-v2`.
 - The Python graph is a **per-request bounded model → trusted Node read tool → model** state machine. Node's durable PostgreSQL session, User Intent Document and business action ledger remain authoritative.
-- `LANGGRAPH_CONVERSATION_ENABLED=false` by default. Existing `CONVERSATION_ENGINE_V2_ENABLED` and `CONVERSATION_ENGINE_V2_TENANTS` remain separately gated.
+- Both `LANGGRAPH_CONVERSATION_ENABLED=true` and `CONVERSATION_ENGINE_V2_ENABLED=true` are defaults. Explicit `false` disables each path. An empty `CONVERSATION_ENGINE_V2_TENANTS` allows all tenants with a configured v2 gateway; set a tenant UUID list to restrict UAT. Consent and workflow action gates remain in Node.
 - No new SQL migration, table rewrite, seed, data purge, vector reset, customer replay, Salesforce mutation or n8n activation is introduced.
 - No LangGraph checkpoint tables are created. A durable LangGraph checkpointer may be added only after an explicit separate database/schema and retention/privacy review. Do **not** point auto-migrating checkpoint setup at the populated operational database.
 - The graph receives masked user content. It cannot invoke arbitrary tools; actual CRM/document writes continue to require Node's existing consent/action gates.
+- Empty RAG alone is not a failure: the response guard permits only a deterministic, server-authored missing-evidence dialogue. Generated claims about fees, timelines, eligibility, payment and signing still need verified sources.
 
 ## Code changes and risk addressed
 
@@ -67,9 +68,9 @@ npx vitest run services/api/src/v2-tool-gateway.test.ts
 
 1. **Back up** the existing PostgreSQL database via the running `postgres` container and verify the backup is readable, using a location outside the repository. Never use `down -v`, `docker volume prune`, `DROP`, `TRUNCATE`, a blanket seed/reset or a production customer session during this UAT.
 2. Confirm the existing Compose project/service names and the exact UAT tenant UUID. Do not start a second Compose project from a separate worktree and accidentally point it at a different database.
-3. Check your current `.env` locally without pasting secrets into tickets. Keep `LANGGRAPH_CONVERSATION_ENABLED=false` until static + unit checks pass.
-4. Set an **approved UAT tenant ID only** in `CONVERSATION_ENGINE_V2_TENANTS`. Turn on `CONVERSATION_ENGINE_V2_ENABLED=true` and `LANGGRAPH_CONVERSATION_ENABLED=true` only for explicit evaluation after the catalog/action path is verified. Apply the `docker-compose.python-gpt.yml` overlay when rebuilding `api` and `model-gateway`. Keep n8n and provider writes disabled unless mocks are configured.
-5. Capture a fresh synthetic lead/opportunity/session. Verify Stage 1→5 status using stored provider evidence, not just chat text; test a pricing detour, visa-count correction, repeated message ID, pending document upload and restart continuity.
+3. Check your current `.env` locally without pasting secrets into tickets. If it still explicitly contains `false`, that overrides the new defaults: update both flags to `true` only once you intend to test the running containers. Both paths require a configured private Python gateway, model deployment and service key.
+4. For local UAT, set an approved tenant UUID in `CONVERSATION_ENGINE_V2_TENANTS` to avoid accidentally including every tenant. The flags default to true, but you must select the `docker-compose.python-gpt.yml` overlay and rebuild `api` and `model-gateway` for the new code to take effect. Keep n8n and provider writes disabled unless mock providers are explicitly configured.
+5. Capture a fresh synthetic lead/opportunity/session. Verify Stage 1→5 status using stored provider evidence, not just chat text; test a pricing detour, visa-count correction, repeated message ID, pending document upload and restart continuity. With no RAG evidence, the guarded v2 response now uses a clear, factual-claim-free conversational acknowledgment and one relevant question. It never invents pricing, legal rules or provider outcomes.
 
 **Rollback:** revert both feature flags to `false`, restart only `api` and `model-gateway` with the same Compose project and existing volumes. Preserve in-flight actions, callbacks and database records. Never roll back by deleting migrations or dropping data.
 
