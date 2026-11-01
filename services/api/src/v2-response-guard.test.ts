@@ -85,6 +85,16 @@ describe('guardV2Response', () => {
     expect(result.verdict.reasonCode).toBe('invalid_question');
   });
 
+  it('allows the same unanswered requirement across multiple customer detours', () => {
+    const candidate = response({ answer: 'I can help with that. What business activity are you planning?',
+      nextQuestion: 'What business activity are you planning?', nextQuestionKey: 'business_activity', reasonNoQuestion: null });
+    const state = context({ pendingRequirementKey: 'business_activity', lastQuestionKey: 'business_activity', questionPolicy: 'required' });
+    expect(guardV2Response(candidate, state).verdict.accepted).toBe(true);
+    expect(guardV2Response(response({ ...candidate, nextQuestionKey: 'other_requirement' }), state).verdict.reasonCode).toBe('invalid_question');
+    expect(guardV2Response(response({ ...candidate, nextQuestionKey: 'business_activity' }),
+      context({ lastQuestionKey: 'business_activity', pendingRequirementKey: null })).verdict.reasonCode).toBe('invalid_question');
+  });
+
   it('allows a pending requirement only when the question is the approved next question', () => {
     const result = guardV2Response(response({ answer: 'I can help with that. What is your activity?', nextQuestion: 'What is your activity?', nextQuestionKey: 'business_activity', reasonNoQuestion: null }), context({ pendingRequirementKey: 'business_activity', questionPolicy: 'required' }));
     expect(result.verdict.accepted).toBe(true);
