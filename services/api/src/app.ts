@@ -1784,7 +1784,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         return composeGuidedDraft({ answer: fallbackAnswer, citationIds: [], proposedIntent }, responseMode, invalidField);
       };
        let v2Draft: ModelDraft | null = null;
-       let v2NoEvidenceDialogue = false;
+       let v2AllowedUncitedDialogue = false;
        const activeLifecycleStage = state.selectedIntentKey ? state.intentProgress?.entries?.[state.selectedIntentKey]?.lifecycle?.currentStage ?? null : null;
        if (v2Coordinator && conversationEngineV2EnabledForTenant(session.tenantId) && publishedCatalog && persona && session.personaVersionId
          && !consentActionReady && !journeyConfirmationPending && !journeyOfferPending && !journeyDocumentPending) {
@@ -1813,12 +1813,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
              lastQuestionKey: state.pendingPrompt?.requirementKey ?? (activeLifecycleStage ? `stage:${activeLifecycleStage}` : null),
          });
            v2Draft = v2.draft;
-           v2NoEvidenceDialogue = v2.guardReason === 'safe_no_evidence_dialogue';
+           v2AllowedUncitedDialogue = v2.guardReason === 'safe_no_evidence_dialogue' || v2.guardReason === 'accepted_model_dialogue';
            await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.turn', metadata: { sessionId: session.id, modelRequestCount: v2.modelRequestCount, toolCallCount: v2.toolCallCount, guardReason: v2.guardReason, executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
          } catch {
            // An attempted V2 turn must fail closed; never bypass its guard through legacy generation.
            v2Draft = { answer: naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues }), citationIds: [], proposedIntent: null };
-           v2NoEvidenceDialogue = false;
+           v2AllowedUncitedDialogue = false;
          }
        }
        if (v2Draft) {
@@ -1915,7 +1915,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           else throw new HttpError(503, 'MODEL_UNAVAILABLE', 'The assistant is currently unable to verify an answer.');
         }
       }
-      if (!v2NoEvidenceDialogue && !knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog && !consentDenied && !catalogSlotNonAnswer && !isGuidedResponse(draft.answer, 'slot_collection', journeySlotKey)) draft = { answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null };
+      if (!v2AllowedUncitedDialogue && !knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog && !consentDenied && !catalogSlotNonAnswer && !isGuidedResponse(draft.answer, 'slot_collection', journeySlotKey)) draft = { answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null };
       if (knowledgeQuestion && /\b(?:step|steps|process|procedure)\b/iu.test(maskedMessage) && evidence.length > 0 && !/\b(?:step|steps|process|procedure)\b/iu.test(draft.answer)) draft = groundedKnowledgeFallback(maskedMessage, evidence) ?? draft;
       const structuredToolKnowledge = knowledgeQuestion && agentToolResults.some((result) => result.ok
         && ['get_available_packages', 'get_authoritative_pricing', 'get_setup_requirements', 'get_package_document_requirements'].includes(result.name)
@@ -1924,7 +1924,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       let citations = validateCitations(draft, evidence);
       const trustedToolFacts = JSON.stringify(agentToolResults.filter((result) => result.ok).map((result) => ({ name: result.name, data: result.data })));
-      const casualFallback = v2NoEvidenceDialogue || (conversational && (evidence.length === 0 || intent === 'identity'));
+      const casualFallback = v2AllowedUncitedDialogue || (conversational && (evidence.length === 0 || intent === 'identity'));
       const continuityAnswer = continuityTurn && isSafeContinuityAnswer(draft.answer, citations);
       const toolBackedKnowledge = knowledgeQuestion && agentToolResults.some((result) => result.ok
         && ['get_available_packages', 'get_authoritative_pricing', 'get_setup_requirements', 'get_package_document_requirements'].includes(result.name)
@@ -1950,7 +1950,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       let safeAnswer = casualFallback || leadAnswer || continuityAnswer || offerClarificationAnswer ? draft.answer : continuityTurn ? conversationalReply('acknowledgement', persona?.name ?? 'Sales assistant', language, tenant.name) : answer;
       const controlledFinalAbstention = knowledgeQuestion && isControlledKnowledgeAbstention(safeAnswer);
       const safeGrounded = grounded && !continuityFallback && !(knowledgeQuestion && (isControlledKnowledgeAbstention(draft.answer) || controlledFinalAbstention)) && (store.constructor.name !== 'PostgresStore' || !knowledgeQuestion || addressesKnowledgeQuestion(maskedMessage, safeAnswer));
-      if (knowledgeQuestion && store.constructor.name === 'PostgresStore' && !v2NoEvidenceDialogue && !safeGrounded && !controlledFinalAbstention) safeAnswer = naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues });
+      if (knowledgeQuestion && store.constructor.name === 'PostgresStore' && !v2AllowedUncitedDialogue && !safeGrounded && !controlledFinalAbstention) safeAnswer = naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues });
       const safeCitations = safeGrounded ? citations : [];
       if (intent === 'farewell') session.closedAt = new Date().toISOString();
       const nextMissingSlot = crmContactMissing ?? journeySlotKey ?? catalogResolution?.missingSlots[0] ?? null;
