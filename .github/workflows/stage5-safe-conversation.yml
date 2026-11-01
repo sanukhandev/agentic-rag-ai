@@ -4,7 +4,7 @@ on:
     branches: [feat/conversation-engine-v2]
     paths:
       - 'services/model-gateway/**'
-      - 'services/api/src/v2-tool-gateway*'
+      - 'services/api/src/**'
       - 'tools/qa/stage5-preflight*'
       - '.github/workflows/stage5-safe-conversation.yml'
   workflow_dispatch:
@@ -40,6 +40,11 @@ jobs:
           node --test tools/qa/stage5-preflight.test.mjs
           node tools/qa/stage5-preflight.mjs
       - name: Focused Node gateway tests
-        run: npx vitest run services/api/src/v2-tool-gateway.test.ts
+        run: >-
+          npx vitest run
+          services/api/src/v2-tool-gateway.test.ts
+          services/api/src/v2-coordinator.test.ts
+          services/api/src/v2-response-guard.test.ts
+          services/api/src/v2-evidence.test.ts
       - name: TypeScript contracts
         run: npm run typecheck
