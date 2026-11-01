@@ -24,6 +24,7 @@ import { createOutboxEvent } from './events.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
+import { requiredDocumentSetComplete } from './document-stage-evidence.js';
 import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
@@ -1290,11 +1291,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
             && quote.packageOfferingId === offering.id && offering.approvalStatus === 'approved'
             && offering.catalogVersionId === document.catalogVersionId) {
             const documents = await store.listSupportingDocuments(document.tenantId, session.id);
-            const required = offering.requiredDocuments;
-            const allProcessed = required.length > 0 && required.every((documentType) => documents.some((item) =>
-              item.opportunityId === document.opportunityId && item.catalogVersionId === document.catalogVersionId
-              && item.intentKey === document.intentKey && item.expectedDocumentType === documentType
-              && item.status === 'completed'));
+            const allProcessed = requiredDocumentSetComplete(offering.requiredDocuments, documents, {
+              tenantId: document.tenantId, sessionId: session.id,
+              opportunityId: document.opportunityId, intentKey: document.intentKey,
+              catalogVersionId: document.catalogVersionId ?? '',
+            });
             if (allProcessed) {
               await advanceLifecycleStage(session, 'document_upload', {
                 documentId: document.id, documentSetComplete: true, ocrStatus: 'completed',
