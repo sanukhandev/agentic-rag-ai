@@ -24,6 +24,7 @@ def composer_instructions(envelope: TurnEnvelopeV2) -> str:
         "When a requirement is pending, the intentProjection.pendingRequirementKey is the server-authoritative question key: "
         "if you ask about that outstanding requirement, set nextQuestionKey to exactly that value (not a paraphrase or a new key). "
         "Use nextQuestion for the customer-facing question and include exactly the same question at the end of answer. "
+        "If no requirement is pending and you ask a question about the current active business stage, set nextQuestionKey to 'stage:' followed by intentProjection.currentStageKey; do not invent a stage transition. "
         "A requirement can remain unanswered across multiple customer messages; do not invent a completed value. "
         "The intentProjection.confirmedCustomerFacts values are server-persisted customer statements, not legal or provider approvals. "
         "You may echo those exact customer-provided values, but do not infer eligibility, official confirmation or registration. "
