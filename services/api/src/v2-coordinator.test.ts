@@ -205,7 +205,7 @@ describe('V2ConversationCoordinator', () => {
     const accepted = await coordinator.run({ envelope: request, verifiedFacts: trusted, questionPolicy: 'optional' });
     expect(accepted.guardReason).toBe('accepted');
     expect(accepted.response.answer).toBe(answer);
-    const denied = await coordinator.run({ envelope: request, questionPolicy: 'optional' });
+    const denied = await coordinator.run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
     expect(denied.guardReason).toBe('invalid_citation');
     expect(denied.response.answer).not.toBe(answer);
   });
