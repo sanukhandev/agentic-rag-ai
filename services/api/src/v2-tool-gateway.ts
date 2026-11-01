@@ -168,9 +168,23 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       return result(request, 'ok', { packages: offerings.map((offering) => ({ key: offering.packageKey, name: offering.name, visas: offering.includedVisaQuantity, officeRequirement: offering.officeRequirement, inclusions: offering.inclusions, availability: offering.availability, priceMinor: offering.priceMinor, currency: offering.currency, sourceRefs: offering.sourceRefs })) }, sourceVersion);
     }
     case 'get_document_requirements': {
-      const offerings = await store.listPackageOfferings(scope.tenantId, { catalogVersionId: catalog.id });
-      const documents = offerings.flatMap((offering) => offering.requiredDocuments.map((documentType) => ({ packageKey: offering.packageKey, documentType })));
-      return result(request, 'ok', { documents }, sourceVersion);
+      // Read only documents for the confirmed package and approved quotation in this opportunity.
+      if (!scope.opportunityId) return result(request, 'ok', { selectionStatus: 'opportunity_required', documents: [] }, sourceVersion);
+      const selections = await store.listPackageSelections(scope.tenantId, scope.opportunityId);
+      const selected = selections.find((s) => s.status === 'confirmed' && s.tenantId === scope.tenantId && s.sessionId === scope.sessionId && s.opportunityId === scope.opportunityId && s.quoteId);
+      if (!selected || !selected.quoteId) return result(request, 'ok', { selectionStatus: 'package_not_confirmed', documents: [] }, sourceVersion);
+      const [offering, quote] = await Promise.all([
+        store.getPackageOffering(selected.packageOfferingId, scope.tenantId),
+        store.getQuote(selected.quoteId, scope.tenantId),
+      ]);
+      if (!offering || !quote || offering.tenantId !== scope.tenantId || offering.catalogVersionId !== catalog.id || offering.approvalStatus !== 'approved' || quote.status !== 'approved' || quote.tenantId !== scope.tenantId || quote.opportunityId !== scope.opportunityId || quote.packageOfferingId !== offering.id) {
+        return result(request, 'ok', { selectionStatus: 'package_or_quote_unverified', documents: [] }, sourceVersion);
+      }
+      return result(request, 'ok', {
+        selectionStatus: 'confirmed',
+        packageKey: offering.packageKey,
+        documents: offering.requiredDocuments.map((documentType) => ({ packageKey: offering.packageKey, documentType })),
+      }, sourceVersion);
     }
     case 'get_action_status': {
       const actions = await store.listActionsBySession(scope.sessionId, scope.tenantId);
