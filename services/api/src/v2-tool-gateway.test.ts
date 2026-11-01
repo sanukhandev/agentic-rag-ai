@@ -159,6 +159,25 @@ describe('v2 trusted Node tool gateway', () => {
     expect(response).toMatchObject({ status: 'ok', result: { grounded: false, evidence: [] } });
   });
 
+  it('returns no document request before package confirmation', async () => {
+    const scope = issueV2Scope({ tenantId, sessionId, opportunityId: 'opportunity-12345678', catalogVersionId, personaVersionId, stateRevision: 3 }, serviceKey);
+    const store = { ...storeFor(), listPackageSelections: async () => [] } as unknown as Store;
+    const gateway = createV2ToolGateway({ store, embedding: { model: 'test', dimension: 1, embed: async () => [1] }, serviceKey });
+    const result = await gateway.execute(requestFor(scope, { toolCallId: 'call-doc-unconfirmed', toolName: 'get_document_requirements' }));
+    expect(result).toMatchObject({ status: 'ok', result: { selectionStatus: 'package_not_confirmed', documents: [] } });
+  });
+
+  it('returns documents only for the selected package with approved quote', async () => {
+    const scope = issueV2Scope({ tenantId, sessionId, opportunityId: 'opportunity-12345678', catalogVersionId, personaVersionId, stateRevision: 3 }, serviceKey);
+    const selection = { tenantId, sessionId, opportunityId: 'opportunity-12345678', status: 'confirmed', quoteId: 'quote-12345678', packageOfferingId: 'offer-12345678' };
+    const offering = { id: selection.packageOfferingId, tenantId, catalogVersionId, packageKey: 'basic', approvalStatus: 'approved', requiredDocuments: ['proof_of_identity'] };
+    const quote = { id: selection.quoteId, tenantId, opportunityId: selection.opportunityId, packageOfferingId: offering.id, status: 'approved' };
+    const store = { ...storeFor(), listPackageSelections: async () => [selection], getPackageOffering: async () => offering, getQuote: async () => quote } as unknown as Store;
+    const gateway = createV2ToolGateway({ store, embedding: { model: 'test', dimension: 1, embed: async () => [1] }, serviceKey });
+    const result = await gateway.execute(requestFor(scope, { toolCallId: 'call-doc-selected', toolName: 'get_document_requirements' }));
+    expect(result).toMatchObject({ status: 'ok', result: { selectionStatus: 'confirmed', documents: [{ packageKey: 'basic', documentType: 'proof_of_identity' }] } });
+  });
+
   it('keeps the registry explicit and bounded', () => {
     expect(V2_TOOL_NAMES).toHaveLength(9);
     expect(new Set(V2_TOOL_NAMES).size).toBe(V2_TOOL_NAMES.length);
