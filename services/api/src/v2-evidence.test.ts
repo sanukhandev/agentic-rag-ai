@@ -46,6 +46,28 @@ describe('v2 claim provenance and evidence verification', () => {
     expect(verifyV2ResponseEvidence(safe, []).verdict.accepted).toBe(false);
   });
 
+  it('accepts natural acknowledgments and a relevant question without RAG citations', () => {
+    for (const prefix of [
+      'Thanks for clarifying.',
+      'Understood.',
+      'I can help you work through that.',
+      'I can help with your company formation.',
+      'That makes sense.',
+    ]) {
+      const question = 'What company structure are you considering?';
+      const answer = `${prefix} ${question}`;
+      const value = { ...response(answer, []), nextQuestion: question, nextQuestionKey: 'entity_type', reasonNoQuestion: null };
+      expect(verifyV2ResponseEvidence(value, [], [], { allowNonFactualDialogue: true }).verdict.accepted, prefix).toBe(true);
+    }
+  });
+
+  it('rejects greetings containing uncited price claims and provider-success claims', () => {
+    for (const answer of ['Hello, it costs AED 999.', 'Thanks. Your company is registered.', 'Your payment has succeeded.', 'The legal registration is guaranteed.']) {
+      expect(verifyV2ResponseEvidence(response(answer, []), [], [], { conversational: true }).verdict.accepted, answer).toBe(false);
+      expect(verifyV2ResponseEvidence(response(answer, []), [], [], { allowNonFactualDialogue: true }).verdict.accepted, answer).toBe(false);
+    }
+  });
+
   it('allows uncited conversational wording only when explicitly marked conversational', () => {
     expect(verifyV2ResponseEvidence(response('Hello, how can I help?', []), [], [], { conversational: true }).verdict.accepted).toBe(true);
     expect(verifyV2ResponseEvidence(response('The package is available.', []), [], [], { conversational: true }).verdict.accepted).toBe(false);
