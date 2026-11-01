@@ -62,6 +62,42 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.nextQuestion).toBe('What business activity are you planning?');
   });
 
+  it('accepts a safe model-authored business follow-up when RAG is empty', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'I would like to discuss company formation.';
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'lead_qualification', pendingRequirementKey: 'business_activity' };
+    const question = 'What business activity are you planning?';
+    const answer = `I can help you work through that. ${question}`;
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer, {
+      response: { ...result(answer).response, nextQuestion: question, nextQuestionKey: 'business_activity', reasonNoQuestion: null },
+    }) });
+    const output = await coordinator.run({ envelope: request, questionPolicy: 'required' });
+    expect(output.guardReason).toBe('accepted_model_dialogue');
+    expect(output.response.answer).toBe(answer);
+    expect(output.response.citationIds).toEqual([]);
+  });
+
+  it('does not treat a Python model fallback as a successful conversation when a goal is active', async () => {
+    const request = envelope();
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'lead_qualification', pendingRequirementKey: null };
+    const broken = result('I cannot finish right now.');
+    broken.response.decisionRef = 'fallback-request-12345678';
+    const coordinator = new V2ConversationCoordinator({ turn: async () => broken });
+    const output = await coordinator.run({ envelope: request, fallbackTemplates });
+    expect(output.guardReason).toBe('model_or_tool_unavailable');
+    expect(output.response.answer).toBe(fallbackTemplates.templates.tool_unavailable);
+  });
+
+  it('does not disguise failed tool calls as missing knowledge', async () => {
+    const request = envelope();
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'lead_qualification', pendingRequirementKey: null };
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result('Hello, how can I help?', {
+      toolTrace: [{ toolCallId: 'call-12345678', toolName: 'get_journey_state', status: 'temporarily_unavailable', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: [] }],
+    }) });
+    const output = await coordinator.run({ envelope: request, fallbackTemplates });
+    expect(output.guardReason).toBe('model_or_tool_unavailable');
+  });
+
   it('keeps a pending requirement useful after a repeated knowledge interruption', async () => {
     const request = envelope();
     request.customerMessageMasked = 'Could you explain the formation process?';
