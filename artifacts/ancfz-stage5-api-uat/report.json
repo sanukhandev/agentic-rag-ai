@@ -1,9 +1,9 @@
 {
-  "runId": "4a9ff974-5bc7-4ef3-a768-6e1cbca028ab",
-  "startedAt": "2026-11-01T19:48:14.024Z",
-  "endedAt": "2026-11-01T19:48:22.190Z",
+  "runId": "a626bec9-204c-4d62-b59a-a383fcb16a09",
+  "startedAt": "2026-11-01T19:49:16.343Z",
+  "endedAt": "2026-11-01T19:49:23.626Z",
   "branch": "feat/conversation-v2-langgraph-stage5-safe",
-  "commit": "d4ea0a9f9a9360e10bf2a8293a841ed8849255d0",
+  "commit": "2ab683171d5c4e5a8b8068d4c0e0a08376bc43eb",
   "apiBase": "http://127.0.0.1:4100",
   "project": "anc-mock-uat",
   "model": {
@@ -194,12 +194,12 @@
   ],
   "failedAssertions": [],
   "primary": {
-    "sessionId": "bf6813d9-c1a1-46f0-909a-7ef39f5460a5",
+    "sessionId": "566da599-2e4b-4ed6-89cb-ede0dbc2fdbc",
     "tenantId": "110a38e2-a3d2-4a4f-b9c1-9d431dc86ac6",
     "turns": [
       {
         "message": "Hi Zara, I’m thinking about starting a software consulting company in the UAE.",
-        "clientMessageId": "2d5cd7c8",
+        "clientMessageId": "b9d70e0a",
         "status": 200,
         "answer": "To continue, could you share your entity type?",
         "pendingRequirementKey": "entity_type",
@@ -207,7 +207,7 @@
       },
       {
         "message": "Could you explain the general company formation process and what is still needed?",
-        "clientMessageId": "42d980b3",
+        "clientMessageId": "781d0eeb",
         "status": 200,
         "answer": "I can help you work through that.",
         "pendingRequirementKey": "entity_type",
@@ -215,7 +215,7 @@
       },
       {
         "message": "Could you explain the general company formation process and what is still needed?",
-        "clientMessageId": "42d980b3",
+        "clientMessageId": "781d0eeb",
         "status": 200,
         "answer": "I can help you work through that.",
         "pendingRequirementKey": "entity_type",
@@ -223,7 +223,7 @@
       },
       {
         "message": "Correction: the business activity is software consulting and AI services.",
-        "clientMessageId": "eda26239",
+        "clientMessageId": "1a271736",
         "status": 200,
         "answer": "To continue, could you share your entity type?",
         "pendingRequirementKey": "entity_type",
@@ -231,7 +231,7 @@
       },
       {
         "message": "LLC",
-        "clientMessageId": "4c1b5fbd",
+        "clientMessageId": "1d92df3e",
         "status": 200,
         "answer": "To continue, could you share your visa count?",
         "pendingRequirementKey": "visa_count",
@@ -239,7 +239,7 @@
       },
       {
         "message": "3",
-        "clientMessageId": "2a664215",
+        "clientMessageId": "bc282469",
         "status": 200,
         "answer": "To continue, could you share your name?",
         "pendingRequirementKey": "name",
@@ -247,7 +247,7 @@
       },
       {
         "message": "My name is [NAME_REDACTED].",
-        "clientMessageId": "a3f167e1",
+        "clientMessageId": "9ad29c6b",
         "status": 200,
         "answer": "To continue, could you share your email address or phone number?",
         "pendingRequirementKey": "email",
@@ -255,7 +255,7 @@
       },
       {
         "message": "My email is [EMAIL_REDACTED].",
-        "clientMessageId": "51c7a389",
+        "clientMessageId": "19c8fb29",
         "status": 200,
         "answer": "To continue, could you share your email address or phone number?",
         "pendingRequirementKey": "phone",
@@ -263,19 +263,19 @@
       },
       {
         "message": "My phone number is [PHONE_REDACTED].",
-        "clientMessageId": "2aa31681",
+        "clientMessageId": "f10d8b46",
         "status": 200,
         "answer": "I have the details needed. Please approve the consent action below to register your request. To continue, could you share your contact consent?",
         "pendingRequirementKey": "contact_consent",
         "actionProposal": {
-          "id": "37cdb567",
+          "id": "e49216f8",
           "intent": "crm.lead.create",
           "consentRequired": true
         }
       },
       {
         "message": "Yes, I explicitly consent to being contacted about this request.",
-        "clientMessageId": "674b67ea",
+        "clientMessageId": "4449a89a",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -283,7 +283,7 @@
       },
       {
         "message": "Please keep my company formation request moving and tell me the next verified requirement.",
-        "clientMessageId": "1a4a9c03",
+        "clientMessageId": "a2b3618e",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -291,7 +291,7 @@
       },
       {
         "message": "What should I prepare next for this company formation request?",
-        "clientMessageId": "a52b4657",
+        "clientMessageId": "c86d79b6",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -299,7 +299,7 @@
       },
       {
         "message": "Please keep my company formation request moving and tell me the next verified requirement.",
-        "clientMessageId": "3126a762",
+        "clientMessageId": "0879ea62",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -307,7 +307,7 @@
       },
       {
         "message": "What should I prepare next for this company formation request?",
-        "clientMessageId": "6bb2516c",
+        "clientMessageId": "b7eae290",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -315,7 +315,7 @@
       },
       {
         "message": "Please keep my company formation request moving and tell me the next verified requirement.",
-        "clientMessageId": "b98647c6",
+        "clientMessageId": "11c0d859",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -323,7 +323,7 @@
       },
       {
         "message": "What should I prepare next for this company formation request?",
-        "clientMessageId": "a87c4872",
+        "clientMessageId": "182f96f0",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -331,7 +331,7 @@
       },
       {
         "message": "Please keep my company formation request moving and tell me the next verified requirement.",
-        "clientMessageId": "8679fa0a",
+        "clientMessageId": "53fe0b70",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -339,7 +339,7 @@
       },
       {
         "message": "What should I prepare next for this company formation request?",
-        "clientMessageId": "9faf04ea",
+        "clientMessageId": "7d9c2110",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -347,7 +347,7 @@
       },
       {
         "message": "Please keep my company formation request moving and tell me the next verified requirement.",
-        "clientMessageId": "817eb299",
+        "clientMessageId": "78894224",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -355,7 +355,7 @@
       },
       {
         "message": "What should I prepare next for this company formation request?",
-        "clientMessageId": "dfa54347",
+        "clientMessageId": "1901dada",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -363,7 +363,7 @@
       },
       {
         "message": "Please keep my company formation request moving and tell me the next verified requirement.",
-        "clientMessageId": "9709bb03",
+        "clientMessageId": "2a62b24c",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -371,7 +371,7 @@
       },
       {
         "message": "What should I prepare next for this company formation request?",
-        "clientMessageId": "86d8f486",
+        "clientMessageId": "d16295d5",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -379,7 +379,7 @@
       },
       {
         "message": "Please keep my company formation request moving and tell me the next verified requirement.",
-        "clientMessageId": "170b4d69",
+        "clientMessageId": "3bf82d94",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -387,7 +387,7 @@
       },
       {
         "message": "What should I prepare next for this company formation request?",
-        "clientMessageId": "a01ecf19",
+        "clientMessageId": "99b55429",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -395,7 +395,7 @@
       },
       {
         "message": "Please keep my company formation request moving and tell me the next verified requirement.",
-        "clientMessageId": "65f0c2b1",
+        "clientMessageId": "d19c586a",
         "status": 200,
         "answer": "I can help you work through that. Which part of your setup would you like to discuss first?",
         "pendingRequirementKey": null,
@@ -403,7 +403,7 @@
       },
       {
         "message": "This message ID is intentionally reused with different content.",
-        "clientMessageId": "2d5cd7c8",
+        "clientMessageId": "b9d70e0a",
         "status": 409,
         "answer": null,
         "pendingRequirementKey": null,
@@ -412,12 +412,12 @@
     ],
     "actions": [
       {
-        "id": "37cdb567",
+        "id": "e49216f8",
         "state": "completed",
         "workflowKey": "crm.lead.create"
       },
       {
-        "id": "ff0b4f64",
+        "id": "14a59c8c",
         "state": "completed",
         "workflowKey": "crm.account.convert"
       }
@@ -425,7 +425,7 @@
     "persisted": {
       "state": {
         "phase": "SUCCEEDED",
-        "lastTurnAt": "2026-11-01T19:48:20.142Z",
+        "lastTurnAt": "2026-11-01T19:49:21.547Z",
         "slotValues": {
           "name": "[NAME_1]",
           "email": "[EMAIL_1]",
@@ -449,7 +449,7 @@
               "status": "fulfilled",
               "revision": 29,
               "intentKey": "anc.company_formation",
-              "journeyId": "b2c6e2de-f486-400d-8a6c-93da9d76bb34",
+              "journeyId": "5fa25bcc-8dce-4005-8763-a8228698ee64",
               "lifecycle": {
                 "stages": {
                   "contract": {
@@ -471,52 +471,52 @@
                     "status": "completed",
                     "evidence": {
                       "ocrStatus": "completed",
-                      "documentId": "990df403-9c54-40d2-b017-8198c1f383a6",
+                      "documentId": "7b8df74f-1633-47ce-98f2-9e72145ab7be",
                       "providerVerified": true
                     },
                     "revision": 1,
-                    "completedAt": "2026-11-01T19:48:21.153Z"
+                    "completedAt": "2026-11-01T19:49:22.564Z"
                   },
                   "lead_generation": {
                     "stage": "lead_generation",
                     "status": "completed",
                     "evidence": {
-                      "actionId": "37cdb567-11e3-4d51-b2db-07706eb61066",
+                      "actionId": "e49216f8-744a-4b0e-8f76-824b2562ce35",
                       "providerVerified": true
                     },
                     "revision": 1,
-                    "completedAt": "2026-11-01T19:48:16.307Z"
+                    "completedAt": "2026-11-01T19:49:18.304Z"
                   },
                   "account_creation": {
                     "stage": "account_creation",
                     "status": "completed",
                     "evidence": {
-                      "actionId": "ff0b4f64-8551-46a8-9566-f4e5b7355c06",
+                      "actionId": "14a59c8c-456d-424a-bd3a-777e7de0b0a8",
                       "providerVerified": true
                     },
                     "revision": 1,
-                    "completedAt": "2026-11-01T19:48:20.655Z"
+                    "completedAt": "2026-11-01T19:49:22.231Z"
                   },
                   "package_selection": {
                     "stage": "package_selection",
                     "status": "completed",
                     "evidence": {
-                      "quoteId": "22a15698-7671-4ae7-aa5b-c39a23b05252",
-                      "selectionId": "4887a6a0-2b75-4850-920b-fee0189eabeb",
+                      "quoteId": "80aa762f-3893-47ac-8337-d5190f7cf428",
+                      "selectionId": "ea5b0b99-1369-4e5d-bd94-3e7ae5cbc931",
                       "packageConfirmed": true
                     },
                     "revision": 1,
-                    "completedAt": "2026-11-01T19:48:20.959Z"
+                    "completedAt": "2026-11-01T19:49:22.350Z"
                   },
                   "lead_qualification": {
                     "stage": "lead_qualification",
                     "status": "completed",
                     "evidence": {
-                      "actionId": "37cdb567-11e3-4d51-b2db-07706eb61066",
+                      "actionId": "e49216f8-744a-4b0e-8f76-824b2562ce35",
                       "qualificationVerified": true
                     },
                     "revision": 1,
-                    "completedAt": "2026-11-01T19:48:16.313Z"
+                    "completedAt": "2026-11-01T19:49:18.310Z"
                   }
                 },
                 "revision": 5,
@@ -536,43 +536,43 @@
                 "name": {
                   "source": "visitor",
                   "corrected": false,
-                  "capturedAt": "2026-11-01T19:48:15.413Z",
+                  "capturedAt": "2026-11-01T19:49:17.657Z",
                   "messageSequence": 6
                 },
                 "email": {
                   "source": "visitor",
                   "corrected": false,
-                  "capturedAt": "2026-11-01T19:48:15.615Z",
+                  "capturedAt": "2026-11-01T19:49:17.855Z",
                   "messageSequence": 7
                 },
                 "phone": {
                   "source": "visitor",
                   "corrected": false,
-                  "capturedAt": "2026-11-01T19:48:15.796Z",
+                  "capturedAt": "2026-11-01T19:49:18.040Z",
                   "messageSequence": 8
                 },
                 "timeline": {
                   "source": "visitor",
                   "corrected": false,
-                  "capturedAt": "2026-11-01T19:48:14.772Z",
+                  "capturedAt": "2026-11-01T19:49:17.052Z",
                   "messageSequence": 3
                 },
                 "visa_count": {
                   "source": "visitor",
                   "corrected": false,
-                  "capturedAt": "2026-11-01T19:48:15.209Z",
+                  "capturedAt": "2026-11-01T19:49:17.455Z",
                   "messageSequence": 5
                 },
                 "entity_type": {
                   "source": "visitor",
                   "corrected": false,
-                  "capturedAt": "2026-11-01T19:48:15.004Z",
+                  "capturedAt": "2026-11-01T19:49:17.256Z",
                   "messageSequence": 4
                 },
                 "business_activity": {
                   "source": "visitor",
                   "corrected": true,
-                  "capturedAt": "2026-11-01T19:48:14.772Z",
+                  "capturedAt": "2026-11-01T19:49:17.052Z",
                   "messageSequence": 3
                 }
               },
@@ -591,11 +591,11 @@
           },
           "version": 1,
           "journeys": {
-            "b2c6e2de-f486-400d-8a6c-93da9d76bb34": {
+            "5fa25bcc-8dce-4005-8763-a8228698ee64": {
               "status": "fulfilled",
               "revision": 29,
               "intentKey": "anc.company_formation",
-              "journeyId": "b2c6e2de-f486-400d-8a6c-93da9d76bb34",
+              "journeyId": "5fa25bcc-8dce-4005-8763-a8228698ee64",
               "lifecycle": {
                 "stages": {
                   "contract": {
@@ -617,52 +617,52 @@
                     "status": "completed",
                     "evidence": {
                       "ocrStatus": "completed",
-                      "documentId": "990df403-9c54-40d2-b017-8198c1f383a6",
+                      "documentId": "7b8df74f-1633-47ce-98f2-9e72145ab7be",
                       "providerVerified": true
                     },
                     "revision": 1,
-                    "completedAt": "2026-11-01T19:48:21.153Z"
+                    "completedAt": "2026-11-01T19:49:22.564Z"
                   },
                   "lead_generation": {
                     "stage": "lead_generation",
                     "status": "completed",
                     "evidence": {
-                      "actionId": "37cdb567-11e3-4d51-b2db-07706eb61066",
+                      "actionId": "e49216f8-744a-4b0e-8f76-824b2562ce35",
                       "providerVerified": true
                     },
                     "revision": 1,
-                    "completedAt": "2026-11-01T19:48:16.307Z"
+                    "completedAt": "2026-11-01T19:49:18.304Z"
                   },
                   "account_creation": {
                     "stage": "account_creation",
                     "status": "completed",
                     "evidence": {
-                      "actionId": "ff0b4f64-8551-46a8-9566-f4e5b7355c06",
+                      "actionId": "14a59c8c-456d-424a-bd3a-777e7de0b0a8",
                       "providerVerified": true
                     },
                     "revision": 1,
-                    "completedAt": "2026-11-01T19:48:20.655Z"
+                    "completedAt": "2026-11-01T19:49:22.231Z"
                   },
                   "package_selection": {
                     "stage": "package_selection",
                     "status": "completed",
                     "evidence": {
-                      "quoteId": "22a15698-7671-4ae7-aa5b-c39a23b05252",
-                      "selectionId": "4887a6a0-2b75-4850-920b-fee0189eabeb",
+                      "quoteId": "80aa762f-3893-47ac-8337-d5190f7cf428",
+                      "selectionId": "ea5b0b99-1369-4e5d-bd94-3e7ae5cbc931",
                       "packageConfirmed": true
                     },
                     "revision": 1,
-                    "completedAt": "2026-11-01T19:48:20.959Z"
+                    "completedAt": "2026-11-01T19:49:22.350Z"
                   },
                   "lead_qualification": {
                     "stage": "lead_qualification",
                     "status": "completed",
                     "evidence": {
-                      "actionId": "37cdb567-11e3-4d51-b2db-07706eb61066",
+                      "actionId": "e49216f8-744a-4b0e-8f76-824b2562ce35",
                       "qualificationVerified": true
                     },
                     "revision": 1,
-                    "completedAt": "2026-11-01T19:48:16.313Z"
+                    "completedAt": "2026-11-01T19:49:18.310Z"
                   }
                 },
                 "revision": 5,
@@ -682,43 +682,43 @@
                 "name": {
                   "source": "visitor",
                   "corrected": false,
-                  "capturedAt": "2026-11-01T19:48:15.413Z",
+                  "capturedAt": "2026-11-01T19:49:17.657Z",
                   "messageSequence": 6
                 },
                 "email": {
                   "source": "visitor",
                   "corrected": false,
-                  "capturedAt": "2026-11-01T19:48:15.615Z",
+                  "capturedAt": "2026-11-01T19:49:17.855Z",
                   "messageSequence": 7
                 },
                 "phone": {
                   "source": "visitor",
                   "corrected": false,
-                  "capturedAt": "2026-11-01T19:48:15.796Z",
+                  "capturedAt": "2026-11-01T19:49:18.040Z",
                   "messageSequence": 8
                 },
                 "timeline": {
                   "source": "visitor",
                   "corrected": false,
-                  "capturedAt": "2026-11-01T19:48:14.772Z",
+                  "capturedAt": "2026-11-01T19:49:17.052Z",
                   "messageSequence": 3
                 },
                 "visa_count": {
                   "source": "visitor",
                   "corrected": false,
-                  "capturedAt": "2026-11-01T19:48:15.209Z",
+                  "capturedAt": "2026-11-01T19:49:17.455Z",
                   "messageSequence": 5
                 },
                 "entity_type": {
                   "source": "visitor",
                   "corrected": false,
-                  "capturedAt": "2026-11-01T19:48:15.004Z",
+                  "capturedAt": "2026-11-01T19:49:17.256Z",
                   "messageSequence": 4
                 },
                 "business_activity": {
                   "source": "visitor",
                   "corrected": true,
-                  "capturedAt": "2026-11-01T19:48:14.772Z",
+                  "capturedAt": "2026-11-01T19:49:17.052Z",
                   "messageSequence": 3
                 }
               },
@@ -751,43 +751,43 @@
           "name": {
             "source": "visitor",
             "corrected": false,
-            "capturedAt": "2026-11-01T19:48:15.413Z",
+            "capturedAt": "2026-11-01T19:49:17.657Z",
             "messageSequence": 6
           },
           "email": {
             "source": "visitor",
             "corrected": false,
-            "capturedAt": "2026-11-01T19:48:15.615Z",
+            "capturedAt": "2026-11-01T19:49:17.855Z",
             "messageSequence": 7
           },
           "phone": {
             "source": "visitor",
             "corrected": false,
-            "capturedAt": "2026-11-01T19:48:15.796Z",
+            "capturedAt": "2026-11-01T19:49:18.040Z",
             "messageSequence": 8
           },
           "timeline": {
             "source": "visitor",
             "corrected": false,
-            "capturedAt": "2026-11-01T19:48:14.772Z",
+            "capturedAt": "2026-11-01T19:49:17.052Z",
             "messageSequence": 3
           },
           "visa_count": {
             "source": "visitor",
             "corrected": false,
-            "capturedAt": "2026-11-01T19:48:15.209Z",
+            "capturedAt": "2026-11-01T19:49:17.455Z",
             "messageSequence": 5
           },
           "entity_type": {
             "source": "visitor",
             "corrected": false,
-            "capturedAt": "2026-11-01T19:48:15.004Z",
+            "capturedAt": "2026-11-01T19:49:17.256Z",
             "messageSequence": 4
           },
           "business_activity": {
             "source": "visitor",
             "corrected": true,
-            "capturedAt": "2026-11-01T19:48:14.772Z",
+            "capturedAt": "2026-11-01T19:49:17.052Z",
             "messageSequence": 3
           }
         },
@@ -796,7 +796,7 @@
         "summaryRevision": 24,
         "catalogVersionId": "10000000-0000-4000-8000-000000000001",
         "intentConfidence": 0.5,
-        "consentCapturedAt": "2026-11-01T19:48:20.365Z",
+        "consentCapturedAt": "2026-11-01T19:49:21.766Z",
         "selectedIntentKey": "anc.company_formation",
         "candidateIntentKeys": [
           "anc.company_formation"
@@ -806,17 +806,17 @@
       },
       "actions": [
         {
-          "id": "37cdb567-11e3-4d51-b2db-07706eb61066",
+          "id": "e49216f8-744a-4b0e-8f76-824b2562ce35",
           "workflowKey": "crm.lead.create",
           "state": "completed",
-          "opportunityId": "b2c6e2de-f486-400d-8a6c-93da9d76bb34",
+          "opportunityId": "5fa25bcc-8dce-4005-8763-a8228698ee64",
           "actionRevision": 1
         },
         {
-          "id": "ff0b4f64-8551-46a8-9566-f4e5b7355c06",
+          "id": "14a59c8c-456d-424a-bd3a-777e7de0b0a8",
           "workflowKey": "crm.account.convert",
           "state": "completed",
-          "opportunityId": "b2c6e2de-f486-400d-8a6c-93da9d76bb34",
+          "opportunityId": "5fa25bcc-8dce-4005-8763-a8228698ee64",
           "actionRevision": 1
         }
       ],
@@ -825,9 +825,9 @@
       "selections": 1,
       "documents": [
         {
-          "id": "990df403-9c54-40d2-b017-8198c1f383a6",
+          "id": "7b8df74f-1633-47ce-98f2-9e72145ab7be",
           "status": "completed",
-          "opportunityId": "b2c6e2de-f486-400d-8a6c-93da9d76bb34",
+          "opportunityId": "5fa25bcc-8dce-4005-8763-a8228698ee64",
           "requirementKey": "business_supporting_document"
         }
       ],
@@ -988,7 +988,7 @@
     {
       "Containers": "1",
       "CreatedAt": "2026-11-01 23:47:50 +0400 +04",
-      "CreatedSince": "32 seconds ago",
+      "CreatedSince": "About a minute ago",
       "Digest": "<none>",
       "ID": "c33a24b3d7a8",
       "Repository": "anc-mock-uat-api",
@@ -1000,7 +1000,7 @@
     {
       "Containers": "1",
       "CreatedAt": "2026-11-01 23:33:19 +0400 +04",
-      "CreatedSince": "15 minutes ago",
+      "CreatedSince": "16 minutes ago",
       "Digest": "<none>",
       "ID": "37a144f3041c",
       "Repository": "anc-mock-uat-event-worker",
@@ -1012,7 +1012,7 @@
     {
       "Containers": "1",
       "CreatedAt": "2026-11-01 23:33:19 +0400 +04",
-      "CreatedSince": "15 minutes ago",
+      "CreatedSince": "16 minutes ago",
       "Digest": "<none>",
       "ID": "15805e66e51e",
       "Repository": "anc-mock-uat-event-relay",
@@ -1024,7 +1024,7 @@
     {
       "Containers": "1",
       "CreatedAt": "2026-11-01 23:26:30 +0400 +04",
-      "CreatedSince": "21 minutes ago",
+      "CreatedSince": "22 minutes ago",
       "Digest": "<none>",
       "ID": "e4b1b4a79d40",
       "Repository": "anc-mock-uat-model-gateway",
