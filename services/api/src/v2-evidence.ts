@@ -56,6 +56,12 @@ const nonFactualPreface = (input: string): boolean => {
     || /^i (?:don(?:'|’)t|do not|can(?:'|’)t|cannot) (?:have (?:a )?verified (?:answer|information|details)(?: (?:for|about|on|to) (?:that|this|the specific (?:detail|question)))?(?: yet)?|want to guess(?: about that)?|verify that (?:detail|claim) yet)$/iu.test(value);
 };
 
+const uncitedQuestion = (answer: string, question: string | null): boolean => {
+  if (!question || !answer.trim().endsWith(question.trim())) return false;
+  const preface = answer.trim().slice(0, answer.trim().length - question.trim().length).trim();
+  return !preface || nonFactualPreface(preface);
+};
+
 const safeNoEvidenceDialogue = (answer: string, question: string | null): boolean => {
   // Disallow business consequences, authority claims, numbers, deadlines and links
   // without approved evidence even when the rest of the reply is conversational.
