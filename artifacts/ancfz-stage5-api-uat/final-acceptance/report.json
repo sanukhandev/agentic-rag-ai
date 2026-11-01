@@ -1,7 +1,7 @@
 {
   "status": "PARTIALLY_VERIFIED_BLOCKERS_REMAIN",
-  "generatedAt": "2026-11-01T21:13:10.005Z",
-  "sourceCommit": "cc161d410a5974176f998ed2e9d1d66ac61945d4",
+  "generatedAt": "2026-11-01T21:24:08.641Z",
+  "sourceCommit": "709e3e2060aaf5b16aeccb8db238df2bf82bfdde",
   "branch": "feat/conversation-v2-langgraph-stage5-safe",
   "composeProject": "anc-mock-uat",
   "apiBase": "http://127.0.0.1:4100",
@@ -9,7 +9,7 @@
   "syntheticOnly": true,
   "gates": {
     "gate1Security": "GATE_1_SECURITY_VERIFIED",
-    "gate2AzureGpt54": "BLOCKED_MODEL_NOT_CONFIGURED",
+    "gate2AzureGpt54": "FAILED_GPT54_DIALOGUE_ACCEPTANCE",
     "gate3Lifecycle": "GATE_3_LIFECYCLE_VERIFIED",
     "gate4Sf02Mock": "GATE_4_SF02_MOCK_VERIFIED",
     "gate4Sf02Sandbox": "SF02_SANDBOX_BLOCKED_NOT_CONFIGURED"
@@ -36,12 +36,20 @@
       "passed": 9
     },
     "azureGpt54": {
-      "status": "BLOCKED",
-      "classification": "BLOCKED_MODEL_NOT_CONFIGURED",
+      "status": "PASSED",
+      "classification": "FAILED_GPT54_DIALOGUE_ACCEPTANCE",
       "deployment": "gpt-5.4",
-      "modelRequests": 0,
-      "modelTurns": 0,
-      "note": "The disposable gateway had no configured Azure endpoint and API key; no Azure conversation was claimed."
+      "modelRequests": 33,
+      "modelTurns": 19,
+      "trustedToolCalls": 33,
+      "successfulTrustedToolReads": 33,
+      "acceptedModelDialogue": 0,
+      "safeNoEvidenceDialogue": 19,
+      "guardRejected": 0,
+      "providerErrors": 0,
+      "averageLatencyMs": 2962,
+      "maximumLatencyMs": 5490,
+      "note": "Azure requests completed, but no model-authored response passed the response guard; observed replies used safe_no_evidence_dialogue."
     }
   },
   "qualification": {
@@ -67,12 +75,20 @@
       "unsupportedClaimIncidents": 0
     },
     "azure": {
-      "status": "BLOCKED",
-      "classification": "BLOCKED_MODEL_NOT_CONFIGURED",
+      "status": "PASSED",
+      "classification": "FAILED_GPT54_DIALOGUE_ACCEPTANCE",
       "deployment": "gpt-5.4",
-      "modelRequests": 0,
-      "modelTurns": 0,
-      "note": "The disposable gateway had no configured Azure endpoint and API key; no Azure conversation was claimed."
+      "modelRequests": 33,
+      "modelTurns": 19,
+      "trustedToolCalls": 33,
+      "successfulTrustedToolReads": 33,
+      "acceptedModelDialogue": 0,
+      "safeNoEvidenceDialogue": 19,
+      "guardRejected": 0,
+      "providerErrors": 0,
+      "averageLatencyMs": 2962,
+      "maximumLatencyMs": 5490,
+      "note": "Azure requests completed, but no model-authored response passed the response guard; observed replies used safe_no_evidence_dialogue."
     }
   },
   "lifecycle": {
@@ -173,7 +189,7 @@
     "multiDocumentGate": "passed in document-stage-evidence.test.ts and API document-scope tests"
   },
   "knownBlockers": [
-    "The disposable gateway had no configured Azure endpoint and API key; no Azure conversation was claimed.",
+    "Azure requests completed, but no model-authored response passed the response guard; observed replies used safe_no_evidence_dialogue.",
     "Salesforce sandbox was not contacted because sandbox credentials and endpoint were not configured."
   ]
 }
