@@ -348,6 +348,14 @@ if (modelMode === 'azure' && !azureReady) {
 const endedAt = new Date().toISOString();
 const primaryLifecycle = primary ? lifecycleReport(primary.parts) : null;
 const primaryExecutionMetrics = primary ? auditMetrics(primary.context.tenantId, primary.context.sessionId) : null;
+if (modelMode === 'azure' && azureReady && primary) {
+  const modelTurns = Number(primaryExecutionMetrics?.modelTurns ?? 0);
+  const acceptedTurns = Number(primaryExecutionMetrics?.modelAuthoredAccepted ?? 0);
+  const acceptanceRate = modelTurns > 0 ? acceptedTurns / modelTurns : 0;
+  record(modelTurns > 0 && acceptanceRate >= 0.80,
+    'Azure GPT-5.4 delivered model-authored dialogue on at least 80% of evaluated model turns.',
+    { modelTurns, acceptedTurns, acceptanceRate: Number(acceptanceRate.toFixed(4)), candidateGuardReasons: primaryExecutionMetrics?.candidateGuardReasons ?? {} });
+}
 const primaryAudit = primary ? auditSummary(primary.context.tenantId, primary.context.sessionId) : [];
 const sf02Verified = primaryAudit.some((item) => item.event === 'document.sf02_attachment_verified' && item.count > 0);
 const knownBlockers = [
