@@ -55,7 +55,7 @@ export const conversationEngineV2Configured = (env: NodeJS.ProcessEnv = process.
 export const conversationEngineV2EnabledForTenant = (tenantId: string, env: NodeJS.ProcessEnv = process.env): boolean => {
   if (!tenantId || env.CONVERSATION_ENGINE_V2_ENABLED === 'false' || !conversationEngineV2Configured(env)) return false;
   const tenants = new Set((env.CONVERSATION_ENGINE_V2_TENANTS ?? '').split(',').map(value => value.trim()).filter(Boolean));
-  return tenants.size > 0 && tenants.has(tenantId);
+  return tenants.size === 0 || tenants.has(tenantId);
 };
 
 export const assertConversationEngineV2Configuration = (nodeEnv: string, env: NodeJS.ProcessEnv = process.env): void => {
