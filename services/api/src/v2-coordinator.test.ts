@@ -192,6 +192,24 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.citationIds).toEqual(['search-source']);
   });
 
+  it('accepts an exact, cited customer-stated fact only from Node verified context', async () => {
+    const request = envelope();
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true,
+      currentStageKey: 'lead_qualification', pendingRequirementKey: null,
+      confirmedCustomerFacts: { entity_type: 'LLC' } };
+    const answer = 'The customer stated their company structure is LLC.';
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer, {
+      response: { ...result(answer).response, citationIds: ['customer-fact-entity_type'] },
+    }) });
+    const trusted = [{ factId: 'customer-fact-entity_type', text: answer, sourceVersion: 'catalog-12345678', verified: true }];
+    const accepted = await coordinator.run({ envelope: request, verifiedFacts: trusted, questionPolicy: 'optional' });
+    expect(accepted.guardReason).toBe('accepted');
+    expect(accepted.response.answer).toBe(answer);
+    const denied = await coordinator.run({ envelope: request, questionPolicy: 'optional' });
+    expect(denied.guardReason).toBe('invalid_citation');
+    expect(denied.response.answer).not.toBe(answer);
+  });
+
   it('rejects tool evidence that is not correlated to a successful search trace', async () => {
     const coordinator = new V2ConversationCoordinator({
       turn: async () => result('The approved package costs 42 credits.', {
