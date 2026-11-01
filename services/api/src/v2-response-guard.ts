@@ -76,8 +76,10 @@ const questionFailure = (response: PersonaComposedResponseV2, context: V2Respons
   // Re-asking the current unanswered requirement is legitimate. The previous
   // question key is a repetition guard only when it does not describe the
   // authoritative pending requirement (which Node may preserve across turns).
-  if (hasQuestion && response.nextQuestionKey === context.lastQuestionKey
-    && response.nextQuestionKey !== context.pendingRequirementKey) return 'invalid_question';
+  const stillPending = response.nextQuestionKey === context.pendingRequirementKey
+    || (context.pendingRequirementKey === null && Boolean(context.activeStageKey)
+      && response.nextQuestionKey === `stage:${context.activeStageKey}`);
+  if (hasQuestion && response.nextQuestionKey === context.lastQuestionKey && !stillPending) return 'invalid_question';
   if (context.questionPolicy === 'required' && !hasQuestion) return 'invalid_question';
   if (context.questionPolicy === 'forbidden' && hasQuestion) return 'invalid_question';
   if (!hasQuestion && response.reasonNoQuestion === null) return 'invalid_question';
