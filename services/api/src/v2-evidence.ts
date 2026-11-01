@@ -43,13 +43,19 @@ const unsafeOutput = (answer: string): boolean => {
 };
 const uncitedConversation = (answer: string): boolean => /^(?:hi|hello|hey|thanks|thank you|you['’]?re welcome|nice to meet you|how can i help|what can i help with)[!.?,\s]/iu.test(answer.trim());
 const uncitedQuestion = (answer: string, nextQuestion: string | null): boolean => {
-  if (!nextQuestion) return false;
+  if (!nextQuestion || !answer.trim().endsWith(nextQuestion.trim())) return false;
   const prefix = answer.slice(0, Math.max(0, answer.length - nextQuestion.length)).trim();
-  return answer.trim().endsWith(nextQuestion.trim()) && /^(?:sure|okay|ok|of course|i can help(?: with that)?|to get started|thanks)?[.!?,\s]*$/iu.test(prefix);
+  // Only constrained conversational openers may precede an ungrounded question.
+  // Do not treat the presence of a question mark as evidence for a factual claim.
+  return /^(?:sure|okay|ok|of course|thanks(?: for sharing)?|i can help(?: you)?(?: with that| work through that)?|to get started|i(?:'|’)m keeping your (?:request|company-formation request) in view|i don(?:'|’)t have a verified answer(?: to that (?:detail|specific detail))? yet(?:, so i don(?:'|’)t want to guess)?)?[.!?,\s]*$/iu.test(prefix);
+};
+const safeNoEvidenceDialogue = (answer: string, question: string | null): boolean => {
+  if (/\b(?:aed|usd|gbp|eur|dollars?|dirhams?|fees?|prices?|costs?|paid|approved|eligible|guaranteed|registered|created|uploaded|completed|signed|legal(?:ly)?|will take|takes? \d+|within \d+)\b|\b\d+(?:[.,]\d+)?\s*(?:days?|hours?|weeks?|months?|visas?)\b/iu.test(answer)) return false;
+  return question ? uncitedQuestion(answer, question) : /^(?:hello|hi|hey|thank you|thanks|you(?:'|’)re welcome|i can help(?: you)?(?: with that| work through that)?|okay|of course)[.!?,\s]*$/iu.test(answer.trim());
 };
 const verdict = (accepted: boolean, reasonCode: ResponseGuardVerdictV2['reasonCode'], response: PersonaComposedResponseV2 | null): ResponseGuardVerdictV2 => ({ schemaVersion: 2, accepted, reasonCode, response });
 
-export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvidence[], facts: V2VerifiedFact[] = [], options: { conversational?: boolean; allowUncitedQuestion?: boolean; allowApprovedFallback?: boolean } = {}): V2EvidenceDecision => {
+export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvidence[], facts: V2VerifiedFact[] = [], options: { conversational?: boolean; allowUncitedQuestion?: boolean; allowNonFactualDialogue?: boolean; allowApprovedFallback?: boolean } = {}): V2EvidenceDecision => {
   const parsed = personaComposedResponseSchema.safeParse(input);
   if (!parsed.success) return { verdict: verdict(false, 'metadata_leak', null), claims: [] };
   const response = parsed.data;
@@ -71,6 +77,8 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
   const citations = modelEvidence.map((item) => item.citation);
   const grounded = options.allowApprovedFallback === true && citationIds.length === 0
     ? true
+    : citationIds.length === 0 && options.allowNonFactualDialogue === true
+    ? safeNoEvidenceDialogue(response.answer, response.nextQuestion)
     : options.conversational === true && citationIds.length === 0
     ? uncitedConversation(response.answer) || (options.allowUncitedQuestion === true && uncitedQuestion(response.answer, response.nextQuestion))
     : citationIds.length > 0 && hasSufficientEvidence(response.answer, modelEvidence, citations, trustedFacts);
