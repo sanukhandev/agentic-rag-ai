@@ -161,8 +161,19 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       const evidenceRefs = approved.map((item) => digest(`${item.citation.sourceId}:${item.citation.versionId}:${item.citation.chunkId}`).slice(0, 32));
       return result(request, 'ok', { grounded: approved.length > 0, evidence: approved.map((item, index) => ({ citationId: evidenceRefs[index], text: bounded(sanitizeKnowledgeText(item.content), 1_500), sourceVersion: item.citation.versionId, approved: true, revoked: false, sourceRef: item.citation.sourceId })) }, sourceVersion, evidenceRefs);
     }
-    case 'get_journey_state':
-      return result(request, 'ok', { activeIntentKey: intentKey, currentStage: state?.phase ?? null, pendingRequirementKey: state?.pendingPrompt?.requirementKey ?? null, contactConsent: state?.contactConsent ?? 'unknown', workflowStatus: state?.workflowStatus ?? 'none', opportunityBound: Boolean(scope.opportunityId && entry?.journeyId === scope.opportunityId) }, sourceVersion);
+    case 'get_journey_state': {
+      const lifecycle = entry?.lifecycle ?? null;
+      const scopedLifecycle = Boolean(scope.opportunityId && entry?.journeyId === scope.opportunityId);
+      return result(request, 'ok', {
+        activeIntentKey: intentKey,
+        currentStage: scopedLifecycle ? lifecycle?.currentStage ?? null : null,
+        stageStatuses: scopedLifecycle && lifecycle ? Object.fromEntries(Object.entries(lifecycle.stages).map(([key, value]) => [key, value.status])) : {},
+        pendingRequirementKey: state?.pendingPrompt?.requirementKey ?? entry?.currentRequirementKey ?? null,
+        contactConsent: state?.contactConsent ?? 'unknown',
+        workflowStatus: state?.workflowStatus ?? 'none',
+        opportunityBound: scopedLifecycle,
+      }, sourceVersion);
+    }
     case 'get_available_packages': {
       const offerings = await store.listPackageOfferings(scope.tenantId, { catalogVersionId: catalog.id, ...(values.business_activity ? { activity: values.business_activity } : {}), ...(values.entity_type ? { entityType: values.entity_type } : {}) });
       return result(request, 'ok', { packages: offerings.map((offering) => ({ key: offering.packageKey, name: offering.name, visas: offering.includedVisaQuantity, officeRequirement: offering.officeRequirement, inclusions: offering.inclusions, availability: offering.availability, priceMinor: offering.priceMinor, currency: offering.currency, sourceRefs: offering.sourceRefs })) }, sourceVersion);
