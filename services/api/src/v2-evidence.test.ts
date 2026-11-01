@@ -35,6 +35,17 @@ describe('v2 claim provenance and evidence verification', () => {
     expect(verifyV2ResponseEvidence(response('The package includes one visa and registration completes tomorrow.'), visaEvidence).verdict.reasonCode).toBe('unsupported_claim');
   });
 
+  it('accepts only constrained model-authored questions in a goal without approved knowledge', () => {
+    const safe = { ...response('I can help you work through that. What business activity are you planning?', []),
+      nextQuestion: 'What business activity are you planning?', nextQuestionKey: 'business_activity', reasonNoQuestion: null };
+    expect(verifyV2ResponseEvidence(safe, [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(true);
+    const invented = { ...safe, answer: 'Your package will cost AED 999. What business activity are you planning?' };
+    expect(verifyV2ResponseEvidence(invented, [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(false);
+    const success = { ...safe, answer: 'Your Account was created. What business activity are you planning?' };
+    expect(verifyV2ResponseEvidence(success, [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(false);
+    expect(verifyV2ResponseEvidence(safe, []).verdict.accepted).toBe(false);
+  });
+
   it('allows uncited conversational wording only when explicitly marked conversational', () => {
     expect(verifyV2ResponseEvidence(response('Hello, how can I help?', []), [], [], { conversational: true }).verdict.accepted).toBe(true);
     expect(verifyV2ResponseEvidence(response('The package is available.', []), [], [], { conversational: true }).verdict.accepted).toBe(false);
