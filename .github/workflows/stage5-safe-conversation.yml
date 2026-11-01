@@ -46,5 +46,8 @@ jobs:
           services/api/src/v2-coordinator.test.ts
           services/api/src/v2-response-guard.test.ts
           services/api/src/v2-evidence.test.ts
+          services/api/src/document-stage-evidence.test.ts
+          services/api/src/document-intake-api.test.ts
+          services/api/src/app.test.ts
       - name: TypeScript contracts
         run: npm run typecheck
