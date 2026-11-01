@@ -10,6 +10,8 @@ export interface V2ResponseGuardContext {
   personaVersionId: string;
   permittedLanguages: readonly string[];
   pendingRequirementKey: string | null;
+  /** Current authoritative workflow stage, if present. */
+  activeStageKey?: string | null;
   lastQuestionKey: string | null;
   questionPolicy: V2QuestionPolicy;
   evidence?: V2ApprovedEvidence[];
