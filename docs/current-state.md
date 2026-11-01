@@ -546,10 +546,12 @@ meaningful customer turns, valid qualification facts, ordered lifecycle state,
 and no invoice or contract side effects. The public HTTP security regression
 passed 9/9 checks, including cross-tenant/session document and action access.
 
-The configured Azure deployment identifier was read as `gpt-5.4`, but the
-disposable gateway had no Azure endpoint/API key, so the real-model gate is
-`BLOCKED_MODEL_NOT_CONFIGURED`; no mock result is represented as Azure
-evidence. The Salesforce sandbox gate is
-`SF02_SANDBOX_BLOCKED_NOT_CONFIGURED`. Final evidence is in
-`artifacts/ancfz-stage5-api-uat/final-acceptance/`; the operational database,
-Docker project and historical reports were not modified.
+The disposable gateway was rebuilt from the local ignored environment source
+with Azure mode enabled, LangGraph enabled, and deployment `gpt-5.4`; the
+real endpoint completed 33 model requests and the 25-turn HTTP run passed
+30/30 API assertions. However, zero model-authored replies passed the Node
+response guard and 19 used `safe_no_evidence_dialogue`, so the model gate is
+`FAILED_GPT54_DIALOGUE_ACCEPTANCE`, not a claimed GPT acceptance. The
+Salesforce sandbox gate is `SF02_SANDBOX_BLOCKED_NOT_CONFIGURED`. Final
+evidence is in `artifacts/ancfz-stage5-api-uat/final-acceptance/`; the
+operational database, Docker project and historical reports were not modified.
