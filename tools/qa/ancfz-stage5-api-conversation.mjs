@@ -315,7 +315,10 @@ const report = redact({
 });
 await mkdir(outputDir, { recursive: true });
 await writeFile(`${outputDir}/report.json`, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-const summary = `# ANC Stage 5 API UAT\n\n- Status: **${report.status}**\n- Mode: **${modelMode}**\n- Scenarios: ${scenarios.map((item) => `${item.name}=${item.status}`).join(', ')}\n- Assertions: ${assertions.filter((item) => item.passed).length}/${assertions.length} passed\n- Primary customer turns: ${primary?.context.turns.length ?? 0}\n- SF-02 attachment verified: **false**\n\nKnown blockers:\n\n${report.knownBlockers.map((item) => `- ${item}`).join('\n')}\n`;
+const lifecycleStages = primary?.persisted?.state?.intentProgress?.entries?.[primary?.persisted?.state?.selectedIntentKey ?? '']?.lifecycle?.stages ?? {};
+const stageSummary = Object.entries(lifecycleStages).map(([stage, value]) => `${stage}=${value.status}`).join(', ');
+const toolSummary = report.toolExecutionEvidence.map((item) => `${item.event}=${item.count}`).join(', ') || 'none';
+const summary = `# ANC Stage 5 API UAT\n\n- Status: **${report.status}**\n- Mode: **${modelMode}**\n- Branch/commit: \`${report.branch}\` / \`${report.commit}\`\n- Tenant: \`${tenantSlug}\` (synthetic-only)\n- Scenarios: ${scenarios.map((item) => `${item.name}=${item.status}`).join(', ')}\n- Assertions: ${assertions.filter((item) => item.passed).length}/${assertions.length} passed\n- Primary customer turns: ${primary?.context.turns.length ?? 0}\n- Final verified stage: **${primary?.finalVerifiedStage ?? 'not verified'}**\n- Document collection reached: **${primary?.documentCollectionReached ?? false}**\n- Actual document upload/OCR verified: **${primary?.actualDocumentUploadVerified ?? false}**\n- SF-02 attachment verified: **${primary?.sf02Verified ?? false}**\n- Persisted stage statuses: ${stageSummary || 'not available'}\n- Session-scoped model/tool evidence: ${toolSummary}\n\nKnown blockers:\n\n${report.knownBlockers.map((item) => `- ${item}`).join('\n')}\n`;
 await writeFile(`${outputDir}/report.md`, summary, 'utf8');
 console.log(JSON.stringify({ status: report.status, scenarios, assertions: assertions.length, passed: assertions.filter((item) => item.passed).length, failed: failures.length, outputDir }, null, 2));
 if (strict && failures.length) process.exitCode = 1;
