@@ -161,6 +161,7 @@ export class V2ConversationCoordinator {
       personaVersionId: envelope.personaVersionId,
       permittedLanguages: envelope.persona.permittedLanguages,
       pendingRequirementKey: envelope.intentProjection.pendingRequirementKey,
+      activeStageKey: envelope.intentProjection.currentStageKey,
       lastQuestionKey: request.lastQuestionKey ?? null,
       questionPolicy: request.questionPolicy ?? (envelope.intentProjection.pendingRequirementKey ? 'required' : 'optional'),
       evidence: mergeEvidence(request.evidence ?? [], agentResult),
