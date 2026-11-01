@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from .contracts import PlanRequest, PlanResult, NormalizeRequest, NormalizeResult
 from .agent import BoundedConversationAgent, HttpToolGateway
+from .graph import LangGraphConversationAgent
 from .reliability import BudgetExceeded, CircuitBreaker, RateLimitExceeded, SlidingWindowRateLimiter, TurnBudget
 from .v2_contracts import AgentTurnResultV2, TurnEnvelopeV2
 
@@ -171,7 +172,8 @@ async def agent_turn(body: TurnEnvelopeV2, x_internal_service_key: str | None = 
     if not gateway_url:
         raise HTTPException(status_code=503, detail={"code": "TOOL_GATEWAY_NOT_CONFIGURED"})
     try:
-        agent = BoundedConversationAgent(_client_get(), HttpToolGateway(gateway_url, os.getenv("MODEL_GATEWAY_SERVICE_KEY", "")), os.environ["AZURE_OPENAI_DEPLOYMENT"])
+        agent_cls = LangGraphConversationAgent if os.getenv("LANGGRAPH_CONVERSATION_ENABLED", "false").lower() == "true" else BoundedConversationAgent
+        agent = agent_cls(_client_get(), HttpToolGateway(gateway_url, os.getenv("MODEL_GATEWAY_SERVICE_KEY", "")), os.environ["AZURE_OPENAI_DEPLOYMENT"])
         return await agent.run(body)
     except ValueError as error:
         raise HTTPException(status_code=503, detail={"code": "TOOL_GATEWAY_NOT_CONFIGURED"}) from error
