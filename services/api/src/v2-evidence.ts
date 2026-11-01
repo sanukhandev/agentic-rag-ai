@@ -51,7 +51,7 @@ const nonFactualPreface = (input: string): boolean => {
   const value = input.trim().replace(/[.!]\s*$/u, '').trim().replace(/\s+/gu, ' ');
   if (!value || value.length > 190) return false;
   return /^(?:thanks?(?: you)?(?: for (?:sharing|clarifying|confirming|explaining)(?: (?:that|the details|those details|your request))?)?|understood|got it|okay|ok|sure|of course|certainly|that makes sense|i understand|i see|no problem|happy to help)$/iu.test(value)
-    || /^i (?:can|would be happy to|am happy to)(?: help(?: you)?| guide you| walk you through (?:that|it|the steps))(?: (?:with|on|through) (?:that|this|your (?:request|setup|company formation|company-formation request)|the (?:process|next steps)))?$/iu.test(value)
+    || /^i (?:can|would be happy to|am happy to)(?: help(?: you)?(?: work through (?:that|this))?| guide you| walk you through (?:that|it|the steps))(?: (?:with|on|through) (?:that|this|your (?:request|setup|company formation|company-formation request)|the (?:process|next steps)))?$/iu.test(value)
     || /^i(?:'|’)ll (?:keep|bear) (?:your|those|the) (?:details|requirements|request|company-formation request) in (?:mind|view)$/iu.test(value)
     || /^i (?:don(?:'|’)t|do not|can(?:'|’)t|cannot) (?:have (?:a )?verified (?:answer|information|details)(?: (?:for|about|on|to) (?:that|this|the specific (?:detail|question)))?(?: yet)?|want to guess(?: about that)?|verify that (?:detail|claim) yet)$/iu.test(value);
 };
