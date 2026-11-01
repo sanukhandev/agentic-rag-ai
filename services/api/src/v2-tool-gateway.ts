@@ -188,7 +188,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         store.getPackageOffering(selected.packageOfferingId, scope.tenantId),
         store.getQuote(selected.quoteId, scope.tenantId),
       ]);
-      if (!offering || !quote || offering.tenantId !== scope.tenantId || offering.catalogVersionId !== catalog.id || offering.approvalStatus !== 'approved' || quote.status !== 'approved' || quote.tenantId !== scope.tenantId || quote.opportunityId !== scope.opportunityId || quote.packageOfferingId !== offering.id) {
+      if (!offering || !quote || offering.tenantId !== scope.tenantId || offering.catalogVersionId !== catalog.id || offering.approvalStatus !== 'approved' || quote.status !== 'approved' || quote.tenantId !== scope.tenantId || quote.opportunityId !== scope.opportunityId || quote.packageOfferingId !== offering.id || Date.parse(quote.validUntil) <= Date.now()) {
         return result(request, 'ok', { selectionStatus: 'package_or_quote_unverified', documents: [] }, sourceVersion);
       }
       return result(request, 'ok', {
