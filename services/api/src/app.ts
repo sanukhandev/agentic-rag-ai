@@ -1815,7 +1815,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
            const validatedFact = (key: string, maxLength: number): string | undefined => {
              const value = pendingCatalogValues[key];
              return typeof value === 'string' && value.trim().length > 0
-               && value.length <= maxLength && !/[\r\n<>]/u.test(value) ? value.trim() : undefined;
+               && value.length <= maxLength && !/[\r\n<>@]/u.test(value) && !/https?:\/\//iu.test(value)
+               && !/\+?\d[\d()\s-]{7,}/u.test(value) ? value.trim() : undefined;
            };
            // Only persisted, normalized non-PII business slots may be supplied as
            // customer facts. No provider status, prices, or unvalidated turn text.
