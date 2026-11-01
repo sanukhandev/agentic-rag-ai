@@ -1275,7 +1275,35 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const completedJob = await store.updateDocumentProcessingJob({ ...job, status: 'completed', leaseExpiresAt: null, executionReference: input.executionReference ?? job.executionReference, updatedAt: new Date().toISOString() });
       if (document.leadId) { const lead = await store.getCrmLead(document.leadId, input.tenantId); if (lead) { const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id); const composed = [lead.summary, composeDocumentSummary(lead, documents)].filter(Boolean).join('\n').slice(0, 20_000); await store.updateCrmLeadSummary(lead.id, lead.tenantId, composed, 'completed'); } }
       await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'document.completed', metadata: { documentId: document.id, jobId: job.id, status: 'completed' }, createdAt: new Date().toISOString() });
-      if (document.opportunityId) await advanceLifecycleStage(session, 'document_upload', { documentId: document.id, ocrStatus: 'completed', providerVerified: true });
+      if (document.opportunityId && document.intentKey) {
+        // Completing one OCR job does not prove every required document is present.
+        // Local OCR evidence must never be represented as an external SF-02 attachment.
+        const currentState = (await store.getSession(session.id))?.conversationState;
+        const journey = currentState?.intentProgress?.entries[document.intentKey];
+        if (journey?.journeyId === document.opportunityId && journey.lifecycle?.currentStage === 'document_upload') {
+          const selections = await store.listPackageSelections(document.tenantId, document.opportunityId);
+          const selected = selections.find((item) => item.status === 'confirmed' && item.sessionId === session.id && item.quoteId);
+          const offering = selected ? await store.getPackageOffering(selected.packageOfferingId, document.tenantId) : null;
+          const quote = selected?.quoteId ? await store.getQuote(selected.quoteId, document.tenantId) : null;
+          if (selected && offering && quote && quote.status === 'approved'
+            && Date.parse(quote.validUntil) > Date.now() && quote.opportunityId === document.opportunityId
+            && quote.packageOfferingId === offering.id && offering.approvalStatus === 'approved'
+            && offering.catalogVersionId === document.catalogVersionId) {
+            const documents = await store.listSupportingDocuments(document.tenantId, session.id);
+            const required = offering.requiredDocuments;
+            const allProcessed = required.length > 0 && required.every((documentType) => documents.some((item) =>
+              item.opportunityId === document.opportunityId && item.catalogVersionId === document.catalogVersionId
+              && item.intentKey === document.intentKey && item.expectedDocumentType === documentType
+              && item.status === 'completed'));
+            if (allProcessed) {
+              await advanceLifecycleStage(session, 'document_upload', {
+                documentId: document.id, documentSetComplete: true, ocrStatus: 'completed',
+                localProcessingVerified: true, sf02AttachmentVerified: false,
+              });
+            }
+          }
+        }
+      }
       res.json({ document: publicDocument(completedDocument), job: completedJob });
     } catch (error) { next(error); }
   });
@@ -2548,10 +2576,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (input.requirementKey && (!journeyRequirement || !journeyRequirement.documentType || !policy?.allowedDocumentTypes.includes(journeyRequirement.documentType))) throw new HttpError(409, 'DOCUMENT_REQUIREMENT_NOT_ACTIVE', 'The requested document requirement is not active for this conversation.');
       const documentOpportunityId = conversationState.intentProgress?.entries[requestedIntentKey]?.journeyId ?? null;
       if (!documentOpportunityId) throw new HttpError(409, 'DOCUMENT_PACKAGE_NOT_CONFIRMED', 'A confirmed package selection is required before document upload.');
-      const confirmedPackage = (await store.listPackageSelections(session.tenantId, documentOpportunityId)).find((selection) => selection.status === 'confirmed');
+      const confirmedPackage = (await store.listPackageSelections(session.tenantId, documentOpportunityId)).find((selection) =>
+        selection.status === 'confirmed' && selection.sessionId === session.id && selection.opportunityId === documentOpportunityId && selection.quoteId);
       const packageOffering = confirmedPackage ? await store.getPackageOffering(confirmedPackage.packageOfferingId, session.tenantId) : null;
-      if (!confirmedPackage || !packageOffering) throw new HttpError(409, 'DOCUMENT_PACKAGE_NOT_CONFIRMED', 'A confirmed package selection is required before document upload.');
-      if (journeyRequirement?.documentType && !packageOffering.requiredDocuments.includes(journeyRequirement.documentType)) throw new HttpError(409, 'DOCUMENT_NOT_REQUIRED_BY_PACKAGE', 'This document is not required by the confirmed package.');
+      const quote = confirmedPackage?.quoteId ? await store.getQuote(confirmedPackage.quoteId, session.tenantId) : null;
+      if (!confirmedPackage || !packageOffering || !quote || quote.status !== 'approved'
+        || quote.opportunityId !== documentOpportunityId || quote.packageOfferingId !== packageOffering.id
+        || Date.parse(quote.validUntil) <= Date.now() || packageOffering.approvalStatus !== 'approved'
+        || packageOffering.catalogVersionId !== version?.id)
+        throw new HttpError(409, 'DOCUMENT_PACKAGE_NOT_CONFIRMED', 'A current approved quotation and confirmed package are required before document upload.');
+      if (!journeyRequirement?.documentType || !packageOffering.requiredDocuments.includes(journeyRequirement.documentType))
+        throw new HttpError(409, 'DOCUMENT_NOT_REQUIRED_BY_PACKAGE', 'The document requirement must match a required document for the confirmed package.');
       if (!settings?.enabled || !binding || !policy?.enabled || !policy.allowUserInitiated || !policy.consentRequired) throw new HttpError(409, 'DOCUMENT_WORKFLOW_NOT_AVAILABLE', 'Supporting document intake is not enabled for this tenant yet.');
       if (!settings.allowedMimeTypes.includes(input.mimeType) || !DEFAULT_DOCUMENT_MIME_TYPES.includes(input.mimeType)) throw new HttpError(422, 'DOCUMENT_TYPE_NOT_ALLOWED', 'This document type is not allowed by the published catalog.');
       if (!isValidBase64(input.contentBase64)) throw new HttpError(422, 'DOCUMENT_ENCODING_INVALID', 'The document encoding is invalid.');
