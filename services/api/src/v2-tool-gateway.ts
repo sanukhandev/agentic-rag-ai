@@ -241,7 +241,7 @@ export const createV2ToolGateway = ({ store, embedding, serviceKey }: V2ToolGate
       if (!parsedArguments?.success) return sanitizedToolError(request, 'invalid_args', 'TOOL_ARGUMENTS_INVALID', scope.stateRevision);
       const value = await toolResultFor(request, scope, session, catalog, store, embedding);
       remember(cacheKey, argsDigest, value);
-      await store.addAudit({ id: randomBytes(16).toString('hex'), tenantId: scope.tenantId, actorId: null, eventName: 'v2.tool.read', metadata: { toolName: request.toolName, toolCallDigest: digest(request.toolCallId).slice(0, 16), scopeDigest: digest(request.scopeRef).slice(0, 16), status: value.status, stateRevision: scope.stateRevision }, createdAt: new Date().toISOString() });
+      await store.addAudit({ id: randomBytes(16).toString('hex'), tenantId: scope.tenantId, actorId: null, eventName: 'v2.tool.read', metadata: { sessionId: scope.sessionId, toolName: request.toolName, toolCallDigest: digest(request.toolCallId).slice(0, 16), scopeDigest: digest(request.scopeRef).slice(0, 16), status: value.status, stateRevision: scope.stateRevision }, createdAt: new Date().toISOString() });
       return value;
     } catch {
       const value = sanitizedToolError(request, 'temporarily_unavailable', 'TOOL_UNAVAILABLE', scope.stateRevision);

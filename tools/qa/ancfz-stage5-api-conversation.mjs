@@ -73,9 +73,10 @@ const dbState = (sessionId, tenantId) => {
     'auditEvents',(SELECT coalesce(json_agg(json_build_object('event',event_name) ORDER BY created_at),'[]'::json) FROM audit_events WHERE tenant_id='${tenantId}' AND metadata->>'sessionId'='${sessionId}')
   )`);
 };
-const auditSummary = (tenantId) => {
+const auditSummary = (tenantId, sessionId = null) => {
   if (!safeUuid(tenantId)) return [];
-  return db(`SELECT coalesce(json_agg(json_build_object('event',event_name,'count',count) ORDER BY event_name),'[]'::json) FROM (SELECT event_name,count(*) FROM audit_events WHERE tenant_id='${tenantId}' GROUP BY event_name) events`);
+  const sessionFilter = safeUuid(sessionId) ? ` AND metadata->>'sessionId'='${sessionId}'` : '';
+  return db(`SELECT coalesce(json_agg(json_build_object('event',event_name,'count',count) ORDER BY event_name),'[]'::json) FROM (SELECT event_name,count(*) FROM audit_events WHERE tenant_id='${tenantId}'${sessionFilter} GROUP BY event_name) events`);
 };
 const stateParts = (snapshot) => {
   const state = snapshot?.state ?? {};
@@ -307,8 +308,8 @@ const report = redact({
   scenarios,
   assertions,
   failedAssertions: failures,
-  primary: primary ? { sessionId: primary.context.sessionId, tenantId: primary.context.tenantId, turns: primary.context.turns, actions: primary.context.actions, persisted: primary.persisted, finalVerifiedStage: primary.parts?.entry?.lifecycle?.stages?.document_upload?.status === 'completed' ? 'document_upload' : null, documentCollectionReached: primary.parts?.entry?.lifecycle?.stages?.document_upload?.status === 'completed', actualDocumentUploadVerified: Boolean(primary.context.documentId), sf02Verified: false, audit: auditSummary(primary.context.tenantId) } : null,
-  dockerImages: images(), toolExecutionEvidence: primary ? (auditSummary(primary.context.tenantId) ?? []).filter((item) => /v2\.(tool|model)|workflow\.dispatch|workflow\.transition/iu.test(item.event)) : [],
+  primary: primary ? { sessionId: primary.context.sessionId, tenantId: primary.context.tenantId, turns: primary.context.turns, actions: primary.context.actions, persisted: primary.persisted, finalVerifiedStage: primary.parts?.entry?.lifecycle?.stages?.document_upload?.status === 'completed' ? 'document_upload' : null, documentCollectionReached: primary.parts?.entry?.lifecycle?.stages?.document_upload?.status === 'completed', actualDocumentUploadVerified: Boolean(primary.context.documentId), sf02Verified: false, audit: auditSummary(primary.context.tenantId, primary.context.sessionId) } : null,
+  dockerImages: images(), toolExecutionEvidence: primary ? (auditSummary(primary.context.tenantId, primary.context.sessionId) ?? []).filter((item) => /v2\.(tool|model)|workflow\.dispatch|workflow\.transition/iu.test(item.event)) : [],
   knownBlockers: ['SF-02 external attachment was not claimed; only local OCR completion was tested.', 'Azure GPT integration mode was not executed in deterministic mock mode.'],
   status: failures.length ? 'FAILED' : 'PASSED',
 });
