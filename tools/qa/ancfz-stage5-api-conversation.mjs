@@ -346,8 +346,10 @@ if (modelMode === 'azure' && !azureReady) {
 const endedAt = new Date().toISOString();
 const primaryLifecycle = primary ? lifecycleReport(primary.parts) : null;
 const primaryExecutionMetrics = primary ? auditMetrics(primary.context.tenantId, primary.context.sessionId) : null;
+const primaryAudit = primary ? auditSummary(primary.context.tenantId, primary.context.sessionId) : [];
+const sf02Verified = primaryAudit.some((item) => item.event === 'document.sf02_attachment_verified' && item.count > 0);
 const knownBlockers = [
-  'SF-02 external attachment was not claimed; only local OCR completion was tested.',
+  ...(!sf02Verified ? ['SF-02 external attachment was not verified; local OCR evidence is kept separate.'] : []),
   ...(modelMode === 'mock' ? ['Azure GPT-5.4 integration mode was not executed in deterministic mock mode.'] : []),
   ...(modelMode === 'azure' && !azureReady ? ['BLOCKED_MODEL_NOT_CONFIGURED: the private gateway was not running with an Azure endpoint, deployment and key.'] : []),
 ];
@@ -366,8 +368,8 @@ const report = redact({
   scenarios,
   assertions,
   failedAssertions: failures,
-  primary: primary ? { sessionId: primary.context.sessionId, tenantId: primary.context.tenantId, turns: primary.context.turns, actions: primary.context.actions, persisted: primary.persisted, ...primaryLifecycle, finalVerifiedStage: primaryLifecycle?.lastCompletedStage === 'document_upload' ? 'document_upload' : null, documentCollectionReached: primaryLifecycle?.lastCompletedStage === 'document_upload', actualDocumentUploadVerified: primaryLifecycle?.stages?.document_upload?.status === 'completed' && Boolean(primary.context.documentId), sf02Verified: false, audit: auditSummary(primary.context.tenantId, primary.context.sessionId), executionMetrics: { audit: primaryExecutionMetrics, latency: latencySummary(primary.context.turns) } } : null,
-  dockerImages: images(), toolExecutionEvidence: primary ? (auditSummary(primary.context.tenantId, primary.context.sessionId) ?? []).filter((item) => /v2\.(tool|model)|workflow\.dispatch|workflow\.transition/iu.test(item.event)) : [],
+  primary: primary ? { sessionId: primary.context.sessionId, tenantId: primary.context.tenantId, turns: primary.context.turns, actions: primary.context.actions, persisted: primary.persisted, ...primaryLifecycle, finalVerifiedStage: primaryLifecycle?.lastCompletedStage === 'document_upload' ? 'document_upload' : null, documentCollectionReached: primaryLifecycle?.lastCompletedStage === 'document_upload', actualDocumentUploadVerified: primaryLifecycle?.stages?.document_upload?.status === 'completed' && Boolean(primary.context.documentId), sf02Verified, audit: primaryAudit, executionMetrics: { audit: primaryExecutionMetrics, latency: latencySummary(primary.context.turns) } } : null,
+  dockerImages: images(), toolExecutionEvidence: primary ? primaryAudit.filter((item) => /v2\.(tool|model)|workflow\.dispatch|workflow\.transition/iu.test(item.event)) : [],
   knownBlockers,
   status: overallStatus,
 });

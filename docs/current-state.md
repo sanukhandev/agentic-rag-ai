@@ -534,3 +534,22 @@ validation, Docker build and secret checks passed. Evidence is in
 `artifacts/ancfz-stage5-api-uat/hardening-report.json` and
 `hardening-report-azure-gpt5.4.json`; operational Docker services and data
 were not modified.
+
+## Final integration UAT — 2026-11-02
+
+The final integration pass rebuilt the isolated `anc-mock-uat` services and
+connected the existing deterministic v2 document provider to the post-OCR
+required-document gate. A verified SF-02 mock receipt is now persisted as
+tenant/session/opportunity/document-scoped audit evidence; local OCR remains a
+separate evidence tier. The mock HTTP journey passed 39/39 assertions with 25
+meaningful customer turns, valid qualification facts, ordered lifecycle state,
+and no invoice or contract side effects. The public HTTP security regression
+passed 9/9 checks, including cross-tenant/session document and action access.
+
+The configured Azure deployment identifier was read as `gpt-5.4`, but the
+disposable gateway had no Azure endpoint/API key, so the real-model gate is
+`BLOCKED_MODEL_NOT_CONFIGURED`; no mock result is represented as Azure
+evidence. The Salesforce sandbox gate is
+`SF02_SANDBOX_BLOCKED_NOT_CONFIGURED`. Final evidence is in
+`artifacts/ancfz-stage5-api-uat/final-acceptance/`; the operational database,
+Docker project and historical reports were not modified.

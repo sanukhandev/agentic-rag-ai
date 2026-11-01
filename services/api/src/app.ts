@@ -25,6 +25,7 @@ import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
 import { requiredDocumentSetComplete } from './document-stage-evidence.js';
+import { buildV2DocumentProviderRequest, DeterministicV2DocumentProvider, validateV2DocumentProviderResult } from './v2-document-provider.js';
 import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
@@ -401,6 +402,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const ingestionWorkerSecret = dependencies.ingestionWorkerSecret ?? process.env.INGESTION_WORKER_SECRET ?? '';
   const ingestionStaging = new IngestionStaging(dependencies.ingestionStagingRoot ?? process.env.INGESTION_STAGING_ROOT ?? join(process.cwd(), 'data', 'ingestion-staging'));
   const documentStorage = new PrivateDocumentStorage(dependencies.documentStorageRoot ?? process.env.SUPPORTING_DOCUMENT_ROOT ?? join(process.cwd(), 'data', 'supporting-documents'));
+  const mockDocumentProvider = process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2DocumentProvider() : null;
   const chatSessionTtlMs = dependencies.chatSessionTtlMs ?? Number(process.env.CHAT_SESSION_TTL_MS ?? 10 * 60 * 1000);
   const readRate = (value: number | undefined, name: string): number | null => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return null; const parsed = Number(raw); if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative number.`); return parsed; };
   const inputCostUsdPerMillion = readRate(dependencies.inputCostUsdPerMillion, 'MODEL_INPUT_COST_USD_PER_MILLION');
@@ -448,6 +450,25 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const nextEntry = { ...entry, lifecycle, revision: entry.revision + 1 };
     const nextProgress = { ...(state.intentProgress!), entries: { ...(state.intentProgress?.entries ?? {}), [intentKey!]: nextEntry }, journeys: { ...(state.intentProgress?.journeys ?? {}), [entry.journeyId]: nextEntry }, journeyRevision: Math.max(state.intentProgress?.journeyRevision ?? 0, lifecycle.revision) };
     await updateSessionSafely({ ...current, conversationState: { ...state, intentProgress: nextProgress } }, true, 'workflow');
+  };
+  const verifyMockSf02Attachment = async (session: Session, document: SupportingDocument): Promise<boolean> => {
+    if (!mockDocumentProvider || !document.opportunityId || !document.leadId) return false;
+    const existing = (await store.listAudit(document.tenantId)).find((event) => event.eventName === 'document.sf02_attachment_verified'
+      && event.metadata.documentId === document.id && event.metadata.attachmentStatus === 'verified');
+    if (existing) return true;
+    const account = await store.getCrmAccountByOpportunity(document.opportunityId, document.tenantId);
+    if (!account) return false;
+    const idempotencyKey = `sf02:${document.id}`;
+    try {
+      const request = buildV2DocumentProviderRequest({ session, document, account, idempotencyKey, providerType: 'deterministic_mock' });
+      const result = mockDocumentProvider.execute(request);
+      const validation = validateV2DocumentProviderResult(request, result);
+      await store.addAudit({ id: randomUUID(), tenantId: document.tenantId, actorId: null, eventName: validation.accepted ? 'document.sf02_attachment_verified' : 'document.sf02_attachment_rejected', metadata: { documentId: document.id, sessionId: document.sessionId, opportunityId: document.opportunityId, leadId: document.leadId, attachmentId: result.attachmentId, idempotencyKey, attachmentStatus: result.attachmentStatus, evidenceTier: result.evidenceTier, validationStatus: validation.status }, createdAt: new Date().toISOString() });
+      return validation.accepted;
+    } catch (error) {
+      await store.addAudit({ id: randomUUID(), tenantId: document.tenantId, actorId: null, eventName: 'document.sf02_attachment_rejected', metadata: { documentId: document.id, sessionId: document.sessionId, opportunityId: document.opportunityId, leadId: document.leadId, idempotencyKey, attachmentStatus: 'reconciliation_required', reason: error instanceof Error ? error.message.slice(0, 120) : 'provider_validation_failed' }, createdAt: new Date().toISOString() });
+      return false;
+    }
   };
   const syncWorkflowState = async (action: Pick<ActionRequest, 'id' | 'tenantId' | 'sessionId' | 'intentKey' | 'catalogVersionId' | 'workflowKey' | 'opportunityId'>, status: ActionState): Promise<void> => {
     const session = await store.getSession(action.sessionId);
@@ -1297,9 +1318,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
               catalogVersionId: document.catalogVersionId ?? '',
             });
             if (allProcessed) {
+              const sf02AttachmentVerified = await verifyMockSf02Attachment(session, completedDocument);
               await advanceLifecycleStage(session, 'document_upload', {
                 documentId: document.id, documentSetComplete: true, ocrStatus: 'completed',
-                localProcessingVerified: true, sf02AttachmentVerified: false,
+                localProcessingVerified: true, sf02AttachmentVerified,
               });
             }
           }
