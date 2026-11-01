@@ -41,17 +41,35 @@ const unsafeOutput = (answer: string): boolean => {
     || /(?:tenantId|sessionId|opportunityId)/u.test(answer)
     || /https?:\/\/[^\s]+(?:webhook|callback)/iu.test(answer);
 };
-const uncitedConversation = (answer: string): boolean => /^(?:hi|hello|hey|thanks|thank you|you['’]?re welcome|nice to meet you|how can i help|what can i help with)[!.?,\s]/iu.test(answer.trim());
-const uncitedQuestion = (answer: string, nextQuestion: string | null): boolean => {
-  if (!nextQuestion || !answer.trim().endsWith(nextQuestion.trim())) return false;
-  const prefix = answer.slice(0, Math.max(0, answer.length - nextQuestion.length)).trim();
-  // Only constrained conversational openers may precede an ungrounded question.
-  // Do not treat the presence of a question mark as evidence for a factual claim.
-  return /^(?:sure|okay|ok|of course|thanks(?: for sharing)?|i can help(?: you)?(?: with that| work through that)?|to get started|i(?:'|’)m keeping your (?:request|company-formation request) in view|i don(?:'|’)t have a verified answer(?: to that (?:detail|specific detail))? yet(?:, so i don(?:'|’)t want to guess)?)?[.!?,\s]*$/iu.test(prefix);
+// Uncited model output is restricted to non-factual conversational speech acts.
+// Do not accept a greeting prefix followed by an unsupported business claim.
+const uncitedConversation = (answer: string): boolean =>
+  /^(?:hi|hello|hey)(?:[,!.\s]+(?:how can i help(?: you)?|what can i help (?:you )?with)\??)?[.!?\s]*$/iu.test(answer.trim())
+  || /^(?:thanks|thank you|you're welcome|you’re welcome|nice to meet you)[.!?\s]*$/iu.test(answer.trim());
+
+const nonFactualPreface = (input: string): boolean => {
+  const value = input.trim().replace(/[.!]\s*$/u, '').trim().replace(/\s+/gu, ' ');
+  if (!value || value.length > 190) return false;
+  return /^(?:thanks?(?: you)?(?: for (?:sharing|clarifying|confirming|explaining)(?: (?:that|the details|those details|your request))?)?|understood|got it|okay|ok|sure|of course|certainly|that makes sense|i understand|i see|no problem|happy to help)$/iu.test(value)
+    || /^i (?:can|would be happy to|am happy to)(?: help(?: you)?| guide you| walk you through (?:that|it|the steps))(?: (?:with|on|through) (?:that|this|your (?:request|setup|company formation|company-formation request)|the (?:process|next steps)))?$/iu.test(value)
+    || /^i(?:'|’)ll (?:keep|bear) (?:your|those|the) (?:details|requirements|request|company-formation request) in (?:mind|view)$/iu.test(value)
+    || /^i (?:don(?:'|’)t|do not|can(?:'|’)t|cannot) (?:have (?:a )?verified (?:answer|information|details)(?: (?:for|about|on|to) (?:that|this|the specific (?:detail|question)))?(?: yet)?|want to guess(?: about that)?|verify that (?:detail|claim) yet)$/iu.test(value);
 };
+
 const safeNoEvidenceDialogue = (answer: string, question: string | null): boolean => {
-  if (/\b(?:aed|usd|gbp|eur|dollars?|dirhams?|fees?|prices?|costs?|paid|approved|eligible|guaranteed|registered|created|uploaded|completed|signed|legal(?:ly)?|will take|takes? \d+|within \d+)\b|\b\d+(?:[.,]\d+)?\s*(?:days?|hours?|weeks?|months?|visas?)\b/iu.test(answer)) return false;
-  return question ? uncitedQuestion(answer, question) : /^(?:hello|hi|hey|thank you|thanks|you(?:'|’)re welcome|i can help(?: you)?(?: with that| work through that)?|okay|of course)[.!?,\s]*$/iu.test(answer.trim());
+  // Disallow business consequences, authority claims, numbers, deadlines and links
+  // without approved evidence even when the rest of the reply is conversational.
+  if (/\b(?:aed|usd|gbp|eur|dollars?|dirhams?|fees?|prices?|costs?|invoices?|paid|payment|eligible|eligibility|guaranteed|guarantee|registered|registration|created|uploaded|completed|signed|legal(?:ly)?|law|policy|licen[cs]e|approved|confirmed|successful|visa issued|will take|takes? \d+|within \d+)\b|\b\d+(?:[.,]\d+)?\s*(?:days?|hours?|weeks?|months?|visas?)\b|https?:\/\//iu.test(answer)) return false;
+  if (answer.length > 500) return false;
+  if (!question && uncitedConversation(answer)) return true;
+  if (question) {
+    if (!answer.trim().endsWith(question.trim()) || !/\?\s*$/u.test(question)) return false;
+    if (!/^(?:what|which|who|when|where|how|could you|would you|can you|do you|are you|is there|please|tell me|have you)\b/iu.test(question.trim())) return false;
+  }
+  const preface = question ? answer.trim().slice(0, answer.trim().length - question.trim().length).trim() : answer.trim();
+  if (!preface) return Boolean(question);
+  const segments = preface.split(/(?<=[.!])\s+/u).filter(Boolean);
+  return segments.length <= 2 && segments.every(nonFactualPreface);
 };
 const verdict = (accepted: boolean, reasonCode: ResponseGuardVerdictV2['reasonCode'], response: PersonaComposedResponseV2 | null): ResponseGuardVerdictV2 => ({ schemaVersion: 2, accepted, reasonCode, response });
 
