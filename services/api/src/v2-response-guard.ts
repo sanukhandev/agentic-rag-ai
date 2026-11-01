@@ -21,6 +21,8 @@ export interface V2ResponseGuardContext {
   legalRegistration?: V2LegalRegistrationState;
   /** Only set for a deterministic, server-authored no-evidence response. Never use for model output. */
   approvedNoEvidenceAnswer?: string;
+  /** Authorize only a narrowly validated model-authored non-factual acknowledgement/question. */
+  allowNonFactualDialogue?: boolean;
 }
 
 export interface V2GuardFeedback {
@@ -102,7 +104,7 @@ export const guardV2Response = (input: unknown, context: V2ResponseGuardContext)
     && response.citationIds.length === 0
     && (context.evidence?.length ?? 0) === 0
     && (context.verifiedFacts?.length ?? 0) === 0;
-  const evidenceOptions: { conversational?: boolean; allowUncitedQuestion: boolean; allowApprovedFallback?: boolean } = { allowUncitedQuestion: context.questionPolicy === 'required' };
+  const evidenceOptions: { conversational?: boolean; allowUncitedQuestion: boolean; allowNonFactualDialogue?: boolean; allowApprovedFallback?: boolean } = { allowUncitedQuestion: context.questionPolicy === 'required', allowNonFactualDialogue: context.allowNonFactualDialogue === true };
   if (approvedNoEvidenceAnswer) evidenceOptions.allowApprovedFallback = true;
   if (context.conversational !== undefined) evidenceOptions.conversational = context.conversational;
   const evidence = verifyV2ResponseEvidence(response, context.evidence ?? [], context.verifiedFacts ?? [], evidenceOptions);
