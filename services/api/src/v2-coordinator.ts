@@ -59,7 +59,7 @@ export const conversationEngineV2EnabledForTenant = (tenantId: string, env: Node
  * without asking the model to invent factual claims or alter any journey/action state. */
 const noEvidenceReply = (envelope: TurnEnvelopeV2, previousQuestionKey: string | null): PersonaComposedResponseV2 => {
   const message = envelope.customerMessageMasked.toLocaleLowerCase('en-US');
-  const specificFactsRequested = /\b(?:price|pricing|cost|fees?|aed|visa|eligib|licen[cs]e|requirement|documents?|how long|timeline|policy|regulation|law)\b/u.test(message);
+  const specificFactsRequested = /\b(?:price|pricing|cost|fees?|aed|eligib\w*|licen[cs]e|how long|timeline|policy|regulation|law|how much)\b/u.test(message);
   const goal = envelope.intentProjection.primaryGoalKey;
   const pending = envelope.intentProjection.pendingRequirementKey;
   const questionByRequirement: Record<string, string> = {
@@ -113,7 +113,9 @@ export class V2ConversationCoordinator {
     if (guarded.verdict.accepted) return { response: guarded.response, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted' };
     // A missing RAG source must not block conversation. Never use this path when
     // evidence exists, citations are invalid, or the model/tool failed.
-    if (guarded.verdict.reasonCode === 'unsupported_claim'
+    const unverifiedActionOutcome = /\b(?:payment|invoice|contract|signature|account|registration|lead|document upload)\b.{0,50}\b(?:complete|completed|successful|created|paid|signed|registered|uploaded)\b/iu.test(agentResult.response.answer);
+    if (['unsupported_claim', 'invalid_question'].includes(guarded.verdict.reasonCode)
+      && !unverifiedActionOutcome
       && agentResult.response.citationIds.length === 0
       && (request.evidence?.length ?? 0) === 0
       && !agentResult.response.decisionRef.startsWith('fallback-')) {
