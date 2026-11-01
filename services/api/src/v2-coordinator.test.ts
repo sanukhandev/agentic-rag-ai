@@ -14,7 +14,9 @@ const fallbackTemplates = { approved: true, personaVersionId: 'persona-12345678'
 afterEach(() => vi.unstubAllGlobals());
 
 describe('V2ConversationCoordinator', () => {
-  it('is opt-in and tenant-scoped with rollback by default', () => {
+  it('is on by default, preserves tenant allowlists, and supports explicit rollback', () => {
+    expect(conversationEngineV2EnabledForTenant('tenant-a', {})).toBe(true);
+    expect(conversationEngineV2EnabledForTenant('tenant-b', { CONVERSATION_ENGINE_V2_ENABLED: 'true', CONVERSATION_ENGINE_V2_TENANTS: '' })).toBe(true);
     expect(conversationEngineV2EnabledForTenant('tenant-a', { CONVERSATION_ENGINE_V2_ENABLED: 'true', CONVERSATION_ENGINE_V2_TENANTS: 'tenant-a' })).toBe(true);
     expect(conversationEngineV2EnabledForTenant('tenant-b', { CONVERSATION_ENGINE_V2_ENABLED: 'true', CONVERSATION_ENGINE_V2_TENANTS: 'tenant-a' })).toBe(false);
     expect(conversationEngineV2EnabledForTenant('tenant-a', { CONVERSATION_ENGINE_V2_ENABLED: 'false', CONVERSATION_ENGINE_V2_TENANTS: 'tenant-a' })).toBe(false);

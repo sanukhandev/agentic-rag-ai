@@ -49,9 +49,10 @@ const fallbackFamilyFor = (reason: string): V2FallbackFamily => reason === 'stal
 const toDraft = (response: PersonaComposedResponseV2): ModelDraft => ({ answer: response.answer, citationIds: response.citationIds, proposedIntent: null });
 
 export const conversationEngineV2EnabledForTenant = (tenantId: string, env: NodeJS.ProcessEnv = process.env): boolean => {
-  if (env.CONVERSATION_ENGINE_V2_ENABLED !== 'true' || !tenantId) return false;
+  if (env.CONVERSATION_ENGINE_V2_ENABLED === 'false' || !tenantId) return false;
   const tenants = new Set((env.CONVERSATION_ENGINE_V2_TENANTS ?? '').split(',').map(value => value.trim()).filter(Boolean));
-  return tenants.has(tenantId);
+  // Blank allowlist means enabled by default; a populated allowlist scopes rollout to named tenants.
+  return tenants.size === 0 || tenants.has(tenantId);
 };
 
 export class V2ConversationCoordinator {
