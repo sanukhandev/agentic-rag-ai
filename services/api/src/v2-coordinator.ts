@@ -171,7 +171,23 @@ export class V2ConversationCoordinator {
       && agentResult.response.citationIds.length === 0
       && agentResult.approvedEvidence.length === 0
       && (request.evidence?.length ?? 0) === 0;
+    // The Python gateway can return an internally generated fallback on model/tool
+    // failure. Never relabel that failure as a successful no-knowledge dialogue.
+    if (agentResult.response.decisionRef.startsWith('fallback-') || agentResult.toolTrace.some((trace) => trace.status !== 'ok')) {
+      const unavailable = guardV2OfflineFallback('tool_unavailable', guardContext);
+      if (!unavailable.verdict.accepted || !unavailable.response) throw new Error('V2_MODEL_OR_TOOL_UNAVAILABLE');
+      return { response: unavailable.response, draft: toDraft(unavailable.response), toolTrace: agentResult.toolTrace,
+        modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'model_or_tool_unavailable' };
+    }
     if (noApprovedEvidence) {
+      // A safe question and acknowledgement can be authored by the model without
+      // RAG citations. Constrain the accepted text shape and forbid factual claims.
+      const authored = guardV2Response(agentResult.response, { ...guardContext, allowNonFactualDialogue: true });
+      if (authored.verdict.accepted) return {
+        response: authored.response, draft: toDraft(authored.response), toolTrace: agentResult.toolTrace,
+        modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
+        guardReason: 'accepted_model_dialogue',
+      };
       const natural = noEvidenceReply(envelope, request.lastQuestionKey ?? null);
       const safe = guardV2Response(natural, {
         ...guardContext,
