@@ -1187,6 +1187,7 @@ describe('API vertical slice', () => {
         { intentKey: 'company.setup', slotKey: 'company_structure', dataType: 'enum', required: true, alternativeGroup: null, collectionOrder: 2, promptKey: 'company.ask_structure', validationRule: 'enum:catalog_value', retentionClass: 'business' },
         { intentKey: 'company.setup', slotKey: 'visa_count', dataType: 'integer', required: true, alternativeGroup: null, collectionOrder: 3, promptKey: 'company.ask_visas', validationRule: 'integer:0-10', retentionClass: 'business' },
         { intentKey: 'company.setup', slotKey: 'workspace_preference', dataType: 'enum', required: true, alternativeGroup: null, collectionOrder: 4, promptKey: 'company.ask_workspace', validationRule: 'enum:shared_office|private_office|none', retentionClass: 'business' },
+        { intentKey: 'company.setup', slotKey: 'timeline', dataType: 'text', required: false, alternativeGroup: null, collectionOrder: 5, promptKey: 'company.ask_timeline', validationRule: 'text:timeline', retentionClass: 'business' },
       ],
       relations: [],
       workflowBindings: [{ workflowKey: 'crm.lead.create', n8nWorkflowId: 'journey-contract', webhookPath: 'lead-capture', payloadContract: 'crm-lead-v1', sideEffectClass: 'crm_write', active: true }],
@@ -1212,6 +1213,12 @@ describe('API vertical slice', () => {
     expect(activity.body.answer).toContain('company structure');
     expect(activity.body.pendingRequirementKey).toBe('company.structure');
     expect((await runtime.store.getSession(session.body.sessionId))?.conversationState).toMatchObject({ slotValues: { business_activity: 'CCTV installation and monitoring' }, pendingPrompt: { requirementKey: 'company.structure', slotKey: 'company_structure' }, intentProgress: { entries: { 'company.setup': { completedRequirementKeys: ['company.activity'] } } } });
+    await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message: 'Correction: the business activity is software consulting and AI services, and the timeline is next month.', clientMessageId: 'journey-contract-correction-with-timeline' }).expect(200);
+    const correctedFacts = (await runtime.store.getSession(session.body.sessionId))?.conversationState;
+    expect(correctedFacts?.slotValues.business_activity).toBe('software consulting and AI services');
+    expect(correctedFacts?.slotValues.timeline).toBe('next month');
+    expect(correctedFacts?.slotValues.timeline).not.toContain('Correction:');
+    expect(correctedFacts?.slotProvenance?.timeline).toMatchObject({ source: 'visitor', corrected: false });
     for (const [index, message] of ['Okay, let\'s continue with my company setup.', 'Can we proceed?', 'That sounds good.', 'Tell me more about the company.'].entries()) {
       await api.post('/api/v1/chat/messages').send({ sessionId: session.body.sessionId, message, clientMessageId: `journey-contract-invalid-structure-${index}` }).expect(200);
       expect((await runtime.store.getSession(session.body.sessionId))?.conversationState?.slotValues).not.toHaveProperty('company_structure');

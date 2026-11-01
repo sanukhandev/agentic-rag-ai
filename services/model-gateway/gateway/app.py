@@ -104,6 +104,9 @@ def _client_get() -> Any:
                               max_retries=3)
     return _client
 
+def langgraph_conversation_enabled() -> bool:
+    return os.getenv("LANGGRAPH_CONVERSATION_ENABLED", "true").lower() == "true"
+
 async def _model(system: str, payload: dict, schema: dict, name: str, deadline_at: str | None = None) -> tuple[dict, str | None]:
     global _next_call_at
     started = time.monotonic()
@@ -178,7 +181,7 @@ async def agent_turn(body: TurnEnvelopeV2, x_internal_service_key: str | None = 
     if not gateway_url:
         raise HTTPException(status_code=503, detail={"code": "TOOL_GATEWAY_NOT_CONFIGURED"})
     try:
-        agent_cls = LangGraphConversationAgent if os.getenv("LANGGRAPH_CONVERSATION_ENABLED", "false").lower() == "true" else BoundedConversationAgent
+        agent_cls = LangGraphConversationAgent if langgraph_conversation_enabled() else BoundedConversationAgent
         agent = agent_cls(_client_get(), HttpToolGateway(gateway_url, os.getenv("MODEL_GATEWAY_SERVICE_KEY", "")), os.environ["AZURE_OPENAI_DEPLOYMENT"])
         return await agent.run(body)
     except ValueError as error:

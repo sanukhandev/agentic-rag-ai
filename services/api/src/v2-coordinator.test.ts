@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HttpV2ConversationAgent, V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
+import { assertConversationEngineV2Configuration, HttpV2ConversationAgent, V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
 import type { TurnEnvelopeV2 } from './python-model/v2-contracts.js';
 
 const envelope = (): TurnEnvelopeV2 => ({
@@ -14,12 +14,21 @@ const fallbackTemplates = { approved: true, personaVersionId: 'persona-12345678'
 afterEach(() => vi.unstubAllGlobals());
 
 describe('V2ConversationCoordinator', () => {
-  it('is off by default and requires an explicit tenant allowlist', () => {
-    expect(conversationEngineV2EnabledForTenant('tenant-a', {})).toBe(false);
-    expect(conversationEngineV2EnabledForTenant('tenant-b', { CONVERSATION_ENGINE_V2_ENABLED: 'true', CONVERSATION_ENGINE_V2_TENANTS: '' })).toBe(false);
-    expect(conversationEngineV2EnabledForTenant('tenant-a', { CONVERSATION_ENGINE_V2_ENABLED: 'true', CONVERSATION_ENGINE_V2_TENANTS: 'tenant-a' })).toBe(true);
-    expect(conversationEngineV2EnabledForTenant('tenant-b', { CONVERSATION_ENGINE_V2_ENABLED: 'true', CONVERSATION_ENGINE_V2_TENANTS: 'tenant-a' })).toBe(false);
-    expect(conversationEngineV2EnabledForTenant('tenant-a', { CONVERSATION_ENGINE_V2_ENABLED: 'false', CONVERSATION_ENGINE_V2_TENANTS: 'tenant-a' })).toBe(false);
+  it('defaults on only with a configured private gateway and tenant allowlist', () => {
+    const configured = { PYTHON_MODEL_URL: 'http://model-gateway:8088', MODEL_GATEWAY_SERVICE_KEY: 'private-key', CONVERSATION_ENGINE_V2_TENANTS: 'tenant-a' };
+    expect(conversationEngineV2EnabledForTenant('tenant-a', configured)).toBe(true);
+    expect(conversationEngineV2EnabledForTenant('tenant-a', { ...configured, CONVERSATION_ENGINE_V2_ENABLED: 'true' })).toBe(true);
+    expect(conversationEngineV2EnabledForTenant('tenant-a', { ...configured, CONVERSATION_ENGINE_V2_ENABLED: 'false' })).toBe(false);
+    expect(conversationEngineV2EnabledForTenant('tenant-b', configured)).toBe(false);
+    expect(conversationEngineV2EnabledForTenant('tenant-a', { ...configured, MODEL_GATEWAY_SERVICE_KEY: '' })).toBe(false);
+    expect(conversationEngineV2EnabledForTenant('tenant-a', { ...configured, PYTHON_MODEL_URL: '' })).toBe(false);
+    expect(conversationEngineV2EnabledForTenant('tenant-a', { ...configured, CONVERSATION_ENGINE_V2_TENANTS: '' })).toBe(false);
+  });
+
+  it('fails production startup clearly when v2 is enabled without a private gateway', () => {
+    expect(() => assertConversationEngineV2Configuration('production', { CONVERSATION_ENGINE_V2_ENABLED: 'true' })).toThrow('PYTHON_MODEL_URL');
+    expect(() => assertConversationEngineV2Configuration('production', {})).toThrow('PYTHON_MODEL_URL');
+    expect(() => assertConversationEngineV2Configuration('production', { CONVERSATION_ENGINE_V2_ENABLED: 'false' })).not.toThrow();
   });
 
   it('returns only a guarded draft and preserves the agent trace', async () => {
@@ -51,6 +60,35 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.answer).toContain('verified answer');
     expect(output.response.nextQuestionKey).toBe('business_activity');
     expect(output.response.nextQuestion).toBe('What business activity are you planning?');
+  });
+
+  it('keeps a pending requirement useful after a repeated knowledge interruption', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'Could you explain the formation process?';
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'lead_qualification', pendingRequirementKey: 'entity_type' };
+    const coordinator = new V2ConversationCoordinator({
+      turn: async () => result('The setup process is AED 999.'),
+    });
+    const first = await coordinator.run({ envelope: request, questionPolicy: 'required' });
+    const second = await coordinator.run({ envelope: request, lastQuestionKey: 'entity_type', questionPolicy: 'required' });
+    expect(second.guardReason).toBe('safe_no_evidence_dialogue');
+    expect(second.response.answer).not.toBe('I can help you work through that.');
+    expect(second.response.nextQuestionKey).toBe('entity_type');
+    expect(second.response.nextQuestion).toBe('What company structure are you considering?');
+    expect(second.response.answer).toContain(second.response.nextQuestion);
+    expect(first.response.answer).not.toBe(second.response.answer);
+  });
+
+  it('uses the durable active stage after qualification instead of restarting the journey', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'What should happen next?';
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'account_creation', pendingRequirementKey: null };
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result('I do not have a verified answer.') });
+    const output = await coordinator.run({ envelope: request, questionPolicy: 'required' });
+    expect(output.guardReason).toBe('safe_no_evidence_dialogue');
+    expect(output.response.nextQuestionKey).toBe('stage:account_creation');
+    expect(output.response.nextQuestion).toContain('Account creation');
+    expect(output.response.answer).not.toContain('Which part of your setup');
   });
 
   it('never converts an invented factual claim into a grounded response', async () => {

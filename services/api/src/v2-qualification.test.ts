@@ -5,10 +5,10 @@ import type { CatalogV2Document } from './catalog-v2.js';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
 const facts = (overrides: Record<string, string | number> = {}) => ({
-  business_activity: { value: 'technology services', source: 'customer' as const, messageSequence: 2, evidenceRefs: ['turn:2'] },
-  entity_type: { value: 'new company', source: 'customer' as const, messageSequence: 3, evidenceRefs: ['turn:3'] },
+  business_activity: { value: 'software consulting and AI services', source: 'customer' as const, messageSequence: 2, evidenceRefs: ['turn:2'] },
+  entity_type: { value: 'LLC', source: 'customer' as const, messageSequence: 3, evidenceRefs: ['turn:3'] },
   visa_count: { value: 3, source: 'customer' as const, messageSequence: 4, evidenceRefs: ['turn:4'] },
-  timeline: { value: 'next quarter', source: 'customer' as const, messageSequence: 5, evidenceRefs: ['turn:5'] },
+  timeline: { value: 'next month', source: 'customer' as const, messageSequence: 5, evidenceRefs: ['turn:5'] },
   ...Object.fromEntries(Object.entries(overrides).map(([key, value]) => [key, { value, source: 'customer' as const, messageSequence: 6, evidenceRefs: ['turn:6'] }])),
 });
 
@@ -26,6 +26,17 @@ describe('v2 deterministic qualification policy', () => {
     const documentOnly = evaluateV2Qualification(fixture, 'anc.company_formation', 'lead_qualification', { document: { value: 'reviewed', source: 'provider', messageSequence: 8, evidenceRefs: ['document:1'] } });
     expect(documentOnly.reasons).toContain('requirements_missing');
     expect(documentOnly.eligibleForAccountCreation).toBe(false);
+  });
+
+  it('rejects cross-slot and semantically invalid qualification values', () => {
+    const contaminated = evaluateV2Qualification(fixture, 'anc.company_formation', 'lead_qualification', facts({
+      business_activity: 'LLC',
+      entity_type: 'Correction: the business activity is software consulting',
+      timeline: 'software consulting and AI services',
+    }));
+    expect(contaminated.status).toBe('unknown');
+    expect(contaminated.eligibleForAccountCreation).toBe(false);
+    expect(contaminated.invalidFactKeys).toEqual(expect.arrayContaining(['business_activity', 'entity_type', 'timeline']));
   });
 
   it('uses only explicit catalog disqualifiers and supports manual review', () => {

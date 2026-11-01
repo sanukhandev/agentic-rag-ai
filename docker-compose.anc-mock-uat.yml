@@ -39,11 +39,13 @@ services:
       dockerfile: services/model-gateway/Dockerfile
     container_name: anc-mock-uat-model-gateway
     environment:
-      MODEL_MODE: mock
-      AZURE_OPENAI_DEPLOYMENT: anc-mock-model
+      MODEL_MODE: ${MODEL_MODE:-mock}
+      AZURE_OPENAI_BASE_URL: ${AZURE_OPENAI_BASE_URL:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-anc-mock-model}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
       MODEL_GATEWAY_SERVICE_KEY: anc-mock-gateway-service-key
       NODE_TOOL_GATEWAY_URL: http://api:4000
-      LANGGRAPH_CONVERSATION_ENABLED: "true"
+      LANGGRAPH_CONVERSATION_ENABLED: ${LANGGRAPH_CONVERSATION_ENABLED:-true}
       MODEL_MAX_CONCURRENCY: "2"
       MODEL_MIN_CALL_INTERVAL_SECONDS: "0"
     expose:
@@ -92,7 +94,8 @@ services:
       PYTHON_MODEL_TIMEOUT_MS: "20000"
       LANGGRAPH_CONVERSATION_ENABLED: "true"
       CONVERSATION_ENGINE_V2_ENABLED: "true"
-      CONVERSATION_ENGINE_V2_TENANTS: "${CONVERSATION_ENGINE_V2_TENANTS:-}"
+      # The bootstrap uses this fixed disposable tenant UUID; an explicit environment override remains supported.
+      CONVERSATION_ENGINE_V2_TENANTS: "${ANC_UAT_V2_TENANT_ID:-110a38e2-a3d2-4a4f-b9c1-9d431dc86ac6}"
       CHAT_SESSION_TOKEN_REQUIRED: "true"
       N8N_INTERNAL_URL: http://mock-provider:8090
       N8N_WEBHOOK_SECRET: anc-mock-uat-n8n-secret
@@ -198,7 +201,7 @@ services:
     environment:
       API_BASE_URL: http://api:4000
       TENANT_SLUG: anc
-      MODEL_MODE: mock
+      MODEL_MODE: ${MODEL_MODE:-mock}
       OUTPUT_DIR: /workspace/artifacts/ancfz-stage5-api-uat
     volumes:
       - .:/workspace:ro

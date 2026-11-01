@@ -16,6 +16,12 @@ def test_internal_auth_required(client):
     res = client.post("/internal/v1/model/plan", json={"requestId": "auth-test", "message": "test"})
     assert res.status_code == 401
 
+def test_langgraph_is_default_on_but_can_be_rolled_back(monkeypatch):
+    monkeypatch.delenv("LANGGRAPH_CONVERSATION_ENABLED", raising=False)
+    assert module.langgraph_conversation_enabled()
+    monkeypatch.setenv("LANGGRAPH_CONVERSATION_ENABLED", "false")
+    assert not module.langgraph_conversation_enabled()
+
 def test_no_fabricated_knowledge_when_evidence_missing(client, monkeypatch):
     async def fake_model(system, payload, schema, name):
         return ({

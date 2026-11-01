@@ -512,3 +512,25 @@ This evidence is limited to deterministic mock-provider execution. SF-02
 external attachment verification and the Azure deployment run remain blocked;
 the journey intentionally stops before payment/invoice. Reports are emitted to
 `artifacts/ancfz-stage5-api-uat/`.
+
+## Conversation hardening and real-model UAT — 2026-11-02
+
+The Stage 5 runner now uses 25 meaningful customer turns, detects repeated
+assistant replies, preserves qualification provenance through corrections,
+separates last-completed/current/next stages, and records mock and Azure
+results independently. Conversation Engine v2 and LangGraph default to on
+when the private gateway and tenant allowlist are configured; explicit false
+remains the emergency rollback.
+
+The isolated `anc-mock-uat` run passed 39/39 assertions across the happy path,
+empty-RAG and security/recovery scenarios. The real Azure deployment run
+(`gpt-5.4`) passed 30/30 assertions in a separate 25-turn session. Both runs
+reached durable `document_upload`; the current active and next stage were
+correctly reported as `billing_invoice`, and neither payment nor contract
+execution was started. Local document intake/OCR passed; SF-02 external
+attachment evidence remains unverified. Full API tests passed 333 with 12
+skipped, Python gateway tests passed 31, and API typecheck/lint, Compose
+validation, Docker build and secret checks passed. Evidence is in
+`artifacts/ancfz-stage5-api-uat/hardening-report.json` and
+`hardening-report-azure-gpt5.4.json`; operational Docker services and data
+were not modified.

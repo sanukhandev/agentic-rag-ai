@@ -23,7 +23,13 @@ const normalized = (value: string | number | boolean): string => String(value).t
 const validFact = (validation: string, value: string | number | boolean): boolean => {
   if (validation === 'integer.nonnegative') return typeof value === 'number' ? Number.isInteger(value) && value >= 0 : /^\d+$/u.test(String(value).trim());
   if (validation === 'number.nonnegative') return typeof value === 'number' ? Number.isFinite(value) && value >= 0 : /^(?:0|\d+(?:\.\d+)?)$/u.test(String(value).trim());
-  return typeof value === 'string' ? value.trim().length > 0 : true;
+  if (typeof value !== 'string' || value.trim().length === 0) return false;
+  const text = value.trim();
+  if (validation === 'catalog.entity_type') return /^(?:llc|fze|fzc|free\s+zone(?:\s+(?:company|establishment))?|branch|sole\s+(?:proprietorship|establishment)|partnership|corporation|incorporated|unclear)$/iu.test(text);
+  if (validation === 'catalog.timeline') return /^(?:asap|immediately|urgent|today|tomorrow|next\s+(?:week|month|quarter|year)|this\s+(?:week|month|quarter|year)|within\s+\d+\s+(?:day|days|week|weeks|month|months)|in\s+\d+\s+(?:day|days|week|weeks|month|months)|by\s+.+)$/iu.test(text);
+  if (validation === 'catalog.activity') return !/^(?:llc|fze|fzc|free\s+zone|branch|sole\s+(?:proprietorship|establishment)|partnership|corporation|incorporated|asap|immediately|urgent|next\s+(?:week|month|quarter|year)|this\s+(?:week|month|quarter|year))$/iu.test(text)
+    && !/^(?:correction|actually|update|change)\s*:/iu.test(text);
+  return true;
 };
 
 export const evaluateV2Qualification = (catalog: CatalogV2Document, goalKey: string, stageKey: string, facts: Record<string, V2QualificationFact>): V2QualificationDecision => {
