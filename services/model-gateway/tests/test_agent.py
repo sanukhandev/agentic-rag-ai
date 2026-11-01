@@ -70,8 +70,12 @@ def test_valid_function_call_continues_with_correlated_output():
     assert result.modelRequestCount == 2
     assert result.toolCallCount == 1
     assert len(gateway.requests) == 1
-    assert client.calls[1]["previous_response_id"] == "response-12345678"
-    assert client.calls[1]["input"][0]["type"] == "function_call_output"
+    assert all("previous_response_id" not in call for call in client.calls)
+    assert client.calls[0]["store"] is False
+    assert client.calls[1]["input"][0]["role"] == "user"
+    assert client.calls[1]["input"][1]["type"] == "function_call"
+    assert client.calls[1]["input"][2]["type"] == "function_call_output"
+    assert client.calls[1]["input"][2]["call_id"] == "call-12345678"
 
 
 def test_unknown_tool_is_denied_without_gateway_execution():
@@ -114,3 +118,32 @@ def test_budget_exhaustion_returns_typed_fallback():
 
     assert result.response.reasonNoQuestion == "tool_budget_exhausted"
     assert gateway.requests == []
+
+
+def test_stateless_replay_preserves_encrypted_reasoning():
+    class FakeReasoning:
+        def model_dump(self, mode="json", exclude_none=True):
+            return {"type": "reasoning", "id": "rs_123", "summary": [], "encrypted_content": "opaque-encrypted-reasoning"}
+
+    client = FakeClient([
+        SimpleNamespace(id="response-a", output=[FakeReasoning(), function_call()]),
+        SimpleNamespace(id="response-b", output=[], output_text=final_response()),
+    ])
+    result = asyncio.run(BoundedConversationAgent(client, FakeGateway(), "deployment").run(envelope()))
+    assert result.response.answer == "Approved answer"
+    assert client.calls[1]["input"][1]["type"] == "reasoning"
+    assert client.calls[1]["input"][1]["encrypted_content"] == "opaque-encrypted-reasoning"
+
+
+def test_signed_scope_ref_accepts_node_gateway_length():
+    long_ref = "s" * 900
+    turn = envelope().model_copy(update={"scopeRef": long_ref})
+    assert TurnEnvelopeV2.model_validate(turn.model_dump()).scopeRef == long_ref
+    from gateway.v2_contracts import ToolRequestV2
+    request = ToolRequestV2.model_validate({
+        "schemaVersion": 2, "toolCallId": "call-12345678", "toolName": "search_knowledge",
+        "arguments": {"query": "approved", "resultCount": None},
+        "scopeRef": long_ref, "expectedStateRevision": 4,
+        "deadlineAt": (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat(),
+    })
+    assert request.scopeRef == long_ref

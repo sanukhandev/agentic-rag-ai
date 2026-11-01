@@ -102,7 +102,7 @@ class BoundedConversationAgent:
             "intentProjection": envelope.intentProjection.model_dump(),
         }, ensure_ascii=False)
 
-    async def _response(self, envelope: TurnEnvelopeV2, budget: TurnBudget, *, input_value: Any, previous_response_id: str | None = None) -> Any:
+    async def _response(self, envelope: TurnEnvelopeV2, budget: TurnBudget, *, input_value: Any) -> Any:
         if budget.remaining() <= 0:
             raise BudgetExceeded("turn deadline exceeded")
         kwargs: dict[str, Any] = {
@@ -114,8 +114,6 @@ class BoundedConversationAgent:
             "max_output_tokens": 1700,
             "store": False,
         }
-        if previous_response_id:
-            kwargs["previous_response_id"] = previous_response_id
         return await asyncio.wait_for(self.client.responses.create(**kwargs), timeout=max(0.001, budget.remaining()))
 
     def _calls(self, response: Any) -> list[FunctionCall] | None:
@@ -130,6 +128,25 @@ class BoundedConversationAgent:
                 return None
             calls.append(FunctionCall(call_id, name, arguments))
         return calls
+
+    @staticmethod
+    def _replayable_output(response: Any) -> list[dict[str, Any]]:
+        """Stateless Responses continuation must replay function calls and reasoning items."""
+        items: list[dict[str, Any]] = []
+        for item in _value(response, "output", []) or []:
+            if isinstance(item, dict):
+                replay = item
+            elif callable(getattr(item, "model_dump", None)):
+                replay = item.model_dump(mode="json", exclude_none=True)
+            elif _value(item, "type") == "function_call":
+                # Lightweight test doubles can expose only function-call fields.
+                replay = {key: _value(item, key) for key in ("type", "call_id", "name", "arguments")}
+            else:
+                raise ValueError("Non-replayable response item")
+            if not isinstance(replay, dict) or not isinstance(replay.get("type"), str):
+                raise ValueError("Invalid response output item")
+            items.append(replay)
+        return items
 
     def _digest(self, result: ToolResultV2) -> str:
         return hashlib.sha256(json.dumps(result.model_dump(), sort_keys=True, default=str).encode()).hexdigest()
@@ -162,7 +179,8 @@ class BoundedConversationAgent:
     async def run(self, envelope: TurnEnvelopeV2) -> AgentTurnResultV2:
         budget = TurnBudget.from_deadline(envelope.budgets.deadlineAt, 90)
         try:
-            response = await self._response(envelope, budget, input_value=self._input(envelope))
+            history: list[dict[str, Any]] = [{"role": "user", "content": self._input(envelope)}]
+            response = await self._response(envelope, budget, input_value=history)
             model_requests = 1
             seen: dict[str, ToolResultV2] = {}
             traces: list[ToolTraceV2] = []
@@ -187,11 +205,12 @@ class BoundedConversationAgent:
                     traces.append(trace)
                     total_calls += 1
                     outputs.append({"type": "function_call_output", "call_id": call.call_id, "output": json.dumps(result.model_dump(), ensure_ascii=False)})
-                response_id = _value(response, "id")
-                if not isinstance(response_id, str) or not response_id:
-                    return AgentTurnResultV2(response=self._fallback(envelope, "missing_response_id"), toolTrace=traces, modelRequestCount=model_requests, toolCallCount=total_calls)
-                response = await self._response(envelope, budget, input_value=outputs, previous_response_id=response_id)
+                history.extend(self._replayable_output(response))
+                history.extend(outputs)
+                response = await self._response(envelope, budget, input_value=history)
                 model_requests += 1
             return AgentTurnResultV2(response=self._fallback(envelope, "tool_budget_exhausted"), toolTrace=traces, modelRequestCount=model_requests, toolCallCount=total_calls)
         except (BudgetExceeded, asyncio.TimeoutError):
             return AgentTurnResultV2(response=self._fallback(envelope, "turn_deadline_exceeded"), toolTrace=[], modelRequestCount=1, toolCallCount=0)
+        except ValueError:
+            return AgentTurnResultV2(response=self._fallback(envelope, "invalid_model_response"), toolTrace=[], modelRequestCount=1, toolCallCount=0)

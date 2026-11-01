@@ -35,7 +35,7 @@ class TurnEnvelopeV2(StrictV2):
     schemaVersion: Literal[2]
     requestId: str = Field(min_length=8, max_length=256)
     clientMessageId: str = Field(min_length=8, max_length=256)
-    scopeRef: str = Field(min_length=8, max_length=256)
+    scopeRef: str = Field(min_length=8, max_length=2048)
     sessionRevision: int = Field(ge=0)
     intentRevision: int = Field(ge=0)
     catalogVersionId: str = Field(min_length=8, max_length=256)
@@ -60,7 +60,7 @@ class ToolRequestV2(StrictV2):
     toolCallId: str = Field(min_length=8, max_length=256)
     toolName: str = Field(min_length=1, max_length=128)
     arguments: dict[str, Any] = Field(default_factory=dict)
-    scopeRef: str = Field(min_length=8, max_length=256)
+    scopeRef: str = Field(min_length=8, max_length=2048)
     expectedStateRevision: int = Field(ge=0)
     deadlineAt: str
 
