@@ -38,6 +38,36 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.answer).not.toContain('payment is complete');
   });
 
+  it('continues naturally when knowledge is absent without making unsupported claims', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'How much does a company licence cost?';
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'lead_qualification', pendingRequirementKey: 'business_activity' };
+    const coordinator = new V2ConversationCoordinator({
+      turn: async () => result('The licence will cost AED 999.'),
+    });
+    const output = await coordinator.run({ envelope: request, questionPolicy: 'required' });
+    expect(output.guardReason).toBe('safe_no_evidence_dialogue');
+    expect(output.response.answer).not.toContain('999');
+    expect(output.response.answer).toContain('verified answer');
+    expect(output.response.nextQuestionKey).toBe('business_activity');
+    expect(output.response.nextQuestion).toBe('What business activity are you planning?');
+  });
+
+  it('never converts an invented factual claim into a grounded response', async () => {
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result('Your payment is complete.') });
+    const output = await coordinator.run({ envelope: envelope(), fallbackTemplates });
+    expect(output.response.answer).not.toContain('payment is complete');
+    expect(output.draft.citationIds).toHaveLength(0);
+  });
+
+  it('does not disguise failed tool execution as missing knowledge', async () => {
+    const broken = result('I cannot finish right now.');
+    broken.response.decisionRef = 'fallback-request-12345678';
+    const coordinator = new V2ConversationCoordinator({ turn: async () => broken });
+    const output = await coordinator.run({ envelope: envelope(), fallbackTemplates });
+    expect(output.guardReason).not.toBe('safe_no_evidence_dialogue');
+  });
+
   it('calls the private v2 agent route with the service key', async () => {
     vi.stubGlobal('fetch', vi.fn(async (_url: string, options: RequestInit) => {
       expect(options.headers).toMatchObject({ 'x-internal-service-key': 'private-key' });
