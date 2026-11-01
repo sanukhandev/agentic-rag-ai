@@ -77,6 +77,34 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.citationIds).toEqual([]);
   });
 
+  it('accepts a natural GPT-authored next question when the required slot remains unanswered', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'Before I reply, can you help me understand the request?';
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true,
+      currentStageKey: 'lead_qualification', pendingRequirementKey: 'entity_type' };
+    const question = 'What company structure are you considering?';
+    const answer = `Thanks for clarifying. ${question}`;
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer, { response: {
+      ...result(answer).response, nextQuestion: question, nextQuestionKey: 'entity_type', reasonNoQuestion: null,
+    } }) });
+    const output = await coordinator.run({ envelope: request, lastQuestionKey: 'entity_type', questionPolicy: 'required' });
+    expect(output.guardReason).toBe('accepted_model_dialogue');
+    expect(output.candidateGuardReason).toBe('accepted');
+    expect(output.response.answer).toBe(answer);
+  });
+
+  it('preserves original factual rejection cause even when a safe question is delivered', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'How much does the company licence cost?';
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true,
+      currentStageKey: 'lead_qualification', pendingRequirementKey: 'business_activity' };
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result('The licence costs AED 999.') });
+    const output = await coordinator.run({ envelope: request, questionPolicy: 'required' });
+    expect(output.guardReason).toBe('safe_no_evidence_dialogue');
+    expect(output.candidateGuardReason).toBe('invalid_question');
+    expect(output.response.answer).not.toContain('999');
+  });
+
   it('does not treat a Python model fallback as a successful conversation when a goal is active', async () => {
     const request = envelope();
     request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'lead_qualification', pendingRequirementKey: null };
