@@ -220,7 +220,7 @@ export class V2ConversationCoordinator {
       candidateGuardReason = 'model_or_tool_unavailable';
       const unavailable = guardV2OfflineFallback('tool_unavailable', guardContext);
       if (!unavailable.verdict.accepted || !unavailable.response) throw new Error('V2_MODEL_OR_TOOL_UNAVAILABLE');
-      return { response: unavailable.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(unavailable.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence,
+      return { response: unavailable.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(unavailable.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [],
         modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'model_or_tool_unavailable', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
     }
     if (uncitedDialogueCandidate) {
@@ -229,7 +229,7 @@ export class V2ConversationCoordinator {
       const authored = guardV2Response(candidateResponse, { ...guardContext, allowNonFactualDialogue: true });
       candidateGuardReason = authored.verdict.reasonCode;
       if (authored.verdict.accepted) return {
-        response: authored.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(authored.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence,
+        response: authored.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(authored.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [],
         modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
         guardReason: 'accepted_model_dialogue', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
       };
@@ -241,14 +241,14 @@ export class V2ConversationCoordinator {
         approvedNoEvidenceAnswer: natural.answer,
       });
       if (safe.verdict.accepted) return {
-        response: safe.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(safe.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence,
+        response: safe.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(safe.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [],
         modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
         guardReason: 'safe_no_evidence_dialogue', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
       };
     }
     const guarded = guardV2Response(candidateResponse, guardContext);
     candidateGuardReason = guarded.verdict.reasonCode;
-    if (guarded.verdict.accepted) return { response: guarded.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
+    if (guarded.verdict.accepted) return { response: guarded.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
     // A missing RAG source must not block conversation. Never use this path when
     // evidence exists, citations are invalid, or the model/tool failed.
     const unverifiedActionOutcome = /\b(?:payment|invoice|contract|signature|account|registration|lead|document upload)\b.{0,50}\b(?:complete|completed|successful|created|paid|signed|registered|uploaded)\b/iu.test(candidateResponse.answer);
@@ -267,13 +267,13 @@ export class V2ConversationCoordinator {
         approvedNoEvidenceAnswer: natural.answer,
       });
       if (safe.verdict.accepted) return {
-        response: safe.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(safe.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence,
+        response: safe.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(safe.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [],
         modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
         guardReason: 'safe_no_evidence_dialogue', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
       };
     }
     const fallback = guardV2OfflineFallback(fallbackFamilyFor(guarded.verdict.reasonCode), guardContext);
     if (!fallback.verdict.accepted || !fallback.response) throw new Error('V2_RESPONSE_REJECTED');
-    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: guarded.verdict.reasonCode, candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
+    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: guarded.verdict.reasonCode, candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
   }
 }
