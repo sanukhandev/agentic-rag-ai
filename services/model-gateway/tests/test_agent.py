@@ -208,3 +208,11 @@ def test_diagnostic_capture_preserves_bounded_redacted_candidate_only_when_enabl
     assert "alice@example.test" not in result.diagnosticCandidate
     assert "+971 50 123 4567" not in result.diagnosticCandidate
     assert len(result.diagnosticCandidate) <= 2_000
+
+
+def test_short_bounded_decision_reference_is_valid_model_output():
+    client = FakeClient([SimpleNamespace(id="response-12345678", output=[], output_text=final_response().replace("decision-12345678", "final"))])
+
+    result = asyncio.run(BoundedConversationAgent(client, FakeGateway(), "deployment").run(envelope()))
+
+    assert result.response.decisionRef == "final"

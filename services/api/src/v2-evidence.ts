@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { hasConflictingEvidence } from './knowledge.js';
 import { hasSufficientEvidence, type ModelEvidence } from './model.js';
 import { personaComposedResponseSchema, type PersonaComposedResponseV2, type ResponseGuardVerdictV2 } from './python-model/v2-contracts.js';
+import type { Citation } from './types.js';
 
 export interface V2ApprovedEvidence {
   citationId: string;
@@ -32,6 +33,27 @@ export interface V2EvidenceDecision {
 
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex').slice(0, 32);
 const sentences = (answer: string): string[] => answer.split(/(?<=[.!?])\s+|\n+/u).map((value) => value.trim()).filter(Boolean);
+const factWords = (value: string): string[] => (value.toLocaleLowerCase('en-US').match(/[a-z\u00c0-\u024f\d]{3,}/gu) ?? []);
+const factValueWords = (value: string): string[] => {
+  const match = value.match(/\b(?:is|as|requested)\s+(.+?)(?:[.!?]|$)/iu);
+  return factWords(match?.[1] ?? value);
+};
+const factAppearsIn = (answer: string, fact: V2VerifiedFact): boolean => {
+  const normalized = answer.toLocaleLowerCase('en-US');
+  const value = factValueWords(fact.text);
+  return value.length > 0 && value.every((word) => new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}\\b`, 'u').test(normalized));
+};
+const safeFactAcknowledgement = (sentence: string): boolean => /^(?:thanks?(?: for (?:checking|clarifying|confirming|sharing))?|understood|got it|okay|ok|sure|that makes sense|i(?:'|’)m keeping|i have your)\b/iu.test(sentence.trim());
+const safeUncertainty = (sentence: string): boolean => /\b(?:i (?:cannot|can't|can’t|do not|don't|don’t) (?:verify|confirm|have)|there (?:is|are) no (?:verified|approved))\b/iu.test(sentence)
+  && !/\b(?:legally registered|registered successfully|is eligible|are eligible|is created|are created|is completed|are completed)\b/iu.test(sentence);
+const customerFactReflection = (sentence: string, facts: V2VerifiedFact[]): boolean => {
+  const matching = facts.filter((fact) => factAppearsIn(sentence, fact));
+  if (matching.length === 0) return safeFactAcknowledgement(sentence) || safeUncertainty(sentence);
+  if (/\b(?:legally registered|registered successfully|is eligible|are eligible|is created|are created|is completed|are completed|costs?|requires?|includes?)\b/iu.test(sentence)) return false;
+  const vocabulary = new Set([...matching.flatMap((fact) => factWords(fact.text)), 'thanks', 'checking', 'clarifying', 'confirming', 'sharing', 'noted', 'note', 'setup', 'keep', 'keeping', 'unchanged', 'current', 'still', 'view', 'details', 'detail', 'target', 'start', 'expect', 'expected', 'need', 'needs', 'count', 'have', 'has', 'said', 'told', 'mentioned', 'requested']);
+  return factWords(sentence).every((word) => vocabulary.has(word));
+};
+const mixedEvidenceGrounded = (answer: string, evidence: ModelEvidence[], citations: Citation[], trustedFacts: string, facts: V2VerifiedFact[]): boolean => sentences(answer).every((sentence) => customerFactReflection(sentence, facts) || hasSufficientEvidence(sentence, evidence, citations, trustedFacts));
 const unsafeOutput = (answer: string): boolean => {
   const normalized = answer.toLocaleLowerCase('en-US');
   return normalized.includes('ignore all previous instructions')
@@ -80,6 +102,12 @@ const safeNoEvidenceDialogue = (answer: string, question: string | null): boolea
   const segments = preface.split(/(?<=[.!])\s+/u).filter(Boolean);
   return segments.length <= 2 && segments.every(nonFactualPreface);
 };
+export const addVerifiedFactCitations = (response: PersonaComposedResponseV2, facts: V2VerifiedFact[]): PersonaComposedResponseV2 => {
+  const matching = facts.filter((fact) => fact.verified && factAppearsIn(response.answer, fact));
+  if (matching.length === 0) return response;
+  const citationIds = [...new Set([...response.citationIds, ...matching.map((fact) => fact.factId)])];
+  return citationIds.length === response.citationIds.length ? response : { ...response, citationIds };
+};
 const verdict = (accepted: boolean, reasonCode: ResponseGuardVerdictV2['reasonCode'], response: PersonaComposedResponseV2 | null): ResponseGuardVerdictV2 => ({ schemaVersion: 2, accepted, reasonCode, response });
 
 export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvidence[], facts: V2VerifiedFact[] = [], options: { conversational?: boolean; allowUncitedQuestion?: boolean; allowNonFactualDialogue?: boolean; allowApprovedFallback?: boolean } = {}): V2EvidenceDecision => {
@@ -111,7 +139,8 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
     ? safeNoEvidenceDialogue(response.answer, response.nextQuestion)
     : options.conversational === true && citationIds.length === 0
     ? uncitedConversation(response.answer) || (options.allowUncitedQuestion === true && uncitedQuestion(response.answer, response.nextQuestion))
-    : citationIds.length > 0 && hasSufficientEvidence(answerForEvidence, modelEvidence, citations, trustedFacts);
+    : citationIds.length > 0 && (hasSufficientEvidence(answerForEvidence, modelEvidence, citations, trustedFacts)
+      || (citedFacts.length > 0 && mixedEvidenceGrounded(answerForEvidence, modelEvidence, citations, trustedFacts, citedFacts)));
   if (!grounded) return { verdict: verdict(false, citationIds.length === 0 ? 'unsupported_claim' : 'unsupported_claim', null), claims: [] };
   const sourceVersions = [...new Set([...citedEvidence.map((item) => item.sourceVersion), ...citedFacts.map((item) => item.sourceVersion)])];
   const claims = sentences(response.answer).map((claim) => ({ claimDigest: digest(claim), citationIds, sourceVersions }));

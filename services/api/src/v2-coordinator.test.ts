@@ -256,6 +256,21 @@ describe('V2ConversationCoordinator', () => {
     expect(denied.response.answer).not.toBe(answer);
   });
 
+  it('adds only matching Node-verified fact citations when the model omitted them', async () => {
+    const request = envelope();
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true,
+      currentStageKey: 'lead_qualification', pendingRequirementKey: 'email',
+      confirmedCustomerFacts: { entity_type: 'LLC' } };
+    const question = 'What email address should we use for this request?';
+    const answer = `Thanks for checking. I have your company structure noted as LLC. ${question}`;
+    const fact = { factId: 'customer-fact-entity_type', text: 'The customer stated their company structure is LLC.', sourceVersion: 'catalog-12345678', verified: true };
+    const output = await new V2ConversationCoordinator({ turn: async () => result(answer, { response: {
+      ...result(answer).response, nextQuestion: question, nextQuestionKey: 'email', reasonNoQuestion: null,
+    } }) }).run({ envelope: request, verifiedFacts: [fact], questionPolicy: 'required' });
+    expect(output.guardReason).toBe('accepted');
+    expect(output.response.citationIds).toEqual(['customer-fact-entity_type']);
+  });
+
   it('does not treat the purposeful follow-up question as an unsupported factual claim', async () => {
     const request = envelope();
     request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true,

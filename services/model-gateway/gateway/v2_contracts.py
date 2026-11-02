@@ -99,7 +99,7 @@ class PersonaComposedResponseV2(StrictV2):
     nextQuestion: str | None = Field(default=None, max_length=1000)
     nextQuestionKey: str | None = None
     reasonNoQuestion: str | None = Field(default=None, max_length=300)
-    decisionRef: str = Field(min_length=8, max_length=256)
+    decisionRef: str = Field(min_length=1, max_length=256, pattern=r"^[A-Za-z0-9._:-]+$")
 
 
 class ResponseGuardVerdictV2(StrictV2):

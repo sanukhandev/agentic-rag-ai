@@ -1,7 +1,7 @@
 import { agentTurnResultSchema, turnEnvelopeSchema, type AgentTurnResultV2, type PersonaComposedResponseV2, type TurnEnvelopeV2 } from './python-model/v2-contracts.js';
 import { guardV2OfflineFallback, guardV2Response, type V2ResponseGuardContext } from './v2-response-guard.js';
 import type { ModelDraft } from './model.js';
-import type { V2ApprovedEvidence, V2VerifiedFact } from './v2-evidence.js';
+import { addVerifiedFactCitations, type V2ApprovedEvidence, type V2VerifiedFact } from './v2-evidence.js';
 import type { V2ApprovedFallbackTemplateSet, V2FallbackFamily } from './v2-fallbacks.js';
 
 export interface V2ConversationAgent {
@@ -171,7 +171,7 @@ export class V2ConversationCoordinator {
     const parsed = agentTurnResultSchema.safeParse(rawResult);
     if (!parsed.success) throw new Error('V2_MODEL_INVALID_RESPONSE');
     const agentResult = parsed.data;
-    const candidateResponse = repairTrailingDuplicateQuestion(agentResult.response);
+    const candidateResponse = repairTrailingDuplicateQuestion(addVerifiedFactCitations(agentResult.response, request.verifiedFacts ?? []));
     const repairApplied = candidateResponse !== agentResult.response;
     const guardContext: V2ResponseGuardContext = {
       personaVersionId: envelope.personaVersionId,

@@ -57,4 +57,11 @@ describe('conversation engine v2 contracts', () => {
       internalTrace: 'not-public',
     }).success).toBe(false);
   });
+
+  it('accepts a bounded short internal decision reference from the model', () => {
+    expect(personaComposedResponseSchema.safeParse({
+      schemaVersion: 2, personaVersionId: envelope.personaVersionId, language: 'en', answer: 'Ready.',
+      citationIds: [], nextQuestion: null, nextQuestionKey: null, reasonNoQuestion: 'farewell', decisionRef: 'final',
+    }).success).toBe(true);
+  });
 });

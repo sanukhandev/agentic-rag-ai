@@ -17,6 +17,22 @@ describe('v2 claim provenance and evidence verification', () => {
     expect(result.verdict.accepted).toBe(true);
   });
 
+  it('accepts a natural reflection of cited customer facts before a pending question', () => {
+    const facts: V2VerifiedFact[] = [
+      { factId: 'customer-fact-entity_type', text: 'The customer stated their company structure is LLC.', sourceVersion: 'catalog-12345678', verified: true },
+      { factId: 'customer-fact-business_activity', text: 'The customer described their business activity as software consulting and AI services.', sourceVersion: 'catalog-12345678', verified: true },
+    ];
+    const question = 'Could you share your email address?';
+    const value = { ...response(`Thanks for checking. I have your company setup noted as an LLC and your activity as software consulting and AI services. ${question}`, facts.map((item) => item.factId)), nextQuestion: question, nextQuestionKey: 'email', reasonNoQuestion: null };
+    expect(verifyV2ResponseEvidence(value, [], facts, { allowUncitedQuestion: true }).verdict.accepted).toBe(true);
+  });
+
+  it('does not let a customer fact citation authorize a provider or legal outcome', () => {
+    const value = response('Your LLC is legally registered.', ['customer-fact-entity_type']);
+    const entityFact: V2VerifiedFact = { factId: 'customer-fact-entity_type', text: 'The customer stated their company structure is LLC.', sourceVersion: 'catalog-12345678', verified: true };
+    expect(verifyV2ResponseEvidence(value, [], [entityFact]).verdict.accepted).toBe(false);
+  });
+
   it('rejects unsupported consequential claims and unknown citations', () => {
     expect(verifyV2ResponseEvidence(response('The approved package costs 999 credits.'), approved).verdict.reasonCode).toBe('unsupported_claim');
     expect(verifyV2ResponseEvidence(response('The package costs 42 credits.', ['unknown-12345678']), approved).verdict.reasonCode).toBe('invalid_citation');
