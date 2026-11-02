@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { cacheKey, type CacheStore } from './cache.js';
 import { newConversationState, prompt } from './conversation-state.js';
+import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
+import { validateV2PlanningProposal } from './v2-planning.js';
 import { HttpError } from './http/errors.js';
 import { assertKnownTokens, maskPiiForSession, rehydrateForSession, TokenVault } from './privacy.js';
 import { issueV2Scope, V2_TOOL_NAMES } from './v2-tool-gateway.js';
@@ -120,6 +122,24 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   if (intentDocument && (intentDocument.personaVersionId !== persona.id || intentDocument.tenantId !== tenant.id || intentDocument.sessionId !== session.id)) {
     throw new HttpError(409, 'V2_PINNED_CONTEXT_STALE', 'The session intent document does not match its trusted context.');
   }
+  // Canonical Catalog V2 publication is independent of the V1 catalog used by
+  // rollback tools. Never auto-promote a legacy intent document or reuse its consent.
+  const publishedV2 = (await store.listIntentCatalogV2Versions(tenant.id))
+    .find(version => version.status === 'published') ?? null;
+  const v2Version = intentDocument?.catalogSource === 'v2'
+    ? (publishedV2?.catalogVersionRef === intentDocument.catalogVersionRef ? publishedV2 : null)
+    : !intentDocument ? publishedV2 : null;
+  if (intentDocument?.catalogSource === 'v2' && !v2Version) {
+    throw new HttpError(409, 'V2_CATALOG_PIN_STALE', 'The pinned V2 catalog is no longer published.');
+  }
+  const validatedV2 = v2Version ? validatePublishedCatalogV2(v2Version.catalog, {
+    published: v2Version.status === 'published',
+    tenantScope: tenant.slug, pinnedVersionRef: v2Version.catalogVersionRef,
+  }) : null;
+  if (v2Version && (!validatedV2?.ok || !validatedV2.catalog)) {
+    throw new HttpError(409, 'V2_CATALOG_INVALID', 'The published V2 catalog cannot be validated.');
+  }
+  const catalogV2 = validatedV2?.catalog ?? null;
   const activeGoal = originalState.activeFollowUpIntentKey ?? originalState.intentProgress?.activeIntentKey
     ?? originalState.selectedIntentKey ?? intentDocument?.businessGoalKey ?? null;
   const entry = activeGoal ? originalState.intentProgress?.entries[activeGoal] : null;
@@ -141,6 +161,18 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     sessionRevision, intentRevision: originalState.intentProgress?.journeyRevision ?? 0,
     catalogVersionId: catalog.id, personaVersionId: persona.id, customerMessageMasked: maskedMessage.slice(0, 5_000),
     latestTurns: history, catalogDigest: hash(JSON.stringify(catalog.catalog)),
+    ...(catalogV2 && v2Version ? { catalogV2: {
+      versionRef: v2Version.catalogVersionRef,
+      businessGoals: catalogV2.sheets.BusinessGoals.filter(goal => goal.active)
+        .map(goal => ({ key: goal.businessGoalKey, name: goal.name.slice(0, 120), confirmationRequired: goal.confirmationRequired })),
+      turnIntents: catalogV2.sheets.TurnIntents.filter(turn => turn.active)
+        .map(turn => ({ key: turn.turnIntentKey, categoryKey: turn.categoryKey, businessGoalKey: turn.businessGoalKey })),
+      signals: catalogV2.sheets.IntentSignals
+        .map(signal => ({ signalId: signal.signalId, targetKey: signal.targetKey, value: signal.value })),
+      requirementKeys: catalogV2.sheets.RequirementPolicies.filter(req => req.required).map(req => req.requirementKey),
+      enabledReadToolKeys: catalogV2.sheets.ToolBindings.filter(tool => tool.enabled && tool.sideEffectClass === 'read_only')
+        .map(tool => tool.toolKey).slice(0, 32),
+    } } : {}),
     persona: { personaVersionId: persona.id, assistantName: persona.name, assistantRole: 'AI assistant',
       permittedLanguages: persona.permittedLanguages,
       tone: persona.tone.split(/[,;]+/u).map(x => x.trim()).filter(Boolean).slice(0, 12),
@@ -160,6 +192,43 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     throw new HttpError(409, 'V2_STALE_SESSION', 'The conversation changed while the model was reasoning.');
   }
 
+  // Model planning is advisory until checked against the exact canonical,
+  // published V2 catalog. Never accept a fabricated signal as score evidence.
+  const modelPlan = result.guardReason === 'accepted' || result.guardReason === 'accepted_model_dialogue'
+    ? result.response.planning ?? null : null;
+  const existingConfirmedGoal = intentDocument?.catalogSource === 'v2' && intentDocument.goalConfirmed
+    ? intentDocument.businessGoalKey : null;
+  const planningDecision = modelPlan && catalogV2 ? validateV2PlanningProposal(modelPlan, catalogV2, {
+    confirmedGoalKey: existingConfirmedGoal, currentStageKey: intentDocument?.catalogSource === 'v2'
+      ? intentDocument.currentStageKey : null,
+    verifiedRequirementKeys: Object.keys(intentDocument?.catalogSource === 'v2' ? intentDocument.verifiedFacts : facts),
+    goalConfirmed: Boolean(existingConfirmedGoal),
+    allowedToolKeys: catalogV2.sheets.ToolBindings.filter(tool => tool.enabled && tool.sideEffectClass === 'read_only')
+      .map(tool => tool.toolKey),
+    observedText: maskedMessage,
+  }) : null;
+  // Only validated proposals and independently observed signals influence
+  // the candidate goal. High model confidence never confirms a goal.
+  const validPlan = Boolean(planningDecision?.accepted);
+  const selectedV2Goal = existingConfirmedGoal ?? (validPlan && planningDecision?.score?.thresholdMet
+    && !planningDecision.score.ambiguous ? planningDecision.primaryGoalKey : null);
+  const selectedTurnCategory = validPlan ? planningDecision?.proposal?.turnCategory ?? null : null;
+  const selectedTurnIntent = validPlan && selectedV2Goal && selectedTurnCategory && catalogV2
+    ? catalogV2.sheets.TurnIntents.find(turn =>
+        turn.active && turn.businessGoalKey === selectedV2Goal && turn.categoryKey === selectedTurnCategory)?.turnIntentKey ?? null
+    : null;
+  const selectedRequirement = validPlan && selectedV2Goal && planningDecision?.score?.thresholdMet
+    ? planningDecision.nextRequirementKey : null;
+  const catalogSignalRefs = validPlan ? (planningDecision?.proposal?.matchedSignalIds ?? [])
+    .map(signal => 'catalog-signal:' + signal) : [];
+  // Publication can change during a model/tool turn. Fail closed rather than
+  // attributing a new decision to a no-longer-published version.
+  if (v2Version) {
+    const stillPublished = await store.getIntentCatalogV2Version(tenant.id, v2Version.id);
+    if (!stillPublished || stillPublished.status !== 'published' || stillPublished.catalogVersionRef !== v2Version.catalogVersionRef) {
+      throw new HttpError(409, 'V2_CATALOG_PIN_STALE', 'The V2 catalog publication changed during the turn.');
+    }
+  }
   const citations = await resolvePublicCitations(store, tenant.id, result.response.citationIds, result.approvedEvidence ?? []);
   const answerMasked = maskPiiForSession(session, result.response.answer, input.tokenVault);
   assertKnownTokens(session, answerMasked, input.tokenVault);
@@ -169,17 +238,19 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   // to an existing, required slot in the active, pinned catalog. The model
   // cannot create consent, document, confirmation or stage transitions.
   const nextKey = result.response.nextQuestionKey;
-  const proposedRequirement = !originalState.pendingPrompt && activeGoal && nextKey
+  const proposedRequirement = !originalState.pendingPrompt && activeGoal && nextKey && !catalogV2
     ? catalog.catalog.journeyRequirements?.find(candidate =>
         candidate.intentKey === activeGoal && candidate.requirementKey === nextKey
         && candidate.required && candidate.requirementType === 'slot'
         && !entry?.completedRequirementKeys.includes(candidate.requirementKey))
     : null;
+  // V2 requirements are kept in the authoritative intent document; they
+  // cannot create a legacy action or stage transition by themselves.
   const nextPendingPrompt = originalState.pendingPrompt ?? (
     proposedRequirement && activeGoal
       ? prompt('slot', activeGoal, proposedRequirement.slotKey, proposedRequirement.requirementKey)
       : null);
-  const effectivePendingRequirement = nextPendingPrompt?.requirementKey ?? pendingRequirement;
+  const effectivePendingRequirement = nextPendingPrompt?.requirementKey ?? selectedRequirement ?? pendingRequirement;
   const state = { ...originalState, catalogVersionId: catalog.id, pendingPrompt: nextPendingPrompt,
     rollingSummary: (originalState.rollingSummary + '\nCustomer: ' + maskedMessage.slice(0, 1_000)).trim().slice(-4_000),
     messageSequence: originalState.messageSequence + 1, summaryRevision: originalState.summaryRevision + 1,
@@ -191,19 +262,24 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const at = new Date().toISOString();
   const nextDoc: UserIntentDocument = intentDocument ? {
     ...intentDocument, approvedResponse, lastQuestion: result.response.nextQuestion,
+    businessGoalKey: intentDocument.goalConfirmed ? intentDocument.businessGoalKey
+      : intentDocument.catalogSource === 'v2' ? selectedV2Goal : intentDocument.businessGoalKey,
+    turnIntentKey: intentDocument.catalogSource === 'v2' ? selectedTurnIntent : intentDocument.turnIntentKey,
     pendingRequirementKey: effectivePendingRequirement,
     toolRefs: result.toolTrace.map(trace => trace.toolCallId),
-    sourceRefs: result.response.citationIds, summary: state.rollingSummary,
+    sourceRefs: [...result.response.citationIds, ...catalogSignalRefs], summary: state.rollingSummary,
     summaryRevision: intentDocument.summaryRevision + 1,
     revision: intentDocument.revision + 1, updatedAt: at,
   } : {
-    id: randomUUID(), tenantId: tenant.id, sessionId: session.id, opportunityId, catalogSource: 'legacy_v1',
-    catalogVersionRef: catalog.id, personaVersionId: persona.id, businessGoalKey: activeGoal,
-    turnIntentKey: null, currentStageKey: entry?.lifecycle?.currentStage ?? null,
+    id: randomUUID(), tenantId: tenant.id, sessionId: session.id, opportunityId,
+    catalogSource: catalogV2 ? 'v2' : 'legacy_v1',
+    catalogVersionRef: v2Version?.catalogVersionRef ?? catalog.id, personaVersionId: persona.id,
+    businessGoalKey: selectedV2Goal ?? activeGoal,
+    turnIntentKey: selectedTurnIntent, currentStageKey: entry?.lifecycle?.currentStage ?? null,
     stageRevision: entry?.lifecycle?.revision ?? 0,
     goalConfirmed: Boolean(originalState.selectedIntentKey), verifiedFacts: factPatch(facts as Record<string,string>, state.messageSequence),
     pendingRequirementKey: effectivePendingRequirement, lastQuestion: result.response.nextQuestion, approvedResponse,
-    toolRefs: result.toolTrace.map(trace => trace.toolCallId), sourceRefs: result.response.citationIds,
+    toolRefs: result.toolTrace.map(trace => trace.toolCallId), sourceRefs: [...result.response.citationIds, ...catalogSignalRefs],
     summary: state.rollingSummary, summaryRevision: 1, revision: 0, createdAt: at, updatedAt: at,
   };
   assertSafeUserIntentDocument(nextDoc);
@@ -213,16 +289,32 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   } else await store.createUserIntentDocument(nextDoc);
   const assessment = { id: randomUUID(), documentId: nextDoc.id, tenantId: tenant.id, sessionId: session.id,
     opportunityId, turnSequence: state.messageSequence, clientMessageId: input.clientMessageId,
-    messageHash: input.messageHash, businessGoalKey: activeGoal, turnIntentKey: null, intentCategory: null,
+    messageHash: input.messageHash,
+    businessGoalKey: nextDoc.businessGoalKey, turnIntentKey: nextDoc.turnIntentKey,
+    intentCategory: selectedTurnCategory,
     verifiedFactPatch: {}, pendingRequirementKey: effectivePendingRequirement, lastQuestion: result.response.nextQuestion,
-    approvedResponse, toolRefs: result.toolTrace.map(trace => trace.toolCallId), sourceRefs: result.response.citationIds, createdAt: at };
+    approvedResponse, toolRefs: result.toolTrace.map(trace => trace.toolCallId),
+    sourceRefs: [...result.response.citationIds, ...catalogSignalRefs], createdAt: at };
   assertSafeIntentTurn(assessment);
   await store.appendIntentTurn(assessment);
+  if (modelPlan && v2Version) {
+    await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: null,
+      eventName: 'v2.catalog.planning_reviewed',
+      metadata: { sessionId: session.id, sessionRevision, intentRevision: nextDoc.revision,
+        catalogVersionRef: v2Version.catalogVersionRef, clientMessageId: input.clientMessageId,
+        planDigest: hash(JSON.stringify(modelPlan)),
+        accepted: validPlan, candidateGoalKey: selectedV2Goal,
+        turnCategory: selectedTurnCategory, nextMove: validPlan ? modelPlan.nextMove : null,
+        matchedSignalIds: catalogSignalRefs.join(',').slice(0, 600),
+        score: planningDecision?.score?.evidenceScore ?? null,
+        reasons: planningDecision?.reasons.join(',').slice(0, 600) ?? '',
+        actionAuthorized: false }, createdAt: at });
+  }
 
   const response = {
     messageId: responseId, sessionId: session.id, answer: rehydrateForSession(session, answerMasked, input.tokenVault),
     grounded, conversational: !grounded, citations, actionProposal: null,
-    pendingPromptId: nextPendingPrompt?.id ?? null, pendingIntentKey: activeGoal,
+    pendingPromptId: nextPendingPrompt?.id ?? null, pendingIntentKey: nextDoc.businessGoalKey,
     pendingRequirementKey: effectivePendingRequirement, requestId: input.requestId,
   };
   await store.addMessage({ id: responseId, sessionId: session.id, tenantId: tenant.id, role: 'assistant',
