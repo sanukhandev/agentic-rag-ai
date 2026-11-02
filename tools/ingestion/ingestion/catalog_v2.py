@@ -22,6 +22,7 @@ REQUIRED_SHEETS = (
     "ToolBindings", "WorkflowBindings", "FollowUpPolicies", "KnowledgeTopics",
     "PersonaPolicies", "DocumentPolicies",
 )
+OPTIONAL_SHEETS = ("QualificationPolicies",)
 
 HEADERS: dict[str, tuple[str, ...]] = {
     "README": ("key", "value"),
@@ -32,6 +33,7 @@ HEADERS: dict[str, tuple[str, ...]] = {
     "IntentSignals": ("signal_id", "target_key", "signal_type", "value", "language", "weight", "min_weight", "max_weight"),
     "ScoringPolicies": ("scoring_policy_key", "business_goal_key", "threshold", "ambiguity_margin", "policy_version"),
     "RequirementPolicies": ("requirement_key", "goal_key", "stage_key", "type", "required", "dependencies", "validation", "source_of_truth", "prompt_key", "priority"),
+    "QualificationPolicies": ("policy_key", "goal_key", "stage_key", "fact_key", "operator", "values", "outcome", "active"),
     "BusinessStages": ("business_goal_key", "stage_key", "stage_order", "entry_requirements", "completion_evidence_policy_key", "active"),
     "ToolBindings": ("tool_key", "goal_key", "stage_key", "side_effect_class", "arguments_schema_ref", "required_keys", "consent", "confirmation", "registry_key", "enabled"),
     "WorkflowBindings": ("workflow_key", "registry_key", "provider_type", "payload_schema_ref", "callback_schema_ref", "evidence_policy_key", "enabled"),
@@ -41,7 +43,7 @@ HEADERS: dict[str, tuple[str, ...]] = {
     "DocumentPolicies": ("policy_key", "goal_key", "stage_key", "doc_type", "required", "mime_types", "review_policy", "retention_class", "enabled"),
 }
 
-ARRAY_FIELDS = {"dependencies", "entry_requirements", "required_keys", "no_question_reasons", "permitted_languages", "mime_types"}
+ARRAY_FIELDS = {"dependencies", "entry_requirements", "required_keys", "no_question_reasons", "permitted_languages", "mime_types", "values"}
 BOOL_FIELDS = {"active", "confirmation_required", "required", "enabled", "citation_required"}
 INT_FIELDS = {"schema_version", "revision", "stage_order", "priority"}
 FLOAT_FIELDS = {"threshold", "ambiguity_margin", "weight", "min_weight", "max_weight"}
@@ -122,13 +124,14 @@ def parse_catalog_v2(path: Path, expected_tenant_scope: str | None = None) -> di
             raise CatalogV2ParseError("UNSAFE_WORKBOOK", "External links and macros are not allowed.")
     workbook = load_workbook(path, read_only=False, data_only=False, keep_links=False)
     try:
-        unknown = sorted(set(workbook.sheetnames) - set(REQUIRED_SHEETS))
+        unknown = sorted(set(workbook.sheetnames) - set(REQUIRED_SHEETS) - set(OPTIONAL_SHEETS))
         missing = [name for name in REQUIRED_SHEETS if name not in workbook.sheetnames]
         if missing:
             raise CatalogV2ParseError("MISSING_SHEETS", f"Missing required sheets: {', '.join(missing)}")
         if unknown:
             raise CatalogV2ParseError("UNKNOWN_SHEET", f"Unknown executable sheets: {', '.join(unknown)}")
         parsed = {name: _sheet_rows(workbook, name) for name in REQUIRED_SHEETS}
+        parsed["QualificationPolicies"] = _sheet_rows(workbook, "QualificationPolicies") if "QualificationPolicies" in workbook.sheetnames else []
         if len(parsed["CatalogManifest"]) != 1:
             raise CatalogV2ParseError("INVALID_MANIFEST", "CatalogManifest must contain exactly one row.", "CatalogManifest")
         manifest = parsed["CatalogManifest"][0]

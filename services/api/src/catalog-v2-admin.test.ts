@@ -1,4 +1,5 @@
 import request from 'supertest';
+import { inflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
 import { readFileSync } from 'node:fs';
@@ -6,6 +7,20 @@ import { exportCatalogV2Workbook } from './catalog-v2-xlsx.js';
 import { validateCatalogV2 } from './catalog-v2.js';
 
 const catalog = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as Record<string, unknown>;
+
+const xlsxXml = (workbook: Buffer): string[] => {
+  const entries: string[] = [];
+  let offset = 0;
+  while (workbook.readUInt32LE(offset) === 0x04034b50) {
+    const compressedSize = workbook.readUInt32LE(offset + 18);
+    const nameLength = workbook.readUInt16LE(offset + 26);
+    const extraLength = workbook.readUInt16LE(offset + 28);
+    const start = offset + 30 + nameLength + extraLength;
+    entries.push(inflateRawSync(workbook.subarray(start, start + compressedSize)).toString('utf8'));
+    offset = start + compressedSize;
+  }
+  return entries;
+};
 
 describe('catalog v2 Admin boundary', () => {
   it('previews, stores, publishes and exports a tenant-scoped v2 catalog', async () => {
@@ -27,6 +42,14 @@ describe('catalog v2 Admin boundary', () => {
     const exportedJson = await api.get('/api/v2/admin/intent-catalog/published/export.json').set(auth).expect(200);
     expect(exportedJson.body.schemaVersion).toBe(2);
     expect(validateCatalogV2(exportedJson.body).ok).toBe(true);
+  });
+
+  it('exports headers for optional qualification policies', () => {
+    const validation = validateCatalogV2(catalog);
+    expect(validation.document).not.toBeNull();
+    const workbook = exportCatalogV2Workbook(validation.document!);
+
+    expect(xlsxXml(workbook).some((entry) => entry.includes('policy_key') && entry.includes('fact_key'))).toBe(true);
   });
 
   it('does not allow another tenant to read or publish the version', async () => {
