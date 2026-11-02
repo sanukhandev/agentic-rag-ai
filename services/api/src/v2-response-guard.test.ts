@@ -82,6 +82,8 @@ describe('guardV2Response', () => {
   it('allows a safe negation of an unverified provider outcome', () => {
     const result = guardV2Response(response({ answer: 'I’ll wait for verified evidence and won’t assume the account is complete.' }), context({ conversational: false, allowNonFactualDialogue: true }));
     expect(result.verdict.accepted).toBe(true);
+    const prefixed = guardV2Response(response({ answer: 'Thanks for clarifying. I’ll wait for verified evidence and won’t assume the account is complete.' }), context({ conversational: false, allowNonFactualDialogue: true }));
+    expect(prefixed.verdict.accepted).toBe(true);
   });
 
   it('blocks legal registration claims without authoritative registration evidence', () => {

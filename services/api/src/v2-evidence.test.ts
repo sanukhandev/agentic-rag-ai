@@ -102,6 +102,8 @@ describe('v2 claim provenance and evidence verification', () => {
     expect(verifyV2ResponseEvidence(prefixed, [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(true);
     const safeQuestion = { ...response('I can help with that. The general formation process detail is not verified here, so I don’t want to guess. What business activity will your company do?', []), nextQuestion: 'What business activity will your company do?', nextQuestionKey: 'business_activity', reasonNoQuestion: null };
     expect(verifyV2ResponseEvidence(safeQuestion, [], [], { allowNonFactualDialogue: true, pendingRequirementKey: 'business_activity' }).verdict.accepted).toBe(true);
+    const contactQuestion = { ...response('Thanks for sharing. I have your email address. Could you share your phone number?', []), nextQuestion: 'Could you share your phone number?', nextQuestionKey: 'phone', reasonNoQuestion: null };
+    expect(verifyV2ResponseEvidence(contactQuestion, [], [], { allowNonFactualDialogue: true, pendingRequirementKey: 'phone' }).verdict.accepted).toBe(true);
     const unsafeProcess = response('In general, forming a company means preparing the required documents and application information.', []);
     expect(verifyV2ResponseEvidence(unsafeProcess, [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(false);
   });

@@ -49,15 +49,18 @@ const factAppearsIn = (answer: string, fact: V2VerifiedFact): boolean => {
 };
 const safeFactAcknowledgement = (sentence: string): boolean => /^(?:thanks?(?: for (?:checking|clarifying|confirming|sharing))?|understood|got it|okay|ok|sure|that makes sense)\.?$/iu.test(sentence.trim());
 const safeUncertainty = (sentence: string): boolean => /\b(?:i (?:cannot|can't|can’t|do not|don't|don’t) (?:verify|confirm|have)|there (?:is|are) no (?:verified|approved)|(?:not|isn't|isn’t|is not) verified|(?:don't|do not|don’t) want to guess)\b/iu.test(sentence)
-  && !/\b(?:legally registered|registered successfully|is eligible|are eligible|is created|are created|is complete|are complete|is completed|are completed|required|costs?|requires?|includes?|paid|signed)\b/iu.test(sentence)
+  && !/\b(?:legally registered|registered successfully|is eligible|are eligible|is created|are created|is complete|are complete|is completed|are completed|required(?!\s+business document)|costs?|requires?|includes?|paid|signed)\b/iu.test(sentence)
   && !/\b(?:your|the|this|that)\b[\s\S]{0,60}\b(?:costs?|requires?|includes?|is complete|are complete|is created|are created|is registered|are registered|is paid|is signed)\b/iu.test(sentence);
 const safeOutcomeAbstention = (sentence: string): boolean => /^\s*(?:i(?:'|’)ll|i will)\s+wait for verified evidence and (?:i\s+)?(?:won't|won’t|will not)\s+assume (?:the )?(?:account|opportunity|payment|invoice|contract)\s+(?:is|was)\s+(?:complete|completed|created|registered|paid|signed)\.?\s*$/iu.test(sentence);
+const safeGoalAcknowledgement = (sentence: string): boolean => /^(?:of course|absolutely|sure)[,!\.\s—-]+i(?:'|’)ll keep your company-formation request active while you ask your questions\.?$/iu.test(sentence.trim());
+const safeDialogueOffer = (sentence: string): boolean => /^(?:if you want,\s+)?i can (?:still )?help (?:gather a verified follow-up or advisor review|with package comparison or document preparation questions)\.?$/iu.test(sentence.trim());
+const safeDialogueSegment = (sentence: string): boolean => safeFactAcknowledgement(sentence) || safeGoalAcknowledgement(sentence) || safeDialogueOffer(sentence) || safeUncertainty(sentence) || safeOutcomeAbstention(sentence);
 const customerFactReflection = (sentence: string, facts: V2VerifiedFact[]): boolean => {
   const matching = facts.filter((fact) => factAppearsIn(sentence, fact));
   if (safeUncertainty(sentence)) return true;
   if (matching.length === 0) return safeFactAcknowledgement(sentence) || safeUncertainty(sentence);
   if (/\b(?:legally registered|registered successfully|is eligible|are eligible|is created|are created|is completed|are completed|costs?|requires?|includes?)\b/iu.test(sentence)) return false;
-  const vocabulary = new Set([...matching.flatMap((fact) => factWords(fact.text)), 'thanks', 'checking', 'clarifying', 'confirming', 'sharing', 'noted', 'note', 'setup', 'keep', 'keeping', 'unchanged', 'current', 'still', 'view', 'details', 'detail', 'target', 'start', 'started', 'expect', 'expected', 'want', 'get', 'moving', 'move', 'outline', 'general', 'process', 'once', 'continue', 'file', 'rather', 'may', 'need', 'needs', 'your', 'company', 'structure', 'activity', 'visa', 'visas', 'timeline', 'number', 'type', 'guide', 'options', 'option', 'entity', 'form', 'rules', 'qualifies', 'qualify', 'see', 'here', 'things', 'said', 'told', 'mentioned', 'requested']);
+  const vocabulary = new Set([...matching.flatMap((fact) => factWords(fact.text)), 'thanks', 'checking', 'clarifying', 'confirming', 'sharing', 'noted', 'note', 'setup', 'keep', 'keeping', 'unchanged', 'current', 'still', 'view', 'details', 'detail', 'target', 'start', 'started', 'expect', 'expected', 'want', 'get', 'moving', 'move', 'outline', 'general', 'process', 'once', 'continue', 'file', 'rather', 'may', 'need', 'needs', 'your', 'company', 'formation', 'request', 'forward', 'and', 'structure', 'activity', 'visa', 'visas', 'timeline', 'number', 'type', 'guide', 'options', 'option', 'entity', 'form', 'rules', 'qualifies', 'qualify', 'see', 'here', 'things', 'said', 'told', 'mentioned', 'requested']);
   return factWords(sentence).every((word) => vocabulary.has(word));
 };
 const relaxedEvidenceText = (value: string): string => value.replace(/\b(?:i|can|help|with|that|the|only|see|shows?|confirm|request|company|formation|journey|specific|process|option|details?|review|information|currently|from|have|your|our|still|yet|right|now|further|outcome|after|things|moving|keep|keeping|what|would|like|this|these|those|into|before|once|continue|general|outline|rather|may)\b/giu, ' ').replace(/\s+/gu, ' ').trim();
@@ -65,8 +68,7 @@ const safeCurrentStatusParaphrase = (sentence: string, citedText: string): boole
   && /\b(?:authoritative journey|current (?:workflow )?status|current(?:ly)? at|server-authorized requirement|verified action|awaiting verified provider evidence)\b/iu.test(citedText);
 const evidenceGrounded = (answer: string, evidence: ModelEvidence[], citations: Citation[], trustedFacts: string): boolean => {
   const citedText = `${evidence.filter((item) => citations.some((citation) => citation.chunkId === item.citation.chunkId)).map((item) => item.content).join(' ')} ${trustedFacts}`;
-  const groundedSentence = (sentence: string): boolean => safeFactAcknowledgement(sentence)
-    || safeUncertainty(sentence)
+  const groundedSentence = (sentence: string): boolean => safeDialogueSegment(sentence)
     || hasSufficientEvidence(sentence, evidence, citations, trustedFacts)
     || hasSufficientEvidence(relaxedEvidenceText(sentence), evidence, citations, trustedFacts)
     || safeCurrentStatusParaphrase(sentence, citedText);
@@ -110,13 +112,13 @@ const uncitedQuestion = (answer: string, question: string | null): boolean => {
 const safeNoEvidenceDialogue = (answer: string, question: string | null, pendingRequirementKey: string | null = null): boolean => {
   // Disallow business consequences, authority claims, numbers, deadlines and links
   // without approved evidence even when the rest of the reply is conversational.
-  const safeUncertaintyDialogue = sentences(answer).length <= 3
-    && sentences(answer).every((segment) => safeFactAcknowledgement(segment) || nonFactualPreface(segment) || safeUncertainty(segment) || safeOutcomeAbstention(segment));
+  const safeUncertaintyDialogue = sentences(answer).length <= 4
+    && sentences(answer).every((segment) => safeDialogueSegment(segment) || nonFactualPreface(segment));
   const controlledUncertainty = /^\s*i (?:can(?:'|’)t|cannot) (?:verify|confirm)\b/iu.test(answer) || safeOutcomeAbstention(answer) || safeUncertaintyDialogue;
   const containsBlockedClaim = /\b(?:aed|usd|gbp|eur|dollars?|dirhams?|fees?|prices?|costs?|invoices?|paid|payment|eligible|eligibility|guaranteed|guarantee|registered|registration|created|uploaded|completed|signed|legal(?:ly)?|law|policy|licen[cs]e|approved|confirmed|successful|visa issued|will take|takes? \d+|within \d+)\b|\b\d+(?:[.,]\d+)?\s*(?:days?|hours?|weeks?|months?|visas?)\b|https?:\/\//iu.test(answer);
   if (containsBlockedClaim && !controlledUncertainty) return false;
   if (answer.length > 500) return false;
-  if (!question && (uncitedConversation(answer) || safeOutcomeAbstention(answer) || safeUncertaintyDialogue
+  if (!question && (uncitedConversation(answer) || safeOutcomeAbstention(answer) || safeUncertaintyDialogue || safeGoalAcknowledgement(answer)
     || /^(?:of course|absolutely|sure)[,!.\s—-]+i(?:'|’)ll keep your company-formation request active while you ask your questions\.?$/iu.test(answer.trim())
     || (/^(?:in general,\s+)?(?:forming|setting up) (?:a|the) company means\b[\s\S]*$/iu.test(answer.trim())
       && !/\b(?:usually|typically|required|eligible|price|cost|licen[cs]e|legal|regulation|policy|timeline|days?|weeks?|months?)\b/iu.test(answer)))) return true;
@@ -131,7 +133,8 @@ const safeNoEvidenceDialogue = (answer: string, question: string | null, pending
   const pendingRequirementPreface = (segment: string): boolean => pendingTerms.length > 0
     && /\b(?:still need|missing requirement|missing detail|remaining detail|to continue)\b/iu.test(segment)
     && pendingTerms.some((term) => segment.toLocaleLowerCase('en-US').includes(term));
-  return segments.length <= 2 && segments.every((segment) => nonFactualPreface(segment) || safeUncertainty(segment) || pendingRequirementPreface(segment));
+  const pendingContactPreface = (segment: string): boolean => pendingRequirementKey === 'phone' && /^i have your email address\.?$/iu.test(segment.trim());
+  return segments.length <= 4 && segments.every((segment) => nonFactualPreface(segment) || safeDialogueSegment(segment) || pendingRequirementPreface(segment) || pendingContactPreface(segment));
 };
 export const addVerifiedFactCitations = (response: PersonaComposedResponseV2, facts: V2VerifiedFact[]): PersonaComposedResponseV2 => {
   const matching = facts.filter((fact) => fact.verified && factAppearsIn(response.answer, fact));
