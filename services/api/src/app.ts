@@ -1852,13 +1852,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
          try {
            const v2Scope = issueV2Scope({ tenantId: session.tenantId, sessionId: session.id, opportunityId: currentOpportunityId, catalogVersionId: publishedCatalog.id, personaVersionId: session.personaVersionId, stateRevision: session.stateVersion ?? 0, toolAllowlist: [...V2_TOOL_NAMES] }, process.env.MODEL_GATEWAY_SERVICE_KEY ?? '');
            const validatedFact = (key: string, maxLength: number): string | undefined => {
-             const value = pendingCatalogValues[key];
+             const value = catalogSlotValues[key] ?? pendingCatalogValues[key];
              return typeof value === 'string' && value.trim().length > 0
                && value.length <= maxLength && !/[\r\n<>@]/u.test(value) && !/https?:\/\//iu.test(value)
                && !/\+?\d[\d()\s-]{7,}/u.test(value) ? value.trim() : undefined;
            };
-           // Only persisted, normalized non-PII business slots may be supplied as
-           // customer facts. No provider status, prices, or unvalidated turn text.
+           // Only Node-validated current or persisted, normalized non-PII business
+           // slots may be supplied as customer facts. No provider status, prices,
+           // or unvalidated turn text.
            const confirmedCustomerFacts = {
              ...(validatedFact('business_activity', 180) ? { business_activity: validatedFact('business_activity', 180)! } : {}),
              ...(validatedFact('entity_type', 80) ? { entity_type: validatedFact('entity_type', 80)! } : {}),
