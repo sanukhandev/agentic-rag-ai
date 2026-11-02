@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { cacheKey, type CacheStore } from './cache.js';
-import { newConversationState } from './conversation-state.js';
+import { newConversationState, prompt } from './conversation-state.js';
 import { HttpError } from './http/errors.js';
 import { assertKnownTokens, maskPiiForSession, rehydrateForSession, TokenVault } from './privacy.js';
 import { issueV2Scope, V2_TOOL_NAMES } from './v2-tool-gateway.js';
@@ -156,14 +156,29 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   assertKnownTokens(session, answerMasked, input.tokenVault);
   const grounded = result.response.citationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence');
   const responseId = randomUUID();
-  const state = { ...originalState, catalogVersionId: catalog.id,
+  // A model-authored next-question key can become durable only when it refers
+  // to an existing, required slot in the active, pinned catalog. The model
+  // cannot create consent, document, confirmation or stage transitions.
+  const nextKey = result.response.nextQuestionKey;
+  const proposedRequirement = !originalState.pendingPrompt && activeGoal && nextKey
+    ? catalog.catalog.journeyRequirements?.find(candidate =>
+        candidate.intentKey === activeGoal && candidate.requirementKey === nextKey
+        && candidate.required && candidate.requirementType === 'slot'
+        && !entry?.completedRequirementKeys.includes(candidate.requirementKey))
+    : null;
+  const nextPendingPrompt = originalState.pendingPrompt ?? (
+    proposedRequirement && activeGoal
+      ? prompt('slot', activeGoal, proposedRequirement.slotKey, proposedRequirement.requirementKey)
+      : null);
+  const effectivePendingRequirement = nextPendingPrompt?.requirementKey ?? pendingRequirement;
+  const state = { ...originalState, catalogVersionId: catalog.id, pendingPrompt: nextPendingPrompt,
     rollingSummary: (originalState.rollingSummary + '\nCustomer: ' + maskedMessage.slice(0, 1_000)).trim().slice(-4_000),
     messageSequence: originalState.messageSequence + 1, summaryRevision: originalState.summaryRevision + 1,
     lastTurnAt: userMessage.createdAt };
   session.conversationState = state;
   await input.updateSession(session);
   const approvedResponse = { answer: answerMasked, grounded, citationRefs: result.response.citationIds,
-    pendingRequirementKey: pendingRequirement };
+    pendingRequirementKey: effectivePendingRequirement };
   const at = new Date().toISOString();
   const nextDoc: UserIntentDocument = intentDocument ? {
     ...intentDocument, approvedResponse, lastQuestion: result.response.nextQuestion,
@@ -177,7 +192,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     turnIntentKey: null, currentStageKey: entry?.lifecycle?.currentStage ?? null,
     stageRevision: entry?.lifecycle?.revision ?? 0,
     goalConfirmed: Boolean(originalState.selectedIntentKey), verifiedFacts: factPatch(facts as Record<string,string>, state.messageSequence),
-    pendingRequirementKey: pendingRequirement, lastQuestion: result.response.nextQuestion, approvedResponse,
+    pendingRequirementKey: effectivePendingRequirement, lastQuestion: result.response.nextQuestion, approvedResponse,
     toolRefs: result.toolTrace.map(trace => trace.toolCallId), sourceRefs: result.response.citationIds,
     summary: state.rollingSummary, summaryRevision: 1, revision: 0, createdAt: at, updatedAt: at,
   };
@@ -189,7 +204,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const assessment = { id: randomUUID(), documentId: nextDoc.id, tenantId: tenant.id, sessionId: session.id,
     opportunityId, turnSequence: state.messageSequence, clientMessageId: input.clientMessageId,
     messageHash: input.messageHash, businessGoalKey: activeGoal, turnIntentKey: null, intentCategory: null,
-    verifiedFactPatch: {}, pendingRequirementKey: pendingRequirement, lastQuestion: result.response.nextQuestion,
+    verifiedFactPatch: {}, pendingRequirementKey: effectivePendingRequirement, lastQuestion: result.response.nextQuestion,
     approvedResponse, toolRefs: result.toolTrace.map(trace => trace.toolCallId), sourceRefs: result.response.citationIds, createdAt: at };
   assertSafeIntentTurn(assessment);
   await store.appendIntentTurn(assessment);
@@ -197,8 +212,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const response = {
     messageId: responseId, sessionId: session.id, answer: rehydrateForSession(session, answerMasked, input.tokenVault),
     grounded, conversational: !grounded, citations, actionProposal: null,
-    pendingPromptId: originalState.pendingPrompt?.id ?? null, pendingIntentKey: activeGoal,
-    pendingRequirementKey: pendingRequirement, requestId: input.requestId,
+    pendingPromptId: nextPendingPrompt?.id ?? null, pendingIntentKey: activeGoal,
+    pendingRequirementKey: effectivePendingRequirement, requestId: input.requestId,
   };
   await store.addMessage({ id: responseId, sessionId: session.id, tenantId: tenant.id, role: 'assistant',
     maskedContent: answerMasked, citations, clientMessageId: null,
