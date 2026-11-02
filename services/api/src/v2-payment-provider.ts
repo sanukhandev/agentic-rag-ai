@@ -81,15 +81,20 @@ export const validateV2PaymentProviderResult = (request: V2PaymentProviderReques
 };
 
 export class DeterministicV2PaymentProvider {
+  private readonly requestFingerprints = new Map<string, string>();
   private readonly results = new Map<string, V2PaymentProviderResult>();
 
   public execute(requestInput: V2PaymentProviderRequest): V2PaymentProviderResult {
     const request = v2PaymentProviderRequestSchema.parse(requestInput);
     const key = `${request.tenantId}:${request.idempotencyKey}`;
     const existing = this.results.get(key);
-    if (existing) return existing;
+    if (existing) {
+      if (this.requestFingerprints.get(key) !== JSON.stringify(request)) throw new Error('V2_PROVIDER_IDEMPOTENCY_CONFLICT');
+      return existing;
+    }
     const paymentId = `mockpay_${createHash('sha256').update(request.idempotencyKey).digest('hex').slice(0, 32)}`;
     const result = v2PaymentProviderResultSchema.parse({ schemaVersion: 2, operation: request.operation, providerType: request.providerType, tenantId: request.tenantId, sessionId: request.sessionId, opportunityId: request.opportunityId, quoteId: request.quoteId, invoiceId: request.invoiceId, externalInvoiceId: request.externalInvoiceId, paymentId, amountMinor: request.amountMinor, currency: request.currency, status: 'pending', evidenceTier: 'mock_verified', idempotencyKey: request.idempotencyKey });
+    this.requestFingerprints.set(key, JSON.stringify(request));
     this.results.set(key, result);
     return result;
   }

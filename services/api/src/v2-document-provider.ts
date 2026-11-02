@@ -111,13 +111,17 @@ export const validateV2DocumentProviderResult = (request: V2DocumentProviderRequ
 };
 
 export class DeterministicV2DocumentProvider {
+  private readonly requestFingerprints = new Map<string, string>();
   private readonly results = new Map<string, V2DocumentProviderResult>();
 
   public execute(requestInput: V2DocumentProviderRequest): V2DocumentProviderResult {
     const request = v2DocumentProviderRequestSchema.parse(requestInput);
     const key = `${request.tenantId}:${request.idempotencyKey}`;
     const existing = this.results.get(key);
-    if (existing) return existing;
+    if (existing) {
+      if (this.requestFingerprints.get(key) !== JSON.stringify(request)) throw new Error('V2_PROVIDER_IDEMPOTENCY_CONFLICT');
+      return existing;
+    }
     const digest = createHash('sha256').update(`${request.documentId}:${request.idempotencyKey}`).digest('hex');
     const result = v2DocumentProviderResultSchema.parse({
       schemaVersion: request.schemaVersion,
@@ -139,6 +143,7 @@ export class DeterministicV2DocumentProvider {
       attachmentStatus: 'verified',
       evidenceTier: 'mock_verified',
     });
+    this.requestFingerprints.set(key, JSON.stringify(request));
     this.results.set(key, result);
     return result;
   }

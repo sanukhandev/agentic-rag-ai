@@ -40,6 +40,7 @@ describe('v2 stage 7 contract and signature provider boundary', () => {
     const provider = new DeterministicV2ContractProvider();
     const input = request();
     const sent = provider.execute(input);
+    expect(() => provider.execute({ ...input, signatoryRef: 'other-signatory-ref-2' })).toThrow('IDEMPOTENCY_CONFLICT');
     expect(validateV2ContractProviderResult(input, sent)).toMatchObject({ accepted: true, stageCompletionEligible: false, reasons: ['signature_pending'] });
     const signed = provider.sign(input);
     expect(validateV2ContractProviderResult(input, signed, verifiedReadback(input, signed.remoteContractId))).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'mock_verified' });

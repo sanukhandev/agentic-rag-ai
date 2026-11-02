@@ -34,6 +34,7 @@ describe('v2 stage 6 invoice and payment provider boundary', () => {
     const request = buildV2PaymentProviderRequest({ invoice: invoice(), quote: quote(), sessionId: randomUUID(), tenantId, artifactSha256: 'a'.repeat(64), idempotencyKey: 'payment-idempotency-1', providerType: 'deterministic_mock' });
     const provider = new DeterministicV2PaymentProvider();
     expect(validateV2PaymentProviderResult(request, provider.execute(request))).toMatchObject({ accepted: true, paymentVerified: false, status: 'mock_verified', reasons: ['payment_pending'] });
+    expect(() => provider.execute({ ...request, amountMinor: request.amountMinor + 1 })).toThrow('IDEMPOTENCY_CONFLICT');
     expect(validateV2PaymentProviderResult(request, provider.settle(request), verifiedReadback(request, provider.settle(request).paymentId))).toMatchObject({ accepted: true, paymentVerified: true, status: 'mock_verified', reasons: ['mock_payment_only'] });
   });
 

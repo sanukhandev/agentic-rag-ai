@@ -99,15 +99,20 @@ export const validateV2ContractProviderResult = (request: V2ContractProviderRequ
 };
 
 export class DeterministicV2ContractProvider {
+  private readonly requestFingerprints = new Map<string, string>();
   private readonly results = new Map<string, V2ContractProviderResult>();
 
   public execute(requestInput: V2ContractProviderRequest): V2ContractProviderResult {
     const request = v2ContractProviderRequestSchema.parse(requestInput);
     const key = `${request.tenantId}:${request.idempotencyKey}`;
     const existing = this.results.get(key);
-    if (existing) return existing;
+    if (existing) {
+      if (this.requestFingerprints.get(key) !== JSON.stringify(request)) throw new Error('V2_PROVIDER_IDEMPOTENCY_CONFLICT');
+      return existing;
+    }
     const remoteContractId = `mock-contract-${createHash('sha256').update(request.idempotencyKey).digest('hex').slice(0, 24)}`;
     const result = v2ContractProviderResultSchema.parse({ schemaVersion: 2, operation: request.operation, providerType: request.providerType, tenantId: request.tenantId, sessionId: request.sessionId, opportunityId: request.opportunityId, contractId: request.contractId, packageSelectionId: request.packageSelectionId, invoiceId: request.invoiceId, remoteContractId, signatoryRef: request.signatoryRef, status: 'sent', signatureEvidence: 'none', signedArtifactSha256: null, idempotencyKey: request.idempotencyKey });
+    this.requestFingerprints.set(key, JSON.stringify(request));
     this.results.set(key, result);
     return result;
   }

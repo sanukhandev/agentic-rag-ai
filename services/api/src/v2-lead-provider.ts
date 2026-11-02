@@ -97,12 +97,17 @@ export const validateV2LeadProviderResult = (request: V2LeadProviderRequest, res
 };
 
 export class DeterministicV2LeadProvider {
+  private readonly requestFingerprints = new Map<string, string>();
   private readonly results = new Map<string, V2LeadProviderResult>();
 
   execute(requestInput: V2LeadProviderRequest): V2LeadProviderResult {
     const request = v2LeadProviderRequestSchema.parse(requestInput);
-    const existing = this.results.get(`${request.tenantId}:${request.idempotencyKey}`);
-    if (existing) return existing;
+    const key = `${request.tenantId}:${request.idempotencyKey}`;
+    const existing = this.results.get(key);
+    if (existing) {
+      if (this.requestFingerprints.get(key) !== JSON.stringify(request)) throw new Error('V2_PROVIDER_IDEMPOTENCY_CONFLICT');
+      return existing;
+    }
     const externalLeadId = `mock-lead-${createHash('sha256').update(request.idempotencyKey).digest('hex').slice(0, 24)}`;
     const result = v2LeadProviderResultSchema.parse({
       schemaVersion: request.schemaVersion,
@@ -121,7 +126,8 @@ export class DeterministicV2LeadProvider {
       notificationStatus: 'accepted',
       evidenceTier: 'mock_verified',
     });
-    this.results.set(`${request.tenantId}:${request.idempotencyKey}`, result);
+    this.requestFingerprints.set(key, JSON.stringify(request));
+    this.results.set(key, result);
     return result;
   }
 }

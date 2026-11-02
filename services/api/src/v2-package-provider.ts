@@ -101,13 +101,17 @@ export const validateV2QuoteProviderResult = (request: V2QuoteProviderRequest, r
 };
 
 export class DeterministicV2QuoteProvider {
+  private readonly requestFingerprints = new Map<string, string>();
   private readonly results = new Map<string, V2QuoteProviderResult>();
 
   public execute(requestInput: V2QuoteProviderRequest): V2QuoteProviderResult {
     const request = v2QuoteProviderRequestSchema.parse(requestInput);
     const key = `${request.tenantId}:${request.idempotencyKey}`;
     const existing = this.results.get(key);
-    if (existing) return existing;
+    if (existing) {
+      if (this.requestFingerprints.get(key) !== JSON.stringify(request)) throw new Error('V2_PROVIDER_IDEMPOTENCY_CONFLICT');
+      return existing;
+    }
     const digest = createHash('sha256').update(request.idempotencyKey).digest('hex');
     const quoteId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
     const result = v2QuoteProviderResultSchema.parse({
@@ -129,6 +133,7 @@ export class DeterministicV2QuoteProvider {
       idempotencyKey: request.idempotencyKey,
       evidenceTier: 'mock_verified',
     });
+    this.requestFingerprints.set(key, JSON.stringify(request));
     this.results.set(key, result);
     return result;
   }

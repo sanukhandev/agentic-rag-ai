@@ -45,6 +45,7 @@ describe('v2 stage 4 package and quote provider boundary', () => {
     const provider = new DeterministicV2QuoteProvider();
     const first = provider.execute(request);
     const second = provider.execute(request);
+    expect(() => provider.execute({ ...request, amountMinor: request.amountMinor + 1 })).toThrow('IDEMPOTENCY_CONFLICT');
     expect(second).toEqual(first);
     expect(first.quoteId).toMatch(/^[0-9a-f-]{36}$/u);
     expect(validateV2QuoteProviderResult(request, first, verifiedReadback(request, first.quoteId))).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'mock_verified' });

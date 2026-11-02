@@ -71,6 +71,7 @@ describe('v2 stage 3 account provider and OTP boundary', () => {
     const provider = new DeterministicV2AccountProvider();
     const first = provider.execute(request);
     const second = provider.execute(request);
+    expect(() => provider.execute({ ...request, actionRevision: request.actionRevision + 1 })).toThrow('IDEMPOTENCY_CONFLICT');
     expect(second).toMatchObject({ deduplicated: true, remoteAccountId: first.remoteAccountId, remoteContactId: first.remoteContactId, remoteOpportunityId: first.remoteOpportunityId });
     expect(validateV2AccountProviderResult(request, first, verifiedReadback(request, first.remoteAccountId))).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'mock_verified' });
   });

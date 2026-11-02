@@ -44,6 +44,7 @@ describe('v2 stage 1 lead provider contract', () => {
     const request = buildV2LeadProviderRequest({ action: action(), lead, providerType: 'deterministic_mock' });
     const first = provider.execute(request);
     const second = provider.execute(request);
+    expect(() => provider.execute({ ...request, actionRevision: request.actionRevision + 1 })).toThrow('IDEMPOTENCY_CONFLICT');
     expect(second).toEqual(first);
     expect(validateV2LeadProviderResult(request, first, verifiedReadback(request, first.externalLeadId))).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'mock_verified' });
     expect(first.externalLeadId).toMatch(/^mock-lead-[a-f0-9]{24}$/u);

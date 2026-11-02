@@ -208,13 +208,17 @@ export const validateV2AccountProviderResult = (request: V2AccountProviderReques
 };
 
 export class DeterministicV2AccountProvider {
+  private readonly requestFingerprints = new Map<string, string>();
   private readonly results = new Map<string, V2AccountProviderResult>();
 
   public execute(requestInput: V2AccountProviderRequest): V2AccountProviderResult {
     const request = v2AccountProviderRequestSchema.parse(requestInput);
     const key = `${request.tenantId}:${request.idempotencyKey}`;
     const existing = this.results.get(key);
-    if (existing) return { ...existing, deduplicated: true };
+    if (existing) {
+      if (this.requestFingerprints.get(key) !== JSON.stringify(request)) throw new Error('V2_PROVIDER_IDEMPOTENCY_CONFLICT');
+      return { ...existing, deduplicated: true };
+    }
     const suffix = createHmac('sha256', 'v2-account-mock').update(request.idempotencyKey).digest('hex').slice(0, 20);
     const result = v2AccountProviderResultSchema.parse({
       schemaVersion: request.schemaVersion,
@@ -236,6 +240,7 @@ export class DeterministicV2AccountProvider {
       deduplicated: false,
       evidenceTier: 'mock_verified',
     });
+    this.requestFingerprints.set(key, JSON.stringify(request));
     this.results.set(key, result);
     return result;
   }

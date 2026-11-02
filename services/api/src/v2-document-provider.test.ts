@@ -46,6 +46,7 @@ describe('v2 stage 5 document and SF-02 provider boundary', () => {
     const provider = new DeterministicV2DocumentProvider();
     const first = provider.execute(request);
     const second = provider.execute(request);
+    expect(() => provider.execute({ ...request, documentSha256: 'b'.repeat(64) })).toThrow('IDEMPOTENCY_CONFLICT');
     expect(second).toEqual(first);
     expect(first).toMatchObject({ leadAttachmentId: expect.any(String), accountAttachmentId: expect.any(String) });
     expect(first.attachmentId).toMatch(/^mock-attachment-[a-f0-9]{24}$/u);
