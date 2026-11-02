@@ -6,7 +6,7 @@ export const v2ProviderEvidenceStatusSchema = z.enum(['transport_received', 'dis
 export type V2ProviderEvidenceStatus = z.infer<typeof v2ProviderEvidenceStatusSchema>;
 
 export const deriveV2ProviderEvidenceStatus = (input: { actionState: ActionRequest['state']; providerStatus?: string | null; evidenceTier?: unknown }): V2ProviderEvidenceStatus => {
-  if (input.actionState === 'reconcile_required' || input.providerStatus === 'reconcile_required') return 'reconciliation_required';
+  if (input.actionState === 'reconcile_required' || input.actionState === 'failed' || input.providerStatus === 'reconcile_required' || input.providerStatus === 'failed') return 'reconciliation_required';
   // A successful HTTP transport or self-asserted evidence tier is not a completed operation.
   if (input.actionState === 'completed' && input.providerStatus === 'completed'
     && (input.evidenceTier === 'provider_record_verified' || input.evidenceTier === 'mock_verified')) return input.evidenceTier;
