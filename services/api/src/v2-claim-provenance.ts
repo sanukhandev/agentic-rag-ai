@@ -43,7 +43,7 @@ export const hasPositiveBusinessOutcomeClaim = (s: string): boolean => {
 // Only split on clause conjunctions when a new subject follows; do not split
 // customer values such as "software consulting and AI services".
 const clauses = (s: string): string[] => s.split(/(?<=[.!?])\s+|\n+/u)
-  .flatMap((part) => part.split(/,\s+(?=(?:and\s+|but\s+)?(?:your|the|there|i\s|we\s|lead|account|workflow|contact|visa|timeline))/iu))
+  .flatMap((part) => part.split(/,\s+(?=(?:(?:and|but|so)\s+)?(?:your|the|there|i\s|we\s|a\s|an\s|lead|account|workflow|contact|visa|timeline|entity))/iu))
   .flatMap((part) => part.split(/\s+(?:and|but|while)\s+(?=(?:your|the|there|i\s|we\s|you\s|lead|account|workflow|registration|payment|document)\b)/iu))
   .map((part) => part.trim()).filter(Boolean);
 
@@ -52,16 +52,18 @@ const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (c
   const text = norm(source.text);
   if (!source.sourceVersion.trim() || !text || numbers(subject).some((n) => !numbers(text).includes(n))) return false;
   const negativeStatus = /\bnot complete\b/iu.test(subject) && /\b(?:authoritative journey|current workflow status)\b/iu.test(text);
-  if (negative(subject) !== negative(text) && !negativeStatus) return false;
+  const unrelatedProviderNegation = !negative(subject) && /\b(?:no|not)\s+(?:provider|further|additional|other)\b/iu.test(text);
+  const journeyParaphrase = /\bjourney\b.{0,50}\b(?:currently\s+)?at\b/iu.test(subject) && /\bauthoritative journey\b.{0,50}\bcurrently at\b/iu.test(text) && tokens(subject).filter((word) => tokens(text).includes(word)).length >= 3;
+  if (negative(subject) !== negative(text) && !negativeStatus && !unrelatedProviderNegation) return false;
   if (hasPositiveBusinessOutcomeClaim(subject)) {
     if (source.kind === 'customer_fact' || !verifiedRecord.test(text) || !state.test(text) || !completed.test(text)) return false;
   }
   const important = tokens(subject);
   const available = new Set(tokens(text));
   const matchCount = important.filter((word) => available.has(word)).length;
-  if (!negativeStatus && (important.length === 0 ? subject !== text : matchCount === 0 || matchCount / important.length < 0.7)) return false;
+  if (!negativeStatus && !journeyParaphrase && (important.length === 0 ? subject !== text : matchCount === 0 || matchCount / important.length < 0.7)) return false;
   // Semantic check is per-source, not a concatenation of unrelated citations.
-  return semanticCheck(clause, source) || subject === text || negativeStatus;
+  return semanticCheck(clause, source) || subject === text || negativeStatus || journeyParaphrase;
 };
 
 export const evaluateV2ClaimProvenance = (

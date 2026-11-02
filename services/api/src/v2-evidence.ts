@@ -142,6 +142,9 @@ export const addVerifiedFactCitations = (response: PersonaComposedResponseV2, fa
   const citationIds = [...new Set([...response.citationIds, ...matching.map((fact) => fact.factId)])];
   return citationIds.length === response.citationIds.length ? response : { ...response, citationIds };
 };
+const safeNonFactualTransition = (segment: string): boolean =>
+  /^(?:to keep things moving|for now|whenever you're ready)[,.]?$/iu.test(segment.trim())
+  || /^(?:so\s+)?i (?:will|can) (?:share|provide|give you) (?:the )?(?:next|a) (?:verified )?(?:update|details?) when (?:it|they) (?:arrive|are available)\.?$/iu.test(segment.trim());
 const verdict = (accepted: boolean, reasonCode: ResponseGuardVerdictV2['reasonCode'], response: PersonaComposedResponseV2 | null): ResponseGuardVerdictV2 => ({ schemaVersion: 2, accepted, reasonCode, response });
 
 export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvidence[], facts: V2VerifiedFact[] = [], options: { conversational?: boolean; allowUncitedQuestion?: boolean; allowNonFactualDialogue?: boolean; allowApprovedFallback?: boolean; pendingRequirementKey?: string | null } = {}): V2EvidenceDecision => {
@@ -194,7 +197,7 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
       || (source.kind === 'customer_fact' && factAppearsIn(part, reflectedFact) && customerFactReflection(part, [reflectedFact]));
   };
   const evaluation = evaluateV2ClaimProvenance(answerForEvidence, sources,
-    (part) => safeDialogueSegment(part) || nonFactualPreface(part) || safeFactAcknowledgement(part), supports);
+    (part) => safeDialogueSegment(part) || nonFactualPreface(part) || safeFactAcknowledgement(part) || safeNonFactualTransition(part), supports);
   if (!evaluation.supported) return { verdict: verdict(false, 'unsupported_claim', null), claims: [] };
   if (evaluation.unusedCitationIds.length > 0) return { verdict: verdict(false, 'invalid_citation', null), claims: [] };
   return { verdict: verdict(true, 'accepted', response), claims: evaluation.claims };
