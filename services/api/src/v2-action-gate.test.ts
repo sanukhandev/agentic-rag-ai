@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ActionGateway } from './actions.js';
-import { type CatalogV2Document } from './catalog-v2.js';
+import { catalogV2VersionRef, type CatalogV2Document } from './catalog-v2.js';
+import type { IntentCatalogV2Version, LifecycleState, UserIntentDocument } from './types.js';
 import { MemoryStore } from './store-memory.js';
 import { proposeV2CatalogAction, validateV2ActionConfirmation, validateV2ActionProposal, v2ActionConsentScope, type V2ActionGateContext } from './v2-action-gate.js';
 
@@ -10,9 +11,34 @@ const catalog = structuredClone(fixture);
 catalog.sheets.ToolBindings = catalog.sheets.ToolBindings.map((binding) => binding.toolKey === 'account.propose_creation' ? { ...binding, enabled: true } : binding);
 catalog.sheets.WorkflowBindings = [...catalog.sheets.WorkflowBindings, { workflowKey: 'crm.account.create', registryKey: 'crm.account.create', providerType: 'sandbox', payloadSchemaRef: 'payload.account.v1', callbackSchemaRef: 'callback.account.v1', evidencePolicyKey: 'provider.account.verified', enabled: true }];
 
-const baseContext = (overrides: Partial<V2ActionGateContext> = {}): V2ActionGateContext => ({
-  tenantId: 'tenant-a', sessionId: 'session-a', opportunityId: 'opportunity-a', catalogVersionId: 'catalog-v2-a', currentStageKey: 'account_creation', confirmedGoalKey: 'anc.company_formation', goalConfirmed: true, verifiedRequirementKeys: ['account_confirmation'], expectedActionRevision: 1, purposeConsentScope: v2ActionConsentScope({ catalogVersionId: 'catalog-v2-a' }, 'account.propose_creation'), purposeConsentGranted: true, ...overrides,
-});
+const pin = catalogV2VersionRef(catalog);
+const makeLifecycle = (): LifecycleState => {
+  const keys = ['lead_generation', 'lead_qualification', 'account_creation', 'package_selection', 'document_upload', 'billing_invoice', 'contract'] as const;
+  const stages = Object.fromEntries(keys.map((stage, index) => [stage, {
+    stage, status: index < 2 ? 'completed' : index === 2 ? 'ready' : 'not_started', revision: 1,
+    completedAt: index < 2 ? new Date().toISOString() : null,
+    evidence: index < 2 ? {
+      tenantId: 'tenant-a', sessionId: 'session-a', opportunityId: 'opportunity-a', catalogVersionRef: pin,
+      stageKey: stage, stageRevision: 1, evidenceRef: 'verified:' + stage, evidenceTier: index === 1 ? 'node_verified' : 'mock_verified',
+      operationStatus: 'completed', leadId: 'original-lead', ...(index === 1 ? { qualificationStatus: 'qualified' } : {}),
+    } : {},
+  }])) as LifecycleState['stages'];
+  return { currentStage: 'account_creation', revision: 1, stages };
+};
+const baseContext = (overrides: Partial<V2ActionGateContext> = {}): V2ActionGateContext => {
+  const context: V2ActionGateContext = {
+    tenantId: 'tenant-a', sessionId: 'session-a', opportunityId: 'opportunity-a', catalogVersionId: pin,
+    currentStageKey: 'account_creation', confirmedGoalKey: 'anc.company_formation', goalConfirmed: true,
+    verifiedRequirementKeys: ['account_confirmation'], expectedActionRevision: 1,
+    purposeConsentScope: v2ActionConsentScope({ catalogVersionId: pin }, 'account.propose_creation'), purposeConsentGranted: true,
+    expectedStageRevision: 1, expectedLifecycleRevision: 1, lifecycle: makeLifecycle(),
+    intentDocument: { tenantId: 'tenant-a', sessionId: 'session-a', opportunityId: 'opportunity-a',
+      catalogVersionRef: pin, catalogSource: 'v2', goalConfirmed: true, businessGoalKey: 'anc.company_formation',
+      currentStageKey: 'account_creation', stageRevision: 1 } as UserIntentDocument,
+    pinnedCatalogVersion: { tenantId: 'tenant-a', status: 'published', catalogVersionRef: pin, catalog } as IntentCatalogV2Version,
+  };
+  return { ...context, ...overrides };
+};
 const proposal = { schemaVersion: 2 as const, toolKey: 'account.propose_creation', goalKey: 'anc.company_formation', stageKey: 'account_creation', actionRevision: 1, arguments: { account_confirmation: 'confirmed' } };
 
 describe('v2 catalog action gate', () => {
@@ -20,7 +46,7 @@ describe('v2 catalog action gate', () => {
     const store = new MemoryStore();
     const gateway = new ActionGateway(store);
     const decision = await proposeV2CatalogAction(proposal, catalog, baseContext(), { gateway, store });
-    expect(decision).toMatchObject({ accepted: true, status: 'created', action: { state: 'awaiting_confirmation', tenantId: 'tenant-a', sessionId: 'session-a', opportunityId: 'opportunity-a', catalogVersionId: 'catalog-v2-a', actionKey: 'account.propose_creation', actionRevision: 1 } });
+    expect(decision).toMatchObject({ accepted: true, status: 'created', action: { state: 'awaiting_confirmation', tenantId: 'tenant-a', sessionId: 'session-a', opportunityId: 'opportunity-a', catalogVersionId: pin, actionKey: 'account.propose_creation', actionRevision: 1 } });
     expect(await store.listActions('tenant-a')).toHaveLength(1);
     expect((await store.listActions('tenant-a'))[0]?.state).toBe('awaiting_confirmation');
   });
@@ -58,7 +84,7 @@ describe('v2 catalog action gate', () => {
     expect(await store.listActions('tenant-a')).toHaveLength(1);
   });
 
-  it('requires explicit confirmation before the existing gateway can approve', async () => {
+  it('gateway authorization is a separate integration boundary from this pure gate', async () => {
     const store = new MemoryStore();
     const gateway = new ActionGateway(store);
     const created = await proposeV2CatalogAction(proposal, catalog, baseContext(), { gateway, store });
