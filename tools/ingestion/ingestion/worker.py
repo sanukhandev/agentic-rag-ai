@@ -11,6 +11,7 @@ from typing import Any
 import requests
 
 from .intent_catalog import parse_intent_catalog
+from .catalog_v2 import parse_catalog_v2
 from .pipeline import MAX_BYTES, IngestedSource, ingest_file, ingest_url
 from .document_ocr import document_summary, extract_document_text
 from .staging import LocalStaging
@@ -287,7 +288,14 @@ def process_job(
             staged = staging.stage_bytes(Path(file_name).suffix, content)
             try:
                 if mime_type == "application/vnd.agentic.intent-catalog+excel":
-                    return submit_catalog_result(api_base, job_id, worker_secret, parse_intent_catalog(staged), client)
+                    from openpyxl import load_workbook
+                    workbook = load_workbook(staged, read_only=True, data_only=False, keep_links=False)
+                    try:
+                        is_v2 = "CatalogManifest" in workbook.sheetnames
+                    finally:
+                        workbook.close()
+                    parsed_catalog = parse_catalog_v2(staged) if is_v2 else parse_intent_catalog(staged)
+                    return submit_catalog_result(api_base, job_id, worker_secret, parsed_catalog, client)
                 ingested = ingest_file(staged)
             finally:
                 staging.purge(staged)

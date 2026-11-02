@@ -4,25 +4,33 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { ActionGateway, isSafeExternalReference, leadQuality, verifyN8nPayload, type WorkflowAdapter } from './actions.js';
 import { AuthService, authMiddleware, ensureTenant, requireRoles, type AuthedRequest } from './auth.js';
-import { cacheKey, createCache, type CacheStore } from './cache.js';
+import { cacheKey, createCache, Singleflight, type CacheStore } from './cache.js';
 import { channelAuthMiddleware, ChannelSecretVault, getChannel, type StaticChannelAuth } from './channel-auth.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, KnowledgeRetrievalError, retrieveApprovedKnowledge } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { addressesKnowledgeQuestion, classifyOfferReply, conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isControlledKnowledgeAbstention, isGuidedResponse, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
-import { assertKnownTokens, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, TokenVault } from './privacy.js';
+import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, sanitizeSensitiveText, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogIntentLabel, catalogNextFollowUpRequirement, catalogRequirementLabel, catalogSlotLabel, catalogSlotQuestion, isCrmWriteBinding, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
+import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './catalog-v2.js';
+import { auditLegacyCatalogVersion, createLegacyCatalogV2Candidate } from './catalog-v2-migration.js';
+import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 import { reduceIntentJourney } from './intent-journey.js';
+import { completeLifecycleStage, newLifecycleState } from './lifecycle-state.js';
 import { normalizeFullTextQuery } from './search-query.js';
 import { exportIntentCatalogWorkbook } from './intent-catalog-xlsx.js';
+import { exportCatalogV2Workbook } from './catalog-v2-xlsx.js';
 import { composeConversationSummary, consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState, phaseFor, prompt } from './conversation-state.js';
 import { createOutboxEvent } from './events.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
+import { requiredDocumentSetComplete } from './document-stage-evidence.js';
+import { buildV2DocumentProviderRequest, DeterministicV2DocumentProvider, validateV2DocumentProviderResult } from './v2-document-provider.js';
 import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
-import type { ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, FollowUpOfferOption, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, Message, PendingFollowUpOffer, Session, SourceStatus, Store, SupportingDocument } from './types.js';
+import { validateV2ProviderCorrelation, v2ProviderCorrelationSchema, type V2ProviderCorrelation } from './v2-provider-correlation.js';
+import type { ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, FollowUpOfferOption, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, LifecycleStage, Message, PendingFollowUpOffer, Session, SourceStatus, Store, SupportingDocument } from './types.js';
 import { HttpError, parse } from './http/errors.js';
 import {
   DEFAULT_CONTEXT_WINDOW_MESSAGES,
@@ -53,6 +61,8 @@ import {
   ingestionResultSchema,
   intentCatalogEditSchema,
   intentCatalogResultSchema,
+  intentCatalogV2Schema,
+  intentCatalogV2MigrationSchema,
   intentCatalogUploadSchema,
   messageSchema,
   sessionSchema,
@@ -67,6 +77,10 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 import { registerLifecycleRoutes } from './routes/lifecycle.js';
+import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './v2-tool-gateway.js';
+import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
+import type { V2ApprovedFallbackTemplateSet } from './v2-fallbacks.js';
+import type { PersonaComposedResponseV2 } from './python-model/v2-contracts.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null; normalizationAttempts: number; normalizationFallbacks: number; normalizationFailures: number; normalizationLatencyMs: number };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -74,6 +88,19 @@ export const pruneExpiredRateLimits = (entries: Map<string, RateLimitEntry>, now
   for (const [key, entry] of entries) if (entry.resetAt <= now) entries.delete(key);
 };
 const catalogQuality = (score: number, rule: IntentCatalogQualityRule | undefined): ReturnType<typeof leadQuality> => rule ? score >= rule.hotThreshold ? 'hot' : score >= rule.warmThreshold ? 'warm' : score >= rule.nurtureThreshold ? 'nurture' : 'new' : leadQuality(score);
+
+// shortcut: catalog currently exposes fallback references, not template bodies; replace these with Admin-published text before production cutover.
+const approvedV2FallbackTemplates = (personaVersionId: string, language: string): V2ApprovedFallbackTemplateSet => ({
+  approved: true,
+  personaVersionId,
+  templateVersion: `fallback-${personaVersionId}`,
+  language,
+  templates: {
+    invalid_model: 'I’m unable to use that response safely yet. I can continue with verified information.',
+    tool_unavailable: 'I’m unable to retrieve the approved information right now. I can continue once it is available.',
+    reconciliation: 'I need to verify the request status before I confirm the outcome.',
+  },
+});
 
 const publicUser = (user: { id: string; email: string; role: string; tenantId: string | null }) => ({ id: user.id, email: user.email, role: user.role, tenantId: user.tenantId });
 const publicChannelCredential = (credential: ChannelCredential) => ({ id: credential.id, tenantId: credential.tenantId, channel: credential.channel, authMode: credential.authMode, keyId: credential.keyId, active: credential.active, createdAt: credential.createdAt, revokedAt: credential.revokedAt });
@@ -298,6 +325,22 @@ const inferredCatalogSlotValue = (slot: IntentCatalogSlot, rawInput: string, mas
   return catalogSlotValueForSlot(slot, rawInput, maskedInput, session, tokenVault);
 };
 
+const explicitCatalogSlotValue = (slot: IntentCatalogSlot, rawInput: string, maskedInput: string, session: Session, tokenVault: TokenVault): string | null => {
+  if (/activity|business/iu.test(slot.slotKey)) {
+    const value = rawInput.match(/(?:business\s+activity|activity|business)\s*(?:is|:|=)\s*(.+?)(?=\s*(?:,\s*(?:and\s+)?(?:the\s+)?(?:timeline|start|visa|entity|company|structure)|;|$))/iu)?.[1]?.trim();
+    return value ? catalogSlotValueForSlot(slot, value, value, session, tokenVault) : null;
+  }
+  if (/timeline|start/iu.test(slot.slotKey)) {
+    const value = rawInput.match(/(?:timeline|start(?:ing)?|start\s+date)\s*(?:is|:|=)\s*(.+?)(?=\s*(?:,|;|$))/iu)?.[1]?.trim();
+    return value ? catalogSlotValueForSlot(slot, value, value, session, tokenVault) : null;
+  }
+  if (/structure|legal|entity|company_type/iu.test(slot.slotKey)) {
+    const value = rawInput.match(/\b(?:limited\s+liability|llc|fze|fzc|free\s+zone|branch|sole\s+(?:proprietorship|establishment)|partnership|corporation|incorporated)\b/iu)?.[0];
+    return value && slot.validationRule !== 'enum:catalog_value' ? catalogSlotValueForSlot(slot, value, value, session, tokenVault) : null;
+  }
+  return null;
+};
+
 const offerText = (text: string): string => normalizeConversationQuery(text).toLocaleLowerCase('en-US');
 const offerOptionIsPresented = (answer: string, option: FollowUpOfferOption): boolean => offerText(answer).includes(offerText(option.label));
 const presentsUntrackedOffer = (answer: string): boolean => {
@@ -336,12 +379,45 @@ export interface AppDependencies {
   cache?: CacheStore;
   chatResponseCacheTtlSeconds?: number;
   catalogQueryNormalizationEnabled?: boolean;
+  sessionAccessTokenRequired?: boolean;
+  v2Coordinator?: V2ConversationCoordinator;
 }
+
+export const v2ModelAuditMetadata = (input: { sessionId: string; clientMessageId: string }) => ({
+  sessionId: input.sessionId,
+  clientMessageId: input.clientMessageId,
+});
+
+const diagnosticText = (value: string | null, maxLength: number): string | null => value === null
+  ? null
+  : maskPii(sanitizeSensitiveText(value)).masked.slice(0, maxLength);
+
+export const v2DiagnosticCaptureMetadata = (
+  candidate: Pick<PersonaComposedResponseV2, 'answer' | 'citationIds' | 'nextQuestion' | 'nextQuestionKey' | 'reasonNoQuestion' | 'decisionRef'>,
+  env: NodeJS.ProcessEnv = process.env,
+) => {
+  if (env.V2_DIAGNOSTIC_CAPTURE !== 'true' || env.NODE_ENV === 'production') return undefined;
+  return {
+    answer: diagnosticText(candidate.answer, 2_000),
+    citationIds: [...new Set(candidate.citationIds)].slice(0, 32),
+    nextQuestion: diagnosticText(candidate.nextQuestion, 500),
+    nextQuestionKey: candidate.nextQuestionKey,
+    reasonNoQuestion: diagnosticText(candidate.reasonNoQuestion, 120),
+    decisionRefDigest: createHash('sha256').update(candidate.decisionRef).digest('hex').slice(0, 32),
+  };
+};
 
 export const createApp = (dependencies: AppDependencies = {}) => {
   const store = dependencies.store ?? new MemoryStore();
   const cache = dependencies.cache ?? createCache(process.env.REDIS_URL);
+  const cacheFlights = new Singleflight();
+  const tenantCachePrefix = (tenantId: string): string => cacheKey('tenant', tenantId);
+  const invalidateTenantCache = async (tenantId: string): Promise<void> => { try { await cache.invalidate(tenantCachePrefix(tenantId)); } catch { /* cache invalidation must not block durable state */ } };
+  const auditCacheEvent = async (tenantId: string, eventName: string, key: string): Promise<void> => {
+    await store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName, metadata: { keyDigest: contentHash(key).slice(0, 12) }, createdAt: new Date().toISOString() });
+  };
   const model: ChatModel = dependencies.model ?? new DeterministicGroundedModel();
+  const v2Coordinator = dependencies.v2Coordinator;
   const workflow = dependencies.workflow;
   const nodeEnv = dependencies.nodeEnv ?? process.env.NODE_ENV ?? 'development';
   const jwtSecret = dependencies.jwtSecret ?? process.env.JWT_SECRET ?? 'local-development-only-change-me';
@@ -365,6 +441,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const ingestionWorkerSecret = dependencies.ingestionWorkerSecret ?? process.env.INGESTION_WORKER_SECRET ?? '';
   const ingestionStaging = new IngestionStaging(dependencies.ingestionStagingRoot ?? process.env.INGESTION_STAGING_ROOT ?? join(process.cwd(), 'data', 'ingestion-staging'));
   const documentStorage = new PrivateDocumentStorage(dependencies.documentStorageRoot ?? process.env.SUPPORTING_DOCUMENT_ROOT ?? join(process.cwd(), 'data', 'supporting-documents'));
+  const mockDocumentProvider = process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2DocumentProvider() : null;
   const chatSessionTtlMs = dependencies.chatSessionTtlMs ?? Number(process.env.CHAT_SESSION_TTL_MS ?? 10 * 60 * 1000);
   const readRate = (value: number | undefined, name: string): number | null => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return null; const parsed = Number(raw); if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative number.`); return parsed; };
   const inputCostUsdPerMillion = readRate(dependencies.inputCostUsdPerMillion, 'MODEL_INPUT_COST_USD_PER_MILLION');
@@ -373,6 +450,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const readRateLimit = (value: number | undefined, name: string, fallback: number, max: number): number => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return fallback; const parsed = Number(raw); if (!Number.isInteger(parsed) || parsed < 1 || parsed > max) throw new Error(`${name} must be an integer between 1 and ${max}.`); return parsed; };
   const chatResponseCacheTtlSeconds = readCacheTtl(dependencies.chatResponseCacheTtlSeconds, 'CHAT_RESPONSE_CACHE_TTL_SECONDS', 60, 300);
   const catalogQueryNormalizationEnabled = dependencies.catalogQueryNormalizationEnabled ?? process.env.CATALOG_QUERY_NORMALIZATION_ENABLED === 'true';
+  const sessionAccessTokenRequired = nodeEnv === 'production' || (dependencies.sessionAccessTokenRequired ?? process.env.CHAT_SESSION_TOKEN_REQUIRED === 'true');
   const updateSessionSafely = async (session: Session, preserveConcurrentState: boolean, conflictMerge: 'conversation' | 'workflow' = 'conversation'): Promise<Session> => {
     let candidate = session;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -398,24 +476,80 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     }
     throw new HttpError(409, 'SESSION_STATE_CONFLICT', 'Another message changed this conversation. Retry with the latest prompt.');
   };
-  const syncWorkflowState = async (action: Pick<ActionRequest, 'id' | 'tenantId' | 'sessionId' | 'intentKey' | 'catalogVersionId'>, status: ActionState): Promise<void> => {
+  const advanceLifecycleStage = async (session: Session, stage: LifecycleStage, evidence: Record<string, string | number | boolean>): Promise<void> => {
+    const current = await store.getSession(session.id);
+    if (!current || current.tenantId !== session.tenantId) return;
+    const state = current.conversationState ?? newConversationState();
+    const intentKey = state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey;
+    const entry = intentKey ? state.intentProgress?.entries[intentKey] : null;
+    if (!entry || !entry.journeyId || !entry.lifecycle) return;
+    if (entry.lifecycle.stages[stage]?.status === 'completed') return;
+    if (entry.lifecycle.currentStage !== stage) return;
+    const lifecycle = completeLifecycleStage(entry.lifecycle ?? newLifecycleState(), stage, evidence);
+    const nextEntry = { ...entry, lifecycle, revision: entry.revision + 1 };
+    const nextProgress = { ...(state.intentProgress!), entries: { ...(state.intentProgress?.entries ?? {}), [intentKey!]: nextEntry }, journeys: { ...(state.intentProgress?.journeys ?? {}), [entry.journeyId]: nextEntry }, journeyRevision: Math.max(state.intentProgress?.journeyRevision ?? 0, lifecycle.revision) };
+    await updateSessionSafely({ ...current, conversationState: { ...state, intentProgress: nextProgress } }, true, 'workflow');
+  };
+  const verifyMockSf02Attachment = async (session: Session, document: SupportingDocument): Promise<boolean> => {
+    if (!mockDocumentProvider || !document.opportunityId || !document.leadId) return false;
+    const existing = (await store.listAudit(document.tenantId)).find((event) => event.eventName === 'document.sf02_attachment_verified'
+      && event.metadata.documentId === document.id && event.metadata.attachmentStatus === 'verified');
+    if (existing) return true;
+    const account = await store.getCrmAccountByOpportunity(document.opportunityId, document.tenantId);
+    if (!account) return false;
+    const idempotencyKey = `sf02:${document.id}`;
+    try {
+      const request = buildV2DocumentProviderRequest({ session, document, account, idempotencyKey, providerType: 'deterministic_mock' });
+      const result = mockDocumentProvider.execute(request);
+      const validation = validateV2DocumentProviderResult(request, result);
+      await store.addAudit({ id: randomUUID(), tenantId: document.tenantId, actorId: null, eventName: validation.accepted ? 'document.sf02_attachment_verified' : 'document.sf02_attachment_rejected', metadata: { documentId: document.id, sessionId: document.sessionId, opportunityId: document.opportunityId, leadId: document.leadId, attachmentId: result.attachmentId, idempotencyKey, attachmentStatus: result.attachmentStatus, evidenceTier: result.evidenceTier, validationStatus: validation.status }, createdAt: new Date().toISOString() });
+      return validation.accepted;
+    } catch (error) {
+      await store.addAudit({ id: randomUUID(), tenantId: document.tenantId, actorId: null, eventName: 'document.sf02_attachment_rejected', metadata: { documentId: document.id, sessionId: document.sessionId, opportunityId: document.opportunityId, leadId: document.leadId, idempotencyKey, attachmentStatus: 'reconciliation_required', reason: error instanceof Error ? error.message.slice(0, 120) : 'provider_validation_failed' }, createdAt: new Date().toISOString() });
+      return false;
+    }
+  };
+  const syncWorkflowState = async (action: Pick<ActionRequest, 'id' | 'tenantId' | 'sessionId' | 'intentKey' | 'catalogVersionId' | 'workflowKey' | 'opportunityId'>, status: ActionState): Promise<void> => {
     const session = await store.getSession(action.sessionId);
     if (!session || session.tenantId !== action.tenantId) return;
     const currentState = session.conversationState;
-    if (currentState && action.intentKey && currentState.selectedIntentKey && currentState.selectedIntentKey !== action.intentKey) return;
+    const lifecycleIntentTransition = action.workflowKey === 'crm.account.convert' && action.intentKey === 'account.registration';
+    if (currentState && action.intentKey && currentState.selectedIntentKey && currentState.selectedIntentKey !== action.intentKey && !lifecycleIntentTransition) return;
     if (currentState && action.catalogVersionId && currentState.catalogVersionId && currentState.catalogVersionId !== action.catalogVersionId) return;
     const workflowStatus = status === 'completed' ? 'succeeded' : status === 'reconcile_required' ? 'reconcile_required' : status === 'human_review' ? 'human_review' : status === 'failed' ? 'failed' : status === 'awaiting_customer' ? 'awaiting_customer' : 'processing';
     const phase = status === 'completed' ? 'SUCCEEDED' : status === 'reconcile_required' ? 'RECONCILE_REQUIRED' : status === 'human_review' ? 'HUMAN_REVIEW' : status === 'failed' ? 'FAILED' : status === 'awaiting_customer' ? 'SLOT_COLLECTION' : 'QUEUED';
     await updateSessionSafely({ ...session, conversationState: { ...(currentState ?? newConversationState()), workflowStatus, phase, pendingPrompt: null } }, true, 'workflow');
+    if (status === 'completed' && action.opportunityId) {
+      const refreshed = await store.getSession(action.sessionId);
+      if (refreshed) {
+        if (action.workflowKey === 'crm.lead.create') {
+          await advanceLifecycleStage(refreshed, 'lead_generation', { actionId: action.id, providerVerified: true });
+          const lead = await store.getCrmLeadByActionId(action.id, action.tenantId);
+          if (lead?.qualificationStatus === 'qualified') {
+            await advanceLifecycleStage(refreshed, 'lead_qualification', { actionId: action.id, qualificationVerified: true });
+          }
+        } else if (action.workflowKey === 'crm.account.convert') {
+          await advanceLifecycleStage(refreshed, 'account_creation', { actionId: action.id, providerVerified: true });
+        }
+      }
+    }
   };
   const assertWorkflowExecution = async (action: ActionRequest, executionReference: string | undefined, eventId: string | undefined, correlationId: string | undefined, attempt: number | undefined, requireReference: boolean): Promise<void> => {
     if (!eventId || !correlationId || attempt === undefined || (requireReference && !executionReference)) throw new HttpError(409, 'WORKFLOW_CORRELATION_REQUIRED', 'A verified workflow event, correlation, attempt and execution reference are required.');
     const execution = await store.getActionExecution(action.id, action.tenantId);
     if (!execution || execution.eventId !== eventId || execution.correlationId !== correlationId || execution.attempt !== attempt || (execution.n8nExecutionRef && executionReference && execution.n8nExecutionRef !== executionReference)) throw new HttpError(409, 'WORKFLOW_CORRELATION_MISMATCH', 'The workflow completion does not match the current execution claim.');
   };
-  const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null, executionReference?: string, eventId?: string, correlationId?: string, attempt?: number): Promise<ActionRequest> => {
+  const assertV2ProviderCorrelation = async (action: ActionRequest, input: unknown): Promise<void> => {
+    if (!action.catalogVersionId || !await store.getIntentCatalogV2Version(action.tenantId, action.catalogVersionId)) return;
+    const parsed = v2ProviderCorrelationSchema.safeParse(input);
+    if (!parsed.success) throw new HttpError(409, 'V2_PROVIDER_CORRELATION_REQUIRED', 'A v2 provider callback must include its trusted session, opportunity, catalog and action revision.');
+    const reason = validateV2ProviderCorrelation(action, parsed.data);
+    if (reason) throw new HttpError(409, 'V2_PROVIDER_CORRELATION_MISMATCH', `The v2 provider callback correlation is invalid (${reason}).`);
+  };
+  const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null, executionReference?: string, eventId?: string, correlationId?: string, attempt?: number, providerCorrelation?: V2ProviderCorrelation): Promise<ActionRequest> => {
     const resolvingReconciliation = action.state === 'reconcile_required' && status === 'completed';
     const providerTerminal = actorId === null && ['completed', 'failed'].includes(status);
+    if (providerCorrelation || providerTerminal) await assertV2ProviderCorrelation(action, providerCorrelation);
     if (providerTerminal) await assertWorkflowExecution(action, executionReference, eventId, correlationId, attempt, true);
     else if (eventId || correlationId || executionReference) await assertWorkflowExecution(action, executionReference, eventId, correlationId, attempt, false);
     const resolvesReconciliation = resolvingReconciliation;
@@ -430,6 +564,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!committed) throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action and execution changed before this transition was committed.');
       await syncWorkflowState(committed.action, status);
       await store.addAudit({ id: randomUUID(), tenantId: committed.action.tenantId, actorId, eventName: `workflow.transition.${action.state}.${status}`, metadata: { actionId: committed.action.id, fromState: action.state, toState: status }, createdAt: new Date().toISOString() });
+      await invalidateTenantCache(committed.action.tenantId);
       return committed.action;
     }
     const executionContext = { ...(eventId ? { eventId } : {}), ...(correlationId ? { correlationId } : {}), ...(attempt !== undefined ? { expectedAttempt: attempt } : {}) };
@@ -443,6 +578,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     await syncWorkflowState(updated, status);
     await store.updateActionExecution({ actionId: updated.id, tenantId: updated.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: externalReference ? { externalReference } : null, resolveReconciliation: resolvesReconciliation, ...executionContext });
     await store.addAudit({ id: randomUUID(), tenantId: updated.tenantId, actorId, eventName: `workflow.transition.${action.state}.${status}`, metadata: { actionId: updated.id, fromState: action.state, toState: status }, createdAt: new Date().toISOString() });
+    await invalidateTenantCache(updated.tenantId);
     return updated;
   };
   const chatActionContext = async (req: Request, actionId: string): Promise<{ action: ActionRequest; session: Session; tenant: NonNullable<Awaited<ReturnType<typeof store.getTenant>>> }> => {
@@ -456,6 +592,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (!session || session.tenantId !== action.tenantId || !tenant || (channel && channel.tenantId !== action.tenantId)) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
     if (!tenant) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
     ensureLiveSession(session.lastActivityAt, session.closedAt);
+    await authorizeSessionAccessToken(req, session);
     if (!getAuth(req) && !channel) {
       if (!tenant.publicChatEnabled) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
       enforcePublicOrigin(req, tenant, nodeEnv);
@@ -503,25 +640,28 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const normalizeCatalogQuery = async (tenantId: string, catalogVersionId: string, input: QueryNormalizationInput, fallback: string): Promise<{ value: string; usedFallback: boolean; failed: boolean }> => {
     const health = normalizerHealth.get(tenantId) ?? { failures: 0, blockedUntil: 0 };
     normalizerHealth.set(tenantId, health);
-    if (!model.normalizeQuery || !catalogQueryNormalizationEnabled || Date.now() < health.blockedUntil) return { value: fallback, usedFallback: true, failed: Date.now() < health.blockedUntil };
+    const normalizeQuery = model.normalizeQuery?.bind(model);
+    if (!normalizeQuery || !catalogQueryNormalizationEnabled || Date.now() < health.blockedUntil) return { value: fallback, usedFallback: true, failed: Date.now() < health.blockedUntil };
     const contextDigest = contentHash(JSON.stringify((input.conversation ?? []).slice(-8).map((turn) => ({ role: turn.role, content: turn.content.slice(-1_000) }))));
-    const key = cacheKey('catalog-normalized-query-v3', tenantId, catalogVersionId, input.selectedIntentKey ?? '', contextDigest, input.maskedMessage);
-    const cached = await cache.get<string>(key);
-    if (cached) return { value: cached, usedFallback: false, failed: false };
-    try {
-      const normalized = await model.normalizeQuery(input);
-      if (!normalized) throw new Error('normalization unavailable');
-      const safe = normalizeConversationQuery(normalized);
-      if (!preservesNormalizationFacts(input.maskedMessage, safe)) throw new Error('normalization changed protected facts');
-      health.failures = 0;
-      health.blockedUntil = 0;
-      await cache.set(key, safe, Math.min(300, Math.max(1, chatResponseCacheTtlSeconds)));
-      return { value: safe, usedFallback: false, failed: false };
-    } catch {
-      health.failures += 1;
-      if (health.failures >= 3) health.blockedUntil = Date.now() + 30_000;
-      return { value: fallback, usedFallback: true, failed: true };
-    }
+    const key = cacheKey('tenant', tenantId, 'catalog-normalized-query-v3', catalogVersionId, input.selectedIntentKey ?? '', contextDigest, input.maskedMessage);
+    return cacheFlights.run(key, async () => {
+      const cached = await cache.get<string>(key);
+      if (cached) return { value: cached, usedFallback: false, failed: false };
+      try {
+        const normalized = await normalizeQuery(input);
+        if (!normalized) throw new Error('normalization unavailable');
+        const safe = normalizeConversationQuery(normalized);
+        if (!preservesNormalizationFacts(input.maskedMessage, safe)) throw new Error('normalization changed protected facts');
+        health.failures = 0;
+        health.blockedUntil = 0;
+        await cache.set(key, safe, Math.min(300, Math.max(1, chatResponseCacheTtlSeconds)));
+        return { value: safe, usedFallback: false, failed: false };
+      } catch {
+        health.failures += 1;
+        if (health.failures >= 3) health.blockedUntil = Date.now() + 30_000;
+        return { value: fallback, usedFallback: true, failed: true };
+      }
+    });
   };
   const rateLimitMax = readRateLimit(dependencies.rateLimitMax, 'API_RATE_LIMIT_MAX', nodeEnv === 'development' || nodeEnv === 'test' ? 600 : 120, 100_000);
   const rateLimitWindowMs = readRateLimit(dependencies.rateLimitWindowMs, 'API_RATE_LIMIT_WINDOW_MS', 60_000, 3_600_000);
@@ -591,6 +731,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
   // shortcut: one bounded JSON parser supports local 20 MiB base64 uploads; replace with streaming/object storage before production.
   app.use(express.json({ limit: '30mb' }));
+  registerV2ToolGateway(app, { store, embedding, serviceKey: process.env.MODEL_GATEWAY_SERVICE_KEY ?? '' });
   app.use((req, res, next) => { const started = Date.now(); res.once('finish', () => { const elapsed = Date.now() - started; const failed = res.statusCode >= 500 ? 1 : 0; const timestamp = new Date().toISOString(); telemetry.requests += 1; telemetry.serverErrors += failed; telemetry.totalLatencyMs += elapsed; telemetry.lastRequestAt = timestamp; const tenantId = (req as AuthedRequest).auth?.tenantId; if (tenantId) { const scoped = tenantTelemetry.get(tenantId) ?? newTelemetry(); scoped.requests += 1; scoped.serverErrors += failed; scoped.totalLatencyMs += elapsed; scoped.lastRequestAt = timestamp; tenantTelemetry.set(tenantId, scoped); } }); next(); });
   app.use((req, res, next) => {
     if (!req.path.startsWith('/api/')) { next(); return; }
@@ -644,8 +785,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       void channelApi(req, res, next).catch(next);
     });
   };
+  const authorizeSessionAccessToken = async (req: Request, session: Session): Promise<void> => {
+    if (getAuth(req)) return;
+    const token = req.header('x-agentic-session-token');
+    if (!sessionAccessTokenRequired && !token) return;
+    if (!token || !(await store.verifySessionAccessToken(session.id, createHash('sha256').update(token).digest('hex')))) {
+      throw new HttpError(401, token ? 'SESSION_TOKEN_INVALID' : 'SESSION_TOKEN_REQUIRED', 'A valid session access token is required.');
+    }
+  };
   const authorizeChatSession = async (req: Request, session: Session): Promise<void> => {
     ensureLiveSession(session.lastActivityAt, session.closedAt);
+    await authorizeSessionAccessToken(req, session);
     const tenant = await activeTenant(store, session.tenantId);
     const channel = getChannel(req);
     if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
@@ -677,10 +827,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     telemetry,
     tenantTelemetry,
     cachePing: () => cache.ping(),
+    invalidateTenantCache,
     modelConfigured: Boolean(dependencies.model),
     embeddingConfigured: Boolean(dependencies.embedding),
   });
-  registerLifecycleRoutes(app, { store, gateway, chatApi, routeParam, authorizeSession: authorizeChatSession });
+  registerLifecycleRoutes(app, { store, gateway, chatApi, routeParam, authorizeSession: authorizeChatSession, advanceLifecycleStage });
   app.post('/api/v1/admin/ingestion-jobs', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
     try {
       const tenantId = await tenantForRequest(store, req);
@@ -778,6 +929,86 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
     } catch (error) { next(error); }
   });
+  app.post('/api/v2/admin/intent-catalog/preview', protectedApi, requireRoles('platform_admin', 'tenant_admin', 'tenant_editor'), async (req, res, next) => {
+    try {
+      const tenant = await activeTenant(store, await tenantForRequest(store, req));
+      const input = parse(intentCatalogV2Schema, req.body);
+      const validation = validateCatalogV2(input.catalog);
+      if (!validation.document) throw new HttpError(422, 'CATALOG_V2_VALIDATION_FAILED', validation.errors.join(' '));
+      if (validation.document.manifest.tenantScope !== tenant.slug) throw new HttpError(422, 'CATALOG_TENANT_MISMATCH', 'The catalog tenant scope does not match the selected tenant.');
+      res.json({ valid: true, catalogVersionRef: catalogV2VersionRef(validation.document), sourceHash: input.sourceHash ?? catalogV2Sha256(validation.document), catalog: validation.document });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v2/admin/intent-catalog/versions', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenant = await activeTenant(store, await tenantForRequest(store, req));
+      const input = parse(intentCatalogV2Schema, req.body);
+      const validation = validateCatalogV2(input.catalog);
+      if (!validation.document) throw new HttpError(422, 'CATALOG_V2_VALIDATION_FAILED', validation.errors.join(' '));
+      if (validation.document.manifest.tenantScope !== tenant.slug) throw new HttpError(422, 'CATALOG_TENANT_MISMATCH', 'The catalog tenant scope does not match the selected tenant.');
+      const version = await store.createIntentCatalogV2Version({ tenantId: tenant.id, status: 'draft', sourceFileName: input.sourceFileName, sourceHash: input.sourceHash ?? catalogV2Sha256(validation.document), parserVersion: 'intent-catalog-v2-admin-1.0.0', catalog: validation.document, catalogVersionRef: catalogV2VersionRef(validation.document) });
+      await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog_v2.draft_created', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() });
+      res.status(201).json({ version });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v2/admin/intent-catalog/versions', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listIntentCatalogV2Versions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.get('/api/v2/admin/intent-catalog/legacy/versions', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      res.json({ items: (await store.listIntentCatalogVersions(tenantId)).map(auditLegacyCatalogVersion) });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v2/admin/intent-catalog/legacy/versions/:id/migration-candidate', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const tenant = await activeTenant(store, tenantId);
+      const legacyVersion = await store.getIntentCatalogVersion(tenantId, routeParam(req, 'id'));
+      if (!legacyVersion) throw new HttpError(404, 'INTENT_CATALOG_VERSION_NOT_FOUND', 'Legacy intent catalog version not found.');
+      const input = parse(intentCatalogV2MigrationSchema, req.body);
+      let candidate: ReturnType<typeof createLegacyCatalogV2Candidate>;
+      try {
+        candidate = createLegacyCatalogV2Candidate({ legacyVersion, tenantScope: tenant.slug, proposedCatalog: input.catalog });
+      } catch (error) {
+        throw new HttpError(422, 'CATALOG_V2_MIGRATION_FAILED', error instanceof Error ? error.message : 'The v1 catalog mapping is not a valid v2 candidate.');
+      }
+      const version = await store.createIntentCatalogV2Version({ tenantId, status: 'draft', sourceFileName: input.sourceFileName ?? `migration-${legacyVersion.sourceFileName}`, sourceHash: catalogV2Sha256(candidate.catalog), parserVersion: 'intent-catalog-v1-migration-review-1.0.0', catalog: candidate.catalog, catalogVersionRef: candidate.catalogVersionRef });
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog_v2.legacy_migration_candidate_created', metadata: { sourceVersionId: legacyVersion.id, sourceHash: legacyVersion.sourceHash, candidateId: candidate.candidateId, versionId: version.id, autoPublished: false }, createdAt: new Date().toISOString() });
+      res.status(201).json({ audit: auditLegacyCatalogVersion(legacyVersion), candidate: { ...candidate, catalog: undefined }, version });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v2/admin/intent-catalog/versions/:id/publish', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const version = await store.getIntentCatalogV2Version(tenantId, routeParam(req, 'id'));
+      if (!version) throw new HttpError(404, 'INTENT_CATALOG_V2_VERSION_NOT_FOUND', 'Intent catalog v2 version not found.');
+      const validation = validatePublishedCatalogV2(version.catalog, { published: true, tenantScope: (await activeTenant(store, tenantId)).slug, pinnedVersionRef: version.catalogVersionRef });
+      if (!validation.ok) throw new HttpError(422, 'CATALOG_V2_PUBLICATION_FAILED', validation.errors.join(' '));
+      const published = await store.publishIntentCatalogV2Version(tenantId, version.id);
+      if (!published) throw new HttpError(404, 'INTENT_CATALOG_V2_VERSION_NOT_FOUND', 'Intent catalog v2 version not found.');
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog_v2.published', metadata: { versionId: published.id, version: published.version }, createdAt: new Date().toISOString() });
+      res.json({ version: published });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v2/admin/intent-catalog/published/export', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const version = (await store.listIntentCatalogV2Versions(tenantId)).find((candidate) => candidate.status === 'published');
+      if (!version) throw new HttpError(404, 'PUBLISHED_INTENT_CATALOG_V2_NOT_FOUND', 'No published v2 intent catalog is available for this tenant.');
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog_v2.exported', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() });
+      const workbook = exportCatalogV2Workbook(version.catalog);
+      res.setHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('content-disposition', `attachment; filename="${(await activeTenant(store, tenantId)).slug}-intent-catalog-v2-${version.version}.xlsx"`);
+      res.send(workbook);
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v2/admin/intent-catalog/published/export.json', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
+    try {
+      const tenantId = await tenantForRequest(store, req);
+      const version = (await store.listIntentCatalogV2Versions(tenantId)).find((candidate) => candidate.status === 'published');
+      if (!version) throw new HttpError(404, 'PUBLISHED_INTENT_CATALOG_V2_NOT_FOUND', 'No published v2 intent catalog is available for this tenant.');
+      res.json(version.catalog);
+    } catch (error) { next(error); }
+  });
   app.get('/api/v1/admin/intent-catalog/versions', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listIntentCatalogVersions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/intent-catalog/published/export', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
     try {
@@ -816,6 +1047,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const version = await store.publishIntentCatalogVersion(tenantId, routeParam(req, 'id'));
       if (!version) throw new HttpError(404, 'INTENT_CATALOG_VERSION_NOT_FOUND', 'Intent catalog version not found.');
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'intent_catalog.published', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() });
+      await invalidateTenantCache(tenantId);
       res.json({ version });
     } catch (error) { next(error); }
   });
@@ -839,6 +1071,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const source = await store.setSourceStatus(sourceId, tenantId, status);
       if (!source) throw new HttpError(409, status === 'active' ? 'SOURCE_REINDEX_REQUIRED' : 'SOURCE_STATUS_CONFLICT', 'The source status could not be changed.');
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: `source.${status}`, metadata: { sourceId: source.id }, createdAt: new Date().toISOString() });
+      await invalidateTenantCache(tenantId);
       res.json({ source });
     } catch (error) { next(error); }
   };
@@ -852,6 +1085,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (source.status !== 'revoked') throw new HttpError(409, 'SOURCE_NOT_REVOKED', 'Revoke the source before purging it.');
       if (!(await store.purgeSource(source.id, tenantId))) throw new HttpError(404, 'SOURCE_NOT_FOUND', 'Source not found.');
       await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'source.purged', metadata: { sourceId: source.id }, createdAt: new Date().toISOString() });
+      await invalidateTenantCache(tenantId);
       res.status(204).send();
     } catch (error) { next(error); }
   });
@@ -875,6 +1109,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const completed = await store.updateIngestionJob({ ...job, sourceId: updated.id, status: 'completed', leaseExpiresAt: null, updatedAt: new Date().toISOString() });
         await publishIngestionProgress(store, completed, 'completed', chunks.length, chunks.length, 'completed');
         await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'source.reindexed', metadata: { sourceId: source.id, jobId: job.id, versionId }, createdAt: new Date().toISOString() });
+        await invalidateTenantCache(tenantId);
         res.json({ job: completed, source: updated, ingestion: { status: 'awaiting_review', chunks: chunks.length } });
       } catch (error) {
         const errorCode = error instanceof HttpError ? error.code : 'INGESTION_FAILED';
@@ -957,6 +1192,27 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (job.mimeType === 'application/vnd.agentic.intent-catalog+excel') {
         try {
           const input = parse(intentCatalogResultSchema, req.body);
+          if (input.catalog && typeof input.catalog === 'object' && !Array.isArray(input.catalog) && (input.catalog as { schemaVersion?: unknown }).schemaVersion === 2) {
+            const validation = validateCatalogV2(input.catalog);
+            if (!validation.document) throw new HttpError(422, 'CATALOG_V2_VALIDATION_FAILED', validation.errors.join(' '));
+            const tenant = await store.getTenant(job.tenantId);
+            if (validation.document.manifest.tenantScope !== tenant?.slug) throw new HttpError(422, 'CATALOG_TENANT_MISMATCH', 'The workbook tenant scope does not match the target tenant.');
+            const existing = (await store.listIntentCatalogV2Versions(job.tenantId)).find((version) => version.sourceHash === input.sourceHash);
+            if (existing) {
+              const completed = await store.updateIngestionJob({ ...job, status: 'completed', errorDetail: null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+              await ingestionStaging.purge(job.id, job.mimeType);
+              await publishIngestionProgress(store, completed, 'completed', 1, 1, 'completed');
+              res.status(200).json({ job: completed, version: existing, idempotent: true });
+              return;
+            }
+            const version = await store.createIntentCatalogV2Version({ tenantId: job.tenantId, status: 'draft', sourceFileName: job.title, sourceHash: input.sourceHash, parserVersion: input.parserVersion, catalog: validation.document, catalogVersionRef: catalogV2VersionRef(validation.document) });
+            const completed = await store.updateIngestionJob({ ...job, status: 'completed', errorDetail: null, leaseExpiresAt: null, updatedAt: new Date().toISOString() });
+            await ingestionStaging.purge(job.id, job.mimeType);
+            await publishIngestionProgress(store, completed, 'completed', 1, 1, 'completed');
+            await store.addAudit({ id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'intent_catalog_v2.imported', metadata: { versionId: version.id, version: version.version, jobId: job.id }, createdAt: new Date().toISOString() });
+            res.status(201).json({ job: completed, version });
+            return;
+          }
           const validation = validateIntentCatalog(input.catalog);
           if (!validation.catalog) throw new HttpError(422, 'CATALOG_VALIDATION_FAILED', validation.errors.join(' '));
           const tenant = await store.getTenant(job.tenantId);
@@ -1080,6 +1336,36 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const completedJob = await store.updateDocumentProcessingJob({ ...job, status: 'completed', leaseExpiresAt: null, executionReference: input.executionReference ?? job.executionReference, updatedAt: new Date().toISOString() });
       if (document.leadId) { const lead = await store.getCrmLead(document.leadId, input.tenantId); if (lead) { const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id); const composed = [lead.summary, composeDocumentSummary(lead, documents)].filter(Boolean).join('\n').slice(0, 20_000); await store.updateCrmLeadSummary(lead.id, lead.tenantId, composed, 'completed'); } }
       await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'document.completed', metadata: { documentId: document.id, jobId: job.id, status: 'completed' }, createdAt: new Date().toISOString() });
+      if (document.opportunityId && document.intentKey) {
+        // Completing one OCR job does not prove every required document is present.
+        // Local OCR evidence must never be represented as an external SF-02 attachment.
+        const currentState = (await store.getSession(session.id))?.conversationState;
+        const journey = currentState?.intentProgress?.entries[document.intentKey];
+        if (journey?.journeyId === document.opportunityId && journey.lifecycle?.currentStage === 'document_upload') {
+          const selections = await store.listPackageSelections(document.tenantId, document.opportunityId);
+          const selected = selections.find((item) => item.status === 'confirmed' && item.sessionId === session.id && item.quoteId);
+          const offering = selected ? await store.getPackageOffering(selected.packageOfferingId, document.tenantId) : null;
+          const quote = selected?.quoteId ? await store.getQuote(selected.quoteId, document.tenantId) : null;
+          if (selected && offering && quote && quote.status === 'approved'
+            && Date.parse(quote.validUntil) > Date.now() && quote.opportunityId === document.opportunityId
+            && quote.packageOfferingId === offering.id && offering.approvalStatus === 'approved'
+            && offering.catalogVersionId === document.catalogVersionId) {
+            const documents = await store.listSupportingDocuments(document.tenantId, session.id);
+            const allProcessed = requiredDocumentSetComplete(offering.requiredDocuments, documents, {
+              tenantId: document.tenantId, sessionId: session.id,
+              opportunityId: document.opportunityId, intentKey: document.intentKey,
+              catalogVersionId: document.catalogVersionId ?? '',
+            });
+            if (allProcessed) {
+              const sf02AttachmentVerified = await verifyMockSf02Attachment(session, completedDocument);
+              await advanceLifecycleStage(session, 'document_upload', {
+                documentId: document.id, documentSetComplete: true, ocrStatus: 'completed',
+                localProcessingVerified: true, sf02AttachmentVerified,
+              });
+            }
+          }
+        }
+      }
       res.json({ document: publicDocument(completedDocument), job: completedJob });
     } catch (error) { next(error); }
   });
@@ -1130,26 +1416,33 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
       ensureLiveSession(session.lastActivityAt, session.closedAt);
       const tenant = await activeTenant(store, session.tenantId);
+      await authorizeSessionAccessToken(req, session);
       if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
       enforcePublicChatEnabled(req, tenant);
       if ((channel && channel.tenantId !== session.tenantId) || (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin')) throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.');
       // Allocate input tokens against the session so assistant persona names cannot collide with visitor PII.
       const masked = { masked: maskPiiForSession(session, inputText, tokenVault) };
       const messageHash = contentHash(masked.masked);
-      const responseCacheKey = cacheKey('chat-response', session.tenantId, session.id, contentHash(input.clientMessageId));
+      const responseCacheKey = cacheKey('tenant', session.tenantId, 'chat-response', session.id, contentHash(input.clientMessageId));
       const cachedEntry = await cache.get<{ messageHash?: unknown; response?: Record<string, unknown> }>(responseCacheKey);
       if (cachedEntry?.response && typeof cachedEntry.response.answer === 'string') {
         if (cachedEntry.messageHash !== messageHash) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
+        await auditCacheEvent(session.tenantId, 'chat.cache_hit', responseCacheKey);
         res.json(rehydrateStoredResponse(session, cachedEntry.response)); return;
       }
       const durableDuplicate = await store.getMessageByClientId(session.id, input.clientMessageId);
       const retryableDuplicate = durableDuplicate?.response?.retryable === true;
       if (durableDuplicate && durableDuplicate.maskedContent !== masked.masked) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
-      if (durableDuplicate?.response && !retryableDuplicate) { res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
+      if (durableDuplicate?.response && !retryableDuplicate) { await auditCacheEvent(session.tenantId, 'chat.replay', responseCacheKey); res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
       if (durableDuplicate && !retryableDuplicate) throw new HttpError(409, 'MESSAGE_IN_PROGRESS', 'A request with this client message ID is already being processed.');
+      const candidateMessage: Message = { id: randomUUID(), sessionId: session.id, tenantId: session.tenantId, role: 'user', maskedContent: masked.masked, citations: [], clientMessageId: input.clientMessageId, response: null, createdAt: new Date().toISOString() };
+      let userMessage = durableDuplicate ?? await store.addMessage(candidateMessage);
+      const racedDuplicate = userMessage.id !== candidateMessage.id;
+      if (racedDuplicate && userMessage.maskedContent !== masked.masked) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
+      if (racedDuplicate && userMessage.response && userMessage.response.retryable !== true) { res.json(rehydrateStoredResponse(session, userMessage.response)); return; }
+      if (racedDuplicate && !userMessage.response) throw new HttpError(409, 'MESSAGE_IN_PROGRESS', 'A request with this client message ID is already being processed.');
       session.lastActivityAt = new Date().toISOString();
       await updateSessionSafely(session, false);
-      let userMessage = durableDuplicate ?? await store.addMessage({ id: randomUUID(), sessionId: session.id, tenantId: session.tenantId, role: 'user', maskedContent: masked.masked, citations: [], clientMessageId: input.clientMessageId, response: null, createdAt: new Date().toISOString() });
       pendingMessage = userMessage;
       const internal = ensureTenant(req, session.tenantId) && getAuth(req)?.role !== undefined;
       const persona = session.personaVersionId
@@ -1248,6 +1541,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : false;
       const pendingContactKind = pendingSlot?.alternativeGroup === 'contact' ? masked.masked.match(/\[(EMAIL|PHONE)_\d+\]/u)?.[1] ?? null : null;
       const continuationReply = /\b(?:continue|resume|proceed|go ahead|help me proceed)\b/iu.test(masked.masked);
+      const pendingTextIsStructuralAnswer = Boolean(pendingSlot && /activity|business/iu.test(pendingSlot.slotKey) && /\b(?:llc|fze|fzc|free\s+zone|company\s+structure|entity\s+type|legal\s+structure)\b/iu.test(inputText) && !/\b(?:business\s+activity|activity)\b/iu.test(inputText));
       const pendingTextRedirected = Boolean(pendingSlot && publishedCatalog && /^text:/u.test(pendingSlot.validationRule) && publishedCatalog.catalog.slots.some((slot) => slot.intentKey === pendingSlotIntent && slot.slotKey !== pendingSlot.slotKey && messageMentionsCatalogSlot(slot, inputText)));
       const activitySignalMentioned = Boolean(publishedCatalog && pendingSlot && /activity|business/iu.test(pendingSlot.slotKey) && publishedCatalog.catalog.signals.some((signal) => {
         if (signal.signalType === 'exclusion' || signal.relationGroup !== 'activity') return false;
@@ -1255,7 +1549,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const message = normalizeConversationQuery(masked.masked).toLocaleLowerCase('en-US');
         return terms.filter((term) => message.includes(term)).length >= Math.min(2, terms.length);
       }));
-      const pendingValue = pendingSlot && !pendingConsentSlot && !knowledgeQuestion && !pendingNameIsIntentPhrase && (!pendingTextRedirected || activitySignalMentioned) && !(continuationReply && pendingSlot.validationRule.startsWith('text:')) ? pendingContactKind ? pendingCatalogSlotValue(`token:${pendingContactKind}`, inputText, masked.masked, session, tokenVault) : catalogSlotValueForSlot(pendingSlot, inputText, masked.masked, session, tokenVault) : null;
+      const pendingValue = pendingSlot && !pendingConsentSlot && !knowledgeQuestion && !pendingNameIsIntentPhrase && !pendingTextIsStructuralAnswer && (!pendingTextRedirected || activitySignalMentioned) && !(continuationReply && pendingSlot.validationRule.startsWith('text:'))
+        ? pendingContactKind
+          ? pendingCatalogSlotValue(`token:${pendingContactKind}`, inputText, masked.masked, session, tokenVault)
+          : explicitCatalogSlotValue(pendingSlot, inputText, masked.masked, session, tokenVault) ?? catalogSlotValueForSlot(pendingSlot, inputText, masked.masked, session, tokenVault)
+        : null;
       const pendingConsentValue = (state.pendingPrompt?.type === 'consent' || pendingPromptRequirement?.requirementType === 'consent') && (!pendingSlot || pendingConsentSlot) && !knowledgeQuestion && (!activeFollowUpOffer || promptScopedReply)
         ? pendingCatalogSlotValue('boolean:explicit_opt_in', inputText, masked.masked, session, tokenVault)
         : null;
@@ -1280,36 +1578,35 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const currentCatalogResolution = publishedCatalog ? resolveIntent(publishedCatalog, deterministicMessage, baseCatalogSlotValues) : null;
       const extractionIntentSwitch = /\b(?:also|another|instead|switch|change)\b/iu.test(maskedMessage);
       const inferredCatalogIntentKey = activeConversationJourney && !extractionIntentSwitch ? activeCatalogIntent : currentCatalogResolution?.intentKey ?? activeCatalogIntent;
+      const slotCorrectionPrefix = /^(?:actually|my|our|the|now|still|please keep|update|change|i have|we have|correction)\b/iu;
       const inferredCatalogValueData = (Boolean(state.selectedIntentKey) || Boolean(inferredCatalogIntentKey) || !publishedCatalog?.catalog.journeyRequirements?.length) && (!knowledgeQuestion || setupConsultationTurn) && !conversational && inferredCatalogIntentKey
         ? (() => {
           const inferred: Record<string, string> = {};
-          const isIntentPhrase = publishedCatalog?.catalog.signals.some((signal) => {
+          const intentSignal = publishedCatalog?.catalog.signals.find((signal) => {
             if (signal.intentKey !== inferredCatalogIntentKey || signal.signalType !== 'phrase' || !signal.value) return false;
             const phrase = normalizeConversationQuery(signal.value).toLocaleLowerCase('en-US');
             const message = deterministicMessage.toLocaleLowerCase('en-US');
-            return message.includes(phrase) && message.length <= phrase.length + 16;
-          }) ?? false;
+            return message.includes(phrase);
+          });
+          const isIntentPhrase = Boolean(intentSignal?.value && deterministicMessage.length <= normalizeConversationQuery(intentSignal.value).length + 16);
+          const summarySlot = publishedCatalog?.catalog.slots.find((slot) => slot.intentKey === inferredCatalogIntentKey && /interest|summary|description/iu.test(slot.slotKey) && !pendingCatalogValues[slot.slotKey]);
+          if (summarySlot && intentSignal?.value) {
+            const phraseIndex = inputText.toLocaleLowerCase('en-US').indexOf(intentSignal.value.toLocaleLowerCase('en-US'));
+            const summary = phraseIndex >= 0 ? inputText.slice(0, phraseIndex + intentSignal.value.length).split(/[.!?]/u).at(-1)?.trim() : null;
+            if (summary) inferred[summarySlot.slotKey] = summary;
+          }
           const continuationPhrase = /\b(?:continue|resume|proceed|go ahead|help me proceed)\b/iu.test(maskedMessage);
           for (const slot of publishedCatalog?.catalog.slots.filter((candidate) => candidate.intentKey === inferredCatalogIntentKey && candidate.slotKey !== pendingSlot?.slotKey && !candidate.validationRule.startsWith('token:') && candidate.validationRule !== 'boolean:explicit_opt_in') ?? []) {
             if (continuationPhrase || conversational) continue;
             if (isIntentPhrase && slot.validationRule.startsWith('text:')) continue;
-            if (!messageMentionsCatalogSlot(slot, inputText)) continue;
-            const value = inferredCatalogSlotValue(slot, inputText, maskedMessage, session, tokenVault);
+            const explicitValue = explicitCatalogSlotValue(slot, inputText, maskedMessage, session, tokenVault);
+            if (!messageMentionsCatalogSlot(slot, inputText) && !explicitValue) continue;
+            const value = explicitValue ?? (/activity|business/iu.test(slot.slotKey) ? null : inferredCatalogSlotValue(slot, inputText, maskedMessage, session, tokenVault));
             if (value) inferred[slot.slotKey] = value;
-          }
-          const interestSlot = publishedCatalog?.catalog.slots.find((slot) => slot.intentKey === inferredCatalogIntentKey && slot.validationRule.startsWith('text:') && slot.required && !pendingCatalogValues[slot.slotKey]);
-          if (pendingValue && pendingSlot?.validationRule.startsWith('text:')) {
-            for (const slot of publishedCatalog?.catalog.slots.filter((candidate) => candidate.intentKey === inferredCatalogIntentKey && !pendingCatalogValues[candidate.slotKey] && candidate.slotKey !== pendingSlot.slotKey && /activity|business/iu.test(candidate.slotKey) && candidate.validationRule.startsWith('text:')) ?? []) inferred[slot.slotKey] = pendingValue;
           }
           const timelineSlot = publishedCatalog?.catalog.slots.find((slot) => slot.intentKey === inferredCatalogIntentKey && /timeline|start/iu.test(slot.slotKey) && !pendingCatalogValues[slot.slotKey]);
           const timelineValue = deterministicMessage.match(/\b(?:next|this|within)\s+(?:month|months|week|weeks)|\b(?:asap|immediately|urgent)\b/iu)?.[0];
           if (timelineSlot && timelineValue) inferred[timelineSlot.slotKey] = timelineValue;
-          if (interestSlot && interestSlot.slotKey !== pendingSlot?.slotKey && !continuationPhrase && maskedMessage.trim().length >= 12) {
-            if (!isIntentPhrase) inferred[interestSlot.slotKey] = maskedMessage.trim();
-            const activitySlot = publishedCatalog?.catalog.slots.find((slot) => slot.intentKey === inferredCatalogIntentKey && !pendingCatalogValues[slot.slotKey] && /activity|business/iu.test(slot.slotKey) && slot.validationRule.startsWith('text:'));
-            if (activitySlot && activitySlot.slotKey !== interestSlot.slotKey) inferred[activitySlot.slotKey] = maskedMessage.trim();
-          }
-          if (pendingTextRedirected && pendingSlot?.validationRule.startsWith('text:') && pendingSlot.required && !pendingCatalogValues[pendingSlot.slotKey] && !continuationPhrase && maskedMessage.trim().length >= 12) inferred[pendingSlot.slotKey] = maskedMessage.trim();
           return inferred;
         })()
         : {};
@@ -1319,7 +1616,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         && publishedCatalog.catalog.relations.some((relation) => (relation.sourceIntent === inferredCatalogIntentKey && relation.relatedIntent === currentCatalogResolution?.intentKey) || (relation.relatedIntent === inferredCatalogIntentKey && relation.sourceIntent === currentCatalogResolution?.intentKey))
         ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === inferredCatalogIntentKey && !currentCatalogSlotValues[slot.slotKey] && /activity|business/iu.test(slot.slotKey) && slot.validationRule.startsWith('text:'))
         : null;
-      if (relatedActivitySlot && maskedMessage.trim().length >= 12 && !knowledgeQuestion && !conversational && !continuationReply) currentCatalogSlotValues[relatedActivitySlot.slotKey] = maskedMessage.trim();
+      const relatedActivityValue = relatedActivitySlot ? explicitCatalogSlotValue(relatedActivitySlot, inputText, maskedMessage, session, tokenVault) : null;
+      if (relatedActivitySlot && relatedActivityValue) currentCatalogSlotValues[relatedActivitySlot.slotKey] = relatedActivityValue;
       const activeActivitySlot = publishedCatalog && state.selectedIntentKey
         ? publishedCatalog.catalog.slots.find((slot) => slot.intentKey === state.selectedIntentKey && !currentCatalogSlotValues[slot.slotKey] && /activity|business/iu.test(slot.slotKey) && slot.validationRule.startsWith('text:'))
         : null;
@@ -1329,7 +1627,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const signalTerms = normalizeConversationQuery(signal.value).toLocaleLowerCase('en-US').split(/\s+/u).filter((term) => term.length >= 4 && !['open', 'start', 'company', 'business', 'agency'].includes(term));
         return signalTerms.length > 0 && signalTerms.filter((term) => messageTerms.has(term)).length >= Math.min(2, signalTerms.length);
       }) ?? false;
-      if (activeActivitySlot && publishedCatalog && maskedMessage.trim().length >= 12 && !conversational && !continuationReply && activityMentioned) currentCatalogSlotValues[activeActivitySlot.slotKey] = maskedMessage.trim();
+      const activeActivityValue = activeActivitySlot ? explicitCatalogSlotValue(activeActivitySlot, inputText, maskedMessage, session, tokenVault) : null;
+      if (activeActivitySlot && publishedCatalog && !conversational && !continuationReply && (activeActivityValue || activityMentioned && !slotCorrectionPrefix.test(maskedMessage))) currentCatalogSlotValues[activeActivitySlot.slotKey] = activeActivityValue ?? maskedMessage.trim();
       const history = publishedCatalog ? catalogHistory : await store.listMessages(session.id, session.tenantId, modelContextWindow + 1);
       const recentMessages = intent === null || Boolean(activeFollowUpOffer) ? history.filter((message) => message.id !== userMessage.id).slice(-modelContextWindow) : [];
       const conversation = recentMessages.map((message) => ({ role: message.role, content: message.maskedContent }));
@@ -1463,11 +1762,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : null;
       const currentIntentKey = intentContinuity && ['matched', 'missing_slots'].includes(intentContinuity.current.reason) ? intentContinuity.current.intentKey : null;
       const detectedSecondaryIntentKey = currentIntentKey && currentIntentKey !== state.selectedIntentKey ? currentIntentKey : null;
-      const slotCorrectionPrefix = /^(?:actually|my|our|the|now|still|please keep|update|change|i have|we have)\b/iu;
+      const previousSlotValues = state.slotValues ?? {};
       const structuredSlotCorrection = Boolean(publishedCatalog?.catalog.slots.some((slot) => {
         const terms = slot.slotKey.split(/[._-]+/u).filter((term) => term.length >= 4);
         return terms.some((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\b`, 'iu').test(maskedMessage)) && slotCorrectionPrefix.test(maskedMessage);
       }));
+      const correctedSlotKeys = Object.entries(catalogSlotValues).filter(([key, value]) => previousSlotValues[key] !== undefined && previousSlotValues[key] !== value).map(([key]) => key);
+      const correctionChanged = correctedSlotKeys.length > 0 && slotCorrectionPrefix.test(maskedMessage);
       const currentOpportunityCompleted = sessionActions.some((action) => actionMatchesOpportunity(action) && action.state === 'completed');
       if (!postCaptureFollowUp && structuredSlotCorrection && currentOpportunityCompleted) postCaptureFollowUp = true;
       const catalogSlotNonAnswer = Boolean(pendingSlot && isCatalogSlotNonAnswer(maskedMessage));
@@ -1498,7 +1799,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const catalogSlotsReady = catalogResolution ? (catalogResolution.missingSlots.length === 0 || consentActionReady) && (isContactWorkflow ? validatedLeadReady : true) && !journeyBlocksAction : validatedLeadReady;
       const leadCollection = leadIntent && !catalogSlotsReady;
       const catalogClarification = !postCaptureFollowUp && !knowledgeQuestion && Boolean(catalogResolution?.intentKey && (catalogResolution.ambiguous || catalogResolution.reason === 'below_threshold'));
-      const composeGuidedDraft = async (fallback: ModelDraft, responseMode: 'slot_collection' | 'intent_clarification' | 'consent' | 'confirmation' | 'document_collection' | 'document_processing' | 'queued' | 'follow_up' | 'offer_clarification', slotKey: string | null = null): Promise<ModelDraft> => {
+       const composeGuidedDraft = async (fallback: ModelDraft, responseMode: 'slot_collection' | 'intent_clarification' | 'consent' | 'confirmation' | 'document_collection' | 'document_processing' | 'queued' | 'follow_up' | 'offer_clarification', slotKey: string | null = null): Promise<ModelDraft> => {
         if (!model.compose) return fallback;
         try {
           const intentKey = catalogResolution?.intentKey ?? pendingCatalogIntent ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey;
@@ -1534,7 +1835,100 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           return fallback;
         }
       };
-       if (!languageAllowed && !conversational) draft = { answer: permittedLanguageReply(language, persona?.permittedLanguages ?? []), citationIds: [], proposedIntent: null };
+      const composeLeadCollectionDraft = async (invalidField: 'name' | 'email' | 'phone' | null, responseMode: 'slot_collection' | 'consent', proposedIntent: string | null = null): Promise<ModelDraft> => {
+        const fallbackAnswer = leadCollectionReply(leadData, invalidField);
+        const previousAssistantReply = [...history].reverse().find((turn) => turn.role === 'assistant')?.maskedContent;
+        if (previousAssistantReply === fallbackAnswer) {
+          const nextQuestion = invalidField === 'email' ? 'What email address should I use?' : invalidField === 'phone' ? 'What phone number, including country code, should I use?' : invalidField === 'name' ? 'What name should I use?' : 'Please explicitly consent before I register the request.';
+          return { answer: `I’ve kept your company-formation details in view. ${nextQuestion}`, citationIds: [], proposedIntent };
+        }
+        return composeGuidedDraft({ answer: fallbackAnswer, citationIds: [], proposedIntent }, responseMode, invalidField);
+      };
+       let v2Draft: ModelDraft | null = null;
+       let v2AllowedUncitedDialogue = false;
+       const activeLifecycleStage = state.selectedIntentKey ? state.intentProgress?.entries?.[state.selectedIntentKey]?.lifecycle?.currentStage ?? null : null;
+       if (v2Coordinator && conversationEngineV2EnabledForTenant(session.tenantId) && publishedCatalog && persona && session.personaVersionId
+         && !consentActionReady && !journeyConfirmationPending && !journeyOfferPending && !journeyDocumentPending) {
+         try {
+           const v2Scope = issueV2Scope({ tenantId: session.tenantId, sessionId: session.id, opportunityId: currentOpportunityId, catalogVersionId: publishedCatalog.id, personaVersionId: session.personaVersionId, stateRevision: session.stateVersion ?? 0, toolAllowlist: [...V2_TOOL_NAMES] }, process.env.MODEL_GATEWAY_SERVICE_KEY ?? '');
+           const validatedFact = (key: string, maxLength: number): string | undefined => {
+             const value = catalogSlotValues[key] ?? pendingCatalogValues[key];
+             return typeof value === 'string' && value.trim().length > 0
+               && value.length <= maxLength && !/[\r\n<>@]/u.test(value) && !/https?:\/\//iu.test(value)
+               && !/\+?\d[\d()\s-]{7,}/u.test(value) ? value.trim() : undefined;
+           };
+           // Only Node-validated current or persisted, normalized non-PII business
+           // slots may be supplied as customer facts. No provider status, prices,
+           // or unvalidated turn text.
+           const confirmedCustomerFacts = {
+             ...(validatedFact('business_activity', 180) ? { business_activity: validatedFact('business_activity', 180)! } : {}),
+             ...(validatedFact('entity_type', 80) ? { entity_type: validatedFact('entity_type', 80)! } : {}),
+             ...(validatedFact('visa_count', 12) ? { visa_count: validatedFact('visa_count', 12)! } : {}),
+             ...(validatedFact('timeline', 100) ? { timeline: validatedFact('timeline', 100)! } : {}),
+           };
+           const trustedCustomerFacts = [
+             confirmedCustomerFacts.business_activity ? { factId: 'customer-fact-business_activity', text: `The customer described their business activity as ${confirmedCustomerFacts.business_activity}.`, sourceVersion: publishedCatalog.id, verified: true } : null,
+             confirmedCustomerFacts.entity_type ? { factId: 'customer-fact-entity_type', text: `The customer stated their company structure is ${confirmedCustomerFacts.entity_type}.`, sourceVersion: publishedCatalog.id, verified: true } : null,
+             confirmedCustomerFacts.visa_count ? { factId: 'customer-fact-visa_count', text: `The customer requested ${confirmedCustomerFacts.visa_count} visas.`, sourceVersion: publishedCatalog.id, verified: true } : null,
+             confirmedCustomerFacts.timeline ? { factId: 'customer-fact-timeline', text: `The customer's requested start timeline is ${confirmedCustomerFacts.timeline}.`, sourceVersion: publishedCatalog.id, verified: true } : null,
+           ].filter((value): value is { factId: string; text: string; sourceVersion: string; verified: true } => value !== null);
+           const v2 = await v2Coordinator.run({
+             envelope: {
+               schemaVersion: 2,
+               requestId: (req as AuthedRequest).requestId ?? randomUUID(),
+               clientMessageId: input.clientMessageId,
+               scopeRef: v2Scope,
+               sessionRevision: session.stateVersion ?? 0,
+               intentRevision: state.intentProgress?.journeyRevision ?? 0,
+               catalogVersionId: publishedCatalog.id,
+               personaVersionId: session.personaVersionId,
+               customerMessageMasked: maskedMessage,
+               latestTurns: conversation.slice(-8).map((turn) => ({ role: turn.role === 'user' ? 'customer' as const : 'assistant' as const, content: turn.content })),
+               persona: { personaVersionId: session.personaVersionId, assistantName: persona.name, assistantRole: 'AI assistant', permittedLanguages: persona.permittedLanguages, tone: persona.tone.split(/[,;]+/u).map((value) => value.trim()).filter(Boolean), speakingStyle: persona.speakingStyle, fallbackTemplateVersion: `fallback-${session.personaVersionId}` },
+               catalogDigest: contentHash(JSON.stringify(publishedCatalog.catalog)),
+               intentProjection: { primaryGoalKey: state.selectedIntentKey ?? state.activeFollowUpIntentKey ?? null, goalConfirmed: Boolean(state.selectedIntentKey ?? state.activeFollowUpIntentKey), currentStageKey: activeLifecycleStage ?? state.phase.toLocaleLowerCase('en-US'), pendingRequirementKey: journeyRequirement?.requirementKey ?? state.pendingPrompt?.requirementKey ?? null, confirmedCustomerFacts },
+               toolAllowlist: [...V2_TOOL_NAMES],
+               budgets: { maxModelRequests: 4, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + 90_000).toISOString() },
+             },
+             evidence: evidence.map((item) => ({ citationId: item.citation.chunkId, text: item.content, sourceVersion: item.citation.versionId, approved: true, revoked: false, sourceRef: item.citation.sourceId })),
+              verifiedFacts: trustedCustomerFacts,
+              questionPolicy: journeyRequirement?.required ? 'required' : 'optional',
+              lastQuestionKey: state.pendingPrompt?.requirementKey ?? (activeLifecycleStage ? `stage:${activeLifecycleStage}` : null),
+              fallbackTemplates: approvedV2FallbackTemplates(session.personaVersionId, persona.permittedLanguages[0] ?? language),
+          });
+           v2Draft = v2.draft;
+           v2AllowedUncitedDialogue = v2.guardReason === 'safe_no_evidence_dialogue' || v2.guardReason === 'accepted_model_dialogue';
+           const responseReason = /^[a-z0-9_.-]{1,80}$/iu.test(v2.response.reasonNoQuestion ?? '') ? v2.response.reasonNoQuestion : null;
+            const candidateResponseReason = /^[a-z0-9_.-]{1,80}$/iu.test(v2.candidateResponse.reasonNoQuestion ?? '') ? v2.candidateResponse.reasonNoQuestion : null;
+            const diagnosticCandidate = v2DiagnosticCaptureMetadata(v2.candidateResponse);
+            const rawCandidate = diagnosticCandidate && v2.diagnosticCandidate
+              ? diagnosticText(v2.diagnosticCandidate, 2_000)
+              : null;
+            await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.turn', metadata: { ...v2ModelAuditMetadata({ sessionId: session.id, clientMessageId: input.clientMessageId }), modelRequestCount: v2.modelRequestCount, toolCallCount: v2.toolCallCount, toolStatuses: v2.toolTrace.map((trace) => trace.status).join(','), guardReason: v2.guardReason, candidateGuardReason: v2.candidateGuardReason, modelResponseAccepted: v2.guardReason === 'accepted_model_dialogue' || v2.guardReason === 'accepted', repairApplied: v2.repairApplied, deliveredCitationCount: v2.response.citationIds.length, deliveredNextQuestionKey: v2.response.nextQuestionKey, ...(responseReason ? { responseReason } : {}), ...(candidateResponseReason ? { candidateResponseReason } : {}), ...(diagnosticCandidate ? { candidateResponse: JSON.stringify(diagnosticCandidate), ...(rawCandidate ? { rawCandidate } : {}), availableEvidenceRefs: JSON.stringify([...new Set(v2.toolTrace.flatMap((trace) => trace.evidenceRefs))].slice(0, 32)) } : {}), executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
+          } catch (error) {
+            const reason = error instanceof Error && /^[A-Z0-9_.-]{1,80}$/u.test(error.message) ? error.message : 'v2_turn_failed';
+            await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.error', metadata: { ...v2ModelAuditMetadata({ sessionId: session.id, clientMessageId: input.clientMessageId }), reason, executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
+            // An attempted V2 turn must fail closed; never bypass its guard through legacy generation.
+            v2Draft = { answer: naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues }), citationIds: [], proposedIntent: null };
+           v2AllowedUncitedDialogue = false;
+         }
+       }
+       if (v2Draft) {
+         draft = v2Draft;
+         const previousAssistantReply = [...history].reverse().find((turn) => turn.role === 'assistant')?.maskedContent;
+         if (previousAssistantReply === draft.answer) {
+           const repeatedRequirement = state.pendingPrompt?.requirementKey;
+           const continuityQuestion = repeatedRequirement === 'email'
+             ? 'What email address should I use?'
+             : repeatedRequirement === 'phone'
+               ? 'What phone number, including country code, should I use?'
+               : activeLifecycleStage === 'account_creation'
+                 ? 'What would you like to review before Account creation is confirmed?'
+                 : 'What would you like to focus on next?';
+           draft = { answer: `I’ve kept your company-formation request in view. ${continuityQuestion}`, citationIds: [], proposedIntent: null };
+         }
+       }
+       else if (!languageAllowed && !conversational) draft = { answer: permittedLanguageReply(language, persona?.permittedLanguages ?? []), citationIds: [], proposedIntent: null };
        else if (offerNeedsClarification && activeFollowUpOffer) draft = await composeGuidedDraft({ answer: `Which would you like to explore: ${activeFollowUpOffer.options.map((option) => option.label).join(' or ')}?`, citationIds: [], proposedIntent: null }, 'offer_clarification');
        else if (!postCaptureFollowUp && !knowledgeQuestion && catalogResolution?.ambiguous) draft = await composeGuidedDraft({ answer: 'I can help with that. Could you tell me a little more about what you need?', citationIds: [], proposedIntent: null }, 'intent_clarification');
        else if (!postCaptureFollowUp && !knowledgeQuestion && publishedCatalog && catalogResolution?.intentKey && catalogResolution.reason === 'below_threshold') draft = await composeGuidedDraft({ answer: catalogIntentClarification(publishedCatalog, catalogResolution.intentKey), citationIds: [], proposedIntent: null }, 'intent_clarification');
@@ -1542,7 +1936,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       else if (conversational && intent === 'farewell') draft = { answer: conversationalReply(intent, persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
       else if (!postCaptureFollowUp && conversational && intent !== 'greeting' && !pendingValue && !acceptedOfferOption) draft = { answer: conversationalReply(intent ?? 'acknowledgement', persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
       else if (!postCaptureFollowUp && !knowledgeQuestion && consentDenied && isContactWorkflow) draft = { answer: 'Understood. I will not register or share your contact details without consent. I can still answer your questions.', citationIds: [], proposedIntent: null };
-        else if (crmContactMissing) draft = await composeGuidedDraft({ answer: leadCollectionReply(leadData, crmContactMissing), citationIds: [], proposedIntent: null }, 'slot_collection', crmContactMissing);
+        else if (crmContactMissing) draft = await composeLeadCollectionDraft(crmContactMissing, 'slot_collection');
+        else if (textConsentApproval) draft = { answer: 'Thanks — I have your explicit contact consent. Please confirm the registration action below so I can submit it.', citationIds: [], proposedIntent: catalogResolution?.intentKey ?? null };
         else if (consentActionReady) draft = await composeGuidedDraft({ answer: 'I have the details needed. Please approve the consent action below to register your request.', citationIds: [], proposedIntent: catalogResolution?.intentKey ?? null }, 'consent');
         else if (!knowledgeQuestion && journeyDocumentAwaiting) draft = await composeGuidedDraft({ answer: 'I’ve received the requested document and it is being reviewed. While that is checked, what else would you like to clarify about your setup?', citationIds: [], proposedIntent: null }, 'document_processing');
         else if (!knowledgeQuestion && journeyOfferPending) draft = await composeGuidedDraft({ answer: `Would you like to continue with ${journeyOfferLabel ?? 'the related request'} as well?`, citationIds: [], proposedIntent: null }, 'confirmation');
@@ -1551,8 +1946,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         else if (postCaptureFollowUp && catalogSlotNonAnswer) draft = await composeGuidedDraft({ answer: 'Thanks, I’ve noted that from earlier. If anything has changed, tell me what to update; otherwise we can continue with the remaining details?', citationIds: [], proposedIntent: null }, 'follow_up', journeySlotKey);
         else if (!knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog) draft = await composeGuidedDraft({ answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null }, 'slot_collection', journeySlotKey);
         else if (!postCaptureFollowUp && !knowledgeQuestion && publishedCatalog && catalogResolution?.intentKey && catalogResolution.missingSlots.length > 0) draft = await composeGuidedDraft({ answer: catalogSlotQuestion(publishedCatalog, catalogResolution.intentKey, catalogResolution.missingSlots[0] ?? '', catalogSlotValues), citationIds: [], proposedIntent: null }, 'slot_collection', catalogResolution.missingSlots[0] ?? null);
-       else if (!postCaptureFollowUp && !knowledgeQuestion && leadIntent && !catalogSlotsReady) draft = await composeGuidedDraft({ answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: null }, 'slot_collection', invalidLeadField);
-       else if (!postCaptureFollowUp && !knowledgeQuestion && ((leadIntent && validatedLeadReady) || (catalogResolution?.actionAllowed && (!isContactWorkflow || validatedLeadReady)))) draft = await composeGuidedDraft({ answer: leadCollectionReply(leadData), citationIds: [], proposedIntent: catalogResolution?.intentKey ?? 'lead.capture' }, 'consent');
+       else if (!postCaptureFollowUp && !knowledgeQuestion && leadIntent && !catalogSlotsReady) draft = await composeLeadCollectionDraft(invalidLeadField, 'slot_collection');
+       else if (!postCaptureFollowUp && !knowledgeQuestion && ((leadIntent && validatedLeadReady) || (catalogResolution?.actionAllowed && (!isContactWorkflow || validatedLeadReady)))) draft = await composeLeadCollectionDraft(null, 'consent', catalogResolution?.intentKey ?? 'lead.capture');
       else if (!postCaptureFollowUp && conversational && intent === 'greeting' && (language === 'ar' || /\bgood (?:morning|afternoon|evening)\b/iu.test(maskedMessage))) draft = { answer: language === 'ar' ? conversationalReply(intent, persona?.name ?? 'Sales assistant', language, tenant.name) : openingGreeting(persona?.greeting, persona?.name ?? 'Sales assistant'), citationIds: [], proposedIntent: null };
       else if (!postCaptureFollowUp && conversational && intent === 'identity') draft = { answer: conversationalReply(intent, persona?.name ?? 'Sales assistant', language, tenant.name), citationIds: [], proposedIntent: null };
       else {
@@ -1612,7 +2007,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           else throw new HttpError(503, 'MODEL_UNAVAILABLE', 'The assistant is currently unable to verify an answer.');
         }
       }
-      if (!knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog && !consentDenied && !catalogSlotNonAnswer && !isGuidedResponse(draft.answer, 'slot_collection', journeySlotKey)) draft = { answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null };
+      if (!v2AllowedUncitedDialogue && !knowledgeQuestion && journeyRequirement && journeySlotKey && publishedCatalog && !consentDenied && !catalogSlotNonAnswer && !isGuidedResponse(draft.answer, 'slot_collection', journeySlotKey)) draft = { answer: catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? '', journeySlotKey, catalogSlotValues), citationIds: [], proposedIntent: null };
       if (knowledgeQuestion && /\b(?:step|steps|process|procedure)\b/iu.test(maskedMessage) && evidence.length > 0 && !/\b(?:step|steps|process|procedure)\b/iu.test(draft.answer)) draft = groundedKnowledgeFallback(maskedMessage, evidence) ?? draft;
       const structuredToolKnowledge = knowledgeQuestion && agentToolResults.some((result) => result.ok
         && ['get_available_packages', 'get_authoritative_pricing', 'get_setup_requirements', 'get_package_document_requirements'].includes(result.name)
@@ -1621,7 +2016,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       try { assertKnownTokens(session, draft.answer, tokenVault); } catch { throw new HttpError(502, 'MODEL_PRIVACY_VIOLATION', 'The assistant returned an unsafe response.'); }
       let citations = validateCitations(draft, evidence);
       const trustedToolFacts = JSON.stringify(agentToolResults.filter((result) => result.ok).map((result) => ({ name: result.name, data: result.data })));
-      const casualFallback = conversational && (evidence.length === 0 || intent === 'identity');
+      const casualFallback = v2AllowedUncitedDialogue || (conversational && (evidence.length === 0 || intent === 'identity'));
       const continuityAnswer = continuityTurn && isSafeContinuityAnswer(draft.answer, citations);
       const toolBackedKnowledge = knowledgeQuestion && agentToolResults.some((result) => result.ok
         && ['get_available_packages', 'get_authoritative_pricing', 'get_setup_requirements', 'get_package_document_requirements'].includes(result.name)
@@ -1647,10 +2042,20 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       let safeAnswer = casualFallback || leadAnswer || continuityAnswer || offerClarificationAnswer ? draft.answer : continuityTurn ? conversationalReply('acknowledgement', persona?.name ?? 'Sales assistant', language, tenant.name) : answer;
       const controlledFinalAbstention = knowledgeQuestion && isControlledKnowledgeAbstention(safeAnswer);
       const safeGrounded = grounded && !continuityFallback && !(knowledgeQuestion && (isControlledKnowledgeAbstention(draft.answer) || controlledFinalAbstention)) && (store.constructor.name !== 'PostgresStore' || !knowledgeQuestion || addressesKnowledgeQuestion(maskedMessage, safeAnswer));
-      if (knowledgeQuestion && store.constructor.name === 'PostgresStore' && !safeGrounded && !controlledFinalAbstention) safeAnswer = naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues });
-      const safeCitations = safeGrounded ? citations : [];
-      if (intent === 'farewell') session.closedAt = new Date().toISOString();
+      if (knowledgeQuestion && store.constructor.name === 'PostgresStore' && !v2AllowedUncitedDialogue && !safeGrounded && !controlledFinalAbstention) safeAnswer = naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues });
       const nextMissingSlot = crmContactMissing ?? journeySlotKey ?? catalogResolution?.missingSlots[0] ?? null;
+      const previousAssistantReply = [...history].reverse().find((turn) => turn.role === 'assistant')?.maskedContent;
+      const repeatedSafeAnswer = Boolean(v2Coordinator && previousAssistantReply && previousAssistantReply === safeAnswer);
+      if (repeatedSafeAnswer) {
+        const continuityQuestion = nextMissingSlot && publishedCatalog
+          ? catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? catalogResolution?.intentKey ?? state.selectedIntentKey ?? '', nextMissingSlot, catalogSlotValues)
+          : activeLifecycleStage === 'account_creation'
+            ? 'What would you like to review before Account creation is confirmed?'
+            : 'What would you like to focus on next?';
+        safeAnswer = `I’m keeping your request in view. ${continuityQuestion}`;
+      }
+      const safeCitations = safeGrounded && !repeatedSafeAnswer ? citations : [];
+      if (intent === 'farewell') session.closedAt = new Date().toISOString();
       const endedConversation = conversational && intent === 'farewell';
       const preserveConsentPrompt = knowledgeQuestion && state.pendingPrompt?.type === 'consent';
       const preserveTypedConsentPrompt = textConsentApproval && state.pendingPrompt?.type === 'consent';
@@ -1685,13 +2090,22 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       state.candidateIntentKeys = [...new Set([...state.candidateIntentKeys, catalogResolution?.intentKey, catalogResolution?.runnerUpIntentKey, ...(intentContinuity?.secondaryIntentKeys ?? [])].filter((value): value is string => Boolean(value)))];
       state.intentEvidence = [...new Set([...(postCaptureFollowUp ? state.intentEvidence ?? [] : []), catalogResolution?.intentKey, detectedSecondaryIntentKey, ...(intentContinuity?.secondaryIntentKeys ?? [])].filter((value): value is string => Boolean(value)))];
-      const previousSlotValues = state.slotValues ?? {};
       state.slotValues = catalogSlotValues;
       state.slotProvenance = { ...(state.slotProvenance ?? {}) };
       const changedVisitorSlots = new Set([...Object.keys(extractLeadData(maskedMessage)), ...Object.keys(inferredCatalogValueData), ...Object.keys(pendingCatalogValueData)]);
       for (const slotKey of changedVisitorSlots) {
         const value = catalogSlotValues[slotKey];
         if (value) state.slotProvenance[slotKey] = { source: 'visitor', messageSequence: state.messageSequence + 1, capturedAt: new Date().toISOString(), corrected: Boolean(previousSlotValues[slotKey] && previousSlotValues[slotKey] !== value) };
+      }
+      if (correctionChanged) {
+        const correctionOpportunityIds = new Set(Object.values(state.intentProgress?.entries ?? {}).map((entry) => entry.journeyId).filter((value): value is string => Boolean(value)));
+        for (const action of sessionActions) {
+          if ((action.opportunityId !== null && action.opportunityId !== undefined && !correctionOpportunityIds.has(action.opportunityId)) || !['awaiting_confirmation', 'awaiting_customer'].includes(action.state)) continue;
+          const invalidated = await store.updateAction({ ...action, state: 'failed', result: null });
+          Object.assign(action, invalidated);
+          await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'conversation.fact_correction.invalidated_action', metadata: { actionId: action.id, opportunityDigest: action.opportunityId ? contentHash(action.opportunityId).slice(0, 12) : null, correctedSlotKeys: JSON.stringify(correctedSlotKeys), priorActionRevision: action.actionRevision ?? 1 }, createdAt: new Date().toISOString() });
+        }
+        await invalidateTenantCache(session.tenantId);
       }
       const persistedJourneyKey = journeyResult?.activeIntentKey ?? state.activeFollowUpIntentKey ?? state.selectedIntentKey;
       if (persistedJourneyKey && state.intentProgress?.entries[persistedJourneyKey]) {
@@ -1742,6 +2156,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       state.pendingPrompt = nextPrompt;
       const nextContactConsent = catalogSlotValues.contact_consent === 'true' ? 'granted' : catalogSlotValues.contact_consent === 'false' ? 'denied' : state.contactConsent;
       if (nextContactConsent !== state.contactConsent) state.consentCapturedAt = nextContactConsent === 'unknown' ? null : new Date().toISOString();
+      if (nextContactConsent !== state.contactConsent) await invalidateTenantCache(session.tenantId);
       state.contactConsent = nextContactConsent;
       state.summaryRevision += 1;
       state.messageSequence += 1;
@@ -1863,6 +2278,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const estimatedOutputTokens = estimateTokens(finalMaskedAnswer);
       await store.addMessage({ id: response.messageId, sessionId: session.id, tenantId: session.tenantId, role: 'assistant', maskedContent: finalMaskedAnswer, citations: safeCitations, clientMessageId: null, response: { conversational, ...(pendingCatalogState ?? {}) }, createdAt: new Date().toISOString() });
       await store.updateMessage({ ...userMessage, response: persistedResponse });
+      await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'chat.response', metadata: { messageDigest: contentHash(response.messageId).slice(0, 12), responseDigest: contentHash(finalMaskedAnswer).slice(0, 12), personaVersionId: session.personaVersionId, language, intentKey: state.activeFollowUpIntentKey ?? state.selectedIntentKey ?? null, grounded: safeGrounded, citationCount: safeCitations.length }, createdAt: new Date().toISOString() });
       await cache.set(responseCacheKey, { messageHash, response: persistedResponse }, chatResponseCacheTtlSeconds);
       recordChatOutcome(session.tenantId, safeGrounded, Boolean(actionForResponse), estimatedInputTokens, estimatedOutputTokens);
       res.json(response);
@@ -1885,6 +2301,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!session || session.tenantId !== action.tenantId || !tenant || (channel && channel.tenantId !== action.tenantId) || (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== action.tenantId)) throw new HttpError(403, 'ACTION_FORBIDDEN', 'Action access denied.');
       if (!getAuth(req) && !channel) { enforcePublicOrigin(req, tenant, nodeEnv); enforcePublicChatEnabled(req, tenant); }
       ensureLiveSession(session.lastActivityAt, session.closedAt);
+      await authorizeSessionAccessToken(req, session);
       await activeTenant(store, action.tenantId);
       const confirmationState = session.conversationState ?? newConversationState();
       const confirmationIntentKey = confirmationState.activeFollowUpIntentKey ?? confirmationState.intentProgress?.activeIntentKey ?? confirmationState.selectedIntentKey;
@@ -1904,6 +2321,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const confirmed = await gateway.confirm(action.id, action.tenantId, sessionForApproval);
       if (!['approved', 'processing', 'completed'].includes(confirmed.state)) throw new HttpError(409, 'ACTION_NOT_ACCEPTED', 'This request was not accepted. Please start a new request.');
       Object.assign(session, sessionForApproval);
+      await invalidateTenantCache(action.tenantId);
       res.json({ action: confirmed, message: null });
     } catch (error) { next(error); }
   });
@@ -1964,7 +2382,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const input = parse(workflowCompletionSchema, req.body);
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(403, 'WORKFLOW_FORBIDDEN', 'Workflow completion does not match the authorized action.');
-      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt);
+      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt, input);
       res.json({ action: updated });
     } catch (error) { next(error); }
   });
@@ -2025,7 +2443,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       assertKnownTokens(session, JSON.stringify({ leadData, conversation }), tokenVault);
       const existing = await store.getCrmLeadByActionId(input.actionId, input.tenantId);
       if (existing) {
-        if (input.completeAction && action.state !== 'completed') await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${existing.id}` } });
+        if (input.completeAction && action.state !== 'completed') {
+          const completedAction = await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${existing.id}` } });
+          await syncWorkflowState(completedAction, 'completed');
+        }
         res.json({ lead: existing, externalReference: `crm-lead-${existing.id}` }); return;
       }
       const lead: CrmLead = { id: randomUUID(), tenantId: input.tenantId, actionId: input.actionId, sessionId: input.sessionId, intent: authorizedIntent, secondaryIntentKeys: (session.conversationState?.candidateIntentKeys ?? []).filter((key) => key !== authorizedIntent), intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: action.catalogVersionId ?? null, score, contactCompletenessScore: contactCompletenessScore({ validName, validEmail: Boolean(rehydratedEmail && isValidLeadEmail(rehydratedEmail)), validPhone: Boolean(rehydratedPhone && isValidLeadPhone(rehydratedPhone)) }), validationPass, leadData, conversation, summary: null, summaryStatus: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
@@ -2037,7 +2458,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       }
       await store.createCrmLeadAssociation({ id: randomUUID(), tenantId: input.tenantId, crmLeadId: created.id, actionId: input.actionId, sessionId: input.sessionId, opportunityId: action.opportunityId ?? null, associationType: 'canonical', createdAt: new Date().toISOString() });
       await store.linkSessionDocuments(created.sessionId, created.tenantId, created.id);
-      if (input.completeAction) await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${created.id}` } });
+      if (input.completeAction) {
+        const completedAction = await store.updateAction({ ...action, state: 'completed', result: { externalReference: `crm-lead-${created.id}` } });
+        await syncWorkflowState(completedAction, 'completed');
+      }
       session.conversationState = { ...(session.conversationState ?? newConversationState()), workflowStatus: 'queued', phase: 'QUEUED', pendingPrompt: null };
       await updateSessionSafely(session, true);
       await store.addAudit({ id: randomUUID(), tenantId: created.tenantId, actorId: null, eventName: 'crm.lead_created', metadata: { leadId: created.id, intent: created.intent, score: created.score, validationPass: created.validationPass }, createdAt: new Date().toISOString() });
@@ -2070,6 +2494,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const summarized = scored ? await store.updateCrmLeadSummary(scored.id, input.tenantId, composed, 'completed') : null;
       const updated = summarized ? await store.updateCrmLeadQualification(summarized.id, input.tenantId, input.status, input.evidence) : null;
       if (!updated) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
+      const action = await store.getAction(updated.actionId);
+      if (action?.state === 'completed') await syncWorkflowState(action, 'completed');
       res.json({ lead: updated });
     } catch (error) { next(error); }
   });
@@ -2214,10 +2640,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const body = JSON.stringify(req.body);
       if (!verifyN8nPayload(n8nCallbackSecret, timestamp, nonce, body, signature)) throw new HttpError(401, 'INVALID_CALLBACK', 'Callback authentication failed.');
       if (!(await store.claimCallbackNonce(nonce, new Date(Date.now() + 300_000).toISOString()))) throw new HttpError(401, 'REPLAYED_CALLBACK', 'Callback replay rejected.');
-      const input = parse(z.object({ actionId: z.string().guid(), tenantId: z.string().guid(), state: z.enum(['completed', 'failed']), externalReference: z.string().refine(isSafeExternalReference, 'An opaque external reference is required.'), executionReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u), eventId: z.string().guid(), correlationId: z.string().guid(), attempt: z.number().int().min(1).max(100_000) }), req.body);
+      const input = parse(z.object({ actionId: z.string().guid(), tenantId: z.string().guid(), state: z.enum(['completed', 'failed']), externalReference: z.string().refine(isSafeExternalReference, 'An opaque external reference is required.'), executionReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u), eventId: z.string().guid(), correlationId: z.string().guid(), attempt: z.number().int().min(1).max(100_000), ...v2ProviderCorrelationSchema.shape }), req.body);
       const action = await store.getAction(input.actionId);
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
-      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt);
+      const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt, input);
       await store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: `workflow.callback.${input.state}`, metadata: { actionId: action.id, executionReference: input.executionReference ?? null, eventId: input.eventId ?? null, correlationId: input.correlationId ?? null, attempt: input.attempt ?? null }, createdAt: new Date().toISOString() });
       res.json({ action: updated });
     } catch (error) { next(error); }
@@ -2227,11 +2653,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     try {
       const session = await store.getSession(routeParam(req, 'id'));
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
-      ensureLiveSession(session.lastActivityAt, session.closedAt);
-      const tenant = await activeTenant(store, session.tenantId);
-      const channel = getChannel(req);
-      if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
-      if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
+      await authorizeChatSession(req, session);
       res.json(await documentConfig(session.tenantId));
     } catch (error) { next(error); }
   });
@@ -2239,11 +2661,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     try {
       const session = await store.getSession(routeParam(req, 'id'));
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
-      ensureLiveSession(session.lastActivityAt, session.closedAt);
-      const tenant = await activeTenant(store, session.tenantId);
-      const channel = getChannel(req);
-      if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
-      if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
+      await authorizeChatSession(req, session);
       const input = parse(documentUploadSchema, req.body);
       const existingLead = await store.getCrmLeadBySessionId(session.id, session.tenantId);
       const conversationState = session.conversationState ?? newConversationState();
@@ -2259,6 +2677,24 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const policy = version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === requestedIntentKey) ?? version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === 'anc.document.supporting_upload');
       const journeyRequirement = version?.catalog.journeyRequirements?.find((candidate) => candidate.intentKey === requestedIntentKey && candidate.requirementKey === input.requirementKey && candidate.requirementType === 'document') ?? null;
       if (input.requirementKey && (!journeyRequirement || !journeyRequirement.documentType || !policy?.allowedDocumentTypes.includes(journeyRequirement.documentType))) throw new HttpError(409, 'DOCUMENT_REQUIREMENT_NOT_ACTIVE', 'The requested document requirement is not active for this conversation.');
+      const documentOpportunityId = conversationState.intentProgress?.entries[requestedIntentKey]?.journeyId ?? null;
+      if (!documentOpportunityId) throw new HttpError(409, 'DOCUMENT_PACKAGE_NOT_CONFIRMED', 'A confirmed package selection is required before document upload.');
+      const confirmedPackage = (await store.listPackageSelections(session.tenantId, documentOpportunityId)).find((selection) =>
+        selection.status === 'confirmed' && selection.sessionId === session.id && selection.opportunityId === documentOpportunityId && selection.quoteId);
+      const packageOffering = confirmedPackage ? await store.getPackageOffering(confirmedPackage.packageOfferingId, session.tenantId) : null;
+      const quote = confirmedPackage?.quoteId ? await store.getQuote(confirmedPackage.quoteId, session.tenantId) : null;
+      if (!confirmedPackage || !packageOffering || !quote || quote.status !== 'approved'
+        || quote.opportunityId !== documentOpportunityId || quote.packageOfferingId !== packageOffering.id
+        || Date.parse(quote.validUntil) <= Date.now() || packageOffering.approvalStatus !== 'approved'
+        || packageOffering.catalogVersionId !== version?.id)
+        throw new HttpError(409, 'DOCUMENT_PACKAGE_NOT_CONFIRMED', 'A current approved quotation and confirmed package are required before document upload.');
+      // Legacy single-document intake may omit requirementKey. Multi-document
+      // packages must supply an explicit catalog requirement to avoid ambiguity.
+      const expectedDocumentType = journeyRequirement?.documentType
+        ?? (packageOffering.requiredDocuments.length === 1 ? packageOffering.requiredDocuments[0] ?? null : null);
+      if (!expectedDocumentType || !packageOffering.requiredDocuments.includes(expectedDocumentType)
+        || !policy?.allowedDocumentTypes.includes(expectedDocumentType))
+        throw new HttpError(409, 'DOCUMENT_NOT_REQUIRED_BY_PACKAGE', 'The document requirement must match a required document for the confirmed package.');
       if (!settings?.enabled || !binding || !policy?.enabled || !policy.allowUserInitiated || !policy.consentRequired) throw new HttpError(409, 'DOCUMENT_WORKFLOW_NOT_AVAILABLE', 'Supporting document intake is not enabled for this tenant yet.');
       if (!settings.allowedMimeTypes.includes(input.mimeType) || !DEFAULT_DOCUMENT_MIME_TYPES.includes(input.mimeType)) throw new HttpError(422, 'DOCUMENT_TYPE_NOT_ALLOWED', 'This document type is not allowed by the published catalog.');
       if (!isValidBase64(input.contentBase64)) throw new HttpError(422, 'DOCUMENT_ENCODING_INVALID', 'The document encoding is invalid.');
@@ -2267,7 +2703,6 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (content.length === 0 || content.length > maxBytes) throw new HttpError(413, 'DOCUMENT_TOO_LARGE', 'The document exceeds the published size limit.');
       if (!hasSupportingDocumentSignature(input.mimeType, content)) throw new HttpError(422, 'DOCUMENT_SIGNATURE_INVALID', 'The document content does not match its declared type.');
       const sha256 = documentSha256(content);
-      const documentOpportunityId = conversationState.intentProgress?.entries[requestedIntentKey]?.journeyId ?? null;
       const duplicate = (await store.listSupportingDocuments(session.tenantId, session.id)).find((candidate) => candidate.sha256 === sha256
         && (candidate.opportunityId ?? null) === documentOpportunityId
         && candidate.intentKey === requestedIntentKey
@@ -2288,7 +2723,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const storageKey = documentStorage.key(session.tenantId, documentId, input.mimeType);
       await documentStorage.write(storageKey, content);
       const createdAt = new Date().toISOString();
-      const document: SupportingDocument = { id: documentId, tenantId: session.tenantId, sessionId: session.id, leadId: existingLead?.id ?? null, opportunityId: conversationState.intentProgress?.entries[requestedIntentKey]?.journeyId ?? null, intentKey: requestedIntentKey, catalogVersionId: version?.id ?? null, requirementKey: journeyRequirement?.requirementKey ?? input.requirementKey ?? null, expectedDocumentType: journeyRequirement?.documentType ?? null, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, sha256, storageKey, status: 'queued', workflowKey: binding.workflowKey, storeExtractedText: policy.storeExtractedText, extractedText: null, summary: null, errorCode: null, consentAt: createdAt, createdAt, updatedAt: createdAt };
+      const document: SupportingDocument = { id: documentId, tenantId: session.tenantId, sessionId: session.id, leadId: existingLead?.id ?? null, opportunityId: conversationState.intentProgress?.entries[requestedIntentKey]?.journeyId ?? null, intentKey: requestedIntentKey, catalogVersionId: version?.id ?? null, requirementKey: journeyRequirement?.requirementKey ?? input.requirementKey ?? null, expectedDocumentType, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, sha256, storageKey, status: 'queued', workflowKey: binding.workflowKey, storeExtractedText: policy.storeExtractedText, extractedText: null, summary: null, errorCode: null, consentAt: createdAt, createdAt, updatedAt: createdAt };
       const job: DocumentProcessingJob = { id: randomUUID(), documentId, tenantId: session.tenantId, workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, status: 'queued', attempts: 0, leaseExpiresAt: null, executionReference: null, createdAt, updatedAt: createdAt };
       try { await store.createSupportingDocumentWithJob(document, job); } catch (error) {
         await documentStorage.purge(storageKey);
@@ -2310,11 +2745,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     try {
       const session = await store.getSession(routeParam(req, 'id'));
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
-      ensureLiveSession(session.lastActivityAt, session.closedAt);
-      const tenant = await activeTenant(store, session.tenantId);
-      const channel = getChannel(req);
-      if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
-      if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
+      await authorizeChatSession(req, session);
       res.json({ items: (await store.listSupportingDocuments(session.tenantId, session.id)).map(publicDocument) });
     } catch (error) { next(error); }
   });
@@ -2328,7 +2759,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.setHeader('content-type', document.mimeType); res.setHeader('content-disposition', `attachment; filename="${document.fileName.replace(/["\\\r\n]/gu, '_')}"`); res.send(content);
     } catch (error) { next(error); }
   });
-  app.get('/api/v1/chat/sessions/:id', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const session = await store.getSession(routeParam(req, 'id')); if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); ensureLiveSession(session.lastActivityAt, session.closedAt); const tenant = await store.getTenant(session.tenantId); if (!tenant) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (!getAuth(req) && !channel) { if (tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.'); const { limit } = parse(historyQuerySchema, req.query); res.json({ sessionId: session.id, tenantId: session.tenantId, createdAt: session.createdAt, messages: (await store.listMessages(session.id, session.tenantId, limit)).map((message) => ({ id: message.id, role: message.role, content: message.role === 'assistant' ? rehydrateForSession(session, message.maskedContent, tokenVault) : message.maskedContent, citations: message.citations, conversational: message.response?.conversational === true, pendingIntentKey: typeof message.response?.catalogIntentKey === 'string' ? message.response.catalogIntentKey : null, pendingRequirementKey: typeof message.response?.catalogRequirementKey === 'string' ? message.response.catalogRequirementKey : null, clientMessageId: message.clientMessageId, createdAt: message.createdAt })) }); } catch (error) { next(error); } });
+  app.get('/api/v1/chat/sessions/:id', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const session = await store.getSession(routeParam(req, 'id')); if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); ensureLiveSession(session.lastActivityAt, session.closedAt); await authorizeSessionAccessToken(req, session); const tenant = await store.getTenant(session.tenantId); if (!tenant) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (channel && channel.tenantId !== session.tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); if (!getAuth(req) && !channel) { if (tenant.status !== 'active' || !tenant.publicChatEnabled) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.'); enforcePublicOrigin(req, tenant, nodeEnv); } else if (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin') throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.'); const { limit } = parse(historyQuerySchema, req.query); res.json({ sessionId: session.id, tenantId: session.tenantId, createdAt: session.createdAt, messages: (await store.listMessages(session.id, session.tenantId, limit)).map((message) => ({ id: message.id, role: message.role, content: message.role === 'assistant' ? rehydrateForSession(session, message.maskedContent, tokenVault) : message.maskedContent, citations: message.citations, conversational: message.response?.conversational === true, pendingIntentKey: typeof message.response?.catalogIntentKey === 'string' ? message.response.catalogIntentKey : null, pendingRequirementKey: typeof message.response?.catalogRequirementKey === 'string' ? message.response.catalogRequirementKey : null, clientMessageId: message.clientMessageId, createdAt: message.createdAt })) }); } catch (error) { next(error); } });
 
   app.get('/api/v1/admin/workflow-runs', protectedApi, async (req, res, next) => {
     try {

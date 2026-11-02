@@ -1,0 +1,335 @@
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { Express, Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
+import { catalogNextFollowUpRequirement, catalogNextJourneyRequirement } from './intent-catalog.js';
+import { retrieveApprovedKnowledge } from './knowledge.js';
+import { sanitizeKnowledgeText } from './privacy.js';
+import { normalizeConversationQuery } from './model.js';
+import type { EmbeddingProvider } from './embedding.js';
+import type { IntentCatalogVersion, Session, Store } from './types.js';
+import { toolRequestSchema, type ToolRequestV2, type ToolResultV2 } from './python-model/v2-contracts.js';
+import { HttpError } from './http/errors.js';
+import { deriveV2ProviderEvidenceStatus, v2StageCompletionEligible } from './v2-provider-evidence.js';
+
+export const V2_TOOL_NAMES = [
+  'get_conversation_context',
+  'get_persona',
+  'get_intent_catalog',
+  'get_missing_requirements',
+  'search_knowledge',
+  'get_journey_state',
+  'get_available_packages',
+  'get_document_requirements',
+  'get_action_status',
+] as const;
+
+export type V2ToolName = (typeof V2_TOOL_NAMES)[number];
+
+const emptyArguments = z.object({}).strict();
+const searchArguments = z.object({
+  query: z.string().trim().min(1).max(2_000),
+  resultCount: z.number().int().min(1).max(5).nullable(),
+}).strict();
+const argumentSchemas: Record<V2ToolName, z.ZodTypeAny> = {
+  get_conversation_context: emptyArguments,
+  get_persona: emptyArguments,
+  get_intent_catalog: emptyArguments,
+  get_missing_requirements: emptyArguments,
+  search_knowledge: searchArguments,
+  get_journey_state: emptyArguments,
+  get_available_packages: emptyArguments,
+  get_document_requirements: emptyArguments,
+  get_action_status: emptyArguments,
+};
+
+type ScopePayload = {
+  tenantId: string;
+  sessionId: string;
+  opportunityId: string | null;
+  catalogVersionId: string;
+  personaVersionId: string;
+  stateRevision: number;
+  toolAllowlist: V2ToolName[];
+  expiresAt: number;
+  nonce: string;
+};
+
+export type V2ToolScopeInput = Omit<ScopePayload, 'expiresAt' | 'nonce' | 'toolAllowlist'> & {
+  toolAllowlist?: V2ToolName[];
+  expiresAt?: number;
+};
+
+const scopePart = (value: string): string => Buffer.from(value, 'utf8').toString('base64url');
+const unscopePart = (value: string): string => Buffer.from(value, 'base64url').toString('utf8');
+const digest = (value: string): string => createHash('sha256').update(value).digest('hex');
+const bounded = (value: string, max: number): string => value.slice(0, max);
+
+export const issueV2Scope = (input: V2ToolScopeInput, secret: string, now = Date.now()): string => {
+  if (!secret || secret.length < 16) throw new Error('V2_TOOL_SCOPE_SECRET_REQUIRED');
+  const payload: ScopePayload = {
+    ...input,
+    toolAllowlist: [...new Set(input.toolAllowlist ?? V2_TOOL_NAMES)],
+    expiresAt: input.expiresAt ?? now + 5 * 60_000,
+    nonce: randomBytes(16).toString('base64url'),
+  };
+  const encoded = scopePart(JSON.stringify(payload));
+  const signature = createHmac('sha256', secret).update(encoded).digest('base64url');
+  return `${encoded}.${signature}`;
+};
+
+export const verifyV2Scope = (scopeRef: string, secret: string, now = Date.now()): ScopePayload | null => {
+  if (!secret || scopeRef.length > 4_096) return null;
+  const parts = scopeRef.split('.');
+  if (parts.length !== 2) return null;
+  const expected = createHmac('sha256', secret).update(parts[0]!).digest();
+  const provided = Buffer.from(parts[1]!, 'base64url');
+  if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) return null;
+  try {
+    const payload = JSON.parse(unscopePart(parts[0]!)) as ScopePayload;
+    if (!payload || typeof payload !== 'object' || payload.expiresAt <= now || payload.stateRevision < 0 || !payload.tenantId || !payload.sessionId || !payload.catalogVersionId || !payload.personaVersionId || !Array.isArray(payload.toolAllowlist)) return null;
+    if (payload.toolAllowlist.some((name) => !V2_TOOL_NAMES.includes(name))) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+};
+
+const activeIntent = (session: Session): string | null => {
+  const state = session.conversationState;
+  return state?.activeFollowUpIntentKey ?? state?.intentProgress?.activeIntentKey ?? state?.selectedIntentKey ?? null;
+};
+
+const activeEntry = (session: Session) => {
+  const intentKey = activeIntent(session);
+  return intentKey ? session.conversationState?.intentProgress?.entries[intentKey] ?? null : null;
+};
+
+const result = (request: ToolRequestV2, status: ToolResultV2['status'], value: Record<string, unknown> | null, sourceVersion: string | null, evidenceRefs: string[] = [], stateRevision = request.expectedStateRevision): ToolResultV2 => ({
+  schemaVersion: 2,
+  toolCallId: request.toolCallId,
+  status,
+  result: value,
+  evidenceRefs: evidenceRefs.slice(0, 32),
+  sourceVersion,
+  stateRevision,
+});
+
+const toolEvidence = (toolName: V2ToolName, sourceVersion: string, claims: string[]) => {
+  const evidence = claims.filter((claim) => claim.trim()).slice(0, 16).map((text, index) => ({
+    citationId: `tool-${digest(`${toolName}:${sourceVersion}:${index}:${text}`).slice(0, 32)}`,
+    text: bounded(text, 1_500),
+    sourceVersion,
+    approved: true as const,
+    revoked: false as const,
+    sourceRef: `tool-${toolName}`,
+  }));
+  return { evidence, evidenceRefs: evidence.map((item) => item.citationId) };
+};
+
+const resultWithToolEvidence = (request: ToolRequestV2, value: Record<string, unknown>, toolName: V2ToolName, sourceVersion: string, claims: string[], stateRevision = request.expectedStateRevision): ToolResultV2 => {
+  const generated = toolEvidence(toolName, sourceVersion, claims);
+  return result(request, 'ok', { ...value, evidence: generated.evidence }, sourceVersion, generated.evidenceRefs, stateRevision);
+};
+
+const actionLabel = (workflowKey: string, actionKey: string | null): string => {
+  if (/account/iu.test(workflowKey) || /account/iu.test(actionKey ?? '')) return 'Account creation';
+  if (/lead/iu.test(workflowKey) || /lead/iu.test(actionKey ?? '')) return 'Lead registration';
+  if (/document/iu.test(workflowKey) || /document/iu.test(actionKey ?? '')) return 'Document processing';
+  return 'The authorized business action';
+};
+
+const sanitizedToolError = (request: ToolRequestV2, status: ToolResultV2['status'], code: string, stateRevision = request.expectedStateRevision): ToolResultV2 => result(request, status, { code }, null, [], stateRevision);
+
+const catalogForScope = async (store: Store, scope: ScopePayload): Promise<IntentCatalogVersion | null> => {
+  const catalog = await store.getIntentCatalogVersion(scope.tenantId, scope.catalogVersionId);
+  return catalog?.status === 'published' ? catalog : null;
+};
+
+const catalogProjection = (catalog: IntentCatalogVersion): Record<string, unknown> => ({
+  intents: catalog.catalog.intents.filter((intent) => intent.active).map((intent) => ({ key: intent.intentKey, name: intent.displayName, description: intent.description })),
+  slots: catalog.catalog.slots.filter((slot) => slot.required).map((slot) => ({ intentKey: slot.intentKey, key: slot.slotKey, promptKey: slot.promptKey, dataType: slot.dataType })),
+  journeys: (catalog.catalog.journeyRequirements ?? []).map((requirement) => ({ intentKey: requirement.intentKey, key: requirement.requirementKey, type: requirement.requirementType, required: requirement.required })),
+});
+
+const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, session: Session, catalog: IntentCatalogVersion, store: Store, embedding: EmbeddingProvider): Promise<ToolResultV2> => {
+  const state = session.conversationState;
+  const intentKey = activeIntent(session);
+  const entry = activeEntry(session);
+  const values = entry?.slotValues ?? state?.slotValues ?? {};
+  const completed = entry?.completedRequirementKeys ?? [];
+  const sourceVersion = catalog.id;
+
+  switch (request.toolName as V2ToolName) {
+    case 'get_conversation_context': {
+      const phase = state?.phase ?? 'DISCOVERY';
+      const workflowStatus = state?.workflowStatus ?? 'none';
+      const pendingRequirementKey = state?.pendingPrompt?.requirementKey ?? null;
+      return resultWithToolEvidence(request, { summary: bounded(state?.rollingSummary ?? '', 4_000), phase, workflowStatus, activeIntentKey: intentKey, pendingRequirementKey }, request.toolName as V2ToolName, sourceVersion, [
+        `The current conversation phase is ${phase} and the workflow status is ${workflowStatus}.`,
+        intentKey ? `The active business goal is ${intentKey}.` : 'No business goal is currently active.',
+        pendingRequirementKey ? `The next server-authorized requirement is ${pendingRequirementKey}.` : 'No server-authorized requirement is currently pending.',
+      ]);
+    }
+    case 'get_persona': {
+      const persona = await store.getPersonaVersion(scope.tenantId, scope.personaVersionId);
+      if (!persona || persona.status !== 'published') return sanitizedToolError(request, 'temporarily_unavailable', 'PERSONA_UNAVAILABLE');
+      return result(request, 'ok', { name: persona.name, tone: persona.tone, speakingStyle: persona.speakingStyle, permittedLanguages: persona.permittedLanguages }, persona.id);
+    }
+    case 'get_intent_catalog': {
+      const projection = catalogProjection(catalog);
+      const activeIntentCount = catalog.catalog.intents.filter((intent) => intent.active).length;
+      return resultWithToolEvidence(request, projection, request.toolName as V2ToolName, sourceVersion, [
+        `The published catalog version ${sourceVersion} contains ${activeIntentCount} active business-goal definitions.`,
+        ...(catalog.catalog.journeyRequirements ?? []).slice(0, 8).map((journey) => `The published catalog defines ${journey.requirementKey} as a ${journey.requirementType} requirement for ${journey.intentKey}.`),
+      ]);
+    }
+    case 'get_missing_requirements': {
+      if (!intentKey) return result(request, 'ok', { intentKey: null, requirement: null }, sourceVersion);
+      const requirement = catalogNextJourneyRequirement(catalog, intentKey, values, completed) ?? catalogNextFollowUpRequirement(catalog, intentKey, values, completed);
+      return resultWithToolEvidence(request, { intentKey, requirement: requirement ? { key: requirement.requirementKey, type: requirement.requirementType, promptKey: requirement.promptKey, documentType: requirement.documentType ?? null } : null }, request.toolName as V2ToolName, sourceVersion, [
+        requirement ? `The next server-authorized requirement is ${requirement.requirementKey}.` : 'No server-authorized requirement is currently pending.',
+      ]);
+    }
+    case 'search_knowledge': {
+      const args = searchArguments.parse(request.arguments);
+      const normalizedQuery = normalizeConversationQuery(args.query);
+      const evidence = await retrieveApprovedKnowledge(store, embedding, scope.tenantId, 'public', normalizedQuery, args.resultCount ?? 4);
+      const approved = (await Promise.all(evidence.map(async (item) => {
+        const source = await store.getSource(item.citation.sourceId);
+        return source && source.tenantId === scope.tenantId && source.status === 'active' && source.versionId === item.citation.versionId ? item : null;
+      }))).filter((item): item is NonNullable<typeof item> => Boolean(item));
+      const evidenceRefs = approved.map((item) => digest(`${item.citation.sourceId}:${item.citation.versionId}:${item.citation.chunkId}`).slice(0, 32));
+      return result(request, 'ok', { grounded: approved.length > 0, evidence: approved.map((item, index) => ({ citationId: evidenceRefs[index], text: bounded(sanitizeKnowledgeText(item.content), 1_500), sourceVersion: item.citation.versionId, approved: true, revoked: false, sourceRef: item.citation.sourceId })) }, sourceVersion, evidenceRefs);
+    }
+    case 'get_journey_state': {
+      const lifecycle = entry?.lifecycle ?? null;
+      const scopedLifecycle = Boolean(scope.opportunityId && entry?.journeyId === scope.opportunityId);
+      const value = {
+        activeIntentKey: intentKey,
+        currentStage: scopedLifecycle ? lifecycle?.currentStage ?? null : null,
+        stageStatuses: scopedLifecycle && lifecycle ? Object.fromEntries(Object.entries(lifecycle.stages).map(([key, value]) => [key, value.status])) : {},
+        pendingRequirementKey: state?.pendingPrompt?.requirementKey ?? entry?.currentRequirementKey ?? null,
+        contactConsent: state?.contactConsent ?? 'unknown',
+        workflowStatus: state?.workflowStatus ?? 'none',
+        opportunityBound: scopedLifecycle,
+      };
+      return resultWithToolEvidence(request, value, request.toolName as V2ToolName, sourceVersion, [
+        scopedLifecycle && lifecycle?.currentStage ? `The authoritative journey is currently at ${lifecycle.currentStage}.` : 'No opportunity is currently bound to the requested journey state.',
+        value.pendingRequirementKey ? `The next server-authorized requirement is ${value.pendingRequirementKey}.` : 'No server-authorized requirement is currently pending.',
+        `Contact consent is ${value.contactConsent}.`,
+        `The current workflow status is ${value.workflowStatus}.`,
+      ]);
+    }
+    case 'get_available_packages': {
+      const offerings = await store.listPackageOfferings(scope.tenantId, { catalogVersionId: catalog.id, ...(values.business_activity ? { activity: values.business_activity } : {}), ...(values.entity_type ? { entityType: values.entity_type } : {}) });
+      const packages = offerings.map((offering) => ({ key: offering.packageKey, name: offering.name, visas: offering.includedVisaQuantity, officeRequirement: offering.officeRequirement, inclusions: offering.inclusions, availability: offering.availability, priceMinor: offering.priceMinor, currency: offering.currency, sourceRefs: offering.sourceRefs }));
+      return resultWithToolEvidence(request, { packages }, request.toolName as V2ToolName, sourceVersion, offerings.length > 0
+        ? offerings.map((offering) => `The approved package ${offering.name} is listed with availability ${offering.availability}${offering.priceMinor !== null && offering.currency ? ` and a verified price of ${offering.currency} ${(offering.priceMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}.` : '.'}`)
+        : ['No approved package is currently available for this setup.']);
+    }
+    case 'get_document_requirements': {
+      // Read only documents for the confirmed package and approved quotation in this opportunity.
+      if (!scope.opportunityId) return resultWithToolEvidence(request, { selectionStatus: 'opportunity_required', documents: [] }, request.toolName as V2ToolName, sourceVersion, ['An opportunity is required before document requirements can be verified.']);
+      const selections = await store.listPackageSelections(scope.tenantId, scope.opportunityId);
+      const selected = selections.find((s) => s.status === 'confirmed' && s.tenantId === scope.tenantId && s.sessionId === scope.sessionId && s.opportunityId === scope.opportunityId && s.quoteId);
+      if (!selected || !selected.quoteId) return resultWithToolEvidence(request, { selectionStatus: 'package_not_confirmed', documents: [] }, request.toolName as V2ToolName, sourceVersion, ['No confirmed package is available for document requirements.']);
+      const [offering, quote] = await Promise.all([
+        store.getPackageOffering(selected.packageOfferingId, scope.tenantId),
+        store.getQuote(selected.quoteId, scope.tenantId),
+      ]);
+      if (!offering || !quote || offering.tenantId !== scope.tenantId || offering.catalogVersionId !== catalog.id || offering.approvalStatus !== 'approved' || quote.status !== 'approved' || quote.tenantId !== scope.tenantId || quote.opportunityId !== scope.opportunityId || quote.packageOfferingId !== offering.id || Date.parse(quote.validUntil) <= Date.now()) {
+        return resultWithToolEvidence(request, { selectionStatus: 'package_or_quote_unverified', documents: [] }, request.toolName as V2ToolName, sourceVersion, ['The package or quotation is not currently verified for document collection.']);
+      }
+      const documents = offering.requiredDocuments.map((documentType) => ({ packageKey: offering.packageKey, documentType }));
+      return resultWithToolEvidence(request, {
+        selectionStatus: 'confirmed',
+        packageKey: offering.packageKey,
+        documents,
+      }, request.toolName as V2ToolName, sourceVersion, [`The confirmed package ${offering.packageKey} requires ${offering.requiredDocuments.join(', ')}.`]);
+    }
+    case 'get_action_status': {
+      if (!scope.opportunityId) return result(request, 'ok', { actions: [] }, sourceVersion);
+      const actions = await store.listActionsBySession(scope.sessionId, scope.tenantId);
+      const scoped = actions.filter((action) => action.opportunityId === scope.opportunityId);
+      const status = await Promise.all(scoped.map(async (action) => {
+        const execution = await store.getActionExecution(action.id, scope.tenantId);
+        const evidenceStatus = deriveV2ProviderEvidenceStatus({ actionState: action.state, providerStatus: execution?.providerStatus ?? null, evidenceTier: execution?.outcome?.evidenceTier });
+        return { workflowKey: action.workflowKey, state: action.state, actionKey: action.actionKey ?? null, providerAcknowledged: Boolean(action.result?.externalReference), providerStatus: execution?.providerStatus ?? null, evidenceStatus, stageCompletionEligible: v2StageCompletionEligible(evidenceStatus) };
+      }));
+      const claims = status.length > 0
+        ? status.map((item) => {
+          const label = actionLabel(item.workflowKey, item.actionKey);
+          if (item.stageCompletionEligible) return `The verified provider outcome for ${label} is complete.`;
+          if (item.state === 'awaiting_confirmation') return `${label} is awaiting customer confirmation.`;
+          return `${label} is awaiting verified provider evidence.`;
+        })
+        : ['No authorized business action is currently recorded for this opportunity.'];
+      return resultWithToolEvidence(request, { actions: status }, request.toolName as V2ToolName, sourceVersion, claims);
+    }
+  }
+};
+
+export interface V2ToolGatewayDependencies {
+  store: Store;
+  embedding: EmbeddingProvider;
+  serviceKey: string;
+}
+
+export const createV2ToolGateway = ({ store, embedding, serviceKey }: V2ToolGatewayDependencies) => {
+  const replayCache = new Map<string, { argsDigest: string; value: ToolResultV2 }>();
+  const remember = (key: string, argsDigest: string, value: ToolResultV2): void => {
+    replayCache.set(key, { argsDigest, value });
+    while (replayCache.size > 1_024) replayCache.delete(replayCache.keys().next().value!);
+  };
+  const execute = async (input: unknown): Promise<ToolResultV2> => {
+    const parsed = toolRequestSchema.safeParse(input);
+    if (!parsed.success) {
+      console.error(JSON.stringify({ event: 'v2.tool.invalid_request', issues: parsed.error.issues.map((issue) => ({ code: issue.code, path: issue.path })) }));
+      return sanitizedToolError({ schemaVersion: 2, toolCallId: 'invalid-call', toolName: 'invalid', arguments: {}, scopeRef: 'invalid-scope', expectedStateRevision: 0, deadlineAt: new Date().toISOString() } as ToolRequestV2, 'invalid_args', 'INVALID_TOOL_REQUEST');
+    }
+    const request = parsed.data;
+    const requestDeadline = Date.parse(request.deadlineAt);
+    if (!Number.isFinite(requestDeadline) || requestDeadline <= Date.now()) return sanitizedToolError(request, 'temporarily_unavailable', 'TOOL_DEADLINE_EXCEEDED');
+    const scope = verifyV2Scope(request.scopeRef, serviceKey);
+    if (!scope) return sanitizedToolError(request, 'not_authorized', 'SCOPE_INVALID');
+    const cacheKey = `${request.scopeRef}:${request.toolCallId}`;
+    const argsDigest = digest(JSON.stringify(request.arguments));
+    const cached = replayCache.get(cacheKey);
+    if (cached) return cached.argsDigest === argsDigest ? cached.value : sanitizedToolError(request, 'not_authorized', 'TOOL_CALL_REUSE_MISMATCH', scope.stateRevision);
+    if (!scope.toolAllowlist.includes(request.toolName as V2ToolName) || !V2_TOOL_NAMES.includes(request.toolName as V2ToolName)) return sanitizedToolError(request, 'not_authorized', 'TOOL_NOT_ALLOWED', scope.stateRevision);
+    const session = await store.getSession(scope.sessionId);
+    if (!session || session.tenantId !== scope.tenantId) return sanitizedToolError(request, 'not_authorized', 'SESSION_SCOPE_DENIED', scope.stateRevision);
+    if ((session.stateVersion ?? 0) !== scope.stateRevision || request.expectedStateRevision !== scope.stateRevision) return sanitizedToolError(request, 'stale_state', 'STATE_REVISION_STALE', session.stateVersion ?? 0);
+    if (session.personaVersionId !== scope.personaVersionId || session.conversationState?.catalogVersionId !== scope.catalogVersionId) return sanitizedToolError(request, 'stale_state', 'PINNED_CONTEXT_STALE', session.stateVersion ?? 0);
+    const entry = activeEntry(session);
+    if (scope.opportunityId && entry?.journeyId !== scope.opportunityId) return sanitizedToolError(request, 'not_authorized', 'OPPORTUNITY_SCOPE_DENIED', scope.stateRevision);
+    const catalog = await catalogForScope(store, scope);
+    if (!catalog) return sanitizedToolError(request, 'temporarily_unavailable', 'CATALOG_UNAVAILABLE', scope.stateRevision);
+    try {
+      const parsedArguments = argumentSchemas[request.toolName as V2ToolName]?.safeParse(request.arguments);
+      if (!parsedArguments?.success) return sanitizedToolError(request, 'invalid_args', 'TOOL_ARGUMENTS_INVALID', scope.stateRevision);
+      const value = await toolResultFor(request, scope, session, catalog, store, embedding);
+      remember(cacheKey, argsDigest, value);
+      await store.addAudit({ id: randomBytes(16).toString('hex'), tenantId: scope.tenantId, actorId: null, eventName: 'v2.tool.read', metadata: { sessionId: scope.sessionId, toolName: request.toolName, toolCallDigest: digest(request.toolCallId).slice(0, 16), scopeDigest: digest(request.scopeRef).slice(0, 16), status: value.status, stateRevision: scope.stateRevision }, createdAt: new Date().toISOString() });
+      return value;
+    } catch {
+      const value = sanitizedToolError(request, 'temporarily_unavailable', 'TOOL_UNAVAILABLE', scope.stateRevision);
+      remember(cacheKey, argsDigest, value);
+      return value;
+    }
+  };
+  return { execute };
+};
+
+export const registerV2ToolGateway = (app: Express, dependencies: V2ToolGatewayDependencies): void => {
+  const gateway = createV2ToolGateway(dependencies);
+  const authenticate = (req: Request, _res: Response, next: NextFunction): void => {
+    const expected = Buffer.from(dependencies.serviceKey);
+    const provided = Buffer.from(req.header('x-internal-service-key') ?? '');
+    if (!dependencies.serviceKey || expected.length !== provided.length || !timingSafeEqual(expected, provided)) { next(new HttpError(401, 'V2_TOOL_GATEWAY_UNAUTHORIZED', 'Internal tool gateway authentication failed.')); return; }
+    next();
+  };
+  app.post('/internal/v2/tools/execute', authenticate, async (req, res, next) => {
+    try { res.status(200).json(await gateway.execute(req.body)); } catch (error) { next(error); }
+  });
+};

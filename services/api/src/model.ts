@@ -372,13 +372,20 @@ export const hasSufficientEvidence = (answer: string, evidence: ModelEvidence[],
   const highRisk = ['guarantee', 'guaranteed', 'approved', 'eligible', 'eligibility', 'required', 'requires', 'includes', 'included', 'qualifies', 'available', 'fastest', 'complete in', 'lowest price'];
   return answer.split(/(?<=[.!?])\s+/u).every((claim) => {
     const normalizedClaim = claim.toLocaleLowerCase('en-US');
-    const numbers = normalizedClaim.match(/\b\d+(?:[.,]\d+)?\b/g) ?? [];
-    if (numbers.some((number) => !citedContent.includes(number))) return false;
-    const claimWithoutEmail = normalizedClaim.replace(/\bemail\s+[^\s@]+@[^\s@]+\b/gu, ' pii ').replace(/\b[^\s@]+@[^\s@]+\b/gu, ' pii ');
-    const terms = (claimWithoutEmail.match(/[a-z\u00c0-\u024f]{4,}/gu) ?? []).filter((term, index, values) => !['that', 'this', 'with', 'from', 'your', 'approved', 'answer', 'pii', 'here', 'verify', 'verified', 'know', 'information', 'complete', 'step', 'steps'].includes(term) && values.indexOf(term) === index);
-    if (terms.length > 0 && !terms.some((term) => citedContent.includes(term))) return false;
-    const riskTerms = highRisk.filter((term) => normalizedClaim.includes(term));
-    return riskTerms.every((term) => citedContent.includes(term));
+    return normalizedClaim.split(/\s+(?:and|but|while)\s+/u).every((clause) => {
+      const numbers = clause.match(/\b\d+(?:[.,]\d+)?\b/g) ?? [];
+      if (numbers.some((number) => !citedContent.includes(number))) return false;
+      if (normalizationNegation(clause) && !normalizationNegation(citedContent)) return false;
+      const claimWithoutEmail = clause.replace(/\bemail\s+[^\s@]+@[^\s@]+\b/gu, ' pii ').replace(/\b[^\s@]+@[^\s@]+\b/gu, ' pii ');
+      const terms = (claimWithoutEmail.match(/[a-z\u00c0-\u024f]{4,}/gu) ?? []).filter((term, index, values) => !['that', 'this', 'with', 'from', 'your', 'approved', 'answer', 'pii', 'here', 'verify', 'verified', 'know', 'information', 'complete', 'step', 'steps', 'thanks', 'clarifying', 'noted', 'note', 'said', 'told', 'stated', 'current', 'details', 'detail', 'remaining', 'requirement', 'requirements', 'share', 'sharing'].includes(term) && values.indexOf(term) === index);
+      if (terms.length > 0 && !terms.some((term) => citedContent.includes(term))) return false;
+      if (!normalizationNegation(clause) && terms.length > 0 && citedContent.split(/(?<=[.!?])\s+/u).some((sentence) => {
+        const negatedTail = sentence.match(/\b(?:no|not|never|without|neither|nor|cannot|can't|doesn't|does not|didn't|did not|won't|will not)\b([\s\S]*)/iu)?.[1] ?? '';
+        return Boolean(negatedTail) && terms.filter((term) => negatedTail.includes(term)).length >= Math.min(2, terms.length);
+      })) return false;
+      const riskTerms = highRisk.filter((term) => clause.includes(term));
+      return riskTerms.every((term) => citedContent.includes(term));
+    });
   });
 };
 

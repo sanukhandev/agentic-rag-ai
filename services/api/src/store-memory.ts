@@ -1,14 +1,16 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, FoundryConversationBinding, IngestionJob, IntentCatalogVersion, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
+import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, FoundryConversationBinding, IngestionJob, IntentCatalogV2Version, IntentCatalogVersion, IntentTurnAssessment, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, UserIntentDocument, WorkflowActionClaim } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
 import { HttpError } from './http/errors.js';
 import { isWorkflowClaimableBinding } from './intent-catalog.js';
+import { assertSafeIntentTurn, assertSafeUserIntentDocument } from './user-intent-document.js';
 
 const now = (): string => new Date().toISOString();
 const isUuid = (value: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
+const intentDocumentKey = (tenantId: string, sessionId: string): string => `${tenantId}:${sessionId}`;
 
 export class MemoryStore implements Store {
   private readonly tenants = new Map<string, Tenant>();
@@ -19,6 +21,9 @@ export class MemoryStore implements Store {
   private readonly channelCredentials = new Map<string, ChannelCredential>();
   private readonly personas = new Map<string, Persona>();
   private readonly intentCatalogVersions = new Map<string, IntentCatalogVersion[]>();
+  private readonly intentCatalogV2Versions = new Map<string, IntentCatalogV2Version[]>();
+  private readonly intentDocuments = new Map<string, UserIntentDocument>();
+  private readonly intentTurns = new Map<string, IntentTurnAssessment>();
   private readonly personaVersions = new Map<string, PersonaVersion[]>();
   private readonly sources = new Map<string, Source>();
   private readonly sourceVersions = new Map<string, SourceVersion[]>();
@@ -130,6 +135,65 @@ export class MemoryStore implements Store {
     const updated = versions.map((version) => ({ ...version, status: version.id === versionId ? 'published' as const : 'draft' as const, publishedAt: version.id === versionId ? publishedAt : version.publishedAt }));
     this.intentCatalogVersions.set(tenantId, updated);
     return updated.find((version) => version.id === versionId) ?? null;
+  }
+  async createIntentCatalogV2Version(input: Omit<IntentCatalogV2Version, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<IntentCatalogV2Version> {
+    const versions = this.intentCatalogV2Versions.get(input.tenantId) ?? [];
+    const version: IntentCatalogV2Version = { ...input, id: randomUUID(), version: versions.length + 1, createdAt: now(), publishedAt: null };
+    this.intentCatalogV2Versions.set(input.tenantId, [...versions, version]);
+    return version;
+  }
+  async listIntentCatalogV2Versions(tenantId: string): Promise<IntentCatalogV2Version[]> { return [...(this.intentCatalogV2Versions.get(tenantId) ?? [])].sort((left, right) => right.version - left.version); }
+  async getIntentCatalogV2Version(tenantId: string, versionId: string): Promise<IntentCatalogV2Version | null> { return (this.intentCatalogV2Versions.get(tenantId) ?? []).find((version) => version.id === versionId) ?? null; }
+  async publishIntentCatalogV2Version(tenantId: string, versionId: string): Promise<IntentCatalogV2Version | null> {
+    const versions = this.intentCatalogV2Versions.get(tenantId) ?? [];
+    if (!versions.some((version) => version.id === versionId)) return null;
+    const publishedAt = now();
+    const updated = versions.map((version) => ({ ...version, status: version.id === versionId ? 'published' as const : 'draft' as const, publishedAt: version.id === versionId ? publishedAt : version.publishedAt }));
+    this.intentCatalogV2Versions.set(tenantId, updated);
+    return updated.find((version) => version.id === versionId) ?? null;
+  }
+  async createUserIntentDocument(document: UserIntentDocument): Promise<UserIntentDocument> {
+    assertSafeUserIntentDocument(document);
+    const session = this.sessions.get(document.sessionId);
+    if (!session || session.tenantId !== document.tenantId) throw new HttpError(403, 'INTENT_DOCUMENT_SESSION_FORBIDDEN', 'User intent document session access denied.');
+    const key = intentDocumentKey(document.tenantId, document.sessionId);
+    if (this.intentDocuments.has(key)) throw new HttpError(409, 'INTENT_DOCUMENT_EXISTS', 'A user intent document already exists for this session.');
+    const stored = structuredClone(document);
+    this.intentDocuments.set(key, stored);
+    return structuredClone(stored);
+  }
+  async getUserIntentDocument(tenantId: string, sessionId: string): Promise<UserIntentDocument | null> {
+    const document = this.intentDocuments.get(intentDocumentKey(tenantId, sessionId));
+    return document ? structuredClone(document) : null;
+  }
+  async updateUserIntentDocument(input: { document: UserIntentDocument; expectedRevision: number }): Promise<UserIntentDocument | null> {
+    assertSafeUserIntentDocument(input.document);
+    const key = intentDocumentKey(input.document.tenantId, input.document.sessionId);
+    const current = this.intentDocuments.get(key);
+    if (!current || current.id !== input.document.id || current.revision !== input.expectedRevision || !this.sessions.has(input.document.sessionId)) return null;
+    const updated = { ...structuredClone(input.document), revision: input.expectedRevision + 1, updatedAt: now() };
+    assertSafeUserIntentDocument(updated);
+    this.intentDocuments.set(key, updated);
+    return structuredClone(updated);
+  }
+  async appendIntentTurn(assessment: IntentTurnAssessment): Promise<IntentTurnAssessment> {
+    assertSafeIntentTurn(assessment);
+    const document = this.intentDocuments.get(intentDocumentKey(assessment.tenantId, assessment.sessionId));
+    if (!document || document.id !== assessment.documentId) throw new HttpError(404, 'INTENT_DOCUMENT_NOT_FOUND', 'User intent document not found.');
+    if (document.opportunityId !== assessment.opportunityId) throw new HttpError(409, 'INTENT_TURN_SCOPE_CONFLICT', 'The intent turn opportunity does not match the document scope.');
+    const existing = [...this.intentTurns.values()].find((turn) => turn.tenantId === assessment.tenantId && turn.sessionId === assessment.sessionId && turn.clientMessageId === assessment.clientMessageId);
+    if (existing) {
+      if (existing.messageHash !== assessment.messageHash) throw new HttpError(409, 'INTENT_TURN_REUSED', 'The client message id is already bound to different content.');
+      return structuredClone(existing);
+    }
+    if ([...this.intentTurns.values()].some((turn) => turn.documentId === assessment.documentId && turn.turnSequence === assessment.turnSequence)) throw new HttpError(409, 'INTENT_TURN_SEQUENCE_CONFLICT', 'The intent turn sequence is already recorded.');
+    const stored = structuredClone(assessment);
+    this.intentTurns.set(stored.id, stored);
+    return structuredClone(stored);
+  }
+  async listIntentTurns(tenantId: string, sessionId: string, limit?: number): Promise<IntentTurnAssessment[]> {
+    const turns = [...this.intentTurns.values()].filter((turn) => turn.tenantId === tenantId && turn.sessionId === sessionId).sort((left, right) => left.turnSequence - right.turnSequence);
+    return structuredClone(limit === undefined ? turns : turns.slice(-limit));
   }
   async createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion> {
     const versions = this.personaVersions.get(input.tenantId) ?? [];
@@ -317,7 +381,12 @@ export class MemoryStore implements Store {
     this.sessions.set(session.id, structuredClone(session));
     return session;
   }
-  async addMessage(message: Message): Promise<Message> { this.messages.set(message.id, message); return message; }
+  async addMessage(message: Message): Promise<Message> {
+    const existing = [...this.messages.values()].find((candidate) => candidate.sessionId === message.sessionId && candidate.clientMessageId === message.clientMessageId);
+    if (existing) return existing;
+    this.messages.set(message.id, message);
+    return message;
+  }
   async updateMessage(message: Message): Promise<Message> { this.messages.set(message.id, message); return message; }
   async listMessages(sessionId: string, tenantId: string, limit?: number): Promise<Message[]> {
     const messages = [...this.messages.values()].filter((message) => message.sessionId === sessionId && message.tenantId === tenantId).sort((left, right) => left.createdAt.localeCompare(right.createdAt));
@@ -592,7 +661,7 @@ export class MemoryStore implements Store {
   async createContract(contract: Contract): Promise<Contract> { this.contracts.set(contract.id, contract); return contract; }
   async getContract(id: string, tenantId: string): Promise<Contract | null> { const contract = this.contracts.get(id); return contract?.tenantId === tenantId ? contract : null; }
   async updateContract(contract: Contract): Promise<Contract> { this.contracts.set(contract.id, contract); return contract; }
-  async enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent> { const existing = this.outbox.get(event.eventId); if (existing) return existing; this.outbox.set(event.eventId, event); return event; }
+  async enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent> { const existing = [...this.outbox.values()].find((candidate) => candidate.stream === event.stream && candidate.idempotencyKey === event.idempotencyKey); if (existing) return existing; this.outbox.set(event.eventId, event); return event; }
   async claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]> {
     const current = Date.now();
     const claimed = [...this.outbox.values()].filter((event) => !event.publishedAt && !this.deadLetteredOutbox.has(event.eventId) && (!event.leaseExpiresAt || Date.parse(event.leaseExpiresAt) <= current)).sort((left, right) => left.occurredAt.localeCompare(right.occurredAt)).slice(0, limit).map((event) => ({ ...event, attempts: event.attempts + 1, leaseExpiresAt: new Date(current + leaseMs).toISOString() }));

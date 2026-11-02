@@ -83,7 +83,8 @@ const defaultVault = new TokenVault(process.env.PII_VAULT_KEY ?? 'local-developm
 
 export const maskPii = (input: string): MaskResult => {
   const tokens: Array<{ token: string; value: string }> = [];
-  let masked = input;
+  // Credential values are not vault tokens: they are never eligible for rehydration.
+  let masked = sanitizeCredentialText(input);
   const replace = (pattern: RegExp, kind: string): void => {
     masked = masked.replace(pattern, (value) => {
       const tokenValue = token(kind, tokens.filter((item) => item.token.startsWith(`[${kind}_`)).length + 1);
@@ -106,13 +107,22 @@ export const maskPii = (input: string): MaskResult => {
   const introductionName = new RegExp(String.raw`\b(?:my name is|i am|i'm)\s+(${nameComponent}(?:\s+(?!(?:and|but|i|i'm|im|need|want|for|from|with|please)\b)${nameComponent}){0,3})(?=\s*(?:[,.!?;]|$|\b(?:and|but|i|i'm|im|need|want|for|from|with|please)\b))`, 'giu');
   replaceName(introductionName, (name) => !nonNameOpeners.has(name.split(/\s+/u)[0]?.toLocaleLowerCase('en-US') ?? ''));
   replace(/\b(?:passport|account|customer|member)[ #:-]*[A-Z0-9-]{4,}\b/gi, 'ID');
-  return { masked, tokens };
+  return { masked: sanitizeCredentialText(masked), tokens };
 };
 
-export const sanitizeKnowledgeText = (input: string): string => input
+/** Credentials are never tokenized: they must not be recoverable by any model-facing path. */
+const sanitizeCredentialText = (input: string): string => input
+  .replace(/(api[_ -]?key|secret|password|token)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED_SECRET]')
+  .replace(/\b(?:otp|one[- ]time(?: password)?|verification code)\s*(?:is|[:=#-])?\s*\d{4,8}\b/gi, '[REDACTED_OTP]')
+  .replace(/\b(?:cvv|cvc|security code)\s*(?:is|[:=#-])?\s*\d{3,4}\b/gi, '[REDACTED_PAYMENT]')
+  .replace(/\b(?:card|pan)\s*(?:number|no\.?)?\s*(?:is|[:=#-])?\s*(?:\d[ -]?){12,18}\d\b/gi, '[REDACTED_PAYMENT]')
+  .replace(/\b(?:bank\s+account|account)\s*(?:number|no\.?)?\s*(?:is|[:=#-])?\s*\d{8,20}\b/gi, '[REDACTED_PAYMENT]');
+
+export const sanitizeSensitiveText = (input: string): string => sanitizeCredentialText(input)
   .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[REDACTED_EMAIL]')
-  .replace(/(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)/g, '[REDACTED_PHONE]')
-  .replace(/(api[_ -]?key|secret|password|token)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED_SECRET]');
+  .replace(/(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)/g, '[REDACTED_PHONE]');
+
+export const sanitizeKnowledgeText = (input: string): string => sanitizeSensitiveText(input);
 
 export const assertKnownTokens = (session: Session, text: string, vault: TokenVault = defaultVault): void => {
   const placeholders = text.match(/\[(?:EMAIL|PHONE|NAME|ID)_\d+\]/g) ?? [];

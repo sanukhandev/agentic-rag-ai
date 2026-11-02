@@ -4,6 +4,7 @@ export interface CacheStore {
   get<T>(key: string): Promise<T | null>;
   set<T>(key: string, value: T, ttlSeconds: number): Promise<void>;
   delete(key: string): Promise<void>;
+  invalidate(prefix: string): Promise<void>;
   ping(): Promise<boolean>;
   close(): Promise<void>;
 }
@@ -13,6 +14,18 @@ type Entry = { value: unknown; expiresAt: number };
 const ttlMs = (ttlSeconds: number): number => Number.isFinite(ttlSeconds) ? Math.max(0, Math.floor(ttlSeconds * 1000)) : 0;
 
 export const cacheKey = (...parts: string[]): string => `agentic:${parts.map((part) => encodeURIComponent(part)).join(':')}`;
+
+export class Singleflight {
+  private readonly pending = new Map<string, Promise<unknown>>();
+
+  async run<T>(key: string, work: () => Promise<T>): Promise<T> {
+    const existing = this.pending.get(key);
+    if (existing) return existing as Promise<T>;
+    const current = Promise.resolve().then(work);
+    this.pending.set(key, current);
+    try { return await current; } finally { if (this.pending.get(key) === current) this.pending.delete(key); }
+  }
+}
 
 export class MemoryCache implements CacheStore {
   private readonly entries = new Map<string, Entry>();
@@ -39,6 +52,10 @@ export class MemoryCache implements CacheStore {
   }
 
   async delete(key: string): Promise<void> { this.entries.delete(key); }
+
+  async invalidate(prefix: string): Promise<void> {
+    for (const key of this.entries.keys()) if (key.startsWith(prefix)) this.entries.delete(key);
+  }
 
   async ping(): Promise<boolean> { return true; }
 
@@ -98,6 +115,16 @@ export class RedisCache implements CacheStore {
     await this.fallback.delete(key);
     if (!(await this.ensureConnected())) return;
     try { await this.client.del(key); } catch { this.markUnavailable(); }
+  }
+
+  async invalidate(prefix: string): Promise<void> {
+    await this.fallback.invalidate(prefix);
+    if (!(await this.ensureConnected())) return;
+    try {
+      const keys: string[] = [];
+      for await (const batch of this.client.scanIterator({ MATCH: `${prefix}*`, COUNT: 100 })) keys.push(...batch);
+      for (const key of keys) await this.client.del(key);
+    } catch { this.markUnavailable(); }
   }
 
   async ping(): Promise<boolean> {

@@ -17,6 +17,7 @@ class PlanRequest(Strict):
     catalog: dict[str, Any] = Field(default_factory=dict)
     evidence: list[Evidence] = Field(default_factory=list, max_length=12)
     responseMode: str = Field(default="dialogue", max_length=80)
+    deadlineAt: str | None = Field(default=None, max_length=80)
 
 class PlanResult(Strict):
     answer: str = Field(min_length=1, max_length=12000)
@@ -28,6 +29,10 @@ class PlanResult(Strict):
     proposedToolKey: str | None = None
     conversationSummary: str = Field(default="", max_length=3000)
     confidenceBand: Literal["low", "medium", "high"]
+    candidateGoalKeys: list[str] = Field(default_factory=list, max_length=8)
+    matchedSignalIds: list[str] = Field(default_factory=list, max_length=32)
+    supportingTopicKeys: list[str] = Field(default_factory=list, max_length=16)
+    runnerUpScore: float | None = Field(default=None, ge=0, le=100)
     modelRequestId: str | None = None
 
 class NormalizeRequest(Strict):
@@ -35,6 +40,7 @@ class NormalizeRequest(Strict):
     message: str = Field(max_length=4000)
     conversationSummary: str = Field(default="", max_length=2000)
     catalog: dict[str, Any] = Field(default_factory=dict)
+    deadlineAt: str | None = Field(default=None, max_length=80)
 
 class NormalizeResult(Strict):
     normalizedQuery: str = Field(max_length=4000)

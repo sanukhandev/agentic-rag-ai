@@ -77,7 +77,7 @@ const executeReadTool = async (name: AgentToolName, context: AgentToolContext, i
     }
     case 'get_customer_registration_status': {
       const actions = await context.store.listActionsBySession(context.session.id, context.session.tenantId);
-      const scoped = actions.filter((action) => !context.opportunityId || action.opportunityId === context.opportunityId);
+      const scoped = context.opportunityId ? actions.filter((action) => action.opportunityId === context.opportunityId) : [];
       const lead = await context.store.getCrmLeadBySessionId(context.session.id, context.session.tenantId);
       return { name, ok: true, data: { lead: lead ? { id: lead.id, remoteLeadId: lead.leadId ?? null, status: lead.leadId ? 'verified' : 'pending' } : null, actions: scoped.map((action) => ({ id: action.id, workflowKey: action.workflowKey, state: action.state, externalReference: action.result?.externalReference ?? null })) } };
     }
