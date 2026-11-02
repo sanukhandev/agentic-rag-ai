@@ -79,6 +79,11 @@ describe('guardV2Response', () => {
     expect(result.response.answer).not.toContain('payment is complete');
   });
 
+  it('allows a safe negation of an unverified provider outcome', () => {
+    const result = guardV2Response(response({ answer: 'I’ll wait for verified evidence and won’t assume the account is complete.' }), context({ conversational: false, allowNonFactualDialogue: true }));
+    expect(result.verdict.accepted).toBe(true);
+  });
+
   it('blocks legal registration claims without authoritative registration evidence', () => {
     const answer = response({ answer: 'Your company is legally registered.', citationIds: ['fact-12345678'] });
     const evidence = [{ citationId: 'fact-12345678', text: 'The government registration record confirms the company is legally registered.', sourceVersion: 'provider-12345678', approved: true, revoked: false }];

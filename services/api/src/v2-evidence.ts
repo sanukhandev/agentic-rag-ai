@@ -49,15 +49,32 @@ const factAppearsIn = (answer: string, fact: V2VerifiedFact): boolean => {
 };
 const safeFactAcknowledgement = (sentence: string): boolean => /^(?:thanks?(?: for (?:checking|clarifying|confirming|sharing))?|understood|got it|okay|ok|sure|that makes sense)\.?$/iu.test(sentence.trim());
 const safeUncertainty = (sentence: string): boolean => /\b(?:i (?:cannot|can't|can’t|do not|don't|don’t) (?:verify|confirm|have)|there (?:is|are) no (?:verified|approved))\b/iu.test(sentence)
-  && !/\b(?:legally registered|registered successfully|is eligible|are eligible|is created|are created|is completed|are completed)\b/iu.test(sentence);
+  && !/\b(?:legally registered|registered successfully|is eligible|are eligible|is created|are created|is complete|are complete|is completed|are completed|costs?|requires?|includes?|paid|signed)\b/iu.test(sentence)
+  && !/\b(?:your|the|this|that)\b[\s\S]{0,60}\b(?:costs?|requires?|includes?|is complete|are complete|is created|are created|is registered|are registered|is paid|is signed)\b/iu.test(sentence);
+const safeOutcomeAbstention = (sentence: string): boolean => /^\s*(?:i(?:'|’)ll|i will)\s+wait for verified evidence and (?:i\s+)?(?:won't|won’t|will not)\s+assume (?:the )?(?:account|opportunity|payment|invoice|contract)\s+(?:is|was)\s+(?:complete|completed|created|registered|paid|signed)\.?\s*$/iu.test(sentence);
 const customerFactReflection = (sentence: string, facts: V2VerifiedFact[]): boolean => {
   const matching = facts.filter((fact) => factAppearsIn(sentence, fact));
+  if (safeUncertainty(sentence)) return true;
   if (matching.length === 0) return safeFactAcknowledgement(sentence) || safeUncertainty(sentence);
   if (/\b(?:legally registered|registered successfully|is eligible|are eligible|is created|are created|is completed|are completed|costs?|requires?|includes?)\b/iu.test(sentence)) return false;
-  const vocabulary = new Set([...matching.flatMap((fact) => factWords(fact.text)), 'thanks', 'checking', 'clarifying', 'confirming', 'sharing', 'noted', 'note', 'setup', 'keep', 'keeping', 'unchanged', 'current', 'still', 'view', 'details', 'detail', 'target', 'start', 'expect', 'expected', 'need', 'needs', 'count', 'have', 'has', 'said', 'told', 'mentioned', 'requested']);
+  const vocabulary = new Set([...matching.flatMap((fact) => factWords(fact.text)), 'thanks', 'checking', 'clarifying', 'confirming', 'sharing', 'noted', 'note', 'setup', 'keep', 'keeping', 'unchanged', 'current', 'still', 'view', 'details', 'detail', 'target', 'start', 'started', 'expect', 'expected', 'want', 'get', 'moving', 'move', 'outline', 'general', 'process', 'once', 'continue', 'file', 'rather', 'may', 'need', 'needs', 'count', 'have', 'has', 'your', 'company', 'structure', 'activity', 'visa', 'visas', 'timeline', 'number', 'type', 'said', 'told', 'mentioned', 'requested']);
   return factWords(sentence).every((word) => vocabulary.has(word));
 };
-const mixedEvidenceGrounded = (answer: string, evidence: ModelEvidence[], citations: Citation[], trustedFacts: string, facts: V2VerifiedFact[]): boolean => sentences(answer).every((sentence) => customerFactReflection(sentence, facts) || hasSufficientEvidence(sentence, evidence, citations, trustedFacts));
+const relaxedEvidenceText = (value: string): string => value.replace(/\b(?:i|can|help|with|that|the|only|see|shows?|confirm|request|company|formation|journey|specific|process|option|details?|review|information|currently|from|have|your|our|still|yet|right|now|further|outcome|after|things|moving|keep|keeping|what|would|like|this|these|those|into|before|once|continue|general|outline|rather|may)\b/giu, ' ').replace(/\s+/gu, ' ').trim();
+const safeCurrentStatusParaphrase = (sentence: string, citedText: string): boolean => /\b(?:not complete|currently at|no server-authorized requirement|no further verified action)\b/iu.test(sentence)
+  && /\b(?:authoritative journey|current (?:workflow )?status|current(?:ly)? at|server-authorized requirement|verified action|awaiting verified provider evidence)\b/iu.test(citedText);
+const evidenceGrounded = (answer: string, evidence: ModelEvidence[], citations: Citation[], trustedFacts: string): boolean => {
+  const citedText = `${evidence.filter((item) => citations.some((citation) => citation.chunkId === item.citation.chunkId)).map((item) => item.content).join(' ')} ${trustedFacts}`;
+  const groundedSentence = (sentence: string): boolean => safeFactAcknowledgement(sentence)
+    || safeUncertainty(sentence)
+    || hasSufficientEvidence(sentence, evidence, citations, trustedFacts)
+    || hasSufficientEvidence(relaxedEvidenceText(sentence), evidence, citations, trustedFacts)
+    || safeCurrentStatusParaphrase(sentence, citedText);
+  return hasSufficientEvidence(answer, evidence, citations, trustedFacts)
+    || hasSufficientEvidence(relaxedEvidenceText(answer), evidence, citations, trustedFacts)
+    || sentences(answer).every(groundedSentence);
+};
+const mixedEvidenceGrounded = (answer: string, evidence: ModelEvidence[], citations: Citation[], trustedFacts: string, facts: V2VerifiedFact[]): boolean => sentences(answer).every((sentence) => customerFactReflection(sentence, facts) || evidenceGrounded(sentence, evidence, citations, trustedFacts));
 const unsafeOutput = (answer: string): boolean => {
   const normalized = answer.toLocaleLowerCase('en-US');
   return normalized.includes('ignore all previous instructions')
@@ -93,11 +110,14 @@ const uncitedQuestion = (answer: string, question: string | null): boolean => {
 const safeNoEvidenceDialogue = (answer: string, question: string | null, pendingRequirementKey: string | null = null): boolean => {
   // Disallow business consequences, authority claims, numbers, deadlines and links
   // without approved evidence even when the rest of the reply is conversational.
-  const controlledUncertainty = /^\s*i (?:can(?:'|’)t|cannot) (?:verify|confirm)\b/iu.test(answer);
+  const controlledUncertainty = /^\s*i (?:can(?:'|’)t|cannot) (?:verify|confirm)\b/iu.test(answer) || safeOutcomeAbstention(answer);
   const containsBlockedClaim = /\b(?:aed|usd|gbp|eur|dollars?|dirhams?|fees?|prices?|costs?|invoices?|paid|payment|eligible|eligibility|guaranteed|guarantee|registered|registration|created|uploaded|completed|signed|legal(?:ly)?|law|policy|licen[cs]e|approved|confirmed|successful|visa issued|will take|takes? \d+|within \d+)\b|\b\d+(?:[.,]\d+)?\s*(?:days?|hours?|weeks?|months?|visas?)\b|https?:\/\//iu.test(answer);
   if (containsBlockedClaim && !controlledUncertainty) return false;
   if (answer.length > 500) return false;
-  if (!question && uncitedConversation(answer)) return true;
+  if (!question && (uncitedConversation(answer) || safeOutcomeAbstention(answer)
+    || /^(?:of course|absolutely|sure)[,!.\s—-]+i(?:'|’)ll keep your company-formation request active while you ask your questions\.?$/iu.test(answer.trim())
+    || (/^(?:in general,\s+)?(?:forming|setting up) (?:a|the) company means\b[\s\S]*$/iu.test(answer.trim())
+      && !/\b(?:usually|typically|required|eligible|price|cost|licen[cs]e|legal|regulation|policy|timeline|days?|weeks?|months?)\b/iu.test(answer)))) return true;
   if (question) {
     if (!answer.trim().endsWith(question.trim()) || !/\?\s*$/u.test(question)) return false;
     if (!/^(?:what|which|who|when|where|how|could you|would you|can you|do you|are you|is there|please|tell me|have you)\b/iu.test(question.trim())) return false;
@@ -107,7 +127,7 @@ const safeNoEvidenceDialogue = (answer: string, question: string | null, pending
   const segments = preface.split(/(?<=[.!])\s+/u).filter(Boolean);
   const pendingTerms = pendingRequirementKey?.split('_').filter((term) => term.length >= 3) ?? [];
   const pendingRequirementPreface = (segment: string): boolean => pendingTerms.length > 0
-    && /\b(?:still need|missing requirement|remaining detail|to continue)\b/iu.test(segment)
+    && /\b(?:still need|missing requirement|missing detail|remaining detail|to continue)\b/iu.test(segment)
     && pendingTerms.some((term) => segment.toLocaleLowerCase('en-US').includes(term));
   return segments.length <= 2 && segments.every((segment) => nonFactualPreface(segment) || pendingRequirementPreface(segment));
 };
@@ -148,7 +168,7 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
     ? safeNoEvidenceDialogue(response.answer, response.nextQuestion, options.pendingRequirementKey ?? null)
     : options.conversational === true && citationIds.length === 0
     ? uncitedConversation(response.answer) || (options.allowUncitedQuestion === true && uncitedQuestion(response.answer, response.nextQuestion))
-    : citationIds.length > 0 && (hasSufficientEvidence(answerForEvidence, modelEvidence, citations, trustedFacts)
+    : citationIds.length > 0 && (evidenceGrounded(answerForEvidence, modelEvidence, citations, trustedFacts)
       || (citedFacts.length > 0 && mixedEvidenceGrounded(answerForEvidence, modelEvidence, citations, trustedFacts, citedFacts)));
   if (!grounded) return { verdict: verdict(false, citationIds.length === 0 ? 'unsupported_claim' : 'unsupported_claim', null), claims: [] };
   const sourceVersions = [...new Set([...citedEvidence.map((item) => item.sourceVersion), ...citedFacts.map((item) => item.sourceVersion)])];

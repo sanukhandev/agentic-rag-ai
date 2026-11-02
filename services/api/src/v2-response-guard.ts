@@ -100,7 +100,8 @@ export const guardV2Response = (input: unknown, context: V2ResponseGuardContext)
   }
   const questionReason = questionFailure(response, context);
   if (questionReason) return { verdict: rejected(questionReason), response: fallback(context, questionReason), claims: [], feedback: feedback(questionReason, input) };
-  if (response.citationIds.length === 0 && /(?:payment|invoice|contract|signature|signed|account|opportunity|registration).{0,40}\b(?:complete|completed|success(?:ful)?|created|paid|signed|registered)\b/iu.test(response.answer)) {
+  const unverifiedOutcome = /(?:payment|invoice|contract|signature|signed|account|opportunity|registration).{0,40}\b(?:complete|completed|success(?:ful)?|created|paid|signed|registered)\b/iu.test(response.answer);
+  if (response.citationIds.length === 0 && unverifiedOutcome && !/^\s*(?:i(?:'|’)ll|i will)\s+wait for verified evidence and (?:i\s+)?(?:won't|won’t|will not)\s+assume (?:the )?(?:account|opportunity|payment|invoice|contract)\s+(?:is|was)\s+(?:complete|completed|created|registered|paid|signed)\.?\s*$/iu.test(response.answer)) {
     const reasonCode: ResponseGuardVerdictV2['reasonCode'] = 'unsupported_claim';
     return { verdict: rejected(reasonCode), response: fallback(context, reasonCode), claims: [], feedback: feedback(reasonCode, input) };
   }

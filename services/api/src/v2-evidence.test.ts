@@ -27,6 +27,17 @@ describe('v2 claim provenance and evidence verification', () => {
     expect(verifyV2ResponseEvidence(value, [], facts, { allowUncitedQuestion: true }).verdict.accepted).toBe(true);
   });
 
+  it('accepts paraphrased verified facts and a grounded pending-requirement question', () => {
+    const facts: V2VerifiedFact[] = [
+      { factId: 'customer-fact-business_activity', text: 'The customer described their business activity as software consulting and AI services.', sourceVersion: 'catalog-12345678', verified: true },
+      { factId: 'customer-fact-visa_count', text: 'The customer requested 3 visas.', sourceVersion: 'catalog-12345678', verified: true },
+      { factId: 'customer-fact-timeline', text: 'The customer requested a timeline of next month.', sourceVersion: 'catalog-12345678', verified: true },
+    ];
+    const question = 'Could you share your email address?';
+    const value = { ...response(`I have your business activity as software consulting and AI services, a visa count of 3, and a timeline of next month. ${question}`, facts.map((item) => item.factId)), nextQuestion: question, nextQuestionKey: 'email', reasonNoQuestion: null };
+    expect(verifyV2ResponseEvidence(value, [], facts, { allowUncitedQuestion: true }).verdict.accepted).toBe(true);
+  });
+
   it('does not let a customer fact citation authorize a provider or legal outcome', () => {
     const value = response('Your LLC is legally registered.', ['customer-fact-entity_type']);
     const entityFact: V2VerifiedFact = { factId: 'customer-fact-entity_type', text: 'The customer stated their company structure is LLC.', sourceVersion: 'catalog-12345678', verified: true };
@@ -77,6 +88,37 @@ describe('v2 claim provenance and evidence verification', () => {
     }
     const greetingQuestion = 'Hi, I can help with that. What business activity are you planning?';
     expect(verifyV2ResponseEvidence({ ...response(greetingQuestion, []), nextQuestion: 'What business activity are you planning?', nextQuestionKey: 'business_activity', reasonNoQuestion: null }, [], [], { allowNonFactualDialogue: true, pendingRequirementKey: 'business_activity' }).verdict.accepted).toBe(true);
+  });
+
+  it('accepts bounded process context, active-goal acknowledgement and a safe pending-detail preface', () => {
+    const process = response('In general, forming a company means choosing a structure and preparing the information needed for the request.', []);
+    expect(verifyV2ResponseEvidence(process, [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(true);
+    const activeGoal = response('Of course — I’ll keep your company-formation request active while you ask your questions.', []);
+    expect(verifyV2ResponseEvidence(activeGoal, [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(true);
+    const question = 'What email address should we use?';
+    const pending = { ...response(`The missing detail is your email address. ${question}`, []), nextQuestion: question, nextQuestionKey: 'email', reasonNoQuestion: null };
+    expect(verifyV2ResponseEvidence(pending, [], [], { allowNonFactualDialogue: true, pendingRequirementKey: 'email' }).verdict.accepted).toBe(true);
+  });
+
+  it('does not treat a negated provider outcome as a completed outcome', () => {
+    const safe = response('I’ll wait for verified evidence and won’t assume the account is complete.', []);
+    expect(verifyV2ResponseEvidence(safe, [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(true);
+    const mixed = response('I can’t verify eligibility, but your package costs 999 credits.', ['source-a']);
+    expect(verifyV2ResponseEvidence(mixed, approved).verdict.accepted).toBe(false);
+  });
+
+  it('accepts safe paraphrases of current journey and provider status evidence', () => {
+    const evidence: V2ApprovedEvidence[] = [
+      { citationId: 'journey-12345678', text: 'The authoritative journey is currently at account_creation.', sourceVersion: 'catalog-12345678', approved: true, revoked: false },
+      { citationId: 'pending-12345678', text: 'No server-authorized requirement is currently pending.', sourceVersion: 'catalog-12345678', approved: true, revoked: false },
+      { citationId: 'consent-12345678', text: 'Contact consent is granted.', sourceVersion: 'catalog-12345678', approved: true, revoked: false },
+      { citationId: 'workflow-12345678', text: 'The current workflow status is succeeded.', sourceVersion: 'catalog-12345678', approved: true, revoked: false },
+      { citationId: 'action-12345678', text: 'Lead registration is awaiting verified provider evidence.', sourceVersion: 'catalog-12345678', approved: true, revoked: false },
+    ];
+    const journey = response('I can help with that. I can confirm your request is not complete from the approved information I have. Your company-formation journey is currently at account_creation, and there is no server-authorized requirement pending right now.', ['journey-12345678', 'pending-12345678']);
+    expect(verifyV2ResponseEvidence(journey, evidence).verdict.accepted).toBe(true);
+    const action = response('Thanks for checking. Your contact consent is granted, and the workflow status shows succeeded, but lead registration is still awaiting verified provider evidence. I can’t verify any further outcome after registration yet.', ['consent-12345678', 'workflow-12345678', 'action-12345678']);
+    expect(verifyV2ResponseEvidence(action, evidence).verdict.accepted).toBe(true);
   });
 
   it('rejects greetings containing uncited price claims and provider-success claims', () => {
