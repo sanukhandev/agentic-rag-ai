@@ -9,7 +9,7 @@ import { channelAuthMiddleware, ChannelSecretVault, getChannel, type StaticChann
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, KnowledgeRetrievalError, retrieveApprovedKnowledge } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { addressesKnowledgeQuestion, classifyOfferReply, conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isControlledKnowledgeAbstention, isGuidedResponse, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
-import { assertKnownTokens, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, TokenVault } from './privacy.js';
+import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, sanitizeSensitiveText, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogIntentLabel, catalogNextFollowUpRequirement, catalogRequirementLabel, catalogSlotLabel, catalogSlotQuestion, isCrmWriteBinding, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
 import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './catalog-v2.js';
 import { auditLegacyCatalogVersion, createLegacyCatalogV2Candidate } from './catalog-v2-migration.js';
@@ -80,6 +80,7 @@ import { registerLifecycleRoutes } from './routes/lifecycle.js';
 import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './v2-tool-gateway.js';
 import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
 import type { V2ApprovedFallbackTemplateSet } from './v2-fallbacks.js';
+import type { PersonaComposedResponseV2 } from './python-model/v2-contracts.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null; normalizationAttempts: number; normalizationFallbacks: number; normalizationFailures: number; normalizationLatencyMs: number };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -386,6 +387,25 @@ export const v2ModelAuditMetadata = (input: { sessionId: string; clientMessageId
   sessionId: input.sessionId,
   clientMessageId: input.clientMessageId,
 });
+
+const diagnosticText = (value: string | null, maxLength: number): string | null => value === null
+  ? null
+  : maskPii(sanitizeSensitiveText(value)).masked.slice(0, maxLength);
+
+export const v2DiagnosticCaptureMetadata = (
+  candidate: Pick<PersonaComposedResponseV2, 'answer' | 'citationIds' | 'nextQuestion' | 'nextQuestionKey' | 'reasonNoQuestion' | 'decisionRef'>,
+  env: NodeJS.ProcessEnv = process.env,
+) => {
+  if (env.V2_DIAGNOSTIC_CAPTURE !== 'true' || env.NODE_ENV === 'production') return undefined;
+  return {
+    answer: diagnosticText(candidate.answer, 2_000),
+    citationIds: [...new Set(candidate.citationIds)].slice(0, 32),
+    nextQuestion: diagnosticText(candidate.nextQuestion, 500),
+    nextQuestionKey: candidate.nextQuestionKey,
+    reasonNoQuestion: diagnosticText(candidate.reasonNoQuestion, 120),
+    decisionRefDigest: createHash('sha256').update(candidate.decisionRef).digest('hex').slice(0, 32),
+  };
+};
 
 export const createApp = (dependencies: AppDependencies = {}) => {
   const store = dependencies.store ?? new MemoryStore();
@@ -1879,7 +1899,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
            v2AllowedUncitedDialogue = v2.guardReason === 'safe_no_evidence_dialogue' || v2.guardReason === 'accepted_model_dialogue';
            const responseReason = /^[a-z0-9_.-]{1,80}$/iu.test(v2.response.reasonNoQuestion ?? '') ? v2.response.reasonNoQuestion : null;
             const candidateResponseReason = /^[a-z0-9_.-]{1,80}$/iu.test(v2.candidateResponse.reasonNoQuestion ?? '') ? v2.candidateResponse.reasonNoQuestion : null;
-            await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.turn', metadata: { ...v2ModelAuditMetadata({ sessionId: session.id, clientMessageId: input.clientMessageId }), modelRequestCount: v2.modelRequestCount, toolCallCount: v2.toolCallCount, toolStatuses: v2.toolTrace.map((trace) => trace.status).join(','), guardReason: v2.guardReason, candidateGuardReason: v2.candidateGuardReason, modelResponseAccepted: v2.guardReason === 'accepted_model_dialogue' || v2.guardReason === 'accepted', repairApplied: v2.repairApplied, deliveredCitationCount: v2.response.citationIds.length, deliveredNextQuestionKey: v2.response.nextQuestionKey, ...(responseReason ? { responseReason } : {}), ...(candidateResponseReason ? { candidateResponseReason } : {}), executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
+            const diagnosticCandidate = v2DiagnosticCaptureMetadata(v2.candidateResponse);
+            const rawCandidate = diagnosticCandidate && v2.diagnosticCandidate
+              ? diagnosticText(v2.diagnosticCandidate, 2_000)
+              : null;
+            await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.turn', metadata: { ...v2ModelAuditMetadata({ sessionId: session.id, clientMessageId: input.clientMessageId }), modelRequestCount: v2.modelRequestCount, toolCallCount: v2.toolCallCount, toolStatuses: v2.toolTrace.map((trace) => trace.status).join(','), guardReason: v2.guardReason, candidateGuardReason: v2.candidateGuardReason, modelResponseAccepted: v2.guardReason === 'accepted_model_dialogue' || v2.guardReason === 'accepted', repairApplied: v2.repairApplied, deliveredCitationCount: v2.response.citationIds.length, deliveredNextQuestionKey: v2.response.nextQuestionKey, ...(responseReason ? { responseReason } : {}), ...(candidateResponseReason ? { candidateResponseReason } : {}), ...(diagnosticCandidate ? { candidateResponse: JSON.stringify(diagnosticCandidate), ...(rawCandidate ? { rawCandidate } : {}), availableEvidenceRefs: JSON.stringify([...new Set(v2.toolTrace.flatMap((trace) => trace.evidenceRefs))].slice(0, 32)) } : {}), executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
           } catch (error) {
             const reason = error instanceof Error && /^[A-Z0-9_.-]{1,80}$/u.test(error.message) ? error.message : 'v2_turn_failed';
             await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.error', metadata: { ...v2ModelAuditMetadata({ sessionId: session.id, clientMessageId: input.clientMessageId }), reason, executionPath: 'langgraph' }, createdAt: new Date().toISOString() });

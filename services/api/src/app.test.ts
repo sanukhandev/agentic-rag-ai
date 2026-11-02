@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { createApp, isValidBase64, v2ModelAuditMetadata } from './app.js';
+import { createApp, isValidBase64, v2DiagnosticCaptureMetadata, v2ModelAuditMetadata } from './app.js';
 import { MockWorkflowAdapter, signN8nPayload } from './actions.js';
 import { MemoryCache } from './cache.js';
 import { MemoryStore, contentHash } from './store-memory.js';
@@ -136,6 +136,29 @@ describe('API vertical slice', () => {
       sessionId: 'session-12345678',
       clientMessageId: 'message-12345678',
     });
+  });
+
+  it('captures only bounded redacted candidate diagnostics when explicitly enabled', () => {
+    const candidate = {
+      answer: 'My email is alice@example.test and my phone is +971 50 123 4567. ' + 'x'.repeat(2_100),
+      citationIds: ['citation-12345678'],
+      nextQuestion: 'What is your timeline?',
+      nextQuestionKey: 'timeline',
+      reasonNoQuestion: null,
+      decisionRef: 'model-decision-12345678',
+    };
+    expect(v2DiagnosticCaptureMetadata(candidate, { NODE_ENV: 'test', V2_DIAGNOSTIC_CAPTURE: 'false' })).toBeUndefined();
+    expect(v2DiagnosticCaptureMetadata(candidate, { NODE_ENV: 'test', V2_DIAGNOSTIC_CAPTURE: 'true' })).toMatchObject({
+      answer: expect.stringContaining('[REDACTED_EMAIL]'),
+      citationIds: ['citation-12345678'],
+      nextQuestion: 'What is your timeline?',
+      nextQuestionKey: 'timeline',
+    });
+    const captured = v2DiagnosticCaptureMetadata(candidate, { NODE_ENV: 'test', V2_DIAGNOSTIC_CAPTURE: 'true' });
+    expect(captured?.answer).not.toContain('alice@example.test');
+    expect(captured?.answer).not.toContain('+971 50 123 4567');
+    expect(captured?.answer?.length).toBeLessThanOrEqual(2_000);
+    expect(v2DiagnosticCaptureMetadata(candidate, { NODE_ENV: 'production', V2_DIAGNOSTIC_CAPTURE: 'true' })).toBeUndefined();
   });
 
   it('denies document session endpoints to an authenticated user from another tenant', async () => {

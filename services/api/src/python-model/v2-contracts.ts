@@ -140,6 +140,7 @@ export const agentTurnResultSchema = z.object({
   approvedEvidence: z.array(approvedEvidenceSchema).max(32).default([]),
   modelRequestCount: z.number().int().min(1).max(8),
   toolCallCount: z.number().int().nonnegative().max(12),
+  diagnosticCandidate: z.string().max(2_000).nullable().optional(),
 }).strict();
 
 export type TurnEnvelopeV2 = z.infer<typeof turnEnvelopeSchema>;

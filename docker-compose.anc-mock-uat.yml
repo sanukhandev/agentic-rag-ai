@@ -46,6 +46,7 @@ services:
       MODEL_GATEWAY_SERVICE_KEY: anc-mock-gateway-service-key
       NODE_TOOL_GATEWAY_URL: http://api:4000
       LANGGRAPH_CONVERSATION_ENABLED: ${LANGGRAPH_CONVERSATION_ENABLED:-true}
+      V2_DIAGNOSTIC_CAPTURE: ${V2_DIAGNOSTIC_CAPTURE:-false}
       MODEL_MAX_CONCURRENCY: "2"
       MODEL_MIN_CALL_INTERVAL_SECONDS: "0"
     expose:
@@ -93,6 +94,7 @@ services:
       MODEL_GATEWAY_SERVICE_KEY: anc-mock-gateway-service-key
       PYTHON_MODEL_TIMEOUT_MS: "20000"
       LANGGRAPH_CONVERSATION_ENABLED: "true"
+      V2_DIAGNOSTIC_CAPTURE: ${V2_DIAGNOSTIC_CAPTURE:-false}
       CONVERSATION_ENGINE_V2_ENABLED: "true"
       # The bootstrap uses this fixed disposable tenant UUID; an explicit environment override remains supported.
       CONVERSATION_ENGINE_V2_TENANTS: "${ANC_UAT_V2_TENANT_ID:-110a38e2-a3d2-4a4f-b9c1-9d431dc86ac6}"

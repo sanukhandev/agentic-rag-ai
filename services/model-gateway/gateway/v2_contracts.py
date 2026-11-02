@@ -133,3 +133,4 @@ class AgentTurnResultV2(StrictV2):
     approvedEvidence: list[ApprovedEvidenceV2] = Field(default_factory=list, max_length=32)
     modelRequestCount: int = Field(ge=1, le=8)
     toolCallCount: int = Field(ge=0, le=12)
+    diagnosticCandidate: str | None = Field(default=None, max_length=2_000)

@@ -13,7 +13,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from .agent import BoundedConversationAgent, FunctionCall
+from .agent import BoundedConversationAgent, FunctionCall, diagnostic_candidate
 from .reliability import BudgetExceeded, TurnBudget
 from .persona_composer import validate_composed_response
 from .v2_contracts import AgentTurnResultV2, ApprovedEvidenceV2, ToolResultV2, ToolTraceV2, TurnEnvelopeV2
@@ -31,6 +31,7 @@ class GraphTurnState(TypedDict, total=False):
     model_count: int
     tool_count: int
     round_count: int
+    diagnostic_candidate: str | None
     result: AgentTurnResultV2
 
 
@@ -57,6 +58,7 @@ class LangGraphConversationAgent(BoundedConversationAgent):
             approvedEvidence=list(state.get("approved_evidence", {}).values()),
             modelRequestCount=max(1, state["model_count"]),
             toolCallCount=state["tool_count"],
+            diagnosticCandidate=state.get("diagnostic_candidate"),
         )
 
     def _failed(self, state: GraphTurnState, reason: str) -> dict[str, Any]:
@@ -74,14 +76,15 @@ class LangGraphConversationAgent(BoundedConversationAgent):
                 envelope, state["budget"], input_value=state["history"]
             )
             next_count = state["model_count"] + 1
+            next_state: GraphTurnState = {**state, "model_count": next_count, "diagnostic_candidate": diagnostic_candidate(getattr(response, "output_text", "")) or state.get("diagnostic_candidate")}
             calls = self._calls(response)
-            next_state: GraphTurnState = {**state, "model_count": next_count}
             if calls is None:
                 return {**self._failed(next_state, "malformed_tool_call"), "model_count": next_count}
             if not calls:
-                final, rejection = validate_composed_response(
-                    json.loads(getattr(response, "output_text", "")), envelope
-                )
+                try:
+                    final, rejection = validate_composed_response(json.loads(getattr(response, "output_text", "")), envelope)
+                except (json.JSONDecodeError, TypeError):
+                    return {**self._failed(next_state, "invalid_model_response"), "model_count": next_count}
                 if final is None:
                     return {**self._failed(next_state, rejection or "invalid_model_response"), "model_count": next_count}
                 return {"model_count": next_count, "calls": [], "result": self._result(next_state, final)}
@@ -137,7 +140,7 @@ class LangGraphConversationAgent(BoundedConversationAgent):
             "history": [{"role": "user", "content": self._input(envelope)}],
             "calls": [], "seen": {}, "traces": [],
             "approved_evidence": {},
-            "model_count": 0, "tool_count": 0, "round_count": 0,
+            "model_count": 0, "tool_count": 0, "round_count": 0, "diagnostic_candidate": None,
         }
         try:
             final = await self.graph.ainvoke(

@@ -4,6 +4,8 @@ import asyncio
 import hashlib
 import json
 import time
+import os
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -70,6 +72,19 @@ def _value(item: Any, key: str, default: Any = None) -> Any:
     if isinstance(item, dict):
         return item.get(key, default)
     return getattr(item, key, default)
+
+
+def diagnostic_candidate(raw: Any) -> str | None:
+    if os.getenv("V2_DIAGNOSTIC_CAPTURE", "false").lower() != "true":
+        return None
+    if os.getenv("NODE_ENV", "development").lower() == "production":
+        return None
+    if not isinstance(raw, str) or not raw:
+        return None
+    redacted = re.sub(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", "[REDACTED_EMAIL]", raw)
+    redacted = re.sub(r"(?<!\w)\+?\d[\d ()-]{7,}\d", "[REDACTED_PHONE]", redacted)
+    redacted = re.sub(r"(?i)(api[_ -]?key|token|secret|password)\s*[:=]\s*[^,\s}\"]+", r"\1=[REDACTED]", redacted)
+    return redacted[:2_000]
 
 
 class BoundedConversationAgent:
@@ -169,8 +184,8 @@ class BoundedConversationAgent:
         return evidence
 
     @staticmethod
-    def _result(envelope: TurnEnvelopeV2, response: PersonaComposedResponseV2, traces: list[ToolTraceV2], model_requests: int, tool_calls: int, evidence: dict[str, ApprovedEvidenceV2]) -> AgentTurnResultV2:
-        return AgentTurnResultV2(response=response, toolTrace=traces, approvedEvidence=list(evidence.values()), modelRequestCount=model_requests, toolCallCount=tool_calls)
+    def _result(envelope: TurnEnvelopeV2, response: PersonaComposedResponseV2, traces: list[ToolTraceV2], model_requests: int, tool_calls: int, evidence: dict[str, ApprovedEvidenceV2], diagnostic: str | None = None) -> AgentTurnResultV2:
+        return AgentTurnResultV2(response=response, toolTrace=traces, approvedEvidence=list(evidence.values()), modelRequestCount=model_requests, toolCallCount=tool_calls, diagnosticCandidate=diagnostic)
 
     async def _execute(self, envelope: TurnEnvelopeV2, call: FunctionCall, seen: dict[str, ToolResultV2]) -> tuple[ToolResultV2, ToolTraceV2]:
         started = time.monotonic()
@@ -207,20 +222,22 @@ class BoundedConversationAgent:
             approved_evidence: dict[str, ApprovedEvidenceV2] = {}
             traces: list[ToolTraceV2] = []
             total_calls = 0
+            diagnostic = None
             for round_index in range(envelope.budgets.maxToolRounds + 1):
+                diagnostic = diagnostic_candidate(_value(response, "output_text", "")) or diagnostic
                 calls = self._calls(response)
                 if calls is None:
-                    return self._result(envelope, self._fallback(envelope, "malformed_tool_call"), traces, model_requests, total_calls, approved_evidence)
+                    return self._result(envelope, self._fallback(envelope, "malformed_tool_call"), traces, model_requests, total_calls, approved_evidence, diagnostic)
                 if not calls:
                     try:
                         final, rejection = validate_composed_response(json.loads(_value(response, "output_text", "")), envelope)
                         if final is None:
-                            return self._result(envelope, self._fallback(envelope, rejection or "invalid_model_response"), traces, model_requests, total_calls, approved_evidence)
-                        return self._result(envelope, final, traces, model_requests, total_calls, approved_evidence)
+                            return self._result(envelope, self._fallback(envelope, rejection or "invalid_model_response"), traces, model_requests, total_calls, approved_evidence, diagnostic)
+                        return self._result(envelope, final, traces, model_requests, total_calls, approved_evidence, diagnostic)
                     except (json.JSONDecodeError, TypeError):
-                        return self._result(envelope, self._fallback(envelope, "invalid_model_response"), traces, model_requests, total_calls, approved_evidence)
+                        return self._result(envelope, self._fallback(envelope, "invalid_model_response"), traces, model_requests, total_calls, approved_evidence, diagnostic)
                 if round_index >= envelope.budgets.maxToolRounds or total_calls + len(calls) > envelope.budgets.maxToolCalls or model_requests >= envelope.budgets.maxModelRequests:
-                    return self._result(envelope, self._fallback(envelope, "tool_budget_exhausted"), traces, model_requests, total_calls, approved_evidence)
+                    return self._result(envelope, self._fallback(envelope, "tool_budget_exhausted"), traces, model_requests, total_calls, approved_evidence, diagnostic)
                 outputs = []
                 for call in calls:
                     result, trace = await self._execute(envelope, call, seen)
@@ -233,7 +250,7 @@ class BoundedConversationAgent:
                 history.extend(outputs)
                 response = await self._response(envelope, budget, input_value=history)
                 model_requests += 1
-            return self._result(envelope, self._fallback(envelope, "tool_budget_exhausted"), traces, model_requests, total_calls, approved_evidence)
+            return self._result(envelope, self._fallback(envelope, "tool_budget_exhausted"), traces, model_requests, total_calls, approved_evidence, diagnostic)
         except (BudgetExceeded, asyncio.TimeoutError):
             return AgentTurnResultV2(response=self._fallback(envelope, "turn_deadline_exceeded"), toolTrace=[], approvedEvidence=[], modelRequestCount=1, toolCallCount=0)
         except ValueError:

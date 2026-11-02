@@ -194,3 +194,17 @@ def test_signed_scope_ref_accepts_node_gateway_length():
         "deadlineAt": (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat(),
     })
     assert request.scopeRef == long_ref
+
+
+def test_diagnostic_capture_preserves_bounded_redacted_candidate_only_when_enabled(monkeypatch):
+    monkeypatch.setenv("V2_DIAGNOSTIC_CAPTURE", "true")
+    raw = json.dumps({"answer": "Contact alice@example.test at +971 50 123 4567", "unexpected": "x" * 3_000})
+    client = FakeClient([SimpleNamespace(id="response-12345678", output=[], output_text=raw)])
+
+    result = asyncio.run(BoundedConversationAgent(client, FakeGateway(), "deployment").run(envelope()))
+
+    assert result.response.reasonNoQuestion == "invalid_model_response"
+    assert result.diagnosticCandidate is not None
+    assert "alice@example.test" not in result.diagnosticCandidate
+    assert "+971 50 123 4567" not in result.diagnosticCandidate
+    assert len(result.diagnosticCandidate) <= 2_000
