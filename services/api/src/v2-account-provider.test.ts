@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, V2OtpChallengeService, validateV2AccountProviderResult, type V2OtpVerificationResult } from './v2-account-provider.js';
 import type { ActionRequest, CrmLead } from './types.js';
 
+
+const verifiedReadback = (request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string; providerType: string }, recordRef: string) => ({
+  tenantId: request.tenantId, sessionId: request.sessionId, opportunityId: request.opportunityId,
+  idempotencyKey: request.idempotencyKey, providerType: request.providerType, recordRef,
+  verificationStatus: 'verified' as const,
+  evidenceTier: request.providerType === 'deterministic_mock' ? 'mock_verified' as const : 'provider_record_verified' as const,
+});
+
 const tenantId = randomUUID();
 const sessionId = randomUUID();
 const opportunityId = randomUUID();
@@ -53,7 +61,7 @@ describe('v2 stage 3 account provider and OTP boundary', () => {
     const first = provider.execute(request);
     const second = provider.execute(request);
     expect(second).toMatchObject({ deduplicated: true, remoteAccountId: first.remoteAccountId, remoteContactId: first.remoteContactId, remoteOpportunityId: first.remoteOpportunityId });
-    expect(validateV2AccountProviderResult(request, first)).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'mock_verified' });
+    expect(validateV2AccountProviderResult(request, first, verifiedReadback(request, first.remoteAccountId))).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'mock_verified' });
   });
 
   it('requires exact callback correlation and independent sandbox evidence', () => {
@@ -62,6 +70,6 @@ describe('v2 stage 3 account provider and OTP boundary', () => {
     const sandbox = { ...mock, providerType: 'salesforce_sandbox' as const, evidenceTier: 'provider_record_verified' as const };
     expect(validateV2AccountProviderResult(request, { ...sandbox, actionId: randomUUID() })).toMatchObject({ accepted: false, status: 'reconciliation_required', reasons: ['actionId_mismatch'] });
     expect(validateV2AccountProviderResult(request, { ...sandbox, remoteOpportunityId: 'unknown' })).toMatchObject({ accepted: false, status: 'reconciliation_required' });
-    expect(validateV2AccountProviderResult(request, sandbox)).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'provider_record_verified' });
+    expect(validateV2AccountProviderResult(request, sandbox, verifiedReadback(request, sandbox.remoteAccountId))).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'provider_record_verified' });
   });
 });

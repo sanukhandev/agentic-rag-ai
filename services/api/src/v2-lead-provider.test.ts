@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { buildV2LeadProviderRequest, DeterministicV2LeadProvider, validateV2LeadProviderResult } from './v2-lead-provider.js';
 import type { ActionRequest, CrmLead } from './types.js';
 
+
+const verifiedReadback = (request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string; providerType: string }, recordRef: string) => ({
+  tenantId: request.tenantId, sessionId: request.sessionId, opportunityId: request.opportunityId,
+  idempotencyKey: request.idempotencyKey, providerType: request.providerType, recordRef,
+  verificationStatus: 'verified' as const,
+  evidenceTier: request.providerType === 'deterministic_mock' ? 'mock_verified' as const : 'provider_record_verified' as const,
+});
+
 const tenantId = randomUUID();
 const sessionId = randomUUID();
 const opportunityId = randomUUID();
@@ -37,7 +45,7 @@ describe('v2 stage 1 lead provider contract', () => {
     const first = provider.execute(request);
     const second = provider.execute(request);
     expect(second).toEqual(first);
-    expect(validateV2LeadProviderResult(request, first)).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'mock_verified' });
+    expect(validateV2LeadProviderResult(request, first, verifiedReadback(request, first.externalLeadId))).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'mock_verified' });
     expect(first.externalLeadId).toMatch(/^mock-lead-[a-f0-9]{24}$/u);
   });
 
@@ -46,6 +54,6 @@ describe('v2 stage 1 lead provider contract', () => {
     const result = { ...new DeterministicV2LeadProvider().execute({ ...request, providerType: 'deterministic_mock' }), providerType: 'salesforce_sandbox' as const, evidenceTier: 'provider_record_verified' as const };
     expect(validateV2LeadProviderResult(request, { ...result, notificationStatus: 'unknown' })).toMatchObject({ accepted: false, stageCompletionEligible: false, status: 'reconciliation_required' });
     expect(validateV2LeadProviderResult(request, { ...result, actionId: randomUUID() })).toMatchObject({ accepted: false, reasons: ['actionId_mismatch'] });
-    expect(validateV2LeadProviderResult(request, result)).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'provider_record_verified' });
+    expect(validateV2LeadProviderResult(request, result, verifiedReadback(request, result.externalLeadId))).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'provider_record_verified' });
   });
 });

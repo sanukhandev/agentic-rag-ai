@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { buildV2PaymentProviderRequest, DeterministicV2PaymentProvider, validateV2PaymentProviderResult } from './v2-payment-provider.js';
 import type { Invoice, Quote } from './types.js';
 
+
+const verifiedReadback = (request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string; providerType: string }, recordRef: string) => ({
+  tenantId: request.tenantId, sessionId: request.sessionId, opportunityId: request.opportunityId,
+  idempotencyKey: request.idempotencyKey, providerType: request.providerType, recordRef,
+  verificationStatus: 'verified' as const,
+  evidenceTier: request.providerType === 'deterministic_mock' ? 'mock_verified' as const : 'provider_record_verified' as const,
+});
+
 const tenantId = randomUUID();
 const opportunityId = randomUUID();
 const quoteId = randomUUID();
@@ -26,7 +34,7 @@ describe('v2 stage 6 invoice and payment provider boundary', () => {
     const request = buildV2PaymentProviderRequest({ invoice: invoice(), quote: quote(), sessionId: randomUUID(), tenantId, artifactSha256: 'a'.repeat(64), idempotencyKey: 'payment-idempotency-1', providerType: 'deterministic_mock' });
     const provider = new DeterministicV2PaymentProvider();
     expect(validateV2PaymentProviderResult(request, provider.execute(request))).toMatchObject({ accepted: true, paymentVerified: false, status: 'mock_verified', reasons: ['payment_pending'] });
-    expect(validateV2PaymentProviderResult(request, provider.settle(request))).toMatchObject({ accepted: true, paymentVerified: true, status: 'mock_verified', reasons: ['mock_payment_only'] });
+    expect(validateV2PaymentProviderResult(request, provider.settle(request), verifiedReadback(request, provider.settle(request).paymentId))).toMatchObject({ accepted: true, paymentVerified: true, status: 'mock_verified', reasons: ['mock_payment_only'] });
   });
 
   it('deduplicates retries and rejects stale, duplicate or unverified callbacks', () => {
@@ -36,6 +44,6 @@ describe('v2 stage 6 invoice and payment provider boundary', () => {
     expect(validateV2PaymentProviderResult(request, { ...sandbox, invoiceId: randomUUID() })).toMatchObject({ accepted: false, status: 'reconciliation_required', reasons: ['invoiceId_mismatch'] });
     expect(validateV2PaymentProviderResult(request, { ...sandbox, status: 'real_paid' as const })).toMatchObject({ accepted: false, status: 'reconciliation_required' });
     expect(validateV2PaymentProviderResult(request, { ...sandbox, evidenceTier: 'reconciliation_required' as const })).toMatchObject({ accepted: false, paymentVerified: false });
-    expect(validateV2PaymentProviderResult(request, sandbox)).toMatchObject({ accepted: true, paymentVerified: true, status: 'provider_record_verified' });
+    expect(validateV2PaymentProviderResult(request, sandbox, verifiedReadback(request, sandbox.paymentId))).toMatchObject({ accepted: true, paymentVerified: true, status: 'provider_record_verified' });
   });
 });
