@@ -155,6 +155,24 @@ describe('v2 claim provenance and evidence verification', () => {
     expect(verifyV2ResponseEvidence(response('I can’t verify from the approved information how that required business document is handled after package confirmation. I can still help you review what to check before you choose or confirm a package.', []), [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(true);
   });
 
+  it('accepts a bounded correction acknowledgement and pending contact question', () => {
+    const facts: V2VerifiedFact[] = [
+      { factId: 'customer-fact-business_activity', text: 'The customer described their business activity as software consulting and AI services.', sourceVersion: 'catalog-12345678', verified: true },
+      { factId: 'customer-fact-timeline', text: 'The customer requested a timeline of next month.', sourceVersion: 'catalog-12345678', verified: true },
+    ];
+    const question = 'Could you share your email address?';
+    const corrected = { ...response(`Thanks for the correction. I’ve noted your business activity as software consulting and AI services, and your timeline as next month. ${question}`, facts.map((item) => item.factId)), nextQuestion: question, nextQuestionKey: 'email', reasonNoQuestion: null };
+    expect(verifyV2ResponseEvidence(corrected, [], facts).verdict.accepted).toBe(true);
+    const contactQuestion = 'What is your email address?';
+    const contact = { ...response(`Thanks for clarifying. I’m ready for it — please share your email address. ${contactQuestion}`, []), nextQuestion: contactQuestion, nextQuestionKey: 'email', reasonNoQuestion: null };
+    expect(verifyV2ResponseEvidence(contact, [], [], { allowNonFactualDialogue: true, pendingRequirementKey: 'email' }).verdict.accepted).toBe(true);
+  });
+
+  it('accepts a safe unverified-process offer with an optional follow-up', () => {
+    const answer = 'I can help with that. I don’t have a verified detail for what happens after registration yet. If you’d like, I can still help with your company formation request.';
+    expect(verifyV2ResponseEvidence(response(answer, []), [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(true);
+  });
+
   it('rejects greetings containing uncited price claims and provider-success claims', () => {
     for (const answer of ['Hello, it costs AED 999.', 'Thanks. Your company is registered.', 'Your payment has succeeded.', 'The legal registration is guaranteed.']) {
       expect(verifyV2ResponseEvidence(response(answer, []), [], [], { conversational: true }).verdict.accepted, answer).toBe(false);

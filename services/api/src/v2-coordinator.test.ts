@@ -315,6 +315,22 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.answer).toBe(`${answer} ${question}`);
   });
 
+  it('repairs a stage placeholder only from the authoritative active stage', async () => {
+    const request = envelope();
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'account_creation', pendingRequirementKey: null };
+    const evidence = [{ citationId: 'journey-source', text: 'The verified action shows lead registration is awaiting verified provider evidence. The authoritative journey is currently at account_creation.', sourceVersion: 'catalog-12345678', approved: true, revoked: false, sourceRef: 'tool-get_journey_state' }];
+    const answer = 'The verified action shows lead registration is awaiting verified provider evidence, and the journey is currently at account_creation.';
+    const question = 'What would you like to review about the [ID_1] stage?';
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer, { response: {
+      ...result(answer).response, citationIds: ['journey-source'], nextQuestion: question, nextQuestionKey: 'stage:account_creation', reasonNoQuestion: null,
+    } }) });
+    const output = await coordinator.run({ envelope: request, evidence, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted');
+    expect(output.repairApplied).toBe(true);
+    expect(output.response.answer).toContain('Account creation');
+    expect(output.response.answer).not.toContain('[ID_');
+  });
+
   it('rejects tool evidence that is not correlated to a successful search trace', async () => {
     const coordinator = new V2ConversationCoordinator({
       turn: async () => result('The approved package costs 42 credits.', {

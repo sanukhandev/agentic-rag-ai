@@ -54,6 +54,22 @@ export interface V2CoordinatorResult {
 
 const fallbackFamilyFor = (reason: string): V2FallbackFamily => reason === 'stale_state' ? 'reconciliation' : reason === 'invalid_citation' || reason === 'unsupported_claim' || reason === 'metadata_leak' || reason === 'persona_mismatch' ? 'invalid_model' : 'tool_unavailable';
 const toDraft = (response: PersonaComposedResponseV2): ModelDraft => ({ answer: response.answer, citationIds: response.citationIds, proposedIntent: null });
+const stagePlaceholderContext = /\b(?:currently\s+at|at\s+the|about\s+the|in\s+the)\s+\[ID_\d+\](?:\s+stage)?/iu;
+const stageLabel = (stageKey: string | null): string | null => {
+  if (!stageKey) return null;
+  const value = stageKey.replace(/_/gu, ' ');
+  return value ? `${value[0]!.toLocaleUpperCase('en-US')}${value.slice(1)}` : null;
+};
+const repairAuthoritativeStagePlaceholder = (response: PersonaComposedResponseV2, activeStageKey: string | null): PersonaComposedResponseV2 => {
+  const label = stageLabel(activeStageKey);
+  if (!label) return response;
+  const replaceField = (value: string | null): string | null => value && value.includes('[ID_') && stagePlaceholderContext.test(value)
+    ? value.replace(new RegExp(stagePlaceholderContext.source, 'giu'), (match) => match.replace(/\[ID_\d+\]/iu, label))
+    : value;
+  const answer = replaceField(response.answer) ?? response.answer;
+  const nextQuestion = replaceField(response.nextQuestion);
+  return answer === response.answer && nextQuestion === response.nextQuestion ? response : { ...response, answer, nextQuestion };
+};
 const repairTrailingQuestionContract = (response: PersonaComposedResponseV2): PersonaComposedResponseV2 => {
   const question = response.nextQuestion?.trim();
   const answer = response.answer.trim();
@@ -178,7 +194,7 @@ export class V2ConversationCoordinator {
     const parsed = agentTurnResultSchema.safeParse(rawResult);
     if (!parsed.success) throw new Error('V2_MODEL_INVALID_RESPONSE');
     const agentResult = parsed.data;
-    const candidateResponse = repairTrailingQuestionContract(addVerifiedFactCitations(agentResult.response, request.verifiedFacts ?? []));
+    const candidateResponse = repairTrailingQuestionContract(repairAuthoritativeStagePlaceholder(addVerifiedFactCitations(agentResult.response, request.verifiedFacts ?? []), envelope.intentProjection.currentStageKey));
     const repairApplied = candidateResponse !== agentResult.response;
     const guardContext: V2ResponseGuardContext = {
       personaVersionId: envelope.personaVersionId,
