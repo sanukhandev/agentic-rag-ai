@@ -9,6 +9,17 @@ from .v2_contracts import PersonaComposedResponseV2, TurnEnvelopeV2
 
 
 _INTERNAL_OUTPUT = re.compile(r"(?:tenantId|sessionId|opportunityId|scopeRef|toolCallId|function_call|citationIds|modelRequestId|system prompt|```(?:json|typescript))", re.IGNORECASE)
+_PLACEHOLDER_CITATION = re.compile(r"^\[ID_\d+\](?P<fact>[a-z][a-z0-9_]*)?$", re.IGNORECASE)
+_STAGE_PLACEHOLDER_CONTEXT = re.compile(r"\b(?:currently\s+at|at\s+the|about\s+the|in\s+the)\s+\[ID_\d+\](?:\s+stage)?", re.IGNORECASE)
+_STAGE_LABELS = {
+    "lead_generation": "Lead generation",
+    "lead_qualification": "Lead qualification",
+    "account_creation": "Account creation",
+    "package_selection": "package selection",
+    "document_upload": "document upload",
+    "billing_invoice": "billing and invoicing",
+    "contract": "contract",
+}
 
 
 def composer_instructions(envelope: TurnEnvelopeV2) -> str:
@@ -48,9 +59,42 @@ def composer_instructions(envelope: TurnEnvelopeV2) -> str:
     )
 
 
+def _repair_bounded_placeholders(value: Any, envelope: TurnEnvelopeV2) -> Any:
+    if not isinstance(value, dict):
+        return value
+    repaired = dict(value)
+    refs = value.get("citationIds")
+    facts = envelope.intentProjection.confirmedCustomerFacts
+    if isinstance(refs, list):
+        normalized_refs: list[Any] = []
+        for ref in refs:
+            if not isinstance(ref, str):
+                normalized_refs.append(ref)
+                continue
+            match = _PLACEHOLDER_CITATION.fullmatch(ref)
+            if not match:
+                normalized_refs.append(ref)
+                continue
+            fact_key = match.group("fact")
+            if fact_key and facts is not None and getattr(facts, fact_key, None):
+                normalized_refs.append(f"customer-fact-{fact_key}")
+        repaired["citationIds"] = normalized_refs
+
+    stage_label = _STAGE_LABELS.get(envelope.intentProjection.currentStageKey or "")
+    if stage_label:
+        def replace_stage_placeholder(match: re.Match[str]) -> str:
+            return re.sub(r"\[ID_\d+\]", stage_label, match.group(0), flags=re.IGNORECASE)
+
+        for field in ("answer", "nextQuestion"):
+            text = repaired.get(field)
+            if isinstance(text, str) and "[ID_" in text and _STAGE_PLACEHOLDER_CONTEXT.search(text):
+                repaired[field] = _STAGE_PLACEHOLDER_CONTEXT.sub(replace_stage_placeholder, text)
+    return repaired
+
+
 def validate_composed_response(value: Any, envelope: TurnEnvelopeV2) -> tuple[PersonaComposedResponseV2 | None, str | None]:
     try:
-        response = PersonaComposedResponseV2.model_validate(value)
+        response = PersonaComposedResponseV2.model_validate(_repair_bounded_placeholders(value, envelope))
     except ValidationError:
         return None, "invalid_model_response"
     if response.personaVersionId != envelope.personaVersionId or response.language not in envelope.persona.permittedLanguages:

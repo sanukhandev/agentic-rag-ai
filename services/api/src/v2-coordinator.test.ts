@@ -291,7 +291,7 @@ describe('V2ConversationCoordinator', () => {
     const request = envelope();
     request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'lead_qualification', pendingRequirementKey: 'email' };
     const question = 'What email address should we use for this request?';
-    const answer = `Thanks for clarifying. ${question} ${question}`;
+    const answer = `Thanks for clarifying. ${question}\n\n${question}`;
     const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer, { response: {
       ...result(answer).response, nextQuestion: question, nextQuestionKey: 'email', reasonNoQuestion: null,
     } }) });
@@ -299,6 +299,20 @@ describe('V2ConversationCoordinator', () => {
     expect(output.guardReason).toBe('accepted_model_dialogue');
     expect(output.repairApplied).toBe(true);
     expect(output.response.answer).toBe(`Thanks for clarifying. ${question}`);
+  });
+
+  it('repairs one missing trailing question when the remaining dialogue is safe', async () => {
+    const request = envelope();
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'account_creation', pendingRequirementKey: null };
+    const question = 'What would you like to review next about your company-formation request?';
+    const answer = 'I can’t verify from the approved information how that required business document is handled after package confirmation. I can still help with other verified parts of your company-formation request.';
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer, { response: {
+      ...result(answer).response, nextQuestion: question, nextQuestionKey: 'stage:account_creation', reasonNoQuestion: null,
+    } }) });
+    const output = await coordinator.run({ envelope: request, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted_model_dialogue');
+    expect(output.repairApplied).toBe(true);
+    expect(output.response.answer).toBe(`${answer} ${question}`);
   });
 
   it('rejects tool evidence that is not correlated to a successful search trace', async () => {

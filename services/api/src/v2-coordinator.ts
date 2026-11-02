@@ -54,13 +54,20 @@ export interface V2CoordinatorResult {
 
 const fallbackFamilyFor = (reason: string): V2FallbackFamily => reason === 'stale_state' ? 'reconciliation' : reason === 'invalid_citation' || reason === 'unsupported_claim' || reason === 'metadata_leak' || reason === 'persona_mismatch' ? 'invalid_model' : 'tool_unavailable';
 const toDraft = (response: PersonaComposedResponseV2): ModelDraft => ({ answer: response.answer, citationIds: response.citationIds, proposedIntent: null });
-const repairTrailingDuplicateQuestion = (response: PersonaComposedResponseV2): PersonaComposedResponseV2 => {
+const repairTrailingQuestionContract = (response: PersonaComposedResponseV2): PersonaComposedResponseV2 => {
   const question = response.nextQuestion?.trim();
   const answer = response.answer.trim();
-  if (!question || answer.length < question.length * 2 + 1) return response;
-  const duplicate = `${question} ${question}`;
-  return answer.endsWith(duplicate)
-    ? { ...response, answer: `${answer.slice(0, -question.length).trim()}` }
+  if (!question) return response;
+  const answerLower = answer.toLocaleLowerCase('en-US');
+  const questionLower = question.toLocaleLowerCase('en-US');
+  if (answerLower.endsWith(questionLower)) {
+    const beforeQuestion = answer.slice(0, answer.length - question.length).trimEnd();
+    return beforeQuestion.toLocaleLowerCase('en-US').endsWith(questionLower)
+      ? { ...response, answer: beforeQuestion }
+      : response;
+  }
+  return !answer.includes('?') && !answerLower.includes(questionLower)
+    ? { ...response, answer: `${answer} ${question}` }
     : response;
 };
 
@@ -171,7 +178,7 @@ export class V2ConversationCoordinator {
     const parsed = agentTurnResultSchema.safeParse(rawResult);
     if (!parsed.success) throw new Error('V2_MODEL_INVALID_RESPONSE');
     const agentResult = parsed.data;
-    const candidateResponse = repairTrailingDuplicateQuestion(addVerifiedFactCitations(agentResult.response, request.verifiedFacts ?? []));
+    const candidateResponse = repairTrailingQuestionContract(addVerifiedFactCitations(agentResult.response, request.verifiedFacts ?? []));
     const repairApplied = candidateResponse !== agentResult.response;
     const guardContext: V2ResponseGuardContext = {
       personaVersionId: envelope.personaVersionId,
