@@ -117,3 +117,19 @@ describe('conversation state concurrency merge', () => {
     expect(merged.pendingPrompt).toBeNull();
   });
 });
+
+import { classifyScopedGoalDecision } from './conversation-state.js';
+
+describe('scoped Business Goal reply classifier', () => {
+  it.each([
+    ['Yes, proceed.', 'confirmed'],
+    ['No, I only need information.', 'rejected'],
+    ['Actually, I want to explore another service.', 'corrected'],
+    ['What are the fees?', 'interruption'],
+    ['Yes, what are the fees?', 'interruption'],
+    ['Maybe later', 'ambiguous'],
+    ['Yesterday was busy', 'ambiguous'],
+  ])('classifies a complete reply %s as %s', (reply, status) => {
+    expect(classifyScopedGoalDecision(reply)).toBe(status);
+  });
+});

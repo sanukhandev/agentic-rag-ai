@@ -232,3 +232,160 @@ describe('quoted customer fact provenance (pure unit)', () => {
     expect(facts).toEqual({});
   });
 });
+
+
+const proposalTurn = async () => {
+  const ctx = await prepared();
+  await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+  const message = 'I want to register a company for technology consulting';
+  const user = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+  if (!user) throw new Error('UNIT_MESSAGE_MISSING');
+  await ctx.store.updateMessage({ ...user, maskedContent: message });
+  ctx.input.userMessage = { ...user, maskedContent: message };
+  ctx.input.maskedMessage = message;
+  ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
+  ctx.coordinator.run.mockImplementationOnce(async () => ({
+    modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+    response: { citationIds: [], answer: 'I can explain company formation.', nextQuestion: null,
+      nextQuestionKey: null, planning: modelProposal },
+    guardReason: 'accepted',
+  }) as unknown as V2CoordinatorResult);
+  const response = await runGPTFirstChatTurn(ctx.input);
+  return { ...ctx, response };
+};
+
+const followUpTurn = async (ctx: Awaited<ReturnType<typeof proposalTurn>>, message: string) => {
+  const session = await ctx.store.getSession(ctx.session.id);
+  if (!session) throw new Error('UNIT_SESSION_MISSING');
+  const clientMessageId = randomUUID();
+  const userMessage = await ctx.store.addMessage({
+    id: randomUUID(), sessionId: ctx.session.id, tenantId: ctx.tenant.id, role: 'user',
+    maskedContent: message, clientMessageId, citations: [], response: null,
+    createdAt: new Date().toISOString(),
+  });
+  return { ...ctx.input, session, userMessage, clientMessageId, maskedMessage: message,
+    messageHash: createHash('sha256').update(message).digest('hex'),
+    requestId: randomUUID() };
+};
+
+describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
+  it('issues one durable, catalog/persona/revision-scoped prompt and no action', async () => {
+    const { store, tenant, session, response, input } = await proposalTurn();
+    const document = await store.getUserIntentDocument(tenant.id, session.id);
+    const state = await store.getSession(session.id);
+    expect(response.answer).toContain('Would you like to proceed with company formation?');
+    expect(document?.goalConfirmed).toBe(false);
+    expect(document?.goalConfirmation).toMatchObject({
+      status: 'pending', goalKey: 'anc.company_formation',
+      promptId: response.messageId, proposalMessageId: input.userMessage.id,
+      catalogVersionRef: document?.catalogVersionRef,
+      personaVersionId: session.personaVersionId,
+      sessionRevision: state?.stateVersion,
+      intentRevision: document?.revision,
+    });
+    expect(await store.listActionsBySession(session.id, tenant.id)).toEqual([]);
+  });
+
+  it('accepts scoped explicit confirmation once, with immutable message evidence', async () => {
+    const ctx = await proposalTurn();
+    const confirmation = await followUpTurn(ctx, 'Yes, proceed.');
+    const reply = await runGPTFirstChatTurn(confirmation);
+    const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(reply.actionProposal).toBeNull();
+    expect(reply.pendingPromptId).toBeNull();
+    expect(document?.goalConfirmed).toBe(true);
+    expect(document?.businessGoalKey).toBe('anc.company_formation');
+    expect(document?.goalConfirmation).toMatchObject({
+      status: 'confirmed', promptId: ctx.response.messageId,
+      customerMessageId: confirmation.userMessage.id,
+      customerClientMessageId: confirmation.clientMessageId,
+      decisionIntentRevision: 0,
+    });
+    expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
+    const audit = await ctx.store.listAudit(ctx.tenant.id);
+    expect(audit.filter(event => event.eventName === 'v2.goal_confirmation.confirmed')).toHaveLength(1);
+    await expect(runGPTFirstChatTurn(confirmation)).rejects.toThrow('already been assessed');
+    const saved = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(saved?.goalConfirmation?.customerMessageId).toBe(confirmation.userMessage.id);
+  });
+
+  it.each([
+    ['No, I only need information.', 'rejected'],
+    ['Actually, I want to explore another service.', 'corrected'],
+  ])('supports %s without clearing unrelated verified facts', async (text, status) => {
+    const ctx = await proposalTurn();
+    const next = await followUpTurn(ctx, text);
+    const reply = await runGPTFirstChatTurn(next);
+    const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document?.goalConfirmation?.status).toBe(status);
+    expect(document?.goalConfirmed).toBe(false);
+    expect(document?.businessGoalKey).toBeNull();
+    expect(document?.verifiedFacts.business_activity?.maskedValue).toBe('technology consulting');
+    expect(reply.actionProposal).toBeNull();
+  });
+
+  it('preserves the same scoped prompt during a knowledge question and ambiguity', async () => {
+    const ctx = await proposalTurn();
+    const question = await followUpTurn(ctx, 'What documents are needed?');
+    const answer = await runGPTFirstChatTurn(question);
+    let document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(answer.pendingPromptId).toBe(ctx.response.messageId);
+    expect(document?.goalConfirmation?.status).toBe('pending');
+    const ambiguous = await followUpTurn(ctx, 'Maybe');
+    const clarification = await runGPTFirstChatTurn(ambiguous);
+    expect(clarification.answer).toContain('Would you like to proceed');
+    expect(clarification.pendingPromptId).toBe(ctx.response.messageId);
+    document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document?.goalConfirmed).toBe(false);
+    const valid = await followUpTurn(ctx, 'Yes, proceed.');
+    await runGPTFirstChatTurn(valid);
+    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.goalConfirmed).toBe(true);
+  });
+
+  it('rejects stale session cursors and cross-tenant decisions', async () => {
+    const ctx = await proposalTurn();
+    const stored = await ctx.store.getSession(ctx.session.id);
+    if (!stored) throw new Error('UNIT_SESSION_MISSING');
+    await ctx.store.updateSession({ ...stored, lastActivityAt: new Date().toISOString() });
+    const stale = await followUpTurn(ctx, 'Yes');
+    await expect(runGPTFirstChatTurn(stale)).rejects.toThrow('no longer current');
+    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.goalConfirmed).toBe(false);
+    const other = await ctx.store.createTenant({ name: 'Other', slug: 'other' });
+    await expect(runGPTFirstChatTurn({ ...stale, tenant: other })).rejects.toThrow('scope does not match');
+  });
+
+  it('does not confirm a standalone yes without an active prompt', async () => {
+    const ctx = await prepared();
+    await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+    const result = await runGPTFirstChatTurn(ctx.input);
+    expect(result.pendingPromptId).toBeNull();
+    const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document?.goalConfirmed).toBe(false);
+    expect(document?.goalConfirmation).toBeNull();
+  });
+
+  it('does not ask for company-formation confirmation on a knowledge-only turn', async () => {
+    const ctx = await prepared();
+    await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+    const message = 'I want to register a company for technology consulting';
+    const user = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+    if (!user) throw new Error('UNIT_MESSAGE_MISSING');
+    await ctx.store.updateMessage({ ...user, maskedContent: message });
+    ctx.input.userMessage = { ...user, maskedContent: message };
+    ctx.input.maskedMessage = message;
+    ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'These are general formation options.', nextQuestion: null,
+        nextQuestionKey: null, planning: { ...modelProposal, turnCategory: 'knowledge_advisory',
+          nextMove: 'answer_knowledge' } },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(ctx.input);
+    const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(reply.pendingPromptId).toBeNull();
+    expect(document?.goalConfirmed).toBe(false);
+    expect(document?.goalConfirmation).toBeNull();
+    expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
+  });
+});
