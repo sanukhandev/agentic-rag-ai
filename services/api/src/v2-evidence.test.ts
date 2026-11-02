@@ -65,6 +65,23 @@ describe('v2 claim provenance and evidence verification', () => {
     expect(verifyV2ResponseEvidence(response('The package includes one visa and registration completes tomorrow.'), visaEvidence).verdict.reasonCode).toBe('unsupported_claim');
   });
 
+  it('allows varied non-factual dialogue without citations but rejects attached claims', () => {
+    for (const answer of [
+      'I’d be happy to help with that.',
+      'Let’s explore this together.',
+      'We can talk through your question together.',
+      'I’m here to help.',
+    ]) {
+      expect(verifyV2ResponseEvidence(response(answer, []), [], [], { allowNonFactualDialogue: true }).verdict.accepted, answer).toBe(true);
+    }
+    expect(verifyV2ResponseEvidence(response('Let’s explore that together. The package costs AED 900.', []), [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(false);
+  });
+
+  it('does not combine a price citation with unrelated visa eligibility', () => {
+    const item: V2ApprovedEvidence = { citationId: 'price-source', text: 'The package costs 42 credits.', sourceVersion: 'price-v1', approved: true, revoked: false };
+    expect(verifyV2ResponseEvidence(response('The package costs 42 credits and includes three visas.', ['price-source']), [item]).verdict.reasonCode).toBe('unsupported_claim');
+  });
+
   it('accepts only constrained model-authored questions in a goal without approved knowledge', () => {
     const safe = { ...response('I can help you work through that. What business activity are you planning?', []),
       nextQuestion: 'What business activity are you planning?', nextQuestionKey: 'business_activity', reasonNoQuestion: null };

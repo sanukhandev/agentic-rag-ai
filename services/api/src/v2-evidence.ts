@@ -85,6 +85,12 @@ const nonFactualPreface = (input: string): boolean => {
   const value = input.trim().replace(/[.!]\s*$/u, '').trim().replace(/\s+/gu, ' ');
   if (!value || value.length > 190) return false;
   if (/^(?:hi|hello|hey)[,!]?\s+i can help(?: you)?(?: with that| with your (?:request|company formation))?$/iu.test(value)) return true;
+  // Speech acts are not knowledge claims. Accept varied natural phrasings,
+  // but only in these narrowly bounded conversational forms.
+  if (/^(?:i(?:'|’)d|i would) be (?:glad|happy) to help(?: you)?(?: (?:with|work through) (?:that|this|your request))?$/iu.test(value)
+    || /^let(?:'|’)s (?:explore|talk through|work through) (?:that|this|your question)(?: together)?$/iu.test(value)
+    || /^we can (?:explore|talk through|work through) (?:that|this|your question)(?: together)?$/iu.test(value)
+    || /^i(?:'|’)m here to help(?: you)?(?: with (?:that|this))?$/iu.test(value)) return true;
   return /^(?:thanks?(?: you)?(?: for (?:sharing|clarifying|confirming|explaining)(?: (?:that|the details|those details|your request))?)?|understood|got it|okay|ok|sure|of course|certainly|that makes sense|i understand|i see|no problem|happy to help)$/iu.test(value)
     || /^i (?:can|would be happy to|am happy to)(?: help(?: you)?(?: work through (?:that|this))?| guide you| walk you through (?:that|it|the steps))(?: (?:with|on|through) (?:that|this|your (?:request|setup|company formation|company-formation request)|the (?:process|next steps)))?$/iu.test(value)
     || /^i(?:'|’)ll (?:keep|bear) (?:your|those|the) (?:details|requirements|request|company-formation request) in (?:mind|view)$/iu.test(value)
