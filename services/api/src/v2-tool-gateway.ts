@@ -346,17 +346,30 @@ export const createV2ToolGateway = ({ store, embedding, serviceKey }: V2ToolGate
     // provider status) must be refreshed: source revocation, package availability
     // and provider outcomes can change without a session revision increment.
     if (cached && (request.toolName === 'get_persona' || request.toolName === 'get_intent_catalog')) return cached.value;
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
     try {
       const parsedArguments = argumentSchemas[request.toolName as V2ToolName]?.safeParse(request.arguments);
       if (!parsedArguments?.success) return sanitizedToolError(request, 'invalid_args', 'TOOL_ARGUMENTS_INVALID', scope.stateRevision);
-      const value = await toolResultFor(request, scope, session, catalog, store, embedding);
+      const remainingMs = Math.min(requestDeadline, scope.expiresAt) - Date.now();
+      if (remainingMs <= 0) return sanitizedToolError(request, 'temporarily_unavailable', 'TOOL_DEADLINE_EXCEEDED', scope.stateRevision);
+      // Hard upper bound on the HTTP-visible read result. The underlying store
+      // adapter may finish later, but no late result is ever published to the model.
+      const deadline = new Promise<never>((_resolve, reject) => {
+        deadlineTimer = setTimeout(() => reject(new Error('V2_TOOL_EXECUTION_DEADLINE')), remainingMs);
+      });
+      const value = await Promise.race([toolResultFor(request, scope, session, catalog, store, embedding), deadline]);
+      if (Date.now() > requestDeadline) return sanitizedToolError(request, 'temporarily_unavailable', 'TOOL_DEADLINE_EXCEEDED', scope.stateRevision);
       remember(cacheKey, argsDigest, value);
       await store.addAudit({ id: randomBytes(16).toString('hex'), tenantId: scope.tenantId, actorId: null, eventName: 'v2.tool.read', metadata: { sessionId: scope.sessionId, toolName: request.toolName, toolCallDigest: digest(request.toolCallId).slice(0, 16), scopeDigest: digest(request.scopeRef).slice(0, 16), status: value.status, stateRevision: scope.stateRevision }, createdAt: new Date().toISOString() });
       return value;
-    } catch {
-      const value = sanitizedToolError(request, 'temporarily_unavailable', 'TOOL_UNAVAILABLE', scope.stateRevision);
+    } catch (error) {
+      const code = error instanceof Error && error.message === 'V2_TOOL_EXECUTION_DEADLINE'
+        ? 'TOOL_DEADLINE_EXCEEDED' : 'TOOL_UNAVAILABLE';
+      const value = sanitizedToolError(request, 'temporarily_unavailable', code, scope.stateRevision);
       remember(cacheKey, argsDigest, value);
       return value;
+    } finally {
+      if (deadlineTimer) clearTimeout(deadlineTimer);
     }
   };
   return { execute };
