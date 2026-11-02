@@ -79,7 +79,7 @@ import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 import { registerLifecycleRoutes } from './routes/lifecycle.js';
 import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './v2-tool-gateway.js';
 import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
-import { executeV2Turn } from './v2-turn-controller.js';
+import { executeV2Turn, runGPTFirstChatTurn } from './v2-turn-controller.js';
 import type { V2ApprovedFallbackTemplateSet } from './v2-fallbacks.js';
 import type { PersonaComposedResponseV2 } from './python-model/v2-contracts.js';
 
@@ -666,7 +666,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   };
   const rateLimitMax = readRateLimit(dependencies.rateLimitMax, 'API_RATE_LIMIT_MAX', nodeEnv === 'development' || nodeEnv === 'test' ? 600 : 120, 100_000);
   const rateLimitWindowMs = readRateLimit(dependencies.rateLimitWindowMs, 'API_RATE_LIMIT_WINDOW_MS', 60_000, 3_600_000);
-  if (nodeEnv === 'production' && (!dependencies.model || !dependencies.embedding || !n8nCallbackSecret || !ingestionWorkerSecret)) throw new Error('Production Azure, embedding, n8n polling and ingestion adapters are required.');
+  if (nodeEnv === 'production' && ((!dependencies.model && !v2Coordinator) || !dependencies.embedding || !n8nCallbackSecret || !ingestionWorkerSecret)) throw new Error('Production Azure, embedding, n8n polling and ingestion adapters are required.');
   if (nodeEnv === 'production' && (!configuredChannelCredentialKey || /^(?:replace-with|local-development|change-me)/i.test(configuredChannelCredentialKey))) throw new Error('Production CHANNEL_CREDENTIAL_KEY is required.');
   if (nodeEnv === 'production' && !dependencies.cache && !process.env.REDIS_URL) throw new Error('Production requires REDIS_URL.');
   if (!Number.isFinite(chatSessionTtlMs) || chatSessionTtlMs <= 0) throw new Error('CHAT_SESSION_TTL_MS must be a positive number.');
@@ -1445,6 +1445,23 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       session.lastActivityAt = new Date().toISOString();
       await updateSessionSafely(session, false);
       pendingMessage = userMessage;
+      // GPT-first mode has a single response owner: authenticate/dedupe above, then
+      // delegate the entire model/tool/evidence/persistence turn. Never run the
+      // deterministic legacy conversation planner after this returns.
+      if (v2Coordinator && conversationEngineV2EnabledForTenant(session.tenantId)) {
+        const response = await runGPTFirstChatTurn({
+          store, cache, tokenVault, session, tenant, userMessage, coordinator: v2Coordinator,
+          clientMessageId: input.clientMessageId, messageHash, maskedMessage: masked.masked,
+          requestId: (req as AuthedRequest).requestId ?? randomUUID(),
+          responseCacheTtlSeconds: chatResponseCacheTtlSeconds,
+          scopeSecret: process.env.MODEL_GATEWAY_SERVICE_KEY ?? '',
+          updateSession: async (candidate) => updateSessionSafely(candidate, false),
+        });
+        recordChatOutcome(session.tenantId, response.grounded, false,
+          estimateTokens(masked.masked), estimateTokens(response.answer));
+        res.json(response);
+        return;
+      }
       const internal = ensureTenant(req, session.tenantId) && getAuth(req)?.role !== undefined;
       const persona = session.personaVersionId
         ? await store.getPersonaVersion(session.tenantId, session.personaVersionId)
