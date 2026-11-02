@@ -600,3 +600,28 @@ Python run passed 81 tests with three pre-existing unrelated failures (one
 workflow fixture expectation and two missing `bs4` ingestion dependencies).
 Final versioned evidence is under
 `artifacts/ancfz-stage5-api-uat/gate2-quality-recovery/final-v1/`.
+
+## Gate 3 reliability and protected-quality verification — 2026-11-02
+
+Gate 3 work is isolated on `feat/gate3-salesforce-sf02-reliability`, branched
+from the protected Gate 2 commit `e8e1af1f908db728c848b884bf6f18404db796ed`;
+PR #126 and its branch were not modified. An immutable 23-case baseline with
+21 accepted case identities and fixture hashes is recorded at
+`artifacts/gate3/baseline/gate2-protected-baseline.json`.
+
+The deterministic mock UAT remained 39/39, public security remained 9/9, and
+the restart/replay runner passed 34/34 checks across API, model gateway,
+worker, relay and Redis restarts. It verified one synthetic Lead, Account and
+document, completed OCR, one durable SF-02 mock receipt, idempotent retries,
+forged-callback rejection and cross-tenant rejection. An independent unseen
+deterministic evaluation passed 40/40 (34 eligible turns and 6 security
+refusals); it is not an Azure quality score.
+
+The three official real Azure `gpt-5.4` qualification runs did not preserve
+the Gate 2 protected quality: 18/23, 15/23 and 15/23. Therefore
+`GATE_2_DIALOGUE_PRESERVED` is not verified and release qualification remains
+blocked. Salesforce Lead/Account sandbox and SF-02 sandbox verification are
+separately `BLOCKED` because no authorized sandbox configuration was present.
+Node passed 373 tests with 12 skipped; Python model-gateway passed 84 tests;
+ingestion passed 30 tests; typecheck, lint, build, Compose and secret checks
+passed. Evidence is under `artifacts/gate3/`.

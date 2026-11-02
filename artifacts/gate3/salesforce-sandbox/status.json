@@ -1,0 +1,15 @@
+{
+  "status": "SALESFORCE_SANDBOX_BLOCKED",
+  "provider": "salesforce",
+  "checkedAt": "2026-11-02T00:00:00Z",
+  "reason": "The isolated UAT API is configured with REMOTE_CRM_PROVIDER=deterministic_mock and no authorized Salesforce sandbox credentials or sandbox endpoint were available for this run.",
+  "productionContacted": false,
+  "mockEvidence": "artifacts/gate3/restart-replay/report.json",
+  "contractCoverage": [
+    "services/api/src/v2-lead-provider.test.ts",
+    "services/api/src/v2-account-provider.test.ts",
+    "services/api/src/account-conversion-api.test.ts"
+  ],
+  "remoteLeadVerified": false,
+  "remoteAccountVerified": false
+}

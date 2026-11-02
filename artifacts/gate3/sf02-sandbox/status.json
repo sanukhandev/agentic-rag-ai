@@ -1,0 +1,14 @@
+{
+  "status": "SF02_SANDBOX_BLOCKED",
+  "provider": "salesforce_sf02",
+  "checkedAt": "2026-11-02T00:00:00Z",
+  "reason": "No authorized Salesforce sandbox endpoint or credentials were configured. No external Salesforce document mutation was attempted.",
+  "productionContacted": false,
+  "mockEvidence": "artifacts/gate3/restart-replay/report.json",
+  "contractCoverage": [
+    "services/api/src/v2-document-provider.test.ts",
+    "services/api/src/document-stage-evidence.test.ts"
+  ],
+  "sandboxAttachmentVerified": false,
+  "mockAttachmentVerified": true
+}

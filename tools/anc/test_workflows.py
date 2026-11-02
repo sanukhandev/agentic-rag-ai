@@ -20,6 +20,7 @@ class Tests(unittest.TestCase):
  def test_unlinked_leads_create_and_linked_leads_reconcile(self):
   workflow=json.loads((BASE/'03-anc-lead-capture-wf-1.json').read_text())
   routes=workflow['connections']['Existing Remote CRM Identity?']['main']
-  self.assertEqual(routes[0][0]['node'],'Remote CRM Create Lead')
-  self.assertEqual(routes[1][0]['node'],'Reconcile Existing CRM Lead')
+  # n8n's IF node places the true branch first; alreadyLinked=true must reconcile.
+  self.assertEqual(routes[0][0]['node'],'Reconcile Existing CRM Lead')
+  self.assertEqual(routes[1][0]['node'],'Remote CRM Create Lead')
 if __name__=='__main__':unittest.main()
