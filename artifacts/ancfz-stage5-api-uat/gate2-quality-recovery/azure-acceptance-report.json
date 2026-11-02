@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "status": "GATE_2_GPT54_DIALOGUE_FAILED",
+  "branch": "feat/conversation-v2-langgraph-stage5-safe",
+  "referenceSha": "98a53a6d73964dc47c3bfff58d3e0fab77302f35",
+  "finalCodeSha": "cd11c8eee7c559e8ed95b774d125d0908b705edf",
+  "executionCommitRecordedByRunner": "eace2f75929a1084054a0ed19f6c507cd70301a1",
+  "sourceRun": "artifacts/ancfz-stage5-api-uat/gate2-quality-recovery/azure-final-v1/hardening-report-azure-gpt5.4.json",
+  "model": {
+    "mode": "azure",
+    "deployment": "gpt-5.4",
+    "gatewayReady": true,
+    "realProviderCallsConfirmed": true,
+    "langGraphEnabled": true,
+    "secretsLogged": false
+  },
+  "conversation": {
+    "customerTurns": 25,
+    "durableModelTurns": 23,
+    "modelRequests": 36,
+    "trustedToolCalls": 17,
+    "trustedToolReadEvents": 16,
+    "modelAuthoredAccepted": 3,
+    "overallAcceptance": { "numerator": 3, "denominator": 23, "rate": 0.1304 },
+    "eligibleDialogueAcceptance": { "status": "NOT_MEASURED", "numerator": null, "denominator": null },
+    "acceptedAfterRepair": 0,
+    "repairApplied": 0,
+    "responseGuard": {
+      "delivered": { "accepted": 3, "model_or_tool_unavailable": 5, "safe_no_evidence_dialogue": 1, "unsupported_claim": 14 },
+      "candidate": { "accepted": 3, "model_or_tool_unavailable": 5, "unsupported_claim": 15 },
+      "candidateTextRetained": false
+    },
+    "candidateRejectionClassification": {
+      "TRUE_UNSUPPORTED_CLAIM": 0,
+      "EVIDENCE_AVAILABLE_NOT_PROPAGATED": 0,
+      "VALID_CLAIM_FALSE_REJECTED": 0,
+      "INVALID_CITATION_OR_PROVENANCE": 0,
+      "QUESTION_POLICY_MISMATCH": 0,
+      "MODEL_OR_TOOL_FAILURE": 5,
+      "OUTPUT_FORMAT_ERROR": 0,
+      "OTHER": 0,
+      "INSUFFICIENT_DIAGNOSTIC_EVIDENCE": 15
+    },
+    "fallbacks": { "safe_no_evidence_dialogue": 1, "model_or_tool_unavailable": 5 },
+    "providerErrors": 0,
+    "toolErrors": 0,
+    "latencyMs": { "count": 25, "min": 232, "average": 3671, "max": 7579 },
+    "repeatedResponseIncidents": "NOT_FORMALLY_MEASURED",
+    "unsupportedConsequentialClaimsDelivered": 0,
+    "fabricatedProviderSuccessesDelivered": 0
+  },
+  "assertions": {
+    "passed": 30,
+    "failed": 1,
+    "total": 31,
+    "failedAssertion": "Azure GPT-5.4 delivered model-authored dialogue on at least 80% of evaluated model turns. Actual 3/23 = 13.04%."
+  },
+  "durableLifecycle": {
+    "lead_generation": "completed",
+    "lead_qualification": "completed",
+    "account_creation": "completed",
+    "package_selection": "completed",
+    "document_upload": "completed",
+    "billing_invoice": "awaiting_customer",
+    "contract": "not_started",
+    "lastCompletedStage": "document_upload",
+    "currentActiveStage": "billing_invoice",
+    "nextPendingStage": "billing_invoice",
+    "intentionalStopStage": "document_upload",
+    "documentUploadVerified": true,
+    "ocrVerified": true,
+    "sf02MockVerified": true,
+    "paymentInvoiceContractSideEffects": false
+  },
+  "securityAndRegression": {
+    "security": "9/9 passed",
+    "mockUat": "39/39 passed",
+    "node": "356 passed, 12 skipped",
+    "pythonGateway": "32 passed",
+    "typecheckLintBuildComposeSecrets": "passed",
+    "fullPython": "3 unrelated failures: one workflow fixture expectation and two missing bs4 ingestion dependencies"
+  },
+  "evidenceFiles": [
+    "azure-conversation-redacted.json",
+    "candidate-rejection-classification.json",
+    "root-cause-analysis.md",
+    "quality-comparison.json",
+    "regression-summary.md"
+  ],
+  "blockers": [
+    "Azure model-authored acceptance is 13.04%, below the required 80% target.",
+    "Candidate response text and claim-level evidence mappings were not retained, so the 15 unsupported_claim outcomes cannot be truthfully classified as hallucinations or false positives.",
+    "Full repository Python suite has three unrelated failures.",
+    "Salesforce sandbox verification is not configured; SF-02 result is mock-only."
+  ]
+}

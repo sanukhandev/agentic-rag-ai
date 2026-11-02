@@ -1,0 +1,623 @@
+{
+  "runId": "ref-d65c09165e0b",
+  "mode": "mock",
+  "scenarios": [
+    {
+      "name": "A-happy-path",
+      "status": "PASSED",
+      "turns": 25
+    },
+    {
+      "name": "B-empty-rag",
+      "status": "PASSED",
+      "turns": 3
+    },
+    {
+      "name": "C-security-recovery",
+      "status": "PASSED"
+    }
+  ],
+  "primary": {
+    "turns": [
+      {
+        "message": "Hi Zara, I’m thinking about starting a software consulting company in the UAE.",
+        "clientMessageId": "695f93d8",
+        "status": 200,
+        "latencyMs": 407,
+        "answer": "To continue, could you share your business activity?",
+        "pendingRequirementKey": "business_activity",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "model_or_tool_unavailable",
+          "candidateGuardReason": "model_or_tool_unavailable",
+          "candidateResponseReason": null,
+          "responseReason": "tool_unavailable",
+          "modelResponseAccepted": "false",
+          "repairApplied": "false",
+          "toolStatuses": "stale_state",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "Could you explain the general formation process and what information you need from me?",
+        "clientMessageId": "e0a18e25",
+        "status": 200,
+        "latencyMs": 299,
+        "answer": "I’m keeping your company-formation request moving. What business activity are you planning?",
+        "pendingRequirementKey": "business_activity",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "safe_no_evidence_dialogue",
+          "candidateGuardReason": "unsupported_claim",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "modelResponseAccepted": "false",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": "business_activity"
+        }
+      },
+      {
+        "message": "The business activity is software consulting and AI services.",
+        "clientMessageId": "5415079c",
+        "status": 200,
+        "latencyMs": 293,
+        "answer": "To continue, could you share your entity type?",
+        "pendingRequirementKey": "entity_type",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": "entity_type"
+        }
+      },
+      {
+        "message": "I am leaning toward an LLC for the company structure.",
+        "clientMessageId": "16b900be",
+        "status": 200,
+        "latencyMs": 269,
+        "answer": "To continue, could you share your visa count?",
+        "pendingRequirementKey": "visa_count",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": "visa_count"
+        }
+      },
+      {
+        "message": "I expect to need 3 visas at the start.",
+        "clientMessageId": "9d902414",
+        "status": 200,
+        "latencyMs": 223,
+        "answer": "To continue, could you share your timeline?",
+        "pendingRequirementKey": "timeline",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": "timeline"
+        }
+      },
+      {
+        "message": "I would like to get started next month.",
+        "clientMessageId": "79291503",
+        "status": 200,
+        "latencyMs": 234,
+        "answer": "To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "Correction: the business activity is software consulting and AI services, and the timeline is next month.",
+        "clientMessageId": "0dacd311",
+        "status": 200,
+        "latencyMs": 241,
+        "answer": "I’m keeping your request in view. To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "unsupported_claim",
+          "candidateGuardReason": "unsupported_claim",
+          "candidateResponseReason": null,
+          "responseReason": "invalid_model",
+          "modelResponseAccepted": "false",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "Before we continue, what can you tell me about eligibility?",
+        "clientMessageId": "8ed82ca2",
+        "status": 200,
+        "latencyMs": 219,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "unsupported_claim",
+          "candidateGuardReason": "unsupported_claim",
+          "candidateResponseReason": null,
+          "responseReason": "invalid_model",
+          "modelResponseAccepted": "false",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "Please tell me which requirement is still missing for my company-formation request.",
+        "clientMessageId": "ae196ec9",
+        "status": 200,
+        "latencyMs": 229,
+        "answer": "To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "Actually, I may need 5 visas rather than 3.",
+        "clientMessageId": "d8409a5b",
+        "status": 200,
+        "latencyMs": 216,
+        "answer": "I’m keeping your request in view. To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "Correction: please keep the visa count at 3.",
+        "clientMessageId": "c38c3368",
+        "status": 200,
+        "latencyMs": 228,
+        "answer": "To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "Can you confirm that you kept my LLC structure and software consulting activity?",
+        "clientMessageId": "bd2f70ce",
+        "status": 200,
+        "latencyMs": 328,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "I am ready to provide the contact details needed for this request.",
+        "clientMessageId": "9832317f",
+        "status": 200,
+        "latencyMs": 222,
+        "answer": "To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "My name is [NAME_REDACTED] and my email is [EMAIL_REDACTED].",
+        "clientMessageId": "9dc8382b",
+        "status": 200,
+        "latencyMs": 222,
+        "answer": "I’m keeping your request in view. To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "phone",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": "phone"
+        }
+      },
+      {
+        "message": "My phone number is [PHONE_REDACTED].",
+        "clientMessageId": "e4496f7d",
+        "status": 200,
+        "latencyMs": 197,
+        "answer": "I have the details needed. Please approve the consent action below to register your request. To continue, could you share your contact consent?",
+        "pendingRequirementKey": "contact_consent",
+        "actionProposal": {
+          "id": "fad5acd2",
+          "intent": "crm.lead.create",
+          "consentRequired": true
+        },
+        "v2Audit": null
+      },
+      {
+        "message": "Yes, I explicitly consent to being contacted about this request.",
+        "clientMessageId": "263a1a9b",
+        "status": 200,
+        "latencyMs": 198,
+        "answer": "To continue, could you share your contact consent?",
+        "pendingRequirementKey": "contact_consent",
+        "actionProposal": {
+          "id": "fad5acd2",
+          "intent": "crm.lead.create",
+          "consentRequired": true
+        },
+        "v2Audit": null
+      },
+      {
+        "message": "What happens after my request is registered?",
+        "clientMessageId": "7a65c09b",
+        "status": 200,
+        "latencyMs": 292,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "Please keep the same company-formation request active while I ask a couple of questions.",
+        "clientMessageId": "9ee4f5bd",
+        "status": 200,
+        "latencyMs": 232,
+        "answer": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "Can you explain the next Account step without claiming it is complete?",
+        "clientMessageId": "3e2aff6c",
+        "status": 200,
+        "latencyMs": 218,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "I do not want to change the business activity or company structure.",
+        "clientMessageId": "ddf4ecf7",
+        "status": 200,
+        "latencyMs": 214,
+        "answer": "I’m keeping your request in view. What would you like to review before Account creation is confirmed?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "What information will I review before choosing a package?",
+        "clientMessageId": "fba31351",
+        "status": 200,
+        "latencyMs": 232,
+        "answer": "I can’t verify the package options from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "How will the required business document be handled after package confirmation?",
+        "clientMessageId": "4b4ba1be",
+        "status": 200,
+        "latencyMs": 226,
+        "answer": "I’m keeping your request in view. What would you like to review before Account creation is confirmed?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "Please confirm that the visa count is still 3 and the target is next month.",
+        "clientMessageId": "d6dd2505",
+        "status": 200,
+        "latencyMs": 214,
+        "answer": "Great—let’s keep going. What would you like to look at next?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "What is the next verified action for this opportunity?",
+        "clientMessageId": "484d4bcb",
+        "status": 200,
+        "latencyMs": 228,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "I will wait for verified evidence rather than assuming the Account is complete.",
+        "clientMessageId": "e4f874c0",
+        "status": 200,
+        "latencyMs": 232,
+        "answer": "I’m keeping your request in view. What would you like to review before Account creation is confirmed?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": null
+        }
+      }
+    ],
+    "actions": [
+      {
+        "id": "fad5acd2",
+        "state": "completed",
+        "workflowKey": "crm.lead.create"
+      },
+      {
+        "id": "5ed4b47b",
+        "state": "completed",
+        "workflowKey": "crm.account.convert"
+      }
+    ],
+    "stage": {
+      "stages": {
+        "contract": {
+          "stage": "contract",
+          "status": "not_started",
+          "evidence": {},
+          "revision": 0,
+          "completedAt": null
+        },
+        "billing_invoice": {
+          "stage": "billing_invoice",
+          "status": "awaiting_customer",
+          "evidence": {},
+          "revision": 0,
+          "completedAt": null
+        },
+        "document_upload": {
+          "stage": "document_upload",
+          "status": "completed",
+          "evidence": {
+            "ocrStatus": "completed",
+            "documentId": "ref-cce81f398949",
+            "documentSetComplete": true,
+            "sf02AttachmentVerified": true,
+            "localProcessingVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T06:56:27.986Z"
+        },
+        "lead_generation": {
+          "stage": "lead_generation",
+          "status": "completed",
+          "evidence": {
+            "actionId": "ref-3f8d07c4d370",
+            "providerVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T06:56:22.991Z"
+        },
+        "account_creation": {
+          "stage": "account_creation",
+          "status": "completed",
+          "evidence": {
+            "actionId": "ref-cb9c792ac7d9",
+            "providerVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T06:56:27.057Z"
+        },
+        "package_selection": {
+          "stage": "package_selection",
+          "status": "completed",
+          "evidence": {
+            "quoteId": "ref-b2ef13f1fc80",
+            "selectionId": "ref-285d3a017fa7",
+            "packageConfirmed": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T06:56:27.146Z"
+        },
+        "lead_qualification": {
+          "stage": "lead_qualification",
+          "status": "completed",
+          "evidence": {
+            "actionId": "ref-3f8d07c4d370",
+            "qualificationVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T06:56:22.998Z"
+        }
+      },
+      "lastCompletedStage": "document_upload",
+      "currentActiveStage": "billing_invoice",
+      "nextPendingStage": "billing_invoice",
+      "intentionalStopStage": "document_upload"
+    }
+  }
+}

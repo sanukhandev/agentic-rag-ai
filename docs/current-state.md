@@ -555,3 +555,26 @@ response guard and 19 used `safe_no_evidence_dialogue`, so the model gate is
 Salesforce sandbox gate is `SF02_SANDBOX_BLOCKED_NOT_CONFIGURED`. Final
 evidence is in `artifacts/ancfz-stage5-api-uat/final-acceptance/`; the
 operational database, Docker project and historical reports were not modified.
+
+## Conversation quality recovery — 2026-11-02
+
+The follow-up quality investigation correlated v2 model audit records to the
+originating `clientMessageId` and propagated bounded, tenant-scoped evidence
+from trusted read tools into the Python evidence envelope and Node guard. This
+includes journey state, missing requirements, packages, document requirements,
+action status and the published intent catalog; customer facts remain a
+separate persisted evidence domain. The guard and consent/action boundaries
+remain fail-closed.
+
+The final bounded Azure run used the real configured deployment `gpt-5.4` with
+LangGraph enabled. It completed 23 model turns, 36 model requests and 17
+trusted tool calls, accepted 3 model-authored responses (13.04%), and therefore
+did not meet the 80% dialogue target. The retained redacted evidence does not
+contain original candidate text or claim-level mappings, so the 15 candidate
+`unsupported_claim` outcomes cannot be truthfully classified as hallucinations
+or false positives. The isolated mock journey remained 39/39, security was
+9/9, and the final lifecycle evidence reached `document_upload` with
+`billing_invoice` active; payment, invoice and contract actions were not run.
+Full-repository Python still has three unrelated failures (one workflow fixture
+expectation and two missing `bs4` ingestion dependencies). Detailed evidence is
+under `artifacts/ancfz-stage5-api-uat/gate2-quality-recovery/`.

@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "classificationStatus": "PARTIAL_INSUFFICIENT_DIAGNOSTIC_EVIDENCE",
+  "sourceReport": "artifacts/ancfz-stage5-api-uat/gate2-retest/final-acceptance-v2/report.json",
+  "sourceTranscript": "artifacts/ancfz-stage5-api-uat/gate2-retest/final-acceptance-v2/azure-gpt54-conversation-redacted.json",
+  "durableModelTurns": 23,
+  "turnAssociationReliable": false,
+  "associationIssue": "Historical runner selected the latest audit row by tenant and session without matching clientMessageId; two of 25 transcript rows have no corresponding durable model-turn event.",
+  "aggregateCounts": {
+    "accepted": 2,
+    "MODEL_OR_TOOL_FAILURE": 3,
+    "INSUFFICIENT_DIAGNOSTIC_EVIDENCE": 18
+  },
+  "reasonCountsFromSource": {
+    "candidateGuardReason": {
+      "accepted": 2,
+      "model_or_tool_unavailable": 3,
+      "unsupported_claim": 17,
+      "invalid_question": 1
+    }
+  },
+  "records": [
+    {"modelTurnOrdinal": 1, "status": "rejected", "primaryCategory": "MODEL_OR_TOOL_FAILURE", "evidence": "Source aggregate records model_or_tool_unavailable; candidate text unavailable."},
+    {"modelTurnOrdinal": 2, "status": "rejected", "primaryCategory": "MODEL_OR_TOOL_FAILURE", "evidence": "Source aggregate records model_or_tool_unavailable; candidate text unavailable."},
+    {"modelTurnOrdinal": 3, "status": "rejected", "primaryCategory": "MODEL_OR_TOOL_FAILURE", "evidence": "Source aggregate records model_or_tool_unavailable; candidate text unavailable."},
+    {"modelTurnOrdinal": 4, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 5, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 6, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 7, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 8, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 9, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 10, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 11, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 12, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 13, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 14, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 15, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 16, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 17, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 18, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 19, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "invalid_question", "evidence": "Question text, pending requirement and current turn were not retained together."},
+    {"modelTurnOrdinal": 20, "status": "accepted", "primaryCategory": "ACCEPTED", "evidence": "Source aggregate records accepted candidate; exact turn association is unavailable."},
+    {"modelTurnOrdinal": 21, "status": "accepted", "primaryCategory": "ACCEPTED", "evidence": "Source aggregate records accepted candidate; exact turn association is unavailable."},
+    {"modelTurnOrdinal": 22, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."},
+    {"modelTurnOrdinal": 23, "status": "rejected", "primaryCategory": "INSUFFICIENT_DIAGNOSTIC_EVIDENCE", "sourceReason": "unsupported_claim", "evidence": "Original candidate and claim/evidence mapping were not retained."}
+  ],
+  "note": "The ordinal rows are aggregate placeholders, not claims about which customer message produced a reason. A rerun with clientMessageId-correlated audit events is required for turn-specific classification.",
+  "postFixRun": {
+    "sourceReport": "artifacts/ancfz-stage5-api-uat/gate2-quality-recovery/azure-final-v1/hardening-report-azure-gpt5.4.json",
+    "commitAtExecution": "eace2f75929a1084054a0ed19f6c507cd70301a1 (working-tree type fix; committed as cd11c8eee7c559e8ed95b774d125d0908b705edf)",
+    "turnAssociationReliable": true,
+    "durableModelTurns": 23,
+    "candidateTextRetained": false,
+    "candidateCategories": {
+      "accepted": 3,
+      "MODEL_OR_TOOL_FAILURE": 5,
+      "INSUFFICIENT_DIAGNOSTIC_EVIDENCE": 15
+    },
+    "reasonCountsFromSource": {
+      "accepted": 3,
+      "model_or_tool_unavailable": 5,
+      "unsupported_claim": 15
+    },
+    "classificationNote": "Correlation is now reliable, but candidate text and claim-level evidence mappings are absent. The 15 unsupported_claim outcomes are not proven true unsupported claims or false positives."
+  }
+}

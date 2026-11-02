@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "branch": "feat/conversation-v2-langgraph-stage5-safe",
+  "referenceSha": "98a53a6d73964dc47c3bfff58d3e0fab77302f35",
+  "finalCodeSha": "cd11c8eee7c559e8ed95b774d125d0908b705edf",
+  "model": "azure",
+  "deployment": "gpt-5.4",
+  "baseline": {
+    "source": "artifacts/ancfz-stage5-api-uat/gate2-retest/final-acceptance-v2/",
+    "modelTurns": 23,
+    "acceptedModelResponses": 2,
+    "overallAcceptance": "2/23 = 8.7%",
+    "candidateUnsupportedClaim": 17,
+    "candidateModelOrToolUnavailable": 3,
+    "candidateInvalidQuestion": 1,
+    "auditCorrelationReliable": false,
+    "candidateTextRetained": false
+  },
+  "runs": [
+    {
+      "name": "correlated-telemetry",
+      "source": "artifacts/ancfz-stage5-api-uat/gate2-quality-recovery/hardening-report-azure-gpt5.4.json",
+      "modelTurns": 23,
+      "acceptedModelResponses": 3,
+      "overallAcceptance": "3/23 = 13.04%",
+      "note": "First bounded fresh run after clientMessageId audit correlation."
+    },
+    {
+      "name": "evidence-propagation-rerun",
+      "source": "artifacts/ancfz-stage5-api-uat/gate2-quality-recovery/rerun-evidence-v1/hardening-report-azure-gpt5.4.json",
+      "modelTurns": 23,
+      "acceptedModelResponses": 4,
+      "overallAcceptance": "4/23 = 17.39%",
+      "note": "Used the non-search trusted-tool evidence envelope before the final request-budget adjustment."
+    },
+    {
+      "name": "final-committed-rerun",
+      "source": "artifacts/ancfz-stage5-api-uat/gate2-quality-recovery/azure-final-v1/hardening-report-azure-gpt5.4.json",
+      "modelTurns": 23,
+      "modelRequests": 36,
+      "trustedToolCalls": 17,
+      "toolReadEvents": 16,
+      "acceptedModelResponses": 3,
+      "overallAcceptance": "3/23 = 13.04%",
+      "candidateReasons": { "accepted": 3, "model_or_tool_unavailable": 5, "unsupported_claim": 15 },
+      "deliveredGuardReasons": { "accepted": 3, "model_or_tool_unavailable": 5, "safe_no_evidence_dialogue": 1, "unsupported_claim": 14 },
+      "latencyMs": { "count": 25, "min": 232, "average": 3671, "max": 7579 },
+      "providerErrorEvents": 0,
+      "auditCorrelationReliable": true,
+      "executionCommitRecordedByRunner": "eace2f75929a1084054a0ed19f6c507cd70301a1",
+      "reproducibleCommitAfterRun": "cd11c8eee7c559e8ed95b774d125d0908b705edf"
+    }
+  ],
+  "eligibleDialogueAcceptance": {
+    "status": "NOT_MEASURED",
+    "numerator": null,
+    "denominator": null,
+    "reason": "The retained redacted artifacts do not preserve original candidate text and claim-level evidence mappings. It is not safe to infer which turns were eligible non-factual dialogue from customer messages alone."
+  },
+  "customerQuestionRelevance": {
+    "status": "NOT_FORMALLY_MEASURED",
+    "automatedContinuityAssertions": "passed in the scenario run",
+    "subjective90PercentTarget": "not claimed"
+  },
+  "workflow": {
+    "lastCompletedStage": "document_upload",
+    "currentActiveStage": "billing_invoice",
+    "nextPendingStage": "billing_invoice",
+    "intentionalStopStage": "document_upload",
+    "localDocumentUploadVerified": true,
+    "localOcrVerified": true,
+    "sf02MockVerified": true,
+    "paymentInvoiceContractExecuted": false
+  },
+  "otherGates": {
+    "mockUat": "39/39 assertions passed",
+    "securityRegression": "9/9 checks passed",
+    "nodeApi": "356 passed, 12 skipped",
+    "pythonModelGateway": "32 passed",
+    "typecheckLintBuildComposeSecrets": "passed",
+    "fullPythonRepository": "3 unrelated failures"
+  },
+  "classification": {
+    "confirmedTrueUnsupportedClaims": 0,
+    "falsePositiveGuardRejections": 0,
+    "insufficientDiagnosticEvidence": 15,
+    "modelOrToolFailures": 5,
+    "note": "Zero is not a proof that no hallucinations occurred; it means no retained evidence supports labeling any candidate as a confirmed true unsupported claim."
+  },
+  "verdict": "GATE_2_GPT54_DIALOGUE_FAILED"
+}
