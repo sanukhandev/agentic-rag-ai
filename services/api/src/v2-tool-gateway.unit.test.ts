@@ -117,6 +117,20 @@ describe('V2 trusted tool execution (isolated unit)', () => {
     expect(second.status).toBe('ok');
     expect(second.result).toHaveProperty('recentTurns', [{ role: 'user', content: 'A new question' }]);
   });
+  it('returns a safe timeout instead of delayed tool data', async () => {
+    const { store, gateway, request } = await makeGateway();
+    const original = store.getPersonaVersion.bind(store);
+    store.getPersonaVersion = async (tenantId, versionId) => {
+      await new Promise<void>(resolve => setTimeout(resolve, 100));
+      return original(tenantId, versionId);
+    };
+    const result = await gateway.execute({
+      ...request('get_persona'),
+      deadlineAt: new Date(Date.now() + 40).toISOString(),
+    });
+    expect(result.status).toBe('temporarily_unavailable');
+    expect(result.result).toHaveProperty('code', 'TOOL_DEADLINE_EXCEEDED');
+  });
   it('rejects altered arguments for an already-used tool call ID', async () => {
     const { gateway, request } = await makeGateway();
     const callId = 'replay-mismatch-12345678';
