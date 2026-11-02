@@ -3,6 +3,7 @@ import { cacheKey, type CacheStore } from './cache.js';
 import { newConversationState, prompt } from './conversation-state.js';
 import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 import { validateV2PlanningProposal } from './v2-planning.js';
+import { validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
 import { HttpError } from './http/errors.js';
 import { assertKnownTokens, maskPiiForSession, rehydrateForSession, TokenVault } from './privacy.js';
 import { issueV2Scope, V2_TOOL_NAMES } from './v2-tool-gateway.js';
@@ -264,7 +265,10 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const at = new Date().toISOString();
   // Persist only facts that Node already verified in its session/intent store.
   // Never promote model-generated facts to verified customer facts.
-  const incomingFacts = factPatch(facts as Record<string, string>, state.messageSequence);
+  const proposedFacts = validPlan && selectedV2Goal && modelPlan
+    ? validateQuotedV2CustomerFacts(modelPlan.proposedFacts, maskedMessage, userMessage.id, state.messageSequence)
+    : {};
+  const incomingFacts = { ...factPatch(facts as Record<string, string>, state.messageSequence), ...proposedFacts };
   const verifiedFactPatch: Record<string, UserIntentFact> = Object.fromEntries(
     Object.entries(incomingFacts).filter(([key, value]) =>
       !intentDocument?.verifiedFacts[key] || intentDocument.verifiedFacts[key]?.maskedValue !== value.maskedValue)
@@ -317,6 +321,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         accepted: validPlan, candidateGoalKey: selectedV2Goal,
         turnCategory: selectedTurnCategory, nextMove: validPlan ? modelPlan.nextMove : null,
         matchedSignalIds: catalogSignalRefs.join(',').slice(0, 600),
+        acceptedCustomerFactKeys: Object.keys(proposedFacts).join(','),
         score: planningDecision?.score?.evidenceScore ?? null,
         modelConfidenceBand: modelPlan.confidenceBand,
         proposedToolKey: modelPlan.proposedToolKey,
