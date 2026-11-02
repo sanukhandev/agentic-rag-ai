@@ -1,0 +1,692 @@
+{
+  "runId": "ref-47463ebd9eff",
+  "mode": "mock",
+  "scenarios": [
+    {
+      "name": "A-happy-path",
+      "status": "PASSED",
+      "turns": 25
+    },
+    {
+      "name": "B-empty-rag",
+      "status": "PASSED",
+      "turns": 3
+    },
+    {
+      "name": "C-security-recovery",
+      "status": "PASSED"
+    }
+  ],
+  "primary": {
+    "turns": [
+      {
+        "message": "Hi Zara, I’m thinking about starting a software consulting company in the UAE.",
+        "clientMessageId": "53b998f2",
+        "status": 200,
+        "latencyMs": 342,
+        "answer": "To continue, could you share your business activity?",
+        "pendingRequirementKey": "business_activity",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "model_or_tool_unavailable",
+          "candidateGuardReason": "model_or_tool_unavailable",
+          "candidateResponseReason": null,
+          "responseReason": "tool_unavailable",
+          "candidateResponse": "{\"answer\":\"I can help with your company-formation request. What business activity are you planning?\",\"citationIds\":[],\"nextQuestion\":\"What business activity are you planning?\",\"nextQuestionKey\":\"business_activity\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"I can help with your company-formation request. What business activity are you planning?\", \"citationIds\": [], \"nextQuestion\": \"What business activity are you planning?\", \"nextQuestionKey\": \"business_activity\", \"reasonNoQuestion\": null, \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "false",
+          "repairApplied": "false",
+          "toolStatuses": "stale_state",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "Could you explain the general formation process and what information you need from me?",
+        "clientMessageId": "b52fecbd",
+        "status": 200,
+        "latencyMs": 225,
+        "answer": "I’m keeping your company-formation request moving. What business activity are you planning?",
+        "pendingRequirementKey": "business_activity",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "safe_no_evidence_dialogue",
+          "candidateGuardReason": "unsupported_claim",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"I do not have an approved source to verify that detail yet, but I can still help with your company-formation request. What business activity are you planning?\",\"citationIds\":[],\"nextQuestion\":\"What business activity are you planning?\",\"nextQuestionKey\":\"business_activity\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"I do not have an approved source to verify that detail yet, but I can still help with your company-formation request. What business activity are you planning?\", \"citationIds\": [], \"nextQuestion\": \"What business activity are you planning?\", \"nextQuestionKey\": \"business_activity\", \"reasonNoQuestion\": null, \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "false",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": "business_activity"
+        }
+      },
+      {
+        "message": "The business activity is software consulting and AI services.",
+        "clientMessageId": "84de4e9a",
+        "status": 200,
+        "latencyMs": 224,
+        "answer": "To continue, could you share your entity type?",
+        "pendingRequirementKey": "entity_type",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at lead_generation. What company structure are you considering?\",\"citationIds\":[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-dc3e8a82cf7720bac165bd1b99ad13af\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"],\"nextQuestion\":\"What company structure are you considering?\",\"nextQuestionKey\":\"entity_type\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at lead_generation. What company structure are you considering?\", \"citationIds\": [\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\", \"tool-dc3e8a82cf7720bac165bd1b99ad13af\", \"tool-62ec1af7f1ec0a36b2212bc24c422b6e\", \"tool-c41b22244e68db67fe908dc86dadb405\"], \"nextQuestion\": \"What company structure are you considering?\", \"nextQuestionKey\": \"entity_type\", \"reasonNoQuestion\": null, \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-dc3e8a82cf7720bac165bd1b99ad13af\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": "entity_type"
+        }
+      },
+      {
+        "message": "I am leaning toward an LLC for the company structure.",
+        "clientMessageId": "46b65516",
+        "status": 200,
+        "latencyMs": 235,
+        "answer": "To continue, could you share your visa count?",
+        "pendingRequirementKey": "visa_count",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at lead_generation. How many visas do you expect to need?\",\"citationIds\":[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-50922feb6fe51d3e4491ebbca150225b\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"],\"nextQuestion\":\"How many visas do you expect to need?\",\"nextQuestionKey\":\"visa_count\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at lead_generation. How many visas do you expect to need?\", \"citationIds\": [\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\", \"tool-50922feb6fe51d3e4491ebbca150225b\", \"tool-62ec1af7f1ec0a36b2212bc24c422b6e\", \"tool-c41b22244e68db67fe908dc86dadb405\"], \"nextQuestion\": \"How many visas do you expect to need?\", \"nextQuestionKey\": \"visa_count\", \"reasonNoQuestion\": null, \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-50922feb6fe51d3e4491ebbca150225b\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": "visa_count"
+        }
+      },
+      {
+        "message": "I expect to need 3 visas at the start.",
+        "clientMessageId": "232a55df",
+        "status": 200,
+        "latencyMs": 243,
+        "answer": "To continue, could you share your timeline?",
+        "pendingRequirementKey": "timeline",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at lead_generation. When are you hoping to get started?\",\"citationIds\":[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-6ef5556b0dd610b7703835052ed2996f\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"],\"nextQuestion\":\"When are you hoping to get started?\",\"nextQuestionKey\":\"timeline\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at lead_generation. When are you hoping to get started?\", \"citationIds\": [\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\", \"tool-6ef5556b0dd610b7703835052ed2996f\", \"tool-62ec1af7f1ec0a36b2212bc24c422b6e\", \"tool-c41b22244e68db67fe908dc86dadb405\"], \"nextQuestion\": \"When are you hoping to get started?\", \"nextQuestionKey\": \"timeline\", \"reasonNoQuestion\": null, \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-6ef5556b0dd610b7703835052ed2996f\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": "timeline"
+        }
+      },
+      {
+        "message": "I would like to get started next month.",
+        "clientMessageId": "da41be40",
+        "status": 200,
+        "latencyMs": 238,
+        "answer": "To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at lead_generation. What email address may we use to contact you?\",\"citationIds\":[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-d16ea5a21fdc89f27055335d64260ebf\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"],\"nextQuestion\":\"What email address may we use to contact you?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at lead_generation. What email address may we use to contact you?\", \"citationIds\": [\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\", \"tool-d16ea5a21fdc89f27055335d64260ebf\", \"tool-62ec1af7f1ec0a36b2212bc24c422b6e\", \"tool-c41b22244e68db67fe908dc86dadb405\"], \"nextQuestion\": \"What email address may we use to contact you?\", \"nextQuestionKey\": \"email\", \"reasonNoQuestion\": null, \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-d16ea5a21fdc89f27055335d64260ebf\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "Correction: the business activity is software consulting and AI services, and the timeline is next month.",
+        "clientMessageId": "866fdbfe",
+        "status": 200,
+        "latencyMs": 238,
+        "answer": "I’m keeping your request in view. To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "unsupported_claim",
+          "candidateGuardReason": "unsupported_claim",
+          "candidateResponseReason": null,
+          "responseReason": "invalid_model",
+          "candidateResponse": "{\"answer\":\"I do not have an approved source to verify that detail yet, but I can still help with your company-formation request. What email address may we use to contact you?\",\"citationIds\":[],\"nextQuestion\":\"What email address may we use to contact you?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"I do not have an approved source to verify that detail yet, but I can still help with your company-formation request. What email address may we use to contact you?\", \"citationIds\": [], \"nextQuestion\": \"What email address may we use to contact you?\", \"nextQuestionKey\": \"email\", \"reasonNoQuestion\": null, \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "false",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "Before we continue, what can you tell me about eligibility?",
+        "clientMessageId": "019594a3",
+        "status": 200,
+        "latencyMs": 228,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "unsupported_claim",
+          "candidateGuardReason": "unsupported_claim",
+          "candidateResponseReason": null,
+          "responseReason": "invalid_model",
+          "candidateResponse": "{\"answer\":\"I do not have an approved source to verify that detail yet, but I can still help with your company-formation request. What email address may we use to contact you?\",\"citationIds\":[],\"nextQuestion\":\"What email address may we use to contact you?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"I do not have an approved source to verify that detail yet, but I can still help with your company-formation request. What email address may we use to contact you?\", \"citationIds\": [], \"nextQuestion\": \"What email address may we use to contact you?\", \"nextQuestionKey\": \"email\", \"reasonNoQuestion\": null, \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "false",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "Please tell me which requirement is still missing for my company-formation request.",
+        "clientMessageId": "ed7cc1c2",
+        "status": 200,
+        "latencyMs": 221,
+        "answer": "To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at lead_generation. What email address may we use to contact you?\",\"citationIds\":[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"],\"nextQuestion\":\"What email address may we use to contact you?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at lead_generation. What email address may we use to contact you?\", \"citationIds\": [\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\", \"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\", \"tool-62ec1af7f1ec0a36b2212bc24c422b6e\", \"tool-c41b22244e68db67fe908dc86dadb405\"], \"nextQuestion\": \"What email address may we use to contact you?\", \"nextQuestionKey\": \"email\", \"reasonNoQuestion\": null, \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "Actually, I may need 5 visas rather than 3.",
+        "clientMessageId": "bafcf1d4",
+        "status": 200,
+        "latencyMs": 213,
+        "answer": "I’m keeping your request in view. To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at lead_generation. What email address may we use to contact you?\",\"citationIds\":[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"],\"nextQuestion\":\"What email address may we use to contact you?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at lead_generation. What email address may we use to contact you?\", \"citationIds\": [\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\", \"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\", \"tool-62ec1af7f1ec0a36b2212bc24c422b6e\", \"tool-c41b22244e68db67fe908dc86dadb405\"], \"nextQuestion\": \"What email address may we use to contact you?\", \"nextQuestionKey\": \"email\", \"reasonNoQuestion\": null, \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "Correction: please keep the visa count at 3.",
+        "clientMessageId": "d8549129",
+        "status": 200,
+        "latencyMs": 215,
+        "answer": "To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at lead_generation. What email address may we use to contact you?\",\"citationIds\":[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"],\"nextQuestion\":\"What email address may we use to contact you?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at lead_generation. What email address may we use to contact you?\", \"citationIds\": [\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\", \"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\", \"tool-62ec1af7f1ec0a36b2212bc24c422b6e\", \"tool-c41b22244e68db67fe908dc86dadb405\"], \"nextQuestion\": \"What email address may we use to contact you?\", \"nextQuestionKey\": \"email\", \"reasonNoQuestion\": null, \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "Can you confirm that you kept my LLC structure and software consulting activity?",
+        "clientMessageId": "dda2b240",
+        "status": 200,
+        "latencyMs": 219,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at lead_generation. What email address may we use to contact you?\",\"citationIds\":[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"],\"nextQuestion\":\"What email address may we use to contact you?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at lead_generation. What email address may we use to contact you?\", \"citationIds\": [\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\", \"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\", \"tool-62ec1af7f1ec0a36b2212bc24c422b6e\", \"tool-c41b22244e68db67fe908dc86dadb405\"], \"nextQuestion\": \"What email address may we use to contact you?\", \"nextQuestionKey\": \"email\", \"reasonNoQuestion\": null, \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "I am ready to provide the contact details needed for this request.",
+        "clientMessageId": "566dfc2a",
+        "status": 200,
+        "latencyMs": 357,
+        "answer": "To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at lead_generation. What email address may we use to contact you?\",\"citationIds\":[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"],\"nextQuestion\":\"What email address may we use to contact you?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at lead_generation. What email address may we use to contact you?\", \"citationIds\": [\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\", \"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\", \"tool-62ec1af7f1ec0a36b2212bc24c422b6e\", \"tool-c41b22244e68db67fe908dc86dadb405\"], \"nextQuestion\": \"What email address may we use to contact you?\", \"nextQuestionKey\": \"email\", \"reasonNoQuestion\": null, \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "My name is [NAME_REDACTED] and my email is [EMAIL_REDACTED].",
+        "clientMessageId": "e38ed6c6",
+        "status": 200,
+        "latencyMs": 229,
+        "answer": "I’m keeping your request in view. To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "phone",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at lead_generation. What phone number may we use to contact you?\",\"citationIds\":[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"],\"nextQuestion\":\"What phone number may we use to contact you?\",\"nextQuestionKey\":\"phone\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at lead_generation. What phone number may we use to contact you?\", \"citationIds\": [\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\", \"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\", \"tool-62ec1af7f1ec0a36b2212bc24c422b6e\", \"tool-c41b22244e68db67fe908dc86dadb405\"], \"nextQuestion\": \"What phone number may we use to contact you?\", \"nextQuestionKey\": \"phone\", \"reasonNoQuestion\": null, \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": "phone"
+        }
+      },
+      {
+        "message": "My phone number is [PHONE_REDACTED].",
+        "clientMessageId": "ceb46180",
+        "status": 200,
+        "latencyMs": 198,
+        "answer": "I have the details needed. Please approve the consent action below to register your request. To continue, could you share your contact consent?",
+        "pendingRequirementKey": "contact_consent",
+        "actionProposal": {
+          "id": "c01dbe0b",
+          "intent": "crm.lead.create",
+          "consentRequired": true
+        },
+        "v2Audit": null
+      },
+      {
+        "message": "Yes, I explicitly consent to being contacted about this request.",
+        "clientMessageId": "f3c80353",
+        "status": 200,
+        "latencyMs": 207,
+        "answer": "To continue, could you share your contact consent?",
+        "pendingRequirementKey": "contact_consent",
+        "actionProposal": {
+          "id": "c01dbe0b",
+          "intent": "crm.lead.create",
+          "consentRequired": true
+        },
+        "v2Audit": null
+      },
+      {
+        "message": "What happens after my request is registered?",
+        "clientMessageId": "624e8ce4",
+        "status": 200,
+        "latencyMs": 232,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at account_creation.\",\"citationIds\":[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-689afddcfb301564b2d7d4f9659dd00d\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"],\"nextQuestion\":null,\"nextQuestionKey\":null,\"reasonNoQuestion\":\"mock_complete\",\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at account_creation.\", \"citationIds\": [\"tool-0d32bd53b5d1b9bf293a8555060d1635\", \"tool-689afddcfb301564b2d7d4f9659dd00d\", \"tool-ca963771b82377b334c012c480575237\", \"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"], \"nextQuestion\": null, \"nextQuestionKey\": null, \"reasonNoQuestion\": \"mock_complete\", \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-689afddcfb301564b2d7d4f9659dd00d\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "Please keep the same company-formation request active while I ask a couple of questions.",
+        "clientMessageId": "5a54ab42",
+        "status": 200,
+        "latencyMs": 233,
+        "answer": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at account_creation.\",\"citationIds\":[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"],\"nextQuestion\":null,\"nextQuestionKey\":null,\"reasonNoQuestion\":\"mock_complete\",\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at account_creation.\", \"citationIds\": [\"tool-0d32bd53b5d1b9bf293a8555060d1635\", \"tool-61287bb23a8f0e69a882a723792a63ea\", \"tool-ca963771b82377b334c012c480575237\", \"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"], \"nextQuestion\": null, \"nextQuestionKey\": null, \"reasonNoQuestion\": \"mock_complete\", \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "Can you explain the next Account step without claiming it is complete?",
+        "clientMessageId": "af725d58",
+        "status": 200,
+        "latencyMs": 223,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at account_creation.\",\"citationIds\":[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"],\"nextQuestion\":null,\"nextQuestionKey\":null,\"reasonNoQuestion\":\"mock_complete\",\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at account_creation.\", \"citationIds\": [\"tool-0d32bd53b5d1b9bf293a8555060d1635\", \"tool-61287bb23a8f0e69a882a723792a63ea\", \"tool-ca963771b82377b334c012c480575237\", \"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"], \"nextQuestion\": null, \"nextQuestionKey\": null, \"reasonNoQuestion\": \"mock_complete\", \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "I do not want to change the business activity or company structure.",
+        "clientMessageId": "3fc39ec8",
+        "status": 200,
+        "latencyMs": 223,
+        "answer": "I’m keeping your request in view. What would you like to review before Account creation is confirmed?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at account_creation.\",\"citationIds\":[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"],\"nextQuestion\":null,\"nextQuestionKey\":null,\"reasonNoQuestion\":\"mock_complete\",\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at account_creation.\", \"citationIds\": [\"tool-0d32bd53b5d1b9bf293a8555060d1635\", \"tool-61287bb23a8f0e69a882a723792a63ea\", \"tool-ca963771b82377b334c012c480575237\", \"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"], \"nextQuestion\": null, \"nextQuestionKey\": null, \"reasonNoQuestion\": \"mock_complete\", \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "What information will I review before choosing a package?",
+        "clientMessageId": "570afd59",
+        "status": 200,
+        "latencyMs": 227,
+        "answer": "I can’t verify the package options from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at account_creation.\",\"citationIds\":[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"],\"nextQuestion\":null,\"nextQuestionKey\":null,\"reasonNoQuestion\":\"mock_complete\",\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at account_creation.\", \"citationIds\": [\"tool-0d32bd53b5d1b9bf293a8555060d1635\", \"tool-61287bb23a8f0e69a882a723792a63ea\", \"tool-ca963771b82377b334c012c480575237\", \"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"], \"nextQuestion\": null, \"nextQuestionKey\": null, \"reasonNoQuestion\": \"mock_complete\", \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "How will the required business document be handled after package confirmation?",
+        "clientMessageId": "29d1ab25",
+        "status": 200,
+        "latencyMs": 258,
+        "answer": "I’m keeping your request in view. What would you like to review before Account creation is confirmed?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at account_creation.\",\"citationIds\":[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"],\"nextQuestion\":null,\"nextQuestionKey\":null,\"reasonNoQuestion\":\"mock_complete\",\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at account_creation.\", \"citationIds\": [\"tool-0d32bd53b5d1b9bf293a8555060d1635\", \"tool-61287bb23a8f0e69a882a723792a63ea\", \"tool-ca963771b82377b334c012c480575237\", \"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"], \"nextQuestion\": null, \"nextQuestionKey\": null, \"reasonNoQuestion\": \"mock_complete\", \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "Please confirm that the visa count is still 3 and the target is next month.",
+        "clientMessageId": "923e3090",
+        "status": 200,
+        "latencyMs": 219,
+        "answer": "Great—let’s keep going. What would you like to look at next?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at account_creation.\",\"citationIds\":[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"],\"nextQuestion\":null,\"nextQuestionKey\":null,\"reasonNoQuestion\":\"mock_complete\",\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at account_creation.\", \"citationIds\": [\"tool-0d32bd53b5d1b9bf293a8555060d1635\", \"tool-61287bb23a8f0e69a882a723792a63ea\", \"tool-ca963771b82377b334c012c480575237\", \"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"], \"nextQuestion\": null, \"nextQuestionKey\": null, \"reasonNoQuestion\": \"mock_complete\", \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "What is the next verified action for this opportunity?",
+        "clientMessageId": "19e23af5",
+        "status": 200,
+        "latencyMs": 220,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at account_creation.\",\"citationIds\":[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"],\"nextQuestion\":null,\"nextQuestionKey\":null,\"reasonNoQuestion\":\"mock_complete\",\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at account_creation.\", \"citationIds\": [\"tool-0d32bd53b5d1b9bf293a8555060d1635\", \"tool-61287bb23a8f0e69a882a723792a63ea\", \"tool-ca963771b82377b334c012c480575237\", \"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"], \"nextQuestion\": null, \"nextQuestionKey\": null, \"reasonNoQuestion\": \"mock_complete\", \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "I will wait for verified evidence rather than assuming the Account is complete.",
+        "clientMessageId": "4a3a4809",
+        "status": 200,
+        "latencyMs": 239,
+        "answer": "I’m keeping your request in view. What would you like to review before Account creation is confirmed?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": "mock_complete",
+          "responseReason": "mock_complete",
+          "candidateResponse": "{\"answer\":\"The authoritative journey is currently at account_creation.\",\"citationIds\":[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"],\"nextQuestion\":null,\"nextQuestionKey\":null,\"reasonNoQuestion\":\"mock_complete\",\"decisionRefDigest\":\"8412530b3d251a86ef324c5a1dba2e93\"}",
+          "rawCandidate": "{\"schemaVersion\": 2, \"personaVersionId\": \"ref-5cd1ccf2cbf4\", \"language\": \"en\", \"answer\": \"The authoritative journey is currently at account_creation.\", \"citationIds\": [\"tool-0d32bd53b5d1b9bf293a8555060d1635\", \"tool-61287bb23a8f0e69a882a723792a63ea\", \"tool-ca963771b82377b334c012c480575237\", \"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"], \"nextQuestion\": null, \"nextQuestionKey\": null, \"reasonNoQuestion\": \"mock_complete\", \"decisionRef\": \"mock-decision-0001\"}",
+          "availableEvidenceRefs": "[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": null
+        }
+      }
+    ],
+    "actions": [
+      {
+        "id": "c01dbe0b",
+        "state": "completed",
+        "workflowKey": "crm.lead.create"
+      },
+      {
+        "id": "07773b28",
+        "state": "completed",
+        "workflowKey": "crm.account.convert"
+      }
+    ],
+    "stage": {
+      "stages": {
+        "contract": {
+          "stage": "contract",
+          "status": "not_started",
+          "evidence": {},
+          "revision": 0,
+          "completedAt": null
+        },
+        "billing_invoice": {
+          "stage": "billing_invoice",
+          "status": "awaiting_customer",
+          "evidence": {},
+          "revision": 0,
+          "completedAt": null
+        },
+        "document_upload": {
+          "stage": "document_upload",
+          "status": "completed",
+          "evidence": {
+            "ocrStatus": "completed",
+            "documentId": "ref-da6c85479bbe",
+            "documentSetComplete": true,
+            "sf02AttachmentVerified": true,
+            "localProcessingVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T08:20:03.338Z"
+        },
+        "lead_generation": {
+          "stage": "lead_generation",
+          "status": "completed",
+          "evidence": {
+            "actionId": "ref-4e1c88c8c9de",
+            "providerVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T08:19:57.491Z"
+        },
+        "account_creation": {
+          "stage": "account_creation",
+          "status": "completed",
+          "evidence": {
+            "actionId": "ref-fc3c53c5a61d",
+            "providerVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T08:20:02.685Z"
+        },
+        "package_selection": {
+          "stage": "package_selection",
+          "status": "completed",
+          "evidence": {
+            "quoteId": "ref-a1335685b6aa",
+            "selectionId": "ref-3f08811d9482",
+            "packageConfirmed": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T08:20:02.805Z"
+        },
+        "lead_qualification": {
+          "stage": "lead_qualification",
+          "status": "completed",
+          "evidence": {
+            "actionId": "ref-4e1c88c8c9de",
+            "qualificationVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T08:19:57.499Z"
+        }
+      },
+      "lastCompletedStage": "document_upload",
+      "currentActiveStage": "billing_invoice",
+      "nextPendingStage": "billing_invoice",
+      "intentionalStopStage": "document_upload"
+    }
+  }
+}

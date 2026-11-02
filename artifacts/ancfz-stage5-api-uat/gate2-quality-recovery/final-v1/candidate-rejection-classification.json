@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "run": "azure-retest-v13",
+  "commit": "b935dd076dba8808d1bd7306b6eaed9ec022d07f",
+  "model": "gpt-5.4",
+  "modelTurns": 23,
+  "accepted": 21,
+  "rejected": 2,
+  "confirmedHallucinationsDelivered": 0,
+  "unclassifiable": 0,
+  "classifications": [
+    {
+      "turn": 19,
+      "category": "OUTPUT_FORMAT_ERROR",
+      "candidateGuardReason": "unsupported_claim",
+      "evidence": "Redacted candidate contained the internal placeholder [ID_1] in the stage text.",
+      "delivered": false,
+      "safeDecision": "Node response guard rejected the candidate and delivered a bounded fallback."
+    },
+    {
+      "turn": 22,
+      "category": "QUESTION_POLICY_MISMATCH",
+      "candidateGuardReason": "unsupported_claim",
+      "evidence": "Candidate contained bounded uncertainty and a package-review offer with no citation or provider-completion claim; the wording was outside the constrained dialogue allowlist.",
+      "delivered": false,
+      "safeDecision": "Node delivered a safe fallback; no unsupported consequential claim escaped."
+    }
+  ]
+}

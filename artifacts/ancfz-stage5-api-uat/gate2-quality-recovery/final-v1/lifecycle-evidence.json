@@ -1,0 +1,19 @@
+{
+  "status": "PASSED",
+  "tenant": "anc",
+  "session": "redacted",
+  "opportunity": "redacted",
+  "stages": {
+    "lead_generation": { "status": "completed", "providerVerified": true },
+    "lead_qualification": { "status": "completed", "qualificationVerified": true, "facts": { "business_activity": "software consulting and AI services", "entity_type": "LLC", "visa_count": "3", "timeline": "next month" } },
+    "account_creation": { "status": "completed", "providerVerified": true, "linkedToOriginalLead": true },
+    "package_selection": { "status": "completed", "packageConfirmed": true, "quotationVerified": true },
+    "document_upload": { "status": "completed", "ocrStatus": "completed", "documentSetComplete": true, "localProcessingVerified": true, "sf02AttachmentVerified": true },
+    "billing_invoice": { "status": "awaiting_customer", "sideEffectExecuted": false },
+    "contract": { "status": "not_started", "sideEffectExecuted": false }
+  },
+  "lastCompletedStage": "document_upload",
+  "currentActiveStage": "billing_invoice",
+  "nextPendingStage": "billing_invoice",
+  "intentionalStopStage": "document_upload"
+}

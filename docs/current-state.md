@@ -578,3 +578,25 @@ or false positives. The isolated mock journey remained 39/39, security was
 Full-repository Python still has three unrelated failures (one workflow fixture
 expectation and two missing `bs4` ingestion dependencies). Detailed evidence is
 under `artifacts/ancfz-stage5-api-uat/gate2-quality-recovery/`.
+
+## Gate 2 quality recovery final verification — 2026-11-02
+
+The final bounded Azure UAT used the configured deployment `gpt-5.4` through
+the private LangGraph gateway. It completed 23 model turns over 25 meaningful
+customer turns, 34 model requests and 13 trusted tool calls. Node accepted 21
+model-authored responses (21/23, 91.30%), exceeding the fixed 20/23 (85%)
+gate. Two candidates were rejected safely: one contained an internal stage
+placeholder and one used a safe wording form not covered by the bounded
+dialogue policy. No rejected candidate was delivered to the customer.
+
+The final Azure run passed 31/31 assertions and reached the durable first five
+stages. `document_upload` is the last completed stage and `billing_invoice` is
+the current active/next stage. Local upload/OCR and the deterministic SF-02
+mock receipt were verified separately; Salesforce sandbox verification remains
+`BLOCKED_NOT_CONFIGURED`. The deterministic mock run passed 39/39 assertions,
+and the public security regression passed 9/9 checks. Node passed 373 tests
+with 12 skipped; the model-gateway suite passed 37 tests. The repository-wide
+Python run passed 81 tests with three pre-existing unrelated failures (one
+workflow fixture expectation and two missing `bs4` ingestion dependencies).
+Final versioned evidence is under
+`artifacts/ancfz-stage5-api-uat/gate2-quality-recovery/final-v1/`.

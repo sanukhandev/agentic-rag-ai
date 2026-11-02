@@ -1,0 +1,12 @@
+{
+  "mock": {
+    "status": "SF02_MOCK_VERIFIED",
+    "provider": "deterministic synthetic mock",
+    "receiptEvidence": "document.sf02_attachment_verified count=1",
+    "documentEvidence": { "sf02AttachmentVerified": true, "documentSetComplete": true, "ocrStatus": "completed" },
+    "tenantSessionOpportunityScoped": true,
+    "duplicateProtection": "verified by idempotent duplicate document upload",
+    "restartVerification": "not separately exercised in this run"
+  },
+  "salesforceSandbox": { "status": "SF02_SANDBOX_BLOCKED_NOT_CONFIGURED" }
+}

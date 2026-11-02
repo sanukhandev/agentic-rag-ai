@@ -1,0 +1,10 @@
+{
+  "baseline": { "run": "historical-final-v2", "azureAccepted": 3, "azureModelTurns": 23, "rate": 0.130435 },
+  "intermediate": [
+    { "run": "azure-retest-v10", "accepted": 14, "turns": 23, "rate": 0.608696 },
+    { "run": "azure-retest-v11", "accepted": 16, "turns": 23, "rate": 0.695652 },
+    { "run": "azure-retest-v12", "accepted": 16, "turns": 23, "rate": 0.695652 }
+  ],
+  "final": { "run": "azure-retest-v13", "accepted": 21, "turns": 23, "rate": 0.913043, "fixedGate": "PASSED" },
+  "mock": { "run": "mock-final-v1", "workflowAssertions": "39/39" }
+}
