@@ -150,6 +150,7 @@ export const addVerifiedFactCitations = (response: PersonaComposedResponseV2, fa
 };
 const safeNonFactualTransition = (segment: string): boolean =>
   /^(?:to keep things moving|for now|whenever you're ready)[,.]?$/iu.test(segment.trim())
+  || /^(?:so\s+)?i (?:will not|won't|won’t|do not|don't|don’t) proceed\.?$/iu.test(segment.trim())
   || /^(?:so\s+)?i (?:will|can) (?:share|provide|give you) (?:the )?(?:next|a) (?:verified )?(?:update|details?) when (?:it|they) (?:arrives?|are available)\.?$/iu.test(segment.trim());
 const verdict = (accepted: boolean, reasonCode: ResponseGuardVerdictV2['reasonCode'], response: PersonaComposedResponseV2 | null): ResponseGuardVerdictV2 => ({ schemaVersion: 2, accepted, reasonCode, response });
 
