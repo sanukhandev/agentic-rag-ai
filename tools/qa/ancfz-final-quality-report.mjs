@@ -15,7 +15,13 @@ const branch = execFileSync('git', ['branch', '--show-current'], { encoding: 'ut
 const mockAudit = mock.primary?.executionMetrics?.audit ?? {};
 const azureAudit = azure.primary?.executionMetrics?.audit ?? {};
 const securityMessages = /clientMessageId|Cross-session|before qualification|before package|invalid document|tenant|unauthorized|stale|callback|MIME|signature/iu;
-const securityChecks = (mock.assertions ?? []).filter((item) => securityMessages.test(item.message));
+let securityChecks = (mock.assertions ?? []).filter((item) => securityMessages.test(item.message));
+try {
+  const security = await readJson(join(outputDir, 'security-regression.json'));
+  if (Array.isArray(security.checks)) securityChecks = security.checks;
+} catch {
+  // The report can still be generated from the mock assertions when the standalone suite was not run.
+}
 const securityPassed = securityChecks.filter((item) => item.passed).length;
 const stage5Complete = mock.primary?.lastCompletedStage === 'document_upload' && mock.primary?.currentActiveStage === 'billing_invoice';
 const sf02Verified = mock.primary?.sf02Verified === true;
