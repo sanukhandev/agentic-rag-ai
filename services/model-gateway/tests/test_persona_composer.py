@@ -20,6 +20,9 @@ def test_composer_uses_dynamic_persona_and_hides_internal_protocol():
     assert "Tenant Assistant" in text
     assert "Zara" not in text
     assert "tool names" in text
+    assert "Never use words such as 'usually'" in text
+    assert "masked contact placeholders" in text
+    assert "exactly once" in text
 
 
 def test_response_validator_accepts_pinned_language_and_rejects_wrong_language_or_metadata():

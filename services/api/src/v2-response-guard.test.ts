@@ -67,6 +67,12 @@ describe('guardV2Response', () => {
     expect(guardV2Response(wrong, scope).verdict.reasonCode).toBe('unsupported_claim');
   });
 
+  it('accepts a controlled uncertainty statement before the next requirement question', () => {
+    const question = 'What business activity are you planning?';
+    const candidate = response({ answer: `I can't verify eligibility from the approved information yet. ${question}`, nextQuestion: question, nextQuestionKey: 'business_activity', reasonNoQuestion: null });
+    expect(guardV2Response(candidate, context({ conversational: false, pendingRequirementKey: 'business_activity', questionPolicy: 'required', allowNonFactualDialogue: true })).verdict.accepted).toBe(true);
+  });
+
   it('blocks invented payment completion without approved evidence', () => {
     const result = guardV2Response(response({ answer: 'Your payment is complete.' }), context({ conversational: false }));
     expect(result.verdict.reasonCode).toBe('unsupported_claim');

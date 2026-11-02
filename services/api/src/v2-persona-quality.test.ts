@@ -65,12 +65,14 @@ describe('v2 persona quality matrix', () => {
     }
   });
 
-  it('allows one purposeful qualification question and rejects repetition or unrelated keys', () => {
+  it('allows a repeated question for the still-pending requirement but rejects stale or unrelated keys', () => {
     const scenario = scenarios[1]!;
     const valid = guardV2Response(response(personas[0]!.personaVersionId, scenario), context(personas[0]!.personaVersionId, scenario));
     expect(valid.response.nextQuestionKey).toBe('business_activity');
     const repeated = guardV2Response(response(personas[0]!.personaVersionId, scenario), { ...context(personas[0]!.personaVersionId, scenario), lastQuestionKey: 'business_activity' });
-    expect(repeated.verdict.reasonCode).toBe('invalid_question');
+    expect(repeated.verdict.reasonCode).toBe('accepted');
+    const stale = guardV2Response(response(personas[0]!.personaVersionId, scenario), { ...context(personas[0]!.personaVersionId, scenario), pendingRequirementKey: 'entity_type', lastQuestionKey: 'business_activity' });
+    expect(stale.verdict.reasonCode).toBe('invalid_question');
     const unrelated = guardV2Response(response(personas[0]!.personaVersionId, { ...scenario, nextQuestionKey: 'package_selection' }), context(personas[0]!.personaVersionId, scenario));
     expect(unrelated.verdict.reasonCode).toBe('invalid_question');
   });

@@ -53,6 +53,7 @@ const nonFactualPreface = (input: string): boolean => {
   return /^(?:thanks?(?: you)?(?: for (?:sharing|clarifying|confirming|explaining)(?: (?:that|the details|those details|your request))?)?|understood|got it|okay|ok|sure|of course|certainly|that makes sense|i understand|i see|no problem|happy to help)$/iu.test(value)
     || /^i (?:can|would be happy to|am happy to)(?: help(?: you)?(?: work through (?:that|this))?| guide you| walk you through (?:that|it|the steps))(?: (?:with|on|through) (?:that|this|your (?:request|setup|company formation|company-formation request)|the (?:process|next steps)))?$/iu.test(value)
     || /^i(?:'|’)ll (?:keep|bear) (?:your|those|the) (?:details|requirements|request|company-formation request) in (?:mind|view)$/iu.test(value)
+    || /^i (?:can(?:'|’)t|cannot) (?:verify|confirm) [\s\S]{1,170} (?:from|with|based on) (?:the )?(?:approved information|approved sources|what i have)(?: yet| right now| at this time)?$/iu.test(value)
     || /^i (?:don(?:'|’)t|do not|can(?:'|’)t|cannot) (?:have (?:a )?verified (?:answer|information|details)(?: (?:for|about|on|to) (?:that|this|the specific (?:detail|question)))?(?: yet)?|want to guess(?: about that)?|verify that (?:detail|claim) yet)$/iu.test(value);
 };
 
@@ -65,7 +66,9 @@ const uncitedQuestion = (answer: string, question: string | null): boolean => {
 const safeNoEvidenceDialogue = (answer: string, question: string | null): boolean => {
   // Disallow business consequences, authority claims, numbers, deadlines and links
   // without approved evidence even when the rest of the reply is conversational.
-  if (/\b(?:aed|usd|gbp|eur|dollars?|dirhams?|fees?|prices?|costs?|invoices?|paid|payment|eligible|eligibility|guaranteed|guarantee|registered|registration|created|uploaded|completed|signed|legal(?:ly)?|law|policy|licen[cs]e|approved|confirmed|successful|visa issued|will take|takes? \d+|within \d+)\b|\b\d+(?:[.,]\d+)?\s*(?:days?|hours?|weeks?|months?|visas?)\b|https?:\/\//iu.test(answer)) return false;
+  const controlledUncertainty = /^\s*i (?:can(?:'|’)t|cannot) (?:verify|confirm)\b/iu.test(answer);
+  const containsBlockedClaim = /\b(?:aed|usd|gbp|eur|dollars?|dirhams?|fees?|prices?|costs?|invoices?|paid|payment|eligible|eligibility|guaranteed|guarantee|registered|registration|created|uploaded|completed|signed|legal(?:ly)?|law|policy|licen[cs]e|approved|confirmed|successful|visa issued|will take|takes? \d+|within \d+)\b|\b\d+(?:[.,]\d+)?\s*(?:days?|hours?|weeks?|months?|visas?)\b|https?:\/\//iu.test(answer);
+  if (containsBlockedClaim && !controlledUncertainty) return false;
   if (answer.length > 500) return false;
   if (!question && uncitedConversation(answer)) return true;
   if (question) {
@@ -99,13 +102,16 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
   ];
   const trustedFacts = citedFacts.map((fact) => fact.text).join(' ');
   const citations = modelEvidence.map((item) => item.citation);
+  const answerForEvidence = response.nextQuestion && response.answer.trim().endsWith(response.nextQuestion.trim())
+    ? response.answer.trim().slice(0, -response.nextQuestion.trim().length).trim()
+    : response.answer;
   const grounded = options.allowApprovedFallback === true && citationIds.length === 0
     ? true
     : citationIds.length === 0 && options.allowNonFactualDialogue === true
     ? safeNoEvidenceDialogue(response.answer, response.nextQuestion)
     : options.conversational === true && citationIds.length === 0
     ? uncitedConversation(response.answer) || (options.allowUncitedQuestion === true && uncitedQuestion(response.answer, response.nextQuestion))
-    : citationIds.length > 0 && hasSufficientEvidence(response.answer, modelEvidence, citations, trustedFacts);
+    : citationIds.length > 0 && hasSufficientEvidence(answerForEvidence, modelEvidence, citations, trustedFacts);
   if (!grounded) return { verdict: verdict(false, citationIds.length === 0 ? 'unsupported_claim' : 'unsupported_claim', null), claims: [] };
   const sourceVersions = [...new Set([...citedEvidence.map((item) => item.sourceVersion), ...citedFacts.map((item) => item.sourceVersion)])];
   const claims = sentences(response.answer).map((claim) => ({ claimDigest: digest(claim), citationIds, sourceVersions }));

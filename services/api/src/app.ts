@@ -79,6 +79,7 @@ import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 import { registerLifecycleRoutes } from './routes/lifecycle.js';
 import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './v2-tool-gateway.js';
 import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
+import type { V2ApprovedFallbackTemplateSet } from './v2-fallbacks.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null; normalizationAttempts: number; normalizationFallbacks: number; normalizationFailures: number; normalizationLatencyMs: number };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -86,6 +87,19 @@ export const pruneExpiredRateLimits = (entries: Map<string, RateLimitEntry>, now
   for (const [key, entry] of entries) if (entry.resetAt <= now) entries.delete(key);
 };
 const catalogQuality = (score: number, rule: IntentCatalogQualityRule | undefined): ReturnType<typeof leadQuality> => rule ? score >= rule.hotThreshold ? 'hot' : score >= rule.warmThreshold ? 'warm' : score >= rule.nurtureThreshold ? 'nurture' : 'new' : leadQuality(score);
+
+// shortcut: catalog currently exposes fallback references, not template bodies; replace these with Admin-published text before production cutover.
+const approvedV2FallbackTemplates = (personaVersionId: string, language: string): V2ApprovedFallbackTemplateSet => ({
+  approved: true,
+  personaVersionId,
+  templateVersion: `fallback-${personaVersionId}`,
+  language,
+  templates: {
+    invalid_model: 'I’m unable to use that response safely yet. I can continue with verified information.',
+    tool_unavailable: 'I’m unable to retrieve the approved information right now. I can continue once it is available.',
+    reconciliation: 'I need to verify the request status before I confirm the outcome.',
+  },
+});
 
 const publicUser = (user: { id: string; email: string; role: string; tenantId: string | null }) => ({ id: user.id, email: user.email, role: user.role, tenantId: user.tenantId });
 const publicChannelCredential = (credential: ChannelCredential) => ({ id: credential.id, tenantId: credential.tenantId, channel: credential.channel, authMode: credential.authMode, keyId: credential.keyId, active: credential.active, createdAt: credential.createdAt, revokedAt: credential.revokedAt });
@@ -1851,16 +1865,20 @@ export const createApp = (dependencies: AppDependencies = {}) => {
                budgets: { maxModelRequests: 3, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + 90_000).toISOString() },
              },
              evidence: evidence.map((item) => ({ citationId: item.citation.chunkId, text: item.content, sourceVersion: item.citation.versionId, approved: true, revoked: false, sourceRef: item.citation.sourceId })),
-             verifiedFacts: trustedCustomerFacts,
-             questionPolicy: journeyRequirement?.required ? 'required' : 'optional',
-             lastQuestionKey: state.pendingPrompt?.requirementKey ?? (activeLifecycleStage ? `stage:${activeLifecycleStage}` : null),
-         });
+              verifiedFacts: trustedCustomerFacts,
+              questionPolicy: journeyRequirement?.required ? 'required' : 'optional',
+              lastQuestionKey: state.pendingPrompt?.requirementKey ?? (activeLifecycleStage ? `stage:${activeLifecycleStage}` : null),
+              fallbackTemplates: approvedV2FallbackTemplates(session.personaVersionId, persona.permittedLanguages[0] ?? language),
+          });
            v2Draft = v2.draft;
            v2AllowedUncitedDialogue = v2.guardReason === 'safe_no_evidence_dialogue' || v2.guardReason === 'accepted_model_dialogue';
-           await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.turn', metadata: { sessionId: session.id, modelRequestCount: v2.modelRequestCount, toolCallCount: v2.toolCallCount, guardReason: v2.guardReason, candidateGuardReason: v2.candidateGuardReason, modelResponseAccepted: v2.guardReason === 'accepted_model_dialogue' || v2.guardReason === 'accepted', executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
-         } catch {
-           // An attempted V2 turn must fail closed; never bypass its guard through legacy generation.
-           v2Draft = { answer: naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues }), citationIds: [], proposedIntent: null };
+           const responseReason = /^[a-z0-9_.-]{1,80}$/iu.test(v2.response.reasonNoQuestion ?? '') ? v2.response.reasonNoQuestion : null;
+           await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.turn', metadata: { sessionId: session.id, modelRequestCount: v2.modelRequestCount, toolCallCount: v2.toolCallCount, toolStatuses: v2.toolTrace.map((trace) => trace.status).join(','), guardReason: v2.guardReason, candidateGuardReason: v2.candidateGuardReason, modelResponseAccepted: v2.guardReason === 'accepted_model_dialogue' || v2.guardReason === 'accepted', repairApplied: v2.repairApplied, deliveredCitationCount: v2.response.citationIds.length, deliveredNextQuestionKey: v2.response.nextQuestionKey, ...(responseReason ? { responseReason } : {}), executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
+          } catch (error) {
+            const reason = error instanceof Error && /^[A-Z0-9_.-]{1,80}$/u.test(error.message) ? error.message : 'v2_turn_failed';
+            await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.error', metadata: { sessionId: session.id, reason, executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
+            // An attempted V2 turn must fail closed; never bypass its guard through legacy generation.
+            v2Draft = { answer: naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues }), citationIds: [], proposedIntent: null };
            v2AllowedUncitedDialogue = false;
          }
        }
@@ -1994,9 +2012,19 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const controlledFinalAbstention = knowledgeQuestion && isControlledKnowledgeAbstention(safeAnswer);
       const safeGrounded = grounded && !continuityFallback && !(knowledgeQuestion && (isControlledKnowledgeAbstention(draft.answer) || controlledFinalAbstention)) && (store.constructor.name !== 'PostgresStore' || !knowledgeQuestion || addressesKnowledgeQuestion(maskedMessage, safeAnswer));
       if (knowledgeQuestion && store.constructor.name === 'PostgresStore' && !v2AllowedUncitedDialogue && !safeGrounded && !controlledFinalAbstention) safeAnswer = naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues });
-      const safeCitations = safeGrounded ? citations : [];
-      if (intent === 'farewell') session.closedAt = new Date().toISOString();
       const nextMissingSlot = crmContactMissing ?? journeySlotKey ?? catalogResolution?.missingSlots[0] ?? null;
+      const previousAssistantReply = [...history].reverse().find((turn) => turn.role === 'assistant')?.maskedContent;
+      const repeatedSafeAnswer = Boolean(v2Coordinator && previousAssistantReply && previousAssistantReply === safeAnswer);
+      if (repeatedSafeAnswer) {
+        const continuityQuestion = nextMissingSlot && publishedCatalog
+          ? catalogSlotQuestion(publishedCatalog, journeyResult?.activeIntentKey ?? catalogResolution?.intentKey ?? state.selectedIntentKey ?? '', nextMissingSlot, catalogSlotValues)
+          : activeLifecycleStage === 'account_creation'
+            ? 'What would you like to review before Account creation is confirmed?'
+            : 'What would you like to focus on next?';
+        safeAnswer = `I’m keeping your request in view. ${continuityQuestion}`;
+      }
+      const safeCitations = safeGrounded && !repeatedSafeAnswer ? citations : [];
+      if (intent === 'farewell') session.closedAt = new Date().toISOString();
       const endedConversation = conversational && intent === 'farewell';
       const preserveConsentPrompt = knowledgeQuestion && state.pendingPrompt?.type === 'consent';
       const preserveTypedConsentPrompt = textConsentApproval && state.pendingPrompt?.type === 'consent';

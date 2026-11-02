@@ -80,6 +80,20 @@ const auditSummary = (tenantId, sessionId = null) => {
   const sessionFilter = safeUuid(sessionId) ? ` AND metadata->>'sessionId'='${sessionId}'` : '';
   return db(`SELECT coalesce(json_agg(json_build_object('event',event_name,'count',count) ORDER BY event_name),'[]'::json) FROM (SELECT event_name,count(*) FROM audit_events WHERE tenant_id='${tenantId}'${sessionFilter} GROUP BY event_name) events`);
 };
+const latestV2Audit = (tenantId, sessionId) => {
+  if (!safeUuid(tenantId) || !safeUuid(sessionId)) return null;
+  return db(`SELECT json_build_object(
+    'event',event_name,
+    'guardReason',metadata->>'guardReason',
+    'candidateGuardReason',metadata->>'candidateGuardReason',
+    'responseReason',metadata->>'responseReason',
+    'modelResponseAccepted',metadata->>'modelResponseAccepted',
+    'repairApplied',metadata->>'repairApplied',
+    'toolStatuses',metadata->>'toolStatuses',
+    'deliveredCitationCount',metadata->>'deliveredCitationCount',
+    'deliveredNextQuestionKey',metadata->>'deliveredNextQuestionKey'
+  ) FROM audit_events WHERE tenant_id='${tenantId}' AND metadata->>'sessionId'='${sessionId}' AND event_name IN ('v2.model.turn','v2.model.error') ORDER BY created_at DESC LIMIT 1`);
+};
 const auditMetrics = (tenantId, sessionId) => {
   if (!safeUuid(tenantId) || !safeUuid(sessionId)) return null;
   const filter = `tenant_id='${tenantId}' AND metadata->>'sessionId'='${sessionId}'`;
@@ -91,6 +105,7 @@ const auditMetrics = (tenantId, sessionId) => {
     'guardReasons',(SELECT coalesce(json_object_agg(reason,total),'{}'::json) FROM (SELECT coalesce(metadata->>'guardReason','unknown') AS reason,count(*) AS total FROM audit_events WHERE ${filter} AND event_name='v2.model.turn' GROUP BY 1) reasons),
     'candidateGuardReasons',(SELECT coalesce(json_object_agg(reason,total),'{}'::json) FROM (SELECT coalesce(metadata->>'candidateGuardReason','unknown') AS reason,count(*) AS total FROM audit_events WHERE ${filter} AND event_name='v2.model.turn' GROUP BY 1) reasons),
     'modelAuthoredAccepted',(SELECT count(*) FROM audit_events WHERE ${filter} AND event_name='v2.model.turn' AND metadata->>'modelResponseAccepted'='true'),
+    'repairApplied',(SELECT count(*) FROM audit_events WHERE ${filter} AND event_name='v2.model.turn' AND metadata->>'repairApplied'='true'),
     'providerErrorEvents',(SELECT count(*) FROM audit_events WHERE ${filter} AND event_name ILIKE '%error%')
   )`);
 };
@@ -128,7 +143,7 @@ const send = async (context, message, clientMessageId = crypto.randomUUID(), { r
   const response = await request('/api/v1/chat/messages', { method: 'POST', sessionToken: context.sessionToken, body: { sessionId: context.sessionId, type: 'text', message, clientMessageId } });
   const session = await request(`/api/v1/chat/sessions/${context.sessionId}`, { sessionToken: context.sessionToken });
   const persisted = dbState(context.sessionId, context.tenantId);
-  const turn = { message: redact(message), clientMessageId: clientMessageId.slice(0, 8), status: response.status, latencyMs: Date.now() - startedAtMs, answer: redact(response.body?.answer ?? null), pendingRequirementKey: response.body?.pendingRequirementKey ?? null, actionProposal: response.body?.actionProposal ? { id: String(response.body.actionProposal.id).slice(0, 8), intent: response.body.actionProposal.intent, consentRequired: response.body.actionProposal.consentRequired } : null };
+  const turn = { message: redact(message), clientMessageId: clientMessageId.slice(0, 8), status: response.status, latencyMs: Date.now() - startedAtMs, answer: redact(response.body?.answer ?? null), pendingRequirementKey: response.body?.pendingRequirementKey ?? null, actionProposal: response.body?.actionProposal ? { id: String(response.body.actionProposal.id).slice(0, 8), intent: response.body.actionProposal.intent, consentRequired: response.body.actionProposal.consentRequired } : null, v2Audit: latestV2Audit(context.tenantId, context.sessionId) };
   if (recordTurn) context.turns.push(turn);
   context.firstClientMessageId ??= clientMessageId;
   context.firstMessage ??= message;

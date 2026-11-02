@@ -77,6 +77,24 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.citationIds).toEqual([]);
   });
 
+  it('accepts safe uncited dialogue when approved evidence is available but not needed', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'Could you explain that before I answer?';
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'lead_qualification', pendingRequirementKey: 'business_activity' };
+    const question = 'What business activity are you planning?';
+    const answer = `Thanks for clarifying. ${question}`;
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer, { response: {
+      ...result(answer).response, nextQuestion: question, nextQuestionKey: 'business_activity', reasonNoQuestion: null,
+    } }) });
+    const output = await coordinator.run({
+      envelope: request,
+      evidence: [{ citationId: 'approved-1', text: 'Approved setup information.', sourceVersion: 'version-12345678', approved: true, revoked: false, sourceRef: 'source-12345678' }],
+      questionPolicy: 'required',
+    });
+    expect(output.guardReason).toBe('accepted_model_dialogue');
+    expect(output.response.answer).toBe(answer);
+  });
+
   it('accepts a natural GPT-authored next question when the required slot remains unanswered', async () => {
     const request = envelope();
     request.customerMessageMasked = 'Before I reply, can you help me understand the request?';
@@ -208,6 +226,36 @@ describe('V2ConversationCoordinator', () => {
     const denied = await coordinator.run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
     expect(denied.guardReason).toBe('invalid_citation');
     expect(denied.response.answer).not.toBe(answer);
+  });
+
+  it('does not treat the purposeful follow-up question as an unsupported factual claim', async () => {
+    const request = envelope();
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true,
+      currentStageKey: 'lead_qualification', pendingRequirementKey: 'email',
+      confirmedCustomerFacts: { entity_type: 'LLC' } };
+    const fact = 'The customer stated their company structure is LLC.';
+    const question = 'What email address should we use for this request?';
+    const answer = `${fact} ${question}`;
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer, { response: {
+      ...result(answer).response, citationIds: ['customer-fact-entity_type'], nextQuestion: question, nextQuestionKey: 'email', reasonNoQuestion: null,
+    } }) });
+    const output = await coordinator.run({ envelope: request, verifiedFacts: [{ factId: 'customer-fact-entity_type', text: fact, sourceVersion: 'catalog-12345678', verified: true }], questionPolicy: 'required' });
+    expect(output.guardReason).toBe('accepted');
+    expect(output.response.answer).toBe(answer);
+  });
+
+  it('repairs one duplicated trailing question without changing its meaning', async () => {
+    const request = envelope();
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'lead_qualification', pendingRequirementKey: 'email' };
+    const question = 'What email address should we use for this request?';
+    const answer = `Thanks for clarifying. ${question} ${question}`;
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer, { response: {
+      ...result(answer).response, nextQuestion: question, nextQuestionKey: 'email', reasonNoQuestion: null,
+    } }) });
+    const output = await coordinator.run({ envelope: request, questionPolicy: 'required' });
+    expect(output.guardReason).toBe('accepted_model_dialogue');
+    expect(output.repairApplied).toBe(true);
+    expect(output.response.answer).toBe(`Thanks for clarifying. ${question}`);
   });
 
   it('rejects tool evidence that is not correlated to a successful search trace', async () => {

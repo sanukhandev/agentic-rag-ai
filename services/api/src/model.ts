@@ -377,7 +377,7 @@ export const hasSufficientEvidence = (answer: string, evidence: ModelEvidence[],
       if (numbers.some((number) => !citedContent.includes(number))) return false;
       if (normalizationNegation(clause) && !normalizationNegation(citedContent)) return false;
       const claimWithoutEmail = clause.replace(/\bemail\s+[^\s@]+@[^\s@]+\b/gu, ' pii ').replace(/\b[^\s@]+@[^\s@]+\b/gu, ' pii ');
-      const terms = (claimWithoutEmail.match(/[a-z\u00c0-\u024f]{4,}/gu) ?? []).filter((term, index, values) => !['that', 'this', 'with', 'from', 'your', 'approved', 'answer', 'pii', 'here', 'verify', 'verified', 'know', 'information', 'complete', 'step', 'steps'].includes(term) && values.indexOf(term) === index);
+      const terms = (claimWithoutEmail.match(/[a-z\u00c0-\u024f]{4,}/gu) ?? []).filter((term, index, values) => !['that', 'this', 'with', 'from', 'your', 'approved', 'answer', 'pii', 'here', 'verify', 'verified', 'know', 'information', 'complete', 'step', 'steps', 'thanks', 'clarifying', 'noted', 'note', 'said', 'told', 'stated', 'current', 'details', 'detail', 'remaining', 'requirement', 'requirements', 'share', 'sharing'].includes(term) && values.indexOf(term) === index);
       if (terms.length > 0 && !terms.some((term) => citedContent.includes(term))) return false;
       if (!normalizationNegation(clause) && terms.length > 0 && citedContent.split(/(?<=[.!?])\s+/u).some((sentence) => {
         const negatedTail = sentence.match(/\b(?:no|not|never|without|neither|nor|cannot|can't|doesn't|does not|didn't|did not|won't|will not)\b([\s\S]*)/iu)?.[1] ?? '';

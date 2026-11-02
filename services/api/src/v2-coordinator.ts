@@ -38,6 +38,9 @@ export interface V2CoordinatorRequest {
 
 export interface V2CoordinatorResult {
   response: PersonaComposedResponseV2;
+  /** Original model response retained for bounded local diagnostics and guard telemetry. */
+  candidateResponse: PersonaComposedResponseV2;
+  repairApplied: boolean;
   draft: ModelDraft;
   toolTrace: AgentTurnResultV2['toolTrace'];
   modelRequestCount: number;
@@ -49,6 +52,15 @@ export interface V2CoordinatorResult {
 
 const fallbackFamilyFor = (reason: string): V2FallbackFamily => reason === 'stale_state' ? 'reconciliation' : reason === 'invalid_citation' || reason === 'unsupported_claim' || reason === 'metadata_leak' || reason === 'persona_mismatch' ? 'invalid_model' : 'tool_unavailable';
 const toDraft = (response: PersonaComposedResponseV2): ModelDraft => ({ answer: response.answer, citationIds: response.citationIds, proposedIntent: null });
+const repairTrailingDuplicateQuestion = (response: PersonaComposedResponseV2): PersonaComposedResponseV2 => {
+  const question = response.nextQuestion?.trim();
+  const answer = response.answer.trim();
+  if (!question || answer.length < question.length * 2 + 1) return response;
+  const duplicate = `${question} ${question}`;
+  return answer.endsWith(duplicate)
+    ? { ...response, answer: `${answer.slice(0, -question.length).trim()}` }
+    : response;
+};
 
 export const conversationEngineV2Configured = (env: NodeJS.ProcessEnv = process.env): boolean => Boolean(
   env.PYTHON_MODEL_URL && /^https?:\/\//u.test(env.PYTHON_MODEL_URL) && env.MODEL_GATEWAY_SERVICE_KEY,
@@ -157,6 +169,8 @@ export class V2ConversationCoordinator {
     const parsed = agentTurnResultSchema.safeParse(rawResult);
     if (!parsed.success) throw new Error('V2_MODEL_INVALID_RESPONSE');
     const agentResult = parsed.data;
+    const candidateResponse = repairTrailingDuplicateQuestion(agentResult.response);
+    const repairApplied = candidateResponse !== agentResult.response;
     const guardContext: V2ResponseGuardContext = {
       personaVersionId: envelope.personaVersionId,
       permittedLanguages: envelope.persona.permittedLanguages,
@@ -170,27 +184,26 @@ export class V2ConversationCoordinator {
       fallbackTemplateVersion: envelope.persona.fallbackTemplateVersion,
       ...(request.fallbackTemplates ? { fallbackTemplates: request.fallbackTemplates } : {}),
     };
-    const noApprovedEvidence = Boolean(envelope.intentProjection.primaryGoalKey)
-      && agentResult.response.citationIds.length === 0
-      && agentResult.approvedEvidence.length === 0
-      && (request.evidence?.length ?? 0) === 0;
+    const uncitedDialogueCandidate = Boolean(envelope.intentProjection.primaryGoalKey)
+      && candidateResponse.citationIds.length === 0
+      && agentResult.approvedEvidence.length === 0;
     let candidateGuardReason = 'not_evaluated';
     // The Python gateway can return an internally generated fallback on model/tool
     // failure. Never relabel that failure as a successful no-knowledge dialogue.
-    if (agentResult.response.decisionRef.startsWith('fallback-') || agentResult.toolTrace.some((trace) => trace.status !== 'ok')) {
+    if (candidateResponse.decisionRef.startsWith('fallback-') || agentResult.toolTrace.some((trace) => trace.status !== 'ok')) {
       candidateGuardReason = 'model_or_tool_unavailable';
       const unavailable = guardV2OfflineFallback('tool_unavailable', guardContext);
       if (!unavailable.verdict.accepted || !unavailable.response) throw new Error('V2_MODEL_OR_TOOL_UNAVAILABLE');
-      return { response: unavailable.response, draft: toDraft(unavailable.response), toolTrace: agentResult.toolTrace,
+      return { response: unavailable.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(unavailable.response), toolTrace: agentResult.toolTrace,
         modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'model_or_tool_unavailable', candidateGuardReason };
     }
-    if (noApprovedEvidence) {
+    if (uncitedDialogueCandidate) {
       // A safe question and acknowledgement can be authored by the model without
       // RAG citations. Constrain the accepted text shape and forbid factual claims.
-      const authored = guardV2Response(agentResult.response, { ...guardContext, allowNonFactualDialogue: true });
+      const authored = guardV2Response(candidateResponse, { ...guardContext, allowNonFactualDialogue: true });
       candidateGuardReason = authored.verdict.reasonCode;
       if (authored.verdict.accepted) return {
-        response: authored.response, draft: toDraft(authored.response), toolTrace: agentResult.toolTrace,
+        response: authored.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(authored.response), toolTrace: agentResult.toolTrace,
         modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
         guardReason: 'accepted_model_dialogue', candidateGuardReason,
       };
@@ -202,20 +215,20 @@ export class V2ConversationCoordinator {
         approvedNoEvidenceAnswer: natural.answer,
       });
       if (safe.verdict.accepted) return {
-        response: safe.response, draft: toDraft(safe.response), toolTrace: agentResult.toolTrace,
+        response: safe.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(safe.response), toolTrace: agentResult.toolTrace,
         modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
         guardReason: 'safe_no_evidence_dialogue', candidateGuardReason,
       };
     }
-    const guarded = guardV2Response(agentResult.response, guardContext);
+    const guarded = guardV2Response(candidateResponse, guardContext);
     candidateGuardReason = guarded.verdict.reasonCode;
-    if (guarded.verdict.accepted) return { response: guarded.response, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason };
+    if (guarded.verdict.accepted) return { response: guarded.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason };
     // A missing RAG source must not block conversation. Never use this path when
     // evidence exists, citations are invalid, or the model/tool failed.
-    const unverifiedActionOutcome = /\b(?:payment|invoice|contract|signature|account|registration|lead|document upload)\b.{0,50}\b(?:complete|completed|successful|created|paid|signed|registered|uploaded)\b/iu.test(agentResult.response.answer);
+    const unverifiedActionOutcome = /\b(?:payment|invoice|contract|signature|account|registration|lead|document upload)\b.{0,50}\b(?:complete|completed|successful|created|paid|signed|registered|uploaded)\b/iu.test(candidateResponse.answer);
     if (['unsupported_claim', 'invalid_question'].includes(guarded.verdict.reasonCode)
       && !unverifiedActionOutcome
-      && agentResult.response.citationIds.length === 0
+      && candidateResponse.citationIds.length === 0
       && (request.evidence?.length ?? 0) === 0
       && !agentResult.response.decisionRef.startsWith('fallback-')) {
       const natural = noEvidenceReply(envelope, request.lastQuestionKey ?? null);
@@ -228,13 +241,13 @@ export class V2ConversationCoordinator {
         approvedNoEvidenceAnswer: natural.answer,
       });
       if (safe.verdict.accepted) return {
-        response: safe.response, draft: toDraft(safe.response), toolTrace: agentResult.toolTrace,
+        response: safe.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(safe.response), toolTrace: agentResult.toolTrace,
         modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
         guardReason: 'safe_no_evidence_dialogue', candidateGuardReason,
       };
     }
     const fallback = guardV2OfflineFallback(fallbackFamilyFor(guarded.verdict.reasonCode), guardContext);
     if (!fallback.verdict.accepted || !fallback.response) throw new Error('V2_RESPONSE_REJECTED');
-    return { response: fallback.response, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: guarded.verdict.reasonCode, candidateGuardReason };
+    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: guarded.verdict.reasonCode, candidateGuardReason };
   }
 }
