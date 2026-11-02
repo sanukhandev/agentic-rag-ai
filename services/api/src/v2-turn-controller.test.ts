@@ -120,3 +120,82 @@ describe('GPT-first controller full-turn unit behavior', () => {
     expect(await store.getUserIntentDocument(tenant.id, session.id)).toBeNull();
   });
 });
+
+
+import { readFileSync } from 'node:fs';
+import { catalogV2Sha256, catalogV2VersionRef, type CatalogV2Document } from './catalog-v2.js';
+
+const publishPlannerFixture = async (store: MemoryStore, tenantId: string, tenantScope: string) => {
+  const catalogV2 = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
+  catalogV2.manifest.tenantScope = tenantScope;
+  catalogV2.sheets.CatalogManifest[0]!.tenantScope = tenantScope;
+  const version = await store.createIntentCatalogV2Version({
+    tenantId, status: 'draft', sourceFileName: 'reviewed-v2.json',
+    sourceHash: catalogV2Sha256(catalogV2), parserVersion: 'unit',
+    catalogVersionRef: catalogV2VersionRef(catalogV2), catalog: catalogV2,
+  });
+  await store.publishIntentCatalogV2Version(tenantId, version.id);
+  return version;
+};
+
+const modelProposal = {
+  turnCategory: 'business_goal' as const, primaryGoalKey: 'anc.company_formation',
+  candidateGoalKeys: ['anc.company_formation'], matchedSignalIds: ['signal.company.register'],
+  supportingTopicKeys: [], runnerUpScore: 15, nextMove: 'confirm_goal' as const,
+  nextQuestion: null, proposedToolKey: null, confidenceBand: 'high' as const,
+};
+
+describe('published Catalog V2 planning in the GPT-first controller', () => {
+  it('stores a scored, observed goal as UNCONFIRMED and records an intent decision revision', async () => {
+    const { store, tenant, coordinator, input, session } = await prepared();
+    const catalog = await publishPlannerFixture(store, tenant.id, tenant.slug);
+    const message = 'I want to register a company for technology consulting';
+    const userMessage = await store.getMessageByClientId(session.id, input.clientMessageId);
+    if (!userMessage) throw new Error('UNIT_MESSAGE_MISSING');
+    await store.updateMessage({ ...userMessage, maskedContent: message });
+    input.userMessage = { ...userMessage, maskedContent: message };
+    input.maskedMessage = message;
+    input.messageHash = createHash('sha256').update(message).digest('hex');
+    coordinator.run.mockImplementationOnce(async request => {
+      expect(request.envelope.catalogV2?.versionRef).toBe(catalog.catalogVersionRef);
+      return {
+        modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+        response: { citationIds: [], answer: 'I can help with your company-formation request.', nextQuestion: null,
+          nextQuestionKey: null, planning: modelProposal },
+        guardReason: 'accepted',
+      } as unknown as V2CoordinatorResult;
+    });
+    const answer = await runGPTFirstChatTurn(input);
+    const document = await store.getUserIntentDocument(tenant.id, session.id);
+    expect(answer.actionProposal).toBeNull();
+    expect(document).toMatchObject({ catalogSource: 'v2', catalogVersionRef: catalog.catalogVersionRef,
+      businessGoalKey: 'anc.company_formation', turnIntentKey: 'goal.company_formation', goalConfirmed: false });
+    const turns = await store.listIntentTurns(tenant.id, session.id);
+    expect(turns[0]).toMatchObject({ intentCategory: 'business_goal', businessGoalKey: 'anc.company_formation' });
+    expect(turns[0]?.sourceRefs).toContain('catalog-signal:signal.company.register');
+    expect(await store.listActionsBySession(session.id, tenant.id)).toEqual([]);
+    const audit = (await store.listAudit(tenant.id)).find(event => event.eventName === 'v2.catalog.planning_reviewed');
+    expect(audit?.metadata).toMatchObject({ accepted: true, actionAuthorized: false,
+      catalogVersionRef: catalog.catalogVersionRef, score: 80 });
+    expect(typeof audit?.metadata.sessionRevision).toBe('number');
+  });
+
+  it('rejects fabricated match evidence even when the model claims high confidence', async () => {
+    const { store, tenant, coordinator, input, session } = await prepared();
+    await publishPlannerFixture(store, tenant.id, tenant.slug);
+    coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'Hello, how can I help?', nextQuestion: null,
+        nextQuestionKey: null, planning: modelProposal },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    const result = await runGPTFirstChatTurn(input);
+    const document = await store.getUserIntentDocument(tenant.id, session.id);
+    expect(result.actionProposal).toBeNull();
+    expect(document?.catalogSource).toBe('v2');
+    expect(document?.businessGoalKey).toBeNull();
+    expect(document?.goalConfirmed).toBe(false);
+    const audit = (await store.listAudit(tenant.id)).find(event => event.eventName === 'v2.catalog.planning_reviewed');
+    expect(audit?.metadata).toMatchObject({ accepted: false, actionAuthorized: false });
+  });
+});

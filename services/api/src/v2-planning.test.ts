@@ -44,3 +44,18 @@ describe('v2 bounded intent and stage planning', () => {
     expect(disabled.reasons).toContain('tool_not_allowed');
   });
 });
+
+
+describe('server-observed evidence gates for model planning', () => {
+  it('accepts a genuinely observed signal without authorizing any side effect', () => {
+    const decision = validateV2PlanningProposal(base, catalog, { ...context, observedText: 'I want to register a company for consulting.' });
+    expect(decision.accepted).toBe(true);
+    expect(decision.score?.evidenceScore).toBe(80);
+    expect(decision.score?.actionReadiness.eligible).toBe(false);
+  });
+  it('rejects invented signal matches regardless of model confidence', () => {
+    const decision = validateV2PlanningProposal(base, catalog, { ...context, observedText: 'Hello' });
+    expect(decision.accepted).toBe(false);
+    expect(decision.reasons).toContain('unobserved_signal');
+  });
+});

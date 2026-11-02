@@ -138,3 +138,26 @@ describe('V2 trusted tool execution (isolated unit)', () => {
     expect((await gateway.execute(request('search_knowledge', { query: 'visa', resultCount: 1 }, callId))).status).toBe('not_authorized');
   });
 });
+
+
+import { readFileSync } from 'node:fs';
+import { catalogV2Sha256, catalogV2VersionRef, type CatalogV2Document } from './catalog-v2.js';
+
+describe('V2 catalog publication exposed through trusted read tool', () => {
+  it('returns the canonical published V2 version and active business goals', async () => {
+    const { store, tenant, gateway, request } = await makeGateway();
+    const catalog = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
+    catalog.manifest.tenantScope = tenant.slug;
+    catalog.sheets.CatalogManifest[0]!.tenantScope = tenant.slug;
+    const version = await store.createIntentCatalogV2Version({
+      tenantId: tenant.id, sourceFileName: 'catalog-v2.json', status: 'draft',
+      sourceHash: catalogV2Sha256(catalog), parserVersion: 'unit', catalogVersionRef: catalogV2VersionRef(catalog), catalog,
+    });
+    await store.publishIntentCatalogV2Version(tenant.id, version.id);
+    const result = await gateway.execute(request('get_intent_catalog'));
+    expect(result.status).toBe('ok');
+    expect(result.sourceVersion).toBe(version.catalogVersionRef);
+    expect((result.result?.catalogV2 as { businessGoals: Array<{ key: string }> }).businessGoals)
+      .toContainEqual(expect.objectContaining({ key: 'anc.company_formation' }));
+  });
+});
