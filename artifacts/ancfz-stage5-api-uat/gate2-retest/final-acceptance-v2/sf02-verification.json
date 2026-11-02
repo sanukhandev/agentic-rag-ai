@@ -1,0 +1,7 @@
+{
+  "status": "GATE_4_SF02_MOCK_VERIFIED",
+  "providerType": "deterministic_mock",
+  "localUpload": true,
+  "localOcr": true,
+  "sandbox": "SF02_SANDBOX_BLOCKED_NOT_CONFIGURED"
+}

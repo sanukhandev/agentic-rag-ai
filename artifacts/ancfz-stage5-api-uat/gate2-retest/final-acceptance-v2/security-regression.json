@@ -1,0 +1,76 @@
+{
+  "status": "GATE_1_SECURITY_VERIFIED",
+  "checks": [
+    {
+      "name": "missing session token document config",
+      "passed": true,
+      "status": 401,
+      "code": "SESSION_TOKEN_REQUIRED",
+      "expected": "401 or 403"
+    },
+    {
+      "name": "invalid session token document config",
+      "passed": true,
+      "status": 401,
+      "code": "SESSION_TOKEN_INVALID",
+      "expected": "401 or 403"
+    },
+    {
+      "name": "cross-tenant document config",
+      "passed": true,
+      "status": 401,
+      "code": "SESSION_TOKEN_INVALID",
+      "expected": "401, 403 or 404"
+    },
+    {
+      "name": "cross-tenant document list",
+      "passed": true,
+      "status": 401,
+      "code": "SESSION_TOKEN_INVALID",
+      "expected": "401, 403 or 404"
+    },
+    {
+      "name": "cross-tenant document upload",
+      "passed": true,
+      "status": 401,
+      "code": "SESSION_TOKEN_INVALID",
+      "expected": "401, 403 or 404"
+    },
+    {
+      "name": "cross-session message access",
+      "passed": true,
+      "status": 401,
+      "code": "SESSION_TOKEN_INVALID",
+      "expected": "401, 403 or 404"
+    },
+    {
+      "name": "cross-session action confirmation",
+      "passed": true,
+      "status": 404,
+      "code": "ACTION_NOT_FOUND",
+      "expected": "401, 403 or 404"
+    },
+    {
+      "name": "same message ID with different content",
+      "passed": true,
+      "status": 409,
+      "code": "MESSAGE_ID_REUSED",
+      "expected": "409 MESSAGE_ID_REUSED"
+    },
+    {
+      "name": "unauthorized requests caused no action/document side effects",
+      "passed": true,
+      "before": {
+        "messages": 0,
+        "actions": 0,
+        "documents": 0
+      },
+      "after": {
+        "messages": 2,
+        "actions": 0,
+        "documents": 0
+      },
+      "expected": "actions and documents unchanged"
+    }
+  ]
+}
