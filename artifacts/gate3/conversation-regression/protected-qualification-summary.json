@@ -1,0 +1,17 @@
+{
+  "model": "azure",
+  "deployment": "gpt-5.4",
+  "baseline": "artifacts/gate3/baseline/gate2-protected-baseline.json",
+  "runs": [
+    {"run":"azure-run-1","accepted":18,"denominator":23,"rate":0.782609,"gate":"FAILED","workflowAssertions":"30/31","providerErrors":0},
+    {"run":"azure-run-2","accepted":15,"denominator":23,"rate":0.652174,"gate":"FAILED","workflowAssertions":"30/31","providerErrors":0},
+    {"run":"azure-run-3","accepted":15,"denominator":23,"rate":0.652174,"gate":"FAILED","workflowAssertions":"30/31","providerErrors":0}
+  ],
+  "required": "21/23 on all three runs and zero regressions in the protected accepted identities",
+  "result": "GATE_2_DIALOGUE_NOT_PRESERVED",
+  "classificationNotes": [
+    "Run 1 and run 2 retained candidate text and redacted evidence references.",
+    "Some rejected candidates contain safe uncertainty or customer-fact reflections, but the redacted reports do not contain the underlying tool payloads needed to prove false-positive versus true unsupported claim for every case.",
+    "No unsupported consequential claim was delivered in the three runs; this does not prove absolute zero hallucination outside the evaluated traces."
+  ]
+}

@@ -1,0 +1,683 @@
+{
+  "runId": "ref-c70085ab7fd7",
+  "mode": "azure",
+  "scenarios": [
+    {
+      "name": "E-real-gpt-5.4",
+      "status": "PASSED",
+      "turns": 25
+    }
+  ],
+  "primary": {
+    "turns": [
+      {
+        "message": "Hi Zara, I’m thinking about starting a software consulting company in the UAE.",
+        "clientMessageId": "b4f38bab",
+        "status": 200,
+        "latencyMs": 3398,
+        "answer": "To continue, could you share your business activity?",
+        "pendingRequirementKey": "business_activity",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"Hi! I can help with that. What business activity best describes your software consulting company?\",\"citationIds\":[],\"nextQuestion\":\"What business activity best describes your software consulting company?\",\"nextQuestionKey\":\"business_activity\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"2443630b4620165c8b173e7265e17526\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Hi! I can help with that. What business activity best describes your software consulting company?\",\"citationIds\":[],\"nextQuestion\":\"What business activity best describes your software consulting company?\",\"nextQuestionKey\":\"business_activity\",\"reasonNoQuestion\":null,\"decisionRef\":\"final\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": "business_activity"
+        }
+      },
+      {
+        "message": "Could you explain the general formation process and what information you need from me?",
+        "clientMessageId": "1eaebce3",
+        "status": 200,
+        "latencyMs": 4426,
+        "answer": "I’m keeping your company-formation request moving. What business activity are you planning?",
+        "pendingRequirementKey": "business_activity",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "safe_no_evidence_dialogue",
+          "candidateGuardReason": "unsupported_claim",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"I can help with that. I can explain the general formation process at a high level, but I don’t have a verified process checklist in this chat yet. To move forward, I need your business activity first. What is your business activity?\",\"citationIds\":[],\"nextQuestion\":\"What is your business activity?\",\"nextQuestionKey\":\"business_activity\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"2d48e85437e155f3474d4c1d135168c0\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"I can help with that. I can explain the general formation process at a high level, but I don’t have a verified process checklist in this chat yet. To move forward, I need your business activity first. What is your business activity?\",\"citationIds\":[],\"nextQuestion\":\"What is your business activity?\",\"nextQuestionKey\":\"business_activity\",\"reasonNoQuestion\":null,\"decisionRef\":\"answer-and-collect-pending-requirement\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "false",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": "business_activity"
+        }
+      },
+      {
+        "message": "The business activity is software consulting and AI services.",
+        "clientMessageId": "23752017",
+        "status": 200,
+        "latencyMs": 3388,
+        "answer": "To continue, could you share your entity type?",
+        "pendingRequirementKey": "entity_type",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "unsupported_claim",
+          "candidateGuardReason": "unsupported_claim",
+          "candidateResponseReason": null,
+          "responseReason": "invalid_model",
+          "candidateResponse": "{\"answer\":\"Thanks for clarifying. I’ve noted your business activity as software consulting and AI services. To move your company-formation request forward, what type of company do you want to set up? For example: mainland, free zone, or offshore?\\n\\nWhat type of company do you want to set up? For example: mainland, free zone, or offshore?\",\"citationIds\":[\"customer-fact-business_activity\"],\"nextQuestion\":\"What type of company do you want to set up? For example: mainland, free zone, or offshore?\",\"nextQuestionKey\":\"entity_type\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"4ba0f67610aaefab28d3b9b2da98f7ef\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Thanks for clarifying. I’ve noted your business activity as software consulting and AI services. To move your company-formation request forward, what type of company do you want to set up? For example: mainland, free zone, or offshore?\\n\\nWhat type of company do you want to set up? For example: mainland, free zone, or offshore?\",\"citationIds\":[\"[ID_1]business_activity\"],\"nextQuestion\":\"What type of company do you want to set up? For example: mainland, free zone, or offshore?\",\"nextQuestionKey\":\"entity_type\",\"reasonNoQuestion\":null,\"decisionRef\":\"answer-pending-requirement\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "false",
+          "repairApplied": "true",
+          "toolStatuses": "",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "I am leaning toward an LLC for the company structure.",
+        "clientMessageId": "df721014",
+        "status": 200,
+        "latencyMs": 2225,
+        "answer": "To continue, could you share your visa count?",
+        "pendingRequirementKey": "visa_count",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"Thanks for clarifying. I’ve noted your company structure as LLC and your business activity as software consulting and AI services. How many visas will you need?\",\"citationIds\":[\"customer-fact-business_activity\",\"customer-fact-entity_type\"],\"nextQuestion\":\"How many visas will you need?\",\"nextQuestionKey\":\"visa_count\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"3362492193220028086fe3d40d51dea7\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Thanks for clarifying. I’ve noted your company structure as LLC and your business activity as software consulting and AI services. How many visas will you need?\",\"citationIds\":[\"[ID_1]business_activity\",\"[ID_2]entity_type\"],\"nextQuestion\":\"How many visas will you need?\",\"nextQuestionKey\":\"visa_count\",\"reasonNoQuestion\":null,\"decisionRef\":\"answer-requirement-followup\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "",
+          "deliveredCitationCount": "2",
+          "deliveredNextQuestionKey": "visa_count"
+        }
+      },
+      {
+        "message": "I expect to need 3 visas at the start.",
+        "clientMessageId": "6c9b608a",
+        "status": 200,
+        "latencyMs": 2817,
+        "answer": "To continue, could you share your timeline?",
+        "pendingRequirementKey": "timeline",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"Thanks for clarifying. I’ve noted 3 visas at the start. What timeline are you working toward for setting up the company?\",\"citationIds\":[\"customer-fact-visa_count\"],\"nextQuestion\":\"What timeline are you working toward for setting up the company?\",\"nextQuestionKey\":\"timeline\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"37a8eec1ce19687d132fe29051dca629\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Thanks for clarifying. I’ve noted 3 visas at the start. What timeline are you working toward for setting up the company?\",\"citationIds\":[\"[ID_1]visa_count\"],\"nextQuestion\":\"What timeline are you working toward for setting up the company?\",\"nextQuestionKey\":\"timeline\",\"reasonNoQuestion\":null,\"decisionRef\":\"default\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "",
+          "deliveredCitationCount": "1",
+          "deliveredNextQuestionKey": "timeline"
+        }
+      },
+      {
+        "message": "I would like to get started next month.",
+        "clientMessageId": "b94429c9",
+        "status": 200,
+        "latencyMs": 2500,
+        "answer": "To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"Thanks for clarifying. I’ve noted that your timeline is next month. What’s the best email address to use?\",\"citationIds\":[\"customer-fact-timeline\"],\"nextQuestion\":\"What’s the best email address to use?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"2443630b4620165c8b173e7265e17526\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Thanks for clarifying. I’ve noted that your timeline is next month. What’s the best email address to use?\",\"citationIds\":[\"[ID_1]\"],\"nextQuestion\":\"What’s the best email address to use?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRef\":\"final\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "",
+          "deliveredCitationCount": "1",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "Correction: the business activity is software consulting and AI services, and the timeline is next month.",
+        "clientMessageId": "a1bea2ad",
+        "status": 200,
+        "latencyMs": 2607,
+        "answer": "I’m keeping your request in view. To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"Thanks for the correction. I’ve noted your business activity as software consulting and AI services, and your timeline as next month. Could you share your email address?\",\"citationIds\":[\"customer-fact-business_activity\",\"customer-fact-timeline\"],\"nextQuestion\":\"Could you share your email address?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"a192dde341e5a895fe5838f23599ab0d\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Thanks for the correction. I’ve noted your business activity as software consulting and AI services, and your timeline as next month. Could you share your email address?\",\"citationIds\":[\"[ID_1]business_activity\",\"[ID_2]\"],\"nextQuestion\":\"Could you share your email address?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRef\":\"answer_pending_requirement_after_acknowledging_correction\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "",
+          "deliveredCitationCount": "2",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "Before we continue, what can you tell me about eligibility?",
+        "clientMessageId": "ee721159",
+        "status": 200,
+        "latencyMs": 4333,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"I can help with that. I don’t have verified eligibility rules to confirm who qualifies yet. I do have your business activity as software consulting and AI services, your visa count as 3, and your timeline as next month. To continue, could you share your email address?\",\"citationIds\":[\"customer-fact-business_activity\",\"customer-fact-visa_count\",\"customer-fact-timeline\"],\"nextQuestion\":\"To continue, could you share your email address?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"5da5ebac5319d7c1bfadc05cfc5a3610\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"I can help with that. I don’t have verified eligibility rules to confirm who qualifies yet. I do have your business activity as software consulting and AI services, your visa count as 3, and your timeline as next month. To continue, could you share your email address?\",\"citationIds\":[\"[ID_1]business_activity\",\"[ID_2]visa_count\",\"[ID_3]\"],\"nextQuestion\":\"To continue, could you share your email address?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRef\":\"answer_unverified_eligibility_then_collect_pending_requirement\"}",
+          "availableEvidenceRefs": "[\"tool-1801a90e801a2d26d0b60b58e45c265d\",\"tool-01a4c41763b8d3febf3a1c3ad1abb4e6\",\"tool-3c5cbcf9fca2d9eb3ae5ae03aa619ed7\",\"tool-62ec1af7f1ec0a36b2212bc24c422b6e\",\"tool-c41b22244e68db67fe908dc86dadb405\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok,ok,ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "Please tell me which requirement is still missing for my company-formation request.",
+        "clientMessageId": "68e0fcf6",
+        "status": 200,
+        "latencyMs": 4655,
+        "answer": "To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"I can help with that. The missing requirement for your company-formation request is your email address. What is your email address?\",\"citationIds\":[\"tool-1801a90e801a2d26d0b60b58e45c265d\"],\"nextQuestion\":\"What is your email address?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"a9f4b3d22a523fdada41c85c175425bc\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"I can help with that. The missing requirement for your company-formation request is your email address. What is your email address?\",\"citationIds\":[\"tool-1801a90e801a2d26d0b60b58e45c265d\"],\"nextQuestion\":\"What is your email address?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRef\":\"response\"}",
+          "availableEvidenceRefs": "[\"tool-1801a90e801a2d26d0b60b58e45c265d\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "1",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "Actually, I may need 5 visas rather than 3.",
+        "clientMessageId": "8f23f6df",
+        "status": 200,
+        "latencyMs": 3894,
+        "answer": "I’m keeping your request in view. To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"Thanks for clarifying. I’ve noted that you may need 5 visas. The missing requirement for your company-formation request is your email address. Could you share your email address?\",\"citationIds\":[\"customer-fact-visa_count\",\"tool-1801a90e801a2d26d0b60b58e45c265d\"],\"nextQuestion\":\"Could you share your email address?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"c6b2dc6332a8c19cb9a88e868afc9cfb\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Thanks for clarifying. I’ve noted that you may need 5 visas. The missing requirement for your company-formation request is your email address. Could you share your email address?\",\"citationIds\":[\"[ID_1]visa_count\",\"tool-1801a90e801a2d26d0b60b58e45c265d\"],\"nextQuestion\":\"Could you share your email address?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRef\":\"turn-answer-pending-requirement\"}",
+          "availableEvidenceRefs": "[\"tool-1801a90e801a2d26d0b60b58e45c265d\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "2",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "Correction: please keep the visa count at 3.",
+        "clientMessageId": "d1312112",
+        "status": 200,
+        "latencyMs": 2275,
+        "answer": "To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"Thanks for clarifying. I’ve noted your correction to keep the visa count at 3. To continue, could you share your email address?\",\"citationIds\":[\"customer-fact-business_activity\",\"customer-fact-entity_type\",\"customer-fact-visa_count\",\"customer-fact-timeline\"],\"nextQuestion\":\"To continue, could you share your email address?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"2443630b4620165c8b173e7265e17526\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Thanks for clarifying. I’ve noted your correction to keep the visa count at 3. To continue, could you share your email address?\",\"citationIds\":[\"[ID_1]business_activity\",\"[ID_2]entity_type\",\"[ID_3]visa_count\",\"[ID_4]\"],\"nextQuestion\":\"To continue, could you share your email address?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRef\":\"final\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "",
+          "deliveredCitationCount": "4",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "Can you confirm that you kept my LLC structure and software consulting activity?",
+        "clientMessageId": "62f8a25f",
+        "status": 200,
+        "latencyMs": 2257,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"Thanks for checking. I have your company setup noted as LLC and your business activity noted as software consulting and AI services. To continue, what’s your email address?\",\"citationIds\":[\"customer-fact-entity_type\",\"customer-fact-business_activity\"],\"nextQuestion\":\"What’s your email address?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"d9caf6d9572fb3d58b1a22176d1d9e59\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Thanks for checking. I have your company setup noted as LLC and your business activity noted as software consulting and AI services. To continue, what’s your email address?\",\"citationIds\":[\"[ID_1]entity_type\",\"[ID_2]business_activity\"],\"nextQuestion\":\"What’s your email address?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRef\":\"answer_pending_requirement_confirmed_facts\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "",
+          "deliveredCitationCount": "2",
+          "deliveredNextQuestionKey": "email"
+        }
+      },
+      {
+        "message": "I am ready to provide the contact details needed for this request.",
+        "clientMessageId": "15ce58ef",
+        "status": 200,
+        "latencyMs": 2521,
+        "answer": "To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "email",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "unsupported_claim",
+          "candidateGuardReason": "unsupported_claim",
+          "candidateResponseReason": null,
+          "responseReason": "invalid_model",
+          "candidateResponse": "{\"answer\":\"Thanks for clarifying. I’m ready to take the missing contact detail for your company-formation request. What is your email address?\",\"citationIds\":[],\"nextQuestion\":\"What is your email address?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"1215843f542972e7b38e694c7aa79f88\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Thanks for clarifying. I’m ready to take the missing contact detail for your company-formation request. What is your email address?\",\"citationIds\":[],\"nextQuestion\":\"What is your email address?\",\"nextQuestionKey\":\"email\",\"reasonNoQuestion\":null,\"decisionRef\":\"answer-pending-requirement-email\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "false",
+          "repairApplied": "false",
+          "toolStatuses": "",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "My name is [NAME_REDACTED] and my email is [EMAIL_REDACTED].",
+        "clientMessageId": "8f91103b",
+        "status": 200,
+        "latencyMs": 2103,
+        "answer": "I’m keeping your request in view. To continue, could you share your email address or phone number?",
+        "pendingRequirementKey": "phone",
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "unsupported_claim",
+          "candidateGuardReason": "unsupported_claim",
+          "candidateResponseReason": null,
+          "responseReason": "invalid_model",
+          "candidateResponse": "{\"answer\":\"Thanks for sharing that. I’ve noted your contact email. Could you also share your phone number?\",\"citationIds\":[],\"nextQuestion\":\"Could you also share your phone number?\",\"nextQuestionKey\":\"phone\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"fb48b8e5a353bbda553c154d56105013\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Thanks for sharing that. I’ve noted your contact email. Could you also share your phone number?\",\"citationIds\":[],\"nextQuestion\":\"Could you also share your phone number?\",\"nextQuestionKey\":\"phone\",\"reasonNoQuestion\":null,\"decisionRef\":\"resp-001\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "false",
+          "repairApplied": "false",
+          "toolStatuses": "",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "My phone number is [PHONE_REDACTED].",
+        "clientMessageId": "9798f3ff",
+        "status": 200,
+        "latencyMs": 2492,
+        "answer": "I have the details needed. Please approve the consent action below to register your request. To continue, could you share your contact consent?",
+        "pendingRequirementKey": "contact_consent",
+        "actionProposal": {
+          "id": "b88b0779",
+          "intent": "crm.lead.create",
+          "consentRequired": true
+        },
+        "v2Audit": null
+      },
+      {
+        "message": "Yes, I explicitly consent to being contacted about this request.",
+        "clientMessageId": "b2bd153a",
+        "status": 200,
+        "latencyMs": 228,
+        "answer": "To continue, could you share your contact consent?",
+        "pendingRequirementKey": "contact_consent",
+        "actionProposal": {
+          "id": "b88b0779",
+          "intent": "crm.lead.create",
+          "consentRequired": true
+        },
+        "v2Audit": null
+      },
+      {
+        "message": "What happens after my request is registered?",
+        "clientMessageId": "d38cb5f2",
+        "status": 200,
+        "latencyMs": 5816,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"Thanks for checking. Your contact consent is granted, and the workflow status is succeeded. I can also confirm the journey is currently at account_creation. What would you like help with next?\",\"citationIds\":[\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\",\"tool-0d32bd53b5d1b9bf293a8555060d1635\"],\"nextQuestion\":\"What would you like help with next?\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"d870bc7267fc3f93b8622680c9b74cdd\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Thanks for checking. Your contact consent is granted, and the workflow status is succeeded. I can also confirm the journey is currently at account_creation. What would you like help with next?\",\"citationIds\":[\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\",\"tool-0d32bd53b5d1b9bf293a8555060d1635\"],\"nextQuestion\":\"What would you like help with next?\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRef\":\"answer-status-then-stage-question\"}",
+          "availableEvidenceRefs": "[\"tool-324d6fb4e2aedb1ba4ed15249e02acd6\",\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-689afddcfb301564b2d7d4f9659dd00d\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok,ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": "stage:account_creation"
+        }
+      },
+      {
+        "message": "Please keep the same company-formation request active while I ask a couple of questions.",
+        "clientMessageId": "97935d94",
+        "status": 200,
+        "latencyMs": 5133,
+        "answer": "I can’t verify the setup steps from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"Of course — I’ll keep your company-formation request active while you ask your questions. Your request is still at the [ID_1] stage, and there is no pending requirement from you right now. What would you like to ask?\",\"citationIds\":[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\"],\"nextQuestion\":\"What would you like to ask?\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"db8e75473d9070fa86726d8f981051fa\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Of course — I’ll keep your company-formation request active while you ask your questions. Your request is still at the [ID_1] stage, and there is no pending requirement from you right now. What would you like to ask?\",\"citationIds\":[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\"],\"nextQuestion\":\"What would you like to ask?\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRef\":\"answer-current-question-and-hold-stage\"}",
+          "availableEvidenceRefs": "[\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok,ok",
+          "deliveredCitationCount": "2",
+          "deliveredNextQuestionKey": "stage:account_creation"
+        }
+      },
+      {
+        "message": "Can you explain the next Account step without claiming it is complete?",
+        "clientMessageId": "c4d27519",
+        "status": 200,
+        "latencyMs": 4342,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "invalid_question",
+          "candidateGuardReason": "invalid_question",
+          "candidateResponseReason": null,
+          "responseReason": "tool_unavailable",
+          "candidateResponse": "{\"answer\":\"I can help with that. I can’t verify the specific next step after your request is registered from the approved information I have, so I won’t describe it as complete or confirmed. I’m still keeping your company-formation request active, including your LLC preference, 3 visas, and next month timeline. If you want, I can help with another question about the same request.\",\"citationIds\":[\"customer-fact-entity_type\",\"customer-fact-visa_count\",\"customer-fact-timeline\"],\"nextQuestion\":\"If you want, I can help with another question about the same request.\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"98bb7681917604e05ea4f20abd310984\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"I can help with that. I can’t verify the specific next step after your request is registered from the approved information I have, so I won’t describe it as complete or confirmed. I’m still keeping your company-formation request active, including your LLC preference, 3 visas, and next month timeline. If you want, I can help with another question about the same request.\",\"citationIds\":[\"[ID_1]entity_type\",\"[ID_2]visa_count\",\"[ID_3]\"],\"nextQuestion\":\"If you want, I can help with another question about the same request.\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRef\":\"call_KsZNMSXtw1vVp2lmzgfulKWT\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "false",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "I do not want to change the business activity or company structure.",
+        "clientMessageId": "43307ab1",
+        "status": 200,
+        "latencyMs": 5333,
+        "answer": "I’m keeping your request in view. What would you like to review before Account creation is confirmed?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"Thanks for clarifying. I’ll keep your business activity as software consulting and AI services and your company structure as LLC unchanged. Your lead has been registered, but provider evidence is still pending, so I can’t confirm it as complete yet. Would you like me to request a verified quotation or advisor review?\",\"citationIds\":[\"customer-fact-business_activity\",\"customer-fact-entity_type\",\"tool-324d6fb4e2aedb1ba4ed15249e02acd6\"],\"nextQuestion\":\"Would you like me to request a verified quotation or advisor review?\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"153e03e7d7face917cc50209a6fba109\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Thanks for clarifying. I’ll keep your business activity as software consulting and AI services and your company structure as LLC unchanged. Your lead has been registered, but provider evidence is still pending, so I can’t confirm it as complete yet. Would you like me to request a verified quotation or advisor review?\",\"citationIds\":[\"[ID_1]business_activity\",\"[ID_2]entity_type\",\"tool-324d6fb4e2aedb1ba4ed15249e02acd6\"],\"nextQuestion\":\"Would you like me to request a verified quotation or advisor review?\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRef\":\"answer-status-and-ask-stage-question\"}",
+          "availableEvidenceRefs": "[\"tool-324d6fb4e2aedb1ba4ed15249e02acd6\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": "stage:account_creation"
+        }
+      },
+      {
+        "message": "What information will I review before choosing a package?",
+        "clientMessageId": "e5a127c0",
+        "status": 200,
+        "latencyMs": 4882,
+        "answer": "I can’t verify the package options from the approved information currently available. I’ll keep your current requirements (3 visas, a next month. start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "unsupported_claim",
+          "candidateGuardReason": "unsupported_claim",
+          "candidateResponseReason": null,
+          "responseReason": "invalid_model",
+          "candidateResponse": "{\"answer\":\"I can help with that. I can verify that one approved package is currently listed: ANC Mock Basic, priced at AED 2,500.00, and it includes company formation and three visas. I can’t verify any broader review checklist for package choice from the approved information I have right now. Your company-formation request is still active, and the journey is currently at [ID_1]. Would you like me to help you compare the package details we do have?\",\"citationIds\":[\"tool-75bb86db69a3d6aa1c9de212e92d93b8\",\"tool-0d32bd53b5d1b9bf293a8555060d1635\"],\"nextQuestion\":\"Would you like me to help you compare the package details we do have?\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"2443630b4620165c8b173e7265e17526\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"I can help with that. I can verify that one approved package is currently listed: ANC Mock Basic, priced at AED 2,500.00, and it includes company formation and three visas. I can’t verify any broader review checklist for package choice from the approved information I have right now. Your company-formation request is still active, and the journey is currently at [ID_1]. Would you like me to help you compare the package details we do have?\",\"citationIds\":[\"tool-75bb86db69a3d6aa1c9de212e92d93b8\",\"tool-0d32bd53b5d1b9bf293a8555060d1635\"],\"nextQuestion\":\"Would you like me to help you compare the package details we do have?\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRef\":\"final\"}",
+          "availableEvidenceRefs": "[\"tool-75bb86db69a3d6aa1c9de212e92d93b8\",\"tool-0d32bd53b5d1b9bf293a8555060d1635\",\"tool-61287bb23a8f0e69a882a723792a63ea\",\"tool-ca963771b82377b334c012c480575237\",\"tool-bd6120f8b2f2ff1b1766d32c2254d6eb\"]",
+          "modelResponseAccepted": "false",
+          "repairApplied": "true",
+          "toolStatuses": "ok,ok",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "How will the required business document be handled after package confirmation?",
+        "clientMessageId": "7fdc5052",
+        "status": 200,
+        "latencyMs": 4457,
+        "answer": "I’m keeping your request in view. What would you like to review before Account creation is confirmed?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "invalid_question",
+          "candidateGuardReason": "invalid_question",
+          "candidateResponseReason": null,
+          "responseReason": "tool_unavailable",
+          "candidateResponse": "{\"answer\":\"I can help with that. I can only verify that there is no confirmed package yet, so there are no approved document requirements available to review right now. If you want, I can still help with your package questions.\",\"citationIds\":[\"tool-d85ed12bbfac656a419a9093bec85038\"],\"nextQuestion\":\"If you want, I can still help with your package questions.\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"fb48b8e5a353bbda553c154d56105013\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"I can help with that. I can only verify that there is no confirmed package yet, so there are no approved document requirements available to review right now. If you want, I can still help with your package questions.\",\"citationIds\":[\"tool-d85ed12bbfac656a419a9093bec85038\"],\"nextQuestion\":\"If you want, I can still help with your package questions.\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRef\":\"resp-001\"}",
+          "availableEvidenceRefs": "[\"tool-d85ed12bbfac656a419a9093bec85038\"]",
+          "modelResponseAccepted": "false",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": null
+        }
+      },
+      {
+        "message": "Please confirm that the visa count is still 3 and the target is next month.",
+        "clientMessageId": "d0332007",
+        "status": 200,
+        "latencyMs": 2681,
+        "answer": "Great—let’s keep going. What would you like to look at next?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"Thanks for clarifying. I still have 3 visas and a target of next month in view. What would you like to review before choosing a package?\",\"citationIds\":[\"customer-fact-visa_count\",\"customer-fact-timeline\"],\"nextQuestion\":\"What would you like to review before choosing a package?\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"fb48b8e5a353bbda553c154d56105013\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Thanks for clarifying. I still have 3 visas and a target of next month in view. What would you like to review before choosing a package?\",\"citationIds\":[\"[ID_1]visa_count\",\"[ID_2]\"],\"nextQuestion\":\"What would you like to review before choosing a package?\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRef\":\"resp-001\"}",
+          "availableEvidenceRefs": "[]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "",
+          "deliveredCitationCount": "2",
+          "deliveredNextQuestionKey": "stage:account_creation"
+        }
+      },
+      {
+        "message": "What is the next verified action for this opportunity?",
+        "clientMessageId": "2e96ef3f",
+        "status": 200,
+        "latencyMs": 4748,
+        "answer": "I can’t verify that specific setup detail from the approved information currently available. I’ll keep your current requirements (3 visas, a next month start) in view, and I can request a verified quotation or advisor review. Would you like me to request that?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "accepted",
+          "candidateGuardReason": "accepted",
+          "candidateResponseReason": null,
+          "responseReason": null,
+          "candidateResponse": "{\"answer\":\"I can help with that. The only verified status I can see is that lead registration is awaiting verified provider evidence. I can also keep in view that you confirmed 3 visas and a target of next month. What would you like to review before [ID_1] is confirmed?\",\"citationIds\":[\"tool-324d6fb4e2aedb1ba4ed15249e02acd6\",\"customer-fact-visa_count\",\"customer-fact-timeline\"],\"nextQuestion\":\"What would you like to review before [ID_1] is confirmed?\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRefDigest\":\"bdedaacdc3a863a40ec9aef46e854e37\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"I can help with that. The only verified status I can see is that lead registration is awaiting verified provider evidence. I can also keep in view that you confirmed 3 visas and a target of next month. What would you like to review before [ID_1] is confirmed?\",\"citationIds\":[\"tool-324d6fb4e2aedb1ba4ed15249e02acd6\",\"[ID_2]visa_count\",\"[ID_3]\"],\"nextQuestion\":\"What would you like to review before [ID_4] is confirmed?\",\"nextQuestionKey\":\"stage:account_creation\",\"reasonNoQuestion\":null,\"decisionRef\":\"turn-answer-with-stage-question\"}",
+          "availableEvidenceRefs": "[\"tool-324d6fb4e2aedb1ba4ed15249e02acd6\"]",
+          "modelResponseAccepted": "true",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "3",
+          "deliveredNextQuestionKey": "stage:account_creation"
+        }
+      },
+      {
+        "message": "I will wait for verified evidence rather than assuming the Account is complete.",
+        "clientMessageId": "c9a50ece",
+        "status": 200,
+        "latencyMs": 3827,
+        "answer": "I’m keeping your request in view. What would you like to review before Account creation is confirmed?",
+        "pendingRequirementKey": null,
+        "actionProposal": null,
+        "v2Audit": {
+          "event": "v2.model.turn",
+          "guardReason": "unsupported_claim",
+          "candidateGuardReason": "unsupported_claim",
+          "candidateResponseReason": "status-pending",
+          "responseReason": "invalid_model",
+          "candidateResponse": "{\"answer\":\"Thanks for clarifying. Verified provider evidence is still pending for the current action, so I’m not assuming the account is complete.\",\"citationIds\":[\"tool-324d6fb4e2aedb1ba4ed15249e02acd6\"],\"nextQuestion\":null,\"nextQuestionKey\":null,\"reasonNoQuestion\":\"status-pending\",\"decisionRefDigest\":\"2443630b4620165c8b173e7265e17526\"}",
+          "rawCandidate": "{\"schemaVersion\":2,\"personaVersionId\":\"ref-5cd1ccf2cbf4\",\"language\":\"en\",\"answer\":\"Thanks for clarifying. Verified provider evidence is still pending for the current action, so I’m not assuming the account is complete.\",\"citationIds\":[\"tool-324d6fb4e2aedb1ba4ed15249e02acd6\"],\"nextQuestion\":null,\"nextQuestionKey\":null,\"reasonNoQuestion\":\"status-pending\",\"decisionRef\":\"final\"}",
+          "availableEvidenceRefs": "[\"tool-324d6fb4e2aedb1ba4ed15249e02acd6\"]",
+          "modelResponseAccepted": "false",
+          "repairApplied": "false",
+          "toolStatuses": "ok",
+          "deliveredCitationCount": "0",
+          "deliveredNextQuestionKey": null
+        }
+      }
+    ],
+    "actions": [
+      {
+        "id": "b88b0779",
+        "state": "completed",
+        "workflowKey": "crm.lead.create"
+      },
+      {
+        "id": "d7d5d882",
+        "state": "completed",
+        "workflowKey": "crm.account.convert"
+      }
+    ],
+    "stage": {
+      "stages": {
+        "contract": {
+          "stage": "contract",
+          "status": "not_started",
+          "evidence": {},
+          "revision": 0,
+          "completedAt": null
+        },
+        "billing_invoice": {
+          "stage": "billing_invoice",
+          "status": "awaiting_customer",
+          "evidence": {},
+          "revision": 0,
+          "completedAt": null
+        },
+        "document_upload": {
+          "stage": "document_upload",
+          "status": "completed",
+          "evidence": {
+            "ocrStatus": "completed",
+            "documentId": "ref-43c9af2b7946",
+            "documentSetComplete": true,
+            "sf02AttachmentVerified": true,
+            "localProcessingVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T08:51:16.200Z"
+        },
+        "lead_generation": {
+          "stage": "lead_generation",
+          "status": "completed",
+          "evidence": {
+            "actionId": "ref-59adc17a71a2",
+            "providerVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T08:50:31.518Z"
+        },
+        "account_creation": {
+          "stage": "account_creation",
+          "status": "completed",
+          "evidence": {
+            "actionId": "ref-013aaf0a1358",
+            "providerVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T08:51:15.830Z"
+        },
+        "package_selection": {
+          "stage": "package_selection",
+          "status": "completed",
+          "evidence": {
+            "quoteId": "ref-f9e0e39678ad",
+            "selectionId": "ref-68ea06efd29c",
+            "packageConfirmed": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T08:51:15.932Z"
+        },
+        "lead_qualification": {
+          "stage": "lead_qualification",
+          "status": "completed",
+          "evidence": {
+            "actionId": "ref-59adc17a71a2",
+            "qualificationVerified": true
+          },
+          "revision": 1,
+          "completedAt": "2026-11-02T08:50:31.522Z"
+        }
+      },
+      "lastCompletedStage": "document_upload",
+      "currentActiveStage": "billing_invoice",
+      "nextPendingStage": "billing_invoice",
+      "intentionalStopStage": "document_upload"
+    }
+  }
+}

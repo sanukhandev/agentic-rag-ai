@@ -1,0 +1,19 @@
+{
+  "status": "PASSED",
+  "branchBase": "e8e1af1f908db728c848b884bf6f18404db796ed",
+  "checks": [
+    {"name":"Node workspace tests","passed":373,"skipped":12,"total":385},
+    {"name":"Python model-gateway tests","passed":84,"failed":0},
+    {"name":"Python ingestion tests","passed":30,"failed":0},
+    {"name":"TypeScript typecheck","status":"PASSED"},
+    {"name":"Lint","status":"PASSED"},
+    {"name":"Build","status":"PASSED"},
+    {"name":"Compose validation","status":"PASSED"},
+    {"name":"Secret checks","status":"PASSED"},
+    {"name":"Gate 3 protected comparator tests","passed":2,"failed":0}
+  ],
+  "notes": [
+    "The workflow fixture test was corrected to reflect n8n IF true-branch semantics: alreadyLinked=true reconciles; false creates.",
+    "beautifulsoup4 was already declared in tools/ingestion/requirements.txt; the local test environment was missing the declared dependency. CI installs that requirements file before ingestion tests."
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "status": "GATE_3_PARTIALLY_VERIFIED",
+  "branch": "feat/gate3-salesforce-sf02-reliability",
+  "implementationCommit": "a4d4fdd22ccbf47fe20fafebf12799a8d8b66cf8",
+  "sourceBaselineCommit": "e8e1af1f908db728c848b884bf6f18404db796ed",
+  "pr126": "unchanged; original branch remains feat/conversation-v2-langgraph-stage5-safe",
+  "gate2DialoguePreserved": false,
+  "gate3ReliabilityVerified": true,
+  "salesforceSandbox": "SALESFORCE_SANDBOX_BLOCKED",
+  "sf02Sandbox": "SF02_SANDBOX_BLOCKED",
+  "mockUat": "PASSED_39_OF_39",
+  "security": "PASSED_9_OF_9",
+  "restartReplay": "PASSED_34_OF_34",
+  "unseenDeterministic": "PASSED_40_OF_40",
+  "azureOfficialRuns": ["18/23 FAILED","15/23 FAILED","15/23 FAILED"],
+  "lifecycle": {
+    "lead_generation":"completed",
+    "lead_qualification":"completed",
+    "account_creation":"completed",
+    "package_selection":"completed",
+    "document_upload":"completed",
+    "billing_invoice":"awaiting_customer",
+    "contract":"not_started"
+  },
+  "reports": {
+    "baseline":"artifacts/gate3/baseline/gate2-protected-baseline.json",
+    "python":"artifacts/gate3/python-ci/report.json",
+    "restartReplay":"artifacts/gate3/restart-replay/report.json",
+    "azureSummary":"artifacts/gate3/conversation-regression/protected-qualification-summary.json",
+    "security":"artifacts/gate3/final/security-regression.json",
+    "lifecycle":"artifacts/gate3/final/lifecycle-evidence.json",
+    "salesforce":"artifacts/gate3/salesforce-sandbox/status.json",
+    "sf02":"artifacts/gate3/sf02-sandbox/status.json"
+  },
+  "blockers": [
+    "Protected Azure Gate 2 quality was not preserved in any of three official runs; release qualification is blocked.",
+    "Salesforce sandbox Lead/Account verification is not configured.",
+    "Salesforce SF-02 sandbox verification is not configured.",
+    "The previous full Python repository failures are resolved in the local declared-dependency environment; CI confirmation remains to be observed."
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "status": "PASSED_FOR_DETERMINISTIC_UAT",
+  "sourceReports": [
+    "artifacts/gate3/restart-replay/report.json",
+    "artifacts/gate3/conversation-regression/mock-final/hardening-report.json",
+    "artifacts/gate3/conversation-regression/azure-run-1/hardening-report-azure-gpt5.4.json"
+  ],
+  "expectedFinalState": {
+    "lead_generation": "completed",
+    "lead_qualification": "completed",
+    "account_creation": "completed",
+    "package_selection": "completed",
+    "document_upload": "completed",
+    "billing_invoice": "awaiting_customer",
+    "contract": "not_started"
+  },
+  "restartReplay": {
+    "checks": "34/34",
+    "uniqueLead": true,
+    "uniqueAccount": true,
+    "uniqueDocument": true,
+    "ocrCompleted": true,
+    "sf02MockReceiptVerified": true,
+    "callbackForgeryRejected": true,
+    "callbackReplayIdempotent": true
+  },
+  "sandbox": {
+    "salesforceLeadAccount": "SALESFORCE_SANDBOX_BLOCKED",
+    "sf02": "SF02_SANDBOX_BLOCKED"
+  }
+}

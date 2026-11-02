@@ -1,0 +1,337 @@
+{
+  "status": "PASSED",
+  "mode": "deterministic_mock",
+  "apiBase": "http://127.0.0.1:4100",
+  "caseCount": 40,
+  "eligibleDialogue": {
+    "passed": 34,
+    "total": 34
+  },
+  "security": {
+    "passed": 6,
+    "total": 6
+  },
+  "cases": [
+    {
+      "id": "u01",
+      "category": "lead_intent",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u02",
+      "category": "lead_intent",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u03",
+      "category": "qualification",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u04",
+      "category": "qualification",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u05",
+      "category": "qualification",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u06",
+      "category": "qualification",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u07",
+      "category": "qualification",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u08",
+      "category": "correction",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u09",
+      "category": "correction",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u10",
+      "category": "correction",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u11",
+      "category": "continuity",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u12",
+      "category": "continuity",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u13",
+      "category": "continuity",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u14",
+      "category": "continuity",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u15",
+      "category": "knowledge",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u16",
+      "category": "knowledge",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u17",
+      "category": "knowledge",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u18",
+      "category": "knowledge",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u19",
+      "category": "status",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u20",
+      "category": "status",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u21",
+      "category": "status",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u22",
+      "category": "status",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u23",
+      "category": "package",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u24",
+      "category": "package",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u25",
+      "category": "package",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u26",
+      "category": "package",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u27",
+      "category": "document",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u28",
+      "category": "document",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u29",
+      "category": "document",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u30",
+      "category": "document",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u31",
+      "category": "recovery",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u32",
+      "category": "recovery",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u33",
+      "category": "recovery",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u34",
+      "category": "recovery",
+      "eligible": true,
+      "passed": true,
+      "status": 200,
+      "responseQuality": "useful_or_safe"
+    },
+    {
+      "id": "u35",
+      "category": "security",
+      "eligible": false,
+      "passed": true,
+      "status": 401,
+      "responseQuality": "security_refusal_expected"
+    },
+    {
+      "id": "u36",
+      "category": "security",
+      "eligible": false,
+      "passed": true,
+      "status": 401,
+      "responseQuality": "security_refusal_expected"
+    },
+    {
+      "id": "u37",
+      "category": "security",
+      "eligible": false,
+      "passed": true,
+      "status": 401,
+      "responseQuality": "security_refusal_expected"
+    },
+    {
+      "id": "u38",
+      "category": "security",
+      "eligible": false,
+      "passed": true,
+      "status": 401,
+      "responseQuality": "security_refusal_expected"
+    },
+    {
+      "id": "u39",
+      "category": "security",
+      "eligible": false,
+      "passed": true,
+      "status": 409,
+      "responseQuality": "security_refusal_expected"
+    },
+    {
+      "id": "u40",
+      "category": "security",
+      "eligible": false,
+      "passed": true,
+      "status": 409,
+      "responseQuality": "security_refusal_expected"
+    }
+  ],
+  "note": "This is an independent deterministic contract/generalization evaluation, not an Azure quality score and not a replacement for the protected 23-case gate."
+}

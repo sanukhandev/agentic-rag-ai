@@ -1,0 +1,9 @@
+{
+  "status": "PASSED",
+  "threshold": "21/23",
+  "accepted": 21,
+  "denominator": 23,
+  "protectedAcceptedCases": 21,
+  "candidateModelTurns": 23,
+  "diffs": []
+}

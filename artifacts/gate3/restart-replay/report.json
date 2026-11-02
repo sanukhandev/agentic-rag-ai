@@ -1,0 +1,214 @@
+{
+  "status": "PASSED",
+  "runId": "ref-addea1045e94",
+  "startedAt": "2026-11-02T08:39:42.682Z",
+  "endedAt": "2026-11-02T08:40:17.567Z",
+  "apiBase": "http://127.0.0.1:4100",
+  "composeProject": "anc-mock-uat",
+  "syntheticOnly": true,
+  "sessionReference": "ref-c6116ac64c80",
+  "tenantReference": "ref-ae93dbd8ea7a",
+  "opportunityReference": "ref-d69dfccf0a6f",
+  "documentReference": "ref-c3d980a68cc6",
+  "finalState": {
+    "leads": 1,
+    "accounts": 1,
+    "documents": 1,
+    "completedDocuments": 1,
+    "sf02VerifiedReceipts": 1
+  },
+  "checks": [
+    {
+      "name": "created synthetic anc session",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "name": "conversation message accepted: I want to start a synthetic soft",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "name": "conversation message accepted: The business activity is softwar",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "name": "conversation message accepted: The company structure is LLC, I ",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "name": "conversation message accepted: My name is Restart UAT and my em",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "name": "conversation message accepted: My phone number is +97154350563.",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "name": "conversation message accepted: Yes, I explicitly consent to bei",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "name": "explicit action confirmation accepted",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "name": "confirmed action reached a terminal state",
+      "passed": true,
+      "state": "completed"
+    },
+    {
+      "name": "service restart recovered: api",
+      "passed": true,
+      "service": "api"
+    },
+    {
+      "name": "service restart recovered: model-gateway",
+      "passed": true,
+      "service": "model-gateway"
+    },
+    {
+      "name": "service restart recovered: event-worker",
+      "passed": true,
+      "service": "event-worker"
+    },
+    {
+      "name": "service restart recovered: event-relay",
+      "passed": true,
+      "service": "event-relay"
+    },
+    {
+      "name": "service restart recovered: redis",
+      "passed": true,
+      "service": "redis"
+    },
+    {
+      "name": "session state survived API, gateway, worker, relay and Redis restarts",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "name": "conversation continued after all service restarts",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "name": "stable opportunity persisted after restart",
+      "passed": true,
+      "opportunity": "ref-d69dfccf0a6f"
+    },
+    {
+      "name": "duplicate client message replay returns safely",
+      "passed": true,
+      "first": 200,
+      "replay": 200
+    },
+    {
+      "name": "conflicting client message replay is rejected",
+      "passed": true,
+      "status": 409,
+      "code": "MESSAGE_ID_REUSED"
+    },
+    {
+      "name": "account proposal is available only after qualification",
+      "passed": true,
+      "status": 202
+    },
+    {
+      "name": "concurrent account confirmations are idempotent or safely conflicted",
+      "passed": true,
+      "statuses": [
+        200,
+        200
+      ]
+    },
+    {
+      "name": "service restart recovered: api",
+      "passed": true,
+      "service": "api"
+    },
+    {
+      "name": "package options remain available after API restart",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "name": "package and approved quote remain durable",
+      "passed": true,
+      "proposal": 201,
+      "quote": 201,
+      "selection": 200
+    },
+    {
+      "name": "synthetic document accepted after package confirmation",
+      "passed": true,
+      "status": 202
+    },
+    {
+      "name": "service restart recovered: event-worker",
+      "passed": true,
+      "service": "event-worker"
+    },
+    {
+      "name": "duplicate document upload remains idempotent after worker restart",
+      "passed": true,
+      "status": 202,
+      "idempotent": true
+    },
+    {
+      "name": "created synthetic anc-empty session",
+      "passed": true,
+      "status": 201
+    },
+    {
+      "name": "cross-tenant document replay is rejected",
+      "passed": true,
+      "status": 401
+    },
+    {
+      "name": "forged provider callback is rejected",
+      "passed": true,
+      "status": 409
+    },
+    {
+      "name": "replayed provider callback is idempotent",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "name": "final durable state has exactly one Lead, Account and document",
+      "passed": true,
+      "counts": {
+        "leads": 1,
+        "accounts": 1,
+        "documents": 1,
+        "completedDocuments": 1
+      }
+    },
+    {
+      "name": "final durable state contains verified SF-02 mock evidence",
+      "passed": true,
+      "sf02VerifiedReceipts": 1
+    },
+    {
+      "name": "final lifecycle is stopped after document upload",
+      "passed": true,
+      "currentStage": "billing_invoice",
+      "documentStage": "completed",
+      "billingStage": "awaiting_customer"
+    }
+  ],
+  "restartServices": [
+    "api",
+    "model-gateway",
+    "event-worker",
+    "event-relay",
+    "redis"
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "status": "FAILED",
+  "threshold": "21/23",
+  "accepted": 15,
+  "denominator": 23,
+  "protectedAcceptedCases": 21,
+  "candidateModelTurns": 23,
+  "diffs": [
+    {
+      "caseId": "gate2-azure-02",
+      "failure": "OUTCOME_CHANGED",
+      "previous": "accepted",
+      "current": "rejected",
+      "previousGuardReason": "accepted",
+      "currentGuardReason": "unsupported_claim",
+      "traceId": null,
+      "evidenceRefs": [],
+      "clientMessageId": "1eaebce3"
+    },
+    {
+      "caseId": "gate2-azure-03",
+      "failure": "OUTCOME_CHANGED",
+      "previous": "accepted",
+      "current": "rejected",
+      "previousGuardReason": "accepted",
+      "currentGuardReason": "unsupported_claim",
+      "traceId": null,
+      "evidenceRefs": [],
+      "clientMessageId": "23752017"
+    },
+    {
+      "caseId": "gate2-azure-13",
+      "failure": "OUTCOME_CHANGED",
+      "previous": "accepted",
+      "current": "rejected",
+      "previousGuardReason": "accepted",
+      "currentGuardReason": "unsupported_claim",
+      "traceId": null,
+      "evidenceRefs": [],
+      "clientMessageId": "15ce58ef"
+    },
+    {
+      "caseId": "gate2-azure-14",
+      "failure": "OUTCOME_CHANGED",
+      "previous": "accepted",
+      "current": "rejected",
+      "previousGuardReason": "accepted",
+      "currentGuardReason": "unsupported_claim",
+      "traceId": null,
+      "evidenceRefs": [],
+      "clientMessageId": "8f91103b"
+    },
+    {
+      "caseId": "gate2-azure-19",
+      "failure": "OUTCOME_CHANGED",
+      "previous": "accepted",
+      "current": "rejected",
+      "previousGuardReason": "accepted",
+      "currentGuardReason": "unsupported_claim",
+      "traceId": null,
+      "evidenceRefs": [],
+      "clientMessageId": "e5a127c0"
+    },
+    {
+      "caseId": "gate2-azure-23",
+      "failure": "OUTCOME_CHANGED",
+      "previous": "accepted",
+      "current": "rejected",
+      "previousGuardReason": "accepted",
+      "currentGuardReason": "unsupported_claim",
+      "traceId": null,
+      "evidenceRefs": [],
+      "clientMessageId": "c9a50ece"
+    },
+    {
+      "caseId": null,
+      "failure": "ACCEPTED_COUNT_BELOW_THRESHOLD",
+      "previous": 21,
+      "current": 15
+    }
+  ]
+}

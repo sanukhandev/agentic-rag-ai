@@ -1,0 +1,104 @@
+{
+  "status": "FAILED",
+  "threshold": "21/23",
+  "accepted": 15,
+  "denominator": 23,
+  "protectedAcceptedCases": 21,
+  "candidateModelTurns": 23,
+  "diffs": [
+    {
+      "caseId": "gate2-azure-02",
+      "failure": "OUTCOME_CHANGED",
+      "previous": "accepted",
+      "current": "rejected",
+      "previousGuardReason": "accepted",
+      "currentGuardReason": "unsupported_claim",
+      "traceId": null,
+      "evidenceRefs": [],
+      "clientMessageId": "6d8e5773"
+    },
+    {
+      "caseId": "gate2-azure-03",
+      "failure": "OUTCOME_CHANGED",
+      "previous": "accepted",
+      "current": "rejected",
+      "previousGuardReason": "accepted",
+      "currentGuardReason": "unsupported_claim",
+      "traceId": null,
+      "evidenceRefs": [],
+      "clientMessageId": "d641f8d2"
+    },
+    {
+      "caseId": "gate2-azure-13",
+      "failure": "OUTCOME_CHANGED",
+      "previous": "accepted",
+      "current": "rejected",
+      "previousGuardReason": "accepted",
+      "currentGuardReason": "invalid_question",
+      "traceId": null,
+      "evidenceRefs": [],
+      "clientMessageId": "75a5eeeb"
+    },
+    {
+      "caseId": "gate2-azure-15",
+      "failure": "OUTCOME_CHANGED",
+      "previous": "accepted",
+      "current": "rejected",
+      "previousGuardReason": "accepted",
+      "currentGuardReason": "unsupported_claim",
+      "traceId": null,
+      "evidenceRefs": [],
+      "clientMessageId": "adbab1f8"
+    },
+    {
+      "caseId": "gate2-azure-16",
+      "failure": "OUTCOME_CHANGED",
+      "previous": "accepted",
+      "current": "rejected",
+      "previousGuardReason": "accepted",
+      "currentGuardReason": "unsupported_claim",
+      "traceId": null,
+      "evidenceRefs": [],
+      "clientMessageId": "c2bf36db"
+    },
+    {
+      "caseId": "gate2-azure-18",
+      "failure": "OUTCOME_CHANGED",
+      "previous": "accepted",
+      "current": "rejected",
+      "previousGuardReason": "accepted",
+      "currentGuardReason": "unsupported_claim",
+      "traceId": null,
+      "evidenceRefs": [],
+      "clientMessageId": "4f2d6377"
+    },
+    {
+      "caseId": "gate2-azure-19",
+      "failure": "OUTCOME_CHANGED",
+      "previous": "accepted",
+      "current": "rejected",
+      "previousGuardReason": "accepted",
+      "currentGuardReason": "unsupported_claim",
+      "traceId": null,
+      "evidenceRefs": [],
+      "clientMessageId": "dadac90b"
+    },
+    {
+      "caseId": "gate2-azure-20",
+      "failure": "OUTCOME_CHANGED",
+      "previous": "rejected",
+      "current": "accepted",
+      "previousGuardReason": "unsupported_claim",
+      "currentGuardReason": "accepted",
+      "traceId": null,
+      "evidenceRefs": [],
+      "clientMessageId": "99893a7b"
+    },
+    {
+      "caseId": null,
+      "failure": "ACCEPTED_COUNT_BELOW_THRESHOLD",
+      "previous": 21,
+      "current": 15
+    }
+  ]
+}
