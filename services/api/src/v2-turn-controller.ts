@@ -107,6 +107,15 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     ? await store.getIntentCatalogVersion(tenant.id, originalState.catalogVersionId)
     : await store.getPublishedIntentCatalog(tenant.id);
   if (!catalog || catalog.status !== 'published') throw new HttpError(409, 'V2_CATALOG_UNAVAILABLE', 'The pinned published catalog is required for authorized tools.');
+  // Pin before issuing any read-tool scope. New sessions otherwise have a null
+  // catalog ID in the Store, and the first model-selected tool is rejected.
+  if (!originalState.catalogVersionId) {
+    session.conversationState = { ...originalState, catalogVersionId: catalog.id };
+    await input.updateSession(session);
+    if (session.conversationState?.catalogVersionId !== catalog.id) {
+      throw new HttpError(409, 'V2_CATALOG_PIN_CONFLICT', 'The published catalog changed while starting this turn.');
+    }
+  }
   const intentDocument = await store.getUserIntentDocument(tenant.id, session.id);
   if (intentDocument && (intentDocument.personaVersionId !== persona.id || intentDocument.tenantId !== tenant.id || intentDocument.sessionId !== session.id)) {
     throw new HttpError(409, 'V2_PINNED_CONTEXT_STALE', 'The session intent document does not match its trusted context.');

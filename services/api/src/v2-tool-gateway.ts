@@ -59,6 +59,20 @@ export type V2ToolScopeInput = Omit<ScopePayload, 'expiresAt' | 'nonce' | 'toolA
   expiresAt?: number;
 };
 
+const scopePayloadSchema = z.object({
+  tenantId: z.string().min(1).max(256),
+  sessionId: z.string().min(1).max(256),
+  opportunityId: z.string().min(1).max(256).nullable(),
+  catalogVersionId: z.string().min(1).max(256),
+  personaVersionId: z.string().min(1).max(256),
+  stateRevision: z.number().int().nonnegative().safe(),
+  toolAllowlist: z.array(z.enum(V2_TOOL_NAMES)).max(V2_TOOL_NAMES.length),
+  expiresAt: z.number().int().positive().safe(),
+  nonce: z.string().regex(/^[A-Za-z0-9_-]{22}$/u),
+}).strict();
+const SCOPE_MAX_LIFETIME_MS = 5 * 60_000;
+const TOOL_MAX_DEADLINE_MS = 90_000;
+const MAX_SCOPE_REF_LENGTH = 2_048;
 const scopePart = (value: string): string => Buffer.from(value, 'utf8').toString('base64url');
 const unscopePart = (value: string): string => Buffer.from(value, 'base64url').toString('utf8');
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex');
@@ -66,28 +80,32 @@ const bounded = (value: string, max: number): string => value.slice(0, max);
 
 export const issueV2Scope = (input: V2ToolScopeInput, secret: string, now = Date.now()): string => {
   if (!secret || secret.length < 16) throw new Error('V2_TOOL_SCOPE_SECRET_REQUIRED');
-  const payload: ScopePayload = {
+  const payload = scopePayloadSchema.parse({
     ...input,
     toolAllowlist: [...new Set(input.toolAllowlist ?? V2_TOOL_NAMES)],
-    expiresAt: input.expiresAt ?? now + 5 * 60_000,
+    expiresAt: input.expiresAt ?? now + SCOPE_MAX_LIFETIME_MS,
     nonce: randomBytes(16).toString('base64url'),
-  };
+  });
+  if (payload.expiresAt <= now || payload.expiresAt > now + SCOPE_MAX_LIFETIME_MS) throw new Error('V2_TOOL_SCOPE_EXPIRY_INVALID');
   const encoded = scopePart(JSON.stringify(payload));
   const signature = createHmac('sha256', secret).update(encoded).digest('base64url');
-  return `${encoded}.${signature}`;
+  const scopeRef = `${encoded}.${signature}`;
+  if (scopeRef.length > MAX_SCOPE_REF_LENGTH) throw new Error('V2_TOOL_SCOPE_TOO_LARGE');
+  return scopeRef;
 };
 
 export const verifyV2Scope = (scopeRef: string, secret: string, now = Date.now()): ScopePayload | null => {
-  if (!secret || scopeRef.length > 4_096) return null;
+  if (!secret || secret.length < 16 || scopeRef.length > MAX_SCOPE_REF_LENGTH) return null;
   const parts = scopeRef.split('.');
   if (parts.length !== 2) return null;
   const expected = createHmac('sha256', secret).update(parts[0]!).digest();
   const provided = Buffer.from(parts[1]!, 'base64url');
   if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) return null;
   try {
-    const payload = JSON.parse(unscopePart(parts[0]!)) as ScopePayload;
-    if (!payload || typeof payload !== 'object' || payload.expiresAt <= now || payload.stateRevision < 0 || !payload.tenantId || !payload.sessionId || !payload.catalogVersionId || !payload.personaVersionId || !Array.isArray(payload.toolAllowlist)) return null;
-    if (payload.toolAllowlist.some((name) => !V2_TOOL_NAMES.includes(name))) return null;
+    const parsed = scopePayloadSchema.safeParse(JSON.parse(unscopePart(parts[0]!)));
+    if (!parsed.success) return null;
+    const payload: ScopePayload = parsed.data;
+    if (payload.expiresAt <= now || payload.expiresAt > now + SCOPE_MAX_LIFETIME_MS) return null;
     return payload;
   } catch {
     return null;
@@ -158,13 +176,25 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
   const values = entry?.slotValues ?? state?.slotValues ?? {};
   const completed = entry?.completedRequirementKeys ?? [];
   const sourceVersion = catalog.id;
+  // Session-bound evidence revisions must change when the authoritative state changes.
+  const stateSourceVersion = `${catalog.id}:state:${scope.sessionId}:${scope.stateRevision}`;
 
   switch (request.toolName as V2ToolName) {
     case 'get_conversation_context': {
       const phase = state?.phase ?? 'DISCOVERY';
       const workflowStatus = state?.workflowStatus ?? 'none';
       const pendingRequirementKey = state?.pendingPrompt?.requirementKey ?? null;
-      return resultWithToolEvidence(request, { summary: bounded(state?.rollingSummary ?? '', 4_000), phase, workflowStatus, activeIntentKey: intentKey, pendingRequirementKey }, request.toolName as V2ToolName, sourceVersion, [
+      const document = await store.getUserIntentDocument(scope.tenantId, scope.sessionId);
+      const allowedFacts = new Set(['business_activity', 'entity_type', 'visa_count', 'timeline']);
+      const verifiedFacts = document && document.catalogVersionRef === catalog.id && document.personaVersionId === scope.personaVersionId
+        ? Object.fromEntries(Object.entries(document.verifiedFacts).filter(([key, fact]) =>
+            allowedFacts.has(key) && (fact.source === 'visitor' || fact.source === 'node') && fact.maskedValue.length <= 180
+            && !/[\r\n<>@]/u.test(fact.maskedValue) && !/https?:\/\//iu.test(fact.maskedValue))
+          .map(([key, fact]) => [key, fact.maskedValue]))
+        : {};
+      const recentTurns = (await store.listMessages(scope.sessionId, scope.tenantId, 6))
+        .map((message) => ({ role: message.role, content: bounded(message.maskedContent, 600) }));
+      return resultWithToolEvidence(request, { summary: bounded(state?.rollingSummary ?? '', 4_000), phase, workflowStatus, activeIntentKey: intentKey, pendingRequirementKey, verifiedFacts, recentTurns }, request.toolName as V2ToolName, stateSourceVersion, [
         `The current conversation phase is ${phase} and the workflow status is ${workflowStatus}.`,
         intentKey ? `The active business goal is ${intentKey}.` : 'No business goal is currently active.',
         pendingRequirementKey ? `The next server-authorized requirement is ${pendingRequirementKey}.` : 'No server-authorized requirement is currently pending.',
@@ -186,7 +216,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
     case 'get_missing_requirements': {
       if (!intentKey) return result(request, 'ok', { intentKey: null, requirement: null }, sourceVersion);
       const requirement = catalogNextJourneyRequirement(catalog, intentKey, values, completed) ?? catalogNextFollowUpRequirement(catalog, intentKey, values, completed);
-      return resultWithToolEvidence(request, { intentKey, requirement: requirement ? { key: requirement.requirementKey, type: requirement.requirementType, promptKey: requirement.promptKey, documentType: requirement.documentType ?? null } : null }, request.toolName as V2ToolName, sourceVersion, [
+      return resultWithToolEvidence(request, { intentKey, requirement: requirement ? { key: requirement.requirementKey, type: requirement.requirementType, promptKey: requirement.promptKey, documentType: requirement.documentType ?? null } : null }, request.toolName as V2ToolName, stateSourceVersion, [
         requirement ? `The next server-authorized requirement is ${requirement.requirementKey}.` : 'No server-authorized requirement is currently pending.',
       ]);
     }
@@ -199,7 +229,9 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         return source && source.tenantId === scope.tenantId && source.status === 'active' && source.versionId === item.citation.versionId ? item : null;
       }))).filter((item): item is NonNullable<typeof item> => Boolean(item));
       const evidenceRefs = approved.map((item) => digest(`${item.citation.sourceId}:${item.citation.versionId}:${item.citation.chunkId}`).slice(0, 32));
-      return result(request, 'ok', { grounded: approved.length > 0, evidence: approved.map((item, index) => ({ citationId: evidenceRefs[index], text: bounded(sanitizeKnowledgeText(item.content), 1_500), sourceVersion: item.citation.versionId, approved: true, revoked: false, sourceRef: item.citation.sourceId })) }, sourceVersion, evidenceRefs);
+      const sourceVersions = [...new Set(approved.map((item) => item.citation.versionId))];
+      // A mixed-version retrieval has per-citation provenance, not a single source version.
+      return result(request, 'ok', { grounded: approved.length > 0, evidence: approved.map((item, index) => ({ citationId: evidenceRefs[index], text: bounded(sanitizeKnowledgeText(item.content), 1_500), sourceVersion: item.citation.versionId, approved: true, revoked: false, sourceRef: item.citation.sourceId })) }, sourceVersions.length === 1 ? sourceVersions[0]! : null, evidenceRefs);
     }
     case 'get_journey_state': {
       const lifecycle = entry?.lifecycle ?? null;
@@ -213,7 +245,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         workflowStatus: state?.workflowStatus ?? 'none',
         opportunityBound: scopedLifecycle,
       };
-      return resultWithToolEvidence(request, value, request.toolName as V2ToolName, sourceVersion, [
+      return resultWithToolEvidence(request, value, request.toolName as V2ToolName, stateSourceVersion, [
         scopedLifecycle && lifecycle?.currentStage ? `The authoritative journey is currently at ${lifecycle.currentStage}.` : 'No opportunity is currently bound to the requested journey state.',
         value.pendingRequirementKey ? `The next server-authorized requirement is ${value.pendingRequirementKey}.` : 'No server-authorized requirement is currently pending.',
         `Contact consent is ${value.contactConsent}.`,
@@ -222,9 +254,11 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
     }
     case 'get_available_packages': {
       const offerings = await store.listPackageOfferings(scope.tenantId, { catalogVersionId: catalog.id, ...(values.business_activity ? { activity: values.business_activity } : {}), ...(values.entity_type ? { entityType: values.entity_type } : {}) });
-      const packages = offerings.map((offering) => ({ key: offering.packageKey, name: offering.name, visas: offering.includedVisaQuantity, officeRequirement: offering.officeRequirement, inclusions: offering.inclusions, availability: offering.availability, priceMinor: offering.priceMinor, currency: offering.currency, sourceRefs: offering.sourceRefs }));
-      return resultWithToolEvidence(request, { packages }, request.toolName as V2ToolName, sourceVersion, offerings.length > 0
-        ? offerings.map((offering) => `The approved package ${offering.name} is listed with availability ${offering.availability}${offering.priceMinor !== null && offering.currency ? ` and a verified price of ${offering.currency} ${(offering.priceMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}.` : '.'}`)
+      // Keep tool responses bounded even when a tenant has a large published catalog.
+      const selected = offerings.slice(0, 20);
+      const packages = selected.map((offering) => ({ key: offering.packageKey, name: bounded(offering.name, 160), visas: offering.includedVisaQuantity, officeRequirement: offering.officeRequirement, inclusions: offering.inclusions.slice(0, 12).map(value => bounded(value, 240)), availability: offering.availability, priceMinor: offering.priceMinor, currency: offering.currency, sourceRefs: offering.sourceRefs.slice(0, 12) }));
+      return resultWithToolEvidence(request, { packages, truncated: offerings.length > selected.length }, request.toolName as V2ToolName, sourceVersion, selected.length > 0
+        ? selected.map((offering) => `The approved package ${bounded(offering.name, 160)} is listed with availability ${offering.availability}${offering.priceMinor !== null && offering.currency ? ` and a verified price of ${offering.currency} ${(offering.priceMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}.` : '.'}`)
         : ['No approved package is currently available for this setup.']);
     }
     case 'get_document_requirements': {
@@ -264,7 +298,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
           return `${label} is awaiting verified provider evidence.`;
         })
         : ['No authorized business action is currently recorded for this opportunity.'];
-      return resultWithToolEvidence(request, { actions: status }, request.toolName as V2ToolName, sourceVersion, claims);
+      return resultWithToolEvidence(request, { actions: status.slice(0, 20), truncated: status.length > 20 }, request.toolName as V2ToolName, stateSourceVersion, claims.slice(0, 20));
     }
   }
 };
@@ -289,13 +323,10 @@ export const createV2ToolGateway = ({ store, embedding, serviceKey }: V2ToolGate
     }
     const request = parsed.data;
     const requestDeadline = Date.parse(request.deadlineAt);
-    if (!Number.isFinite(requestDeadline) || requestDeadline <= Date.now()) return sanitizedToolError(request, 'temporarily_unavailable', 'TOOL_DEADLINE_EXCEEDED');
+    if (!Number.isFinite(requestDeadline) || requestDeadline <= Date.now() || requestDeadline > Date.now() + TOOL_MAX_DEADLINE_MS) return sanitizedToolError(request, 'temporarily_unavailable', 'TOOL_DEADLINE_EXCEEDED');
     const scope = verifyV2Scope(request.scopeRef, serviceKey);
     if (!scope) return sanitizedToolError(request, 'not_authorized', 'SCOPE_INVALID');
-    const cacheKey = `${request.scopeRef}:${request.toolCallId}`;
-    const argsDigest = digest(JSON.stringify(request.arguments));
-    const cached = replayCache.get(cacheKey);
-    if (cached) return cached.argsDigest === argsDigest ? cached.value : sanitizedToolError(request, 'not_authorized', 'TOOL_CALL_REUSE_MISMATCH', scope.stateRevision);
+    if (requestDeadline > scope.expiresAt) return sanitizedToolError(request, 'not_authorized', 'TOOL_DEADLINE_OUTSIDE_SCOPE', scope.stateRevision);
     if (!scope.toolAllowlist.includes(request.toolName as V2ToolName) || !V2_TOOL_NAMES.includes(request.toolName as V2ToolName)) return sanitizedToolError(request, 'not_authorized', 'TOOL_NOT_ALLOWED', scope.stateRevision);
     const session = await store.getSession(scope.sessionId);
     if (!session || session.tenantId !== scope.tenantId) return sanitizedToolError(request, 'not_authorized', 'SESSION_SCOPE_DENIED', scope.stateRevision);
@@ -305,6 +336,12 @@ export const createV2ToolGateway = ({ store, embedding, serviceKey }: V2ToolGate
     if (scope.opportunityId && entry?.journeyId !== scope.opportunityId) return sanitizedToolError(request, 'not_authorized', 'OPPORTUNITY_SCOPE_DENIED', scope.stateRevision);
     const catalog = await catalogForScope(store, scope);
     if (!catalog) return sanitizedToolError(request, 'temporarily_unavailable', 'CATALOG_UNAVAILABLE', scope.stateRevision);
+    // Replay data is safe only AFTER the current state, persona, opportunity and catalog
+    // are re-authorized. Otherwise an old cached success can survive a revocation.
+    const cacheKey = `${request.scopeRef}:${request.toolCallId}`;
+    const argsDigest = digest(JSON.stringify(request.arguments));
+    const cached = replayCache.get(cacheKey);
+    if (cached) return cached.argsDigest === argsDigest ? cached.value : sanitizedToolError(request, 'not_authorized', 'TOOL_CALL_REUSE_MISMATCH', scope.stateRevision);
     try {
       const parsedArguments = argumentSchemas[request.toolName as V2ToolName]?.safeParse(request.arguments);
       if (!parsedArguments?.success) return sanitizedToolError(request, 'invalid_args', 'TOOL_ARGUMENTS_INVALID', scope.stateRevision);
