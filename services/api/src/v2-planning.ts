@@ -16,6 +16,11 @@ export const v2PlanningProposalSchema = z.object({
   nextQuestion: z.string().trim().max(1_000).nullable(),
   proposedToolKey: z.string().trim().min(1).max(80).nullable(),
   confidenceBand: z.enum(['low', 'medium', 'high']),
+  proposedFacts: z.array(z.object({
+    key: z.enum(['business_activity', 'entity_type', 'visa_count', 'timeline']),
+    maskedValue: z.string().trim().min(1).max(180),
+    supportingQuote: z.string().trim().min(1).max(300),
+  }).strict()).max(8).default([]),
 }).strict();
 
 export type V2PlanningProposal = z.infer<typeof v2PlanningProposalSchema>;

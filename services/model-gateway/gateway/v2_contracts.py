@@ -100,6 +100,12 @@ class ToolResultV2(StrictV2):
     stateRevision: int = Field(ge=0)
 
 
+class ProposedCustomerFactV2(StrictV2):
+    key: Literal["business_activity", "entity_type", "visa_count", "timeline"]
+    maskedValue: str = Field(min_length=1, max_length=180)
+    supportingQuote: str = Field(min_length=1, max_length=300)
+
+
 class PlanningProposalV2(StrictV2):
     turnCategory: Literal['business_goal', 'knowledge_advisory', 'qualification_requirement', 'service_execution', 'service_status_support', 'conversation_navigation']
     primaryGoalKey: str | None = None
@@ -110,7 +116,8 @@ class PlanningProposalV2(StrictV2):
     nextMove: Literal['clarify_goal', 'confirm_goal', 'answer_knowledge', 'collect_requirement', 'request_contact', 'request_document', 'check_action_status', 'propose_action', 'ask_more_help', 'stop']
     nextQuestion: str | None = Field(default=None, max_length=1000)
     proposedToolKey: str | None = None
-    confidenceBand: Literal['low', 'medium', 'high']
+    confidenceBand: Literal["low", "medium", "high"]
+    proposedFacts: list[ProposedCustomerFactV2] = Field(default_factory=list, max_length=8)
 
 
 class PersonaComposedResponseV2(StrictV2):

@@ -43,7 +43,11 @@ _FINAL_RESPONSE_SCHEMA: dict[str, Any] = {
                 "nextQuestion": {"type": ["string", "null"]},
                 "proposedToolKey": {"type": ["string", "null"]},
                 "confidenceBand": {"type": "string", "enum": ["low", "medium", "high"]},
-            }, "required": ["turnCategory", "primaryGoalKey", "candidateGoalKeys", "matchedSignalIds", "supportingTopicKeys", "runnerUpScore", "nextMove", "nextQuestion", "proposedToolKey", "confidenceBand"]},
+                "proposedFacts": {"type": "array", "items": {"type": "object", "additionalProperties": False, "properties": {
+                    "key": {"type": "string", "enum": ["business_activity", "entity_type", "visa_count", "timeline"]},
+                    "maskedValue": {"type": "string"}, "supportingQuote": {"type": "string"}
+                }, "required": ["key", "maskedValue", "supportingQuote"]}},
+            }, "required": ["turnCategory", "primaryGoalKey", "candidateGoalKeys", "matchedSignalIds", "supportingTopicKeys", "runnerUpScore", "nextMove", "nextQuestion", "proposedToolKey", "confidenceBand", "proposedFacts"]},
             {"type": "null"}
         ]},
     },
