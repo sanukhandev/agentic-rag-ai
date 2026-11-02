@@ -816,6 +816,24 @@ export interface ApprovedIntentResponse {
   pendingRequirementKey: string | null;
 }
 
+/** A scoped, durable goal question. Does not grant provider/action consent. */
+export interface GoalConfirmationRecord {
+  status: 'pending' | 'confirmed' | 'rejected' | 'corrected';
+  promptId: string;
+  proposalMessageId: string;
+  goalKey: string;
+  catalogVersionRef: string;
+  personaVersionId: string;
+  sessionRevision: number;
+  intentRevision: number;
+  issuedAt: string;
+  customerMessageId?: string;
+  customerClientMessageId?: string;
+  decidedAt?: string;
+  decisionSessionRevision?: number;
+  decisionIntentRevision?: number;
+}
+
 export interface UserIntentDocument {
   id: string;
   tenantId: string;
@@ -829,6 +847,7 @@ export interface UserIntentDocument {
   currentStageKey: string | null;
   stageRevision: number;
   goalConfirmed: boolean;
+  goalConfirmation?: GoalConfirmationRecord | null;
   verifiedFacts: Record<string, UserIntentFact>;
   pendingRequirementKey: string | null;
   lastQuestion: string | null;
@@ -914,6 +933,8 @@ export interface Store {
   getUserIntentDocument(tenantId: string, sessionId: string): Promise<UserIntentDocument | null>;
   updateUserIntentDocument(input: { document: UserIntentDocument; expectedRevision: number }): Promise<UserIntentDocument | null>;
   appendIntentTurn(assessment: IntentTurnAssessment): Promise<IntentTurnAssessment>;
+  /** Commit a V2 turn across session, document, assessment and decision audit. */
+  commitV2IntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null }): Promise<{ session: Session; document: UserIntentDocument }>;
   listIntentTurns(tenantId: string, sessionId: string, limit?: number): Promise<IntentTurnAssessment[]>;
   createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion>;
   listPersonaVersions(tenantId: string): Promise<PersonaVersion[]>;

@@ -191,6 +191,35 @@ export class MemoryStore implements Store {
     this.intentTurns.set(stored.id, stored);
     return structuredClone(stored);
   }
+  async commitV2IntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null }): Promise<{ session: Session; document: UserIntentDocument }> {
+    const { session, document, assessment } = input;
+    assertSafeUserIntentDocument(document);
+    assertSafeIntentTurn(assessment);
+    const previousSession = this.sessions.get(session.id);
+    const key = intentDocumentKey(document.tenantId, session.id);
+    const previousDocument = this.intentDocuments.get(key);
+    const published = (this.intentCatalogV2Versions.get(document.tenantId) ?? []).find(v => v.status === 'published');
+    if (!previousSession || previousSession.tenantId !== document.tenantId
+      || previousSession.stateVersion !== session.stateVersion || session.tenantId !== document.tenantId
+      || document.sessionId !== session.id || document.catalogSource !== 'v2'
+      || !published || published.catalogVersionRef !== document.catalogVersionRef
+      || assessment.tenantId !== document.tenantId || assessment.sessionId !== session.id
+      || assessment.documentId !== document.id || assessment.opportunityId !== document.opportunityId
+      || (input.expectedDocumentRevision === null ? Boolean(previousDocument)
+        : !previousDocument || previousDocument.id !== document.id || previousDocument.revision !== input.expectedDocumentRevision)
+      || [...this.intentTurns.values()].some(turn => (turn.sessionId === session.id && turn.clientMessageId === assessment.clientMessageId)
+        || (turn.documentId === document.id && turn.turnSequence === assessment.turnSequence))) {
+      throw new HttpError(409, 'V2_INTENT_ATOMIC_CONFLICT', 'The confirmation state changed or a message was replayed.');
+    }
+    const savedSession = structuredClone({ ...session, stateVersion: (session.stateVersion ?? 0) + 1 });
+    const savedDocument = structuredClone({ ...document, revision: (input.expectedDocumentRevision ?? -1) + 1 });
+    this.sessions.set(session.id, savedSession);
+    this.intentDocuments.set(key, savedDocument);
+    this.intentTurns.set(assessment.id, structuredClone(assessment));
+    if (input.audit) this.audits.push(structuredClone(input.audit));
+    return { session: structuredClone(savedSession), document: structuredClone(savedDocument) };
+  }
+
   async listIntentTurns(tenantId: string, sessionId: string, limit?: number): Promise<IntentTurnAssessment[]> {
     const turns = [...this.intentTurns.values()].filter((turn) => turn.tenantId === tenantId && turn.sessionId === sessionId).sort((left, right) => left.turnSequence - right.turnSequence);
     return structuredClone(limit === undefined ? turns : turns.slice(-limit));

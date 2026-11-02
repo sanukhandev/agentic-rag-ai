@@ -29,6 +29,27 @@ export const assertSafeUserIntentDocument = (document: UserIntentDocument): void
   assertSafeText(document.summary, 'summary', MAX_SUMMARY_LENGTH);
   assertFacts(document.verifiedFacts, 'facts');
   assertSafeApprovedResponse(document.approvedResponse);
+  const decision = document.goalConfirmation;
+  if (decision) {
+    for (const value of [decision.promptId, decision.proposalMessageId, decision.goalKey,
+      decision.catalogVersionRef, decision.personaVersionId, decision.issuedAt,
+      decision.customerMessageId, decision.customerClientMessageId, decision.decidedAt]
+      .filter((value): value is string => value !== undefined)) {
+      if (!value || value.length > 240 || rawPii.test(value)) throw new Error('INTENT_DOCUMENT_INVALID_GOAL_CONFIRMATION');
+    }
+    if (!['pending', 'confirmed', 'rejected', 'corrected'].includes(decision.status)
+      || !Number.isSafeInteger(decision.sessionRevision) || decision.sessionRevision < 0
+      || !Number.isSafeInteger(decision.intentRevision) || decision.intentRevision < 0
+      || (decision.status === 'pending' && (decision.customerMessageId || decision.decidedAt))
+      || (decision.status === 'confirmed' && (!decision.customerMessageId || !decision.customerClientMessageId || !decision.decidedAt))
+      || (decision.status === 'confirmed') !== document.goalConfirmed
+      || (decision.status === 'confirmed' && decision.goalKey !== document.businessGoalKey)) {
+      throw new Error('INTENT_DOCUMENT_INVALID_GOAL_CONFIRMATION');
+    }
+  }
+  if (document.catalogSource === 'v2' && document.goalConfirmed && !decision) {
+    throw new Error('INTENT_DOCUMENT_MISSING_GOAL_CONFIRMATION');
+  }
   if (document.lastQuestion && document.lastQuestion.length > 2_000) throw new Error('INTENT_DOCUMENT_BOUNDS');
   if (document.toolRefs.some((ref) => ref.length > MAX_REFERENCE_LENGTH) || document.sourceRefs.some((ref) => ref.length > MAX_REFERENCE_LENGTH)) throw new Error('INTENT_DOCUMENT_BOUNDS');
   if (!Number.isInteger(document.revision) || document.revision < 0 || !Number.isInteger(document.stageRevision) || document.stageRevision < 0 || !Number.isInteger(document.summaryRevision) || document.summaryRevision < 0) throw new Error('INTENT_DOCUMENT_INVALID_REVISION');
