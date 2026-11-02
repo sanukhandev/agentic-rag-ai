@@ -177,9 +177,10 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
     }
     case 'get_intent_catalog': {
       const projection = catalogProjection(catalog);
+      const activeIntentCount = catalog.catalog.intents.filter((intent) => intent.active).length;
       return resultWithToolEvidence(request, projection, request.toolName as V2ToolName, sourceVersion, [
-        `The published catalog version ${sourceVersion} contains ${projection.intents.length} active business-goal definitions.`,
-        ...projection.journeys.slice(0, 8).map((journey) => `The published catalog defines ${journey.key} as a ${journey.type} requirement for ${journey.intentKey}.`),
+        `The published catalog version ${sourceVersion} contains ${activeIntentCount} active business-goal definitions.`,
+        ...(catalog.catalog.journeyRequirements ?? []).slice(0, 8).map((journey) => `The published catalog defines ${journey.requirementKey} as a ${journey.requirementType} requirement for ${journey.intentKey}.`),
       ]);
     }
     case 'get_missing_requirements': {
