@@ -243,3 +243,29 @@ def test_model_planning_is_typed_and_exposed_without_tool_side_effects():
     assert parsed is not None and parsed.planning is not None
     assert parsed.planning.primaryGoalKey == "anc.company_formation"
     assert parsed.planning.confidenceBand == "high"
+
+
+def test_planning_fact_proposals_remain_typed_and_cannot_create_actions():
+    from gateway.persona_composer import validate_composed_response
+
+    payload = json.loads(final_response("Hello"))
+    payload["planning"] = {
+        "turnCategory": "business_goal",
+        "primaryGoalKey": "anc.company_formation",
+        "candidateGoalKeys": ["anc.company_formation"],
+        "matchedSignalIds": ["signal.company.register"],
+        "supportingTopicKeys": [],
+        "runnerUpScore": None,
+        "nextMove": "collect_requirement",
+        "nextQuestion": None,
+        "proposedToolKey": None,
+        "confidenceBand": "high",
+        "proposedFacts": [
+            {"key": "business_activity", "maskedValue": "technology consulting",
+             "supportingQuote": "technology consulting"}
+        ],
+    }
+    response, reason = validate_composed_response(payload, envelope())
+    assert reason is None
+    assert response is not None and response.planning is not None
+    assert response.planning.proposedFacts[0].key == "business_activity"

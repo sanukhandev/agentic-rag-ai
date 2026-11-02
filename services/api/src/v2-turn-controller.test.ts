@@ -145,6 +145,7 @@ const modelProposal = {
   candidateGoalKeys: ['anc.company_formation'], matchedSignalIds: ['signal.company.register'],
   supportingTopicKeys: [], runnerUpScore: 15, nextMove: 'confirm_goal' as const,
   nextQuestion: null, proposedToolKey: null, confidenceBand: 'high' as const,
+  proposedFacts: [{ key: 'business_activity' as const, maskedValue: 'technology consulting', supportingQuote: 'technology consulting' }],
 };
 
 describe('published Catalog V2 planning in the GPT-first controller', () => {
@@ -172,6 +173,10 @@ describe('published Catalog V2 planning in the GPT-first controller', () => {
     expect(answer.actionProposal).toBeNull();
     expect(document).toMatchObject({ catalogSource: 'v2', catalogVersionRef: catalog.catalogVersionRef,
       businessGoalKey: 'anc.company_formation', turnIntentKey: 'goal.company_formation', goalConfirmed: false });
+    expect(document?.verifiedFacts.business_activity).toMatchObject({
+      maskedValue: 'technology consulting', source: 'visitor',
+      evidenceRefs: ['customer-message:' + input.userMessage.id],
+    });
     const turns = await store.listIntentTurns(tenant.id, session.id);
     expect(turns[0]).toMatchObject({ intentCategory: 'business_goal', businessGoalKey: 'anc.company_formation' });
     expect(turns[0]?.sourceRefs).toContain('catalog-signal:signal.company.register');
@@ -199,5 +204,31 @@ describe('published Catalog V2 planning in the GPT-first controller', () => {
     expect(document?.goalConfirmed).toBe(false);
     const audit = (await store.listAudit(tenant.id)).find(event => event.eventName === 'v2.catalog.planning_reviewed');
     expect(audit?.metadata).toMatchObject({ accepted: false, actionAuthorized: false });
+  });
+});
+
+
+import { validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
+
+describe('quoted customer fact provenance (pure unit)', () => {
+  it('accepts only facts supported by an exact customer quote', () => {
+    const facts = validateQuotedV2CustomerFacts([
+      { key: 'business_activity', maskedValue: 'technology consulting', supportingQuote: 'technology consulting' },
+      { key: 'visa_count', maskedValue: '3', supportingQuote: 'three visas' },
+      { key: 'timeline', maskedValue: 'next quarter', supportingQuote: 'next quarter' },
+    ], 'I plan technology consulting and need three visas by next quarter', 'message-12345678', 5);
+    expect(facts.business_activity).toMatchObject({ source: 'visitor', maskedValue: 'technology consulting', messageSequence: 5 });
+    expect(facts.visa_count?.maskedValue).toBe('3');
+    expect(facts.timeline?.maskedValue).toBe('next quarter');
+  });
+  it('rejects invented, negated, sensitive, and conflicting facts', () => {
+    const facts = validateQuotedV2CustomerFacts([
+      { key: 'visa_count', maskedValue: '3', supportingQuote: 'not three visas' },
+      { key: 'business_activity', maskedValue: 'construction', supportingQuote: 'consulting' },
+      { key: 'entity_type', maskedValue: 'LLC', supportingQuote: 'LLC' },
+      { key: 'entity_type', maskedValue: 'FZE', supportingQuote: 'FZE' },
+      { key: 'timeline', maskedValue: 'next week', supportingQuote: 'customer@example.com next week' },
+    ], 'I need not three visas; I run consulting, and LLC or FZE suits me, customer@example.com next week.', 'message-12345678', 4);
+    expect(facts).toEqual({});
   });
 });
