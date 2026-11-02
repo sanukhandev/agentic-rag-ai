@@ -98,7 +98,16 @@ const validateProposal = (proposalInput: unknown, catalog: CatalogV2Document, co
   if (context.confirmedGoalKey !== proposal.goalKey || binding.goalKey !== proposal.goalKey) return denied(['goal_mismatch']);
   if (context.currentStageKey !== proposal.stageKey || binding.stageKey !== proposal.stageKey) return denied(['stage_mismatch']);
   if (proposal.actionRevision !== context.expectedActionRevision) return denied(['action_revision_stale']);
-  const missing = binding.requiredKeys.filter((requiredKey) => !context.verifiedRequirementKeys.includes(requiredKey));
+  const requiredPolicies = context.pinnedCatalogVersion?.catalog.sheets.RequirementPolicies ?? [];
+  const missing = binding.requiredKeys.filter((requiredKey) => {
+    if (!context.verifiedRequirementKeys.includes(requiredKey)) return true;
+    const policy = requiredPolicies.find(row => row.goalKey === proposal.goalKey && row.stageKey === proposal.stageKey && row.requirementKey === requiredKey);
+    if (!policy) return true;
+    if (policy.type !== 'fact') return false;
+    const fact = context.intentDocument?.verifiedFacts?.[requiredKey];
+    return !fact || !fact.maskedValue.trim() || fact.evidenceRefs.length === 0
+      || fact.evidenceRefs.some(ref => !ref.trim()) || !['visitor', 'node', 'provider'].includes(fact.source);
+  });
   if (missing.length) return denied(['requirements_missing']);
   if (!context.purposeConsentGranted || context.purposeConsentScope !== consentScope(context.catalogVersionId, proposal.toolKey)) return denied(['purpose_consent_required']);
   if (Object.keys(proposal.arguments).some((argumentKey) => !binding.requiredKeys.includes(argumentKey))) return denied(['arguments_not_catalog_scoped']);
@@ -175,7 +184,7 @@ export const validateV2ActionConfirmation = (action: ActionRequest, context: V2A
   if (action.catalogVersionId !== context.catalogVersionId) return denied(['catalog_revision_mismatch'], action);
   if (action.actionKey !== context.expectedActionKey) return denied(['action_identity_mismatch'], action);
   if (action.actionRevision !== context.expectedActionRevision) return denied(['action_revision_stale'], action);
-  if (!['awaiting_confirmation', 'unknown'].includes(action.state)) return denied(['action_not_confirmable'], action);
+  if (action.state !== 'awaiting_confirmation') return denied(['action_not_confirmable'], action);
   if (!context.purposeConsentGranted || context.purposeConsentScope !== consentScope(context.catalogVersionId, context.expectedActionKey) || action.payload.contactConsent !== true) return denied(['purpose_consent_required'], action);
   if (action.intentKey !== context.confirmedGoalKey) return denied(['goal_mismatch'], action);
   return { ...baseDecision({ schemaVersion: 2, toolKey: action.actionKey ?? action.intentKey ?? action.workflowKey, goalKey: action.intentKey ?? action.workflowKey, stageKey: context.currentStageKey, actionRevision: action.actionRevision ?? context.expectedActionRevision, arguments: {} }, 'confirmed', action), accepted: true };
