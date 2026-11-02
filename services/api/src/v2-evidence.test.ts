@@ -36,6 +36,9 @@ describe('v2 claim provenance and evidence verification', () => {
     const question = 'Could you share your email address?';
     const value = { ...response(`I have your business activity as software consulting and AI services, a visa count of 3, and a timeline of next month. ${question}`, facts.map((item) => item.factId)), nextQuestion: question, nextQuestionKey: 'email', reasonNoQuestion: null };
     expect(verifyV2ResponseEvidence(value, [], facts, { allowUncitedQuestion: true }).verdict.accepted).toBe(true);
+    const combinedFacts = [...facts, { factId: 'customer-fact-entity_type', text: 'The customer stated their company structure is LLC.', sourceVersion: 'catalog-12345678', verified: true }];
+    const combined = { ...response('Thanks for clarifying. I have your business activity as software consulting and AI services, and your entity type as LLC. How many visas will you need?', ['customer-fact-business_activity', 'customer-fact-entity_type']), nextQuestion: 'How many visas will you need?', nextQuestionKey: 'visa_count', reasonNoQuestion: null };
+    expect(verifyV2ResponseEvidence(combined, [], combinedFacts, { allowUncitedQuestion: true }).verdict.accepted).toBe(true);
   });
 
   it('does not let a customer fact citation authorize a provider or legal outcome', () => {
