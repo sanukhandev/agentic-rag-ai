@@ -1,13 +1,18 @@
 name: GPT-first unit-only validation
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/gpt-first-langgraph-unit-only]
     paths:
       - 'services/api/**'
       - 'services/model-gateway/**'
       - 'packages/**'
       - 'apps/**'
       - 'infra/n8n/workflows/**'
+      - 'scripts/check-v2-retirement-safety.mjs'
+      - 'scripts/check-v2-retirement-safety.test.mjs'
+      - 'docs/development/**'
+      - 'docs/engineering/**'
+      - 'AGENTS.md'
       - '.github/workflows/crm-v2-pr-validation.yml'
   push:
     branches: [feat/gpt-first-langgraph-unit-only]
@@ -42,5 +47,9 @@ jobs:
         run: npm run test:unit
       - name: Python isolated unit tests
         run: PYTHONPATH=services/model-gateway python -m pytest -q services/model-gateway/tests
+      - name: Static V2 retirement safety and isolated tests
+        run: |
+          node scripts/check-v2-retirement-safety.mjs
+          node --test scripts/check-v2-retirement-safety.test.mjs
       - name: Static secret scan
         run: npm run verify:secrets
