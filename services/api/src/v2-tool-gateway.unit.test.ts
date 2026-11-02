@@ -57,7 +57,7 @@ const makeGateway = async () => {
     stateRevision: pinned.stateVersion ?? 0, toolAllowlist: [...V2_TOOL_NAMES],
   }, secret);
   const gateway = createV2ToolGateway({ store, embedding: new DeterministicEmbeddingProvider(), serviceKey: secret });
-  const request = (toolName: string, args: Record<string, unknown> = {}, callId = randomUUID()) => ({
+  const request = (toolName: string, args: Record<string, unknown> = {}, callId: string = randomUUID()) => ({
     schemaVersion: 2, toolCallId: callId, toolName, arguments: args, scopeRef,
     expectedStateRevision: pinned.stateVersion ?? 0, deadlineAt: new Date(Date.now() + 15_000).toISOString(),
   });
