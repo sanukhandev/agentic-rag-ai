@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { createApp, isValidBase64 } from './app.js';
+import { createApp, isValidBase64, v2ModelAuditMetadata } from './app.js';
 import { MockWorkflowAdapter, signN8nPayload } from './actions.js';
 import { MemoryCache } from './cache.js';
 import { MemoryStore, contentHash } from './store-memory.js';
@@ -131,6 +131,13 @@ const seedWorkflowExecution = async (store: Store, action: Pick<ActionRequest, '
 };
 
 describe('API vertical slice', () => {
+  it('correlates v2 model audit metadata to the originating client message', () => {
+    expect(v2ModelAuditMetadata({ sessionId: 'session-12345678', clientMessageId: 'message-12345678' })).toEqual({
+      sessionId: 'session-12345678',
+      clientMessageId: 'message-12345678',
+    });
+  });
+
   it('denies document session endpoints to an authenticated user from another tenant', async () => {
     const runtime = createApp({ nodeEnv: 'test', sessionAccessTokenRequired: true });
     const api = request(runtime.app);

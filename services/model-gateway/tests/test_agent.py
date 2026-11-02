@@ -3,7 +3,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from gateway.agent import BoundedConversationAgent
+from gateway.agent import BoundedConversationAgent, FunctionCall
 from gateway.v2_contracts import ToolResultV2, TurnEnvelopeV2
 
 
@@ -98,6 +98,31 @@ def test_search_tool_evidence_is_returned_with_its_trace():
 
     assert result.approvedEvidence[0].citationId == "citation-1"
     assert result.toolTrace[0].evidenceRefs == ["citation-1"]
+
+
+def test_authoritative_non_search_tool_evidence_is_returned_with_its_trace():
+    evidence = {
+        "citationId": "journey-source",
+        "text": "The Account request is awaiting verified provider evidence.",
+        "sourceVersion": "catalog-12345678",
+        "approved": True,
+        "revoked": False,
+        "sourceRef": "tool-get_journey_state",
+    }
+    call = FunctionCall("call-journey-1234", "get_journey_state", "{}")
+    tool_result = ToolResultV2(
+        schemaVersion=2,
+        toolCallId=call.call_id,
+        status="ok",
+        result={"evidence": [evidence]},
+        evidenceRefs=["journey-source"],
+        sourceVersion="catalog-12345678",
+        stateRevision=4,
+    )
+
+    approved = BoundedConversationAgent._evidence_from_result(call, tool_result)
+
+    assert approved[0].citationId == "journey-source"
 
 
 def test_unknown_tool_is_denied_without_gateway_execution():

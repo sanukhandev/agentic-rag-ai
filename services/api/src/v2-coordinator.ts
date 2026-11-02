@@ -86,7 +86,7 @@ const sameEvidence = (left: V2ApprovedEvidence, right: V2ApprovedEvidence): bool
   && left.sourceRef === right.sourceRef;
 
 const evidenceFromTrustedToolTrace = (result: AgentTurnResultV2): V2ApprovedEvidence[] => result.approvedEvidence
-  .filter((item) => result.toolTrace.some((trace) => trace.toolName === 'search_knowledge' && trace.status === 'ok' && trace.evidenceRefs.includes(item.citationId)))
+  .filter((item) => result.toolTrace.some((trace) => trace.status === 'ok' && trace.evidenceRefs.includes(item.citationId)))
   .map((item): V2ApprovedEvidence => ({ citationId: item.citationId, text: item.text, sourceVersion: item.sourceVersion, approved: true, revoked: false, sourceRef: item.sourceRef }));
 
 const mergeEvidence = (requestEvidence: V2ApprovedEvidence[], result: AgentTurnResultV2): V2ApprovedEvidence[] => {
@@ -185,8 +185,7 @@ export class V2ConversationCoordinator {
       ...(request.fallbackTemplates ? { fallbackTemplates: request.fallbackTemplates } : {}),
     };
     const uncitedDialogueCandidate = Boolean(envelope.intentProjection.primaryGoalKey)
-      && candidateResponse.citationIds.length === 0
-      && agentResult.approvedEvidence.length === 0;
+      && candidateResponse.citationIds.length === 0;
     let candidateGuardReason = 'not_evaluated';
     // The Python gateway can return an internally generated fallback on model/tool
     // failure. Never relabel that failure as a successful no-knowledge dialogue.

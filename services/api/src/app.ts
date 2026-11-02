@@ -382,6 +382,11 @@ export interface AppDependencies {
   v2Coordinator?: V2ConversationCoordinator;
 }
 
+export const v2ModelAuditMetadata = (input: { sessionId: string; clientMessageId: string }) => ({
+  sessionId: input.sessionId,
+  clientMessageId: input.clientMessageId,
+});
+
 export const createApp = (dependencies: AppDependencies = {}) => {
   const store = dependencies.store ?? new MemoryStore();
   const cache = dependencies.cache ?? createCache(process.env.REDIS_URL);
@@ -1862,7 +1867,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
                catalogDigest: contentHash(JSON.stringify(publishedCatalog.catalog)),
                intentProjection: { primaryGoalKey: state.selectedIntentKey ?? state.activeFollowUpIntentKey ?? null, goalConfirmed: Boolean(state.selectedIntentKey ?? state.activeFollowUpIntentKey), currentStageKey: activeLifecycleStage ?? state.phase.toLocaleLowerCase('en-US'), pendingRequirementKey: journeyRequirement?.requirementKey ?? state.pendingPrompt?.requirementKey ?? null, confirmedCustomerFacts },
                toolAllowlist: [...V2_TOOL_NAMES],
-               budgets: { maxModelRequests: 3, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + 90_000).toISOString() },
+               budgets: { maxModelRequests: 4, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + 90_000).toISOString() },
              },
              evidence: evidence.map((item) => ({ citationId: item.citation.chunkId, text: item.content, sourceVersion: item.citation.versionId, approved: true, revoked: false, sourceRef: item.citation.sourceId })),
               verifiedFacts: trustedCustomerFacts,
@@ -1873,10 +1878,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
            v2Draft = v2.draft;
            v2AllowedUncitedDialogue = v2.guardReason === 'safe_no_evidence_dialogue' || v2.guardReason === 'accepted_model_dialogue';
            const responseReason = /^[a-z0-9_.-]{1,80}$/iu.test(v2.response.reasonNoQuestion ?? '') ? v2.response.reasonNoQuestion : null;
-           await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.turn', metadata: { sessionId: session.id, modelRequestCount: v2.modelRequestCount, toolCallCount: v2.toolCallCount, toolStatuses: v2.toolTrace.map((trace) => trace.status).join(','), guardReason: v2.guardReason, candidateGuardReason: v2.candidateGuardReason, modelResponseAccepted: v2.guardReason === 'accepted_model_dialogue' || v2.guardReason === 'accepted', repairApplied: v2.repairApplied, deliveredCitationCount: v2.response.citationIds.length, deliveredNextQuestionKey: v2.response.nextQuestionKey, ...(responseReason ? { responseReason } : {}), executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
+            const candidateResponseReason = /^[a-z0-9_.-]{1,80}$/iu.test(v2.candidateResponse.reasonNoQuestion ?? '') ? v2.candidateResponse.reasonNoQuestion : null;
+            await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.turn', metadata: { ...v2ModelAuditMetadata({ sessionId: session.id, clientMessageId: input.clientMessageId }), modelRequestCount: v2.modelRequestCount, toolCallCount: v2.toolCallCount, toolStatuses: v2.toolTrace.map((trace) => trace.status).join(','), guardReason: v2.guardReason, candidateGuardReason: v2.candidateGuardReason, modelResponseAccepted: v2.guardReason === 'accepted_model_dialogue' || v2.guardReason === 'accepted', repairApplied: v2.repairApplied, deliveredCitationCount: v2.response.citationIds.length, deliveredNextQuestionKey: v2.response.nextQuestionKey, ...(responseReason ? { responseReason } : {}), ...(candidateResponseReason ? { candidateResponseReason } : {}), executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
           } catch (error) {
             const reason = error instanceof Error && /^[A-Z0-9_.-]{1,80}$/u.test(error.message) ? error.message : 'v2_turn_failed';
-            await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.error', metadata: { sessionId: session.id, reason, executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
+            await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'v2.model.error', metadata: { ...v2ModelAuditMetadata({ sessionId: session.id, clientMessageId: input.clientMessageId }), reason, executionPath: 'langgraph' }, createdAt: new Date().toISOString() });
             // An attempted V2 turn must fail closed; never bypass its guard through legacy generation.
             v2Draft = { answer: naturalAbstention(language, maskedMessage, { capturedSlots: catalogSlotValues }), citationIds: [], proposedIntent: null };
            v2AllowedUncitedDialogue = false;

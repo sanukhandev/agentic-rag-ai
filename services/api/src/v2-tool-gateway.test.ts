@@ -165,6 +165,15 @@ describe('v2 trusted Node tool gateway', () => {
     const gateway = createV2ToolGateway({ store, embedding: { model: 'test', dimension: 1, embed: async () => [1] }, serviceKey });
     const result = await gateway.execute(requestFor(scope, { toolCallId: 'call-doc-unconfirmed', toolName: 'get_document_requirements' }));
     expect(result).toMatchObject({ status: 'ok', result: { selectionStatus: 'package_not_confirmed', documents: [] } });
+    expect(result.evidenceRefs).toHaveLength(1);
+    expect(result.result?.evidence).toEqual([expect.objectContaining({ sourceVersion: catalogVersionId, approved: true, revoked: false })]);
+  });
+
+  it('attaches current catalog provenance to intent-catalog results', async () => {
+    const scope = issueV2Scope({ tenantId, sessionId, opportunityId: null, catalogVersionId, personaVersionId, stateRevision: 3 }, serviceKey);
+    const gateway = createV2ToolGateway({ store: storeFor(), embedding: { model: 'test', dimension: 1, embed: async () => [1] }, serviceKey });
+    const response = await gateway.execute(requestFor(scope, { toolCallId: 'call-catalog-1234', toolName: 'get_intent_catalog' }));
+    expect(response).toMatchObject({ status: 'ok', sourceVersion: catalogVersionId, evidenceRefs: [expect.any(String)], result: { evidence: [{ sourceVersion: catalogVersionId, approved: true, revoked: false }] } });
   });
 
   it('returns documents only for the selected package with approved quote', async () => {

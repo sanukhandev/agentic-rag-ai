@@ -30,6 +30,7 @@ def composer_instructions(envelope: TurnEnvelopeV2) -> str:
         "You may echo those exact customer-provided values, but do not infer eligibility, official confirmation or registration. "
         "For any sentence reflecting a confirmedCustomerFacts value, list its exact source identifier "
         "'customer-fact-' plus its fact key in citationIds; these are verified by Node. "
+        "Trusted read-only tool results may include an evidence array. When a sentence relies on one of those results, copy the exact evidence item's citationId into citationIds; evidenceRefs alone are not citations. "
         "Do not cite unknown keys or place citation identifiers in answer. "
         "When no approved factual evidence is available, do not invent business facts or provider results. "
         "For process, pricing, eligibility, licensing, document-policy, timing, or status questions, you MUST first use the matching approved read-only tool when one is available; then cite only its returned evidence, or say that the detail is not verified. Never use words such as 'usually', 'likely', 'involves', 'starts with', or 'the next step is' to fill an evidence gap. "

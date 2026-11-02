@@ -210,6 +210,34 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.citationIds).toEqual(['search-source']);
   });
 
+  it('accepts evidence correlated to a successful authoritative state tool trace', async () => {
+    const coordinator = new V2ConversationCoordinator({
+      turn: async () => result('The Account request is awaiting verified provider evidence.', {
+        response: { ...result('The Account request is awaiting verified provider evidence.').response, citationIds: ['journey-source'] },
+        approvedEvidence: [{ citationId: 'journey-source', text: 'The Account request is awaiting verified provider evidence.', sourceVersion: 'catalog-12345678', approved: true, revoked: false, sourceRef: 'tool-get_journey_state' }],
+        toolTrace: [{ toolCallId: 'call-journey-1234', toolName: 'get_journey_state', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: ['journey-source'] }],
+      }),
+    });
+    const output = await coordinator.run({ envelope: envelope(), fallbackTemplates, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted');
+    expect(output.response.citationIds).toEqual(['journey-source']);
+  });
+
+  it('keeps safe uncited dialogue eligible when another tool returned evidence', async () => {
+    const request = envelope();
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'lead_qualification', pendingRequirementKey: 'business_activity' };
+    const question = 'What business activity are you planning?';
+    const answer = `Thanks for clarifying. ${question}`;
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer, {
+      response: { ...result(answer).response, nextQuestion: question, nextQuestionKey: 'business_activity', reasonNoQuestion: null },
+      approvedEvidence: [{ citationId: 'journey-source', text: 'The current journey remains in qualification.', sourceVersion: 'catalog-12345678', approved: true, revoked: false, sourceRef: 'tool-get_journey_state' }],
+      toolTrace: [{ toolCallId: 'call-journey-1234', toolName: 'get_journey_state', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: ['journey-source'] }],
+    }) });
+    const output = await coordinator.run({ envelope: request, questionPolicy: 'required' });
+    expect(output.guardReason).toBe('accepted_model_dialogue');
+    expect(output.response.answer).toBe(answer);
+  });
+
   it('accepts an exact, cited customer-stated fact only from Node verified context', async () => {
     const request = envelope();
     request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true,

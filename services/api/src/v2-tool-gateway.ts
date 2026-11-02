@@ -114,6 +114,30 @@ const result = (request: ToolRequestV2, status: ToolResultV2['status'], value: R
   stateRevision,
 });
 
+const toolEvidence = (toolName: V2ToolName, sourceVersion: string, claims: string[]) => {
+  const evidence = claims.filter((claim) => claim.trim()).slice(0, 16).map((text, index) => ({
+    citationId: `tool-${digest(`${toolName}:${sourceVersion}:${index}:${text}`).slice(0, 32)}`,
+    text: bounded(text, 1_500),
+    sourceVersion,
+    approved: true as const,
+    revoked: false as const,
+    sourceRef: `tool-${toolName}`,
+  }));
+  return { evidence, evidenceRefs: evidence.map((item) => item.citationId) };
+};
+
+const resultWithToolEvidence = (request: ToolRequestV2, value: Record<string, unknown>, toolName: V2ToolName, sourceVersion: string, claims: string[], stateRevision = request.expectedStateRevision): ToolResultV2 => {
+  const generated = toolEvidence(toolName, sourceVersion, claims);
+  return result(request, 'ok', { ...value, evidence: generated.evidence }, sourceVersion, generated.evidenceRefs, stateRevision);
+};
+
+const actionLabel = (workflowKey: string, actionKey: string | null): string => {
+  if (/account/iu.test(workflowKey) || /account/iu.test(actionKey ?? '')) return 'Account creation';
+  if (/lead/iu.test(workflowKey) || /lead/iu.test(actionKey ?? '')) return 'Lead registration';
+  if (/document/iu.test(workflowKey) || /document/iu.test(actionKey ?? '')) return 'Document processing';
+  return 'The authorized business action';
+};
+
 const sanitizedToolError = (request: ToolRequestV2, status: ToolResultV2['status'], code: string, stateRevision = request.expectedStateRevision): ToolResultV2 => result(request, status, { code }, null, [], stateRevision);
 
 const catalogForScope = async (store: Store, scope: ScopePayload): Promise<IntentCatalogVersion | null> => {
@@ -136,19 +160,34 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
   const sourceVersion = catalog.id;
 
   switch (request.toolName as V2ToolName) {
-    case 'get_conversation_context':
-      return result(request, 'ok', { summary: bounded(state?.rollingSummary ?? '', 4_000), phase: state?.phase ?? 'DISCOVERY', workflowStatus: state?.workflowStatus ?? 'none', activeIntentKey: intentKey, pendingRequirementKey: state?.pendingPrompt?.requirementKey ?? null }, sourceVersion);
+    case 'get_conversation_context': {
+      const phase = state?.phase ?? 'DISCOVERY';
+      const workflowStatus = state?.workflowStatus ?? 'none';
+      const pendingRequirementKey = state?.pendingPrompt?.requirementKey ?? null;
+      return resultWithToolEvidence(request, { summary: bounded(state?.rollingSummary ?? '', 4_000), phase, workflowStatus, activeIntentKey: intentKey, pendingRequirementKey }, request.toolName as V2ToolName, sourceVersion, [
+        `The current conversation phase is ${phase} and the workflow status is ${workflowStatus}.`,
+        intentKey ? `The active business goal is ${intentKey}.` : 'No business goal is currently active.',
+        pendingRequirementKey ? `The next server-authorized requirement is ${pendingRequirementKey}.` : 'No server-authorized requirement is currently pending.',
+      ]);
+    }
     case 'get_persona': {
       const persona = await store.getPersonaVersion(scope.tenantId, scope.personaVersionId);
       if (!persona || persona.status !== 'published') return sanitizedToolError(request, 'temporarily_unavailable', 'PERSONA_UNAVAILABLE');
       return result(request, 'ok', { name: persona.name, tone: persona.tone, speakingStyle: persona.speakingStyle, permittedLanguages: persona.permittedLanguages }, persona.id);
     }
-    case 'get_intent_catalog':
-      return result(request, 'ok', catalogProjection(catalog), sourceVersion);
+    case 'get_intent_catalog': {
+      const projection = catalogProjection(catalog);
+      return resultWithToolEvidence(request, projection, request.toolName as V2ToolName, sourceVersion, [
+        `The published catalog version ${sourceVersion} contains ${projection.intents.length} active business-goal definitions.`,
+        ...projection.journeys.slice(0, 8).map((journey) => `The published catalog defines ${journey.key} as a ${journey.type} requirement for ${journey.intentKey}.`),
+      ]);
+    }
     case 'get_missing_requirements': {
       if (!intentKey) return result(request, 'ok', { intentKey: null, requirement: null }, sourceVersion);
       const requirement = catalogNextJourneyRequirement(catalog, intentKey, values, completed) ?? catalogNextFollowUpRequirement(catalog, intentKey, values, completed);
-      return result(request, 'ok', { intentKey, requirement: requirement ? { key: requirement.requirementKey, type: requirement.requirementType, promptKey: requirement.promptKey, documentType: requirement.documentType ?? null } : null }, sourceVersion);
+      return resultWithToolEvidence(request, { intentKey, requirement: requirement ? { key: requirement.requirementKey, type: requirement.requirementType, promptKey: requirement.promptKey, documentType: requirement.documentType ?? null } : null }, request.toolName as V2ToolName, sourceVersion, [
+        requirement ? `The next server-authorized requirement is ${requirement.requirementKey}.` : 'No server-authorized requirement is currently pending.',
+      ]);
     }
     case 'search_knowledge': {
       const args = searchArguments.parse(request.arguments);
@@ -164,7 +203,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
     case 'get_journey_state': {
       const lifecycle = entry?.lifecycle ?? null;
       const scopedLifecycle = Boolean(scope.opportunityId && entry?.journeyId === scope.opportunityId);
-      return result(request, 'ok', {
+      const value = {
         activeIntentKey: intentKey,
         currentStage: scopedLifecycle ? lifecycle?.currentStage ?? null : null,
         stageStatuses: scopedLifecycle && lifecycle ? Object.fromEntries(Object.entries(lifecycle.stages).map(([key, value]) => [key, value.status])) : {},
@@ -172,30 +211,39 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         contactConsent: state?.contactConsent ?? 'unknown',
         workflowStatus: state?.workflowStatus ?? 'none',
         opportunityBound: scopedLifecycle,
-      }, sourceVersion);
+      };
+      return resultWithToolEvidence(request, value, request.toolName as V2ToolName, sourceVersion, [
+        scopedLifecycle && lifecycle?.currentStage ? `The authoritative journey is currently at ${lifecycle.currentStage}.` : 'No opportunity is currently bound to the requested journey state.',
+        value.pendingRequirementKey ? `The next server-authorized requirement is ${value.pendingRequirementKey}.` : 'No server-authorized requirement is currently pending.',
+        `The current workflow status is ${value.workflowStatus}.`,
+      ]);
     }
     case 'get_available_packages': {
       const offerings = await store.listPackageOfferings(scope.tenantId, { catalogVersionId: catalog.id, ...(values.business_activity ? { activity: values.business_activity } : {}), ...(values.entity_type ? { entityType: values.entity_type } : {}) });
-      return result(request, 'ok', { packages: offerings.map((offering) => ({ key: offering.packageKey, name: offering.name, visas: offering.includedVisaQuantity, officeRequirement: offering.officeRequirement, inclusions: offering.inclusions, availability: offering.availability, priceMinor: offering.priceMinor, currency: offering.currency, sourceRefs: offering.sourceRefs })) }, sourceVersion);
+      const packages = offerings.map((offering) => ({ key: offering.packageKey, name: offering.name, visas: offering.includedVisaQuantity, officeRequirement: offering.officeRequirement, inclusions: offering.inclusions, availability: offering.availability, priceMinor: offering.priceMinor, currency: offering.currency, sourceRefs: offering.sourceRefs }));
+      return resultWithToolEvidence(request, { packages }, request.toolName as V2ToolName, sourceVersion, offerings.length > 0
+        ? offerings.map((offering) => `The approved package ${offering.name} is listed with availability ${offering.availability}${offering.priceMinor !== null && offering.currency ? ` and a verified price of ${offering.currency} ${(offering.priceMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}.` : '.'}`)
+        : ['No approved package is currently available for this setup.']);
     }
     case 'get_document_requirements': {
       // Read only documents for the confirmed package and approved quotation in this opportunity.
-      if (!scope.opportunityId) return result(request, 'ok', { selectionStatus: 'opportunity_required', documents: [] }, sourceVersion);
+      if (!scope.opportunityId) return resultWithToolEvidence(request, { selectionStatus: 'opportunity_required', documents: [] }, request.toolName as V2ToolName, sourceVersion, ['An opportunity is required before document requirements can be verified.']);
       const selections = await store.listPackageSelections(scope.tenantId, scope.opportunityId);
       const selected = selections.find((s) => s.status === 'confirmed' && s.tenantId === scope.tenantId && s.sessionId === scope.sessionId && s.opportunityId === scope.opportunityId && s.quoteId);
-      if (!selected || !selected.quoteId) return result(request, 'ok', { selectionStatus: 'package_not_confirmed', documents: [] }, sourceVersion);
+      if (!selected || !selected.quoteId) return resultWithToolEvidence(request, { selectionStatus: 'package_not_confirmed', documents: [] }, request.toolName as V2ToolName, sourceVersion, ['No confirmed package is available for document requirements.']);
       const [offering, quote] = await Promise.all([
         store.getPackageOffering(selected.packageOfferingId, scope.tenantId),
         store.getQuote(selected.quoteId, scope.tenantId),
       ]);
       if (!offering || !quote || offering.tenantId !== scope.tenantId || offering.catalogVersionId !== catalog.id || offering.approvalStatus !== 'approved' || quote.status !== 'approved' || quote.tenantId !== scope.tenantId || quote.opportunityId !== scope.opportunityId || quote.packageOfferingId !== offering.id || Date.parse(quote.validUntil) <= Date.now()) {
-        return result(request, 'ok', { selectionStatus: 'package_or_quote_unverified', documents: [] }, sourceVersion);
+        return resultWithToolEvidence(request, { selectionStatus: 'package_or_quote_unverified', documents: [] }, request.toolName as V2ToolName, sourceVersion, ['The package or quotation is not currently verified for document collection.']);
       }
-      return result(request, 'ok', {
+      const documents = offering.requiredDocuments.map((documentType) => ({ packageKey: offering.packageKey, documentType }));
+      return resultWithToolEvidence(request, {
         selectionStatus: 'confirmed',
         packageKey: offering.packageKey,
-        documents: offering.requiredDocuments.map((documentType) => ({ packageKey: offering.packageKey, documentType })),
-      }, sourceVersion);
+        documents,
+      }, request.toolName as V2ToolName, sourceVersion, [`The confirmed package ${offering.packageKey} requires ${offering.requiredDocuments.join(', ')}.`]);
     }
     case 'get_action_status': {
       if (!scope.opportunityId) return result(request, 'ok', { actions: [] }, sourceVersion);
@@ -206,7 +254,15 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         const evidenceStatus = deriveV2ProviderEvidenceStatus({ actionState: action.state, providerStatus: execution?.providerStatus ?? null, evidenceTier: execution?.outcome?.evidenceTier });
         return { workflowKey: action.workflowKey, state: action.state, actionKey: action.actionKey ?? null, providerAcknowledged: Boolean(action.result?.externalReference), providerStatus: execution?.providerStatus ?? null, evidenceStatus, stageCompletionEligible: v2StageCompletionEligible(evidenceStatus) };
       }));
-      return result(request, 'ok', { actions: status }, sourceVersion);
+      const claims = status.length > 0
+        ? status.map((item) => {
+          const label = actionLabel(item.workflowKey, item.actionKey);
+          if (item.stageCompletionEligible) return `The verified provider outcome for ${label} is complete.`;
+          if (item.state === 'awaiting_confirmation') return `${label} is awaiting customer confirmation.`;
+          return `${label} is awaiting verified provider evidence.`;
+        })
+        : ['No authorized business action is currently recorded for this opportunity.'];
+      return resultWithToolEvidence(request, { actions: status }, request.toolName as V2ToolName, sourceVersion, claims);
     }
   }
 };

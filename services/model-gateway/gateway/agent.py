@@ -153,7 +153,7 @@ class BoundedConversationAgent:
 
     @staticmethod
     def _evidence_from_result(call: FunctionCall, result: ToolResultV2) -> list[ApprovedEvidenceV2]:
-        if call.name != "search_knowledge" or result.status != "ok" or not isinstance(result.result, dict):
+        if result.status != "ok" or not isinstance(result.result, dict):
             return []
         raw = result.result.get("evidence")
         if not isinstance(raw, list):
@@ -161,7 +161,9 @@ class BoundedConversationAgent:
         evidence: list[ApprovedEvidenceV2] = []
         for item in raw:
             try:
-                evidence.append(ApprovedEvidenceV2.model_validate(item))
+                parsed = ApprovedEvidenceV2.model_validate(item)
+                if parsed.citationId in result.evidenceRefs:
+                    evidence.append(parsed)
             except ValidationError:
                 continue
         return evidence
