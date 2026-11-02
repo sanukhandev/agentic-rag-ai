@@ -19,5 +19,3 @@
 - Execution metrics: model turns=23, model requests=35, trusted tool calls=17, tool reads=17, provider errors=0, guard reasons={"accepted":15,"invalid_question":2,"safe_no_evidence_dialogue":1,"unsupported_claim":5}, candidate guard reasons={"accepted":15,"invalid_question":2,"unsupported_claim":6}, model-authored accepted=15, latency avg/max=3494/5816ms
 
 Known blockers:
-
-
