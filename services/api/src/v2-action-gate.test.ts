@@ -69,6 +69,7 @@ describe('v2 catalog action gate', () => {
     expect(validateV2ActionConfirmation(action, { ...baseContext(), pendingActionId: null, expectedActionKey: proposal.toolKey, customerConfirmed: true }).reasons).toContain('confirmation_not_pending');
     expect(validateV2ActionConfirmation(action, { ...baseContext({ opportunityId: 'other-opportunity' }), pendingActionId: action.id, expectedActionKey: proposal.toolKey, customerConfirmed: true }).reasons).toContain('opportunity_mismatch');
     expect(validateV2ActionConfirmation(action, { ...baseContext(), pendingActionId: action.id, expectedActionKey: proposal.toolKey, customerConfirmed: false }).reasons).toContain('customer_confirmation_required');
+    expect(validateV2ActionConfirmation({ ...action, state: 'unknown' }, { ...baseContext(), pendingActionId: action.id, expectedActionKey: proposal.toolKey, customerConfirmed: true }).reasons).toContain('action_not_confirmable');
     const confirmed = validateV2ActionConfirmation(action, { ...baseContext(), pendingActionId: action.id, expectedActionKey: proposal.toolKey, customerConfirmed: true });
     expect(confirmed).toMatchObject({ accepted: true, status: 'confirmed', action: { state: 'awaiting_confirmation' } });
     expect((await store.listActions('tenant-a'))[0]?.state).toBe('awaiting_confirmation');
@@ -81,6 +82,8 @@ describe('v2 catalog action gate', () => {
     const second = await proposeV2CatalogAction(proposal, catalog, baseContext(), { gateway, store });
     expect(second.status).toBe('existing');
     expect(second.action?.id).toBe(first.action?.id);
+    const conflicting = await proposeV2CatalogAction({ ...proposal, arguments: { account_confirmation: 'changed' } }, catalog, baseContext(), { gateway, store });
+    expect(conflicting).toMatchObject({ accepted: false, reasons: ['action_payload_conflict'] });
     expect(await store.listActions('tenant-a')).toHaveLength(1);
   });
 
