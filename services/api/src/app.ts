@@ -79,6 +79,7 @@ import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 import { registerLifecycleRoutes } from './routes/lifecycle.js';
 import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './v2-tool-gateway.js';
 import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
+import { executeV2Turn } from './v2-turn-controller.js';
 import type { V2ApprovedFallbackTemplateSet } from './v2-fallbacks.js';
 import type { PersonaComposedResponseV2 } from './python-model/v2-contracts.js';
 
@@ -1872,7 +1873,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
              confirmedCustomerFacts.visa_count ? { factId: 'customer-fact-visa_count', text: `The customer requested ${confirmedCustomerFacts.visa_count} visas.`, sourceVersion: publishedCatalog.id, verified: true } : null,
              confirmedCustomerFacts.timeline ? { factId: 'customer-fact-timeline', text: `The customer's requested start timeline is ${confirmedCustomerFacts.timeline}.`, sourceVersion: publishedCatalog.id, verified: true } : null,
            ].filter((value): value is { factId: string; text: string; sourceVersion: string; verified: true } => value !== null);
-           const v2 = await v2Coordinator.run({
+           const v2 = await executeV2Turn(v2Coordinator, {
              envelope: {
                schemaVersion: 2,
                requestId: (req as AuthedRequest).requestId ?? randomUUID(),
