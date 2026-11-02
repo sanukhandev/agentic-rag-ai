@@ -37,6 +37,8 @@ import { MemoryStore } from './store-memory.js';
 import { MemoryCache } from './cache.js';
 import { TokenVault } from './privacy.js';
 import { runGPTFirstChatTurn } from './v2-turn-controller.js';
+import { createV2ToolGateway, verifyV2Scope } from './v2-tool-gateway.js';
+import { DeterministicEmbeddingProvider } from './embedding.js';
 
 const prepared = async () => {
   const store = new MemoryStore();
@@ -62,6 +64,22 @@ const prepared = async () => {
   const coordinator = { run: vi.fn(async (request: V2CoordinatorRequest) => {
     expect(request.envelope.persona.assistantName).toBe('Zara');
     expect(request.envelope.catalogVersionId).toBe(catalog.id);
+    // The initial catalog must be stored before LangGraph issues its first tool.
+    const saved = await store.getSession(session.id);
+    expect(saved?.conversationState?.catalogVersionId).toBe(catalog.id);
+    expect(saved?.stateVersion).toBe(request.envelope.sessionRevision);
+    expect(verifyV2Scope(request.envelope.scopeRef, 'unit-test-service-key-123456')?.catalogVersionId).toBe(catalog.id);
+    const tool = createV2ToolGateway({
+      store, embedding: new DeterministicEmbeddingProvider(),
+      serviceKey: 'unit-test-service-key-123456',
+    });
+    const toolResult = await tool.execute({
+      schemaVersion: 2, toolCallId: randomUUID(), toolName: 'get_intent_catalog',
+      arguments: {}, scopeRef: request.envelope.scopeRef,
+      expectedStateRevision: request.envelope.sessionRevision,
+      deadlineAt: new Date(Date.now() + 15_000).toISOString(),
+    });
+    expect(toolResult.status).toBe('ok');
     return { modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
       response: { citationIds: [], answer: 'Hello, how can I help?', nextQuestion: null, nextQuestionKey: null },
       guardReason: 'accepted' } as unknown as V2CoordinatorResult;
