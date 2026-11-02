@@ -123,10 +123,12 @@ describe('GPT-first controller full-turn unit behavior', () => {
 
 
 import { readFileSync } from 'node:fs';
-import { catalogV2Sha256, catalogV2VersionRef, type CatalogV2Document } from './catalog-v2.js';
+import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2, type CatalogV2Document } from './catalog-v2.js';
 
 const publishPlannerFixture = async (store: MemoryStore, tenantId: string, tenantScope: string) => {
-  const catalogV2 = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
+  const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
+  if (!parsed.ok || !parsed.document) throw new Error('UNIT_CATALOG_FIXTURE_INVALID');
+  const catalogV2: CatalogV2Document = parsed.document;
   catalogV2.manifest.tenantScope = tenantScope;
   catalogV2.sheets.CatalogManifest[0]!.tenantScope = tenantScope;
   const version = await store.createIntentCatalogV2Version({
