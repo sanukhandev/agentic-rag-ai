@@ -341,7 +341,11 @@ export const createV2ToolGateway = ({ store, embedding, serviceKey }: V2ToolGate
     const cacheKey = `${request.scopeRef}:${request.toolCallId}`;
     const argsDigest = digest(JSON.stringify(request.arguments));
     const cached = replayCache.get(cacheKey);
-    if (cached) return cached.argsDigest === argsDigest ? cached.value : sanitizedToolError(request, 'not_authorized', 'TOOL_CALL_REUSE_MISMATCH', scope.stateRevision);
+    if (cached && cached.argsDigest !== argsDigest) return sanitizedToolError(request, 'not_authorized', 'TOOL_CALL_REUSE_MISMATCH', scope.stateRevision);
+    // Immutable pinned versions can be replayed. Dynamic reads (especially RAG and
+    // provider status) must be refreshed: source revocation, package availability
+    // and provider outcomes can change without a session revision increment.
+    if (cached && (request.toolName === 'get_persona' || request.toolName === 'get_intent_catalog')) return cached.value;
     try {
       const parsedArguments = argumentSchemas[request.toolName as V2ToolName]?.safeParse(request.arguments);
       if (!parsedArguments?.success) return sanitizedToolError(request, 'invalid_args', 'TOOL_ARGUMENTS_INVALID', scope.stateRevision);
