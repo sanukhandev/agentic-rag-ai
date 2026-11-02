@@ -159,7 +159,8 @@ export const buildV2AccountProviderRequest = (input: {
   if (!original || original.id !== lead.actionId || original.id === action.id
     || original.tenantId !== action.tenantId || original.sessionId !== action.sessionId
     || original.opportunityId !== action.opportunityId || original.catalogVersionId !== action.catalogVersionId
-    || original.state !== 'completed' || !original.result?.externalReference) throw new Error('V2_ACCOUNT_ORIGINAL_LEAD_ACTION_UNVERIFIED');
+    || original.state !== 'completed' || !original.result?.externalReference
+    || original.result.externalReference !== lead.leadId) throw new Error('V2_ACCOUNT_ORIGINAL_LEAD_ACTION_UNVERIFIED');
   if (lead.qualificationStatus !== 'qualified') throw new Error('V2_ACCOUNT_QUALIFICATION_REQUIRED');
   if (!lead.leadId || !lead.remoteCrm) throw new Error('V2_ACCOUNT_LEAD_NOT_VERIFIED');
   return v2AccountProviderRequestSchema.parse({

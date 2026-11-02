@@ -1,4 +1,6 @@
 import type { SupportingDocument } from './types.js';
+import { validateV2DocumentProviderResult, type V2DocumentProviderRequest, type V2DocumentProviderResult } from './v2-document-provider.js';
+import type { V2TrustedProviderReadback } from './v2-provider-evidence.js';
 
 export interface DocumentCompletionScope {
   tenantId: string;
@@ -25,3 +27,27 @@ export const requiredDocumentSetComplete = (
     && document.expectedDocumentType === type
     && document.status === 'completed'));
 };
+
+
+/**
+ * Stage 5 cannot complete from OCR success alone. Each required document must
+ * also have an independently verified SF-02 attachment to the Lead and Account.
+ * Contract attachments are evaluated after a contract record exists.
+ */
+export const requiredSf02DocumentSetComplete = (
+  requiredTypes: readonly string[],
+  documents: readonly SupportingDocument[],
+  scope: DocumentCompletionScope,
+  attachments: readonly { request: V2DocumentProviderRequest; result: V2DocumentProviderResult; readback: V2TrustedProviderReadback }[],
+): boolean => requiredDocumentSetComplete(requiredTypes, documents, scope)
+  && requiredTypes.every(type => documents.some(document => {
+    if (document.expectedDocumentType !== type || document.status !== 'completed'
+      || document.tenantId !== scope.tenantId || document.sessionId !== scope.sessionId
+      || document.opportunityId !== scope.opportunityId || document.catalogVersionId !== scope.catalogVersionId
+      || document.intentKey !== scope.intentKey) return false;
+    return attachments.some(({ request, result, readback }) =>
+      request.documentId === document.id && request.tenantId === scope.tenantId
+      && request.sessionId === scope.sessionId && request.opportunityId === scope.opportunityId
+      && request.catalogVersionId === scope.catalogVersionId && request.leadId === document.leadId
+      && validateV2DocumentProviderResult(request, result, readback).stageCompletionEligible);
+  }));

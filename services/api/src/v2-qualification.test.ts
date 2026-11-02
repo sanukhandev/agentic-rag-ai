@@ -49,6 +49,15 @@ describe('v2 deterministic qualification policy', () => {
     expect(evaluateV2Qualification(catalog, 'anc.company_formation', 'lead_qualification', facts({ entity_type: 'unclear' }))).toMatchObject({ status: 'manual_review', eligibleForAccountCreation: false, reasons: ['manual_review:qualification.review.entity'] });
   });
 
+  it('does not qualify model guesses or facts without authoritative provenance', () => {
+    const missingSource = { ...facts(), entity_type: { ...facts().entity_type, evidenceRefs: [] } };
+    expect(evaluateV2Qualification(fixture, 'anc.company_formation', 'lead_qualification', missingSource).reasons)
+      .toContain('fact_invalid:entity_type');
+    const providerImpersonation = { ...facts(), visa_count: { ...facts().visa_count, source: 'provider' as const } };
+    expect(evaluateV2Qualification(fixture, 'anc.company_formation', 'lead_qualification', providerImpersonation).eligibleForAccountCreation).toBe(false);
+    const staleSequence = { ...facts(), timeline: { ...facts().timeline, messageSequence: -1 } };
+    expect(evaluateV2Qualification(fixture, 'anc.company_formation', 'lead_qualification', staleSequence).eligibleForAccountCreation).toBe(false);
+  });
   it('does not enable Account creation for an unknown or disqualified result', () => {
     expect(evaluateV2Qualification(fixture, 'anc.company_formation', 'not-a-stage', facts()).eligibleForAccountCreation).toBe(false);
   });

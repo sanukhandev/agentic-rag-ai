@@ -34,14 +34,21 @@ const validFact = (validation: string, value: string | number | boolean): boolea
 
 export const evaluateV2Qualification = (catalog: CatalogV2Document, goalKey: string, stageKey: string, facts: Record<string, V2QualificationFact>): V2QualificationDecision => {
   const stage = catalog.sheets.BusinessStages.find((candidate) => candidate.businessGoalKey === goalKey && candidate.stageKey === stageKey);
-  if (!stage) return { status: 'manual_review', eligibleForAccountCreation: false, reasons: ['stage_not_configured'], requiredFactKeys: [], missingFactKeys: [], invalidFactKeys: [], evidence: {}, provenance: {} };
+  if (!stage || !stage.active) return { status: 'manual_review', eligibleForAccountCreation: false, reasons: ['stage_not_configured'], requiredFactKeys: [], missingFactKeys: [], invalidFactKeys: [], evidence: {}, provenance: {} };
   const requirements = new Map(catalog.sheets.RequirementPolicies.filter((requirement) => requirement.goalKey === goalKey && requirement.stageKey === stageKey).map((requirement) => [requirement.requirementKey, requirement]));
-  const requiredFactKeys = stage.entryRequirements;
+  const requiredFactKeys = [...new Set([...stage.entryRequirements, ...[...requirements.values()].filter(row => row.required && row.type === 'fact').map(row => row.requirementKey)])];
   const missingFactKeys = requiredFactKeys.filter((key) => !facts[key] || String(facts[key]!.value).trim() === '');
   const invalidFactKeys = requiredFactKeys.filter((key) => {
     const requirement = requirements.get(key);
     const fact = facts[key];
-    return Boolean(fact && requirement && !validFact(requirement.validation, fact.value));
+    return Boolean(fact && requirement && (
+      !validFact(requirement.validation, fact.value)
+      || !Number.isInteger(fact.messageSequence) || fact.messageSequence < 1
+      || fact.evidenceRefs.length === 0 || fact.evidenceRefs.some(ref => !ref.trim() || ref.length > 160)
+      || (requirement.sourceOfTruth === 'customer' && fact.source !== 'customer')
+      || (requirement.sourceOfTruth === 'node' && fact.source !== 'node')
+      || (requirement.sourceOfTruth === 'provider' && fact.source !== 'provider')
+    ));
   });
   const unconfiguredKeys = requiredFactKeys.filter((key) => !requirements.has(key));
   const evidence = Object.fromEntries(requiredFactKeys.filter((key) => facts[key] && !invalidFactKeys.includes(key)).map((key) => [key, facts[key]!.value]));
