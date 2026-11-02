@@ -206,11 +206,33 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       return result(request, 'ok', { name: persona.name, tone: persona.tone, speakingStyle: persona.speakingStyle, permittedLanguages: persona.permittedLanguages }, persona.id);
     }
     case 'get_intent_catalog': {
+      // Expose the current published V2 contract alongside the rollback V1
+      // projection. A legacy intent catalog is never represented as Catalog V2.
+      const document = await store.getUserIntentDocument(scope.tenantId, scope.sessionId);
+      const publishedV2 = (await store.listIntentCatalogV2Versions(scope.tenantId))
+        .find(version => version.status === 'published') ?? null;
+      if (document?.catalogSource === 'v2' && (!publishedV2 || document.catalogVersionRef !== publishedV2.catalogVersionRef)) {
+        return sanitizedToolError(request, 'stale_state', 'V2_CATALOG_PIN_STALE', scope.stateRevision);
+      }
+      const v2Projection = publishedV2 && (!document || document.catalogSource === 'v2')
+        ? {
+            versionRef: publishedV2.catalogVersionRef,
+            businessGoals: publishedV2.catalog.sheets.BusinessGoals.filter(goal => goal.active)
+              .slice(0, 40).map(goal => ({ key: goal.businessGoalKey, name: bounded(goal.name, 120), confirmationRequired: goal.confirmationRequired })),
+            turnIntents: publishedV2.catalog.sheets.TurnIntents.filter(turn => turn.active)
+              .slice(0, 80).map(turn => ({ key: turn.turnIntentKey, categoryKey: turn.categoryKey, businessGoalKey: turn.businessGoalKey })),
+            requirements: publishedV2.catalog.sheets.RequirementPolicies.filter(req => req.required)
+              .slice(0, 80).map(req => ({ key: req.requirementKey, goalKey: req.goalKey, stageKey: req.stageKey, type: req.type })),
+          }
+        : null;
       const projection = catalogProjection(catalog);
       const activeIntentCount = catalog.catalog.intents.filter((intent) => intent.active).length;
-      return resultWithToolEvidence(request, projection, request.toolName as V2ToolName, sourceVersion, [
-        `The published catalog version ${sourceVersion} contains ${activeIntentCount} active business-goal definitions.`,
-        ...(catalog.catalog.journeyRequirements ?? []).slice(0, 8).map((journey) => `The published catalog defines ${journey.requirementKey} as a ${journey.requirementType} requirement for ${journey.intentKey}.`),
+      return resultWithToolEvidence(request, { ...projection, catalogV2: v2Projection }, request.toolName as V2ToolName, v2Projection?.versionRef ?? sourceVersion, [
+        v2Projection
+          ? `The published V2 catalog ${v2Projection.versionRef} defines ${v2Projection.businessGoals.length} active business goals.`
+          : `The published legacy catalog version ${sourceVersion} contains ${activeIntentCount} active intent definitions.`,
+        ...(catalog.catalog.journeyRequirements ?? []).slice(0, 6).map(journey =>
+          `The legacy catalog defines ${journey.requirementKey} as a ${journey.requirementType} requirement for ${journey.intentKey}.`),
       ]);
     }
     case 'get_missing_requirements': {
