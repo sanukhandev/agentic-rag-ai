@@ -28,7 +28,7 @@ const negative = (s: string): boolean => /\b(?:no|not|never|without|cannot|can't
 const filler = new Set('the a an i we you your our their this that these those there for from with about by into and but while can could would should will have has had been are was were being is as to of at on in it its my me also just still currently now here said stated customer requested request details detail information verified confirm confirmed checking noted note thanks sharing your exactly same setup count shows show showing'.split(' '));
 const tokens = (s: string): string[] => [...new Set((norm(s).match(/[a-z\u00c0-\u024f0-9]+/gu) ?? [])
   .filter((w) => w.length >= 3 && !filler.has(w) && !/^\d/u.test(w))
-  .map((w) => w.replace(/(?:ing|ed|es|s)$/u, '')))];
+  .map((w) => { const stem = w.replace(/(?:ing|ed|es|s)$/u, ''); return stem === 'updat' ? 'correct' : stem; }))];
 const state = /\b(?:account|lead|payment|invoice|contract|signature|document|registration|company|business|entity|opportunity)\b/iu;
 const completed = /\b(?:created|complete|completed|paid|signed|registered|uploaded|issued|successful|succeeded)\b/iu;
 const verifiedRecord = /\b(?:provider[_ ]record[_ ]verified|mock[_ ]verified|verified\s+(?:provider|government|registry|salesforce|payment|invoice|contract|registration)\s+(?:record|receipt|confirmation|evidence)|(?:government|provider|registry|payment|contract)\s+(?:registration\s+)?record\s+confirms)\b/iu;

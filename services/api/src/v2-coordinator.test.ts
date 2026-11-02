@@ -75,6 +75,7 @@ describe('V2ConversationCoordinator', () => {
     expect(output.guardReason).toBe('accepted_model_dialogue');
     expect(output.response.answer).toBe(answer);
     expect(output.response.citationIds).toEqual([]);
+    expect(output.claimProvenance).toEqual([]);
   });
 
   it('accepts safe uncited dialogue when approved evidence is available but not needed', async () => {
@@ -208,6 +209,8 @@ describe('V2ConversationCoordinator', () => {
     const output = await coordinator.run({ envelope: envelope(), fallbackTemplates, questionPolicy: 'optional' });
     expect(output.guardReason).toBe('accepted');
     expect(output.response.citationIds).toEqual(['search-source']);
+    expect(output.claimProvenance).toHaveLength(1);
+    expect(output.claimProvenance[0]).toMatchObject({ citationIds: ['search-source'], sourceVersions: ['version-12345678'], sourceRefs: ['source-12345678'] });
   });
 
   it('accepts evidence correlated to a successful authoritative state tool trace', async () => {
