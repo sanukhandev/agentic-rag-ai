@@ -171,6 +171,9 @@ export class MemoryStore implements Store {
     const key = intentDocumentKey(input.document.tenantId, input.document.sessionId);
     const current = this.intentDocuments.get(key);
     if (!current || current.id !== input.document.id || current.revision !== input.expectedRevision || !this.sessions.has(input.document.sessionId)) return null;
+    if (current.goalConfirmation?.status === 'confirmed'
+      && (JSON.stringify(current.goalConfirmation) !== JSON.stringify(input.document.goalConfirmation)
+        || !input.document.goalConfirmed || input.document.businessGoalKey !== current.businessGoalKey)) return null;
     const updated = { ...structuredClone(input.document), revision: input.expectedRevision + 1, updatedAt: now() };
     assertSafeUserIntentDocument(updated);
     this.intentDocuments.set(key, updated);
@@ -205,6 +208,9 @@ export class MemoryStore implements Store {
       || !published || published.catalogVersionRef !== document.catalogVersionRef
       || assessment.tenantId !== document.tenantId || assessment.sessionId !== session.id
       || assessment.documentId !== document.id || assessment.opportunityId !== document.opportunityId
+      || (previousDocument?.goalConfirmation?.status === 'confirmed'
+        && (JSON.stringify(previousDocument.goalConfirmation) !== JSON.stringify(document.goalConfirmation)
+          || !document.goalConfirmed || document.businessGoalKey !== previousDocument.businessGoalKey))
       || (input.expectedDocumentRevision === null ? Boolean(previousDocument)
         : !previousDocument || previousDocument.id !== document.id || previousDocument.revision !== input.expectedDocumentRevision)
       || [...this.intentTurns.values()].some(turn => (turn.sessionId === session.id && turn.clientMessageId === assessment.clientMessageId)

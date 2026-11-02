@@ -41,7 +41,9 @@ export const assertSafeUserIntentDocument = (document: UserIntentDocument): void
       || !Number.isSafeInteger(decision.sessionRevision) || decision.sessionRevision < 0
       || !Number.isSafeInteger(decision.intentRevision) || decision.intentRevision < 0
       || (decision.status === 'pending' && (decision.customerMessageId || decision.decidedAt))
-      || (decision.status === 'confirmed' && (!decision.customerMessageId || !decision.customerClientMessageId || !decision.decidedAt))
+      || (decision.status === 'pending' && (decision.goalKey !== document.businessGoalKey || decision.intentRevision !== document.revision))
+      || (decision.status === 'rejected' || decision.status === 'corrected') && document.businessGoalKey !== null
+      || (decision.status !== 'pending' && (!decision.customerMessageId || !decision.customerClientMessageId || !decision.decidedAt))
       || (decision.status === 'confirmed') !== document.goalConfirmed
       || (decision.status === 'confirmed' && decision.goalKey !== document.businessGoalKey)) {
       throw new Error('INTENT_DOCUMENT_INVALID_GOAL_CONFIRMATION');

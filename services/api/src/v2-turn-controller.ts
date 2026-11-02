@@ -232,7 +232,9 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       || pendingDecision.personaVersionId !== persona.id
       || pendingDecision.sessionRevision !== sessionRevision
       || pendingDecision.intentRevision !== intentDocument.revision
-      || pendingDecision.proposalMessageId === userMessage.id) {
+      || pendingDecision.proposalMessageId === userMessage.id
+      || !(await store.listMessages(session.id, tenant.id)).some(message =>
+        message.id === pendingDecision.promptId && message.role === 'assistant')) {
       throw new HttpError(409, 'V2_GOAL_CONFIRMATION_STALE', 'The goal confirmation prompt is no longer current.');
     }
   }

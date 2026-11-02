@@ -354,9 +354,34 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     await expect(runGPTFirstChatTurn({ ...stale, tenant: other })).rejects.toThrow('scope does not match');
   });
 
+  it('fails closed when an unrelated V2 catalog revision replaces the pinned publication', async () => {
+    const ctx = await proposalTurn();
+    const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
+    if (!parsed.document) throw new Error('UNIT_CATALOG_FIXTURE_INVALID');
+    parsed.document.manifest.tenantScope = ctx.tenant.slug;
+    parsed.document.sheets.CatalogManifest[0]!.tenantScope = ctx.tenant.slug;
+    parsed.document.manifest.revision += 1;
+    const version = await ctx.store.createIntentCatalogV2Version({
+      tenantId: ctx.tenant.id, status: 'draft', sourceFileName: 'updated-v2.json',
+      sourceHash: catalogV2Sha256(parsed.document), parserVersion: 'unit',
+      catalogVersionRef: catalogV2VersionRef(parsed.document), catalog: parsed.document,
+    });
+    await ctx.store.publishIntentCatalogV2Version(ctx.tenant.id, version.id);
+    const next = await followUpTurn(ctx, 'Yes');
+    await expect(runGPTFirstChatTurn(next)).rejects.toThrow('no longer published');
+    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.goalConfirmed).toBe(false);
+  });
+
   it('does not confirm a standalone yes without an active prompt', async () => {
     const ctx = await prepared();
     await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+    const message = 'Yes';
+    const user = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+    if (!user) throw new Error('UNIT_MESSAGE_MISSING');
+    await ctx.store.updateMessage({ ...user, maskedContent: message });
+    ctx.input.userMessage = { ...user, maskedContent: message };
+    ctx.input.maskedMessage = message;
+    ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
     const result = await runGPTFirstChatTurn(ctx.input);
     expect(result.pendingPromptId).toBeNull();
     const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
