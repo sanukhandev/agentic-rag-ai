@@ -38,6 +38,20 @@ class V2ContractTests(unittest.TestCase):
                 "internalTrace": "secret",
             })
 
+    def test_decision_reference_allows_provider_safe_punctuation(self) -> None:
+        response = PersonaComposedResponseV2.model_validate({
+            "schemaVersion": 2,
+            "personaVersionId": "persona-12345678",
+            "language": "en",
+            "answer": "Ready.",
+            "citationIds": [],
+            "nextQuestion": None,
+            "nextQuestionKey": None,
+            "reasonNoQuestion": "farewell",
+            "decisionRef": "answer+pending_requirement",
+        })
+        self.assertEqual(response.decisionRef, "answer+pending_requirement")
+
 
 if __name__ == "__main__":
     unittest.main()

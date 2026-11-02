@@ -98,6 +98,12 @@ describe('v2 claim provenance and evidence verification', () => {
     const question = 'What email address should we use?';
     const pending = { ...response(`The missing detail is your email address. ${question}`, []), nextQuestion: question, nextQuestionKey: 'email', reasonNoQuestion: null };
     expect(verifyV2ResponseEvidence(pending, [], [], { allowNonFactualDialogue: true, pendingRequirementKey: 'email' }).verdict.accepted).toBe(true);
+    const prefixed = response('Thanks for clarifying. I’ll wait for verified evidence and won’t assume the account is complete.', []);
+    expect(verifyV2ResponseEvidence(prefixed, [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(true);
+    const safeQuestion = { ...response('I can help with that. The general formation process detail is not verified here, so I don’t want to guess. What business activity will your company do?', []), nextQuestion: 'What business activity will your company do?', nextQuestionKey: 'business_activity', reasonNoQuestion: null };
+    expect(verifyV2ResponseEvidence(safeQuestion, [], [], { allowNonFactualDialogue: true, pendingRequirementKey: 'business_activity' }).verdict.accepted).toBe(true);
+    const unsafeProcess = response('In general, forming a company means preparing the required documents and application information.', []);
+    expect(verifyV2ResponseEvidence(unsafeProcess, [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(false);
   });
 
   it('does not treat a negated provider outcome as a completed outcome', () => {

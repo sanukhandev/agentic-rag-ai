@@ -64,4 +64,11 @@ describe('conversation engine v2 contracts', () => {
       citationIds: [], nextQuestion: null, nextQuestionKey: null, reasonNoQuestion: 'farewell', decisionRef: 'final',
     }).success).toBe(true);
   });
+
+  it('accepts provider-safe punctuation used by model decision references', () => {
+    expect(personaComposedResponseSchema.safeParse({
+      schemaVersion: 2, personaVersionId: envelope.personaVersionId, language: 'en', answer: 'Ready.',
+      citationIds: [], nextQuestion: null, nextQuestionKey: null, reasonNoQuestion: 'farewell', decisionRef: 'answer+pending_requirement',
+    }).success).toBe(true);
+  });
 });

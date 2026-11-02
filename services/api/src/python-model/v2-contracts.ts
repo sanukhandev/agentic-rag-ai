@@ -4,7 +4,7 @@ export const V2_SCHEMA_VERSION = 2 as const;
 
 const boundedKey = z.string().trim().regex(/^[a-z][a-z0-9._:-]{0,127}$/u);
 const opaqueRef = z.string().trim().regex(/^[A-Za-z0-9._:-]{8,256}$/u);
-const decisionRef = z.string().trim().regex(/^[A-Za-z0-9._:-]{1,256}$/u);
+const decisionRef = z.string().trim().regex(/^[A-Za-z0-9._:+-]{1,256}$/u);
 const scopeRef = z.string().trim().regex(/^[A-Za-z0-9._:-]{8,2048}$/u);
 const boundedText = z.string().trim().max(5_000);
 
