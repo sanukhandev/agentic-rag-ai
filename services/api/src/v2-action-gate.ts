@@ -335,3 +335,26 @@ export const evaluateV2StageTransition = (input: V2StageTransitionInput): V2Stag
   }
   return { accepted: true, status: 'completed', reasons: [], nextStageKey: expectedNext, expectedLifecycleRevision: input.context.expectedLifecycleRevision! };
 };
+
+
+/** Readiness is a projection of canonical action and provider state, not another state machine. */
+export type V2ActionReadiness =
+  | 'eligible' | 'proposed' | 'awaiting_confirmation' | 'approved' | 'dispatched'
+  | 'pending_provider' | 'completed' | 'failed' | 'reconcile_required';
+
+export const deriveV2ActionReadiness = (input: {
+  action: ActionRequest | null;
+  proposalPresent?: boolean;
+  providerStatus?: string | null;
+  providerCompletionVerified?: boolean;
+}): V2ActionReadiness => {
+  if (!input.action) return input.proposalPresent ? 'proposed' : 'eligible';
+  const { action } = input;
+  if (action.state === 'reconcile_required' || action.state === 'unknown' || action.state === 'human_review') return 'reconcile_required';
+  if (action.state === 'failed') return 'failed';
+  if (action.state === 'awaiting_confirmation' || action.state === 'awaiting_customer') return 'awaiting_confirmation';
+  if (action.state === 'approved') return 'approved';
+  if (action.state === 'processing') return ['accepted', 'processing', 'pending'].includes(input.providerStatus ?? '') ? 'pending_provider' : 'dispatched';
+  if (action.state === 'completed') return input.providerCompletionVerified === true ? 'completed' : 'reconcile_required';
+  return 'reconcile_required';
+};

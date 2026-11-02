@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { catalogV2VersionRef, type CatalogV2Document } from './catalog-v2.js';
-import { evaluateV2StageBoundary, evaluateV2StageTransition, V2_SEVEN_STAGE_KEYS, type V2StageCompletionEvidence, type V2ActionGateContext } from './v2-action-gate.js';
-import type { IntentCatalogV2Version, LifecycleState, UserIntentDocument } from './types.js';
+import { deriveV2ActionReadiness, evaluateV2StageBoundary, evaluateV2StageTransition, V2_SEVEN_STAGE_KEYS, type V2StageCompletionEvidence, type V2ActionGateContext } from './v2-action-gate.js';
+import type { ActionRequest, IntentCatalogV2Version, LifecycleState, UserIntentDocument } from './types.js';
 import { readFileSync } from 'node:fs';
 
 const catalog = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
@@ -104,5 +104,25 @@ describe('seven-stage policy matrix (Node-only, no provider I/O)', () => {
       .toContain('contract_signature_unverified');
     expect(evaluateV2StageTransition({ context: contract, nextStageKey: null,
       completion: allStageEvidence('contract') }).accepted).toBe(true);
+  });
+});
+
+
+describe('canonical action-state readiness projection', () => {
+  const action = (state: ActionRequest['state']): ActionRequest => ({ state } as ActionRequest);
+  it.each([
+    [null, false, undefined, false, 'eligible'],
+    [null, true, undefined, false, 'proposed'],
+    ['awaiting_confirmation', false, undefined, false, 'awaiting_confirmation'],
+    ['approved', false, undefined, false, 'approved'],
+    ['processing', false, undefined, false, 'dispatched'],
+    ['processing', false, 'accepted', false, 'pending_provider'],
+    ['completed', false, 'completed', false, 'reconcile_required'],
+    ['completed', false, 'completed', true, 'completed'],
+    ['failed', false, undefined, false, 'failed'],
+    ['reconcile_required', false, undefined, false, 'reconcile_required'],
+  ] as const)('maps %s to %s only when trusted completion allows it', (state, proposed, providerStatus, verified, status) => {
+    expect(deriveV2ActionReadiness({ action: state === null ? null : action(state),
+      proposalPresent: proposed, providerStatus, providerCompletionVerified: verified })).toBe(status);
   });
 });
