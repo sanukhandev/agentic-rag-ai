@@ -216,3 +216,30 @@ def test_short_bounded_decision_reference_is_valid_model_output():
     result = asyncio.run(BoundedConversationAgent(client, FakeGateway(), "deployment").run(envelope()))
 
     assert result.response.decisionRef == "final"
+
+
+def test_model_planning_is_typed_and_exposed_without_tool_side_effects():
+    from gateway.agent import _FINAL_RESPONSE_SCHEMA
+    from gateway.persona_composer import validate_composed_response
+
+    proposal = {
+        "turnCategory": "business_goal",
+        "primaryGoalKey": "anc.company_formation",
+        "candidateGoalKeys": ["anc.company_formation"],
+        "matchedSignalIds": ["signal.company.register"],
+        "supportingTopicKeys": [],
+        "runnerUpScore": None,
+        "nextMove": "confirm_goal",
+        "nextQuestion": None,
+        "proposedToolKey": None,
+        "confidenceBand": "high",
+    }
+    assert "planning" in _FINAL_RESPONSE_SCHEMA["required"]
+    assert _FINAL_RESPONSE_SCHEMA["properties"]["planning"]["anyOf"][0]["additionalProperties"] is False
+    payload = json.loads(final_response("Hello"))
+    payload["planning"] = proposal
+    parsed, reason = validate_composed_response(payload, envelope())
+    assert reason is None
+    assert parsed is not None and parsed.planning is not None
+    assert parsed.planning.primaryGoalKey == "anc.company_formation"
+    assert parsed.planning.confidenceBand == "high"
