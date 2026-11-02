@@ -41,7 +41,7 @@ export const validateQuotedV2CustomerFacts = (
 ): Record<string, UserIntentFact> => {
   const facts: Record<string, UserIntentFact> = {};
   const conflicts = new Set<string>();
-  for (const proposal of proposals.slice(0, 8)) {
+  for (const proposal of (proposals ?? []).slice(0, 8)) {
     const key = proposal.key;
     if (conflicts.has(key) || !validQuote(proposal, customerMessage)) continue;
     const existing = facts[key];

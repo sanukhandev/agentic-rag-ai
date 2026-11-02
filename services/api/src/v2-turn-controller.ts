@@ -266,7 +266,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   // Persist only facts that Node already verified in its session/intent store.
   // Never promote model-generated facts to verified customer facts.
   const proposedFacts = validPlan && selectedV2Goal && modelPlan
-    ? validateQuotedV2CustomerFacts(modelPlan.proposedFacts, maskedMessage, userMessage.id, state.messageSequence)
+    ? validateQuotedV2CustomerFacts(modelPlan.proposedFacts ?? [], maskedMessage, userMessage.id, state.messageSequence)
     : {};
   const incomingFacts = { ...factPatch(facts as Record<string, string>, state.messageSequence), ...proposedFacts };
   const verifiedFactPatch: Record<string, UserIntentFact> = Object.fromEntries(
