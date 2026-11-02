@@ -182,6 +182,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const at = new Date().toISOString();
   const nextDoc: UserIntentDocument = intentDocument ? {
     ...intentDocument, approvedResponse, lastQuestion: result.response.nextQuestion,
+    pendingRequirementKey: effectivePendingRequirement,
     toolRefs: result.toolTrace.map(trace => trace.toolCallId),
     sourceRefs: result.response.citationIds, summary: state.rollingSummary,
     summaryRevision: intentDocument.summaryRevision + 1,
