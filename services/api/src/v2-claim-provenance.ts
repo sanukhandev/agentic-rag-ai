@@ -53,8 +53,11 @@ const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (c
   if (!source.sourceVersion.trim() || !text || numbers(subject).some((n) => !numbers(text).includes(n))) return false;
   const negativeStatus = /\bnot complete\b/iu.test(subject) && /\b(?:authoritative journey|current workflow status)\b/iu.test(text);
   const unrelatedProviderNegation = !negative(subject) && /\b(?:no|not)\s+(?:provider|further|additional|other)\b/iu.test(text);
+  // A refusal record may say both 'action declined' and 'must not proceed'.
+  // The prohibition does not negate the separately stated decline event.
+  const optOutStatus = /\baction\b.{0,20}\bdeclin\w*\b/iu.test(subject) && /\bdeclin\w*\b/iu.test(text) && /\bmust not proceed\b/iu.test(text);
   const journeyParaphrase = /\bjourney\b.{0,50}\b(?:currently\s+)?at\b/iu.test(subject) && /\bauthoritative journey\b.{0,50}\bcurrently at\b/iu.test(text) && tokens(subject).filter((word) => tokens(text).includes(word)).length >= 3;
-  if (negative(subject) !== negative(text) && !negativeStatus && !unrelatedProviderNegation) return false;
+  if (negative(subject) !== negative(text) && !negativeStatus && !unrelatedProviderNegation && !optOutStatus) return false;
   if (hasPositiveBusinessOutcomeClaim(subject)) {
     if (source.kind === 'customer_fact' || !verifiedRecord.test(text) || !state.test(text) || !completed.test(text)) return false;
   }
