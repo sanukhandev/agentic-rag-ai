@@ -102,6 +102,21 @@ describe('V2 trusted tool execution (isolated unit)', () => {
     expect((await gateway.execute({ ...request('get_persona'), deadlineAt: new Date(Date.now() + 300_000).toISOString() })).status).toBe('temporarily_unavailable');
     expect(() => issueV2Scope({ ...scope, tenantId: tenant.id, stateRevision: -1 }, secret)).toThrow();
   });
+  it('refreshes session-backed results instead of replaying stale dynamic evidence', async () => {
+    const { store, tenant, pinned, gateway, request } = await makeGateway();
+    const call = request('get_conversation_context', {}, 'context-refresh-12345678');
+    const first = await gateway.execute(call);
+    expect(first.status).toBe('ok');
+    expect(first.result).toHaveProperty('recentTurns', []);
+    await store.addMessage({
+      id: randomUUID(), sessionId: pinned.id, tenantId: tenant.id, role: 'user',
+      maskedContent: 'A new question', clientMessageId: randomUUID(),
+      citations: [], response: null, createdAt: new Date().toISOString(),
+    });
+    const second = await gateway.execute(call);
+    expect(second.status).toBe('ok');
+    expect(second.result).toHaveProperty('recentTurns', [{ role: 'user', content: 'A new question' }]);
+  });
   it('rejects altered arguments for an already-used tool call ID', async () => {
     const { gateway, request } = await makeGateway();
     const callId = 'replay-mismatch-12345678';
