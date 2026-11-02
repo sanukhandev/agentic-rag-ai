@@ -41,9 +41,13 @@ const factValueWords = (value: string): string[] => {
 const factAppearsIn = (answer: string, fact: V2VerifiedFact): boolean => {
   const normalized = answer.toLocaleLowerCase('en-US');
   const value = factValueWords(fact.text);
-  return value.length > 0 && value.every((word) => new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}\\b`, 'u').test(normalized));
+  const numbers = value.filter((word) => /\d/u.test(word));
+  const labels = value.filter((word) => !/\d/u.test(word));
+  return value.length > 0
+    && numbers.every((word) => normalized.includes(word))
+    && labels.every((word) => new RegExp(`\\b${word.replace(/s$/u, 's?').replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}\\b`, 'u').test(normalized));
 };
-const safeFactAcknowledgement = (sentence: string): boolean => /^(?:thanks?(?: for (?:checking|clarifying|confirming|sharing))?|understood|got it|okay|ok|sure|that makes sense|i(?:'|’)m keeping|i have your)\b/iu.test(sentence.trim());
+const safeFactAcknowledgement = (sentence: string): boolean => /^(?:thanks?(?: for (?:checking|clarifying|confirming|sharing))?|understood|got it|okay|ok|sure|that makes sense)\.?$/iu.test(sentence.trim());
 const safeUncertainty = (sentence: string): boolean => /\b(?:i (?:cannot|can't|can’t|do not|don't|don’t) (?:verify|confirm|have)|there (?:is|are) no (?:verified|approved))\b/iu.test(sentence)
   && !/\b(?:legally registered|registered successfully|is eligible|are eligible|is created|are created|is completed|are completed)\b/iu.test(sentence);
 const customerFactReflection = (sentence: string, facts: V2VerifiedFact[]): boolean => {
@@ -72,6 +76,7 @@ const uncitedConversation = (answer: string): boolean =>
 const nonFactualPreface = (input: string): boolean => {
   const value = input.trim().replace(/[.!]\s*$/u, '').trim().replace(/\s+/gu, ' ');
   if (!value || value.length > 190) return false;
+  if (/^(?:hi|hello|hey)[,!]?\s+i can help(?: you)?(?: with that| with your (?:request|company formation))?$/iu.test(value)) return true;
   return /^(?:thanks?(?: you)?(?: for (?:sharing|clarifying|confirming|explaining)(?: (?:that|the details|those details|your request))?)?|understood|got it|okay|ok|sure|of course|certainly|that makes sense|i understand|i see|no problem|happy to help)$/iu.test(value)
     || /^i (?:can|would be happy to|am happy to)(?: help(?: you)?(?: work through (?:that|this))?| guide you| walk you through (?:that|it|the steps))(?: (?:with|on|through) (?:that|this|your (?:request|setup|company formation|company-formation request)|the (?:process|next steps)))?$/iu.test(value)
     || /^i(?:'|’)ll (?:keep|bear) (?:your|those|the) (?:details|requirements|request|company-formation request) in (?:mind|view)$/iu.test(value)
@@ -85,7 +90,7 @@ const uncitedQuestion = (answer: string, question: string | null): boolean => {
   return !preface || nonFactualPreface(preface);
 };
 
-const safeNoEvidenceDialogue = (answer: string, question: string | null): boolean => {
+const safeNoEvidenceDialogue = (answer: string, question: string | null, pendingRequirementKey: string | null = null): boolean => {
   // Disallow business consequences, authority claims, numbers, deadlines and links
   // without approved evidence even when the rest of the reply is conversational.
   const controlledUncertainty = /^\s*i (?:can(?:'|’)t|cannot) (?:verify|confirm)\b/iu.test(answer);
@@ -100,7 +105,11 @@ const safeNoEvidenceDialogue = (answer: string, question: string | null): boolea
   const preface = question ? answer.trim().slice(0, answer.trim().length - question.trim().length).trim() : answer.trim();
   if (!preface) return Boolean(question);
   const segments = preface.split(/(?<=[.!])\s+/u).filter(Boolean);
-  return segments.length <= 2 && segments.every(nonFactualPreface);
+  const pendingTerms = pendingRequirementKey?.split('_').filter((term) => term.length >= 3) ?? [];
+  const pendingRequirementPreface = (segment: string): boolean => pendingTerms.length > 0
+    && /\b(?:still need|missing requirement|remaining detail|to continue)\b/iu.test(segment)
+    && pendingTerms.some((term) => segment.toLocaleLowerCase('en-US').includes(term));
+  return segments.length <= 2 && segments.every((segment) => nonFactualPreface(segment) || pendingRequirementPreface(segment));
 };
 export const addVerifiedFactCitations = (response: PersonaComposedResponseV2, facts: V2VerifiedFact[]): PersonaComposedResponseV2 => {
   const matching = facts.filter((fact) => fact.verified && factAppearsIn(response.answer, fact));
@@ -110,7 +119,7 @@ export const addVerifiedFactCitations = (response: PersonaComposedResponseV2, fa
 };
 const verdict = (accepted: boolean, reasonCode: ResponseGuardVerdictV2['reasonCode'], response: PersonaComposedResponseV2 | null): ResponseGuardVerdictV2 => ({ schemaVersion: 2, accepted, reasonCode, response });
 
-export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvidence[], facts: V2VerifiedFact[] = [], options: { conversational?: boolean; allowUncitedQuestion?: boolean; allowNonFactualDialogue?: boolean; allowApprovedFallback?: boolean } = {}): V2EvidenceDecision => {
+export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvidence[], facts: V2VerifiedFact[] = [], options: { conversational?: boolean; allowUncitedQuestion?: boolean; allowNonFactualDialogue?: boolean; allowApprovedFallback?: boolean; pendingRequirementKey?: string | null } = {}): V2EvidenceDecision => {
   const parsed = personaComposedResponseSchema.safeParse(input);
   if (!parsed.success) return { verdict: verdict(false, 'metadata_leak', null), claims: [] };
   const response = parsed.data;
@@ -136,7 +145,7 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
   const grounded = options.allowApprovedFallback === true && citationIds.length === 0
     ? true
     : citationIds.length === 0 && options.allowNonFactualDialogue === true
-    ? safeNoEvidenceDialogue(response.answer, response.nextQuestion)
+    ? safeNoEvidenceDialogue(response.answer, response.nextQuestion, options.pendingRequirementKey ?? null)
     : options.conversational === true && citationIds.length === 0
     ? uncitedConversation(response.answer) || (options.allowUncitedQuestion === true && uncitedQuestion(response.answer, response.nextQuestion))
     : citationIds.length > 0 && (hasSufficientEvidence(answerForEvidence, modelEvidence, citations, trustedFacts)

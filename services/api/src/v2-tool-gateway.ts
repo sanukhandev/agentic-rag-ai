@@ -216,6 +216,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       return resultWithToolEvidence(request, value, request.toolName as V2ToolName, sourceVersion, [
         scopedLifecycle && lifecycle?.currentStage ? `The authoritative journey is currently at ${lifecycle.currentStage}.` : 'No opportunity is currently bound to the requested journey state.',
         value.pendingRequirementKey ? `The next server-authorized requirement is ${value.pendingRequirementKey}.` : 'No server-authorized requirement is currently pending.',
+        `Contact consent is ${value.contactConsent}.`,
         `The current workflow status is ${value.workflowStatus}.`,
       ]);
     }

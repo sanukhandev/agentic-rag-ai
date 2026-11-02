@@ -75,6 +75,8 @@ describe('v2 claim provenance and evidence verification', () => {
       const value = { ...response(answer, []), nextQuestion: question, nextQuestionKey: 'entity_type', reasonNoQuestion: null };
       expect(verifyV2ResponseEvidence(value, [], [], { allowNonFactualDialogue: true }).verdict.accepted, prefix).toBe(true);
     }
+    const greetingQuestion = 'Hi, I can help with that. What business activity are you planning?';
+    expect(verifyV2ResponseEvidence({ ...response(greetingQuestion, []), nextQuestion: 'What business activity are you planning?', nextQuestionKey: 'business_activity', reasonNoQuestion: null }, [], [], { allowNonFactualDialogue: true, pendingRequirementKey: 'business_activity' }).verdict.accepted).toBe(true);
   });
 
   it('rejects greetings containing uncited price claims and provider-success claims', () => {
