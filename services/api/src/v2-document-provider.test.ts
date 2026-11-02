@@ -47,6 +47,7 @@ describe('v2 stage 5 document and SF-02 provider boundary', () => {
     const first = provider.execute(request);
     const second = provider.execute(request);
     expect(second).toEqual(first);
+    expect(first).toMatchObject({ leadAttachmentId: expect.any(String), accountAttachmentId: expect.any(String) });
     expect(first.attachmentId).toMatch(/^mock-attachment-[a-f0-9]{24}$/u);
     expect(validateV2DocumentProviderResult(request, first, verifiedReadback(request, first.attachmentId))).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'mock_verified' });
   });
@@ -58,6 +59,8 @@ describe('v2 stage 5 document and SF-02 provider boundary', () => {
     expect(validateV2DocumentProviderResult(request, { ...sandbox, remoteAccountId: '001-WRONG' })).toMatchObject({ accepted: false, status: 'reconciliation_required', reasons: ['remoteAccountId_mismatch'] });
     expect(validateV2DocumentProviderResult(request, { ...sandbox, attachmentStatus: 'reconciliation_required' as const })).toMatchObject({ accepted: false, status: 'reconciliation_required' });
     expect(validateV2DocumentProviderResult(request, { ...sandbox, documentId: randomUUID() })).toMatchObject({ accepted: false, status: 'reconciliation_required', reasons: ['documentId_mismatch'] });
+    expect(validateV2DocumentProviderResult(request, { ...sandbox, accountAttachmentId: null })).toMatchObject({ accepted: false });
+    expect(validateV2DocumentProviderResult(request, sandbox)).toMatchObject({ accepted: false, reasons: ['provider_readback_required'] });
     expect(validateV2DocumentProviderResult(request, sandbox, verifiedReadback(request, sandbox.attachmentId))).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'provider_record_verified' });
   });
 });

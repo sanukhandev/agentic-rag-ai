@@ -60,6 +60,7 @@ export const v2AccountProviderResultSchema = z.object({
   remoteAccountId: opaque,
   remoteContactId: opaque,
   remoteOpportunityId: opaque,
+  leadExternalId: opaque,
   deduplicated: z.boolean(),
   evidenceTier: z.enum(['provider_record_verified', 'mock_verified', 'reconciliation_required']),
 }).strict();
@@ -142,16 +143,23 @@ export class V2OtpChallengeService {
 export const buildV2AccountProviderRequest = (input: {
   action: ActionRequest;
   lead: CrmLead;
+  originalLeadAction: ActionRequest;
   providerType: 'salesforce_sandbox' | 'deterministic_mock';
   otp: Extract<V2OtpVerificationResult, { status: 'verified' }>;
   explicitConfirmation: boolean;
 }): V2AccountProviderRequest => {
   const { action, lead, providerType, otp } = input;
   if (!['approved', 'processing'].includes(action.state)) throw new Error('V2_ACCOUNT_ACTION_NOT_DISPATCHABLE');
-  if (action.tenantId !== lead.tenantId || action.sessionId !== lead.sessionId || action.id !== lead.actionId || action.opportunityId !== otp.opportunityId || action.tenantId !== otp.tenantId || action.sessionId !== otp.sessionId || lead.id !== otp.leadId) throw new Error('V2_ACCOUNT_IDENTITY_MISMATCH');
+  if (action.tenantId !== lead.tenantId || action.sessionId !== lead.sessionId || action.opportunityId !== otp.opportunityId || action.tenantId !== otp.tenantId || action.sessionId !== otp.sessionId || lead.id !== otp.leadId) throw new Error('V2_ACCOUNT_IDENTITY_MISMATCH');
   if (!action.opportunityId || !action.catalogVersionId || !action.actionKey || !action.actionRevision) throw new Error('V2_ACCOUNT_BINDING_INCOMPLETE');
   if (action.payload.contactConsent !== true) throw new Error('V2_ACCOUNT_CONSENT_REQUIRED');
   if (input.explicitConfirmation !== true) throw new Error('V2_ACCOUNT_CONFIRMATION_REQUIRED');
+  // Account action is a NEW action. Bind it to the original completed Lead action.
+  const original = input.originalLeadAction;
+  if (!original || original.id !== lead.actionId || original.id === action.id
+    || original.tenantId !== action.tenantId || original.sessionId !== action.sessionId
+    || original.opportunityId !== action.opportunityId || original.catalogVersionId !== action.catalogVersionId
+    || original.state !== 'completed' || !original.result?.externalReference) throw new Error('V2_ACCOUNT_ORIGINAL_LEAD_ACTION_UNVERIFIED');
   if (lead.qualificationStatus !== 'qualified') throw new Error('V2_ACCOUNT_QUALIFICATION_REQUIRED');
   if (!lead.leadId || !lead.remoteCrm) throw new Error('V2_ACCOUNT_LEAD_NOT_VERIFIED');
   return v2AccountProviderRequestSchema.parse({
@@ -188,7 +196,7 @@ export const validateV2AccountProviderResult = (request: V2AccountProviderReques
   const parsed = v2AccountProviderResultSchema.safeParse(resultInput);
   if (!parsed.success) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['result_invalid'] };
   const result = parsed.data;
-  const mismatches = (['tenantId', 'sessionId', 'opportunityId', 'leadId', 'actionId', 'catalogVersionId', 'actionKey', 'actionRevision', 'idempotencyKey', 'operation'] as const).filter((field) => result[field] !== request[field]);
+  const mismatches = (['tenantId', 'sessionId', 'opportunityId', 'leadId', 'actionId', 'catalogVersionId', 'actionKey', 'actionRevision', 'idempotencyKey', 'leadExternalId', 'operation'] as const).filter((field) => result[field] !== request[field]);
   if (mismatches.length) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: mismatches.map((field) => `${field}_mismatch`) };
   if (result.providerType !== request.providerType) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_type_mismatch'] };
   if (result.evidenceTier === 'reconciliation_required') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_evidence_incomplete'] };
@@ -223,6 +231,7 @@ export class DeterministicV2AccountProvider {
       remoteAccountId: `mock-account-${suffix}`,
       remoteContactId: `mock-contact-${suffix}`,
       remoteOpportunityId: `mock-opportunity-${suffix}`,
+      leadExternalId: request.leadExternalId,
       deduplicated: false,
       evidenceTier: 'mock_verified',
     });

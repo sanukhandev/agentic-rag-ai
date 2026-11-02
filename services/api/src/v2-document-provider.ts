@@ -42,6 +42,8 @@ export const v2DocumentProviderResultSchema = z.object({
   documentId: id,
   leadId: id,
   attachmentId: opaque,
+  leadAttachmentId: opaque,
+  accountAttachmentId: opaque,
   remoteAccountId: opaque,
   remoteContactId: opaque,
   remoteOpportunityId: opaque,
@@ -66,6 +68,7 @@ export const buildV2DocumentProviderRequest = (input: {
   if (account.status !== 'verified' || !account.remoteAccountId || !account.remoteContactId || !account.remoteOpportunityId) throw new Error('V2_DOCUMENT_TARGET_NOT_VERIFIED');
   const catalogVersionId = document.catalogVersionId ?? session.conversationState?.catalogVersionId;
   if (!catalogVersionId) throw new Error('V2_DOCUMENT_CATALOG_VERSION_REQUIRED');
+  if (document.catalogVersionId && session.conversationState?.catalogVersionId && document.catalogVersionId !== session.conversationState.catalogVersionId) throw new Error('V2_DOCUMENT_CATALOG_VERSION_MISMATCH');
   if (account.leadId !== document.leadId) throw new Error('V2_DOCUMENT_LEAD_MISMATCH');
   return v2DocumentProviderRequestSchema.parse({
     schemaVersion: 2,
@@ -99,6 +102,7 @@ export const validateV2DocumentProviderResult = (request: V2DocumentProviderRequ
   const mismatches = fields.filter((field) => result[field] !== request[field]);
   if (mismatches.length) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: mismatches.map((field) => `${field}_mismatch`) };
   if (result.providerType !== request.providerType) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_type_mismatch'] };
+  if (!result.leadAttachmentId || !result.accountAttachmentId) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['attachment_relationships_unverified'] };
   if (result.attachmentStatus !== 'verified' || result.evidenceTier === 'reconciliation_required') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['attachment_evidence_incomplete'] };
   if (request.providerType === 'deterministic_mock' && result.evidenceTier !== 'mock_verified') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['mock_evidence_tier_mismatch'] };
   if (request.providerType === 'salesforce_sandbox' && result.evidenceTier !== 'provider_record_verified') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['sandbox_evidence_tier_mismatch'] };
@@ -126,6 +130,8 @@ export class DeterministicV2DocumentProvider {
       documentId: request.documentId,
       leadId: request.leadId,
       attachmentId: `mock-attachment-${digest.slice(0, 24)}`,
+      leadAttachmentId: `mock-leadattach-${digest.slice(0, 24)}`,
+      accountAttachmentId: `mock-accountattach-${digest.slice(0, 24)}`,
       remoteAccountId: request.remoteAccountId,
       remoteContactId: request.remoteContactId,
       remoteOpportunityId: request.remoteOpportunityId,
