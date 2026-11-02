@@ -39,6 +39,15 @@ class BudgetsV2(StrictV2):
     deadlineAt: str
 
 
+class CatalogV2Projection(StrictV2):
+    versionRef: str = Field(min_length=8, max_length=240)
+    businessGoals: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
+    turnIntents: list[dict[str, Any]] = Field(default_factory=list, max_length=200)
+    signals: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
+    requirementKeys: list[str] = Field(default_factory=list, max_length=500)
+    enabledReadToolKeys: list[str] = Field(default_factory=list, max_length=32)
+
+
 class TurnEnvelopeV2(StrictV2):
     schemaVersion: Literal[2]
     requestId: str = Field(min_length=8, max_length=256)
@@ -52,6 +61,7 @@ class TurnEnvelopeV2(StrictV2):
     latestTurns: list[dict[str, str]] = Field(default_factory=list, max_length=8)
     persona: PersonaEnvelopeV2
     catalogDigest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    catalogV2: CatalogV2Projection | None = None
     intentProjection: IntentProjectionV2
     toolAllowlist: list[str] = Field(default_factory=list, max_length=32)
     budgets: BudgetsV2
@@ -90,6 +100,19 @@ class ToolResultV2(StrictV2):
     stateRevision: int = Field(ge=0)
 
 
+class PlanningProposalV2(StrictV2):
+    turnCategory: Literal['business_goal', 'knowledge_advisory', 'qualification_requirement', 'service_execution', 'service_status_support', 'conversation_navigation']
+    primaryGoalKey: str | None = None
+    candidateGoalKeys: list[str] = Field(default_factory=list, max_length=8)
+    matchedSignalIds: list[str] = Field(default_factory=list, max_length=32)
+    supportingTopicKeys: list[str] = Field(default_factory=list, max_length=16)
+    runnerUpScore: float | None = Field(default=None, ge=0, le=100)
+    nextMove: Literal['clarify_goal', 'confirm_goal', 'answer_knowledge', 'collect_requirement', 'request_contact', 'request_document', 'check_action_status', 'propose_action', 'ask_more_help', 'stop']
+    nextQuestion: str | None = Field(default=None, max_length=1000)
+    proposedToolKey: str | None = None
+    confidenceBand: Literal['low', 'medium', 'high']
+
+
 class PersonaComposedResponseV2(StrictV2):
     schemaVersion: Literal[2]
     personaVersionId: str = Field(min_length=8, max_length=256)
@@ -100,6 +123,7 @@ class PersonaComposedResponseV2(StrictV2):
     nextQuestionKey: str | None = None
     reasonNoQuestion: str | None = Field(default=None, max_length=300)
     decisionRef: str = Field(min_length=1, max_length=256, pattern=r"^[A-Za-z0-9._:+-]+$")
+    planning: PlanningProposalV2 | None = None
 
 
 class ResponseGuardVerdictV2(StrictV2):

@@ -1,3 +1,4 @@
+import { v2PlanningProposalSchema } from '../v2-planning.js';
 import { z } from 'zod';
 
 export const V2_SCHEMA_VERSION = 2 as const;
@@ -57,6 +58,14 @@ export const turnEnvelopeSchema = z.object({
   latestTurns: z.array(latestTurn).max(8),
   persona,
   catalogDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+  catalogV2: z.object({
+    versionRef: z.string().trim().min(8).max(240),
+    businessGoals: z.array(z.object({ key: boundedKey, name: z.string().max(120), confirmationRequired: z.boolean() }).strict()).max(100),
+    turnIntents: z.array(z.object({ key: boundedKey, categoryKey: boundedKey, businessGoalKey: boundedKey.nullable() }).strict()).max(200),
+    signals: z.array(z.object({ signalId: boundedKey, value: z.string().max(500), targetKey: boundedKey }).strict()).max(500),
+    requirementKeys: z.array(boundedKey).max(500),
+    enabledReadToolKeys: z.array(boundedKey).max(32),
+  }).strict().nullable().optional(),
   intentProjection,
   toolAllowlist: z.array(boundedKey).max(32),
   budgets,
@@ -108,6 +117,7 @@ export const personaComposedResponseSchema = z.object({
   nextQuestionKey: boundedKey.nullable(),
   reasonNoQuestion: z.string().trim().max(300).nullable(),
   decisionRef,
+  planning: v2PlanningProposalSchema.nullable().optional(),
 }).strict();
 
 export const responseGuardVerdictSchema = z.object({

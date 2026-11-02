@@ -31,8 +31,23 @@ _FINAL_RESPONSE_SCHEMA: dict[str, Any] = {
         "nextQuestionKey": {"type": ["string", "null"]},
         "reasonNoQuestion": {"type": ["string", "null"]},
         "decisionRef": {"type": "string"},
+        "planning": {"anyOf": [
+            {"type": "object", "additionalProperties": False, "properties": {
+                "turnCategory": {"type": "string", "enum": ["business_goal", "knowledge_advisory", "qualification_requirement", "service_execution", "service_status_support", "conversation_navigation"]},
+                "primaryGoalKey": {"type": ["string", "null"]},
+                "candidateGoalKeys": {"type": "array", "items": {"type": "string"}},
+                "matchedSignalIds": {"type": "array", "items": {"type": "string"}},
+                "supportingTopicKeys": {"type": "array", "items": {"type": "string"}},
+                "runnerUpScore": {"type": ["number", "null"]},
+                "nextMove": {"type": "string", "enum": ["clarify_goal", "confirm_goal", "answer_knowledge", "collect_requirement", "request_contact", "request_document", "check_action_status", "propose_action", "ask_more_help", "stop"]},
+                "nextQuestion": {"type": ["string", "null"]},
+                "proposedToolKey": {"type": ["string", "null"]},
+                "confidenceBand": {"type": "string", "enum": ["low", "medium", "high"]},
+            }, "required": ["turnCategory", "primaryGoalKey", "candidateGoalKeys", "matchedSignalIds", "supportingTopicKeys", "runnerUpScore", "nextMove", "nextQuestion", "proposedToolKey", "confidenceBand"]},
+            {"type": "null"}
+        ]},
     },
-    "required": ["schemaVersion", "personaVersionId", "language", "answer", "citationIds", "nextQuestion", "nextQuestionKey", "reasonNoQuestion", "decisionRef"],
+    "required": ["schemaVersion", "personaVersionId", "language", "answer", "citationIds", "nextQuestion", "nextQuestionKey", "reasonNoQuestion", "decisionRef", "planning"],
 }
 
 
@@ -114,6 +129,7 @@ class BoundedConversationAgent:
             "persona": envelope.persona.model_dump(),
             "catalogVersionId": envelope.catalogVersionId,
             "catalogDigest": envelope.catalogDigest,
+            "catalogV2": envelope.catalogV2.model_dump() if envelope.catalogV2 else None,
             "intentProjection": envelope.intentProjection.model_dump(),
         }, ensure_ascii=False)
 

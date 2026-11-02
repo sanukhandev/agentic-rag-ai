@@ -26,6 +26,8 @@ export interface V2PlanningContext {
   verifiedRequirementKeys: string[];
   goalConfirmed: boolean;
   allowedToolKeys: string[];
+  /** Only a server-observed customer signal can contribute scoring evidence. */
+  observedText?: string;
 }
 
 export interface V2PlanningDecision {
@@ -54,6 +56,13 @@ export const validateV2PlanningProposal = (input: unknown, catalog: CatalogV2Doc
   if (proposal.primaryGoalKey && !activeGoals.has(proposal.primaryGoalKey)) reasons.push('unknown_primary_goal');
   if (proposal.primaryGoalKey && proposal.candidateGoalKeys.length > 0 && !proposal.candidateGoalKeys.includes(proposal.primaryGoalKey)) reasons.push('primary_goal_not_proposed');
   if (proposal.matchedSignalIds.some((id) => !knownSignals.has(id))) reasons.push('unknown_signal');
+  if (context.observedText !== undefined) {
+    const utterance = context.observedText.normalize('NFKC').toLocaleLowerCase('en-US').replace(/\s+/gu, ' ').trim();
+    if (proposal.matchedSignalIds.some((id) => {
+      const signal = knownSignals.get(id);
+      return !signal || signal.signalType === 'exclusion' || !utterance.includes(signal.value.normalize('NFKC').toLocaleLowerCase('en-US').replace(/\s+/gu, ' ').trim());
+    })) reasons.push('unobserved_signal');
+  }
   if (proposal.supportingTopicKeys.some((key) => !activeTopics.has(key))) reasons.push('unknown_topic');
   if (reasons.length) return rejected(reasons, proposal);
 
@@ -86,6 +95,6 @@ export const validateV2PlanningProposal = (input: unknown, catalog: CatalogV2Doc
     : null;
   if (proposal.proposedToolKey && !allowedTool) reasons.push('tool_not_allowed');
   const ambiguous = score.ambiguous;
-  const accepted = !ambiguous && reasons.every((reason) => !['unknown_goal_candidate', 'unknown_primary_goal', 'primary_goal_not_proposed', 'unknown_signal', 'unknown_topic', 'tool_not_allowed'].includes(reason));
+  const accepted = !ambiguous && reasons.every((reason) => !['unknown_goal_candidate', 'unknown_primary_goal', 'primary_goal_not_proposed', 'unknown_signal', 'unobserved_signal', 'unknown_topic', 'tool_not_allowed'].includes(reason));
   return { accepted, proposal, primaryGoalKey, score, currentStage, nextRequirementKey: ambiguous ? null : nextRequirementKey, proposedToolKey: allowedTool, preservedConfirmedGoal, reasons };
 };
