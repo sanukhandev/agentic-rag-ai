@@ -103,6 +103,9 @@ describe('seven-stage policy matrix (Node-only, no provider I/O)', () => {
       completion: { ...allStageEvidence('contract'), signedArtifactSha256: '' } }).reasons)
       .toContain('contract_signature_unverified');
     expect(evaluateV2StageTransition({ context: contract, nextStageKey: null,
+      completion: { ...allStageEvidence('contract'), contractAttachmentRequired: true, contractAttachmentVerified: false } }).reasons)
+      .toContain('contract_attachment_unverified');
+    expect(evaluateV2StageTransition({ context: contract, nextStageKey: null,
       completion: allStageEvidence('contract') }).accepted).toBe(true);
   });
 });

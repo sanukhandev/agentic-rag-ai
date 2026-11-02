@@ -263,6 +263,8 @@ export interface V2StageCompletionEvidence {
   invoiceIssued?: boolean;
   paymentCompleted?: boolean;
   contractSigned?: boolean;
+  contractAttachmentRequired?: boolean;
+  contractAttachmentVerified?: boolean;
   signedArtifactSha256?: string;
 }
 
@@ -283,6 +285,7 @@ const validateV2StoredStageEvidence = (
   } else if (!['provider_record_verified', 'mock_verified'].includes(String(evidence.evidenceTier))) {
     return 'provider_completion_unverified';
   }
+  if (stageKey === 'lead_generation' && (typeof evidence.leadId !== 'string' || !evidence.leadId)) return 'lead_record_unverified';
   if (stageKey === 'account_creation' && (evidence.accountConfirmation !== true || !evidence.leadId
     || evidence.accountLinkedLeadId !== evidence.leadId)) return 'account_lead_link_unverified';
   if (stageKey === 'package_selection' && (evidence.packagePublished !== true || evidence.packageEligible !== true))
@@ -291,6 +294,7 @@ const validateV2StoredStageEvidence = (
     || evidence.accountAttachmentVerified !== true)) return 'sf02_attachments_unverified';
   if (stageKey === 'payment_invoice' && (evidence.invoiceIssued !== true || evidence.paymentCompleted !== true))
     return 'invoice_or_payment_incomplete';
+  if (stageKey === 'contract' && evidence.contractAttachmentRequired === true && evidence.contractAttachmentVerified !== true) return 'contract_attachment_unverified';
   if (stageKey === 'contract' && (evidence.contractSigned !== true
     || typeof evidence.signedArtifactSha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(evidence.signedArtifactSha256)))
     return 'contract_signature_unverified';
