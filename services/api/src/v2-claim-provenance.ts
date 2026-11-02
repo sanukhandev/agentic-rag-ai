@@ -25,7 +25,7 @@ const norm = (s: string): string => s.normalize('NFKC').toLowerCase().replace(/[
 const digest = (s: string): string => createHash('sha256').update(s).digest('hex').slice(0, 32);
 const numbers = (s: string): string[] => norm(s).match(/\b\d+(?:[.,]\d+)?\b/gu) ?? [];
 const negative = (s: string): boolean => /\b(?:no|not|never|without|cannot|can't|won't|isn't|wasn't|doesn't)\b/iu.test(s);
-const filler = new Set('the a an i we you your our their this that these those there for from with about by into and but while can could would should will have has had been are was were being is as to of at on in it its my me also just still currently now here said stated customer requested request details detail information verified confirm confirmed checking noted note thanks sharing your exactly same setup shows show showing'.split(' '));
+const filler = new Set('the a an i we you your our their this that these those there for from with about by into and but while can could would should will have has had been are was were being is as to of at on in it its my me also just still currently now here said stated customer requested request details detail information verified confirm confirmed checking noted note thanks sharing your exactly same setup count shows show showing'.split(' '));
 const tokens = (s: string): string[] => [...new Set((norm(s).match(/[a-z\u00c0-\u024f0-9]+/gu) ?? [])
   .filter((w) => w.length >= 3 && !filler.has(w) && !/^\d/u.test(w))
   .map((w) => w.replace(/(?:ing|ed|es|s)$/u, '')))];
@@ -61,7 +61,8 @@ const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (c
   const important = tokens(subject);
   const available = new Set(tokens(text));
   const matchCount = important.filter((word) => available.has(word)).length;
-  if (!negativeStatus && !journeyParaphrase && (important.length === 0 ? subject !== text : matchCount === 0 || matchCount / important.length < 0.7)) return false;
+  const customerReflection = source.kind === 'customer_fact' && matchCount > 0 && semanticCheck(clause, source);
+  if (!negativeStatus && !journeyParaphrase && !customerReflection && (important.length === 0 ? subject !== text : matchCount === 0 || matchCount / important.length < 0.7)) return false;
   // Semantic check is per-source, not a concatenation of unrelated citations.
   return semanticCheck(clause, source) || subject === text || negativeStatus || journeyParaphrase;
 };
@@ -74,7 +75,11 @@ export const evaluateV2ClaimProvenance = (
 ): V2ClaimEvaluation => {
   const claims: V2ClaimProvenance[] = [];
   const used = new Set<string>();
-  for (const part of clauses(answer)) {
+  for (const sentence of answer.split(/(?<=[.!?])\s+|\n+/u).map((value) => value.trim()).filter(Boolean)) {
+    // The scope of a negated process claim is the complete uncertainty sentence.
+    if (isDialogue(sentence) && !hasPositiveBusinessOutcomeClaim(sentence)
+      && !/\b(?:but|and)\b[\s\S]{0,120}\b(?:package|account|payment|contract|costs?|eligible|available|required|requires?|includes?|registered|created|completed)\b/iu.test(sentence)) continue;
+    for (const part of clauses(sentence)) {
     if (isDialogue(part) && !hasPositiveBusinessOutcomeClaim(part)) continue;
     const matched = sources.find((source) => supportsSource(part, source, semanticCheck));
     if (!matched) return { supported: false, claims: [], unusedCitationIds: [] };
@@ -83,6 +88,7 @@ export const evaluateV2ClaimProvenance = (
       claimDigest: digest(part), citationIds: [matched.citationId], sourceVersions: [matched.sourceVersion],
       ...(matched.sourceRef ? { sourceRefs: [matched.sourceRef] } : {}),
     });
+    }
   }
   return { supported: true, claims, unusedCitationIds: sources.filter((source) => !used.has(source.citationId)).map((source) => source.citationId) };
 };
