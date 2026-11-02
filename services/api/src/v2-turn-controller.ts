@@ -140,7 +140,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     throw new HttpError(409, 'V2_CATALOG_INVALID', 'The published V2 catalog cannot be validated.');
   }
   const catalogV2 = validatedV2?.catalog ?? null;
-  const activeGoal = originalState.activeFollowUpIntentKey ?? originalState.intentProgress?.activeIntentKey
+  const activeGoal = (intentDocument?.catalogSource === 'v2' ? intentDocument.businessGoalKey : null)
+    ?? originalState.activeFollowUpIntentKey ?? originalState.intentProgress?.activeIntentKey
     ?? originalState.selectedIntentKey ?? intentDocument?.businessGoalKey ?? null;
   const entry = activeGoal ? originalState.intentProgress?.entries[activeGoal] : null;
   const opportunityId = entry?.journeyId ?? intentDocument?.opportunityId ?? null;
@@ -211,7 +212,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   // the candidate goal. High model confidence never confirms a goal.
   const validPlan = Boolean(planningDecision?.accepted);
   const selectedV2Goal = existingConfirmedGoal ?? (validPlan && planningDecision?.score?.thresholdMet
-    && !planningDecision.score.ambiguous ? planningDecision.primaryGoalKey : null);
+    && !planningDecision.score.ambiguous ? planningDecision.primaryGoalKey
+    : intentDocument?.catalogSource === 'v2' ? intentDocument.businessGoalKey : null);
   const selectedTurnCategory = validPlan ? planningDecision?.proposal?.turnCategory ?? null : null;
   const selectedTurnIntent = validPlan && selectedV2Goal && selectedTurnCategory && catalogV2
     ? catalogV2.sheets.TurnIntents.find(turn =>
@@ -260,8 +262,17 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const approvedResponse = { answer: answerMasked, grounded, citationRefs: result.response.citationIds,
     pendingRequirementKey: effectivePendingRequirement };
   const at = new Date().toISOString();
+  // Persist only facts that Node already verified in its session/intent store.
+  // Never promote model-generated facts to verified customer facts.
+  const incomingFacts = factPatch(facts as Record<string, string>, state.messageSequence);
+  const verifiedFactPatch: Record<string, UserIntentFact> = Object.fromEntries(
+    Object.entries(incomingFacts).filter(([key, value]) =>
+      !intentDocument?.verifiedFacts[key] || intentDocument.verifiedFacts[key]?.maskedValue !== value.maskedValue)
+      .map(([key, value]) => [key, { ...value, corrected: Boolean(intentDocument?.verifiedFacts[key]) }]),
+  );
   const nextDoc: UserIntentDocument = intentDocument ? {
     ...intentDocument, approvedResponse, lastQuestion: result.response.nextQuestion,
+    verifiedFacts: { ...intentDocument.verifiedFacts, ...verifiedFactPatch },
     businessGoalKey: intentDocument.goalConfirmed ? intentDocument.businessGoalKey
       : intentDocument.catalogSource === 'v2' ? selectedV2Goal : intentDocument.businessGoalKey,
     turnIntentKey: intentDocument.catalogSource === 'v2' ? selectedTurnIntent : intentDocument.turnIntentKey,
@@ -277,7 +288,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     businessGoalKey: selectedV2Goal ?? activeGoal,
     turnIntentKey: selectedTurnIntent, currentStageKey: entry?.lifecycle?.currentStage ?? null,
     stageRevision: entry?.lifecycle?.revision ?? 0,
-    goalConfirmed: Boolean(originalState.selectedIntentKey), verifiedFacts: factPatch(facts as Record<string,string>, state.messageSequence),
+    goalConfirmed: catalogV2 ? false : Boolean(originalState.selectedIntentKey), verifiedFacts: incomingFacts,
     pendingRequirementKey: effectivePendingRequirement, lastQuestion: result.response.nextQuestion, approvedResponse,
     toolRefs: result.toolTrace.map(trace => trace.toolCallId), sourceRefs: [...result.response.citationIds, ...catalogSignalRefs],
     summary: state.rollingSummary, summaryRevision: 1, revision: 0, createdAt: at, updatedAt: at,
@@ -292,7 +303,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     messageHash: input.messageHash,
     businessGoalKey: nextDoc.businessGoalKey, turnIntentKey: nextDoc.turnIntentKey,
     intentCategory: selectedTurnCategory,
-    verifiedFactPatch: {}, pendingRequirementKey: effectivePendingRequirement, lastQuestion: result.response.nextQuestion,
+    verifiedFactPatch, pendingRequirementKey: effectivePendingRequirement, lastQuestion: result.response.nextQuestion,
     approvedResponse, toolRefs: result.toolTrace.map(trace => trace.toolCallId),
     sourceRefs: [...result.response.citationIds, ...catalogSignalRefs], createdAt: at };
   assertSafeIntentTurn(assessment);
