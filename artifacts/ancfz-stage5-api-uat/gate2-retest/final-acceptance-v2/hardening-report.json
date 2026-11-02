@@ -1,0 +1,189 @@
+{
+  "status": "PARTIALLY_VERIFIED_BLOCKERS_REMAIN",
+  "generatedAt": "2026-11-02T04:35:05.918Z",
+  "branch": "feat/conversation-v2-langgraph-stage5-safe",
+  "commit": "3f5c86960b27813ccceebecacb6aa7b213c3fb5b",
+  "composeProject": "anc-mock-uat",
+  "apiBase": "http://127.0.0.1:4100",
+  "tenantSlug": "anc",
+  "syntheticOnly": true,
+  "gates": {
+    "gate1Security": "GATE_1_SECURITY_VERIFIED",
+    "gate2AzureGpt54": "GATE_2_GPT54_DIALOGUE_FAILED",
+    "gate3Lifecycle": "GATE_3_LIFECYCLE_VERIFIED",
+    "gate4Sf02Mock": "GATE_4_SF02_MOCK_VERIFIED",
+    "gate4Sf02Sandbox": "SF02_SANDBOX_BLOCKED_NOT_CONFIGURED"
+  },
+  "scenarios": {
+    "mockHappyPath": {
+      "status": "PASSED",
+      "assertions": "39/39",
+      "turns": 25
+    },
+    "emptyRag": {
+      "name": "B-empty-rag",
+      "status": "PASSED",
+      "turns": 3
+    },
+    "security": {
+      "status": "PASSED",
+      "checks": 9,
+      "passed": 9
+    },
+    "azureGpt54": {
+      "status": "FAILED",
+      "turns": 25,
+      "assertions": "30/31"
+    }
+  },
+  "qualification": {
+    "business_activity": "software consulting and AI services",
+    "entity_type": "LLC",
+    "visa_count": "3",
+    "timeline": "next month",
+    "invalidCrossSlotContamination": false
+  },
+  "modelAndToolMetrics": {
+    "mock": {
+      "modelTurns": 23,
+      "modelRequests": 46,
+      "trustedToolCalls": 23,
+      "toolReadEvents": 22,
+      "guardReasons": {
+        "accepted_model_dialogue": 19,
+        "model_or_tool_unavailable": 1,
+        "safe_no_evidence_dialogue": 1,
+        "unsupported_claim": 2
+      },
+      "candidateGuardReasons": {
+        "accepted": 19,
+        "model_or_tool_unavailable": 1,
+        "unsupported_claim": 3
+      },
+      "modelAuthoredAccepted": 19,
+      "repairApplied": 0,
+      "providerErrorEvents": 0,
+      "acceptanceRate": 0.8260869565217391
+    },
+    "azure": {
+      "modelTurns": 23,
+      "modelRequests": 36,
+      "trustedToolCalls": 14,
+      "toolReadEvents": 14,
+      "guardReasons": {
+        "accepted": 2,
+        "invalid_question": 1,
+        "model_or_tool_unavailable": 3,
+        "safe_no_evidence_dialogue": 2,
+        "unsupported_claim": 15
+      },
+      "candidateGuardReasons": {
+        "accepted": 2,
+        "invalid_question": 1,
+        "model_or_tool_unavailable": 3,
+        "unsupported_claim": 17
+      },
+      "modelAuthoredAccepted": 2,
+      "repairApplied": 0,
+      "providerErrorEvents": 0,
+      "acceptanceRate": 0.08695652173913043,
+      "deployment": "gpt-5.4"
+    }
+  },
+  "lifecycle": {
+    "lastCompletedStage": "document_upload",
+    "currentActiveStage": "billing_invoice",
+    "nextPendingStage": "billing_invoice",
+    "intentionalStopStage": "document_upload",
+    "stages": {
+      "contract": {
+        "stage": "contract",
+        "status": "not_started",
+        "evidence": {},
+        "revision": 0,
+        "completedAt": null
+      },
+      "billing_invoice": {
+        "stage": "billing_invoice",
+        "status": "awaiting_customer",
+        "evidence": {},
+        "revision": 0,
+        "completedAt": null
+      },
+      "document_upload": {
+        "stage": "document_upload",
+        "status": "completed",
+        "evidence": {
+          "ocrStatus": "completed",
+          "documentId": "ref-3cf8f1913f6f",
+          "documentSetComplete": true,
+          "sf02AttachmentVerified": true,
+          "localProcessingVerified": true
+        },
+        "revision": 1,
+        "completedAt": "2026-11-02T02:45:18.363Z"
+      },
+      "lead_generation": {
+        "stage": "lead_generation",
+        "status": "completed",
+        "evidence": {
+          "actionId": "ref-0861fc6a993e",
+          "providerVerified": true
+        },
+        "revision": 1,
+        "completedAt": "2026-11-02T02:45:12.041Z"
+      },
+      "account_creation": {
+        "stage": "account_creation",
+        "status": "completed",
+        "evidence": {
+          "actionId": "ref-0cd5c49ffe0d",
+          "providerVerified": true
+        },
+        "revision": 1,
+        "completedAt": "2026-11-02T02:45:17.231Z"
+      },
+      "package_selection": {
+        "stage": "package_selection",
+        "status": "completed",
+        "evidence": {
+          "quoteId": "ref-6daf57ccf76f",
+          "selectionId": "ref-3de6407f0aa2",
+          "packageConfirmed": true
+        },
+        "revision": 1,
+        "completedAt": "2026-11-02T02:45:17.310Z"
+      },
+      "lead_qualification": {
+        "stage": "lead_qualification",
+        "status": "completed",
+        "evidence": {
+          "actionId": "ref-0861fc6a993e",
+          "qualificationVerified": true
+        },
+        "revision": 1,
+        "completedAt": "2026-11-02T02:45:12.046Z"
+      }
+    },
+    "noInvoiceOrContractSideEffect": true
+  },
+  "evidence": {
+    "localUpload": true,
+    "localOcr": true,
+    "allRequiredDocuments": true,
+    "sf02Mock": true,
+    "sf02Sandbox": "SF02_SANDBOX_BLOCKED_NOT_CONFIGURED"
+  },
+  "regression": {
+    "nodeApi": "352 passed / 12 skipped",
+    "pythonGateway": "31 passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "composeConfig": "passed"
+  },
+  "knownBlockers": [
+    "Azure GPT-5.4 delivered 2/23 accepted model-authored turns (8.7%); the 80% target was not met.",
+    "Salesforce sandbox verification was not executed because sandbox credentials and endpoint were not configured."
+  ]
+}
