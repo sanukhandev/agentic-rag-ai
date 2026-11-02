@@ -1,3 +1,4 @@
+import { v2TrustedReadbackMatches, type V2TrustedProviderReadback } from './v2-provider-evidence.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { PackageOffering, PackageSelection, Session } from './types.js';
@@ -83,7 +84,7 @@ export const buildV2QuoteProviderRequest = (input: {
 
 export type V2QuoteProviderValidation = { accepted: boolean; stageCompletionEligible: boolean; status: 'provider_record_verified' | 'mock_verified' | 'reconciliation_required'; reasons: string[] };
 
-export const validateV2QuoteProviderResult = (request: V2QuoteProviderRequest, resultInput: unknown): V2QuoteProviderValidation => {
+export const validateV2QuoteProviderResult = (request: V2QuoteProviderRequest, resultInput: unknown, readback?: V2TrustedProviderReadback): V2QuoteProviderValidation => {
   const parsed = v2QuoteProviderResultSchema.safeParse(resultInput);
   if (!parsed.success) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['result_invalid'] };
   const result = parsed.data;
@@ -95,6 +96,7 @@ export const validateV2QuoteProviderResult = (request: V2QuoteProviderRequest, r
   if (result.evidenceTier === 'reconciliation_required') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_evidence_incomplete'] };
   if (request.providerType === 'deterministic_mock' && result.evidenceTier !== 'mock_verified') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['mock_evidence_tier_mismatch'] };
   if (request.providerType === 'pricebook_sandbox' && result.evidenceTier !== 'provider_record_verified') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['sandbox_evidence_tier_mismatch'] };
+  if (!v2TrustedReadbackMatches(request, result.quoteId, result.evidenceTier, readback)) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_readback_required'] };
   return { accepted: true, stageCompletionEligible: true, status: result.evidenceTier, reasons: [] };
 };
 

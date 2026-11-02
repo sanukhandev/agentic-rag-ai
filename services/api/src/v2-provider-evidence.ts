@@ -44,3 +44,29 @@ export const validateV2VerifiedProviderCompletion = (input: {
   const status = deriveV2ProviderEvidenceStatus({ actionState: input.action.state, providerStatus: input.providerStatus, evidenceTier: input.evidenceTier });
   return { accepted: v2StageCompletionEligible(status), status, reasons: v2StageCompletionEligible(status) ? [] : ['provider_evidence_unverified'] };
 };
+
+/**
+ * Trusted provider read-back produced by a Node adapter after checking the
+ * provider record or an explicitly scoped deterministic mock registry.
+ * Never construct this from model output or unauthenticated callback data.
+ */
+export interface V2TrustedProviderReadback {
+  tenantId: string;
+  sessionId: string;
+  opportunityId: string;
+  providerType: string;
+  idempotencyKey: string;
+  recordRef: string;
+  evidenceTier: 'provider_record_verified' | 'mock_verified' | 'reconciliation_required';
+  verificationStatus: 'verified';
+}
+export const v2TrustedReadbackMatches = (
+  request: Pick<V2TrustedProviderReadback, 'tenantId' | 'sessionId' | 'opportunityId' | 'providerType' | 'idempotencyKey'>,
+  recordRef: string, evidenceTier: string, attestation?: V2TrustedProviderReadback,
+): boolean => Boolean(attestation && attestation.verificationStatus === 'verified'
+  && attestation.tenantId === request.tenantId && attestation.sessionId === request.sessionId
+  && attestation.opportunityId === request.opportunityId && attestation.providerType === request.providerType
+  && attestation.idempotencyKey === request.idempotencyKey && attestation.recordRef === recordRef
+  && attestation.evidenceTier === evidenceTier
+  && ((request.providerType === 'deterministic_mock' && evidenceTier === 'mock_verified')
+    || (request.providerType !== 'deterministic_mock' && evidenceTier === 'provider_record_verified')));

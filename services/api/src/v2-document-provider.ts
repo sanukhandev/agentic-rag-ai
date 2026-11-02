@@ -1,3 +1,4 @@
+import { v2TrustedReadbackMatches, type V2TrustedProviderReadback } from './v2-provider-evidence.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { activeOpportunityId } from './business-lifecycle.js';
@@ -90,7 +91,7 @@ export const buildV2DocumentProviderRequest = (input: {
 
 export type V2DocumentProviderValidation = { accepted: boolean; stageCompletionEligible: boolean; status: 'provider_record_verified' | 'mock_verified' | 'reconciliation_required'; reasons: string[] };
 
-export const validateV2DocumentProviderResult = (request: V2DocumentProviderRequest, resultInput: unknown): V2DocumentProviderValidation => {
+export const validateV2DocumentProviderResult = (request: V2DocumentProviderRequest, resultInput: unknown, readback?: V2TrustedProviderReadback): V2DocumentProviderValidation => {
   const parsed = v2DocumentProviderResultSchema.safeParse(resultInput);
   if (!parsed.success) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['result_invalid'] };
   const result = parsed.data;
@@ -101,6 +102,7 @@ export const validateV2DocumentProviderResult = (request: V2DocumentProviderRequ
   if (result.attachmentStatus !== 'verified' || result.evidenceTier === 'reconciliation_required') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['attachment_evidence_incomplete'] };
   if (request.providerType === 'deterministic_mock' && result.evidenceTier !== 'mock_verified') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['mock_evidence_tier_mismatch'] };
   if (request.providerType === 'salesforce_sandbox' && result.evidenceTier !== 'provider_record_verified') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['sandbox_evidence_tier_mismatch'] };
+  if (!v2TrustedReadbackMatches(request, result.attachmentId, result.evidenceTier, readback)) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_readback_required'] };
   return { accepted: true, stageCompletionEligible: true, status: result.evidenceTier, reasons: [] };
 };
 

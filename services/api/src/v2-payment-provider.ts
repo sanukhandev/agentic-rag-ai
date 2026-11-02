@@ -1,3 +1,4 @@
+import { v2TrustedReadbackMatches, type V2TrustedProviderReadback } from './v2-provider-evidence.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Invoice, Quote } from './types.js';
@@ -60,7 +61,7 @@ export const buildV2PaymentProviderRequest = (input: { invoice: Invoice; quote: 
 
 export type V2PaymentProviderValidation = { accepted: boolean; paymentVerified: boolean; status: 'provider_record_verified' | 'mock_verified' | 'reconciliation_required'; reasons: string[] };
 
-export const validateV2PaymentProviderResult = (request: V2PaymentProviderRequest, resultInput: unknown): V2PaymentProviderValidation => {
+export const validateV2PaymentProviderResult = (request: V2PaymentProviderRequest, resultInput: unknown, readback?: V2TrustedProviderReadback): V2PaymentProviderValidation => {
   const parsed = v2PaymentProviderResultSchema.safeParse(resultInput);
   if (!parsed.success) return { accepted: false, paymentVerified: false, status: 'reconciliation_required', reasons: ['result_invalid'] };
   const result = parsed.data;
@@ -71,9 +72,11 @@ export const validateV2PaymentProviderResult = (request: V2PaymentProviderReques
   if (result.status === 'failed' || result.status === 'reconciliation_required') return { accepted: false, paymentVerified: false, status: 'reconciliation_required', reasons: ['payment_not_verified'] };
   if (request.providerType === 'deterministic_mock') {
     if (!['pending', 'mock_paid'].includes(result.status) || result.evidenceTier !== 'mock_verified') return { accepted: false, paymentVerified: false, status: 'reconciliation_required', reasons: ['mock_status_or_evidence_mismatch'] };
+    if (result.status === 'mock_paid' && !v2TrustedReadbackMatches(request, result.paymentId, result.evidenceTier, readback)) return { accepted: false, paymentVerified: false, status: 'reconciliation_required', reasons: ['provider_readback_required'] };
     return { accepted: true, paymentVerified: result.status === 'mock_paid', status: 'mock_verified', reasons: result.status === 'pending' ? ['payment_pending'] : ['mock_payment_only'] };
   }
   if (!['pending', 'sandbox_paid'].includes(result.status) || result.evidenceTier !== 'provider_record_verified') return { accepted: false, paymentVerified: false, status: 'reconciliation_required', reasons: ['sandbox_status_or_evidence_mismatch'] };
+  if (result.status === 'sandbox_paid' && !v2TrustedReadbackMatches(request, result.paymentId, result.evidenceTier, readback)) return { accepted: false, paymentVerified: false, status: 'reconciliation_required', reasons: ['provider_readback_required'] };
   return { accepted: true, paymentVerified: result.status === 'sandbox_paid', status: 'provider_record_verified', reasons: result.status === 'pending' ? ['payment_pending'] : [] };
 };
 

@@ -1,3 +1,4 @@
+import { v2TrustedReadbackMatches, type V2TrustedProviderReadback } from './v2-provider-evidence.js';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import type { ActionRequest, CrmLead } from './types.js';
@@ -183,7 +184,7 @@ export interface V2AccountProviderValidation {
   reasons: string[];
 }
 
-export const validateV2AccountProviderResult = (request: V2AccountProviderRequest, resultInput: unknown): V2AccountProviderValidation => {
+export const validateV2AccountProviderResult = (request: V2AccountProviderRequest, resultInput: unknown, readback?: V2TrustedProviderReadback): V2AccountProviderValidation => {
   const parsed = v2AccountProviderResultSchema.safeParse(resultInput);
   if (!parsed.success) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['result_invalid'] };
   const result = parsed.data;
@@ -193,6 +194,7 @@ export const validateV2AccountProviderResult = (request: V2AccountProviderReques
   if (result.evidenceTier === 'reconciliation_required') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_evidence_incomplete'] };
   if (request.providerType === 'deterministic_mock' && result.evidenceTier !== 'mock_verified') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['mock_evidence_tier_mismatch'] };
   if (request.providerType === 'salesforce_sandbox' && result.evidenceTier !== 'provider_record_verified') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['sandbox_evidence_tier_mismatch'] };
+  if (!v2TrustedReadbackMatches(request, result.remoteAccountId, result.evidenceTier, readback)) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_readback_required'] };
   return { accepted: true, stageCompletionEligible: true, status: result.evidenceTier, reasons: result.deduplicated ? ['deduplicated'] : [] };
 };
 
