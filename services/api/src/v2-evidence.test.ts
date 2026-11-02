@@ -132,6 +132,29 @@ describe('v2 claim provenance and evidence verification', () => {
     expect(verifyV2ResponseEvidence(action, evidence).verdict.accepted).toBe(true);
   });
 
+  it('accepts bounded uncertainty and all verified qualification facts before the next question', () => {
+    const facts: V2VerifiedFact[] = [
+      { factId: 'customer-fact-business_activity', text: 'The customer described their business activity as software consulting and AI services.', sourceVersion: 'catalog-12345678', verified: true },
+      { factId: 'customer-fact-entity_type', text: 'The customer stated their company structure is LLC.', sourceVersion: 'catalog-12345678', verified: true },
+      { factId: 'customer-fact-visa_count', text: 'The customer requested 3 visas.', sourceVersion: 'catalog-12345678', verified: true },
+      { factId: 'customer-fact-timeline', text: 'The customer requested a timeline of next month.', sourceVersion: 'catalog-12345678', verified: true },
+    ];
+    const nextQuestion = 'What type of entity do you want to set up?';
+    const value = {
+      ...response('Thanks for clarifying. I’ve noted your business activity as software consulting and AI services. For the general formation process and exact information needed, I don’t have a verified process summary to quote here. I have your business activity as software consulting and AI services, your entity type as LLC, your visa count as 3, and your timeline as next month. To keep things moving, what type of entity do you want to set up?', facts.map((item) => item.factId)),
+      nextQuestion,
+      nextQuestionKey: 'entity_type',
+      reasonNoQuestion: null,
+    };
+    expect(verifyV2ResponseEvidence(value, [], facts).verdict.accepted).toBe(true);
+  });
+
+  it('accepts safe pending contact and package-review offers', () => {
+    const phoneQuestion = 'Could you share your phone number?';
+    expect(verifyV2ResponseEvidence({ ...response(`Thanks — I’ve noted your email address. ${phoneQuestion}`, []), nextQuestion: phoneQuestion, nextQuestionKey: 'phone', reasonNoQuestion: null }, [], [], { allowNonFactualDialogue: true, pendingRequirementKey: 'phone' }).verdict.accepted).toBe(true);
+    expect(verifyV2ResponseEvidence(response('I can’t verify from the approved information how that required business document is handled after package confirmation. I can still help you review what to check before you choose or confirm a package.', []), [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(true);
+  });
+
   it('rejects greetings containing uncited price claims and provider-success claims', () => {
     for (const answer of ['Hello, it costs AED 999.', 'Thanks. Your company is registered.', 'Your payment has succeeded.', 'The legal registration is guaranteed.']) {
       expect(verifyV2ResponseEvidence(response(answer, []), [], [], { conversational: true }).verdict.accepted, answer).toBe(false);

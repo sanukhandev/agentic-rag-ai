@@ -372,9 +372,11 @@ if (modelMode === 'azure' && azureReady && primary) {
   const modelTurns = Number(primaryExecutionMetrics?.modelTurns ?? 0);
   const acceptedTurns = Number(primaryExecutionMetrics?.modelAuthoredAccepted ?? 0);
   const acceptanceRate = modelTurns > 0 ? acceptedTurns / modelTurns : 0;
-  record(modelTurns > 0 && acceptanceRate >= 0.80,
-    'Azure GPT-5.4 delivered model-authored dialogue on at least 80% of evaluated model turns.',
-    { modelTurns, acceptedTurns, acceptanceRate: Number(acceptanceRate.toFixed(4)), candidateGuardReasons: primaryExecutionMetrics?.candidateGuardReasons ?? {} });
+  const fixedSuiteRequiredTurns = 23;
+  const fixedSuiteMinimumAccepted = 20;
+  record(modelTurns >= fixedSuiteRequiredTurns && acceptedTurns >= fixedSuiteMinimumAccepted && acceptanceRate >= 0.85,
+    'Azure GPT-5.4 fixed-suite dialogue acceptance is at least 20/23 (85%).',
+    { fixedSuiteRequiredTurns, fixedSuiteMinimumAccepted, modelTurns, acceptedTurns, acceptanceRate: Number(acceptanceRate.toFixed(4)), candidateGuardReasons: primaryExecutionMetrics?.candidateGuardReasons ?? {} });
 }
 const primaryAudit = primary ? auditSummary(primary.context.tenantId, primary.context.sessionId) : [];
 const sf02Verified = primaryAudit.some((item) => item.event === 'document.sf02_attachment_verified' && item.count > 0);

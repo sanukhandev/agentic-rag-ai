@@ -55,7 +55,7 @@ const safeOutcomeAbstention = (sentence: string): boolean => /^\s*(?:(?:i(?:'|�
 const safeGoalAcknowledgement = (sentence: string): boolean => /^(?:of course|absolutely|sure)[,!\.\s—-]+i(?:'|’)ll keep your company-formation request active while you ask your questions\.?$/iu.test(sentence.trim());
 const safeHighLevelUncertainty = (sentence: string): boolean => /\b(?:process|formation steps|requirements?)\b[\s\S]{0,100}\b(?:not verified|don't want to guess|do not want to guess)\b/iu.test(sentence)
   && !/\b(?:price|cost|eligible|eligibility|legal|policy|license|licence|timeline|days?|weeks?|months?|required documents?)\b/iu.test(sentence);
-const safeDialogueOffer = (sentence: string): boolean => /^(?:if you want,\s+)?i can (?:still )?help (?:gather a verified follow-up or advisor review|with package comparison or document preparation questions|you review your package options or arrange a verified follow-up|with another question about your company-formation request)\.?$/iu.test(sentence.trim());
+const safeDialogueOffer = (sentence: string): boolean => /^(?:if you want,\s+)?i can (?:still )?help (?:gather a verified follow-up or advisor review|with package comparison or document preparation questions|you review your package options or arrange a verified follow-up|you review what to check before you choose or confirm a package|with another question about your company-formation request)\.?$/iu.test(sentence.trim());
 const safeJourneyOffer = (sentence: string): boolean => /^i can keep your company-formation request active while you ask questions(?:, and if you want, i can help gather a verified follow-up or advisor review)?\.?$/iu.test(sentence.trim());
 const safeConfirmedDetailsOffer = (sentence: string): boolean => /^i can (?:still )?help with other confirmed details of your company-formation request\.?$/iu.test(sentence.trim());
 const safeGoalContinuity = (sentence: string): boolean => /^i(?:'|’)m still keeping your company-formation request active, and you said you do not want to change the business activity or company structure\.?$/iu.test(sentence.trim());
@@ -65,7 +65,7 @@ const customerFactReflection = (sentence: string, facts: V2VerifiedFact[]): bool
   if (safeUncertainty(sentence)) return true;
   if (matching.length === 0) return safeFactAcknowledgement(sentence) || safeUncertainty(sentence);
   if (/\b(?:legally registered|registered successfully|is eligible|are eligible|is created|are created|is completed|are completed|costs?|requires?|includes?)\b/iu.test(sentence)) return false;
-  const vocabulary = new Set([...matching.flatMap((fact) => factWords(fact.text)), 'thanks', 'checking', 'clarifying', 'confirming', 'sharing', 'noted', 'note', 'setup', 'keep', 'keeping', 'unchanged', 'current', 'still', 'view', 'details', 'detail', 'target', 'start', 'started', 'expect', 'expected', 'want', 'get', 'moving', 'move', 'outline', 'general', 'process', 'once', 'continue', 'file', 'rather', 'may', 'need', 'needs', 'have', 'has', 'planned', 'don', 'can', 'help', 'with', 'that', 'from', 'share', 'verified', 'official', 'approval', 'provider', 'side', 'retention', 'phone', 'email', 'address', 'your', 'company', 'formation', 'request', 'forward', 'and', 'structure', 'activity', 'visa', 'visas', 'timeline', 'number', 'type', 'guide', 'options', 'option', 'entity', 'form', 'rules', 'qualifies', 'qualify', 'see', 'here', 'things', 'said', 'told', 'mentioned', 'requested']);
+  const vocabulary = new Set([...matching.flatMap((fact) => factWords(fact.text)), 'thanks', 'checking', 'clarifying', 'confirming', 'sharing', 'noted', 'note', 'setup', 'keep', 'keeping', 'unchanged', 'current', 'still', 'view', 'details', 'detail', 'target', 'start', 'started', 'expect', 'expected', 'want', 'get', 'moving', 'move', 'outline', 'general', 'process', 'once', 'continue', 'file', 'rather', 'may', 'need', 'needs', 'have', 'has', 'planned', 'don', 'can', 'help', 'with', 'that', 'from', 'share', 'verified', 'official', 'approval', 'provider', 'side', 'retention', 'phone', 'email', 'address', 'your', 'company', 'formation', 'request', 'forward', 'and', 'structure', 'activity', 'visa', 'visas', 'count', 'timeline', 'number', 'type', 'guide', 'options', 'option', 'entity', 'form', 'rules', 'qualifies', 'qualify', 'see', 'here', 'things', 'said', 'told', 'mentioned', 'requested', 'information', 'summary', 'quote', 'quoted', 'exact', 'needed']);
   return factWords(sentence).every((word) => vocabulary.has(word));
 };
 const relaxedEvidenceText = (value: string): string => value.replace(/\b(?:i|can|help|with|that|the|only|see|shows?|confirm|request|company|formation|journey|specific|process|option|details?|review|information|currently|from|have|your|our|still|yet|right|now|further|outcome|after|things|moving|keep|keeping|what|would|like|this|these|those|into|before|once|continue|general|outline|rather|may)\b/giu, ' ').replace(/\s+/gu, ' ').trim();
@@ -108,9 +108,16 @@ const nonFactualPreface = (input: string): boolean => {
     || /^i (?:don(?:'|’)t|do not|can(?:'|’)t|cannot) (?:have (?:a )?verified (?:answer|information|details)(?: (?:for|about|on|to) (?:that|this|the specific (?:detail|question)))?(?: yet)?|want to guess(?: about that)?|verify that (?:detail|claim) yet)$/iu.test(value);
 };
 
+const trailingQuestion = (answer: string, question: string | null): string | null => {
+  if (!question) return null;
+  const value = answer.trim();
+  const suffix = question.trim();
+  return value.toLocaleLowerCase('en-US').endsWith(suffix.toLocaleLowerCase('en-US')) ? value.slice(0, value.length - suffix.length).trim() : null;
+};
+
 const uncitedQuestion = (answer: string, question: string | null): boolean => {
-  if (!question || !answer.trim().endsWith(question.trim())) return false;
-  const preface = answer.trim().slice(0, answer.trim().length - question.trim().length).trim();
+  const preface = trailingQuestion(answer, question);
+  if (preface === null) return false;
   return !preface || nonFactualPreface(preface);
 };
 
@@ -128,18 +135,19 @@ const safeNoEvidenceDialogue = (answer: string, question: string | null, pending
     || (/^(?:in general,\s+)?(?:forming|setting up) (?:a|the) company means\b[\s\S]*$/iu.test(answer.trim())
       && !/\b(?:usually|typically|required|eligible|price|cost|licen[cs]e|legal|regulation|policy|timeline|days?|weeks?|months?)\b/iu.test(answer)))) return true;
   if (question) {
-    if (!answer.trim().endsWith(question.trim()) || !/\?\s*$/u.test(question)) return false;
+    if (trailingQuestion(answer, question) === null || !/\?\s*$/u.test(question)) return false;
     if (!/^(?:what|which|who|when|where|how|could you|would you|can you|do you|are you|is there|please|tell me|have you)\b/iu.test(question.trim())) return false;
   }
-  const preface = question ? answer.trim().slice(0, answer.trim().length - question.trim().length).trim() : answer.trim();
+  const preface = question ? trailingQuestion(answer, question) : answer.trim();
+  if (preface === null) return false;
   if (!preface) return Boolean(question);
   const segments = preface.split(/(?<=[.!])\s+/u).filter(Boolean);
   const pendingTerms = pendingRequirementKey?.split('_').filter((term) => term.length >= 3) ?? [];
   const pendingRequirementPreface = (segment: string): boolean => pendingTerms.length > 0
     && /\b(?:still need|missing requirement|missing detail|remaining detail|to continue)\b/iu.test(segment)
     && pendingTerms.some((term) => segment.toLocaleLowerCase('en-US').includes(term));
-  const pendingContactPreface = (segment: string): boolean => pendingRequirementKey === 'phone' && /^(?:i have your email(?: address)?|i have your email, and i still need your phone number to continue)\.?$/iu.test(segment.trim());
-  const pendingRequirementGuidance = (segment: string): boolean => pendingRequirementKey === 'business_activity' && /^(?:what i need from you first is|to move your setup forward, i first need) your business activity\b[\s\S]*$/iu.test(segment.trim());
+  const pendingContactPreface = (segment: string): boolean => pendingRequirementKey === 'phone' && /^(?:thanks\s*[—-]\s*)?(?:i have your email(?: address)?|i(?:'|’)ve noted your email address|i have your email, and i still need your phone number to continue)\.?$/iu.test(segment.trim());
+  const pendingRequirementGuidance = (segment: string): boolean => pendingRequirementKey === 'business_activity' && /^(?:what i need from you first is|to move your setup forward, i first need|to guide you properly, i first need) your business activity\b[\s\S]*$/iu.test(segment.trim());
   const pendingEntityGuidance = (segment: string): boolean => pendingRequirementKey === 'entity_type' && /^to guide the setup properly, i still need to know what type of company you want to form\.?$/iu.test(segment.trim());
   const pendingContactCollection = (segment: string): boolean => pendingRequirementKey === 'email' && /^i(?:'|’)m ready to take your contact detail(?: for this request)?\.?$/iu.test(segment.trim());
   return segments.length <= 4 && segments.every((segment) => nonFactualPreface(segment) || safeDialogueSegment(segment) || pendingRequirementPreface(segment) || pendingContactPreface(segment) || pendingRequirementGuidance(segment) || pendingEntityGuidance(segment) || pendingContactCollection(segment));
@@ -172,9 +180,7 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
   ];
   const trustedFacts = citedFacts.map((fact) => fact.text).join(' ');
   const citations = modelEvidence.map((item) => item.citation);
-  const answerForEvidence = response.nextQuestion && response.answer.trim().endsWith(response.nextQuestion.trim())
-    ? response.answer.trim().slice(0, -response.nextQuestion.trim().length).trim()
-    : response.answer;
+  const answerForEvidence = response.nextQuestion ? trailingQuestion(response.answer, response.nextQuestion) ?? response.answer : response.answer;
   const grounded = options.allowApprovedFallback === true && citationIds.length === 0
     ? true
     : citationIds.length === 0 && options.allowNonFactualDialogue === true
