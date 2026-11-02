@@ -93,6 +93,11 @@ describe('guardV2Response', () => {
     expect(guardV2Response(answer, context({ evidence, legalRegistration: { status: 'verified', evidenceRef: 'registration-record-1' } })).verdict.accepted).toBe(true);
   });
 
+  it('rejects impersonating a different configured assistant name', () => {
+    const result = guardV2Response(response({ answer: 'My name is Alex. How can I help?' }), context({ assistantName: 'Zara' }));
+    expect(result.verdict.reasonCode).toBe('persona_mismatch');
+  });
+
   it('blocks a repeated or irrelevant question', () => {
     const result = guardV2Response(response({ answer: 'What is your activity?', nextQuestion: 'What is your activity?', nextQuestionKey: 'other_requirement', reasonNoQuestion: null }), context({ pendingRequirementKey: 'business_activity', lastQuestionKey: 'other_requirement', questionPolicy: 'required' }));
     expect(result.verdict.reasonCode).toBe('invalid_question');

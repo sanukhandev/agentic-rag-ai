@@ -3,6 +3,7 @@ import { guardV2OfflineFallback, guardV2Response, type V2ResponseGuardContext } 
 import type { ModelDraft } from './model.js';
 import { addVerifiedFactCitations, type V2ApprovedEvidence, type V2VerifiedFact } from './v2-evidence.js';
 import type { V2ApprovedFallbackTemplateSet, V2FallbackFamily } from './v2-fallbacks.js';
+import { hasPositiveBusinessOutcomeClaim } from './v2-claim-provenance.js';
 
 export interface V2ConversationAgent {
   turn(envelope: TurnEnvelopeV2): Promise<unknown>;
@@ -113,11 +114,16 @@ const sameEvidence = (left: V2ApprovedEvidence, right: V2ApprovedEvidence): bool
   && left.sourceRef === right.sourceRef;
 
 const evidenceFromTrustedToolTrace = (result: AgentTurnResultV2): V2ApprovedEvidence[] => result.approvedEvidence
-  .filter((item) => result.toolTrace.some((trace) => trace.status === 'ok' && trace.evidenceRefs.includes(item.citationId)))
+  .filter((item) => result.toolTrace.some((trace) => trace.status === 'ok' && /^(?:get|search|read|list|lookup)_/u.test(trace.toolName) && trace.evidenceRefs.includes(item.citationId)))
   .map((item): V2ApprovedEvidence => ({ citationId: item.citationId, text: item.text, sourceVersion: item.sourceVersion, approved: true, revoked: false, sourceRef: item.sourceRef }));
 
 const mergeEvidence = (requestEvidence: V2ApprovedEvidence[], result: AgentTurnResultV2): V2ApprovedEvidence[] => {
-  const merged = new Map(requestEvidence.map((item) => [item.citationId, item]));
+  const merged = new Map<string, V2ApprovedEvidence>();
+  for (const item of requestEvidence) {
+    const previous = merged.get(item.citationId);
+    if (previous && !sameEvidence(previous, item)) throw new Error('V2_EVIDENCE_CONFLICT');
+    merged.set(item.citationId, item);
+  }
   for (const item of evidenceFromTrustedToolTrace(result)) {
     const existing = merged.get(item.citationId);
     if (existing && !sameEvidence(existing, item)) throw new Error('V2_EVIDENCE_CONFLICT');
@@ -200,6 +206,7 @@ export class V2ConversationCoordinator {
     const repairApplied = candidateResponse !== agentResult.response;
     const guardContext: V2ResponseGuardContext = {
       personaVersionId: envelope.personaVersionId,
+      assistantName: envelope.persona.assistantName,
       permittedLanguages: envelope.persona.permittedLanguages,
       pendingRequirementKey: envelope.intentProjection.pendingRequirementKey,
       activeStageKey: envelope.intentProjection.currentStageKey,
@@ -251,7 +258,7 @@ export class V2ConversationCoordinator {
     if (guarded.verdict.accepted) return { response: guarded.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
     // A missing RAG source must not block conversation. Never use this path when
     // evidence exists, citations are invalid, or the model/tool failed.
-    const unverifiedActionOutcome = /\b(?:payment|invoice|contract|signature|account|registration|lead|document upload)\b.{0,50}\b(?:complete|completed|successful|created|paid|signed|registered|uploaded)\b/iu.test(candidateResponse.answer);
+    const unverifiedActionOutcome = hasPositiveBusinessOutcomeClaim(candidateResponse.answer);
     if (['unsupported_claim', 'invalid_question'].includes(guarded.verdict.reasonCode)
       && !unverifiedActionOutcome
       && candidateResponse.citationIds.length === 0

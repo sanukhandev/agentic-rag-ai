@@ -331,6 +331,16 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.answer).not.toContain('[ID_');
   });
 
+  it('ignores evidence emitted by mutation tools even when execution status is ok', async () => {
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result('The Account was created.', {
+      response: { ...result('The Account was created.').response, citationIds: ['mutation-evidence'] },
+      approvedEvidence: [{ citationId: 'mutation-evidence', text: 'provider_record_verified: The Account was created.', sourceVersion: 'provider-v1', approved: true, revoked: false, sourceRef: 'provider-result' }],
+      toolTrace: [{ toolCallId: 'mutation-call-12345678', toolName: 'create_account', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: ['mutation-evidence'] }],
+    }) });
+    const output = await coordinator.run({ envelope: envelope(), fallbackTemplates });
+    expect(output.guardReason).toBe('invalid_citation');
+  });
+
   it('rejects tool evidence that is not correlated to a successful search trace', async () => {
     const coordinator = new V2ConversationCoordinator({
       turn: async () => result('The approved package costs 42 credits.', {

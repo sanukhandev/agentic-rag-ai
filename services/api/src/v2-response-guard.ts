@@ -3,11 +3,13 @@ import { personaComposedResponseSchema, type PersonaComposedResponseV2, type Res
 import { verifyV2ResponseEvidence, type V2ApprovedEvidence, type V2ClaimProvenance, type V2VerifiedFact } from './v2-evidence.js';
 import { selectV2OfflineFallback, type V2ApprovedFallbackTemplateSet, type V2FallbackFamily } from './v2-fallbacks.js';
 import type { V2LegalRegistrationState } from './v2-registration.js';
+import { hasPositiveBusinessOutcomeClaim } from './v2-claim-provenance.js';
 
 export type V2QuestionPolicy = 'required' | 'optional' | 'forbidden';
 
 export interface V2ResponseGuardContext {
   personaVersionId: string;
+  assistantName?: string;
   permittedLanguages: readonly string[];
   pendingRequirementKey: string | null;
   /** Current authoritative workflow stage, if present. */
@@ -98,14 +100,19 @@ export const guardV2Response = (input: unknown, context: V2ResponseGuardContext)
     const reasonCode: ResponseGuardVerdictV2['reasonCode'] = 'persona_mismatch';
     return { verdict: rejected(reasonCode), response: fallback(context, reasonCode), claims: [], feedback: feedback(reasonCode, input) };
   }
+  const claimedName = response.answer.match(/^(?:(?:hi|hello|hey)[,! ]+)?(?:my name is|i am called|i'm called)\s+([\p{L}\p{N} .'-]{1,80})[.!]/iu)?.[1]?.trim();
+  if (claimedName && context.assistantName && claimedName.toLowerCase() !== context.assistantName.toLowerCase()) {
+    const reasonCode: ResponseGuardVerdictV2['reasonCode'] = 'persona_mismatch';
+    return { verdict: rejected(reasonCode), response: fallback(context, reasonCode), claims: [], feedback: feedback(reasonCode, input) };
+  }
   const questionReason = questionFailure(response, context);
   if (questionReason) return { verdict: rejected(questionReason), response: fallback(context, questionReason), claims: [], feedback: feedback(questionReason, input) };
-  const unverifiedOutcome = /(?:payment|invoice|contract|signature|signed|account|opportunity|registration).{0,40}\b(?:complete|completed|success(?:ful)?|created|paid|signed|registered)\b/iu.test(response.answer);
+  const unverifiedOutcome = hasPositiveBusinessOutcomeClaim(response.answer);
   if (response.citationIds.length === 0 && unverifiedOutcome && !/^\s*(?:(?:thanks?(?: for clarifying)?|understood)\.\s+)?(?:(?:i(?:'|’)ll|i will)\s+wait for verified evidence and (?:i\s+)?(?:won't|won’t|will not)\s+assume (?:the )?(?:account|opportunity|payment|invoice|contract)\s+(?:is|was)\s+(?:complete|completed|created|registered|paid|signed)|(?:i(?:'|’)m|i\s+(?:will not|won't|won’t))\s+not treat (?:the )?(?:account|opportunity|payment|invoice|contract)\s+as\s+(?:complete|completed|created|registered|paid|signed)\s+without verified evidence)\.?\s*$/iu.test(response.answer)) {
     const reasonCode: ResponseGuardVerdictV2['reasonCode'] = 'unsupported_claim';
     return { verdict: rejected(reasonCode), response: fallback(context, reasonCode), claims: [], feedback: feedback(reasonCode, input) };
   }
-  if ((context.legalRegistration?.status ?? 'not_verified') !== 'verified' && /\b(?:company|business|entity)\b.{0,40}\blegally\s+registered\b|\blegally\s+registered\b.{0,40}\b(?:company|business|entity)\b/iu.test(response.answer)) {
+  if ((context.legalRegistration?.status ?? 'not_verified') !== 'verified' && /\b(?:company|business|entity)\b.{0,40}\blegally\s+registered\b|\blegally\s+registered\b.{0,40}\b(?:company|business|entity)\b/iu.test(response.answer) && hasPositiveBusinessOutcomeClaim(response.answer)) {
     const reasonCode: ResponseGuardVerdictV2['reasonCode'] = 'unsupported_claim';
     return { verdict: rejected(reasonCode), response: fallback(context, reasonCode), claims: [], feedback: feedback(reasonCode, input) };
   }

@@ -180,6 +180,32 @@ describe('v2 claim provenance and evidence verification', () => {
     }
   });
 
+  it('rejects unrelated citations and false external provider success', () => {
+    const price: V2ApprovedEvidence = { citationId: 'price-source', text: 'The approved package costs 42 credits.', sourceVersion: 'price-v1', sourceRef: 'price-list', approved: true, revoked: false };
+    const transport: V2ApprovedEvidence = { citationId: 'transport-source', text: 'The workflow succeeded and the account create request was dispatched.', sourceVersion: 'transport-v1', approved: true, revoked: false };
+    expect(verifyV2ResponseEvidence(response('The approved package costs 42 credits. Your Account was created.', ['price-source']), [price]).verdict.reasonCode).toBe('unsupported_claim');
+    expect(verifyV2ResponseEvidence(response('Your Account was created.', ['transport-source']), [transport]).verdict.reasonCode).toBe('unsupported_claim');
+    expect(verifyV2ResponseEvidence(response('The approved package costs 42 credits.', ['price-source', 'transport-source']), [price, transport]).verdict.reasonCode).toBe('invalid_citation');
+    expect(verifyV2ResponseEvidence(response('The approved package costs 42 credits.', ['price-source']), [{ ...price, revoked: true }]).verdict.reasonCode).toBe('invalid_citation');
+  });
+
+  it('records per-clause source/version rather than every citation for the entire answer', () => {
+    const items: V2ApprovedEvidence[] = [
+      { citationId: 'price-source', text: 'The approved package costs 42 credits.', sourceVersion: 'price-v2', sourceRef: 'catalog-price', approved: true, revoked: false },
+      { citationId: 'visa-source', text: 'The package includes one visa.', sourceVersion: 'visa-v3', sourceRef: 'catalog-visa', approved: true, revoked: false },
+    ];
+    const value = verifyV2ResponseEvidence(response('The approved package costs 42 credits. The package includes one visa.', ['price-source', 'visa-source']), items);
+    expect(value.verdict.accepted).toBe(true);
+    expect(value.claims).toHaveLength(2);
+    expect(value.claims[0]).toMatchObject({ citationIds: ['price-source'], sourceVersions: ['price-v2'], sourceRefs: ['catalog-price'] });
+    expect(value.claims[1]).toMatchObject({ citationIds: ['visa-source'], sourceVersions: ['visa-v3'] });
+  });
+
+  it('requires verified provider records for completed operations', () => {
+    const item: V2ApprovedEvidence = { citationId: 'provider-source', text: 'provider_record_verified: The provider confirms the Account was created.', sourceVersion: 'provider-v2', approved: true, revoked: false };
+    expect(verifyV2ResponseEvidence(response('The Account was created.', ['provider-source']), [item]).verdict.accepted).toBe(true);
+  });
+
   it('allows uncited conversational wording only when explicitly marked conversational', () => {
     expect(verifyV2ResponseEvidence(response('Hello, how can I help?', []), [], [], { conversational: true }).verdict.accepted).toBe(true);
     expect(verifyV2ResponseEvidence(response('The package is available.', []), [], [], { conversational: true }).verdict.accepted).toBe(false);

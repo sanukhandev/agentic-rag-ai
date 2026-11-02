@@ -1,4 +1,6 @@
-import { createHash } from 'node:crypto';
+import { evaluateV2ClaimProvenance, type V2ClaimSource } from './v2-claim-provenance.js';
+import type { V2ClaimProvenance } from './v2-claim-provenance.js';
+export type { V2ClaimProvenance } from './v2-claim-provenance.js';
 import { hasConflictingEvidence } from './knowledge.js';
 import { hasSufficientEvidence, type ModelEvidence } from './model.js';
 import { personaComposedResponseSchema, type PersonaComposedResponseV2, type ResponseGuardVerdictV2 } from './python-model/v2-contracts.js';
@@ -20,18 +22,11 @@ export interface V2VerifiedFact {
   verified: boolean;
 }
 
-export interface V2ClaimProvenance {
-  claimDigest: string;
-  citationIds: string[];
-  sourceVersions: string[];
-}
-
 export interface V2EvidenceDecision {
   verdict: ResponseGuardVerdictV2;
   claims: V2ClaimProvenance[];
 }
 
-const digest = (value: string): string => createHash('sha256').update(value).digest('hex').slice(0, 32);
 const sentences = (answer: string): string[] => answer.split(/(?<=[.!?])\s+|\n+/u).map((value) => value.trim()).filter(Boolean);
 const factWords = (value: string): string[] => (value.toLocaleLowerCase('en-US').match(/[a-z\u00c0-\u024f\d]{3,}/gu) ?? []);
 const factValueWords = (value: string): string[] => {
@@ -71,17 +66,6 @@ const customerFactReflection = (sentence: string, facts: V2VerifiedFact[]): bool
 const relaxedEvidenceText = (value: string): string => value.replace(/\b(?:i|can|help|with|that|the|only|see|shows?|confirm|request|company|formation|journey|specific|process|option|details?|review|information|currently|from|have|your|our|still|yet|right|now|further|outcome|after|things|moving|keep|keeping|what|would|like|this|these|those|into|before|once|continue|general|outline|rather|may)\b/giu, ' ').replace(/\s+/gu, ' ').trim();
 const safeCurrentStatusParaphrase = (sentence: string, citedText: string): boolean => /\b(?:not complete|currently at|no server-authorized requirement|no further verified action)\b/iu.test(sentence)
   && /\b(?:authoritative journey|current (?:workflow )?status|current(?:ly)? at|server-authorized requirement|verified action|awaiting verified provider evidence)\b/iu.test(citedText);
-const evidenceGrounded = (answer: string, evidence: ModelEvidence[], citations: Citation[], trustedFacts: string): boolean => {
-  const citedText = `${evidence.filter((item) => citations.some((citation) => citation.chunkId === item.citation.chunkId)).map((item) => item.content).join(' ')} ${trustedFacts}`;
-  const groundedSentence = (sentence: string): boolean => safeDialogueSegment(sentence) || nonFactualPreface(sentence)
-    || hasSufficientEvidence(sentence, evidence, citations, trustedFacts)
-    || hasSufficientEvidence(relaxedEvidenceText(sentence), evidence, citations, trustedFacts)
-    || safeCurrentStatusParaphrase(sentence, citedText);
-  return hasSufficientEvidence(answer, evidence, citations, trustedFacts)
-    || hasSufficientEvidence(relaxedEvidenceText(answer), evidence, citations, trustedFacts)
-    || sentences(answer).every(groundedSentence);
-};
-const mixedEvidenceGrounded = (answer: string, evidence: ModelEvidence[], citations: Citation[], trustedFacts: string, facts: V2VerifiedFact[]): boolean => sentences(answer).every((sentence) => customerFactReflection(sentence, facts) || evidenceGrounded(sentence, evidence, citations, trustedFacts));
 const unsafeOutput = (answer: string): boolean => {
   const normalized = answer.toLocaleLowerCase('en-US');
   return normalized.includes('ignore all previous instructions')
@@ -165,32 +149,53 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
   if (!parsed.success) return { verdict: verdict(false, 'metadata_leak', null), claims: [] };
   const response = parsed.data;
   if (unsafeOutput(response.answer)) return { verdict: verdict(false, 'metadata_leak', null), claims: [] };
-  const evidenceById = new Map(evidence.map((item) => [item.citationId, item]));
-  const factById = new Map(facts.map((item) => [item.factId, item]));
-  const citationIds = [...new Set(response.citationIds)];
-  if (citationIds.length !== response.citationIds.length) return { verdict: verdict(false, 'invalid_citation', null), claims: [] };
-  if (citationIds.some((id) => !evidenceById.has(id) && !factById.has(id))) return { verdict: verdict(false, 'invalid_citation', null), claims: [] };
+  const evidenceById = new Map<string, V2ApprovedEvidence>();
+  const factById = new Map<string, V2VerifiedFact>();
+  const conflicts = new Set<string>();
+  for (const item of evidence) {
+    const previous = evidenceById.get(item.citationId);
+    if (previous && (previous.text !== item.text || previous.sourceVersion !== item.sourceVersion
+      || previous.sourceRef !== item.sourceRef || previous.approved !== item.approved || previous.revoked !== item.revoked)) conflicts.add(item.citationId);
+    evidenceById.set(item.citationId, item);
+  }
+  for (const item of facts) {
+    const previous = factById.get(item.factId);
+    if (previous && (previous.text !== item.text || previous.sourceVersion !== item.sourceVersion || previous.verified !== item.verified)) conflicts.add(item.factId);
+    factById.set(item.factId, item);
+  }
+  const citationIds = response.citationIds;
+  if (new Set(citationIds).size !== citationIds.length || citationIds.some((id) => conflicts.has(id)
+      || (evidenceById.has(id) && factById.has(id)) || (!evidenceById.has(id) && !factById.has(id)))) {
+    return { verdict: verdict(false, 'invalid_citation', null), claims: [] };
+  }
   const citedEvidence = citationIds.map((id) => evidenceById.get(id)).filter((item): item is V2ApprovedEvidence => Boolean(item));
   const citedFacts = citationIds.map((id) => factById.get(id)).filter((item): item is V2VerifiedFact => Boolean(item));
-  if (citedEvidence.some((item) => !item.approved || item.revoked || !item.sourceVersion) || citedFacts.some((item) => !item.verified || !item.sourceVersion)) return { verdict: verdict(false, 'invalid_citation', null), claims: [] };
+  if (citedEvidence.some((item) => !item.approved || item.revoked || !item.sourceVersion.trim() || !item.text.trim())
+    || citedFacts.some((item) => !item.verified || !item.sourceVersion.trim() || !item.text.trim())) return { verdict: verdict(false, 'invalid_citation', null), claims: [] };
   if (hasConflictingEvidence(citedEvidence.map((item) => item.text))) return { verdict: verdict(false, 'policy_denied', null), claims: [] };
-  const modelEvidence: ModelEvidence[] = [
-    ...citedEvidence.map((item) => ({ citation: { sourceId: item.sourceRef ?? item.citationId, versionId: item.sourceVersion, chunkId: item.citationId, title: 'approved evidence', locator: item.citationId }, content: item.text })),
-    ...citedFacts.map((fact) => ({ citation: { sourceId: fact.factId, versionId: fact.sourceVersion, chunkId: fact.factId, title: 'verified fact', locator: fact.factId }, content: fact.text })),
-  ];
-  const trustedFacts = citedFacts.map((fact) => fact.text).join(' ');
-  const citations = modelEvidence.map((item) => item.citation);
   const answerForEvidence = response.nextQuestion ? trailingQuestion(response.answer, response.nextQuestion) ?? response.answer : response.answer;
-  const grounded = options.allowApprovedFallback === true && citationIds.length === 0
-    ? true
-    : citationIds.length === 0 && options.allowNonFactualDialogue === true
-    ? safeNoEvidenceDialogue(response.answer, response.nextQuestion, options.pendingRequirementKey ?? null)
-    : options.conversational === true && citationIds.length === 0
-    ? uncitedConversation(response.answer) || (options.allowUncitedQuestion === true && uncitedQuestion(response.answer, response.nextQuestion))
-    : citationIds.length > 0 && (evidenceGrounded(answerForEvidence, modelEvidence, citations, trustedFacts)
-      || (citedFacts.length > 0 && mixedEvidenceGrounded(answerForEvidence, modelEvidence, citations, trustedFacts, citedFacts)));
-  if (!grounded) return { verdict: verdict(false, citationIds.length === 0 ? 'unsupported_claim' : 'unsupported_claim', null), claims: [] };
-  const sourceVersions = [...new Set([...citedEvidence.map((item) => item.sourceVersion), ...citedFacts.map((item) => item.sourceVersion)])];
-  const claims = sentences(response.answer).map((claim) => ({ claimDigest: digest(claim), citationIds, sourceVersions }));
-  return { verdict: verdict(true, 'accepted', response), claims };
+  if (citationIds.length === 0) {
+    const grounded = options.allowApprovedFallback === true
+      || (options.allowNonFactualDialogue === true && safeNoEvidenceDialogue(response.answer, response.nextQuestion, options.pendingRequirementKey ?? null))
+      || (options.conversational === true && (uncitedConversation(response.answer) || (options.allowUncitedQuestion === true && uncitedQuestion(response.answer, response.nextQuestion))));
+    return { verdict: verdict(grounded, grounded ? 'accepted' : 'unsupported_claim', grounded ? response : null), claims: [] };
+  }
+  const sources: V2ClaimSource[] = [
+    ...citedEvidence.map((item) => ({ citationId: item.citationId, text: item.text, sourceVersion: item.sourceVersion, kind: 'source' as const, ...(item.sourceRef ? { sourceRef: item.sourceRef } : {}) })),
+    ...citedFacts.map((fact) => ({ citationId: fact.factId, text: fact.text, sourceVersion: fact.sourceVersion, sourceRef: fact.factId, kind: 'customer_fact' as const })),
+  ];
+  const supports = (part: string, source: V2ClaimSource): boolean => {
+    const modelEvidence: ModelEvidence[] = [{ citation: { sourceId: source.sourceRef ?? source.citationId, versionId: source.sourceVersion, chunkId: source.citationId, title: 'authorized source', locator: source.citationId }, content: source.text }];
+    const citations: Citation[] = modelEvidence.map((item) => item.citation);
+    const reflectedFact: V2VerifiedFact = { factId: source.citationId, text: source.text, sourceVersion: source.sourceVersion, verified: true };
+    return hasSufficientEvidence(part, modelEvidence, citations, source.kind === 'customer_fact' ? source.text : '')
+      || hasSufficientEvidence(relaxedEvidenceText(part), modelEvidence, citations)
+      || safeCurrentStatusParaphrase(part, source.text)
+      || (source.kind === 'customer_fact' && factAppearsIn(part, reflectedFact) && customerFactReflection(part, [reflectedFact]));
+  };
+  const evaluation = evaluateV2ClaimProvenance(answerForEvidence, sources,
+    (part) => safeDialogueSegment(part) || nonFactualPreface(part) || safeFactAcknowledgement(part), supports);
+  if (!evaluation.supported) return { verdict: verdict(false, 'unsupported_claim', null), claims: [] };
+  if (evaluation.unusedCitationIds.length > 0) return { verdict: verdict(false, 'invalid_citation', null), claims: [] };
+  return { verdict: verdict(true, 'accepted', response), claims: evaluation.claims };
 };
