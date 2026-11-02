@@ -367,7 +367,8 @@ export const createV2ToolGateway = ({ store, embedding, serviceKey }: V2ToolGate
     // Immutable pinned versions can be replayed. Dynamic reads (especially RAG and
     // provider status) must be refreshed: source revocation, package availability
     // and provider outcomes can change without a session revision increment.
-    if (cached && (request.toolName === 'get_persona' || request.toolName === 'get_intent_catalog')) return cached.value;
+    // Published catalog and persona records can be revoked without a session
+    // revision change; always refresh them, including on repeated call IDs.
     let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
     try {
       const parsedArguments = argumentSchemas[request.toolName as V2ToolName]?.safeParse(request.arguments);

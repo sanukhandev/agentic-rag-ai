@@ -318,6 +318,9 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         turnCategory: selectedTurnCategory, nextMove: validPlan ? modelPlan.nextMove : null,
         matchedSignalIds: catalogSignalRefs.join(',').slice(0, 600),
         score: planningDecision?.score?.evidenceScore ?? null,
+        modelConfidenceBand: modelPlan.confidenceBand,
+        proposedToolKey: modelPlan.proposedToolKey,
+        validatedReadToolKey: validPlan ? planningDecision?.proposedToolKey ?? null : null,
         reasons: planningDecision?.reasons.join(',').slice(0, 600) ?? '',
         actionAuthorized: false }, createdAt: at });
   }
