@@ -426,6 +426,13 @@ describe('V2ConversationCoordinator', () => {
     expect(rejectedRepair.response.answer).toBe(fallbackTemplates.templates.invalid_model);
     expect(rejectedRepair.response.citationIds).toEqual([]);
     expect(rejectedRepair.modelRequestCount).toBe(2);
+    expect(rejectedRepair.knowledgeRepairStatus).toBe('attempted_rejected');
+    expect(rejectedRepair.initialClaimFailureReason).toBe('numeric_value_not_in_cited_source');
+    expect(rejectedRepair.initialFailedClauseOrdinal).toBe(1);
+    expect(rejectedRepair.repairCitationCount).toBe(1);
+    expect(rejectedRepair.repairFailureReason).toBe('repair_guard_unsupported_claim');
+    expect(rejectedRepair.repairClaimFailureReason).toBe('numeric_value_not_in_cited_source');
+    expect(rejectedRepair.repairFailedClauseOrdinal).toBe(1);
     expect(calls).toHaveLength(3);
   });
 
