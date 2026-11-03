@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { personaComposedResponseSchema, type PersonaComposedResponseV2, type ResponseGuardVerdictV2 } from './python-model/v2-contracts.js';
 import { verifyV2ResponseEvidence, type V2ApprovedEvidence, type V2ClaimProvenance, type V2VerifiedFact } from './v2-evidence.js';
+import type { V2ClaimFailure } from './v2-claim-provenance.js';
 import { selectV2OfflineFallback, type V2ApprovedFallbackTemplateSet, type V2FallbackFamily } from './v2-fallbacks.js';
 import type { V2LegalRegistrationState } from './v2-registration.js';
 import { hasPositiveBusinessOutcomeClaim } from './v2-claim-provenance.js';
@@ -40,6 +41,8 @@ export interface V2ResponseGuardDecision {
   response: PersonaComposedResponseV2;
   claims: V2ClaimProvenance[];
   feedback: V2GuardFeedback | null;
+  /** Bounded reason for the first unsupported consequential clause. No text. */
+  firstFailure?: V2ClaimFailure;
 }
 
 export interface V2OfflineFallbackDecision {
@@ -124,7 +127,7 @@ export const guardV2Response = (input: unknown, context: V2ResponseGuardContext)
   if (approvedNoEvidenceAnswer) evidenceOptions.allowApprovedFallback = true;
   if (context.conversational !== undefined) evidenceOptions.conversational = context.conversational;
   const evidence = verifyV2ResponseEvidence(response, context.evidence ?? [], context.verifiedFacts ?? [], evidenceOptions);
-  if (!evidence.verdict.accepted) return { verdict: evidence.verdict, response: fallback(context, evidence.verdict.reasonCode), claims: [], feedback: feedback(evidence.verdict.reasonCode, input) };
+  if (!evidence.verdict.accepted) return { verdict: evidence.verdict, response: fallback(context, evidence.verdict.reasonCode), claims: [], feedback: feedback(evidence.verdict.reasonCode, input), ...(evidence.firstFailure ? { firstFailure: evidence.firstFailure } : {}) };
   return { verdict: evidence.verdict, response, claims: evidence.claims, feedback: null };
 };
 
