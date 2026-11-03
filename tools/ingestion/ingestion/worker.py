@@ -80,7 +80,16 @@ def archive_result_payload(members: list[tuple[str, IngestedSource]], warnings: 
         "kind": "archive_members",
         "parserVersion": members[0][1].parser_version if members else "",
         "members": [
-            {"fileName": name, **result_payload(source)}
+            {
+                "fileName": name,
+                "mimeType": source.mime_type,
+                "normalizedContent": source.normalized_content,
+                "contentHash": source.content_hash,
+                "chunks": [
+                    {"ordinal": chunk.ordinal, "locator": chunk.locator, "content": chunk.content, "contentHash": chunk.content_hash}
+                    for chunk in source.chunks
+                ],
+            }
             for name, source in members
         ],
         "warnings": warnings[:100],

@@ -25,6 +25,8 @@ class ArchiveMemberIngestionTest(unittest.TestCase):
             pause.assert_called_once_with(1.25)
             payload = archive_result_payload(members, warnings)
             self.assertEqual(payload["kind"], "archive_members")
+            self.assertEqual(payload["members"][0]["mimeType"], "text/markdown")
+            self.assertEqual(set(payload["members"][0]), {"fileName", "mimeType", "normalizedContent", "contentHash", "chunks"})
             self.assertEqual([row["fileName"] for row in payload["members"]], ["training/01-pricing.md", "training/02-process.txt"])
 
     def test_zip_rejects_unsafe_and_oversized_delays(self):
