@@ -56,6 +56,12 @@ export interface V2CoordinatorResult {
   /** The bounded knowledge repair's outcome, with no answer or source text. */
   knowledgeRepairStatus?: 'not_eligible' | 'skipped_untrusted_evidence' | 'skipped_budget'
     | 'attempted_invalid_result' | 'attempted_rejected' | 'attempted_error' | 'accepted';
+  initialClaimFailureReason?: string | null;
+  initialFailedClauseOrdinal?: number | null;
+  repairCitationCount?: number | null;
+  repairFailureReason?: string | null;
+  repairClaimFailureReason?: string | null;
+  repairFailedClauseOrdinal?: number | null;
   /** Optional bounded Python-side candidate capture for explicit UAT diagnostics. */
   diagnosticCandidate?: string | null;
 }
@@ -304,6 +310,10 @@ export class V2ConversationCoordinator {
     // model/tool claims); the second model pass has no callable tools or actions.
     let repairModelRequests = 0;
     let knowledgeRepairStatus: NonNullable<V2CoordinatorResult['knowledgeRepairStatus']> = 'not_eligible';
+    let repairCitationCount: number | null = null;
+    let repairFailureReason: string | null = null;
+    let repairClaimFailureReason: string | null = null;
+    let repairFailedClauseOrdinal: number | null = null;
     const timeLeft = Date.parse(envelope.budgets.deadlineAt) - Date.now();
     if (guarded.verdict.reasonCode === 'unsupported_claim'
       && (envelope.approvedKnowledge?.length ?? 0) > 0) {
@@ -316,6 +326,7 @@ export class V2ConversationCoordinator {
         // if it asserted a completed business action, because that assertion
         // is never returned and the second answer must pass the same guard.
         knowledgeRepairStatus = 'attempted_invalid_result';
+        repairFailureReason = 'repair_invalid_model_result_or_budget';
         try {
           const repairEnvelope = turnEnvelopeSchema.parse({
             ...envelope,
@@ -335,10 +346,17 @@ export class V2ConversationCoordinator {
             // across a factual knowledge repair.
             const groundedRepair: PersonaComposedResponseV2 = { ...repaired, planning: null };
             knowledgeRepairStatus = 'attempted_rejected';
-            if (groundedRepair.citationIds.length > 0
-              && !groundedRepair.decisionRef.startsWith('fallback-')
-              && !hasPositiveBusinessOutcomeClaim(groundedRepair.answer)) {
+            repairCitationCount = groundedRepair.citationIds.length;
+            if (repairCitationCount === 0) repairFailureReason = 'repair_missing_citations';
+            else if (groundedRepair.decisionRef.startsWith('fallback-')) repairFailureReason = 'repair_gateway_fallback';
+            else if (hasPositiveBusinessOutcomeClaim(groundedRepair.answer)) repairFailureReason = 'repair_unverified_business_outcome';
+            else {
               const verifiedRepair = guardV2Response(groundedRepair, guardContext);
+              if (!verifiedRepair.verdict.accepted) {
+                repairFailureReason = 'repair_guard_' + verifiedRepair.verdict.reasonCode;
+                repairClaimFailureReason = verifiedRepair.firstFailure?.reason ?? null;
+                repairFailedClauseOrdinal = verifiedRepair.firstFailure?.clauseOrdinal ?? null;
+              }
               if (verifiedRepair.verdict.accepted && verifiedRepair.response) return {
                 response: verifiedRepair.response, candidateResponse: agentResult.response,
                 repairApplied: true, draft: toDraft(verifiedRepair.response),
@@ -348,6 +366,9 @@ export class V2ConversationCoordinator {
                 toolCallCount: agentResult.toolCallCount,
                 guardReason: 'accepted_knowledge_repair', candidateGuardReason,
                 knowledgeRepairStatus: 'accepted',
+                repairCitationCount, repairFailureReason: null,
+                initialClaimFailureReason: guarded.firstFailure?.reason ?? null,
+                initialFailedClauseOrdinal: guarded.firstFailure?.clauseOrdinal ?? null,
                 diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
               };
             }
@@ -355,6 +376,7 @@ export class V2ConversationCoordinator {
         } catch {
           // A second-pass error must never release the rejected original draft.
           knowledgeRepairStatus = 'attempted_error';
+          repairFailureReason = 'repair_execution_error';
         }
       }
     }
@@ -383,6 +405,10 @@ export class V2ConversationCoordinator {
     }
     const fallback = guardV2OfflineFallback(fallbackFamilyFor(guarded.verdict.reasonCode), guardContext);
     if (!fallback.verdict.accepted || !fallback.response) throw new Error('V2_RESPONSE_REJECTED');
-    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: [], modelRequestCount: agentResult.modelRequestCount + repairModelRequests, toolCallCount: agentResult.toolCallCount, guardReason: guarded.verdict.reasonCode, candidateGuardReason, knowledgeRepairStatus, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
+    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: [], modelRequestCount: agentResult.modelRequestCount + repairModelRequests, toolCallCount: agentResult.toolCallCount, guardReason: guarded.verdict.reasonCode, candidateGuardReason, knowledgeRepairStatus,
+      initialClaimFailureReason: guarded.firstFailure?.reason ?? null,
+      initialFailedClauseOrdinal: guarded.firstFailure?.clauseOrdinal ?? null,
+      repairCitationCount, repairFailureReason, repairClaimFailureReason, repairFailedClauseOrdinal,
+      diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
   }
 }
