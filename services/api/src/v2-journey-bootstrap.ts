@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { newIntentProgress } from './conversation-state.js';
 import { newLifecycleState } from './lifecycle-state.js';
-import { evaluateV2StageBoundary, type V2ActionGateContext, type V2StageBoundaryDecision } from './v2-action-gate.js';
-import type { ConversationState, IntentCatalogV2Version, IntentProgressEntry, Session, UserIntentDocument } from './types.js';
+import { evaluateV2StageBoundary, validateV2ActionConfirmation, v2ActionConsentScope, type V2ActionGateContext, type V2StageBoundaryDecision } from './v2-action-gate.js';
+import type { ActionRequest, ConversationState, IntentCatalogV2Version, IntentProgressEntry, Session, Store, UserIntentDocument } from './types.js';
 
 export interface V2JourneyBootstrap {
   state: ConversationState;
@@ -101,4 +101,60 @@ export const evaluateConfirmedV2ActionStage = (
   const context = contextForConfirmedV2Action(input);
   return context ? evaluateV2StageBoundary(context)
     : { accepted: false, reasons: ['v2_authoritative_journey_missing'], currentStageKey: null };
+};
+
+
+export type V2ActionAuthorizationResult = {
+  applies: boolean;
+  accepted: boolean;
+  reasons: string[];
+  canonicalCatalogVersionRef: string | null;
+};
+
+/**
+ * The existing public action-confirm endpoint must not use legacy action
+ * authorization when the conversation is using authoritative Catalog V2.
+ * No consent may be synthesized from a 'confirmed:true' request or a
+ * previously confirmed Business Goal.
+ */
+export const evaluatePersistedV2ActionConfirmation = async (
+  store: Pick<Store, 'getUserIntentDocument' | 'listIntentCatalogV2Versions'>,
+  session: Session,
+  action: ActionRequest,
+): Promise<V2ActionAuthorizationResult> => {
+  const doc = await store.getUserIntentDocument(session.tenantId, session.id);
+  if (doc?.catalogSource !== 'v2') {
+    return { applies: false, accepted: false, reasons: [], canonicalCatalogVersionRef: null };
+  }
+  const deny = (...reasons: string[]): V2ActionAuthorizationResult => ({
+    applies: true, accepted: false, reasons, canonicalCatalogVersionRef: doc.catalogVersionRef,
+  });
+  if (session.tenantId !== action.tenantId || session.id !== action.sessionId
+    || action.opportunityId !== doc.opportunityId || action.catalogVersionId !== doc.catalogVersionRef
+    || !action.actionKey || !action.actionRevision) return deny('action_identity_mismatch');
+  const pinned = (await store.listIntentCatalogV2Versions(session.tenantId))
+    .find(version => version.status === 'published' && version.catalogVersionRef === doc.catalogVersionRef);
+  if (!pinned) return deny('catalog_publication_missing');
+  const binding = pinned.catalog.sheets.ToolBindings.find(tool =>
+    tool.enabled && tool.toolKey === action.actionKey && tool.registryKey === action.workflowKey
+    && tool.goalKey === doc.businessGoalKey && tool.stageKey === doc.currentStageKey
+    && tool.sideEffectClass !== 'read_only' && tool.consent === 'purpose_specific'
+    && tool.confirmation === 'explicit_customer');
+  if (!binding) return deny('action_not_authorized_by_pinned_catalog');
+  const purposeScope = v2ActionConsentScope({ catalogVersionId: doc.catalogVersionRef }, action.actionKey);
+  const state = session.conversationState;
+  const purposeConsentGranted = state?.contactConsent === 'granted'
+    && state.consentVersion === purposeScope && action.payload.contactConsent === true;
+  const context = contextForConfirmedV2Action({
+    session, document: doc, catalog: pinned, expectedActionRevision: action.actionRevision,
+    purposeConsentGranted, purposeConsentScope: purposeConsentGranted ? purposeScope : null,
+  });
+  if (!context) return deny('v2_authoritative_journey_missing');
+  const decision = validateV2ActionConfirmation(action, {
+    ...context, pendingActionId: action.id, expectedActionKey: binding.toolKey, customerConfirmed: true,
+  });
+  return {
+    applies: true, accepted: decision.accepted, reasons: decision.reasons,
+    canonicalCatalogVersionRef: doc.catalogVersionRef,
+  };
 };
