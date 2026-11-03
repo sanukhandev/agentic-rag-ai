@@ -213,6 +213,95 @@ describe('V2ConversationCoordinator', () => {
     await expect(agent.turn(envelope())).resolves.toMatchObject({ modelRequestCount: 1, toolCallCount: 0 });
   });
 
+  it('repairs a rejected process claim once using only the exact trusted prefetch', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'Can you tell me about the steps for forming a company?';
+    request.budgets = { ...request.budgets, maxModelRequests: 4, deadlineAt: new Date(Date.now() + 60_000).toISOString() };
+    const snippet = {
+      citationId: 'chunk-12345678', text: 'Choose your business activity and submit the required documents.',
+      sourceRef: 'source-12345678', sourceVersion: 'version-12345678',
+    };
+    request.approvedKnowledge = [snippet];
+    const calls: TurnEnvelopeV2[] = [];
+    const agent = { turn: async (turn: TurnEnvelopeV2) => {
+      calls.push(turn);
+      if (calls.length === 1) return result('The setup costs AED 900.', {
+        response: { ...result('The setup costs AED 900.').response, citationIds: [snippet.citationId] },
+      });
+      expect(turn.knowledgeRepair).toEqual({ reason: 'unsupported_claim', strategy: 'source_close' });
+      expect(turn.toolAllowlist).toEqual([]);
+      expect(turn.budgets.maxModelRequests).toBe(1);
+      expect(turn.budgets.maxToolCalls).toBe(0);
+      expect(turn.budgets.maxToolRounds).toBe(0);
+      expect(turn.approvedKnowledge).toEqual([snippet]);
+      return result(snippet.text, {
+        response: { ...result(snippet.text).response, citationIds: [snippet.citationId], planning: {
+          turnCategory: 'business_goal', primaryGoalKey: 'anc.company_formation',
+          candidateGoalKeys: [], matchedSignalIds: [], supportingTopicKeys: [],
+          runnerUpScore: null, nextMove: 'confirm_goal', nextQuestion: null,
+          proposedToolKey: null, confidenceBand: 'high', proposedFacts: [],
+        } },
+      });
+    } };
+    const output = await new V2ConversationCoordinator(agent).run({
+      envelope: request,
+      evidence: [{ ...snippet, approved: true, revoked: false }],
+      fallbackTemplates, questionPolicy: 'optional',
+    });
+    expect(calls).toHaveLength(2);
+    expect(output.guardReason).toBe('accepted_knowledge_repair');
+    expect(output.candidateGuardReason).toBe('unsupported_claim');
+    expect(output.response.answer).toBe(snippet.text);
+    expect(output.response.citationIds).toEqual([snippet.citationId]);
+    expect(output.response.planning).toBeNull();
+    expect(output.claimProvenance).toHaveLength(1);
+    expect(output.modelRequestCount).toBe(2);
+    expect(output.toolCallCount).toBe(0);
+  });
+
+  it('does not repair from model-invented evidence, missing prefetch, or unsupported repair text', async () => {
+    const text = 'Choose your business activity and submit the required documents.';
+    const snippet = {
+      citationId: 'chunk-12345678', text,
+      sourceRef: 'source-12345678', sourceVersion: 'version-12345678',
+      approved: true, revoked: false,
+    };
+    const makeEnvelope = () => {
+      const request = envelope();
+      request.customerMessageMasked = 'Can you tell me about the steps for forming a company?';
+      request.budgets = { ...request.budgets, maxModelRequests: 4, deadlineAt: new Date(Date.now() + 60_000).toISOString() };
+      return request;
+    };
+    const unsupported = result('The setup costs AED 900.', {
+      response: { ...result('The setup costs AED 900.').response, citationIds: [snippet.citationId] },
+    });
+    const calls: TurnEnvelopeV2[] = [];
+    const agent = { turn: async (turn: TurnEnvelopeV2) => {
+      calls.push(turn);
+      return calls.length === 1 ? unsupported : result('The setup costs AED 999.', {
+        response: { ...result('The setup costs AED 999.').response, citationIds: [snippet.citationId] },
+      });
+    } };
+    const noPrefetch = await new V2ConversationCoordinator(agent).run({
+      envelope: makeEnvelope(), evidence: [snippet], fallbackTemplates,
+    });
+    expect(noPrefetch.guardReason).toBe('unsupported_claim');
+    expect(calls).toHaveLength(1);
+    const request = makeEnvelope();
+    request.approvedKnowledge = [{
+      citationId: snippet.citationId, text: snippet.text,
+      sourceRef: snippet.sourceRef, sourceVersion: snippet.sourceVersion,
+    }];
+    const rejectedRepair = await new V2ConversationCoordinator(agent).run({
+      envelope: request, evidence: [snippet], fallbackTemplates,
+    });
+    expect(rejectedRepair.guardReason).toBe('unsupported_claim');
+    expect(rejectedRepair.response.answer).toBe(fallbackTemplates.templates.invalid_model);
+    expect(rejectedRepair.response.citationIds).toEqual([]);
+    expect(rejectedRepair.modelRequestCount).toBe(2);
+    expect(calls).toHaveLength(3);
+  });
+
   it('accepts only evidence correlated to a successful search tool trace', async () => {
     const coordinator = new V2ConversationCoordinator({
       turn: async () => result('The approved package costs 42 credits.', {
