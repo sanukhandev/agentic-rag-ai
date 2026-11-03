@@ -4,6 +4,7 @@ import { classifyScopedGoalDecision, newConversationState, prompt } from './conv
 import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 import { validateV2PlanningProposal } from './v2-planning.js';
 import { validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
+import { initializeConfirmedV2Journey } from './v2-journey-bootstrap.js';
 import { HttpError } from './http/errors.js';
 import { assertKnownTokens, maskPiiForSession, rehydrateForSession, TokenVault } from './privacy.js';
 import { issueV2Scope, V2_TOOL_NAMES } from './v2-tool-gateway.js';
@@ -358,7 +359,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       !intentDocument?.verifiedFacts[key] || intentDocument.verifiedFacts[key]?.maskedValue !== value.maskedValue)
       .map(([key, value]) => [key, { ...value, corrected: Boolean(intentDocument?.verifiedFacts[key]) }]),
   );
-  const nextDoc: UserIntentDocument = intentDocument ? {
+  let nextDoc: UserIntentDocument = intentDocument ? {
     ...intentDocument, approvedResponse, lastQuestion: effectiveQuestion,
     verifiedFacts: { ...intentDocument.verifiedFacts, ...verifiedFactPatch },
     businessGoalKey: intentDocument.catalogSource === 'v2' ? nextGoalKey : intentDocument.businessGoalKey,
@@ -383,9 +384,17 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     toolRefs: result.toolTrace.map(trace => trace.toolCallId), sourceRefs: [...result.response.citationIds, ...catalogSignalRefs],
     summary: state.rollingSummary, summaryRevision: 1, revision: 0, createdAt: at, updatedAt: at,
   };
+  // Initialize an opportunity only after a customer has explicitly confirmed
+  // the goal. Persist the journey, lifecycle, intent cursor, and both messages
+  // in the same authoritative V2 transaction. Do not authorize an action.
+  const bootstrap = initializeConfirmedV2Journey(state, nextDoc);
+  if (bootstrap.created) {
+    session.conversationState = bootstrap.state;
+    nextDoc = bootstrap.document;
+  }
   assertSafeUserIntentDocument(nextDoc);
   const assessment = { id: randomUUID(), documentId: nextDoc.id, tenantId: tenant.id, sessionId: session.id,
-    opportunityId, turnSequence: state.messageSequence, clientMessageId: input.clientMessageId,
+    opportunityId: nextDoc.opportunityId, turnSequence: state.messageSequence, clientMessageId: input.clientMessageId,
     messageHash: input.messageHash,
     businessGoalKey: nextDoc.businessGoalKey, turnIntentKey: nextDoc.turnIntentKey,
     intentCategory: selectedTurnCategory,
@@ -410,7 +419,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   };
   const assistantMessage: Message = { id: responseId, sessionId: session.id, tenantId: tenant.id, role: 'assistant',
     maskedContent: answerMasked, citations, clientMessageId: null,
-    response: { conversational: !grounded, catalogVersionId: catalog.id, catalogIntentKey: activeGoal, catalogOpportunityId: opportunityId },
+    response: { conversational: !grounded, catalogVersionId: catalog.id, catalogIntentKey: activeGoal, catalogOpportunityId: nextDoc.opportunityId },
     createdAt: at };
   const persisted = { ...response, answer: answerMasked };
   const answeredCustomerMessage: Message = { ...userMessage, response: persisted };

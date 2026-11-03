@@ -298,6 +298,14 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect((await ctx.store.listMessages(ctx.session.id, ctx.tenant.id)).filter(message => message.id === reply.messageId && message.role === 'assistant')).toHaveLength(1);
     expect(document?.goalConfirmed).toBe(true);
     expect(document?.businessGoalKey).toBe('anc.company_formation');
+    const lifecycleSession = await ctx.store.getSession(ctx.session.id);
+    const activeJourney = lifecycleSession?.conversationState?.intentProgress?.entries['anc.company_formation'];
+    expect(document?.currentStageKey).toBe('lead_generation');
+    expect(document?.opportunityId).toBeTruthy();
+    expect(document?.opportunityId).toBe(activeJourney?.journeyId);
+    expect(activeJourney?.lifecycle?.currentStage).toBe('lead_generation');
+    expect(activeJourney?.lifecycle?.revision).toBe(0);
+    expect(activeJourney?.lifecycle?.stages.lead_generation.status).toBe('awaiting_customer');
     expect(document?.goalConfirmation).toMatchObject({
       status: 'confirmed', promptId: ctx.response.messageId,
       customerMessageId: confirmation.userMessage.id,
