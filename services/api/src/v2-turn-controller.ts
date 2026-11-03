@@ -116,10 +116,22 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     throw new HttpError(409, 'V2_TURN_REPLAY', 'This customer message has already been assessed.');
   }
   const originalState = session.conversationState ?? newConversationState();
+  // Canonical GPT-first selection: V2 first for new sessions, then V1 rollback.
+  // Existing sessions remain pinned to their exact catalog publication.
+  const publishedV2 = (await store.listIntentCatalogV2Versions(tenant.id))
+    .find(version => version.status === 'published') ?? null;
+  const pinnedLegacy = originalState.catalogVersionId
+    ? await store.getIntentCatalogVersion(tenant.id, originalState.catalogVersionId) : null;
+  const pinnedV2 = originalState.catalogVersionId && !pinnedLegacy
+    ? await store.getIntentCatalogV2Version(tenant.id, originalState.catalogVersionId) : null;
   const catalog = originalState.catalogVersionId
-    ? await store.getIntentCatalogVersion(tenant.id, originalState.catalogVersionId)
-    : await store.getPublishedIntentCatalog(tenant.id);
-  if (!catalog || catalog.status !== 'published') throw new HttpError(409, 'V2_CATALOG_UNAVAILABLE', 'The pinned published catalog is required for authorized tools.');
+    ? pinnedLegacy ?? pinnedV2
+    : publishedV2 ?? await store.getPublishedIntentCatalog(tenant.id);
+  if (!catalog || catalog.status !== 'published') {
+    throw new HttpError(409, 'V2_CATALOG_UNAVAILABLE',
+      'Publish the reviewed V2 intent catalog for this tenant before using GPT-first chat.');
+  }
+  const legacyCatalog = 'catalogVersionRef' in catalog ? null : catalog;
   // Pin before issuing any read-tool scope. New sessions otherwise have a null
   // catalog ID in the Store, and the first model-selected tool is rejected.
   if (!originalState.catalogVersionId) {
@@ -133,13 +145,14 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   if (intentDocument && (intentDocument.personaVersionId !== persona.id || intentDocument.tenantId !== tenant.id || intentDocument.sessionId !== session.id)) {
     throw new HttpError(409, 'V2_PINNED_CONTEXT_STALE', 'The session intent document does not match its trusted context.');
   }
-  // Canonical Catalog V2 publication is independent of the V1 catalog used by
-  // rollback tools. Never auto-promote a legacy intent document or reuse its consent.
-  const publishedV2 = (await store.listIntentCatalogV2Versions(tenant.id))
-    .find(version => version.status === 'published') ?? null;
+  // Do not borrow a newer V2 revision when an existing journey pins the prior one.
   const v2Version = intentDocument?.catalogSource === 'v2'
-    ? (publishedV2?.catalogVersionRef === intentDocument.catalogVersionRef ? publishedV2 : null)
-    : !intentDocument ? publishedV2 : null;
+    ? (publishedV2?.catalogVersionRef === intentDocument.catalogVersionRef
+        && (!pinnedV2 || pinnedV2.id === publishedV2.id) ? publishedV2 : null)
+    : !intentDocument ? (pinnedV2 ?? (!pinnedLegacy ? publishedV2 : null)) : null;
+  if (pinnedV2 && (!v2Version || pinnedV2.id !== v2Version.id)) {
+    throw new HttpError(409, 'V2_CATALOG_PIN_STALE', 'The pinned V2 catalog was replaced or unpublished.');
+  }
   if (intentDocument?.catalogSource === 'v2' && !v2Version) {
     throw new HttpError(409, 'V2_CATALOG_PIN_STALE', 'The pinned V2 catalog is no longer published.');
   }
@@ -290,8 +303,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   // to an existing, required slot in the active, pinned catalog. The model
   // cannot create consent, document, confirmation or stage transitions.
   const nextKey = result.response.nextQuestionKey;
-  const proposedRequirement = !originalState.pendingPrompt && activeGoal && nextKey && !catalogV2
-    ? catalog.catalog.journeyRequirements?.find(candidate =>
+  const proposedRequirement = !originalState.pendingPrompt && activeGoal && nextKey && !catalogV2 && legacyCatalog
+    ? legacyCatalog.catalog.journeyRequirements?.find(candidate =>
         candidate.intentKey === activeGoal && candidate.requirementKey === nextKey
         && candidate.required && candidate.requirementType === 'slot'
         && !entry?.completedRequirementKeys.includes(candidate.requirementKey))
