@@ -96,8 +96,8 @@ const classifyUnsupportedClause = (part: string, sources: V2ClaimSource[]): V2Cl
     source.kind === 'customer_fact' || !verifiedRecord.test(source.text)
     || !state.test(source.text) || !completed.test(source.text))) return 'unverified_provider_outcome';
   if (sources.every(source => negative(part) !== negative(source.text)
-    && !(/\\bnot complete\\b/iu.test(norm(part)) && /\\b(?:authoritative journey|current workflow status)\\b/iu.test(norm(source.text)))
-    && !(!negative(part) && /\\b(?:no|not)\\s+(?:provider|further|additional|other)\\b/iu.test(norm(source.text))))) {
+    && !(/\bnot complete\b/iu.test(norm(part)) && /\b(?:authoritative journey|current workflow status)\b/iu.test(norm(source.text)))
+    && !(!negative(part) && /\b(?:no|not)\s+(?:provider|further|additional|other)\b/iu.test(norm(source.text))))) {
     return 'claim_source_polarity_mismatch';
   }
   const important = tokens(part);
