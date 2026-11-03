@@ -520,7 +520,7 @@ export class PostgresStore implements Store {
   async listActionsBySession(sessionId: string, tenantId: string): Promise<ActionRequest[]> { const result = await this.pool.query('SELECT * FROM action_requests WHERE session_id=$1 AND tenant_id=$2 ORDER BY created_at DESC', [sessionId, tenantId]); return result.rows.map((row) => this.action(row)); }
   async createCrmLead(lead: CrmLead): Promise<CrmLead> {
     const catalog = catalogVersionStorage(lead.catalogVersionId);
-    const result = await this.pool.query<CrmLeadRow>('INSERT INTO crm_leads (id,tenant_id,action_id,session_id,intent,secondary_intent_keys,intent_score,intent_confidence,catalog_version_id,catalog_v2_version_ref,score,contact_completeness_score,validation_pass,lead_data,conversation_json,summary,summary_status,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$19,$10,$11,$12,$13,$14,$15,$16,$17,$17) RETURNING *',
+    const result = await this.pool.query<CrmLeadRow>('INSERT INTO crm_leads (id,tenant_id,action_id,session_id,intent,secondary_intent_keys,intent_score,intent_confidence,catalog_version_id,catalog_v2_version_ref,score,contact_completeness_score,validation_pass,lead_data,conversation_json,summary,summary_status,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$18,$10,$11,$12,$13,$14,$15,$16,$17,$17) RETURNING *',
       [lead.id, lead.tenantId, lead.actionId, lead.sessionId, lead.intent,
         JSON.stringify(lead.secondaryIntentKeys ?? []), lead.intentScore, lead.intentConfidence,
         catalog.legacy, lead.score, lead.contactCompletenessScore ?? 0, lead.validationPass,
