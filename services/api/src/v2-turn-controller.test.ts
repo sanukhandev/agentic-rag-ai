@@ -127,11 +127,13 @@ describe('GPT-first controller full-turn unit behavior', () => {
         nextQuestion: null, nextQuestionKey: null, decisionRef: 'fallback-test',
       },
       guardReason: 'invalid_citation', candidateGuardReason: 'invalid_citation',
+      knowledgeRepairStatus: 'attempted_error',
     }) as unknown as V2CoordinatorResult);
     await runGPTFirstChatTurn(input);
     const audit = (await store.listAudit(tenant.id)).find(event => event.eventName === 'v2.gpt_first.turn' && event.metadata.sessionId === session.id);
     expect(audit?.metadata).toMatchObject({
       guardReason: 'invalid_citation', candidateGuardReason: 'invalid_citation',
+      knowledgeRepairStatus: 'attempted_error',
       prefetchEvidenceCount: 0, validatedEvidenceCount: 0,
       candidateCitationCount: 1, responseCitationCount: 0,
       failedReadToolCount: 0, fallbackApplied: true,
