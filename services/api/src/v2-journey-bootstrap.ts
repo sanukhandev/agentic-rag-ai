@@ -123,8 +123,13 @@ export const evaluatePersistedV2ActionConfirmation = async (
   action: ActionRequest,
 ): Promise<V2ActionAuthorizationResult> => {
   const doc = await store.getUserIntentDocument(session.tenantId, session.id);
-  if (doc?.catalogSource !== 'v2') {
+  const versions = await store.listIntentCatalogV2Versions(session.tenantId);
+  const knownV2Action = versions.some(version => version.catalogVersionRef === action.catalogVersionId);
+  if (doc?.catalogSource !== 'v2' && !knownV2Action) {
     return { applies: false, accepted: false, reasons: [], canonicalCatalogVersionRef: null };
+  }
+  if (!doc || doc.catalogSource !== 'v2') {
+    return { applies: true, accepted: false, reasons: ['v2_intent_document_missing'], canonicalCatalogVersionRef: action.catalogVersionId ?? null };
   }
   const deny = (...reasons: string[]): V2ActionAuthorizationResult => ({
     applies: true, accepted: false, reasons, canonicalCatalogVersionRef: doc.catalogVersionRef,
@@ -132,8 +137,8 @@ export const evaluatePersistedV2ActionConfirmation = async (
   if (session.tenantId !== action.tenantId || session.id !== action.sessionId
     || action.opportunityId !== doc.opportunityId || action.catalogVersionId !== doc.catalogVersionRef
     || !action.actionKey || !action.actionRevision) return deny('action_identity_mismatch');
-  const pinned = (await store.listIntentCatalogV2Versions(session.tenantId))
-    .find(version => version.status === 'published' && version.catalogVersionRef === doc.catalogVersionRef);
+  const pinned = versions.find(version => version.status === 'published'
+    && version.catalogVersionRef === doc.catalogVersionRef);
   if (!pinned) return deny('catalog_publication_missing');
   const binding = pinned.catalog.sheets.ToolBindings.find(tool =>
     tool.enabled && tool.toolKey === action.actionKey && tool.registryKey === action.workflowKey

@@ -80,6 +80,7 @@ import { registerLifecycleRoutes } from './routes/lifecycle.js';
 import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './v2-tool-gateway.js';
 import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
 import { executeV2Turn, runGPTFirstChatTurn } from './v2-turn-controller.js';
+import { evaluatePersistedV2ActionConfirmation } from './v2-journey-bootstrap.js';
 import type { V2ApprovedFallbackTemplateSet } from './v2-fallbacks.js';
 import type { PersonaComposedResponseV2 } from './python-model/v2-contracts.js';
 
@@ -2339,8 +2340,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           || session.conversationState.catalogVersionId !== action.catalogVersionId)) {
         throw new HttpError(422, 'CONSENT_PROMPT_REQUIRED', 'Consent must be given for the active, purpose-scoped request.');
       }
+      // V2 approval never borrows legacy goal/consent state. The tenant-pinned
+      // action binding and independently persisted purpose consent must pass.
+      const v2Authorization = await evaluatePersistedV2ActionConfirmation(store, session, action);
+      if (v2Authorization.applies && !v2Authorization.accepted) {
+        throw new HttpError(409, 'V2_ACTION_CONFIRMATION_DENIED',
+          'The action cannot be approved without a confirmed goal, a current stage and purpose-specific consent.');
+      }
       const confirmedState = confirmationState;
-      const consentGranted = action.payload.contactConsent === true || action.payload.contactConsent === false;
+      const consentGranted = !v2Authorization.applies && (action.payload.contactConsent === true || action.payload.contactConsent === false);
       const sessionForApproval: Session = { ...session, lastActivityAt: new Date().toISOString(), tokenMap: new Map(session.tokenMap), conversationState: { ...confirmedState, ...(consentGranted ? { contactConsent: 'granted' as const, consentCapturedAt: new Date().toISOString(), consentVersion: consentVersionForState({ catalogVersionId: action.catalogVersionId ?? confirmedState.catalogVersionId, selectedIntentKey: action.intentKey ?? confirmedState.selectedIntentKey }) } : {}), workflowStatus: 'queued', phase: 'QUEUED', pendingPrompt: null } };
       const confirmed = await gateway.confirm(action.id, action.tenantId, sessionForApproval);
       if (!['approved', 'processing', 'completed'].includes(confirmed.state)) throw new HttpError(409, 'ACTION_NOT_ACCEPTED', 'This request was not accepted. Please start a new request.');
