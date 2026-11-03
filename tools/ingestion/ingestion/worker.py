@@ -171,6 +171,24 @@ def submit_result(api_base: str, job_id: str, worker_secret: str, source: Ingest
     return body
 
 
+def v2_catalog_result_payload(parsed: dict[str, Any]) -> dict[str, Any]:
+    """Wrap the strict V2 parser output in the Node ingestion endpoint contract.
+
+    Unlike the legacy V1 parser, the V2 parser returns schemaVersion, manifest
+    and sheets at the top level alongside its file provenance. The worker must
+    send an envelope with a required 'catalog' field; otherwise Node rejects it.
+    """
+    return {
+        "sourceHash": parsed["sourceHash"],
+        "parserVersion": parsed["parserVersion"],
+        "catalog": {
+            "schemaVersion": parsed["schemaVersion"],
+            "manifest": parsed["manifest"],
+            "sheets": parsed["sheets"],
+        },
+    }
+
+
 def submit_catalog_result(api_base: str, job_id: str, worker_secret: str, result: dict[str, Any], session: requests.Session | None = None) -> dict[str, Any]:
     client = session or requests.Session()
     response = client.post(f"{api_base.rstrip('/')}/api/v1/internal/ingestion-jobs/{job_id}/result", headers={"x-ingestion-worker-secret": worker_secret}, json=result, timeout=configured_ingestion_result_timeout_seconds())
@@ -338,7 +356,10 @@ def process_job(
                         is_v2 = "CatalogManifest" in workbook.sheetnames
                     finally:
                         workbook.close()
-                    parsed_catalog = parse_catalog_v2(staged) if is_v2 else parse_intent_catalog(staged)
+                    if is_v2:
+                        parsed_catalog = v2_catalog_result_payload(parse_catalog_v2(staged))
+                    else:
+                        parsed_catalog = parse_intent_catalog(staged)
                     return submit_catalog_result(api_base, job_id, worker_secret, parsed_catalog, client)
                 if mime_type == "application/zip":
                     return process_zip_archive(api_base, job_id, worker_secret, staged, client)

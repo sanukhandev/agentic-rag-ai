@@ -1,10 +1,12 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch, Mock
 
 try:
     from openpyxl import Workbook
     from ingestion.catalog_v2 import CatalogV2ParseError, REQUIRED_SHEETS, parse_catalog_v2
+    from ingestion.worker import process_job, v2_catalog_result_payload
 except ModuleNotFoundError:  # pragma: no cover - environment dependency gate
     Workbook = None
 
@@ -48,6 +50,35 @@ class CatalogV2Tests(unittest.TestCase):
             self.assertEqual(parsed["schemaVersion"], 2)
             self.assertEqual(parsed["manifest"]["catalogKey"], "ancfz")
             self.assertEqual(len(parsed["sourceHash"]), 64)
+
+    def test_v2_payload_matches_node_required_catalog_envelope(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parsed = parse_catalog_v2(self.workbook(directory), "ancfz")
+            payload = v2_catalog_result_payload(parsed)
+            self.assertEqual(set(payload), {"sourceHash", "parserVersion", "catalog"})
+            self.assertEqual(set(payload["catalog"]), {"schemaVersion", "manifest", "sheets"})
+            self.assertEqual(payload["catalog"]["schemaVersion"], 2)
+            self.assertEqual(payload["catalog"]["manifest"]["tenantScope"], "ancfz")
+            self.assertEqual(payload["sourceHash"], parsed["sourceHash"])
+            self.assertEqual(payload["parserVersion"], parsed["parserVersion"])
+
+    def test_worker_posts_valid_v2_envelope_without_changing_v1_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workbook_content = self.workbook(directory).read_bytes()
+            with patch("ingestion.worker.fetch_job_input", return_value=(
+                "catalog-v2.xlsx", "application/vnd.agentic.intent-catalog+excel", workbook_content
+            )), patch("ingestion.worker.submit_catalog_result", return_value={"job": {"status": "completed"}}) as submit:
+                result = process_job(
+                    "http://api:4000", "test-job", "test-secret",
+                    staging_root=Path(directory) / "staging",
+                    session=Mock(), already_claimed=True,
+                )
+            self.assertEqual(result["job"]["status"], "completed")
+            posted = submit.call_args.args[3]
+            self.assertIn("catalog", posted)
+            self.assertEqual(posted["catalog"]["schemaVersion"], 2)
+            self.assertIn("CatalogManifest", posted["catalog"]["sheets"])
+            self.assertEqual(set(posted), {"sourceHash", "parserVersion", "catalog"})
 
     def test_rejects_v1_unknown_sheet_and_scope_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
