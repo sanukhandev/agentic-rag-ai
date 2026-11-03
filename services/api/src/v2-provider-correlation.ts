@@ -6,7 +6,7 @@ export const v2ProviderCorrelationSchema = z.object({
   idempotencyKey: z.string().trim().min(1).max(200),
   sessionId: z.string().guid(),
   opportunityId: z.string().guid(),
-  catalogVersionId: z.string().guid(),
+  catalogVersionId: z.string().trim().min(8).max(240),
   actionKey,
   actionRevision: z.number().int().positive(),
 }).strict();
@@ -15,7 +15,7 @@ export const v2ProviderCorrelationSchema = z.object({
  * which already declare tenantId without duplicate-property compilation errors. */
 export const v2CallbackCorrelationSchema = v2ProviderCorrelationSchema.extend({
   tenantId: z.string().guid(),
-});
+}).strip(); // Full callback bodies carry action/status fields; validate only correlated identity.
 export type V2ProviderCorrelation = z.infer<typeof v2CallbackCorrelationSchema>;
 
 export const validateV2ProviderCorrelation = (action: ActionRequest, input: V2ProviderCorrelation): string | null => {
