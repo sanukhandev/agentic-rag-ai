@@ -34,3 +34,29 @@ END $$;
 CREATE INDEX IF NOT EXISTS action_requests_catalog_v2_ref_idx
   ON action_requests(tenant_id, catalog_v2_version_ref)
   WHERE catalog_v2_version_ref IS NOT NULL;
+
+-- CRM and document records also retain the canonical published catalog identity.
+ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS catalog_v2_version_ref text NULL;
+ALTER TABLE supporting_documents ADD COLUMN IF NOT EXISTS catalog_v2_version_ref text NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'crm_leads_catalog_v2_fk') THEN
+    ALTER TABLE crm_leads ADD CONSTRAINT crm_leads_catalog_v2_fk
+      FOREIGN KEY (tenant_id, catalog_v2_version_ref)
+      REFERENCES intent_catalog_v2_versions(tenant_id, catalog_version_ref) ON DELETE RESTRICT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'supporting_documents_catalog_v2_fk') THEN
+    ALTER TABLE supporting_documents ADD CONSTRAINT supporting_documents_catalog_v2_fk
+      FOREIGN KEY (tenant_id, catalog_v2_version_ref)
+      REFERENCES intent_catalog_v2_versions(tenant_id, catalog_version_ref) ON DELETE RESTRICT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'crm_leads_one_catalog_identity') THEN
+    ALTER TABLE crm_leads ADD CONSTRAINT crm_leads_one_catalog_identity
+      CHECK (catalog_version_id IS NULL OR catalog_v2_version_ref IS NULL);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'supporting_documents_one_catalog_identity') THEN
+    ALTER TABLE supporting_documents ADD CONSTRAINT supporting_documents_one_catalog_identity
+      CHECK (catalog_version_id IS NULL OR catalog_v2_version_ref IS NULL);
+  END IF;
+END $$;
