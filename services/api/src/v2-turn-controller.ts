@@ -510,6 +510,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       // Counts and decision codes only. Never persist model draft text or RAG excerpts
       // in audit metadata; those may contain personal data or unsafe instructions.
       candidateGuardReason: result.candidateGuardReason ?? null,
+      knowledgeRepairStatus: result.knowledgeRepairStatus ?? null,
       prefetchEvidenceCount: approvedKnowledge.length,
       validatedEvidenceCount: result.approvedEvidence?.length ?? 0,
       candidateCitationCount: result.candidateResponse?.citationIds.length ?? 0,
