@@ -1,7 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of, switchMap, takeWhile, timer } from 'rxjs';
-import { IngestionJob, IntentCatalogVersion } from '../types/admin.types';
+import { IngestionJob, IntentCatalogVersion, IntentCatalogV2Version } from '../types/admin.types';
 import { apiErrorMessage } from './api-error';
 import { AuthService } from './auth.service';
 import { isCatalogJobPending } from './intent-catalog-utils';
@@ -19,11 +19,16 @@ export class IntentCatalogService {
 
   // Angular Signals (Primary reactive state)
   private readonly _versions = signal<IntentCatalogVersion[]>([]);
+  private readonly _v2Versions = signal<IntentCatalogV2Version[]>([]);
+  private readonly _v2CatalogError = signal<string | null>(null);
+  private v2LoadRevision = 0;
   private readonly _catalogJob = signal<IngestionJob | null>(null);
   private readonly _catalogError = signal<string | null>(null);
   private watchedJobId: string | null = null;
 
   readonly versions = this._versions.asReadonly();
+  readonly v2Versions = this._v2Versions.asReadonly();
+  readonly v2CatalogError = this._v2CatalogError.asReadonly();
   readonly catalogJob = this._catalogJob.asReadonly();
   readonly catalogError = this._catalogError.asReadonly();
 
@@ -38,6 +43,7 @@ export class IntentCatalogService {
 
   load(): void {
     if (!this.auth.token()) return;
+    this.loadV2();
     this._catalogError.set(null);
     this.catalogErrorSubject.next(null);
 
@@ -52,6 +58,43 @@ export class IntentCatalogService {
       this._versions.set(items);
       this.versionsSubject.next(items);
     });
+  }
+
+  /** V2 versions live in a separate tenant-scoped API and database table. */
+  loadV2(): void {
+    if (!this.auth.token()) return;
+    const revision = ++this.v2LoadRevision;
+    this._v2CatalogError.set(null);
+    this._v2Versions.set([]);
+    this.http.get<{ items: IntentCatalogV2Version[] }>(`${this.apiBase}/api/v2/admin/intent-catalog/versions`).subscribe({
+      next: ({ items }) => {
+        if (revision !== this.v2LoadRevision) return;
+        this._v2Versions.set(items ?? []);
+      },
+      error: (error) => {
+        if (revision !== this.v2LoadRevision) return;
+        const message = apiErrorMessage(error, 'Could not load V2 intent catalog versions.');
+        this._v2CatalogError.set(message);
+        this.toast.show('error', 'V2 catalog unavailable', message);
+      }
+    });
+  }
+
+  publishV2(version: IntentCatalogV2Version): void {
+    if (!this.auth.token()) return;
+    this.http.post(
+      `${this.apiBase}/api/v2/admin/intent-catalog/versions/${version.id}/publish`, {}
+    ).subscribe({
+      next: () => {
+        this.loadV2();
+        this.toast.show('success', 'V2 catalog published', `V2 catalog version ${version.version} is now active.`);
+      },
+      error: (error) => this.toast.show('error', 'V2 publish failed', apiErrorMessage(error, 'Could not publish the V2 catalog.'))
+    });
+  }
+
+  exportPublishedV2(): Observable<Blob> {
+    return this.http.get(`${this.apiBase}/api/v2/admin/intent-catalog/published/export`, { responseType: 'blob' });
   }
 
   resumePendingJob(): void {

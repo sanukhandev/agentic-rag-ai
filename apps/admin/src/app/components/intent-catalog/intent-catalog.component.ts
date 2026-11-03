@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
 import { IntentCatalogService } from '../../services/intent-catalog.service';
-import { IntentCatalogVersion, IngestionJob, Tenant } from '../../types/admin.types';
+import { IntentCatalogVersion, IntentCatalogV2Version, IngestionJob, Tenant } from '../../types/admin.types';
 import { BadgeComponent } from '../shared/badge.component';
 import { IconComponent } from '../shared/icon.component';
 import { ConfirmDialogComponent } from '../shared/confirm-dialog.component';
@@ -60,6 +60,72 @@ import { apiErrorMessage } from '../../services/api-error';
         </div>
       </div>
 
+      <!-- Version 2 catalogs are stored separately from the legacy V1 schema. -->
+      <section *ngIf="!isPlatformAdmin || selectedTenant" class="space-y-4" aria-label="Catalog V2 versions">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 class="text-lg font-semibold text-neutral-900">Business Goal &amp; Intent Catalog V2</h3>
+            <p class="text-xs text-neutral-500">Imported seven-stage catalogs appear here as review-only drafts until explicitly published.</p>
+          </div>
+          <button type="button" (click)="reload()" class="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700">Refresh catalogs</button>
+        </div>
+        <div *ngIf="v2CatalogError as error" role="alert" class="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+          Unable to load V2 versions: {{ error }}
+        </div>
+        <div *ngIf="!v2CatalogError && v2Versions.length === 0" class="rounded-xl border border-dashed border-neutral-300 bg-white p-6 text-sm text-neutral-500">
+          No V2 catalog versions found for the selected tenant. The legacy V1 catalog list is separate.
+        </div>
+        <article *ngFor="let version of v2Versions" class="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="font-semibold text-neutral-900">V2 · Version {{ version.version }}</span>
+                <app-badge [variant]="version.status === 'published' ? 'success' : 'outline'" [text]="version.status | uppercase"></app-badge>
+              </div>
+              <p class="text-xs text-neutral-700">{{ version.sourceFileName }}</p>
+              <p class="font-mono text-[11px] text-neutral-500">Catalog {{ version.catalog.manifest.catalogKey }} · Revision {{ version.catalog.manifest.revision }}</p>
+              <p class="text-[11px] text-neutral-500">Imported {{ version.createdAt | date:'medium' }}<span *ngIf="version.publishedAt"> · Published {{ version.publishedAt | date:'medium' }}</span></p>
+            </div>
+            <div class="flex gap-2">
+              <button *ngIf="canManagePersona && version.status === 'published'" type="button" (click)="exportPublishedV2(version)" [disabled]="isExportingV2" class="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold disabled:opacity-50">Export V2 Excel</button>
+              <button *ngIf="canManagePersona && version.status === 'draft'" type="button" (click)="requestPublishV2(version)" class="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white">Review &amp; Publish V2</button>
+            </div>
+          </div>
+          <div class="mt-3 grid gap-2 text-xs text-neutral-700 sm:grid-cols-3">
+            <p><strong>{{ version.catalog.sheets.BusinessGoals.length }}</strong> business goals</p>
+            <p><strong>{{ version.catalog.sheets.TurnIntents.length }}</strong> turn intents</p>
+            <p><strong>{{ version.catalog.sheets.BusinessStages.length }}</strong> lifecycle stages</p>
+          </div>
+          <p *ngIf="enabledV2Writes(version) > 0" class="mt-3 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
+            {{ enabledV2Writes(version) }} externally consequential tools enabled; verify consent and provider gates before publishing.
+          </p>
+          <p *ngIf="enabledV2Writes(version) === 0" class="mt-3 text-xs text-neutral-500">No external-write tools enabled in this catalog.</p>
+          <details class="mt-4 border-t border-neutral-100 pt-3" [open]="version.status === 'draft'">
+            <summary class="cursor-pointer text-xs font-semibold text-neutral-800">Inspect business stages and intents</summary>
+            <div class="mt-3 space-y-2">
+              <p class="text-xs font-semibold text-neutral-700">Ordered stages</p>
+              <ol class="list-decimal space-y-1 pl-5 text-xs text-neutral-700">
+                <li *ngFor="let stage of orderedV2Stages(version)">
+                  <span class="font-mono">{{ stage.stageKey }}</span> · {{ stage.completionEvidencePolicyKey }}
+                </li>
+              </ol>
+              <p class="pt-2 text-xs font-semibold text-neutral-700">Turn intents</p>
+              <div class="grid gap-2 sm:grid-cols-2">
+                <div *ngFor="let intent of version.catalog.sheets.TurnIntents" class="rounded-lg border border-neutral-100 bg-neutral-50 p-2 text-xs">
+                  <span class="font-mono text-neutral-800">{{ intent.turnIntentKey }}</span>
+                  <span class="ml-2 text-neutral-500">{{ intent.categoryKey }}</span>
+                </div>
+              </div>
+            </div>
+          </details>
+        </article>
+      </section>
+
+      <div *ngIf="versions.length > 0" class="border-t border-neutral-200 pt-4">
+        <h3 class="text-lg font-semibold text-neutral-900">Legacy Intent Catalog V1</h3>
+        <p class="mt-1 text-xs text-neutral-500">Legacy routing contracts are displayed separately from Business Goal Catalog V2.</p>
+      </div>
+
       <!-- Error State -->
       <div *ngIf="catalogError as error" class="rounded-xl border border-rose-200 bg-rose-50/80 p-4 text-xs text-rose-900" role="alert">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -84,7 +150,7 @@ import { apiErrorMessage } from '../../services/api-error';
       </div>
 
       <!-- Empty State -->
-      <div *ngIf="!catalogError && (!isPlatformAdmin || selectedTenant) && versions.length === 0" class="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center text-xs text-neutral-500 space-y-2">
+      <div *ngIf="!catalogError && (!isPlatformAdmin || selectedTenant) && versions.length === 0 && v2Versions.length === 0" class="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center text-xs text-neutral-500 space-y-2">
         <div class="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-100 text-neutral-600">
           <app-icon name="workflow" classNames="w-5 h-5"></app-icon>
         </div>
@@ -140,7 +206,7 @@ import { apiErrorMessage } from '../../services/api-error';
                 {{ editingVersionId === version.id ? 'Close Editor' : 'Edit Catalog JSON' }}
               </button>
               <button
-                *ngIf="version.status !== 'published'"
+                *ngIf="canManagePersona && version.status !== 'published'"
                 type="button"
                 (click)="requestPublish(version)"
                 class="rounded-lg bg-neutral-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 transition-all button-press shadow-sm"
@@ -239,8 +305,8 @@ import { apiErrorMessage } from '../../services/api-error';
       <app-confirm-dialog
         [isOpen]="confirmPublishOpen"
         title="Publish Intent Catalog Version"
-        [message]="'Publish v' + (pendingPublishVersion?.version ?? '') + ' for ' + (selectedTenant?.name || 'this organization') + '?'"
-        consequence="All customer chat sessions and n8n workflow triggers will immediately resolve intents using this catalog version."
+        [message]="'Publish ' + (pendingPublishV2Version ? 'V2' : 'legacy V1') + ' v' + (pendingPublishV2Version?.version ?? pendingPublishVersion?.version ?? '') + ' for ' + (selectedTenant?.name || 'this organization') + '?'"
+        [consequence]="pendingPublishV2Version ? 'This will activate the selected V2 business-goal catalog for this tenant. Confirm its stages, requirements and action gates first.' : 'Legacy V1 chat and workflow triggers will use this published catalog version.'"
         confirmText="Publish Version"
         [isDanger]="false"
         (confirm)="executePublish()"
@@ -260,10 +326,12 @@ export class IntentCatalogComponent {
   editError = '';
   isJsonValid = true;
   isExporting = false;
+  isExportingV2 = false;
 
   // Publish confirmation modal
   confirmPublishOpen = false;
   pendingPublishVersion: IntentCatalogVersion | null = null;
+  pendingPublishV2Version: IntentCatalogV2Version | null = null;
 
   get isPlatformAdmin(): boolean { return this.state.isPlatformAdmin(); }
   get selectedTenant(): Tenant | null { return this.state.selectedTenant(); }
@@ -272,6 +340,8 @@ export class IntentCatalogComponent {
   get catalogJob(): IngestionJob | null { return this.service.catalogJob(); }
   get catalogError(): string | null { return this.service.catalogError(); }
   get versions(): IntentCatalogVersion[] { return this.service.versions(); }
+  get v2Versions(): IntentCatalogV2Version[] { return this.service.v2Versions(); }
+  get v2CatalogError(): string | null { return this.service.v2CatalogError(); }
   get publishedVersion(): IntentCatalogVersion | null { return this.versions.find((version) => version.status === 'published') ?? null; }
 
   private lastLoadedTenantId: string | null = null;
@@ -358,16 +428,59 @@ export class IntentCatalogComponent {
   }
 
   requestPublish(version: IntentCatalogVersion): void {
+    this.pendingPublishV2Version = null;
     this.pendingPublishVersion = version;
     this.confirmPublishOpen = true;
   }
 
+  requestPublishV2(version: IntentCatalogV2Version): void {
+    if (!this.canManagePersona) return;
+    this.pendingPublishVersion = null;
+    this.pendingPublishV2Version = version;
+    this.confirmPublishOpen = true;
+  }
+
+  orderedV2Stages(version: IntentCatalogV2Version): IntentCatalogV2Version['catalog']['sheets']['BusinessStages'] {
+    return [...version.catalog.sheets.BusinessStages].sort((a, b) => a.stageOrder - b.stageOrder);
+  }
+
+  enabledV2Writes(version: IntentCatalogV2Version): number {
+    return version.catalog.sheets.ToolBindings.filter(
+      tool => tool.enabled && tool.sideEffectClass !== 'read_only'
+    ).length;
+  }
+
   executePublish(): void {
-    if (this.pendingPublishVersion) {
+    if (!this.canManagePersona) return;
+    if (this.pendingPublishV2Version) {
+      this.service.publishV2(this.pendingPublishV2Version);
+    } else if (this.pendingPublishVersion) {
       this.service.publish(this.pendingPublishVersion);
-      this.pendingPublishVersion = null;
     }
+    this.pendingPublishVersion = null;
+    this.pendingPublishV2Version = null;
     this.confirmPublishOpen = false;
+  }
+
+  exportPublishedV2(version: IntentCatalogV2Version): void {
+    if (this.isExportingV2 || version.status !== 'published') return;
+    this.isExportingV2 = true;
+    this.service.exportPublishedV2().subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `${this.selectedTenant?.slug ?? 'tenant'}-catalog-v2-${version.version}.xlsx`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+        this.isExportingV2 = false;
+        this.state.showToast('success', 'V2 catalog exported', 'The published catalog workbook was downloaded.');
+      },
+      error: (error) => {
+        this.isExportingV2 = false;
+        this.state.showToast('error', 'V2 export failed', apiErrorMessage(error, 'Could not export V2 catalog.'));
+      }
+    });
   }
 
   exportPublished(): void {

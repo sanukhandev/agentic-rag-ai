@@ -120,6 +120,16 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(isNavSection(null)).toBe(false);
   });
 
+  it('attaches trusted API authentication to both V1 and V2 paths only', () => {
+    const base = 'http://localhost';
+    expect(isTrustedApiRequest('http://localhost/api/v1/admin/intent-catalog/versions', base).isApiRequest).toBe(true);
+    expect(isTrustedApiRequest('http://localhost/api/v2/admin/intent-catalog/versions', base).isApiRequest).toBe(true);
+    expect(isTrustedApiRequest('http://localhost/api/v2/admin/intent-catalog/versions', base).isPublicAuth).toBe(false);
+    expect(isTrustedApiRequest('http://localhost/api/v1/auth/login', base).isPublicAuth).toBe(true);
+    expect(isTrustedApiRequest('https://external.example/api/v2/admin/intent-catalog/versions', base).isApiRequest).toBe(false);
+    expect(isTrustedApiRequest('http://localhost/api/v3/not-trusted', base).isApiRequest).toBe(false);
+  });
+
   it('keeps catalog uploads visible until ingestion completes', () => {
     expect(isCatalogJobPending('queued')).toBe(true);
     expect(isCatalogJobPending('processing')).toBe(true);
