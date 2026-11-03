@@ -402,9 +402,22 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       clientMessageId: input.clientMessageId, businessGoalKey: goalConfirmation.goalKey,
       catalogVersionRef: goalConfirmation.catalogVersionRef, personaVersionId: persona.id,
       sessionRevision, intentRevision: nextDoc.revision, actionAuthorized: false } } : null;
+  const response = {
+    messageId: responseId, sessionId: session.id, answer: rehydrateForSession(session, answerMasked, input.tokenVault),
+    grounded, conversational: !grounded, citations, actionProposal: null,
+    pendingPromptId: goalConfirmation?.status === 'pending' ? goalConfirmation.promptId : nextPendingPrompt?.id ?? null, pendingIntentKey: nextDoc.businessGoalKey,
+    pendingRequirementKey: effectivePendingRequirement, requestId: input.requestId,
+  };
+  const assistantMessage: Message = { id: responseId, sessionId: session.id, tenantId: tenant.id, role: 'assistant',
+    maskedContent: answerMasked, citations, clientMessageId: null,
+    response: { conversational: !grounded, catalogVersionId: catalog.id, catalogIntentKey: activeGoal, catalogOpportunityId: opportunityId },
+    createdAt: at };
+  const persisted = { ...response, answer: answerMasked };
+  const answeredCustomerMessage: Message = { ...userMessage, response: persisted };
   if (catalogV2) {
     const committed = await store.commitV2IntentTurn({ session, document: nextDoc,
-      expectedDocumentRevision: intentDocument?.revision ?? null, assessment, audit: decisionAudit });
+      expectedDocumentRevision: intentDocument?.revision ?? null, assessment, audit: decisionAudit,
+      assistantMessage, customerMessage: answeredCustomerMessage });
     session.stateVersion = committed.session.stateVersion;
   } else {
     await input.updateSession(session);
@@ -413,6 +426,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       if (!updated) throw new HttpError(409, 'V2_INTENT_REVISION_CONFLICT', 'The intent document changed concurrently.');
     } else await store.createUserIntentDocument(nextDoc);
     await store.appendIntentTurn(assessment);
+    await store.addMessage(assistantMessage);
+    await store.updateMessage(answeredCustomerMessage);
   }
   if (modelPlan && v2Version) {
     await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: null,
@@ -432,18 +447,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         actionAuthorized: false }, createdAt: at });
   }
 
-  const response = {
-    messageId: responseId, sessionId: session.id, answer: rehydrateForSession(session, answerMasked, input.tokenVault),
-    grounded, conversational: !grounded, citations, actionProposal: null,
-    pendingPromptId: goalConfirmation?.status === 'pending' ? goalConfirmation.promptId : nextPendingPrompt?.id ?? null, pendingIntentKey: nextDoc.businessGoalKey,
-    pendingRequirementKey: effectivePendingRequirement, requestId: input.requestId,
-  };
-  await store.addMessage({ id: responseId, sessionId: session.id, tenantId: tenant.id, role: 'assistant',
-    maskedContent: answerMasked, citations, clientMessageId: null,
-    response: { conversational: !grounded, catalogVersionId: catalog.id, catalogIntentKey: activeGoal, catalogOpportunityId: opportunityId },
-    createdAt: at });
-  const persisted = { ...response, answer: answerMasked };
-  await store.updateMessage({ ...userMessage, response: persisted });
+
   const responseCacheKey = cacheKey('tenant', tenant.id, 'chat-response', session.id, hash(input.clientMessageId));
   await input.cache.set(responseCacheKey, { messageHash: input.messageHash, response: persisted }, input.responseCacheTtlSeconds);
   await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: null, eventName: 'v2.gpt_first.turn',

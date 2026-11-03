@@ -87,7 +87,7 @@ export class PostgresStore implements Store {
   AND (goal_confirmation IS NULL OR goal_confirmation->>'status' <> 'confirmed'
     OR (goal_confirmation=$23::jsonb AND goal_confirmed=$12 AND business_goal_key=$8)) RETURNING *', [document.id, document.tenantId, document.sessionId, document.opportunityId, document.catalogSource, document.catalogVersionRef, document.personaVersionId, document.businessGoalKey, document.turnIntentKey, document.currentStageKey, document.stageRevision, document.goalConfirmed, JSON.stringify(document.verifiedFacts), document.pendingRequirementKey, document.lastQuestion, JSON.stringify(document.approvedResponse), JSON.stringify(document.toolRefs), JSON.stringify(document.sourceRefs), document.summary, document.summaryRevision, document.updatedAt, input.expectedRevision, JSON.stringify(document.goalConfirmation ?? null)]); return result.rows[0] ? this.intentDocument(result.rows[0]) : null; }
   async appendIntentTurn(assessment: IntentTurnAssessment, client?: PoolClient): Promise<IntentTurnAssessment> { assertSafeIntentTurn(assessment); const owner = await (client ?? this.pool).query<{ opportunity_id: string | null }>('SELECT opportunity_id FROM user_intent_documents WHERE id=$1 AND tenant_id=$2 AND session_id=$3', [assessment.documentId, assessment.tenantId, assessment.sessionId]); if (owner.rowCount !== 1) throw new HttpError(404, 'INTENT_DOCUMENT_NOT_FOUND', 'User intent document not found.'); if (owner.rows[0]!.opportunity_id !== assessment.opportunityId) throw new HttpError(409, 'INTENT_TURN_SCOPE_CONFLICT', 'The intent turn opportunity does not match the document scope.'); const existing = await (client ?? this.pool).query<IntentTurnAssessmentRow>('SELECT * FROM intent_turn_assessments WHERE tenant_id=$1 AND session_id=$2 AND client_message_id=$3', [assessment.tenantId, assessment.sessionId, assessment.clientMessageId]); if (existing.rows[0]) { if (existing.rows[0].message_hash !== assessment.messageHash) throw new HttpError(409, 'INTENT_TURN_REUSED', 'The client message id is already bound to different content.'); return this.intentTurn(existing.rows[0]); } const result = await (client ?? this.pool).query<IntentTurnAssessmentRow>('INSERT INTO intent_turn_assessments (id,document_id,tenant_id,session_id,opportunity_id,turn_sequence,client_message_id,message_hash,business_goal_key,turn_intent_key,intent_category,verified_fact_patch,pending_requirement_key,last_question,approved_response,tool_refs,source_refs,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14,$15::jsonb,$16::jsonb,$17::jsonb,$18) ON CONFLICT (session_id,client_message_id) DO NOTHING RETURNING *', [assessment.id, assessment.documentId, assessment.tenantId, assessment.sessionId, assessment.opportunityId, assessment.turnSequence, assessment.clientMessageId, assessment.messageHash, assessment.businessGoalKey, assessment.turnIntentKey, assessment.intentCategory, JSON.stringify(assessment.verifiedFactPatch), assessment.pendingRequirementKey, assessment.lastQuestion, JSON.stringify(assessment.approvedResponse), JSON.stringify(assessment.toolRefs), JSON.stringify(assessment.sourceRefs), assessment.createdAt]); if (result.rows[0]) return this.intentTurn(result.rows[0]); const retried = await (client ?? this.pool).query<IntentTurnAssessmentRow>('SELECT * FROM intent_turn_assessments WHERE tenant_id=$1 AND session_id=$2 AND client_message_id=$3', [assessment.tenantId, assessment.sessionId, assessment.clientMessageId]); if (!retried.rows[0] || retried.rows[0].message_hash !== assessment.messageHash) throw new HttpError(409, 'INTENT_TURN_CONFLICT', 'The intent turn could not be appended without a conflict.'); return this.intentTurn(retried.rows[0]); }
-  async commitV2IntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null }): Promise<{ session: Session; document: UserIntentDocument }> {
+  async commitV2IntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null; assistantMessage?: Message; customerMessage?: Message }): Promise<{ session: Session; document: UserIntentDocument }> {
     assertSafeUserIntentDocument(input.document);
     assertSafeIntentTurn(input.assessment);
     const { session, document, assessment } = input;
@@ -96,6 +96,19 @@ export class PostgresStore implements Store {
       || assessment.documentId !== document.id || assessment.opportunityId !== document.opportunityId
       || document.catalogSource !== 'v2') {
       throw new HttpError(403, 'V2_INTENT_SCOPE_DENIED', 'V2 turn scope does not match.');
+    }
+    if (Boolean(input.assistantMessage) !== Boolean(input.customerMessage)) {
+      throw new HttpError(409, 'V2_TURN_MESSAGE_PAIR_REQUIRED', 'Both conversation messages must be committed together.');
+    }
+    if (input.assistantMessage && input.customerMessage) {
+      const assistant = input.assistantMessage, customer = input.customerMessage;
+      if (assistant.role !== 'assistant' || customer.role !== 'user'
+        || assistant.tenantId !== document.tenantId || customer.tenantId !== document.tenantId
+        || assistant.sessionId !== session.id || customer.sessionId !== session.id
+        || customer.clientMessageId !== assessment.clientMessageId
+        || assistant.clientMessageId !== null || customer.response === null || customer.id === assistant.id) {
+        throw new HttpError(409, 'V2_TURN_MESSAGE_CONFLICT', 'The message pair does not match the session scope.');
+      }
     }
     const client = await this.pool.connect();
     try {
@@ -112,6 +125,19 @@ export class PostgresStore implements Store {
       if (!savedDocument) throw new HttpError(409, 'V2_INTENT_REVISION_CONFLICT', 'Intent document changed.');
       const savedAssessment = await this.appendIntentTurn(assessment, client);
       if (savedAssessment.id !== assessment.id) throw new HttpError(409, 'V2_INTENT_REPLAY', 'Customer message was already assessed.');
+      if (input.assistantMessage && input.customerMessage) {
+        const assistant = input.assistantMessage, customer = input.customerMessage;
+        const customerUpdated = await client.query(
+          "UPDATE chat_messages SET response=$1::jsonb WHERE id=$2 AND tenant_id=$3 AND session_id=$4 AND role='user' AND client_message_id=$5 AND response IS NULL RETURNING id",
+          [JSON.stringify(customer.response), customer.id, document.tenantId, session.id, assessment.clientMessageId],
+        );
+        if (customerUpdated.rowCount !== 1) throw new HttpError(409, 'V2_TURN_MESSAGE_CONFLICT', 'Customer message was already answered.');
+        const assistantInserted = await client.query(
+          'INSERT INTO chat_messages (id,session_id,tenant_id,role,masked_content,citations,client_message_id,response) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb) RETURNING id',
+          [assistant.id, session.id, document.tenantId, assistant.role, assistant.maskedContent, JSON.stringify(assistant.citations), null, JSON.stringify(assistant.response)],
+        );
+        if (assistantInserted.rowCount !== 1) throw new HttpError(409, 'V2_TURN_MESSAGE_CONFLICT', 'The assistant message could not be committed.');
+      }
       if (input.audit) await client.query(
         'INSERT INTO audit_events (id,tenant_id,actor_id,event_name,metadata) VALUES ($1,$2,$3,$4,$5)',
         [input.audit.id, input.audit.tenantId, input.audit.actorId, input.audit.eventName, JSON.stringify(input.audit.metadata)],
