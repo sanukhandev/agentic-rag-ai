@@ -44,6 +44,30 @@ def test_prefetched_public_evidence_is_given_explicit_citation_first_priority():
     assert "list formation steps only if a cited excerpt actually supports each step" in instructions
 
 
+def test_repair_composer_demands_verbatim_single_source_and_never_reasks_customer():
+    from gateway.v2_contracts import ApprovedKnowledgeSnippetV2, KnowledgeRepairV2
+
+    current = envelope()
+    current.approvedKnowledge = [ApprovedKnowledgeSnippetV2(
+        citationId="chunk-12345678",
+        sourceRef="source-12345678",
+        sourceVersion="version-12345678",
+        text="Choose your business activity and submit the required documents.",
+    )]
+    current.knowledgeRepair = KnowledgeRepairV2(reason="unsupported_claim", strategy="source_close")
+    instructions = composer_instructions(current)
+    assert "copy ONE complete factual sentence" in instructions
+    assert "VERBATIM" in instructions
+    assert "ONLY that excerpt's exact citationId" in instructions
+    assert "nextQuestion and nextQuestionKey to null" in instructions
+    assert "reasonNoQuestion to 'knowledge_answer'" in instructions
+    assert "planning to null" in instructions
+    assert "never cite unrelated excerpts" in instructions
+    assert "do not call tools" in instructions
+    assert "final natural-language persona composer" not in instructions
+    assert "Ask at most one relevant next question" not in instructions
+
+
 def test_response_validator_accepts_pinned_language_and_rejects_wrong_language_or_metadata():
     current = envelope()
     valid, reason = validate_composed_response(response(), current)
