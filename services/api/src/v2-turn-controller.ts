@@ -511,6 +511,12 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       // in audit metadata; those may contain personal data or unsafe instructions.
       candidateGuardReason: result.candidateGuardReason ?? null,
       knowledgeRepairStatus: result.knowledgeRepairStatus ?? null,
+      initialClaimFailureReason: result.initialClaimFailureReason ?? null,
+      initialFailedClauseOrdinal: result.initialFailedClauseOrdinal ?? null,
+      repairCitationCount: result.repairCitationCount ?? null,
+      repairFailureReason: result.repairFailureReason ?? null,
+      repairClaimFailureReason: result.repairClaimFailureReason ?? null,
+      repairFailedClauseOrdinal: result.repairFailedClauseOrdinal ?? null,
       prefetchEvidenceCount: approvedKnowledge.length,
       validatedEvidenceCount: result.approvedEvidence?.length ?? 0,
       candidateCitationCount: result.candidateResponse?.citationIds.length ?? 0,
