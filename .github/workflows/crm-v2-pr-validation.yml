@@ -5,6 +5,8 @@ on:
     paths:
       - 'services/api/**'
       - 'services/model-gateway/**'
+      - 'tools/ingestion/**'
+      - 'tools/intent-catalog/build-ancfz-seven-stage-v2.mjs'
       - 'packages/**'
       - 'apps/**'
       - 'infra/n8n/workflows/**'
@@ -43,6 +45,7 @@ jobs:
         run: |
           npm ci
           python -m pip install -r services/model-gateway/requirements-dev.txt
+          python -m pip install -r tools/ingestion/requirements.txt
       - name: Validate single-file Docker Compose (static only)
         run: npm run verify:compose
       - name: Typecheck and lint
@@ -55,6 +58,18 @@ jobs:
         run: npm run test:unit
       - name: Python isolated unit tests
         run: PYTHONPATH=services/model-gateway python -m pytest -q services/model-gateway/tests
+      - name: Python ingestion isolated unit tests
+        run: PYTHONPATH=tools/ingestion python -m unittest discover -s tools/ingestion -p 'test_*.py'
+      - name: Export and validate ANCFZ seven-stage workbook (offline)
+        run: |
+          node --import tsx/esm tools/intent-catalog/build-ancfz-seven-stage-v2.mjs
+          PYTHONPATH=tools/ingestion python -c "from pathlib import Path; from ingestion.catalog_v2 import parse_catalog_v2; from pprint import pprint; result = parse_catalog_v2(Path('artifacts/ancfz/ANCFZ_Seven_Stage_Intent_Catalog_V2_DRAFT.xlsx'), expected_tenant_scope='ancfz'); assert len(result['sheets']['BusinessStages']) == 7; pprint({'stages': len(result['sheets']['BusinessStages']), 'sourceHash': result['sourceHash']})"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ancfz-seven-stage-intent-catalog-v2-draft
+          path: artifacts/ancfz/ANCFZ_Seven_Stage_Intent_Catalog_V2_DRAFT.xlsx
+          if-no-files-found: error
+          retention-days: 14
       - name: Static V2 retirement safety and isolated tests
         run: |
           node scripts/check-v2-retirement-safety.mjs

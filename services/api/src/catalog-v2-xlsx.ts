@@ -23,7 +23,12 @@ const camel = (value: string): string => value.replace(/_([a-z])/gu, (_match, le
 const cell = (value: unknown): string | number | boolean | null => Array.isArray(value) ? JSON.stringify(value) : value === undefined ? null : value as string | number | boolean | null;
 
 export const exportCatalogV2Workbook = (catalog: CatalogV2Document): Buffer => {
-  const sheets: SheetDefinition[] = Object.entries(catalog.sheets).map(([name, rows]) => ({
+  // The Python workbook importer does not yet support qualification policy rows.
+  // Never silently drop executable policies when exporting a publishable workbook.
+  if (catalog.sheets.QualificationPolicies.length) throw new Error('QUALIFICATION_XLSX_UNSUPPORTED: use JSON v2 catalog publication until the workbook importer supports this sheet.');
+  const sheets: SheetDefinition[] = Object.entries(catalog.sheets)
+    .filter(([name]) => Object.hasOwn(headers, name))
+    .map(([name, rows]) => ({
     name,
     headers: headers[name] ?? [],
     rows: (rows as Array<Record<string, unknown>>).map((row) => (headers[name] ?? []).map((header) => cell(row[camel(header)]))),
