@@ -76,7 +76,7 @@ describe('goal confirmation document invariants', () => {
     const pending = { status: 'pending' as const, promptId: randomUUID(),
       proposalMessageId: randomUUID(), goalKey: 'anc.company_formation',
       catalogVersionRef: doc.catalogVersionRef, personaVersionId: randomUUID(),
-      sessionRevision: 2, intentRevision: 1, issuedAt: new Date().toISOString() };
+      sessionRevision: 2, intentRevision: doc.revision, issuedAt: new Date().toISOString() };
     expect(() => assertSafeUserIntentDocument({ ...doc, goalConfirmed: true,
       goalConfirmation: pending })).toThrow('INTENT_DOCUMENT_INVALID_GOAL_CONFIRMATION');
     expect(() => assertSafeUserIntentDocument({ ...doc, goalConfirmation: pending })).not.toThrow();
