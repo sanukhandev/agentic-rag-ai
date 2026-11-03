@@ -1559,6 +1559,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv);
       enforcePublicChatEnabled(req, tenant);
       if ((channel && channel.tenantId !== session.tenantId) || (getAuth(req)?.tenantId && getAuth(req)?.tenantId !== session.tenantId && getAuth(req)?.role !== 'platform_admin')) throw new HttpError(403, 'SESSION_FORBIDDEN', 'Session access denied.');
+      const gptFirstEligible = Boolean(v2Coordinator && conversationEngineV2EnabledForTenant(session.tenantId));
+      const permittedV2Tenants = (process.env.CONVERSATION_ENGINE_V2_TENANTS ?? '').split(',').map(item => item.trim()).filter(Boolean);
+      if (!gptFirstEligible && process.env.CONVERSATION_ENGINE_V2_ENABLED === 'true'
+        && (permittedV2Tenants.length === 0 || permittedV2Tenants.includes(session.tenantId))) {
+        throw new HttpError(503, 'GPT_FIRST_ENGINE_UNAVAILABLE', 'GPT-first is required but unavailable. Check the API runtime configuration.');
+      }
+      res.setHeader('X-Chat-Engine', gptFirstEligible ? 'gpt-first' : 'legacy');
+
       // Allocate input tokens against the session so assistant persona names cannot collide with visitor PII.
       const masked = { masked: maskPiiForSession(session, inputText, tokenVault) };
       const messageHash = contentHash(masked.masked);
@@ -1586,7 +1594,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       // GPT-first mode has a single response owner: authenticate/dedupe above, then
       // delegate the entire model/tool/evidence/persistence turn. Never run the
       // deterministic legacy conversation planner after this returns.
-      if (v2Coordinator && conversationEngineV2EnabledForTenant(session.tenantId)) {
+      if (gptFirstEligible && v2Coordinator) {
         const response = await runGPTFirstChatTurn({
           store, embedding, cache, tokenVault, session, tenant, userMessage, coordinator: v2Coordinator,
           clientMessageId: input.clientMessageId, messageHash, maskedMessage: masked.masked,
