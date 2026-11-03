@@ -62,6 +62,21 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.nextQuestion).toBe('What business activity are you planning?');
   });
 
+  it('never replaces repeated unanswered company-setup questions with generic refocusing', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'can you tell me about the process of starting a company in ajman freezone';
+    request.latestTurns = [
+      { role:'customer',content:request.customerMessageMasked },
+      { role:'assistant',content:'I cannot verify the setup steps.' },
+    ];
+    const coordinator = new V2ConversationCoordinator({turn:async()=>result('I’m keeping your request in view. What would you like to focus on next?')});
+    const output = await coordinator.run({envelope:request,questionPolicy:'optional'});
+    expect(output.guardReason).toBe('missing_approved_knowledge');
+    expect(output.response.answer).toContain('approved company-formation process guidance');
+    expect(output.response.answer).not.toContain('focus on next');
+    expect(output.response.citationIds).toEqual([]);
+  });
+
   it('accepts a safe model-authored business follow-up when RAG is empty', async () => {
     const request = envelope();
     request.customerMessageMasked = 'I would like to discuss company formation.';

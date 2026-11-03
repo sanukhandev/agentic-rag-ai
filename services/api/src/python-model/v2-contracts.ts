@@ -58,6 +58,11 @@ export const turnEnvelopeSchema = z.object({
   latestTurns: z.array(latestTurn).max(8),
   persona,
   catalogDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+  /** Server-retrieved and version-checked public RAG snippets, not user text. */
+  approvedKnowledge: z.array(z.object({
+    citationId: opaqueRef, sourceRef: opaqueRef, sourceVersion: opaqueRef,
+    text: z.string().trim().min(1).max(1_500),
+  }).strict()).max(4).optional(),
   catalogV2: z.object({
     versionRef: z.string().trim().min(8).max(240),
     businessGoals: z.array(z.object({ key: boundedKey, name: z.string().max(120), confirmationRequired: z.boolean() }).strict()).max(100),

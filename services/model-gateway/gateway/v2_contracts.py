@@ -48,6 +48,13 @@ class CatalogV2Projection(StrictV2):
     enabledReadToolKeys: list[str] = Field(default_factory=list, max_length=32)
 
 
+class ApprovedKnowledgeSnippetV2(StrictV2):
+    citationId: str = Field(min_length=8, max_length=256)
+    sourceRef: str = Field(min_length=8, max_length=256)
+    sourceVersion: str = Field(min_length=8, max_length=256)
+    text: str = Field(min_length=1, max_length=1500)
+
+
 class TurnEnvelopeV2(StrictV2):
     schemaVersion: Literal[2]
     requestId: str = Field(min_length=8, max_length=256)
@@ -61,6 +68,7 @@ class TurnEnvelopeV2(StrictV2):
     latestTurns: list[dict[str, str]] = Field(default_factory=list, max_length=8)
     persona: PersonaEnvelopeV2
     catalogDigest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    approvedKnowledge: list[ApprovedKnowledgeSnippetV2] = Field(default_factory=list, max_length=4)
     catalogV2: CatalogV2Projection | None = None
     intentProjection: IntentProjectionV2
     toolAllowlist: list[str] = Field(default_factory=list, max_length=32)

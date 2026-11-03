@@ -133,6 +133,7 @@ class BoundedConversationAgent:
             "persona": envelope.persona.model_dump(),
             "catalogVersionId": envelope.catalogVersionId,
             "catalogDigest": envelope.catalogDigest,
+            "approvedKnowledge": [item.model_dump() for item in envelope.approvedKnowledge],
             "catalogV2": envelope.catalogV2.model_dump() if envelope.catalogV2 else None,
             "intentProjection": envelope.intentProjection.model_dump(),
         }, ensure_ascii=False)

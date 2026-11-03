@@ -6,6 +6,9 @@ import { validateV2PlanningProposal } from './v2-planning.js';
 import { validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
 import { initializeConfirmedV2Journey } from './v2-journey-bootstrap.js';
 import { HttpError } from './http/errors.js';
+import { prefetchV2ApprovedKnowledge } from './v2-knowledge-preflight.js';
+import { KnowledgeRetrievalError } from './knowledge.js';
+import type { EmbeddingProvider } from './embedding.js';
 import { assertKnownTokens, maskPiiForSession, rehydrateForSession, TokenVault } from './privacy.js';
 import { issueV2Scope, V2_TOOL_NAMES } from './v2-tool-gateway.js';
 import { assertSafeUserIntentDocument, assertSafeIntentTurn } from './user-intent-document.js';
@@ -36,6 +39,8 @@ export const executeV2Turn = async (
 
 export interface GPTFirstTurnInput {
   store: Store;
+  /** Trusted server-side retrieval used before GPT composes factual knowledge answers. */
+  embedding?: EmbeddingProvider;
   cache: CacheStore;
   tokenVault: TokenVault;
   session: Session;
@@ -159,6 +164,17 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const sessionRevision = session.stateVersion ?? 0;
   const history = (await store.listMessages(session.id, tenant.id, 12)).filter(msg => msg.id !== userMessage.id).slice(-8)
     .map(msg => ({ role: msg.role === 'user' ? 'customer' as const : 'assistant' as const, content: msg.maskedContent.slice(0, 2_000) }));
+  let approvedKnowledge: V2ApprovedEvidence[] = [];
+  if (input.embedding) {
+    try {
+      approvedKnowledge = await prefetchV2ApprovedKnowledge(store, input.embedding, tenant.id, maskedMessage);
+    } catch (error) {
+      if (error instanceof KnowledgeRetrievalError) {
+        throw new HttpError(503, 'V2_KNOWLEDGE_RETRIEVAL_UNAVAILABLE', 'Approved knowledge retrieval is unavailable. Please retry the question.');
+      }
+      throw error;
+    }
+  }
   const scopeRef = issueV2Scope({
     tenantId: tenant.id, sessionId: session.id, opportunityId, catalogVersionId: catalog.id,
     personaVersionId: persona.id, stateRevision: sessionRevision, toolAllowlist: [...V2_TOOL_NAMES],
@@ -168,6 +184,10 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     sessionRevision, intentRevision: originalState.intentProgress?.journeyRevision ?? 0,
     catalogVersionId: catalog.id, personaVersionId: persona.id, customerMessageMasked: maskedMessage.slice(0, 5_000),
     latestTurns: history, catalogDigest: hash(JSON.stringify(catalog.catalog)),
+    approvedKnowledge: approvedKnowledge.map(item => ({
+      citationId: item.citationId, sourceVersion: item.sourceVersion,
+      sourceRef: item.sourceRef!, text: item.text,
+    })),
     ...(catalogV2 && v2Version ? { catalogV2: {
       versionRef: v2Version.catalogVersionRef,
       businessGoals: catalogV2.sheets.BusinessGoals.filter(goal => goal.active)
@@ -190,7 +210,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     budgets: { maxModelRequests: 4, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + 90_000).toISOString() },
   };
   const result = await executeV2Turn(coordinator, {
-    envelope, verifiedFacts: evidence, lastQuestionKey: originalState.pendingPrompt?.requirementKey ?? null,
+    envelope, evidence: approvedKnowledge, verifiedFacts: evidence, lastQuestionKey: originalState.pendingPrompt?.requirementKey ?? null,
     questionPolicy: 'optional', fallbackTemplates: fallbackTemplates(persona),
   });
   if (result.toolTrace.some(trace => trace.status === 'stale_state')) throw new HttpError(409, 'V2_STALE_TOOL_STATE', 'The conversation state changed; retry this message.');
@@ -257,6 +277,14 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     }
   }
   const modelCitations = await resolvePublicCitations(store, tenant.id, result.response.citationIds, result.approvedEvidence ?? []);
+  // A source can be revoked while GPT is composing. Never return previously
+  // grounded factual text with citations that no longer resolve to active data.
+  const citedKnowledgeIds = (result.approvedEvidence ?? [])
+    .filter(item => item.sourceRef && !item.sourceRef.startsWith('tool-')
+      && result.response.citationIds.includes(item.citationId)).map(item => item.citationId);
+  if (citedKnowledgeIds.some(id => !modelCitations.some(citation => citation.chunkId === id))) {
+    throw new HttpError(409, 'V2_KNOWLEDGE_CITATION_STALE', 'A cited knowledge source changed during the turn. Please retry.');
+  }
   const responseId = randomUUID();
   // A model-authored next-question key can become durable only when it refers
   // to an existing, required slot in the active, pinned catalog. The model

@@ -3,6 +3,7 @@ import type { Express, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { catalogNextFollowUpRequirement, catalogNextJourneyRequirement } from './intent-catalog.js';
 import { retrieveApprovedKnowledge } from './knowledge.js';
+import { toV2KnowledgeEvidence } from './v2-knowledge-preflight.js';
 import { sanitizeKnowledgeText } from './privacy.js';
 import { normalizeConversationQuery } from './model.js';
 import type { EmbeddingProvider } from './embedding.js';
@@ -250,10 +251,10 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         const source = await store.getSource(item.citation.sourceId);
         return source && source.tenantId === scope.tenantId && source.status === 'active' && source.versionId === item.citation.versionId ? item : null;
       }))).filter((item): item is NonNullable<typeof item> => Boolean(item));
-      const evidenceRefs = approved.map((item) => digest(`${item.citation.sourceId}:${item.citation.versionId}:${item.citation.chunkId}`).slice(0, 32));
+      const evidenceRefs = approved.map(item => item.citation.chunkId);
       const sourceVersions = [...new Set(approved.map((item) => item.citation.versionId))];
       // A mixed-version retrieval has per-citation provenance, not a single source version.
-      return result(request, 'ok', { grounded: approved.length > 0, evidence: approved.map((item, index) => ({ citationId: evidenceRefs[index], text: bounded(sanitizeKnowledgeText(item.content), 1_500), sourceVersion: item.citation.versionId, approved: true, revoked: false, sourceRef: item.citation.sourceId })) }, sourceVersions.length === 1 ? sourceVersions[0]! : null, evidenceRefs);
+      return result(request, 'ok', { grounded: approved.length > 0, evidence: approved.map(toV2KnowledgeEvidence) }, sourceVersions.length === 1 ? sourceVersions[0]! : null, evidenceRefs);
     }
     case 'get_journey_state': {
       const lifecycle = entry?.lifecycle ?? null;

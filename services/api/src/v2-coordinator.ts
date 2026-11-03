@@ -232,6 +232,31 @@ export class V2ConversationCoordinator {
       return { response: unavailable.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(unavailable.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: [],
         modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'model_or_tool_unavailable', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
     }
+    // For a repeated factual process question, an uncited generic reply such
+    // as "What would you like to focus on next?" is not an acceptable answer.
+    // Only use this branch when no public source evidence was retrieved.
+    const asksForProcess = /\\b(?:process|procedures?|steps?|how (?:do|can|to)|setting up|starting)\\b/iu.test(envelope.customerMessageMasked)
+      && /\\b(?:company|business|free[\\s-]?zone|formation|ajman|register|setup)\\b/iu.test(envelope.customerMessageMasked);
+    const knowledgeEvidenceAvailable = (guardContext.evidence ?? []).some(item =>
+      item.sourceRef && !item.sourceRef.startsWith('tool-') && item.approved && !item.revoked);
+    if (asksForProcess && !knowledgeEvidenceAvailable && candidateResponse.citationIds.length === 0) {
+      const unavailableAnswer = 'I couldn’t find approved company-formation process guidance to verify the steps. Once the official setup guide is published in the knowledge base, I can explain the process without guessing.';
+      const unavailableResponse: PersonaComposedResponseV2 = {
+        schemaVersion: 2, personaVersionId: envelope.personaVersionId,
+        language: envelope.persona.permittedLanguages[0] ?? 'en',
+        answer: unavailableAnswer, citationIds: [], nextQuestion: null, nextQuestionKey: null,
+        reasonNoQuestion: 'missing_knowledge', decisionRef: `missing-knowledge-${envelope.requestId.slice(0, 60)}`,
+      };
+      const safe = guardV2Response(unavailableResponse, { ...guardContext, questionPolicy: 'optional', approvedNoEvidenceAnswer: unavailableAnswer });
+      if (safe.verdict.accepted) return {
+        response: safe.response, candidateResponse: agentResult.response, repairApplied,
+        draft: toDraft(safe.response), toolTrace: agentResult.toolTrace,
+        approvedEvidence: guardContext.evidence ?? [], claimProvenance: [],
+        modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
+        guardReason: 'missing_approved_knowledge', candidateGuardReason: 'uncited_process_reply',
+        diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
+      };
+    }
     if (uncitedDialogueCandidate) {
       // A safe question and acknowledgement can be authored by the model without
       // RAG citations. Constrain the accepted text shape and forbid factual claims.

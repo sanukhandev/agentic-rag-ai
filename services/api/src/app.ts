@@ -1588,7 +1588,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       // deterministic legacy conversation planner after this returns.
       if (v2Coordinator && conversationEngineV2EnabledForTenant(session.tenantId)) {
         const response = await runGPTFirstChatTurn({
-          store, cache, tokenVault, session, tenant, userMessage, coordinator: v2Coordinator,
+          store, embedding, cache, tokenVault, session, tenant, userMessage, coordinator: v2Coordinator,
           clientMessageId: input.clientMessageId, messageHash, maskedMessage: masked.masked,
           requestId: (req as AuthedRequest).requestId ?? randomUUID(),
           responseCacheTtlSeconds: chatResponseCacheTtlSeconds,
