@@ -213,6 +213,82 @@ describe('V2ConversationCoordinator', () => {
     await expect(agent.turn(envelope())).resolves.toMatchObject({ modelRequestCount: 1, toolCallCount: 0 });
   });
 
+  it('answers a factual knowledge detour with citations even if a goal is already active', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'What are the steps for forming a company?';
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true,
+      currentStageKey: 'lead_qualification', pendingRequirementKey: null };
+    request.budgets = { ...request.budgets, maxModelRequests: 4,
+      deadlineAt: new Date(Date.now() + 60_000).toISOString() };
+    const snippet = { citationId: 'chunk-12345678',
+      text: 'Choose your business activity and submit the required documents.',
+      sourceRef: 'source-12345678', sourceVersion: 'version-12345678' };
+    request.approvedKnowledge = [snippet];
+    let calls = 0;
+    const coordinator = new V2ConversationCoordinator({ turn: async () => {
+      calls += 1;
+      return result(snippet.text, { response: { ...result(snippet.text).response,
+        citationIds: calls === 1 ? [] : [snippet.citationId] } });
+    } });
+    const output = await coordinator.run({ envelope: request,
+      evidence: [{ ...snippet, approved: true, revoked: false }], fallbackTemplates });
+    expect(calls).toBe(2);
+    expect(output.guardReason).toBe('accepted_knowledge_repair');
+    expect(output.knowledgeRepairStatus).toBe('accepted');
+    expect(output.response.citationIds).toEqual([snippet.citationId]);
+  });
+
+  it('can replace a rejected invented completed-action claim without authorizing it', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'Tell me the steps for forming a company';
+    request.budgets = { ...request.budgets, maxModelRequests: 4,
+      deadlineAt: new Date(Date.now() + 60_000).toISOString() };
+    const snippet = { citationId: 'chunk-12345678',
+      text: 'Choose your business activity and submit the required documents.',
+      sourceRef: 'source-12345678', sourceVersion: 'version-12345678' };
+    request.approvedKnowledge = [snippet];
+    let calls = 0;
+    const coordinator = new V2ConversationCoordinator({ turn: async () => {
+      calls += 1;
+      return calls === 1
+        ? result('Your company was registered and payment completed.', { response: {
+          ...result('Your company was registered and payment completed.').response,
+          citationIds: [snippet.citationId] } })
+        : result(snippet.text, { response: { ...result(snippet.text).response,
+          citationIds: [snippet.citationId] } });
+    } });
+    const output = await coordinator.run({ envelope: request,
+      evidence: [{ ...snippet, approved: true, revoked: false }], fallbackTemplates });
+    expect(calls).toBe(2);
+    expect(output.guardReason).toBe('accepted_knowledge_repair');
+    expect(output.response.answer).toBe(snippet.text);
+    expect(output.response.answer).not.toContain('registered');
+    expect(output.response.planning).toBeNull();
+  });
+
+  it('reports when a grounded repair was skipped because the turn deadline was too close', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'What are the steps for forming a company?';
+    request.budgets = { ...request.budgets, maxModelRequests: 4,
+      deadlineAt: new Date(Date.now() + 1_500).toISOString() };
+    const snippet = { citationId: 'chunk-12345678',
+      text: 'Choose your business activity and submit the required documents.',
+      sourceRef: 'source-12345678', sourceVersion: 'version-12345678' };
+    request.approvedKnowledge = [snippet];
+    let calls = 0;
+    const coordinator = new V2ConversationCoordinator({ turn: async () => {
+      calls += 1;
+      return result('The setup costs AED 999.', { response: {
+        ...result('The setup costs AED 999.').response, citationIds: [snippet.citationId] } });
+    } });
+    const output = await coordinator.run({ envelope: request,
+      evidence: [{ ...snippet, approved: true, revoked: false }], fallbackTemplates });
+    expect(calls).toBe(1);
+    expect(output.guardReason).toBe('unsupported_claim');
+    expect(output.knowledgeRepairStatus).toBe('skipped_budget');
+    expect(output.response.answer).toBe(fallbackTemplates.templates.invalid_model);
+  });
+
   it('repairs a rejected process claim once using only the exact trusted prefetch', async () => {
     const request = envelope();
     request.customerMessageMasked = 'Can you tell me about the steps for forming a company?';
