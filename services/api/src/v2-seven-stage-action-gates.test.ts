@@ -84,7 +84,7 @@ describe('seven-stage policy matrix (Node-only, no provider I/O)', () => {
   it('requires the same qualified lead for account creation and separate invoice/payment flags', () => {
     const accountContext = makeContext(2);
     expect(evaluateV2StageTransition({ context: accountContext, nextStageKey: 'package_selection',
-      completion: { ...allStageEvidence('account_creation'), leadId: 'another-lead', accountLinkedLeadId: 'another-lead' } })
+      completion: { ...allStageEvidence('account_creation'), leadId: 'another-lead', accountLinkedLeadId: 'another-lead' } }))
       .toMatchObject({ accepted: false, reasons: ['qualified_lead_mismatch'] });
     const paymentContext = makeContext(5);
     for (const flag of ['invoiceIssued', 'paymentCompleted'] as const) {
