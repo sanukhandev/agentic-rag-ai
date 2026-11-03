@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const docker = process.platform === 'win32' ? 'docker.exe' : 'docker';
 const env = { ...process.env };
-for (const name of ['APP_BIND_ADDRESS', 'PUBLIC_ORIGIN', 'POSTGRES_PASSWORD', 'JWT_SECRET',
-  'CHANNEL_CREDENTIAL_KEY', 'PII_VAULT_KEY', 'MODEL_GATEWAY_SERVICE_KEY',
-  'N8N_WEBHOOK_SECRET', 'INGESTION_WORKER_SECRET']) delete env[name];
+for (const name of ['APP_BIND_ADDRESS', 'PUBLIC_ORIGIN']) delete env[name];
+// Dummy values are used only for static interpolation, never containers.
+for (const name of ['POSTGRES_PASSWORD', 'JWT_SECRET', 'CHANNEL_CREDENTIAL_KEY',
+  'PII_VAULT_KEY', 'MODEL_GATEWAY_SERVICE_KEY', 'N8N_WEBHOOK_SECRET',
+  'INGESTION_WORKER_SECRET']) env[name] = 'ci-static-placeholder-not-a-secret';
 const run = spawnSync(docker, ['compose', '--env-file', '.env.example', '-f', 'docker-compose.yml', 'config', '--format', 'json'], {
   cwd: root, env, shell: process.platform === 'win32', encoding: 'utf8',
 });
