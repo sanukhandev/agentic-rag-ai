@@ -1,3 +1,4 @@
+import { v2TrustedReadbackMatches, type V2TrustedProviderReadback } from './v2-provider-evidence.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { ActionRequest, CrmLead } from './types.js';
@@ -80,7 +81,7 @@ export const buildV2LeadProviderRequest = (input: {
   });
 };
 
-export const validateV2LeadProviderResult = (request: V2LeadProviderRequest, resultInput: unknown): V2LeadProviderValidation => {
+export const validateV2LeadProviderResult = (request: V2LeadProviderRequest, resultInput: unknown, readback?: V2TrustedProviderReadback): V2LeadProviderValidation => {
   const parsed = v2LeadProviderResultSchema.safeParse(resultInput);
   if (!parsed.success) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['result_invalid'] };
   const result = parsed.data;
@@ -91,16 +92,22 @@ export const validateV2LeadProviderResult = (request: V2LeadProviderRequest, res
   if (result.notificationStatus === 'unknown' || result.evidenceTier === 'reconciliation_required') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_evidence_incomplete'] };
   if (request.providerType === 'deterministic_mock' && result.evidenceTier !== 'mock_verified') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['mock_evidence_tier_mismatch'] };
   if (request.providerType === 'salesforce_sandbox' && result.evidenceTier !== 'provider_record_verified') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['sandbox_evidence_tier_mismatch'] };
+  if (!v2TrustedReadbackMatches(request, result.externalLeadId, result.evidenceTier, readback)) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_readback_required'] };
   return { accepted: true, stageCompletionEligible: true, status: result.evidenceTier, reasons: result.notificationStatus === 'not_sent' ? ['notification_not_sent'] : [] };
 };
 
 export class DeterministicV2LeadProvider {
+  private readonly requestFingerprints = new Map<string, string>();
   private readonly results = new Map<string, V2LeadProviderResult>();
 
   execute(requestInput: V2LeadProviderRequest): V2LeadProviderResult {
     const request = v2LeadProviderRequestSchema.parse(requestInput);
-    const existing = this.results.get(`${request.tenantId}:${request.idempotencyKey}`);
-    if (existing) return existing;
+    const key = `${request.tenantId}:${request.idempotencyKey}`;
+    const existing = this.results.get(key);
+    if (existing) {
+      if (this.requestFingerprints.get(key) !== JSON.stringify(request)) throw new Error('V2_PROVIDER_IDEMPOTENCY_CONFLICT');
+      return existing;
+    }
     const externalLeadId = `mock-lead-${createHash('sha256').update(request.idempotencyKey).digest('hex').slice(0, 24)}`;
     const result = v2LeadProviderResultSchema.parse({
       schemaVersion: request.schemaVersion,
@@ -119,7 +126,8 @@ export class DeterministicV2LeadProvider {
       notificationStatus: 'accepted',
       evidenceTier: 'mock_verified',
     });
-    this.results.set(`${request.tenantId}:${request.idempotencyKey}`, result);
+    this.requestFingerprints.set(key, JSON.stringify(request));
+    this.results.set(key, result);
     return result;
   }
 }

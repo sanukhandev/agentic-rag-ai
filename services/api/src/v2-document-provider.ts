@@ -1,3 +1,4 @@
+import { v2TrustedReadbackMatches, type V2TrustedProviderReadback } from './v2-provider-evidence.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { activeOpportunityId } from './business-lifecycle.js';
@@ -41,6 +42,8 @@ export const v2DocumentProviderResultSchema = z.object({
   documentId: id,
   leadId: id,
   attachmentId: opaque,
+  leadAttachmentId: opaque,
+  accountAttachmentId: opaque,
   remoteAccountId: opaque,
   remoteContactId: opaque,
   remoteOpportunityId: opaque,
@@ -65,6 +68,7 @@ export const buildV2DocumentProviderRequest = (input: {
   if (account.status !== 'verified' || !account.remoteAccountId || !account.remoteContactId || !account.remoteOpportunityId) throw new Error('V2_DOCUMENT_TARGET_NOT_VERIFIED');
   const catalogVersionId = document.catalogVersionId ?? session.conversationState?.catalogVersionId;
   if (!catalogVersionId) throw new Error('V2_DOCUMENT_CATALOG_VERSION_REQUIRED');
+  if (document.catalogVersionId && session.conversationState?.catalogVersionId && document.catalogVersionId !== session.conversationState.catalogVersionId) throw new Error('V2_DOCUMENT_CATALOG_VERSION_MISMATCH');
   if (account.leadId !== document.leadId) throw new Error('V2_DOCUMENT_LEAD_MISMATCH');
   return v2DocumentProviderRequestSchema.parse({
     schemaVersion: 2,
@@ -90,7 +94,7 @@ export const buildV2DocumentProviderRequest = (input: {
 
 export type V2DocumentProviderValidation = { accepted: boolean; stageCompletionEligible: boolean; status: 'provider_record_verified' | 'mock_verified' | 'reconciliation_required'; reasons: string[] };
 
-export const validateV2DocumentProviderResult = (request: V2DocumentProviderRequest, resultInput: unknown): V2DocumentProviderValidation => {
+export const validateV2DocumentProviderResult = (request: V2DocumentProviderRequest, resultInput: unknown, readback?: V2TrustedProviderReadback): V2DocumentProviderValidation => {
   const parsed = v2DocumentProviderResultSchema.safeParse(resultInput);
   if (!parsed.success) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['result_invalid'] };
   const result = parsed.data;
@@ -98,20 +102,26 @@ export const validateV2DocumentProviderResult = (request: V2DocumentProviderRequ
   const mismatches = fields.filter((field) => result[field] !== request[field]);
   if (mismatches.length) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: mismatches.map((field) => `${field}_mismatch`) };
   if (result.providerType !== request.providerType) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_type_mismatch'] };
+  if (!result.leadAttachmentId || !result.accountAttachmentId) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['attachment_relationships_unverified'] };
   if (result.attachmentStatus !== 'verified' || result.evidenceTier === 'reconciliation_required') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['attachment_evidence_incomplete'] };
   if (request.providerType === 'deterministic_mock' && result.evidenceTier !== 'mock_verified') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['mock_evidence_tier_mismatch'] };
   if (request.providerType === 'salesforce_sandbox' && result.evidenceTier !== 'provider_record_verified') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['sandbox_evidence_tier_mismatch'] };
+  if (!v2TrustedReadbackMatches(request, result.attachmentId, result.evidenceTier, readback)) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_readback_required'] };
   return { accepted: true, stageCompletionEligible: true, status: result.evidenceTier, reasons: [] };
 };
 
 export class DeterministicV2DocumentProvider {
+  private readonly requestFingerprints = new Map<string, string>();
   private readonly results = new Map<string, V2DocumentProviderResult>();
 
   public execute(requestInput: V2DocumentProviderRequest): V2DocumentProviderResult {
     const request = v2DocumentProviderRequestSchema.parse(requestInput);
     const key = `${request.tenantId}:${request.idempotencyKey}`;
     const existing = this.results.get(key);
-    if (existing) return existing;
+    if (existing) {
+      if (this.requestFingerprints.get(key) !== JSON.stringify(request)) throw new Error('V2_PROVIDER_IDEMPOTENCY_CONFLICT');
+      return existing;
+    }
     const digest = createHash('sha256').update(`${request.documentId}:${request.idempotencyKey}`).digest('hex');
     const result = v2DocumentProviderResultSchema.parse({
       schemaVersion: request.schemaVersion,
@@ -124,6 +134,8 @@ export class DeterministicV2DocumentProvider {
       documentId: request.documentId,
       leadId: request.leadId,
       attachmentId: `mock-attachment-${digest.slice(0, 24)}`,
+      leadAttachmentId: `mock-leadattach-${digest.slice(0, 24)}`,
+      accountAttachmentId: `mock-accountattach-${digest.slice(0, 24)}`,
       remoteAccountId: request.remoteAccountId,
       remoteContactId: request.remoteContactId,
       remoteOpportunityId: request.remoteOpportunityId,
@@ -131,6 +143,7 @@ export class DeterministicV2DocumentProvider {
       attachmentStatus: 'verified',
       evidenceTier: 'mock_verified',
     });
+    this.requestFingerprints.set(key, JSON.stringify(request));
     this.results.set(key, result);
     return result;
   }

@@ -1,3 +1,4 @@
+import { v2TrustedReadbackMatches, type V2TrustedProviderReadback } from './v2-provider-evidence.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { activeOpportunityId } from './business-lifecycle.js';
@@ -80,7 +81,7 @@ export const buildV2ContractProviderRequest = (input: {
 
 export type V2ContractProviderValidation = { accepted: boolean; stageCompletionEligible: boolean; status: 'provider_record_verified' | 'mock_verified' | 'reconciliation_required'; reasons: string[] };
 
-export const validateV2ContractProviderResult = (request: V2ContractProviderRequest, resultInput: unknown): V2ContractProviderValidation => {
+export const validateV2ContractProviderResult = (request: V2ContractProviderRequest, resultInput: unknown, readback?: V2TrustedProviderReadback): V2ContractProviderValidation => {
   const parsed = v2ContractProviderResultSchema.safeParse(resultInput);
   if (!parsed.success) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['result_invalid'] };
   const result = parsed.data;
@@ -93,19 +94,25 @@ export const validateV2ContractProviderResult = (request: V2ContractProviderRequ
   const signed = result.status === 'signed' && result.signedArtifactSha256 !== null;
   if (request.providerType === 'deterministic_mock' && !['none', 'mock_verified'].includes(result.signatureEvidence)) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['mock_evidence_tier_mismatch'] };
   if (request.providerType === 'signature_sandbox' && !['none', 'provider_record_verified'].includes(result.signatureEvidence)) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['sandbox_evidence_tier_mismatch'] };
+  if (signed && !v2TrustedReadbackMatches(request, result.remoteContractId, result.signatureEvidence, readback)) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_readback_required'] };
   return { accepted: true, stageCompletionEligible: signed, status: result.signatureEvidence === 'none' ? 'reconciliation_required' : result.signatureEvidence, reasons: signed ? [] : ['signature_pending'] };
 };
 
 export class DeterministicV2ContractProvider {
+  private readonly requestFingerprints = new Map<string, string>();
   private readonly results = new Map<string, V2ContractProviderResult>();
 
   public execute(requestInput: V2ContractProviderRequest): V2ContractProviderResult {
     const request = v2ContractProviderRequestSchema.parse(requestInput);
     const key = `${request.tenantId}:${request.idempotencyKey}`;
     const existing = this.results.get(key);
-    if (existing) return existing;
+    if (existing) {
+      if (this.requestFingerprints.get(key) !== JSON.stringify(request)) throw new Error('V2_PROVIDER_IDEMPOTENCY_CONFLICT');
+      return existing;
+    }
     const remoteContractId = `mock-contract-${createHash('sha256').update(request.idempotencyKey).digest('hex').slice(0, 24)}`;
     const result = v2ContractProviderResultSchema.parse({ schemaVersion: 2, operation: request.operation, providerType: request.providerType, tenantId: request.tenantId, sessionId: request.sessionId, opportunityId: request.opportunityId, contractId: request.contractId, packageSelectionId: request.packageSelectionId, invoiceId: request.invoiceId, remoteContractId, signatoryRef: request.signatoryRef, status: 'sent', signatureEvidence: 'none', signedArtifactSha256: null, idempotencyKey: request.idempotencyKey });
+    this.requestFingerprints.set(key, JSON.stringify(request));
     this.results.set(key, result);
     return result;
   }

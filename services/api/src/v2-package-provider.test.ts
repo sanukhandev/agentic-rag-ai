@@ -4,6 +4,14 @@ import { buildV2QuoteProviderRequest, DeterministicV2QuoteProvider, validateV2Qu
 import { newConversationState, newIntentProgress } from './conversation-state.js';
 import type { PackageOffering, PackageSelection, Session } from './types.js';
 
+
+const verifiedReadback = (request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string; providerType: string }, recordRef: string) => ({
+  tenantId: request.tenantId, sessionId: request.sessionId, opportunityId: request.opportunityId,
+  idempotencyKey: request.idempotencyKey, providerType: request.providerType, recordRef,
+  verificationStatus: 'verified' as const,
+  evidenceTier: request.providerType === 'deterministic_mock' ? 'mock_verified' as const : 'provider_record_verified' as const,
+});
+
 const tenantId = randomUUID();
 const sessionId = randomUUID();
 const opportunityId = randomUUID();
@@ -37,9 +45,10 @@ describe('v2 stage 4 package and quote provider boundary', () => {
     const provider = new DeterministicV2QuoteProvider();
     const first = provider.execute(request);
     const second = provider.execute(request);
+    expect(() => provider.execute({ ...request, amountMinor: request.amountMinor + 1 })).toThrow('IDEMPOTENCY_CONFLICT');
     expect(second).toEqual(first);
     expect(first.quoteId).toMatch(/^[0-9a-f-]{36}$/u);
-    expect(validateV2QuoteProviderResult(request, first)).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'mock_verified' });
+    expect(validateV2QuoteProviderResult(request, first, verifiedReadback(request, first.quoteId))).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'mock_verified' });
   });
 
   it('rejects stale or altered quote evidence before selection confirmation', () => {
@@ -48,6 +57,6 @@ describe('v2 stage 4 package and quote provider boundary', () => {
     const sandbox = { ...mock, providerType: 'pricebook_sandbox' as const, evidenceTier: 'provider_record_verified' as const };
     expect(validateV2QuoteProviderResult(request, { ...sandbox, amountMinor: 1 })).toMatchObject({ accepted: false, status: 'reconciliation_required', reasons: ['amountMinor_mismatch'] });
     expect(validateV2QuoteProviderResult(request, { ...sandbox, priceSourceRefs: ['pricebook:old'] })).toMatchObject({ accepted: false, status: 'reconciliation_required', reasons: ['price_source_mismatch'] });
-    expect(validateV2QuoteProviderResult(request, sandbox)).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'provider_record_verified' });
+    expect(validateV2QuoteProviderResult(request, sandbox, verifiedReadback(request, sandbox.quoteId))).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'provider_record_verified' });
   });
 });

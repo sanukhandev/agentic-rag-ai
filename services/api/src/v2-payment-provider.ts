@@ -1,3 +1,4 @@
+import { v2TrustedReadbackMatches, type V2TrustedProviderReadback } from './v2-provider-evidence.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Invoice, Quote } from './types.js';
@@ -60,7 +61,7 @@ export const buildV2PaymentProviderRequest = (input: { invoice: Invoice; quote: 
 
 export type V2PaymentProviderValidation = { accepted: boolean; paymentVerified: boolean; status: 'provider_record_verified' | 'mock_verified' | 'reconciliation_required'; reasons: string[] };
 
-export const validateV2PaymentProviderResult = (request: V2PaymentProviderRequest, resultInput: unknown): V2PaymentProviderValidation => {
+export const validateV2PaymentProviderResult = (request: V2PaymentProviderRequest, resultInput: unknown, readback?: V2TrustedProviderReadback): V2PaymentProviderValidation => {
   const parsed = v2PaymentProviderResultSchema.safeParse(resultInput);
   if (!parsed.success) return { accepted: false, paymentVerified: false, status: 'reconciliation_required', reasons: ['result_invalid'] };
   const result = parsed.data;
@@ -71,22 +72,29 @@ export const validateV2PaymentProviderResult = (request: V2PaymentProviderReques
   if (result.status === 'failed' || result.status === 'reconciliation_required') return { accepted: false, paymentVerified: false, status: 'reconciliation_required', reasons: ['payment_not_verified'] };
   if (request.providerType === 'deterministic_mock') {
     if (!['pending', 'mock_paid'].includes(result.status) || result.evidenceTier !== 'mock_verified') return { accepted: false, paymentVerified: false, status: 'reconciliation_required', reasons: ['mock_status_or_evidence_mismatch'] };
+    if (result.status === 'mock_paid' && !v2TrustedReadbackMatches(request, result.paymentId, result.evidenceTier, readback)) return { accepted: false, paymentVerified: false, status: 'reconciliation_required', reasons: ['provider_readback_required'] };
     return { accepted: true, paymentVerified: result.status === 'mock_paid', status: 'mock_verified', reasons: result.status === 'pending' ? ['payment_pending'] : ['mock_payment_only'] };
   }
   if (!['pending', 'sandbox_paid'].includes(result.status) || result.evidenceTier !== 'provider_record_verified') return { accepted: false, paymentVerified: false, status: 'reconciliation_required', reasons: ['sandbox_status_or_evidence_mismatch'] };
+  if (result.status === 'sandbox_paid' && !v2TrustedReadbackMatches(request, result.paymentId, result.evidenceTier, readback)) return { accepted: false, paymentVerified: false, status: 'reconciliation_required', reasons: ['provider_readback_required'] };
   return { accepted: true, paymentVerified: result.status === 'sandbox_paid', status: 'provider_record_verified', reasons: result.status === 'pending' ? ['payment_pending'] : [] };
 };
 
 export class DeterministicV2PaymentProvider {
+  private readonly requestFingerprints = new Map<string, string>();
   private readonly results = new Map<string, V2PaymentProviderResult>();
 
   public execute(requestInput: V2PaymentProviderRequest): V2PaymentProviderResult {
     const request = v2PaymentProviderRequestSchema.parse(requestInput);
     const key = `${request.tenantId}:${request.idempotencyKey}`;
     const existing = this.results.get(key);
-    if (existing) return existing;
+    if (existing) {
+      if (this.requestFingerprints.get(key) !== JSON.stringify(request)) throw new Error('V2_PROVIDER_IDEMPOTENCY_CONFLICT');
+      return existing;
+    }
     const paymentId = `mockpay_${createHash('sha256').update(request.idempotencyKey).digest('hex').slice(0, 32)}`;
     const result = v2PaymentProviderResultSchema.parse({ schemaVersion: 2, operation: request.operation, providerType: request.providerType, tenantId: request.tenantId, sessionId: request.sessionId, opportunityId: request.opportunityId, quoteId: request.quoteId, invoiceId: request.invoiceId, externalInvoiceId: request.externalInvoiceId, paymentId, amountMinor: request.amountMinor, currency: request.currency, status: 'pending', evidenceTier: 'mock_verified', idempotencyKey: request.idempotencyKey });
+    this.requestFingerprints.set(key, JSON.stringify(request));
     this.results.set(key, result);
     return result;
   }

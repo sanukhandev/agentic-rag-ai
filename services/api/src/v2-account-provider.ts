@@ -1,3 +1,4 @@
+import { v2TrustedReadbackMatches, type V2TrustedProviderReadback } from './v2-provider-evidence.js';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import type { ActionRequest, CrmLead } from './types.js';
@@ -59,6 +60,7 @@ export const v2AccountProviderResultSchema = z.object({
   remoteAccountId: opaque,
   remoteContactId: opaque,
   remoteOpportunityId: opaque,
+  leadExternalId: opaque,
   deduplicated: z.boolean(),
   evidenceTier: z.enum(['provider_record_verified', 'mock_verified', 'reconciliation_required']),
 }).strict();
@@ -141,16 +143,24 @@ export class V2OtpChallengeService {
 export const buildV2AccountProviderRequest = (input: {
   action: ActionRequest;
   lead: CrmLead;
+  originalLeadAction: ActionRequest;
   providerType: 'salesforce_sandbox' | 'deterministic_mock';
   otp: Extract<V2OtpVerificationResult, { status: 'verified' }>;
   explicitConfirmation: boolean;
 }): V2AccountProviderRequest => {
   const { action, lead, providerType, otp } = input;
   if (!['approved', 'processing'].includes(action.state)) throw new Error('V2_ACCOUNT_ACTION_NOT_DISPATCHABLE');
-  if (action.tenantId !== lead.tenantId || action.sessionId !== lead.sessionId || action.id !== lead.actionId || action.opportunityId !== otp.opportunityId || action.tenantId !== otp.tenantId || action.sessionId !== otp.sessionId || lead.id !== otp.leadId) throw new Error('V2_ACCOUNT_IDENTITY_MISMATCH');
+  if (action.tenantId !== lead.tenantId || action.sessionId !== lead.sessionId || action.opportunityId !== otp.opportunityId || action.tenantId !== otp.tenantId || action.sessionId !== otp.sessionId || lead.id !== otp.leadId) throw new Error('V2_ACCOUNT_IDENTITY_MISMATCH');
   if (!action.opportunityId || !action.catalogVersionId || !action.actionKey || !action.actionRevision) throw new Error('V2_ACCOUNT_BINDING_INCOMPLETE');
   if (action.payload.contactConsent !== true) throw new Error('V2_ACCOUNT_CONSENT_REQUIRED');
   if (input.explicitConfirmation !== true) throw new Error('V2_ACCOUNT_CONFIRMATION_REQUIRED');
+  // Account action is a NEW action. Bind it to the original completed Lead action.
+  const original = input.originalLeadAction;
+  if (!original || original.id !== lead.actionId || original.id === action.id
+    || original.tenantId !== action.tenantId || original.sessionId !== action.sessionId
+    || original.opportunityId !== action.opportunityId || original.catalogVersionId !== action.catalogVersionId
+    || original.state !== 'completed' || !original.result?.externalReference
+    || original.result.externalReference !== lead.leadId) throw new Error('V2_ACCOUNT_ORIGINAL_LEAD_ACTION_UNVERIFIED');
   if (lead.qualificationStatus !== 'qualified') throw new Error('V2_ACCOUNT_QUALIFICATION_REQUIRED');
   if (!lead.leadId || !lead.remoteCrm) throw new Error('V2_ACCOUNT_LEAD_NOT_VERIFIED');
   return v2AccountProviderRequestSchema.parse({
@@ -183,27 +193,32 @@ export interface V2AccountProviderValidation {
   reasons: string[];
 }
 
-export const validateV2AccountProviderResult = (request: V2AccountProviderRequest, resultInput: unknown): V2AccountProviderValidation => {
+export const validateV2AccountProviderResult = (request: V2AccountProviderRequest, resultInput: unknown, readback?: V2TrustedProviderReadback): V2AccountProviderValidation => {
   const parsed = v2AccountProviderResultSchema.safeParse(resultInput);
   if (!parsed.success) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['result_invalid'] };
   const result = parsed.data;
-  const mismatches = (['tenantId', 'sessionId', 'opportunityId', 'leadId', 'actionId', 'catalogVersionId', 'actionKey', 'actionRevision', 'idempotencyKey', 'operation'] as const).filter((field) => result[field] !== request[field]);
+  const mismatches = (['tenantId', 'sessionId', 'opportunityId', 'leadId', 'actionId', 'catalogVersionId', 'actionKey', 'actionRevision', 'idempotencyKey', 'leadExternalId', 'operation'] as const).filter((field) => result[field] !== request[field]);
   if (mismatches.length) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: mismatches.map((field) => `${field}_mismatch`) };
   if (result.providerType !== request.providerType) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_type_mismatch'] };
   if (result.evidenceTier === 'reconciliation_required') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_evidence_incomplete'] };
   if (request.providerType === 'deterministic_mock' && result.evidenceTier !== 'mock_verified') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['mock_evidence_tier_mismatch'] };
   if (request.providerType === 'salesforce_sandbox' && result.evidenceTier !== 'provider_record_verified') return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['sandbox_evidence_tier_mismatch'] };
+  if (!v2TrustedReadbackMatches(request, result.remoteAccountId, result.evidenceTier, readback)) return { accepted: false, stageCompletionEligible: false, status: 'reconciliation_required', reasons: ['provider_readback_required'] };
   return { accepted: true, stageCompletionEligible: true, status: result.evidenceTier, reasons: result.deduplicated ? ['deduplicated'] : [] };
 };
 
 export class DeterministicV2AccountProvider {
+  private readonly requestFingerprints = new Map<string, string>();
   private readonly results = new Map<string, V2AccountProviderResult>();
 
   public execute(requestInput: V2AccountProviderRequest): V2AccountProviderResult {
     const request = v2AccountProviderRequestSchema.parse(requestInput);
     const key = `${request.tenantId}:${request.idempotencyKey}`;
     const existing = this.results.get(key);
-    if (existing) return { ...existing, deduplicated: true };
+    if (existing) {
+      if (this.requestFingerprints.get(key) !== JSON.stringify(request)) throw new Error('V2_PROVIDER_IDEMPOTENCY_CONFLICT');
+      return { ...existing, deduplicated: true };
+    }
     const suffix = createHmac('sha256', 'v2-account-mock').update(request.idempotencyKey).digest('hex').slice(0, 20);
     const result = v2AccountProviderResultSchema.parse({
       schemaVersion: request.schemaVersion,
@@ -221,9 +236,11 @@ export class DeterministicV2AccountProvider {
       remoteAccountId: `mock-account-${suffix}`,
       remoteContactId: `mock-contact-${suffix}`,
       remoteOpportunityId: `mock-opportunity-${suffix}`,
+      leadExternalId: request.leadExternalId,
       deduplicated: false,
       evidenceTier: 'mock_verified',
     });
+    this.requestFingerprints.set(key, JSON.stringify(request));
     this.results.set(key, result);
     return result;
   }

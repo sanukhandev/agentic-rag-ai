@@ -4,6 +4,14 @@ import { newConversationState, newIntentProgress } from './conversation-state.js
 import { buildV2ContractProviderRequest, DeterministicV2ContractProvider, validateV2ContractProviderResult } from './v2-contract-provider.js';
 import type { Contract, CrmAccount, Invoice, PackageSelection, Session } from './types.js';
 
+
+const verifiedReadback = (request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string; providerType: string }, recordRef: string) => ({
+  tenantId: request.tenantId, sessionId: request.sessionId, opportunityId: request.opportunityId,
+  idempotencyKey: request.idempotencyKey, providerType: request.providerType, recordRef,
+  verificationStatus: 'verified' as const,
+  evidenceTier: request.providerType === 'deterministic_mock' ? 'mock_verified' as const : 'provider_record_verified' as const,
+});
+
 const tenantId = randomUUID();
 const sessionId = randomUUID();
 const opportunityId = randomUUID();
@@ -32,9 +40,10 @@ describe('v2 stage 7 contract and signature provider boundary', () => {
     const provider = new DeterministicV2ContractProvider();
     const input = request();
     const sent = provider.execute(input);
+    expect(() => provider.execute({ ...input, signatoryRef: 'other-signatory-ref-2' })).toThrow('IDEMPOTENCY_CONFLICT');
     expect(validateV2ContractProviderResult(input, sent)).toMatchObject({ accepted: true, stageCompletionEligible: false, reasons: ['signature_pending'] });
     const signed = provider.sign(input);
-    expect(validateV2ContractProviderResult(input, signed)).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'mock_verified' });
+    expect(validateV2ContractProviderResult(input, signed, verifiedReadback(input, signed.remoteContractId))).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'mock_verified' });
     expect(signed.signedArtifactSha256).toMatch(/^[a-f0-9]{64}$/u);
     expect(provider.sign(input)).toEqual(signed);
   });
@@ -46,6 +55,6 @@ describe('v2 stage 7 contract and signature provider boundary', () => {
     expect(validateV2ContractProviderResult(input, { ...sandbox, signatoryRef: 'wrong-signatory' })).toMatchObject({ accepted: false, status: 'reconciliation_required', reasons: ['signatoryRef_mismatch'] });
     expect(validateV2ContractProviderResult(input, { ...sandbox, status: 'declined' as const })).toMatchObject({ accepted: false, stageCompletionEligible: false });
     expect(validateV2ContractProviderResult(input, { ...sandbox, signedArtifactSha256: null })).toMatchObject({ accepted: false, stageCompletionEligible: false });
-    expect(validateV2ContractProviderResult(input, sandbox)).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'provider_record_verified' });
+    expect(validateV2ContractProviderResult(input, sandbox, verifiedReadback(input, sandbox.remoteContractId))).toMatchObject({ accepted: true, stageCompletionEligible: true, status: 'provider_record_verified' });
   });
 });

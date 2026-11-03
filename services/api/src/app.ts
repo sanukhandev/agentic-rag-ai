@@ -29,7 +29,7 @@ import { buildV2DocumentProviderRequest, DeterministicV2DocumentProvider, valida
 import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
-import { validateV2ProviderCorrelation, v2ProviderCorrelationSchema, type V2ProviderCorrelation } from './v2-provider-correlation.js';
+import { validateV2ProviderCorrelation, v2ProviderCorrelationSchema, v2CallbackCorrelationSchema, type V2ProviderCorrelation } from './v2-provider-correlation.js';
 import type { ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, FollowUpOfferOption, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, LifecycleStage, Message, PendingFollowUpOffer, Session, SourceStatus, Store, SupportingDocument } from './types.js';
 import { HttpError, parse } from './http/errors.js';
 import {
@@ -541,8 +541,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (!execution || execution.eventId !== eventId || execution.correlationId !== correlationId || execution.attempt !== attempt || (execution.n8nExecutionRef && executionReference && execution.n8nExecutionRef !== executionReference)) throw new HttpError(409, 'WORKFLOW_CORRELATION_MISMATCH', 'The workflow completion does not match the current execution claim.');
   };
   const assertV2ProviderCorrelation = async (action: ActionRequest, input: unknown): Promise<void> => {
-    if (!action.catalogVersionId || !await store.getIntentCatalogV2Version(action.tenantId, action.catalogVersionId)) return;
-    const parsed = v2ProviderCorrelationSchema.safeParse(input);
+    if (!action.catalogVersionId) return;
+    // The V2 action identity is the canonical catalogVersionRef, not the
+    // catalog version row UUID. Skipping validation here accepts unauthenticated
+    // completion callbacks, so resolve by the exact published ref.
+    const pinnedV2 = (await store.listIntentCatalogV2Versions(action.tenantId))
+      .find(version => version.status === 'published' && version.catalogVersionRef === action.catalogVersionId);
+    if (!pinnedV2) return;
+    const parsed = v2CallbackCorrelationSchema.safeParse(input);
     if (!parsed.success) throw new HttpError(409, 'V2_PROVIDER_CORRELATION_REQUIRED', 'A v2 provider callback must include its trusted session, opportunity, catalog and action revision.');
     const reason = validateV2ProviderCorrelation(action, parsed.data);
     if (reason) throw new HttpError(409, 'V2_PROVIDER_CORRELATION_MISMATCH', `The v2 provider callback correlation is invalid (${reason}).`);
