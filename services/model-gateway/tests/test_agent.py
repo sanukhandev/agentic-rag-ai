@@ -64,6 +64,29 @@ def function_call(call_id="call-12345678", name="search_knowledge", arguments='{
     return SimpleNamespace(type="function_call", call_id=call_id, name=name, arguments=arguments)
 
 
+def test_knowledge_repair_is_extractive_and_tool_free():
+    from gateway.v2_contracts import KnowledgeRepairV2
+
+    repair = KnowledgeRepairV2(reason="unsupported_claim", strategy="source_close")
+    approved = ApprovedKnowledgeSnippetV2(
+        citationId="chunk-12345678", sourceRef="source-12345678",
+        sourceVersion="version-12345678", text="Choose your business activity and submit the required documents.",
+    )
+    turn = envelope(tool_allowlist=[], maxModelRequests=1, maxToolCalls=0, maxToolRounds=0).model_copy(
+        update={"knowledgeRepair": repair, "approvedKnowledge": [approved]}
+    )
+    checked = TurnEnvelopeV2.model_validate(turn.model_dump())
+    client = FakeClient([SimpleNamespace(id="response-12345678", output=[], output_text=final_response("Choose your business activity and submit the required documents."))])
+    result = asyncio.run(BoundedConversationAgent(client, FakeGateway(), "deployment").run(checked))
+    assert result.modelRequestCount == 1
+    assert result.toolCallCount == 0
+    assert len(client.calls) == 1
+    assert client.calls[0]["tools"] == []
+    assert "one source-grounded response repair" in client.calls[0]["instructions"]
+    assert "exact citationId" in client.calls[0]["instructions"]
+    assert "source-12345678" in json.loads(client.calls[0]["input"][0]["content"])["approvedKnowledge"][0]["sourceRef"]
+
+
 def test_valid_function_call_continues_with_correlated_output():
     client = FakeClient([SimpleNamespace(id="response-12345678", output=[function_call()]), SimpleNamespace(id="response-22345678", output=[], output_text=final_response())])
     gateway = FakeGateway()
