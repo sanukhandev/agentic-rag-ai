@@ -59,6 +59,7 @@ import {
   ingestionRequestSchema,
   ingestionRenewSchema,
   ingestionResultSchema,
+  ingestionArchiveResultSchema,
   intentCatalogEditSchema,
   intentCatalogResultSchema,
   intentCatalogV2Schema,
@@ -1297,6 +1298,87 @@ export const createApp = (dependencies: AppDependencies = {}) => {
             await publishIngestionProgress(store, failed, 'failed', 0, 0, 'failed', errorCode);
           }
           await ingestionStaging.purge(job.id, job.mimeType);
+          throw error;
+        }
+      }
+      if (job.mimeType === 'application/zip' && (req.body as { kind?: unknown } | null)?.kind === 'archive_members') {
+        const input = parse(ingestionArchiveResultSchema, req.body);
+        // Validate the complete worker result before creating any source.
+        const members = input.members.map((member) => {
+          const normalizedContent = canonicalKnowledgeText(member.normalizedContent);
+          if (contentHash(normalizedContent) !== member.contentHash) throw new HttpError(422, 'CONTENT_HASH_MISMATCH', 'Archive member content hash is invalid.');
+          const ordered = [...member.chunks].sort((left, right) => left.ordinal - right.ordinal);
+          if (ordered.some((chunk, index) => chunk.ordinal !== index)) throw new HttpError(422, 'INVALID_CHUNK_ORDER', 'Archive member chunks must have contiguous ordinals.');
+          const chunks = ordered.map((chunk) => ({ ...chunk, content: sanitizeKnowledgeText(chunk.content) }));
+          if (chunks.some((chunk) => contentHash(chunk.content) !== chunk.contentHash)) throw new HttpError(422, 'CHUNK_HASH_MISMATCH', 'Archive member chunk hash is invalid.');
+          return { ...member, normalizedContent, chunks };
+        });
+        const totalBytes = members.reduce((count, member) => count + Buffer.byteLength(member.normalizedContent, 'utf8'), 0);
+        const totalChunks = members.reduce((count, member) => count + member.chunks.length, 0);
+        if (totalBytes > 25 * 1024 * 1024 || totalChunks > 100_000) throw new HttpError(422, 'ARCHIVE_RESULT_OVERSIZED', 'Archive contents exceed the configured ingestion budget.');
+        const names = new Set<string>();
+        for (const member of members) {
+          const name = member.fileName.toLowerCase();
+          if (names.has(name)) throw new HttpError(422, 'ARCHIVE_DUPLICATE_MEMBER', 'The ZIP contains duplicate member paths.');
+          names.add(name);
+        }
+        const summaries: Array<{ id: string; title: string; status: string; reused: boolean }> = [];
+        let processedChunks = 0;
+        try {
+          await publishIngestionProgress(store, job, 'embedding', 0, totalChunks, 'processing');
+          for (const [index, member] of members.entries()) {
+            const title = `${job.title} / ${sanitizeKnowledgeText(member.fileName).replace(/\\|\//gu, ' · ')}`.slice(0, 200);
+            let source = await store.findSourceByHash(job.tenantId, member.contentHash);
+            const reused = Boolean(source);
+            if (!source) {
+              const sourceId = randomUUID();
+              const versionId = randomUUID();
+              const embeddedChunks = await buildIngestionChunksWithEmbeddings(
+                { id: sourceId, tenantId: job.tenantId, versionId },
+                member.chunks,
+                embedding,
+                async (done) => publishIngestionProgress(store, job, 'embedding', processedChunks + done, totalChunks, 'processing'),
+              );
+              source = await store.createSource({
+                id: sourceId, tenantId: job.tenantId, title, mimeType: member.mimeType,
+                sourceUrl: null, audience: job.audience, status: 'awaiting_review',
+                embeddingReady: true, versionId, contentHash: member.contentHash, chunks: embeddedChunks,
+              });
+              await store.addAudit({
+                id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'source.archive_member_ingested',
+                metadata: { archiveJobId: job.id, memberIndex: index, sourceId: source.id, chunks: embeddedChunks.length },
+                createdAt: new Date().toISOString(),
+              });
+            }
+            processedChunks += member.chunks.length;
+            summaries.push({ id: source.id, title: source.title, status: source.status, reused });
+            await publishIngestionProgress(store, job, 'embedding', processedChunks, totalChunks, 'processing');
+          }
+          const completed = await store.updateIngestionJob({
+            ...job, sourceId: summaries[0]?.id ?? null, status: 'completed',
+            errorDetail: input.warnings.length ? ingestionErrorDetail(input.warnings.join(' | ')) : null,
+            leaseExpiresAt: null, updatedAt: new Date().toISOString(),
+          });
+          await ingestionStaging.purge(job.id, job.mimeType);
+          await publishIngestionProgress(store, completed, 'completed', totalChunks, totalChunks, 'completed');
+          await store.addAudit({
+            id: randomUUID(), tenantId: job.tenantId, actorId: null, eventName: 'ingestion.archive_completed',
+            metadata: { archiveJobId: job.id, sourceCount: summaries.length, reusedCount: summaries.filter(item => item.reused).length },
+            createdAt: new Date().toISOString(),
+          });
+          res.status(201).json({ job: completed, sources: summaries, ingestion: { status: 'awaiting_review', sourceCount: summaries.length, chunks: totalChunks }, warnings: input.warnings });
+          return;
+        } catch (error) {
+          const errorCode = error instanceof HttpError ? error.code : 'ARCHIVE_INGESTION_FAILED';
+          const current = await store.getIngestionJob(job.id);
+          if (current?.status === 'processing') {
+            const failed = await store.updateIngestionJob({
+              ...current, status: 'failed', errorCode, errorDetail: ingestionErrorDetail(error),
+              leaseExpiresAt: null, updatedAt: new Date().toISOString(),
+            });
+            await publishIngestionProgress(store, failed, 'failed', processedChunks, totalChunks, 'failed', errorCode);
+          }
+          // Already inserted members are retained and deduplicated on retry.
           throw error;
         }
       }

@@ -51,6 +51,26 @@ export const ingestionResultSchema = z.object({
   chunks: z.array(z.object({ ordinal: z.number().int().nonnegative(), locator: z.string().trim().min(1).max(200), content: z.string().trim().min(1).max(20_000), contentHash: z.string().regex(/^[a-f0-9]{64}$/) })).min(1).max(MAX_INGESTION_RESULT_CHUNKS),
   warnings: z.array(z.string().trim().min(1).max(500)).max(100).default([]),
 });
+// ZIP uploads are delivered as individually reviewable member sources.
+// This remains a worker-only endpoint: no archive entry is auto-published.
+export const ingestionArchiveResultSchema = z.object({
+  kind: z.literal('archive_members'),
+  parserVersion: z.string().trim().min(1).max(120),
+  members: z.array(z.object({
+    fileName: z.string().trim().min(1).max(200).refine(
+      value => !value.startsWith('/') && !value.includes('\\') && value.split('/').every(segment => Boolean(segment) && segment !== '.' && segment !== '..'),
+      'Archive member must have a safe relative path.',
+    ),
+    mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'application/json', 'application/x-ndjson', 'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']),
+    normalizedContent: ingestionResultSchema.shape.normalizedContent,
+    contentHash: ingestionResultSchema.shape.contentHash,
+    chunks: ingestionResultSchema.shape.chunks,
+  }).strict()).min(1).max(100),
+  warnings: ingestionResultSchema.shape.warnings,
+}).strict();
+
 export const ingestionFailureSchema = z.object({ errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('INGESTION_FAILED'), errorDetail: z.string().trim().min(1).max(2_000).optional() });
 export const ingestionRenewSchema = z.object({ jobId: z.string().guid(), leaseMs: z.number().int().min(60_000).max(900_000).default(120_000) });
 export const sessionSchema = z.object({ tenantId: z.string().guid().optional(), tenantSlug: z.string().regex(/^[a-z0-9-]+$/).optional() });
