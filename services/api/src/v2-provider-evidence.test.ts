@@ -7,7 +7,7 @@ const action: ActionRequest = {
   id: 'action-12345678', tenantId: 'tenant-12345678', sessionId: 'session-12345678', workflowKey: 'crm.account.create', intentKey: 'anc.company_formation', catalogVersionId: 'catalog-12345678', opportunityId: 'opportunity-12345678', actionKey: 'account.propose_creation', actionRevision: 2, idempotencyKey: 'action-key', state: 'processing', opaqueReference: 'opaque-action', payload: { contactConsent: true }, createdAt: new Date().toISOString(), result: null,
 };
 
-const correlation = { tenantId: action.tenantId, idempotencyKey: action.idempotencyKey, sessionId: action.sessionId, opportunityId: action.opportunityId, catalogVersionId: action.catalogVersionId!, actionKey: action.actionKey!, actionRevision: action.actionRevision! };
+const correlation = { tenantId: action.tenantId, idempotencyKey: action.idempotencyKey, sessionId: action.sessionId, opportunityId: action.opportunityId!, catalogVersionId: action.catalogVersionId!, actionKey: action.actionKey!, actionRevision: action.actionRevision! };
 
 describe('v2 provider evidence and callback correlation', () => {
   it('requires every trusted identity component for v2 callbacks', () => {

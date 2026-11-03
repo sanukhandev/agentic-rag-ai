@@ -126,7 +126,7 @@ describe('canonical action-state readiness projection', () => {
     ['reconcile_required', false, undefined, false, 'reconcile_required'],
   ] as const)('maps %s to %s only when trusted completion allows it', (state, proposed, providerStatus, verified, status) => {
     expect(deriveV2ActionReadiness({ action: state === null ? null : action(state),
-      proposalPresent: proposed, providerStatus, providerCompletionVerified: verified })).toBe(status);
+      proposalPresent: proposed, ...(providerStatus === undefined ? {} : { providerStatus }), providerCompletionVerified: verified })).toBe(status);
   });
 });
 
