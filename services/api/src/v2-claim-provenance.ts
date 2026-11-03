@@ -15,10 +15,25 @@ export interface V2ClaimProvenance {
   sourceRefs?: string[];
 }
 
+export type V2ClaimFailureReason =
+  | 'missing_cited_source'
+  | 'numeric_value_not_in_cited_source'
+  | 'unverified_provider_outcome'
+  | 'claim_source_polarity_mismatch'
+  | 'insufficient_clause_source_overlap'
+  | 'single_source_support_not_established';
+
+export interface V2ClaimFailure {
+  /** One-based ordinal among consequential clauses. Never stores user/model text. */
+  clauseOrdinal: number;
+  reason: V2ClaimFailureReason;
+}
+
 export interface V2ClaimEvaluation {
   supported: boolean;
   claims: V2ClaimProvenance[];
   unusedCitationIds: string[];
+  firstFailure?: V2ClaimFailure;
 }
 
 const norm = (s: string): string => s.normalize('NFKC').toLowerCase().replace(/[_-]/gu, ' ').replace(/\s+/gu, ' ').trim();
@@ -70,6 +85,30 @@ const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (c
   return semanticCheck(clause, source) || subject === text || negativeStatus || journeyParaphrase;
 };
 
+/** Diagnoses which conservative check ruled out support; never changes the
+ * semantic decision and never records raw model responses or source excerpts. */
+const classifyUnsupportedClause = (part: string, sources: V2ClaimSource[]): V2ClaimFailureReason => {
+  if (sources.length === 0) return 'missing_cited_source';
+  const claimedNumbers = numbers(part);
+  if (claimedNumbers.length > 0 && sources.every(source =>
+    claimedNumbers.some(value => !numbers(source.text).includes(value)))) return 'numeric_value_not_in_cited_source';
+  if (hasPositiveBusinessOutcomeClaim(part) && sources.every(source =>
+    source.kind === 'customer_fact' || !verifiedRecord.test(source.text)
+    || !state.test(source.text) || !completed.test(source.text))) return 'unverified_provider_outcome';
+  if (sources.every(source => negative(part) !== negative(source.text)
+    && !(/\\bnot complete\\b/iu.test(norm(part)) && /\\b(?:authoritative journey|current workflow status)\\b/iu.test(norm(source.text)))
+    && !(!negative(part) && /\\b(?:no|not)\\s+(?:provider|further|additional|other)\\b/iu.test(norm(source.text))))) {
+    return 'claim_source_polarity_mismatch';
+  }
+  const important = tokens(part);
+  if (important.length > 0 && sources.every(source => {
+    const available = new Set(tokens(source.text));
+    const count = important.filter(word => available.has(word)).length;
+    return count === 0 || count / important.length < 0.7;
+  })) return 'insufficient_clause_source_overlap';
+  return 'single_source_support_not_established';
+};
+
 export const evaluateV2ClaimProvenance = (
   answer: string,
   sources: V2ClaimSource[],
@@ -78,14 +117,19 @@ export const evaluateV2ClaimProvenance = (
 ): V2ClaimEvaluation => {
   const claims: V2ClaimProvenance[] = [];
   const used = new Set<string>();
+  let clauseOrdinal = 0;
   for (const sentence of answer.split(/(?<=[.!?])\s+|\n+/u).map((value) => value.trim()).filter(Boolean)) {
     // The scope of a negated process claim is the complete uncertainty sentence.
     if (isDialogue(sentence) && !hasPositiveBusinessOutcomeClaim(sentence)
       && !/\b(?:but|and)\b[\s\S]{0,120}\b(?:package|account|payment|contract|costs?|eligible|available|required|requires?|includes?|registered|created|completed)\b/iu.test(sentence)) continue;
     for (const part of clauses(sentence)) {
     if (isDialogue(part) && !hasPositiveBusinessOutcomeClaim(part)) continue;
+    clauseOrdinal += 1;
     const matched = sources.find((source) => supportsSource(part, source, semanticCheck));
-    if (!matched) return { supported: false, claims: [], unusedCitationIds: [] };
+    if (!matched) return {
+      supported: false, claims: [], unusedCitationIds: [],
+      firstFailure: { clauseOrdinal, reason: classifyUnsupportedClause(part, sources) },
+    };
     used.add(matched.citationId);
     claims.push({
       claimDigest: digest(part), citationIds: [matched.citationId], sourceVersions: [matched.sourceVersion],
