@@ -109,6 +109,37 @@ describe('GPT-first controller full-turn unit behavior', () => {
     expect(await store.listIntentTurns(tenant.id, session.id)).toHaveLength(1);
     expect(await store.listActionsBySession(session.id, tenant.id)).toHaveLength(0);
   });
+  it('records why a model response was replaced without auditing draft or source text', async () => {
+    const { store, tenant, session, coordinator, input } = await prepared();
+    coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 2, toolCallCount: 1,
+      toolTrace: [{
+        toolCallId: 'tool-call-12345678', toolName: 'search_knowledge', status: 'ok',
+        resultDigest: 'a'.repeat(64), elapsedMs: 1, evidenceRefs: [],
+      }],
+      approvedEvidence: [],
+      candidateResponse: {
+        citationIds: ['unknown-citation'], answer: 'Sensitive unverified draft answer',
+        nextQuestion: null, nextQuestionKey: null,
+      },
+      response: {
+        citationIds: [], answer: 'I cannot verify that answer safely. I can continue with confirmed information.',
+        nextQuestion: null, nextQuestionKey: null, decisionRef: 'fallback-test',
+      },
+      guardReason: 'invalid_citation', candidateGuardReason: 'invalid_citation',
+    }) as unknown as V2CoordinatorResult);
+    await runGPTFirstChatTurn(input);
+    const audit = (await store.listAudit(tenant.id)).find(event => event.eventName === 'v2.gpt_first.turn' && event.metadata.sessionId === session.id);
+    expect(audit?.metadata).toMatchObject({
+      guardReason: 'invalid_citation', candidateGuardReason: 'invalid_citation',
+      prefetchEvidenceCount: 0, validatedEvidenceCount: 0,
+      candidateCitationCount: 1, responseCitationCount: 0,
+      failedReadToolCount: 0, fallbackApplied: true,
+    });
+    expect(JSON.stringify(audit)).not.toContain('Sensitive unverified draft answer');
+    expect(JSON.stringify(audit)).not.toContain('unknown-citation');
+  });
+
   it('rejects stale model output without writing an assistant answer', async () => {
     const { store, tenant, session, coordinator, input } = await prepared();
     coordinator.run.mockImplementationOnce(async () => {
