@@ -114,4 +114,4 @@ jobs:
       - name: Python ingestion tests
         run: python -m unittest discover -s tools/ingestion -p 'test_*.py'
       - name: Python model gateway tests
-        run: python -m pytest services/model-gateway/tests -q
+        run: PYTHONPATH=services/model-gateway python -m pytest services/model-gateway/tests -q
