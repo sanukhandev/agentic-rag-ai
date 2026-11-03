@@ -515,6 +515,39 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const session = await store.getSession(action.sessionId);
     if (!session || session.tenantId !== action.tenantId) return;
     const currentState = session.conversationState;
+    const v2Document = await store.getUserIntentDocument(action.tenantId, action.sessionId);
+    if (v2Document?.catalogSource === 'v2') {
+      if (v2Document.opportunityId !== action.opportunityId
+        || v2Document.catalogVersionRef !== action.catalogVersionId) {
+        // Never apply a legacy callback to a separately pinned V2 journey.
+        return;
+      }
+      // Authenticated transport completion is NOT trusted stage completion:
+      // provider record read-back and evaluateV2StageTransition must first
+      // validate the authoritative evidence before advancing the lifecycle.
+      const requiresReconciliation = status === 'completed';
+      const workflowStatus = requiresReconciliation ? 'reconcile_required'
+        : status === 'failed' ? 'failed'
+          : status === 'human_review' ? 'human_review'
+            : status === 'reconcile_required' ? 'reconcile_required'
+              : status === 'awaiting_customer' ? 'awaiting_customer' : 'processing';
+      const phase = requiresReconciliation || status === 'reconcile_required'
+        ? 'RECONCILE_REQUIRED' : status === 'failed' ? 'FAILED'
+          : status === 'human_review' ? 'HUMAN_REVIEW'
+            : status === 'awaiting_customer' ? 'SLOT_COLLECTION' : 'QUEUED';
+      await updateSessionSafely({ ...session, conversationState: {
+        ...(currentState ?? newConversationState()), workflowStatus, phase,
+      } }, true, 'workflow');
+      if (requiresReconciliation) {
+        await store.addAudit({ id: randomUUID(), tenantId: action.tenantId,
+          actorId: null, eventName: 'v2.provider.completion_awaiting_readback',
+          metadata: { actionId: action.id, opportunityId: action.opportunityId,
+            catalogVersionRef: v2Document.catalogVersionRef,
+            stageKey: v2Document.currentStageKey, actionStatus: status },
+          createdAt: new Date().toISOString() });
+      }
+      return;
+    }
     const lifecycleIntentTransition = action.workflowKey === 'crm.account.convert' && action.intentKey === 'account.registration';
     if (currentState && action.intentKey && currentState.selectedIntentKey && currentState.selectedIntentKey !== action.intentKey && !lifecycleIntentTransition) return;
     if (currentState && action.catalogVersionId && currentState.catalogVersionId && currentState.catalogVersionId !== action.catalogVersionId) return;
