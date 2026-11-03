@@ -1,4 +1,4 @@
-import { evaluateV2ClaimProvenance, type V2ClaimSource } from './v2-claim-provenance.js';
+import { evaluateV2ClaimProvenance, type V2ClaimSource, type V2ClaimFailure } from './v2-claim-provenance.js';
 import type { V2ClaimProvenance } from './v2-claim-provenance.js';
 export type { V2ClaimProvenance } from './v2-claim-provenance.js';
 import { hasConflictingEvidence } from './knowledge.js';
@@ -25,6 +25,7 @@ export interface V2VerifiedFact {
 export interface V2EvidenceDecision {
   verdict: ResponseGuardVerdictV2;
   claims: V2ClaimProvenance[];
+  firstFailure?: V2ClaimFailure;
 }
 
 const sentences = (answer: string): string[] => answer.split(/(?<=[.!?])\s+|\n+/u).map((value) => value.trim()).filter(Boolean);
@@ -205,7 +206,7 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
   };
   const evaluation = evaluateV2ClaimProvenance(answerForEvidence, sources,
     (part) => safeDialogueSegment(part) || nonFactualPreface(part) || safeFactAcknowledgement(part) || safeNonFactualTransition(part), supports);
-  if (!evaluation.supported) return { verdict: verdict(false, 'unsupported_claim', null), claims: [] };
+  if (!evaluation.supported) return { verdict: verdict(false, 'unsupported_claim', null), claims: [], ...(evaluation.firstFailure ? { firstFailure: evaluation.firstFailure } : {}) };
   if (evaluation.unusedCitationIds.length > 0) return { verdict: verdict(false, 'invalid_citation', null), claims: [] };
   return { verdict: verdict(true, 'accepted', response), claims: evaluation.claims };
 };
