@@ -53,6 +53,9 @@ export interface V2CoordinatorResult {
   guardReason: string;
   /** Original model candidate verdict, retained even when Node emits a safe fallback. */
   candidateGuardReason: string;
+  /** The bounded knowledge repair's outcome, with no answer or source text. */
+  knowledgeRepairStatus?: 'not_eligible' | 'skipped_untrusted_evidence' | 'skipped_budget'
+    | 'attempted_invalid_result' | 'attempted_rejected' | 'attempted_error' | 'accepted';
   /** Optional bounded Python-side candidate capture for explicit UAT diagnostics. */
   diagnosticCandidate?: string | null;
 }
@@ -257,7 +260,10 @@ export class V2ConversationCoordinator {
         diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
       };
     }
-    if (uncitedDialogueCandidate) {
+    // Do not substitute a generic no-evidence question when verified public
+    // knowledge is available for a factual process question. Evaluate and,
+    // if necessary, repair the cited factual answer instead.
+    if (uncitedDialogueCandidate && !(asksForProcess && knowledgeEvidenceAvailable)) {
       // A safe question and acknowledgement can be authored by the model without
       // RAG citations. Constrain the accepted text shape and forbid factual claims.
       const authored = guardV2Response(candidateResponse, { ...guardContext, allowNonFactualDialogue: true });
@@ -288,53 +294,63 @@ export class V2ConversationCoordinator {
     // All source identities must match the trusted Node prefetch (not untrusted
     // model/tool claims); the second model pass has no callable tools or actions.
     let repairModelRequests = 0;
+    let knowledgeRepairStatus: NonNullable<V2CoordinatorResult['knowledgeRepairStatus']> = 'not_eligible';
     const matchesNodePrefetch = (envelope.approvedKnowledge ?? []).some(item =>
       (request.evidence ?? []).some(approved =>
         approved.approved && !approved.revoked && approved.citationId === item.citationId
         && approved.sourceRef === item.sourceRef && approved.sourceVersion === item.sourceVersion
         && approved.text === item.text));
     const timeLeft = Date.parse(envelope.budgets.deadlineAt) - Date.now();
-    if (asksForProcess && guarded.verdict.reasonCode === 'unsupported_claim'
-      && knowledgeEvidenceAvailable && matchesNodePrefetch
-      && !hasPositiveBusinessOutcomeClaim(candidateResponse.answer)
-      && agentResult.modelRequestCount < envelope.budgets.maxModelRequests
-      && timeLeft >= 10_000) {
-      try {
-        const repairEnvelope = turnEnvelopeSchema.parse({
-          ...envelope,
-          knowledgeRepair: { reason: 'unsupported_claim', strategy: 'source_close' },
-          toolAllowlist: [],
-          budgets: { ...envelope.budgets, maxModelRequests: 1, maxToolCalls: 0, maxToolRounds: 0 },
-        });
-        const candidateRepair = agentTurnResultSchema.safeParse(await this.agent.turn(repairEnvelope));
-        if (candidateRepair.success && candidateRepair.data.modelRequestCount === 1
-          && candidateRepair.data.toolCallCount === 0 && candidateRepair.data.toolTrace.length === 0) {
-          repairModelRequests = 1;
-          const repaired = repairTrailingQuestionContract(repairAuthoritativeStagePlaceholder(
-            addVerifiedFactCitations(candidateRepair.data.response, request.verifiedFacts ?? []),
-            envelope.intentProjection.currentStageKey,
-          ));
-          // A repair of a factual question must not also propose a business goal,
-          // record customer facts, or authorize any stage action.
-          const groundedRepair: PersonaComposedResponseV2 = { ...repaired, planning: null };
-          if (groundedRepair.citationIds.length > 0
-            && !groundedRepair.decisionRef.startsWith('fallback-')
-            && !hasPositiveBusinessOutcomeClaim(groundedRepair.answer)) {
-            const verifiedRepair = guardV2Response(groundedRepair, guardContext);
-            if (verifiedRepair.verdict.accepted && verifiedRepair.response) return {
-              response: verifiedRepair.response, candidateResponse: agentResult.response,
-              repairApplied: true, draft: toDraft(verifiedRepair.response),
-              toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [],
-              claimProvenance: verifiedRepair.claims,
-              modelRequestCount: agentResult.modelRequestCount + 1,
-              toolCallCount: agentResult.toolCallCount,
-              guardReason: 'accepted_knowledge_repair', candidateGuardReason,
-              diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
-            };
+    if (asksForProcess && guarded.verdict.reasonCode === 'unsupported_claim' && knowledgeEvidenceAvailable) {
+      if (!matchesNodePrefetch) {
+        knowledgeRepairStatus = 'skipped_untrusted_evidence';
+      } else if (agentResult.modelRequestCount >= envelope.budgets.maxModelRequests || timeLeft < 2_500) {
+        knowledgeRepairStatus = 'skipped_budget';
+      } else {
+        // The original answer is already rejected. We can safely repair even
+        // if it asserted a completed business action, because that assertion
+        // is never returned and the second answer must pass the same guard.
+        knowledgeRepairStatus = 'attempted_invalid_result';
+        try {
+          const repairEnvelope = turnEnvelopeSchema.parse({
+            ...envelope,
+            knowledgeRepair: { reason: 'unsupported_claim', strategy: 'source_close' },
+            toolAllowlist: [],
+            budgets: { ...envelope.budgets, maxModelRequests: 1, maxToolCalls: 0, maxToolRounds: 0 },
+          });
+          const candidateRepair = agentTurnResultSchema.safeParse(await this.agent.turn(repairEnvelope));
+          if (candidateRepair.success && candidateRepair.data.modelRequestCount === 1
+            && candidateRepair.data.toolCallCount === 0 && candidateRepair.data.toolTrace.length === 0) {
+            repairModelRequests = 1;
+            const repaired = repairTrailingQuestionContract(repairAuthoritativeStagePlaceholder(
+              addVerifiedFactCitations(candidateRepair.data.response, request.verifiedFacts ?? []),
+              envelope.intentProjection.currentStageKey,
+            ));
+            // Do not carry model-authored business goal, stage or action plans
+            // across a factual knowledge repair.
+            const groundedRepair: PersonaComposedResponseV2 = { ...repaired, planning: null };
+            knowledgeRepairStatus = 'attempted_rejected';
+            if (groundedRepair.citationIds.length > 0
+              && !groundedRepair.decisionRef.startsWith('fallback-')
+              && !hasPositiveBusinessOutcomeClaim(groundedRepair.answer)) {
+              const verifiedRepair = guardV2Response(groundedRepair, guardContext);
+              if (verifiedRepair.verdict.accepted && verifiedRepair.response) return {
+                response: verifiedRepair.response, candidateResponse: agentResult.response,
+                repairApplied: true, draft: toDraft(verifiedRepair.response),
+                toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [],
+                claimProvenance: verifiedRepair.claims,
+                modelRequestCount: agentResult.modelRequestCount + 1,
+                toolCallCount: agentResult.toolCallCount,
+                guardReason: 'accepted_knowledge_repair', candidateGuardReason,
+                knowledgeRepairStatus: 'accepted',
+                diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
+              };
+            }
           }
+        } catch {
+          // A second-pass error must never release the rejected original draft.
+          knowledgeRepairStatus = 'attempted_error';
         }
-      } catch {
-        // Repair failures cannot bypass the original guard's safe fallback.
       }
     }
     // A missing RAG source must not block conversation. Never use this path when
@@ -362,6 +378,6 @@ export class V2ConversationCoordinator {
     }
     const fallback = guardV2OfflineFallback(fallbackFamilyFor(guarded.verdict.reasonCode), guardContext);
     if (!fallback.verdict.accepted || !fallback.response) throw new Error('V2_RESPONSE_REJECTED');
-    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: [], modelRequestCount: agentResult.modelRequestCount + repairModelRequests, toolCallCount: agentResult.toolCallCount, guardReason: guarded.verdict.reasonCode, candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
+    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: [], modelRequestCount: agentResult.modelRequestCount + repairModelRequests, toolCallCount: agentResult.toolCallCount, guardReason: guarded.verdict.reasonCode, candidateGuardReason, knowledgeRepairStatus, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
   }
 }
