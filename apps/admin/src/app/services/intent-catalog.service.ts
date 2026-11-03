@@ -1,10 +1,10 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of, switchMap, takeWhile, timer } from 'rxjs';
-import { IngestionJob, IntentCatalogVersion } from '../types/admin.types';
+import { IngestionJob, IntentCatalogV2Version, IntentCatalogVersion } from '../types/admin.types';
 import { apiErrorMessage } from './api-error';
 import { AuthService } from './auth.service';
-import { isCatalogJobPending } from './intent-catalog-utils';
+import { isCatalogJobPending, shouldRestoreCatalogJob } from './intent-catalog-utils';
 import { ToastService } from './toast.service';
 import { API_BASE_URL } from './tokens';
 
@@ -19,11 +19,13 @@ export class IntentCatalogService {
 
   // Angular Signals (Primary reactive state)
   private readonly _versions = signal<IntentCatalogVersion[]>([]);
+  private readonly _v2Versions = signal<IntentCatalogV2Version[]>([]);
   private readonly _catalogJob = signal<IngestionJob | null>(null);
   private readonly _catalogError = signal<string | null>(null);
   private watchedJobId: string | null = null;
 
   readonly versions = this._versions.asReadonly();
+  readonly v2Versions = this._v2Versions.asReadonly();
   readonly catalogJob = this._catalogJob.asReadonly();
   readonly catalogError = this._catalogError.asReadonly();
 
@@ -52,6 +54,12 @@ export class IntentCatalogService {
       this._versions.set(items);
       this.versionsSubject.next(items);
     });
+    this.http.get<{ items: IntentCatalogV2Version[] }>(`${this.apiBase}/api/v2/admin/intent-catalog/versions`).pipe(catchError((error) => {
+      const message = apiErrorMessage(error, 'Could not load the Conversation Engine v2 catalog.');
+      this._catalogError.set(message);
+      this.catalogErrorSubject.next(message);
+      return of({ items: [] });
+    })).subscribe((response) => this._v2Versions.set(response.items ?? []));
   }
 
   resumePendingJob(): void {
@@ -66,13 +74,10 @@ export class IntentCatalogService {
       const job = (items ?? [])
         .filter((candidate) => candidate.mimeType === CATALOG_MIME_TYPE)
         .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0];
-      if (job && isCatalogJobPending(job.status)) {
+      if (job && shouldRestoreCatalogJob(job.status)) {
         this._catalogJob.set(job);
         this.catalogJobSubject.next(job);
         this.watchJob(job.id);
-      } else if (job?.status === 'failed') {
-        this._catalogJob.set(job);
-        this.catalogJobSubject.next(job);
       }
     });
   }
@@ -146,6 +151,10 @@ export class IntentCatalogService {
 
   exportPublished(): Observable<Blob> {
     return this.http.get(`${this.apiBase}/api/v1/admin/intent-catalog/published/export`, { responseType: 'blob' });
+  }
+
+  exportV2Published(): Observable<Blob> {
+    return this.http.get(`${this.apiBase}/api/v2/admin/intent-catalog/published/export`, { responseType: 'blob' });
   }
 
   saveDraft(version: IntentCatalogVersion, catalog: unknown, onSaved: () => void): void {

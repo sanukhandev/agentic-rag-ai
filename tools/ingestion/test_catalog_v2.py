@@ -80,6 +80,19 @@ class CatalogV2Tests(unittest.TestCase):
                 parse_catalog_v2(path)
             self.assertEqual(error.exception.code, "FORMULA_NOT_ALLOWED")
 
+    def test_accepts_exported_optional_qualification_policies_sheet(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.workbook(directory)
+            workbook = __import__("openpyxl").load_workbook(path)
+            sheet = workbook.create_sheet("QualificationPolicies")
+            sheet.append(["policy_key", "goal_key", "stage_key", "fact_key", "operator", "values", "outcome", "active"])
+            sheet.append(["qualification.review", "ancfz", "lead_qualification", "entity_type", "equals", '["restricted"]', "manual_review", True])
+            workbook.save(path)
+
+            parsed = parse_catalog_v2(path, "ancfz")
+
+            self.assertEqual(parsed["sheets"]["QualificationPolicies"][0]["policyKey"], "qualification.review")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -237,3 +237,24 @@ export interface IntentCatalogVersion {
   createdAt: string;
   publishedAt: string | null;
 }
+
+export interface IntentCatalogV2Document {
+  sheets: {
+    BusinessGoals: Array<{ businessGoalKey: string; name: string }>;
+    IntentSignals: Array<{ signalId: string; targetKey: string }>;
+    BusinessStages: Array<{ businessGoalKey: string; stageKey: string; stageOrder: number }>;
+  };
+}
+
+export interface IntentCatalogV2Version {
+  id: string;
+  version: number;
+  status: 'draft' | 'published';
+  sourceFileName: string;
+  sourceHash: string;
+  parserVersion: string;
+  catalogVersionRef: string;
+  catalog: IntentCatalogV2Document;
+  createdAt: string;
+  publishedAt: string | null;
+}
