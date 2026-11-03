@@ -12,6 +12,8 @@ test('all ANCFZ V2 workflows are structurally connected and non-executable by de
  for(const [i,file] of files.entries()){
   const raw=await readFile(new URL(file,root),'utf8'),w=JSON.parse(raw);
   assert.equal(w.active,false,file);
+  assert.equal(w.settings.saveDataSuccessExecution,'none');
+  assert.equal(w.settings.saveDataErrorExecution,'none');
   assert.equal(w.nodes.length,9,file);
   assert.deepEqual(w.nodes.map(node=>node.name),names,file);
   assert.ok(!ids.has(w.id),'duplicate workflow id');ids.add(w.id);

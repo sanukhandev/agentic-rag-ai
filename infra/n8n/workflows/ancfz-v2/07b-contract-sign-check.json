@@ -5,7 +5,7 @@
   "settings": {
     "executionOrder": "v1",
     "saveDataSuccessExecution": "none",
-    "saveDataErrorExecution": "all"
+    "saveDataErrorExecution": "none"
   },
   "nodes": [
     {

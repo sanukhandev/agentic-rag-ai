@@ -15,6 +15,7 @@
 ## Why these templates are inert
 
 - All exports contain `active:false`; no provider credential IDs or secrets are embedded.
+- Success and error execution-data persistence are both set to `none` to avoid retaining customer contacts, document references, payment handles and signing details in n8n execution history. Use restricted backend audit events for diagnostics.
 - Webhook nodes use **Header Auth**; create a credential named `ANCFZ Node Dispatch` with header `X-Agentic-Internal-Secret` and the existing value of `N8N_WEBHOOK_SECRET` from your local deployment. Also assign a managed `httpHeaderAuth` credential for internal HTTP Request nodes; never put the secret into workflow JSON.
 - Salesforce provider nodes require n8n managed OAuth2 credentials (sandbox first). Other providers use placeholder HTTP Header Auth; replace the `.invalid` URLs only with approved sandbox endpoints.
 - The **Node action claim endpoint is legacy V1-only**: `/api/v1/internal/workflow-events/claim` currently resolves action identities from legacy V1 catalogs, not V2. The V2 trusted evidence endpoint `/api/v2/internal/provider-evidence/verify` is **not implemented**. Consequently **the workflows are not runnable end-to-end merely by setting credentials**. Implement and test the Node V2 bridge first; do not weaken the `Require V2 Stage Authorization` gate.
