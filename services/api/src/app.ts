@@ -80,7 +80,7 @@ import { registerLifecycleRoutes } from './routes/lifecycle.js';
 import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './v2-tool-gateway.js';
 import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
 import { executeV2Turn, runGPTFirstChatTurn } from './v2-turn-controller.js';
-import { evaluatePersistedV2ActionConfirmation } from './v2-journey-bootstrap.js';
+import { evaluatePersistedV2ActionConfirmation, evaluateV2CallbackStageCompletion } from './v2-journey-bootstrap.js';
 import type { V2ApprovedFallbackTemplateSet } from './v2-fallbacks.js';
 import type { PersonaComposedResponseV2 } from './python-model/v2-contracts.js';
 
@@ -575,13 +575,19 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (!execution || execution.eventId !== eventId || execution.correlationId !== correlationId || execution.attempt !== attempt || (execution.n8nExecutionRef && executionReference && execution.n8nExecutionRef !== executionReference)) throw new HttpError(409, 'WORKFLOW_CORRELATION_MISMATCH', 'The workflow completion does not match the current execution claim.');
   };
   const assertV2ProviderCorrelation = async (action: ActionRequest, input: unknown): Promise<void> => {
-    if (!action.catalogVersionId) return;
-    // The V2 action identity is the canonical catalogVersionRef, not the
-    // catalog version row UUID. Skipping validation here accepts unauthenticated
-    // completion callbacks, so resolve by the exact published ref.
-    const pinnedV2 = (await store.listIntentCatalogV2Versions(action.tenantId))
-      .find(version => version.status === 'published' && version.catalogVersionRef === action.catalogVersionId);
-    if (!pinnedV2) return;
+    const doc = await store.getUserIntentDocument(action.tenantId, action.sessionId);
+    const versions = await store.listIntentCatalogV2Versions(action.tenantId);
+    const knownV2 = versions.some(version => version.catalogVersionRef === action.catalogVersionId);
+    if (doc?.catalogSource !== 'v2' && !knownV2) return;
+    // A revoked V2 catalog or a missing intent document must never bypass
+    // mandatory callback identity checks through a legacy fallback.
+    const publishedV2 = versions.find(version => version.status === 'published'
+      && version.catalogVersionRef === action.catalogVersionId);
+    if (!publishedV2 || doc?.catalogSource !== 'v2'
+      || doc.catalogVersionRef !== action.catalogVersionId
+      || doc.opportunityId !== action.opportunityId) {
+      throw new HttpError(409, 'V2_PROVIDER_CATALOG_STALE', 'Provider callback has no current V2 catalog and opportunity pin.');
+    }
     const parsed = v2CallbackCorrelationSchema.safeParse(input);
     if (!parsed.success) throw new HttpError(409, 'V2_PROVIDER_CORRELATION_REQUIRED', 'A v2 provider callback must include its trusted session, opportunity, catalog and action revision.');
     const reason = validateV2ProviderCorrelation(action, parsed.data);
@@ -600,6 +606,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       || (action.state === 'awaiting_customer' && ['processing', 'completed', 'failed', 'reconcile_required'].includes(status))
       || resolvesReconciliation;
     if (!allowed) throw new HttpError(409, 'WORKFLOW_TRANSITION_FORBIDDEN', `Workflow action cannot transition from ${action.state} to ${status}.`);
+    const scopeDocument = await store.getUserIntentDocument(action.tenantId, action.sessionId);
+    const isCanonicalV2 = action.catalogVersionId
+      ? (await store.listIntentCatalogV2Versions(action.tenantId))
+        .some(version => version.catalogVersionRef === action.catalogVersionId)
+      : false;
+    const completion = evaluateV2CallbackStageCompletion(action, status, scopeDocument, isCanonicalV2);
+    if (!completion.accepted) {
+      throw new HttpError(409, 'V2_PROVIDER_EVIDENCE_REQUIRED',
+        'The provider callback cannot finalize a V2 action without a trusted provider-record verification.');
+    }
     if (providerTerminal) {
       const committed = await store.transitionActionWithExecution({ actionId: action.id, tenantId: action.tenantId, fromState: action.state, toState: status, result: externalReference ? { externalReference } : action.result, providerStatus: status, n8nExecutionRef: executionReference!, eventId: eventId!, correlationId: correlationId!, expectedAttempt: attempt!, resolveReconciliation: resolvesReconciliation, outcome: externalReference ? { externalReference } : null });
       if (!committed) throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action and execution changed before this transition was committed.');
