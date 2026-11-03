@@ -48,7 +48,9 @@ describe('v2 claim provenance and evidence verification', () => {
   });
 
   it('rejects unsupported consequential claims and unknown citations', () => {
-    expect(verifyV2ResponseEvidence(response('The approved package costs 999 credits.'), approved).verdict.reasonCode).toBe('unsupported_claim');
+    const rejected = verifyV2ResponseEvidence(response('The approved package costs 999 credits.'), approved);
+    expect(rejected.verdict.reasonCode).toBe('unsupported_claim');
+    expect(rejected.firstFailure).toEqual({ clauseOrdinal: 1, reason: 'numeric_value_not_in_cited_source' });
     expect(verifyV2ResponseEvidence(response('The package costs 42 credits.', ['unknown-12345678']), approved).verdict.reasonCode).toBe('invalid_citation');
   });
 
