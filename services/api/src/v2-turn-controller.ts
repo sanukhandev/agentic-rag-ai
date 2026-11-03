@@ -506,6 +506,17 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: null, eventName: 'v2.gpt_first.turn',
     metadata: { sessionId: session.id, clientMessageId: input.clientMessageId,
       catalogVersionId: catalog.id, personaVersionId: persona.id, modelRequestCount: result.modelRequestCount,
-      toolCallCount: result.toolCallCount, guardReason: result.guardReason, executionPath: 'langgraph' }, createdAt: at });
+      toolCallCount: result.toolCallCount, guardReason: result.guardReason,
+      // Counts and decision codes only. Never persist model draft text or RAG excerpts
+      // in audit metadata; those may contain personal data or unsafe instructions.
+      candidateGuardReason: result.candidateGuardReason ?? null,
+      prefetchEvidenceCount: approvedKnowledge.length,
+      validatedEvidenceCount: result.approvedEvidence?.length ?? 0,
+      candidateCitationCount: result.candidateResponse?.citationIds.length ?? 0,
+      responseCitationCount: result.response.citationIds.length,
+      failedReadToolCount: result.toolTrace.filter(trace => trace.status !== 'ok').length,
+      fallbackApplied: result.response.decisionRef?.startsWith('fallback-') === true
+        || result.response.decisionRef?.startsWith('guard-fallback-') === true,
+      executionPath: 'langgraph' }, createdAt: at });
   return response;
 };
