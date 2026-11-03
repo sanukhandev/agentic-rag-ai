@@ -33,7 +33,7 @@ import { filterPermittedCommands } from '../components/shared/command-palette-ut
 import { AdminStateService } from './admin-state.service';
 import { Tenant, Source, NavSection, IngestionJob, Persona } from '../types/admin.types';
 import { isTrustedApiRequest } from './auth.interceptor';
-import { CATALOG_MIME_TYPE } from './intent-catalog.service';
+import { CATALOG_MIME_TYPE, IntentCatalogService } from './intent-catalog.service';
 import { AuthService } from './auth.service';
 import { PersonaService } from './persona.service';
 import { API_BASE_URL } from './tokens';
@@ -128,6 +128,36 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(isTrustedApiRequest('http://localhost/api/v1/auth/login', base).isPublicAuth).toBe(true);
     expect(isTrustedApiRequest('https://external.example/api/v2/admin/intent-catalog/versions', base).isApiRequest).toBe(false);
     expect(isTrustedApiRequest('http://localhost/api/v3/not-trusted', base).isApiRequest).toBe(false);
+  });
+
+  it('loads imported V2 catalog drafts from their own endpoint and publishes through V2', () => {
+    const v2 = {
+      id: 'v2-draft', version: 1, status: 'draft', sourceFileName: 'ANCFZ_Seven_Stage_Intent_Catalog_V2_DRAFT.xlsx',
+      catalog: { schemaVersion: 2, manifest: { catalogKey: 'ancfz', revision: 2 }, sheets: { BusinessStages: [], TurnIntents: [], BusinessGoals: [], ToolBindings: [] } }
+    };
+    const httpMock = {
+      get: vi.fn().mockImplementation((url: string) => of(url.includes('/api/v2/') ? { items: [v2] } : { items: [] })),
+      post: vi.fn().mockReturnValue(of({ version: { ...v2, status: 'published' } }))
+    };
+    const injector = Injector.create({
+      providers: [
+        { provide: API_BASE_URL, useValue: 'http://127.0.0.1:4000' },
+        { provide: HttpClient, useValue: httpMock },
+        ToastService,
+        AuthService,
+        IntentCatalogService
+      ]
+    });
+    const auth = injector.get(AuthService);
+    (auth as any)._token.set('valid-test-token');
+    const catalog = injector.get(IntentCatalogService);
+    catalog.load();
+    expect(httpMock.get).toHaveBeenCalledWith('http://127.0.0.1:4000/api/v2/admin/intent-catalog/versions');
+    expect(httpMock.get).toHaveBeenCalledWith('http://127.0.0.1:4000/api/v1/admin/intent-catalog/versions');
+    expect(catalog.versions()).toEqual([]);
+    expect(catalog.v2Versions()[0].sourceFileName).toBe(v2.sourceFileName);
+    catalog.publishV2(catalog.v2Versions()[0]);
+    expect(httpMock.post).toHaveBeenCalledWith('http://127.0.0.1:4000/api/v2/admin/intent-catalog/versions/v2-draft/publish', {});
   });
 
   it('keeps catalog uploads visible until ingestion completes', () => {
