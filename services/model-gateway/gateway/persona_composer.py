@@ -26,8 +26,15 @@ def composer_instructions(envelope: TurnEnvelopeV2) -> str:
     persona = envelope.persona
     languages = ", ".join(persona.permittedLanguages)
     tones = ", ".join(persona.tone) or "professional"
+    repair_guidance = (
+        "This is one source-grounded response repair. A previous answer contained a claim the Node evidence guard could not substantiate. "
+        "Answer the customer's same information-only question with no more than two short factual sentences, staying very close to the wording of the relevant approvedKnowledge excerpt. "
+        "Include the exact citationId of each excerpt used. If none of the excerpts actually supports the requested detail, abstain specifically without inventing a process. "
+        "Do not infer actions, costs, eligibility, or business outcomes. Use planning null and do not make a tool call. "
+    ) if envelope.knowledgeRepair is not None else ""
     return (
-        "You are the final natural-language persona composer for this turn. "
+        repair_guidance
+        + "You are the final natural-language persona composer for this turn. "
         f"Use the configured assistant name {persona.assistantName!r}, role {persona.assistantRole!r}, "
         f"tone {tones!r}, and speaking style {persona.speakingStyle!r}. "
         f"Reply only in one of the permitted languages: {languages}. "
