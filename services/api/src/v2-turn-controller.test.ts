@@ -293,6 +293,9 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
     expect(reply.actionProposal).toBeNull();
     expect(reply.pendingPromptId).toBeNull();
+    const committedCustomer = await ctx.store.getMessageByClientId(ctx.session.id, confirmation.clientMessageId);
+    expect(committedCustomer?.response).toMatchObject({ messageId: reply.messageId, answer: reply.answer });
+    expect((await ctx.store.listMessages(ctx.session.id, ctx.tenant.id)).filter(message => message.id === reply.messageId && message.role === 'assistant')).toHaveLength(1);
     expect(document?.goalConfirmed).toBe(true);
     expect(document?.businessGoalKey).toBe('anc.company_formation');
     expect(document?.goalConfirmation).toMatchObject({
@@ -322,6 +325,17 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect(document?.businessGoalKey).toBeNull();
     expect(document?.verifiedFacts.business_activity?.maskedValue).toBe('technology consulting');
     expect(reply.actionProposal).toBeNull();
+  });
+
+  it('does not commit a confirmed goal when the original customer reply was already answered', async () => {
+    const ctx = await proposalTurn();
+    const confirmation = await followUpTurn(ctx, 'Yes, proceed.');
+    await ctx.store.updateMessage({ ...confirmation.userMessage, response: { messageId: 'another-turn' } });
+    await expect(runGPTFirstChatTurn(confirmation)).rejects.toThrow('already committed or the message scope changed');
+    const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document?.goalConfirmed).toBe(false);
+    expect(document?.goalConfirmation?.status).toBe('pending');
+    expect(await ctx.store.listIntentTurns(ctx.tenant.id, ctx.session.id)).toHaveLength(1);
   });
 
   it('preserves the same scoped prompt during a knowledge question and ambiguity', async () => {
