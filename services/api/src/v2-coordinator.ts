@@ -235,8 +235,8 @@ export class V2ConversationCoordinator {
     // For a repeated factual process question, an uncited generic reply such
     // as "What would you like to focus on next?" is not an acceptable answer.
     // Only use this branch when no public source evidence was retrieved.
-    const asksForProcess = /\\b(?:process|procedures?|steps?|how (?:do|can|to)|setting up|starting)\\b/iu.test(envelope.customerMessageMasked)
-      && /\\b(?:company|business|free[\\s-]?zone|formation|ajman|register|setup)\\b/iu.test(envelope.customerMessageMasked);
+    const asksForProcess = /\b(?:process|procedures?|steps?|how (?:do|can|to)|setting up|starting)\b/iu.test(envelope.customerMessageMasked)
+      && /\b(?:company|business|free[\s-]?zone|formation|ajman|register|setup)\b/iu.test(envelope.customerMessageMasked);
     const knowledgeEvidenceAvailable = (guardContext.evidence ?? []).some(item =>
       item.sourceRef && !item.sourceRef.startsWith('tool-') && item.approved && !item.revoked);
     if (asksForProcess && !knowledgeEvidenceAvailable && candidateResponse.citationIds.length === 0) {

@@ -1,7 +1,8 @@
 import { retrieveApprovedKnowledge } from './knowledge.js';
 import { sanitizeKnowledgeText } from './privacy.js';
 import type { EmbeddingProvider } from './embedding.js';
-import type { ModelEvidence, Store } from './types.js';
+import type { Store } from './types.js';
+import type { ModelEvidence } from './model.js';
 import type { V2ApprovedEvidence } from './v2-evidence.js';
 
 /** Read-only preflight: facts must come from active, tenant-scoped public knowledge.

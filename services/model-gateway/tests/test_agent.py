@@ -273,6 +273,6 @@ def test_planning_fact_proposals_remain_typed_and_cannot_create_actions():
 def test_prefetched_approved_knowledge_is_in_model_context():
     item = {"citationId": "chunk-12345678", "sourceRef": "source-12345678", "sourceVersion": "version-12345678", "text": "An approved setup process is described here."}
     current = envelope().model_copy(update={"approvedKnowledge": [ApprovedKnowledgeSnippetV2.model_validate(item)]})
-    agent = BoundedConversationAgent(FakeClient([]), FakeToolGateway(), "test-model")
+    agent = BoundedConversationAgent(FakeClient([]), FakeGateway(), "test-model")
     payload = json.loads(agent._input(current))
     assert payload["approvedKnowledge"] == [item]
