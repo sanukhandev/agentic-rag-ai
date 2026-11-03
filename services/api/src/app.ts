@@ -1575,18 +1575,19 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (cachedEntry?.response && typeof cachedEntry.response.answer === 'string') {
         if (cachedEntry.messageHash !== messageHash) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
         await auditCacheEvent(session.tenantId, 'chat.cache_hit', responseCacheKey);
+        res.setHeader('X-Chat-Engine', 'cached');
         res.json(rehydrateStoredResponse(session, cachedEntry.response)); return;
       }
       const durableDuplicate = await store.getMessageByClientId(session.id, input.clientMessageId);
       const retryableDuplicate = durableDuplicate?.response?.retryable === true;
       if (durableDuplicate && durableDuplicate.maskedContent !== masked.masked) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
-      if (durableDuplicate?.response && !retryableDuplicate) { await auditCacheEvent(session.tenantId, 'chat.replay', responseCacheKey); res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
+      if (durableDuplicate?.response && !retryableDuplicate) { await auditCacheEvent(session.tenantId, 'chat.replay', responseCacheKey); res.setHeader('X-Chat-Engine', 'cached'); res.json(rehydrateStoredResponse(session, durableDuplicate.response)); return; }
       if (durableDuplicate && !retryableDuplicate) throw new HttpError(409, 'MESSAGE_IN_PROGRESS', 'A request with this client message ID is already being processed.');
       const candidateMessage: Message = { id: randomUUID(), sessionId: session.id, tenantId: session.tenantId, role: 'user', maskedContent: masked.masked, citations: [], clientMessageId: input.clientMessageId, response: null, createdAt: new Date().toISOString() };
       let userMessage = durableDuplicate ?? await store.addMessage(candidateMessage);
       const racedDuplicate = userMessage.id !== candidateMessage.id;
       if (racedDuplicate && userMessage.maskedContent !== masked.masked) throw new HttpError(409, 'MESSAGE_ID_REUSED', 'clientMessageId is already bound to different message content. Generate a new clientMessageId for each new turn.');
-      if (racedDuplicate && userMessage.response && userMessage.response.retryable !== true) { res.json(rehydrateStoredResponse(session, userMessage.response)); return; }
+      if (racedDuplicate && userMessage.response && userMessage.response.retryable !== true) { res.setHeader('X-Chat-Engine', 'cached'); res.json(rehydrateStoredResponse(session, userMessage.response)); return; }
       if (racedDuplicate && !userMessage.response) throw new HttpError(409, 'MESSAGE_IN_PROGRESS', 'A request with this client message ID is already being processed.');
       session.lastActivityAt = new Date().toISOString();
       await updateSessionSafely(session, false);
