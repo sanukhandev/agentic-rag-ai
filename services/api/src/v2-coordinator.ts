@@ -283,6 +283,59 @@ export class V2ConversationCoordinator {
     const guarded = guardV2Response(candidateResponse, guardContext);
     candidateGuardReason = guarded.verdict.reasonCode;
     if (guarded.verdict.accepted) return { response: guarded.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: guarded.claims, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
+    // A process answer rejected for insufficient claim support can receive ONE
+    // independent, read-only evidence repair. The failed draft is never returned.
+    // All source identities must match the trusted Node prefetch (not untrusted
+    // model/tool claims); the second model pass has no callable tools or actions.
+    let repairModelRequests = 0;
+    const matchesNodePrefetch = (envelope.approvedKnowledge ?? []).some(item =>
+      (request.evidence ?? []).some(approved =>
+        approved.approved && !approved.revoked && approved.citationId === item.citationId
+        && approved.sourceRef === item.sourceRef && approved.sourceVersion === item.sourceVersion
+        && approved.text === item.text));
+    const timeLeft = Date.parse(envelope.budgets.deadlineAt) - Date.now();
+    if (asksForProcess && guarded.verdict.reasonCode === 'unsupported_claim'
+      && knowledgeEvidenceAvailable && matchesNodePrefetch
+      && !hasPositiveBusinessOutcomeClaim(candidateResponse.answer)
+      && agentResult.modelRequestCount < envelope.budgets.maxModelRequests
+      && timeLeft >= 10_000) {
+      try {
+        const repairEnvelope = turnEnvelopeSchema.parse({
+          ...envelope,
+          knowledgeRepair: { reason: 'unsupported_claim', strategy: 'source_close' },
+          toolAllowlist: [],
+          budgets: { ...envelope.budgets, maxModelRequests: 1, maxToolCalls: 0, maxToolRounds: 0 },
+        });
+        const candidateRepair = agentTurnResultSchema.safeParse(await this.agent.turn(repairEnvelope));
+        if (candidateRepair.success && candidateRepair.data.modelRequestCount === 1
+          && candidateRepair.data.toolCallCount === 0 && candidateRepair.data.toolTrace.length === 0) {
+          repairModelRequests = 1;
+          const repaired = repairTrailingQuestionContract(repairAuthoritativeStagePlaceholder(
+            addVerifiedFactCitations(candidateRepair.data.response, request.verifiedFacts ?? []),
+            envelope.intentProjection.currentStageKey,
+          ));
+          // A repair of a factual question must not also propose a business goal,
+          // record customer facts, or authorize any stage action.
+          const groundedRepair: PersonaComposedResponseV2 = { ...repaired, planning: null };
+          if (!groundedRepair.decisionRef.startsWith('fallback-')
+            && !hasPositiveBusinessOutcomeClaim(groundedRepair.answer)) {
+            const verifiedRepair = guardV2Response(groundedRepair, guardContext);
+            if (verifiedRepair.verdict.accepted && verifiedRepair.response) return {
+              response: verifiedRepair.response, candidateResponse: agentResult.response,
+              repairApplied: true, draft: toDraft(verifiedRepair.response),
+              toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [],
+              claimProvenance: verifiedRepair.claims,
+              modelRequestCount: agentResult.modelRequestCount + 1,
+              toolCallCount: agentResult.toolCallCount,
+              guardReason: 'accepted_knowledge_repair', candidateGuardReason,
+              diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
+            };
+          }
+        }
+      } catch {
+        // Repair failures cannot bypass the original guard's safe fallback.
+      }
+    }
     // A missing RAG source must not block conversation. Never use this path when
     // evidence exists, citations are invalid, or the model/tool failed.
     const unverifiedActionOutcome = hasPositiveBusinessOutcomeClaim(candidateResponse.answer);
@@ -308,6 +361,6 @@ export class V2ConversationCoordinator {
     }
     const fallback = guardV2OfflineFallback(fallbackFamilyFor(guarded.verdict.reasonCode), guardContext);
     if (!fallback.verdict.accepted || !fallback.response) throw new Error('V2_RESPONSE_REJECTED');
-    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: [], modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: guarded.verdict.reasonCode, candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
+    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: [], modelRequestCount: agentResult.modelRequestCount + repairModelRequests, toolCallCount: agentResult.toolCallCount, guardReason: guarded.verdict.reasonCode, candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
   }
 }
