@@ -41,3 +41,19 @@ PR checks on the integration branch use **unit tests, typecheck, lint, build, st
 - Verified Node code bootstraps a confirmed V2 journey and checks persisted purpose consent at the public action confirmation boundary. Real provider execution, failure recovery, and live rollout parity are **not** established by these unit tests.
 - Removal of the old V1 adapter and endpoints remains blocked until the deployment owner approves rollback retirement and equivalent tenant/feature-flag recovery behavior is demonstrated. The next deletion PR must prove every remaining import/caller is migrated.
 - Unit-only CI and static guard passing is not live acceptance evidence.
+
+
+## Integration checkpoint — 2026-11-03
+
+The prerequisite child PRs are now merged into `feat/gpt-first-langgraph-unit-only`:
+- #129 static retirement inventory and unit-only CI
+- #130 scoped Business Goal confirmation with atomic message/intent persistence
+- #131 seven-stage authorization, provider correlation and production-mock denial
+
+The integration branch additionally initializes a scoped Stage-1 journey **only after** durable customer confirmation; validates public action-confirmation requests against the canonical V2 catalog, persisted stage, opportunity and independent purpose-scoped consent; and rejects terminal callback completion without a trusted provider readback. Canonical V2 catalog references are stored separately from legacy UUID columns via additive migration 058 for actions, executions, CRM Leads and supporting documents.
+
+**Runtime-retirement gates are not all satisfied.** V2 provider-record completion and atomic stage transitions are not yet wired to a trusted Node provider adapter, and a complete purpose-specific V2 consent/authorization UX is not implemented. Model-proposed actions remain advisory and no V2 operation is automatically dispatched. The V1 adapter and embedded legacy conversation planner still serve an explicit rollback/disabled-tenant path. Removing them without a deployment rollout inventory, verified fallback coverage and owner-approved rollback retirement would break supported behavior.
+
+**Executed cleanup:** dependency inventory, static tripwires, protected migration list extended to 058, and unit-only CI. **Intentionally deferred:** deleting V1 planner/adapter/routes, shared helpers or legacy unit tests. The PR stays draft; do not classify unit-only validation as real Azure conversation quality, Salesforce provider acceptance, or seven-stage production completion.
+
+**Next safe retirement gate:** produce an import/caller graph at the final integrated tip, verify all tenant routing/configuration and non-chat model consumers, and obtain approved rollback retirement with an alternative recovery mechanism. Only then make deletion changes in a separate reviewable PR.
