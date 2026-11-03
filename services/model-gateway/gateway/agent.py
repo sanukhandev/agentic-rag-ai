@@ -145,11 +145,16 @@ class BoundedConversationAgent:
             "model": self.model,
             "instructions": composer_instructions(envelope),
             "input": input_value,
-            "tools": definitions_for(envelope.toolAllowlist),
             "text": {"format": {"type": "json_schema", "name": "persona_response", "strict": True, "schema": _FINAL_RESPONSE_SCHEMA}},
             "max_output_tokens": 1700,
             "store": False,
         }
+        # Do not submit an empty tools array to Azure for Node's no-tools
+        # evidence-repair pass. Absence of tools is a stronger API-level
+        # restriction than an empty declaration.
+        available_tools = definitions_for(envelope.toolAllowlist)
+        if available_tools:
+            kwargs["tools"] = available_tools
         return await asyncio.wait_for(self.client.responses.create(**kwargs), timeout=max(0.001, budget.remaining()))
 
     def _calls(self, response: Any) -> list[FunctionCall] | None:
