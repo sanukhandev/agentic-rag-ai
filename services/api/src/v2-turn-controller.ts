@@ -302,7 +302,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       nextGoalKey = pendingDecision.goalKey;
       goalConfirmation = { ...pendingDecision, status: 'confirmed', customerMessageId: userMessage.id,
         customerClientMessageId: input.clientMessageId, decidedAt: at,
-        decisionSessionRevision: sessionRevision, decisionIntentRevision: intentDocument?.revision };
+        decisionSessionRevision: sessionRevision, decisionIntentRevision: intentDocument!.revision };
       effectiveAnswer = 'Understood. We can focus on ' + goalName.toLowerCase() + '. What would you like to discuss first?';
       effectiveQuestion = 'What would you like to discuss first?';
       overrideResponse = true;
@@ -311,7 +311,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       nextGoalKey = null;
       goalConfirmation = { ...pendingDecision, status: decision, customerMessageId: userMessage.id,
         customerClientMessageId: input.clientMessageId, decidedAt: at,
-        decisionSessionRevision: sessionRevision, decisionIntentRevision: intentDocument?.revision };
+        decisionSessionRevision: sessionRevision, decisionIntentRevision: intentDocument!.revision };
       effectiveAnswer = decision === 'rejected'
         ? 'Understood. I will keep this informational. What would you like to know?'
         : 'Which service would you like to explore instead?';
@@ -363,7 +363,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     verifiedFacts: { ...intentDocument.verifiedFacts, ...verifiedFactPatch },
     businessGoalKey: intentDocument.catalogSource === 'v2' ? nextGoalKey : intentDocument.businessGoalKey,
     goalConfirmed: intentDocument.catalogSource === 'v2' ? goalConfirmed : intentDocument.goalConfirmed,
-    goalConfirmation: intentDocument.catalogSource === 'v2' ? goalConfirmation : intentDocument.goalConfirmation,
+    goalConfirmation: intentDocument.catalogSource === 'v2' ? goalConfirmation : intentDocument.goalConfirmation ?? null,
     turnIntentKey: intentDocument.catalogSource === 'v2' ? (nextGoalKey ? selectedTurnIntent ?? intentDocument.turnIntentKey : null) : intentDocument.turnIntentKey,
     pendingRequirementKey: effectivePendingRequirement,
     toolRefs: result.toolTrace.map(trace => trace.toolCallId),
@@ -418,7 +418,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     const committed = await store.commitV2IntentTurn({ session, document: nextDoc,
       expectedDocumentRevision: intentDocument?.revision ?? null, assessment, audit: decisionAudit,
       assistantMessage, customerMessage: answeredCustomerMessage });
-    session.stateVersion = committed.session.stateVersion;
+    session.stateVersion = committed.session.stateVersion ?? sessionRevision + 1;
   } else {
     await input.updateSession(session);
     if (intentDocument) {
