@@ -242,6 +242,15 @@ export class V2ConversationCoordinator {
       && /\b(?:company|business|free[\s-]?zone|formation|ajman|register|setup)\b/iu.test(envelope.customerMessageMasked);
     const knowledgeEvidenceAvailable = (guardContext.evidence ?? []).some(item =>
       item.sourceRef && !item.sourceRef.startsWith('tool-') && item.approved && !item.revoked);
+    // Node's preflight already classified the question and retrieved public
+    // knowledge. Do not reclassify it with a narrower process-only regex:
+    // otherwise questions such as "How does incorporation work?" retrieve
+    // sources but are ineligible for a grounded response repair.
+    const hasTrustedPrefetch = (envelope.approvedKnowledge ?? []).some(item =>
+      (request.evidence ?? []).some(approved =>
+        approved.approved && !approved.revoked && approved.citationId === item.citationId
+        && approved.sourceRef === item.sourceRef && approved.sourceVersion === item.sourceVersion
+        && approved.text === item.text));
     if (asksForProcess && !envelope.intentProjection.pendingRequirementKey && !knowledgeEvidenceAvailable && candidateResponse.citationIds.length === 0) {
       const unavailableAnswer = 'I couldn’t find approved company-formation process guidance to verify the steps. Once the official setup guide is published in the knowledge base, I can explain the process without guessing.';
       const unavailableResponse: PersonaComposedResponseV2 = {
@@ -263,7 +272,7 @@ export class V2ConversationCoordinator {
     // Do not substitute a generic no-evidence question when verified public
     // knowledge is available for a factual process question. Evaluate and,
     // if necessary, repair the cited factual answer instead.
-    if (uncitedDialogueCandidate && !(asksForProcess && knowledgeEvidenceAvailable)) {
+    if (uncitedDialogueCandidate && !hasTrustedPrefetch) {
       // A safe question and acknowledgement can be authored by the model without
       // RAG citations. Constrain the accepted text shape and forbid factual claims.
       const authored = guardV2Response(candidateResponse, { ...guardContext, allowNonFactualDialogue: true });
@@ -289,20 +298,16 @@ export class V2ConversationCoordinator {
     const guarded = guardV2Response(candidateResponse, guardContext);
     candidateGuardReason = guarded.verdict.reasonCode;
     if (guarded.verdict.accepted) return { response: guarded.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: guarded.claims, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
-    // A process answer rejected for insufficient claim support can receive ONE
+    // A factual answer rejected for insufficient claim support can receive ONE
     // independent, read-only evidence repair. The failed draft is never returned.
     // All source identities must match the trusted Node prefetch (not untrusted
     // model/tool claims); the second model pass has no callable tools or actions.
     let repairModelRequests = 0;
     let knowledgeRepairStatus: NonNullable<V2CoordinatorResult['knowledgeRepairStatus']> = 'not_eligible';
-    const matchesNodePrefetch = (envelope.approvedKnowledge ?? []).some(item =>
-      (request.evidence ?? []).some(approved =>
-        approved.approved && !approved.revoked && approved.citationId === item.citationId
-        && approved.sourceRef === item.sourceRef && approved.sourceVersion === item.sourceVersion
-        && approved.text === item.text));
     const timeLeft = Date.parse(envelope.budgets.deadlineAt) - Date.now();
-    if (asksForProcess && guarded.verdict.reasonCode === 'unsupported_claim' && knowledgeEvidenceAvailable) {
-      if (!matchesNodePrefetch) {
+    if (guarded.verdict.reasonCode === 'unsupported_claim'
+      && (envelope.approvedKnowledge?.length ?? 0) > 0) {
+      if (!hasTrustedPrefetch) {
         knowledgeRepairStatus = 'skipped_untrusted_evidence';
       } else if (agentResult.modelRequestCount >= envelope.budgets.maxModelRequests || timeLeft < 2_500) {
         knowledgeRepairStatus = 'skipped_budget';
