@@ -25,6 +25,25 @@ def test_composer_uses_dynamic_persona_and_hides_internal_protocol():
     assert "exactly once" in text
 
 
+def test_prefetched_public_evidence_is_given_explicit_citation_first_priority():
+    from gateway.v2_contracts import ApprovedKnowledgeSnippetV2
+
+    current = envelope()
+    basic = composer_instructions(current)
+    assert "The server supplied approvedKnowledge excerpts" not in basic
+    source = ApprovedKnowledgeSnippetV2(
+        citationId="chunk-12345678",
+        sourceRef="source-12345678",
+        sourceVersion="version-12345678",
+        text="Choose your business activity and submit the required documents.",
+    )
+    current.approvedKnowledge = [source]
+    instructions = composer_instructions(current)
+    assert "The server supplied approvedKnowledge excerpts" in instructions
+    assert "Copy the exact citationId" in instructions
+    assert "list formation steps only if a cited excerpt actually supports each step" in instructions
+
+
 def test_response_validator_accepts_pinned_language_and_rejects_wrong_language_or_metadata():
     current = envelope()
     valid, reason = validate_composed_response(response(), current)
