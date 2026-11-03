@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { catalogV2VersionRef, type CatalogV2Document } from './catalog-v2.js';
 import { deriveV2ActionReadiness, evaluateV2StageBoundary, evaluateV2StageTransition, V2_SEVEN_STAGE_KEYS, type V2StageCompletionEvidence, type V2ActionGateContext } from './v2-action-gate.js';
 import type { ActionRequest, IntentCatalogV2Version, LifecycleState, UserIntentDocument } from './types.js';
@@ -127,5 +127,22 @@ describe('canonical action-state readiness projection', () => {
   ] as const)('maps %s to %s only when trusted completion allows it', (state, proposed, providerStatus, verified, status) => {
     expect(deriveV2ActionReadiness({ action: state === null ? null : action(state),
       proposalPresent: proposed, providerStatus, providerCompletionVerified: verified })).toBe(status);
+  });
+});
+
+describe('production mock-evidence boundary', () => {
+  it('rejects a freshly proposed mock completion and prior mock-stage proof', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    try {
+      const start = makeContext(0);
+      expect(evaluateV2StageTransition({
+        context: start, completion: allStageEvidence('lead_generation'), nextStageKey: 'lead_qualification',
+      })).toMatchObject({ accepted: false, reasons: ['mock_evidence_forbidden_in_production'] });
+      expect(evaluateV2StageBoundary(makeContext(1))).toMatchObject({
+        accepted: false, reasons: ['mock_evidence_forbidden_in_production'],
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

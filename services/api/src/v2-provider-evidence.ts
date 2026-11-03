@@ -14,7 +14,8 @@ export const deriveV2ProviderEvidenceStatus = (input: { actionState: ActionReque
   return 'transport_received';
 };
 
-export const v2StageCompletionEligible = (status: V2ProviderEvidenceStatus): boolean => status === 'provider_record_verified' || status === 'mock_verified';
+export const v2StageCompletionEligible = (status: V2ProviderEvidenceStatus): boolean =>
+  status === 'provider_record_verified' || (status === 'mock_verified' && process.env.NODE_ENV !== 'production');
 
 
 /**
@@ -63,7 +64,8 @@ export interface V2TrustedProviderReadback {
 export const v2TrustedReadbackMatches = (
   request: Pick<V2TrustedProviderReadback, 'tenantId' | 'sessionId' | 'opportunityId' | 'providerType' | 'idempotencyKey'>,
   recordRef: string, evidenceTier: string, attestation?: V2TrustedProviderReadback,
-): boolean => Boolean(attestation && attestation.verificationStatus === 'verified'
+): boolean => Boolean((process.env.NODE_ENV !== 'production' || evidenceTier !== 'mock_verified')
+  && attestation && attestation.verificationStatus === 'verified'
   && attestation.tenantId === request.tenantId && attestation.sessionId === request.sessionId
   && attestation.opportunityId === request.opportunityId && attestation.providerType === request.providerType
   && attestation.idempotencyKey === request.idempotencyKey && attestation.recordRef === recordRef

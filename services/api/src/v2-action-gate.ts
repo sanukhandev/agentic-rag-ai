@@ -288,6 +288,11 @@ const validateV2StoredStageEvidence = (
     || evidence.stageKey !== stageKey || evidence.stageRevision !== stageRevision) return 'stage_evidence_scope_mismatch';
   if (typeof evidence.evidenceRef !== 'string' || !evidence.evidenceRef.trim() || evidence.operationStatus !== 'completed')
     return 'stage_completion_unverified';
+  // Mock readbacks are test/sandbox-only. The production lifecycle must never
+  // transition on a deterministic mock attestation even if it was persisted.
+  if (process.env.NODE_ENV === 'production' && evidence.evidenceTier === 'mock_verified') {
+    return 'mock_evidence_forbidden_in_production';
+  }
   if (stageKey === 'lead_qualification') {
     if (evidence.evidenceTier !== 'node_verified' || evidence.qualificationStatus !== 'qualified'
       || typeof evidence.leadId !== 'string' || !evidence.leadId) return 'qualification_not_verified';
