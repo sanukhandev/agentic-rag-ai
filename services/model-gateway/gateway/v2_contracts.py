@@ -55,6 +55,11 @@ class ApprovedKnowledgeSnippetV2(StrictV2):
     text: str = Field(min_length=1, max_length=1500)
 
 
+class KnowledgeRepairV2(StrictV2):
+    reason: Literal["unsupported_claim"]
+    strategy: Literal["source_close"]
+
+
 class TurnEnvelopeV2(StrictV2):
     schemaVersion: Literal[2]
     requestId: str = Field(min_length=8, max_length=256)
@@ -69,6 +74,7 @@ class TurnEnvelopeV2(StrictV2):
     persona: PersonaEnvelopeV2
     catalogDigest: str = Field(pattern=r"^[a-f0-9]{64}$")
     approvedKnowledge: list[ApprovedKnowledgeSnippetV2] = Field(default_factory=list, max_length=4)
+    knowledgeRepair: KnowledgeRepairV2 | None = None
     catalogV2: CatalogV2Projection | None = None
     intentProjection: IntentProjectionV2
     toolAllowlist: list[str] = Field(default_factory=list, max_length=32)
