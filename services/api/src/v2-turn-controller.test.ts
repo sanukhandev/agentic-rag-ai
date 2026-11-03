@@ -63,12 +63,14 @@ const prepared = async () => {
   });
   const coordinator = { run: vi.fn(async (request: V2CoordinatorRequest) => {
     expect(request.envelope.persona.assistantName).toBe('Zara');
-    expect(request.envelope.catalogVersionId).toBe(catalog.id);
-    // The initial catalog must be stored before LangGraph issues its first tool.
+    const publishedV2 = (await store.listIntentCatalogV2Versions(tenant.id)).find(version => version.status === 'published');
+    const expectedCatalogId = publishedV2?.id ?? catalog.id;
+    expect(request.envelope.catalogVersionId).toBe(expectedCatalogId);
+    // Pin the authoritative V2 catalog, falling back to V1 only when V2 is absent.
     const saved = await store.getSession(session.id);
-    expect(saved?.conversationState?.catalogVersionId).toBe(catalog.id);
+    expect(saved?.conversationState?.catalogVersionId).toBe(expectedCatalogId);
     expect(saved?.stateVersion).toBe(request.envelope.sessionRevision);
-    expect(verifyV2Scope(request.envelope.scopeRef, 'unit-test-service-key-123456')?.catalogVersionId).toBe(catalog.id);
+    expect(verifyV2Scope(request.envelope.scopeRef, 'unit-test-service-key-123456')?.catalogVersionId).toBe(expectedCatalogId);
     const tool = createV2ToolGateway({
       store, embedding: new DeterministicEmbeddingProvider(),
       serviceKey: 'unit-test-service-key-123456',
