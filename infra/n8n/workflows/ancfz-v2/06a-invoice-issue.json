@@ -26,7 +26,7 @@
         "options": {}
       },
       "webhookId": "ancfz-v2-invoice-issue",
-      "notes": "REQUIRED: configure Webhook Header Auth credential with X-Agentic-Internal-Secret (same value as Node N8N_WEBHOOK_SECRET). Do not publish until all backend gates are ready."
+      "notes": "REQUIRED: configure Webhook Header Auth credential with X-Agentic-Internal-Secret (same value as the Node event-dispatch authentication header). Do not publish until all backend gates are ready."
     },
     {
       "id": "ancfzV2InvoiceIssueR1-validate",
