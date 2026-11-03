@@ -81,7 +81,7 @@ def test_knowledge_repair_is_extractive_and_tool_free():
     assert result.modelRequestCount == 1
     assert result.toolCallCount == 0
     assert len(client.calls) == 1
-    assert client.calls[0]["tools"] == []
+    assert "tools" not in client.calls[0]
     assert "one source-grounded response repair" in client.calls[0]["instructions"]
     assert "exact citationId" in client.calls[0]["instructions"]
     assert "source-12345678" in json.loads(client.calls[0]["input"][0]["content"])["approvedKnowledge"][0]["sourceRef"]
