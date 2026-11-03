@@ -239,7 +239,7 @@ export class V2ConversationCoordinator {
       && /\b(?:company|business|free[\s-]?zone|formation|ajman|register|setup)\b/iu.test(envelope.customerMessageMasked);
     const knowledgeEvidenceAvailable = (guardContext.evidence ?? []).some(item =>
       item.sourceRef && !item.sourceRef.startsWith('tool-') && item.approved && !item.revoked);
-    if (asksForProcess && !knowledgeEvidenceAvailable && candidateResponse.citationIds.length === 0) {
+    if (asksForProcess && !envelope.intentProjection.pendingRequirementKey && !knowledgeEvidenceAvailable && candidateResponse.citationIds.length === 0) {
       const unavailableAnswer = 'I couldn’t find approved company-formation process guidance to verify the steps. Once the official setup guide is published in the knowledge base, I can explain the process without guessing.';
       const unavailableResponse: PersonaComposedResponseV2 = {
         schemaVersion: 2, personaVersionId: envelope.personaVersionId,
