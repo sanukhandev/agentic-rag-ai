@@ -6,7 +6,8 @@ import { retrieveApprovedKnowledge } from './knowledge.js';
 import { toV2KnowledgeEvidence } from './v2-knowledge-preflight.js';
 import { normalizeConversationQuery } from './model.js';
 import type { EmbeddingProvider } from './embedding.js';
-import type { IntentCatalogVersion, Session, Store } from './types.js';
+import type { IntentCatalogVersion, IntentCatalogV2Version, Session, Store } from './types.js';
+import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 import { toolRequestSchema, type ToolRequestV2, type ToolResultV2 } from './python-model/v2-contracts.js';
 import { HttpError } from './http/errors.js';
 import { deriveV2ProviderEvidenceStatus, v2StageCompletionEligible } from './v2-provider-evidence.js';
@@ -158,9 +159,17 @@ const actionLabel = (workflowKey: string, actionKey: string | null): string => {
 
 const sanitizedToolError = (request: ToolRequestV2, status: ToolResultV2['status'], code: string, stateRevision = request.expectedStateRevision): ToolResultV2 => result(request, status, { code }, null, [], stateRevision);
 
-const catalogForScope = async (store: Store, scope: ScopePayload): Promise<IntentCatalogVersion | null> => {
-  const catalog = await store.getIntentCatalogVersion(scope.tenantId, scope.catalogVersionId);
-  return catalog?.status === 'published' ? catalog : null;
+type TrustedCatalog = { kind: 'legacy'; version: IntentCatalogVersion } | { kind: 'v2'; version: IntentCatalogV2Version };
+const catalogForScope = async (store: Store, scope: ScopePayload): Promise<TrustedCatalog | null> => {
+  const legacy = await store.getIntentCatalogVersion(scope.tenantId, scope.catalogVersionId);
+  if (legacy) return legacy.status === 'published' ? { kind: 'legacy', version: legacy } : null;
+  const v2 = await store.getIntentCatalogV2Version(scope.tenantId, scope.catalogVersionId);
+  if (!v2 || v2.status !== 'published') return null;
+  const tenant = await store.getTenant(scope.tenantId);
+  if (!tenant || !validatePublishedCatalogV2(v2.catalog, {
+    published: true, tenantScope: tenant.slug, pinnedVersionRef: v2.catalogVersionRef,
+  }).ok) return null;
+  return { kind: 'v2', version: v2 };
 };
 
 const catalogProjection = (catalog: IntentCatalogVersion): Record<string, unknown> => ({
@@ -169,15 +178,17 @@ const catalogProjection = (catalog: IntentCatalogVersion): Record<string, unknow
   journeys: (catalog.catalog.journeyRequirements ?? []).map((requirement) => ({ intentKey: requirement.intentKey, key: requirement.requirementKey, type: requirement.requirementType, required: requirement.required })),
 });
 
-const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, session: Session, catalog: IntentCatalogVersion, store: Store, embedding: EmbeddingProvider): Promise<ToolResultV2> => {
+const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, session: Session, catalog: TrustedCatalog, store: Store, embedding: EmbeddingProvider): Promise<ToolResultV2> => {
+  const legacyCatalog = catalog.kind === 'legacy' ? catalog.version : null;
+  const v2Catalog = catalog.kind === 'v2' ? catalog.version : null;
   const state = session.conversationState;
   const intentKey = activeIntent(session);
   const entry = activeEntry(session);
   const values = entry?.slotValues ?? state?.slotValues ?? {};
   const completed = entry?.completedRequirementKeys ?? [];
-  const sourceVersion = catalog.id;
+  const sourceVersion = v2Catalog?.catalogVersionRef ?? legacyCatalog!.id;
   // Session-bound evidence revisions must change when the authoritative state changes.
-  const stateSourceVersion = `${catalog.id}:state:${scope.sessionId}:${scope.stateRevision}`;
+  const stateSourceVersion = `${sourceVersion}:state:${scope.sessionId}:${scope.stateRevision}`;
 
   switch (request.toolName as V2ToolName) {
     case 'get_conversation_context': {
@@ -186,7 +197,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       const pendingRequirementKey = state?.pendingPrompt?.requirementKey ?? null;
       const document = await store.getUserIntentDocument(scope.tenantId, scope.sessionId);
       const allowedFacts = new Set(['business_activity', 'entity_type', 'visa_count', 'timeline']);
-      const verifiedFacts = document && document.catalogVersionRef === catalog.id && document.personaVersionId === scope.personaVersionId
+      const verifiedFacts = document && document.catalogVersionRef === sourceVersion && document.personaVersionId === scope.personaVersionId
         ? Object.fromEntries(Object.entries(document.verifiedFacts).filter(([key, fact]) =>
             allowedFacts.has(key) && (fact.source === 'visitor' || fact.source === 'node') && fact.maskedValue.length <= 180
             && !/[\r\n<>@]/u.test(fact.maskedValue) && !/https?:\/\//iu.test(fact.maskedValue))
@@ -209,8 +220,10 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       // Expose the current published V2 contract alongside the rollback V1
       // projection. A legacy intent catalog is never represented as Catalog V2.
       const document = await store.getUserIntentDocument(scope.tenantId, scope.sessionId);
-      const publishedV2 = (await store.listIntentCatalogV2Versions(scope.tenantId))
-        .find(version => version.status === 'published') ?? null;
+      const publishedV2 = v2Catalog ?? (legacyCatalog
+        ? (await store.listIntentCatalogV2Versions(scope.tenantId))
+          .find(version => version.status === 'published') ?? null
+        : null);
       if (document?.catalogSource === 'v2' && (!publishedV2 || document.catalogVersionRef !== publishedV2.catalogVersionRef)) {
         return sanitizedToolError(request, 'stale_state', 'V2_CATALOG_PIN_STALE', scope.stateRevision);
       }
@@ -225,19 +238,25 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
               .slice(0, 80).map(req => ({ key: req.requirementKey, goalKey: req.goalKey, stageKey: req.stageKey, type: req.type })),
           }
         : null;
-      const projection = catalogProjection(catalog);
-      const activeIntentCount = catalog.catalog.intents.filter((intent) => intent.active).length;
+      const projection = legacyCatalog ? catalogProjection(legacyCatalog) : { intents: [], slots: [], journeys: [] };
+      const activeIntentCount = legacyCatalog?.catalog.intents.filter((intent) => intent.active).length ?? 0;
       return resultWithToolEvidence(request, { ...projection, catalogV2: v2Projection }, request.toolName as V2ToolName, v2Projection?.versionRef ?? sourceVersion, [
         v2Projection
           ? `The published V2 catalog ${v2Projection.versionRef} defines ${v2Projection.businessGoals.length} active business goals.`
           : `The published legacy catalog version ${sourceVersion} contains ${activeIntentCount} active intent definitions.`,
-        ...(catalog.catalog.journeyRequirements ?? []).slice(0, 6).map(journey =>
+        ...(legacyCatalog?.catalog.journeyRequirements ?? []).slice(0, 6).map(journey =>
           `The legacy catalog defines ${journey.requirementKey} as a ${journey.requirementType} requirement for ${journey.intentKey}.`),
       ]);
     }
     case 'get_missing_requirements': {
       if (!intentKey) return result(request, 'ok', { intentKey: null, requirement: null }, sourceVersion);
-      const requirement = catalogNextJourneyRequirement(catalog, intentKey, values, completed) ?? catalogNextFollowUpRequirement(catalog, intentKey, values, completed);
+      if (!legacyCatalog) {
+        const document = await store.getUserIntentDocument(scope.tenantId, scope.sessionId);
+        const pending = document?.pendingRequirementKey ?? state?.pendingPrompt?.requirementKey ?? entry?.currentRequirementKey ?? null;
+        return resultWithToolEvidence(request, { intentKey, requirement: pending ? { key: pending, type: 'pending', promptKey: null, documentType: null } : null }, request.toolName as V2ToolName, stateSourceVersion,
+          [pending ? `The server-authorized pending requirement is ${pending}.` : 'No server-authorized requirement is currently pending.']);
+      }
+      const requirement = catalogNextJourneyRequirement(legacyCatalog, intentKey, values, completed) ?? catalogNextFollowUpRequirement(legacyCatalog, intentKey, values, completed);
       return resultWithToolEvidence(request, { intentKey, requirement: requirement ? { key: requirement.requirementKey, type: requirement.requirementType, promptKey: requirement.promptKey, documentType: requirement.documentType ?? null } : null }, request.toolName as V2ToolName, stateSourceVersion, [
         requirement ? `The next server-authorized requirement is ${requirement.requirementKey}.` : 'No server-authorized requirement is currently pending.',
       ]);
@@ -275,7 +294,9 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       ]);
     }
     case 'get_available_packages': {
-      const offerings = await store.listPackageOfferings(scope.tenantId, { catalogVersionId: catalog.id, ...(values.business_activity ? { activity: values.business_activity } : {}), ...(values.entity_type ? { entityType: values.entity_type } : {}) });
+      // V2 has no published pricing registry yet; legacy prices must not leak.
+      if (!legacyCatalog) return sanitizedToolError(request, 'temporarily_unavailable', 'V2_PACKAGE_REGISTRY_NOT_INTEGRATED', scope.stateRevision);
+      const offerings = await store.listPackageOfferings(scope.tenantId, { catalogVersionId: legacyCatalog.id, ...(values.business_activity ? { activity: values.business_activity } : {}), ...(values.entity_type ? { entityType: values.entity_type } : {}) });
       // Keep tool responses bounded even when a tenant has a large published catalog.
       const selected = offerings.slice(0, 20);
       const packages = selected.map((offering) => ({ key: offering.packageKey, name: bounded(offering.name, 160), visas: offering.includedVisaQuantity, officeRequirement: offering.officeRequirement, inclusions: offering.inclusions.slice(0, 12).map(value => bounded(value, 240)), availability: offering.availability, priceMinor: offering.priceMinor, currency: offering.currency, sourceRefs: offering.sourceRefs.slice(0, 12) }));
@@ -284,6 +305,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         : ['No approved package is currently available for this setup.']);
     }
     case 'get_document_requirements': {
+      if (!legacyCatalog) return sanitizedToolError(request, 'temporarily_unavailable', 'V2_DOCUMENT_REQUIREMENTS_NOT_INTEGRATED', scope.stateRevision);
       // Read only documents for the confirmed package and approved quotation in this opportunity.
       if (!scope.opportunityId) return resultWithToolEvidence(request, { selectionStatus: 'opportunity_required', documents: [] }, request.toolName as V2ToolName, sourceVersion, ['An opportunity is required before document requirements can be verified.']);
       const selections = await store.listPackageSelections(scope.tenantId, scope.opportunityId);
@@ -293,7 +315,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         store.getPackageOffering(selected.packageOfferingId, scope.tenantId),
         store.getQuote(selected.quoteId, scope.tenantId),
       ]);
-      if (!offering || !quote || offering.tenantId !== scope.tenantId || offering.catalogVersionId !== catalog.id || offering.approvalStatus !== 'approved' || quote.status !== 'approved' || quote.tenantId !== scope.tenantId || quote.opportunityId !== scope.opportunityId || quote.packageOfferingId !== offering.id || Date.parse(quote.validUntil) <= Date.now()) {
+      if (!offering || !quote || offering.tenantId !== scope.tenantId || offering.catalogVersionId !== legacyCatalog.id || offering.approvalStatus !== 'approved' || quote.status !== 'approved' || quote.tenantId !== scope.tenantId || quote.opportunityId !== scope.opportunityId || quote.packageOfferingId !== offering.id || Date.parse(quote.validUntil) <= Date.now()) {
         return resultWithToolEvidence(request, { selectionStatus: 'package_or_quote_unverified', documents: [] }, request.toolName as V2ToolName, sourceVersion, ['The package or quotation is not currently verified for document collection.']);
       }
       const documents = offering.requiredDocuments.map((documentType) => ({ packageKey: offering.packageKey, documentType }));
