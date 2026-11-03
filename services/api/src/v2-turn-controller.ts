@@ -127,6 +127,9 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const catalog = originalState.catalogVersionId
     ? pinnedLegacy ?? pinnedV2
     : publishedV2 ?? await store.getPublishedIntentCatalog(tenant.id);
+  if (pinnedV2 && pinnedV2.status !== 'published') {
+    throw new HttpError(409, 'V2_CATALOG_PIN_STALE', 'The pinned V2 catalog is no longer published.');
+  }
   if (!catalog || catalog.status !== 'published') {
     throw new HttpError(409, 'V2_CATALOG_UNAVAILABLE',
       'Publish the reviewed V2 intent catalog for this tenant before using GPT-first chat.');
