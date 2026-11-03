@@ -63,6 +63,11 @@ export const turnEnvelopeSchema = z.object({
     citationId: opaqueRef, sourceRef: opaqueRef, sourceVersion: opaqueRef,
     text: z.string().trim().min(1).max(1_500),
   }).strict()).max(4).optional(),
+  /** A one-shot Node-initiated repair after rejecting an unsupported knowledge claim. */
+  knowledgeRepair: z.object({
+    reason: z.literal('unsupported_claim'),
+    strategy: z.literal('source_close'),
+  }).strict().optional(),
   catalogV2: z.object({
     versionRef: z.string().trim().min(8).max(240),
     businessGoals: z.array(z.object({ key: boundedKey, name: z.string().max(120), confirmationRequired: z.boolean() }).strict()).max(100),
