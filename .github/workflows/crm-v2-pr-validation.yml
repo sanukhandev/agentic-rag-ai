@@ -58,6 +58,8 @@ jobs:
         run: npm run test:unit
       - name: Python isolated unit tests
         run: PYTHONPATH=services/model-gateway python -m pytest -q services/model-gateway/tests
+      - name: ANCFZ n8n V2 workflow template contract tests
+        run: node --test infra/n8n/workflows/ancfz-v2-templates.test.mjs
       - name: Python ingestion isolated unit tests
         run: PYTHONPATH=tools/ingestion python -m unittest discover -s tools/ingestion -p 'test_*.py'
       - name: Export and validate ANCFZ seven-stage workbook (offline)
