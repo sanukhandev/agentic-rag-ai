@@ -4,7 +4,6 @@ import { z } from 'zod';
 import { catalogNextFollowUpRequirement, catalogNextJourneyRequirement } from './intent-catalog.js';
 import { retrieveApprovedKnowledge } from './knowledge.js';
 import { toV2KnowledgeEvidence } from './v2-knowledge-preflight.js';
-import { sanitizeKnowledgeText } from './privacy.js';
 import { normalizeConversationQuery } from './model.js';
 import type { EmbeddingProvider } from './embedding.js';
 import type { IntentCatalogVersion, Session, Store } from './types.js';
