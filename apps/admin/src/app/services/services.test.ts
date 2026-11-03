@@ -26,7 +26,7 @@ import { Subject, of } from 'rxjs';
 import { ToastService } from './toast.service';
 import { UiNavigationService, isNavSection } from './ui-navigation.service';
 import { canAccessAdminSection } from './admin-navigation';
-import { isCatalogJobPending } from './intent-catalog-utils';
+import { catalogLoadScope, isCatalogJobPending } from './intent-catalog-utils';
 import { isValidTenantSlug, resolveTenantSlug } from '../components/customer-chat/customer-chat-utils';
 import { apiErrorMessage } from './api-error';
 import { filterPermittedCommands } from '../components/shared/command-palette-utils';
@@ -158,6 +158,14 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(catalog.v2Versions()[0].sourceFileName).toBe(v2.sourceFileName);
     catalog.publishV2(catalog.v2Versions()[0]);
     expect(httpMock.post).toHaveBeenCalledWith('http://127.0.0.1:4000/api/v2/admin/intent-catalog/versions/v2-draft/publish', {});
+  });
+
+  it('loads tenant-admin catalogs without a populated tenant selector', () => {
+    expect(catalogLoadScope('auth-token', false, null)).toBe('authenticated-tenant');
+    expect(catalogLoadScope('auth-token', false, '0fff7d68-3e34-4c4e-a14f-4e719d4419c0')).toBe('tenant:0fff7d68-3e34-4c4e-a14f-4e719d4419c0');
+    expect(catalogLoadScope('auth-token', true, null)).toBeNull();
+    expect(catalogLoadScope('auth-token', true, 'tenant-2')).toBe('tenant:tenant-2');
+    expect(catalogLoadScope('', false, 'tenant-1')).toBeNull();
   });
 
   it('keeps catalog uploads visible until ingestion completes', () => {

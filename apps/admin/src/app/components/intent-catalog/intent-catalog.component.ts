@@ -8,6 +8,7 @@ import { BadgeComponent } from '../shared/badge.component';
 import { IconComponent } from '../shared/icon.component';
 import { ConfirmDialogComponent } from '../shared/confirm-dialog.component';
 import { apiErrorMessage } from '../../services/api-error';
+import { catalogLoadScope } from '../../services/intent-catalog-utils';
 
 @Component({
   selector: 'app-intent-catalog',
@@ -72,7 +73,10 @@ import { apiErrorMessage } from '../../services/api-error';
         <div *ngIf="v2CatalogError as error" role="alert" class="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
           Unable to load V2 versions: {{ error }}
         </div>
-        <div *ngIf="!v2CatalogError && v2Versions.length === 0" class="rounded-xl border border-dashed border-neutral-300 bg-white p-6 text-sm text-neutral-500">
+        <div *ngIf="v2Loading" role="status" class="rounded-xl border border-neutral-200 bg-white p-4 text-xs text-neutral-600">
+          Loading tenant-scoped V2 catalog versions…
+        </div>
+        <div *ngIf="!v2Loading && !v2CatalogError && v2Versions.length === 0" class="rounded-xl border border-dashed border-neutral-300 bg-white p-6 text-sm text-neutral-500">
           No V2 catalog versions found for the selected tenant. The legacy V1 catalog list is separate.
         </div>
         <article *ngFor="let version of v2Versions" class="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
@@ -342,21 +346,35 @@ export class IntentCatalogComponent {
   get versions(): IntentCatalogVersion[] { return this.service.versions(); }
   get v2Versions(): IntentCatalogV2Version[] { return this.service.v2Versions(); }
   get v2CatalogError(): string | null { return this.service.v2CatalogError(); }
+  get v2Loading(): boolean { return this.service.v2Loading(); }
   get publishedVersion(): IntentCatalogVersion | null { return this.versions.find((version) => version.status === 'published') ?? null; }
 
-  private lastLoadedTenantId: string | null = null;
+  private lastLoadedScope: string | null = null;
+  private lastLoadedToken: string | null = null;
 
   constructor() {
     effect(() => {
-      const tenantId = this.state.selectedTenant()?.id ?? null;
-      if (tenantId && tenantId !== this.lastLoadedTenantId) {
-        this.lastLoadedTenantId = tenantId;
+      // The tenant selector can be empty for tenant-admin accounts even though
+      // the authenticated JWT already contains their tenant identity.
+      const token = this.state.token();
+      const tenantId = this.state.selectedTenant()?.id ?? this.state.auth.selectedTenantIdSignal();
+      const isPlatformAdmin = this.state.isPlatformAdmin();
+      const isCatalogSection = this.state.currentSection() === 'catalog';
+      const scope = isCatalogSection ? catalogLoadScope(token, isPlatformAdmin, tenantId) : null;
+      if (scope && (scope !== this.lastLoadedScope || token !== this.lastLoadedToken)) {
+        this.lastLoadedScope = scope;
+        this.lastLoadedToken = token;
         untracked(() => {
           this.service.load();
           this.service.resumePendingJob();
         });
-      } else if (!tenantId) {
-        this.lastLoadedTenantId = null;
+      } else if (!scope) {
+        const hadScope = this.lastLoadedScope !== null;
+        this.lastLoadedScope = null;
+        this.lastLoadedToken = null;
+        // Never display previously selected tenants' catalog versions on
+        // logout, section exit, or before platform-admin tenant selection.
+        if (hadScope) untracked(() => this.service.clearCatalogView());
       }
     });
   }

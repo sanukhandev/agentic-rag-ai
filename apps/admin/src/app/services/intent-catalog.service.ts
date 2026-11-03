@@ -21,6 +21,7 @@ export class IntentCatalogService {
   private readonly _versions = signal<IntentCatalogVersion[]>([]);
   private readonly _v2Versions = signal<IntentCatalogV2Version[]>([]);
   private readonly _v2CatalogError = signal<string | null>(null);
+  private readonly _v2Loading = signal(false);
   private v2LoadRevision = 0;
   private readonly _catalogJob = signal<IngestionJob | null>(null);
   private readonly _catalogError = signal<string | null>(null);
@@ -29,6 +30,7 @@ export class IntentCatalogService {
   readonly versions = this._versions.asReadonly();
   readonly v2Versions = this._v2Versions.asReadonly();
   readonly v2CatalogError = this._v2CatalogError.asReadonly();
+  readonly v2Loading = this._v2Loading.asReadonly();
   readonly catalogJob = this._catalogJob.asReadonly();
   readonly catalogError = this._catalogError.asReadonly();
 
@@ -40,6 +42,18 @@ export class IntentCatalogService {
   readonly versions$: Observable<IntentCatalogVersion[]> = this.versionsSubject.asObservable();
   readonly catalogJob$: Observable<IngestionJob | null> = this.catalogJobSubject.asObservable();
   readonly catalogError$: Observable<string | null> = this.catalogErrorSubject.asObservable();
+
+  clearCatalogView(): void {
+    // Invalidate in-flight V2 responses when switching identity/tenant.
+    this.v2LoadRevision += 1;
+    this._v2Versions.set([]);
+    this._v2CatalogError.set(null);
+    this._v2Loading.set(false);
+    this._versions.set([]);
+    this.versionsSubject.next([]);
+    this._catalogError.set(null);
+    this.catalogErrorSubject.next(null);
+  }
 
   load(): void {
     if (!this.auth.token()) return;
@@ -65,14 +79,17 @@ export class IntentCatalogService {
     if (!this.auth.token()) return;
     const revision = ++this.v2LoadRevision;
     this._v2CatalogError.set(null);
+    this._v2Loading.set(true);
     this._v2Versions.set([]);
     this.http.get<{ items: IntentCatalogV2Version[] }>(`${this.apiBase}/api/v2/admin/intent-catalog/versions`).subscribe({
       next: ({ items }) => {
         if (revision !== this.v2LoadRevision) return;
         this._v2Versions.set(items ?? []);
+        this._v2Loading.set(false);
       },
       error: (error) => {
         if (revision !== this.v2LoadRevision) return;
+        this._v2Loading.set(false);
         const message = apiErrorMessage(error, 'Could not load V2 intent catalog versions.');
         this._v2CatalogError.set(message);
         this.toast.show('error', 'V2 catalog unavailable', message);
