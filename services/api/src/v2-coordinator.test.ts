@@ -289,6 +289,57 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.answer).toBe(fallbackTemplates.templates.invalid_model);
   });
 
+  it('repairs a cited, rejected factual question even when the wording lacks process-regex keywords', async () => {
+    const request = envelope();
+    // This wording was already eligible for Node RAG prefetch but not the
+    // narrower asksForProcess regular expression in the coordinator.
+    request.customerMessageMasked = 'How does incorporation work at Ajman Free Zone?';
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true,
+      currentStageKey: 'lead_qualification', pendingRequirementKey: null };
+    request.budgets = { ...request.budgets, maxModelRequests: 4,
+      deadlineAt: new Date(Date.now() + 60_000).toISOString() };
+    const approved = [
+      { citationId: 'formation-chunk-12345678',
+        sourceRef: 'formation-source-12345678', sourceVersion: 'version-12345678',
+        text: 'Choose a business activity and submit the required application documents.' },
+      { citationId: 'faq-chunk-12345678',
+        sourceRef: 'faq-source-12345678', sourceVersion: 'version-22345678',
+        text: 'The free zone offers company formation information.' },
+      { citationId: 'licenses-chunk-12345678',
+        sourceRef: 'licenses-source-12345678', sourceVersion: 'version-32345678',
+        text: 'Licence requirements depend on the selected business activity.' },
+    ];
+    request.approvedKnowledge = approved;
+    const calls: TurnEnvelopeV2[] = [];
+    const agent = { turn: async (turn: TurnEnvelopeV2) => {
+      calls.push(turn);
+      if (calls.length === 1) {
+        return result('Formation is guaranteed in one day for AED 999.', {
+          response: { ...result('Formation is guaranteed in one day for AED 999.').response,
+            citationIds: approved.map(item => item.citationId) },
+        });
+      }
+      expect(turn.knowledgeRepair).toEqual({ reason: 'unsupported_claim', strategy: 'source_close' });
+      expect(turn.toolAllowlist).toEqual([]);
+      return result(approved[0]!.text, {
+        response: { ...result(approved[0]!.text).response, citationIds: [approved[0]!.citationId] },
+      });
+    } };
+    const output = await new V2ConversationCoordinator(agent).run({
+      envelope: request, evidence: approved.map(item => ({ ...item, approved: true, revoked: false })),
+      fallbackTemplates, questionPolicy: 'optional',
+    });
+    expect(calls).toHaveLength(2);
+    expect(output.guardReason).toBe('accepted_knowledge_repair');
+    expect(output.knowledgeRepairStatus).toBe('accepted');
+    expect(output.candidateGuardReason).toBe('unsupported_claim');
+    expect(output.response.answer).toBe(approved[0]!.text);
+    expect(output.response.citationIds).toEqual([approved[0]!.citationId]);
+    expect(output.response.planning).toBeNull();
+    expect(output.modelRequestCount).toBe(2);
+    expect(output.toolCallCount).toBe(0);
+  });
+
   it('repairs a rejected process claim once using only the exact trusted prefetch', async () => {
     const request = envelope();
     request.customerMessageMasked = 'Can you tell me about the steps for forming a company?';
