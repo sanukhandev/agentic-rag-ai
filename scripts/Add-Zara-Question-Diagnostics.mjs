@@ -8,7 +8,11 @@ const paths = [
   'services/api/src/v2-turn-controller.ts',
   'services/api/src/v2-response-guard.test.ts'
 ];
-const files = new Map(paths.map(p => [p, fs.readFileSync(path.resolve(p), 'utf8')]));
+// Git on Windows may check out tracked TypeScript files as CRLF even when
+// the source anchors in this patch are written with LF. Normalize for
+// matching, then restore each file's original line-ending style on write.
+const originals = new Map(paths.map(p => [p, fs.readFileSync(path.resolve(p), 'utf8')]));
+const files = new Map(paths.map(p => [p, originals.get(p).replace(/\r\n/gu, '\n')]));
 function substitute(p, oldText, newText) {
   const current = files.get(p);
   if (current.split(oldText).length !== 2) throw Error('Unexpected file version or already applied: ' + p);
@@ -77,5 +81,10 @@ substitute(test,
 
   it('allows the same unanswered requirement across multiple customer detours', () => {`
 );
-for (const p of paths) fs.writeFileSync(path.resolve(p), files.get(p), 'utf8');
+for (const p of paths) {
+  const original = originals.get(p);
+  const normalized = files.get(p);
+  fs.writeFileSync(path.resolve(p),
+    original.includes('\r\n') ? normalized.replace(/\n/gu, '\r\n') : normalized, 'utf8');
+}
 console.log('Updated 4 files with audit-only question failure classification. No guard policy changes.');
