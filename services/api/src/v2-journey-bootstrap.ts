@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { newIntentProgress } from './conversation-state.js';
 import { newLifecycleState } from './lifecycle-state.js';
 import { evaluateV2StageBoundary, validateV2ActionConfirmation, v2ActionConsentScope, type V2ActionGateContext, type V2StageBoundaryDecision } from './v2-action-gate.js';
-import type { ActionRequest, ConversationState, IntentCatalogV2Version, IntentProgressEntry, Session, Store, UserIntentDocument } from './types.js';
+import type { ActionRequest, ActionState, ConversationState, IntentCatalogV2Version, IntentProgressEntry, Session, Store, UserIntentDocument } from './types.js';
 
 export interface V2JourneyBootstrap {
   state: ConversationState;
@@ -162,4 +162,31 @@ export const evaluatePersistedV2ActionConfirmation = async (
     applies: true, accepted: decision.accepted, reasons: decision.reasons,
     canonicalCatalogVersionRef: doc.catalogVersionRef,
   };
+};
+
+
+/**
+ * Authenticated callbacks may update a V2 action to processing/failed.
+ * Completion is denied until a separate Node provider-record readback and
+ * atomic stage transition have supplied verified evidence. A callback's
+ * claimed success, receipt or transport status is not such evidence.
+ */
+export const evaluateV2CallbackStageCompletion = (
+  action: ActionRequest,
+  status: ActionState,
+  document: UserIntentDocument | null,
+  knownCanonicalCatalogRef: boolean,
+): { applies: boolean; accepted: boolean; reason: string | null } => {
+  const applies = document?.catalogSource === 'v2' || knownCanonicalCatalogRef;
+  if (!applies) return { applies: false, accepted: true, reason: null };
+  if (!document || document.catalogSource !== 'v2'
+    || document.tenantId !== action.tenantId || document.sessionId !== action.sessionId
+    || document.opportunityId !== action.opportunityId
+    || document.catalogVersionRef !== action.catalogVersionId) {
+    return { applies: true, accepted: false, reason: 'v2_callback_scope_mismatch' };
+  }
+  if (status === 'completed') {
+    return { applies: true, accepted: false, reason: 'v2_trusted_provider_readback_required' };
+  }
+  return { applies: true, accepted: true, reason: null };
 };
