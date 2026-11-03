@@ -5,6 +5,12 @@ const MAX_RESPONSE_LENGTH = 20_000;
 const MAX_REFERENCE_LENGTH = 160;
 const forbiddenField = /(?:^|[._-])(otp|cvv|pan|password|secret)(?:$|[._-])/iu;
 const rawPii = /(?:\b\d{12,19}\b|\b\d{3}[- )]\d{3}[- ]\d{4}\b|\b[^\s@]+@[^\s@]+\.[^\s@]+\b)/u;
+const opaqueUuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu;
+const safeScopedReference = (value: string, catalogVersionRef: string): boolean =>
+  value.length > 0 && value.length <= 240
+  && !/@|\s/u.test(value)
+  && (!rawPii.test(value) || opaqueUuid.test(value) || value === catalogVersionRef);
+
 
 const assertSafeText = (value: string, name: string, max: number): void => {
   if (value.length > max || rawPii.test(value)) throw new Error(`INTENT_DOCUMENT_UNSAFE_${name.toUpperCase()}`);
@@ -35,7 +41,7 @@ export const assertSafeUserIntentDocument = (document: UserIntentDocument): void
       decision.catalogVersionRef, decision.personaVersionId, decision.issuedAt,
       decision.customerMessageId, decision.customerClientMessageId, decision.decidedAt]
       .filter((value): value is string => value !== undefined)) {
-      if (!value || value.length > 240 || rawPii.test(value)) throw new Error('INTENT_DOCUMENT_INVALID_GOAL_CONFIRMATION');
+      if (!safeScopedReference(value, document.catalogVersionRef)) throw new Error('INTENT_DOCUMENT_INVALID_GOAL_CONFIRMATION');
     }
     if (!['pending', 'confirmed', 'rejected', 'corrected'].includes(decision.status)
       || !Number.isSafeInteger(decision.sessionRevision) || decision.sessionRevision < 0

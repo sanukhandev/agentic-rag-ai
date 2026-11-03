@@ -70,6 +70,20 @@ describe('durable v2 User Intent Document boundary', () => {
 });
 
 describe('goal confirmation document invariants', () => {
+  it('does not confuse an opaque UUID with a 12-digit card/PII value', () => {
+    const doc = documentFor(randomUUID(), randomUUID());
+    const numericTailUuid = '12345678-1234-4123-8123-123456789012';
+    const pending = { status: 'pending' as const,
+      promptId: numericTailUuid, proposalMessageId: randomUUID(),
+      goalKey: 'anc.company_formation', catalogVersionRef: doc.catalogVersionRef,
+      personaVersionId: numericTailUuid, sessionRevision: 2,
+      intentRevision: doc.revision, issuedAt: new Date().toISOString() };
+    expect(() => assertSafeUserIntentDocument({ ...doc, goalConfirmation: pending })).not.toThrow();
+    expect(() => assertSafeUserIntentDocument({
+      ...doc, goalConfirmation: { ...pending, promptId: '1234567890123456' },
+    })).toThrow('INTENT_DOCUMENT_INVALID_GOAL_CONFIRMATION');
+  });
+
   it('cannot mark a v2 goal confirmed without scoped customer-message evidence', () => {
     const doc = documentFor(randomUUID(), randomUUID());
     expect(() => assertSafeUserIntentDocument({ ...doc, goalConfirmed: true })).toThrow('INTENT_DOCUMENT_MISSING_GOAL_CONFIRMATION');
