@@ -148,6 +148,63 @@ const modelProposal = {
   proposedFacts: [{ key: 'business_activity' as const, maskedValue: 'technology consulting', supportingQuote: 'technology consulting' }],
 };
 
+describe('V2-only publication without a legacy V1 catalog', () => {
+  it('pins a published V2 catalog and exposes its read-only catalog and RAG tools', async () => {
+    const { store, tenant, coordinator, input, session } = await prepared();
+    const v2 = await publishPlannerFixture(store, tenant.id, tenant.slug);
+    // Simulates a tenant with no published V1 catalog and no V1 lookup record.
+    store.getPublishedIntentCatalog = async () => null;
+    store.getIntentCatalogVersion = async () => null;
+    coordinator.run.mockImplementationOnce(async request => {
+      expect(request.envelope.catalogVersionId).toBe(v2.id);
+      expect(request.envelope.catalogV2?.versionRef).toBe(v2.catalogVersionRef);
+      const pinned = await store.getSession(session.id);
+      expect(pinned?.conversationState?.catalogVersionId).toBe(v2.id);
+      const gateway = createV2ToolGateway({
+        store, embedding: new DeterministicEmbeddingProvider(),
+        serviceKey: 'unit-test-service-key-123456',
+      });
+      for (const toolName of ['get_intent_catalog', 'search_knowledge'] as const) {
+        const response = await gateway.execute({
+          schemaVersion: 2, toolCallId: randomUUID(), toolName,
+          arguments: toolName === 'search_knowledge' ? { query: 'company formation steps', resultCount: 3 } : {},
+          scopeRef: request.envelope.scopeRef, expectedStateRevision: request.envelope.sessionRevision,
+          deadlineAt: new Date(Date.now() + 15_000).toISOString(),
+        });
+        expect(response.status, toolName).toBe('ok');
+        if (toolName === 'get_intent_catalog') {
+          expect((response.result as { catalogV2: { versionRef: string } }).catalogV2.versionRef).toBe(v2.catalogVersionRef);
+        }
+      }
+      return { modelRequestCount: 1, toolCallCount: 2, toolTrace: [], approvedEvidence: [],
+        response: { citationIds: [], answer: 'I can help explain the company setup process.', nextQuestion: null,
+          nextQuestionKey: null }, guardReason: 'accepted' } as unknown as V2CoordinatorResult;
+    });
+    const reply = await runGPTFirstChatTurn(input);
+    expect(reply.actionProposal).toBeNull();
+    expect((await store.getUserIntentDocument(tenant.id, session.id))?.catalogSource).toBe('v2');
+    expect((await store.getUserIntentDocument(tenant.id, session.id))?.catalogVersionRef).toBe(v2.catalogVersionRef);
+    expect((await store.listActionsBySession(session.id, tenant.id))).toEqual([]);
+  });
+
+  it('never treats a V2 draft as published when no legacy V1 exists', async () => {
+    const { store, tenant, input } = await prepared();
+    store.getPublishedIntentCatalog = async () => null;
+    store.getIntentCatalogVersion = async () => null;
+    const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
+    if (!parsed.document) throw new Error('V2_FIXTURE_INVALID');
+    parsed.document.manifest.tenantScope = tenant.slug;
+    parsed.document.sheets.CatalogManifest[0]!.tenantScope = tenant.slug;
+    await store.createIntentCatalogV2Version({
+      tenantId: tenant.id, status: 'draft', sourceFileName: 'awaiting-review.json',
+      sourceHash: catalogV2Sha256(parsed.document), parserVersion: 'unit',
+      catalogVersionRef: catalogV2VersionRef(parsed.document), catalog: parsed.document,
+    });
+    await expect(runGPTFirstChatTurn(input)).rejects.toThrow('Publish the reviewed V2 intent catalog');
+    expect(await store.getUserIntentDocument(tenant.id, input.session.id)).toBeNull();
+  });
+});
+
 describe('published Catalog V2 planning in the GPT-first controller', () => {
   it('stores a scored, observed goal as UNCONFIRMED and records an intent decision revision', async () => {
     const { store, tenant, coordinator, input, session } = await prepared();
