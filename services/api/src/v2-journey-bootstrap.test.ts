@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { MemoryStore } from './store-memory.js';
 import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './catalog-v2.js';
 import { newConversationState } from './conversation-state.js';
-import { evaluateConfirmedV2ActionStage, evaluatePersistedV2ActionConfirmation, initializeConfirmedV2Journey } from './v2-journey-bootstrap.js';
+import { evaluateConfirmedV2ActionStage, evaluatePersistedV2ActionConfirmation, evaluateV2CallbackStageCompletion, initializeConfirmedV2Journey } from './v2-journey-bootstrap.js';
 import type { ActionRequest, Session, UserIntentDocument } from './types.js';
 
 const makeFixture = async () => {
@@ -111,5 +111,30 @@ describe('authoritative confirmed V2 journey bootstrap', () => {
     expect(await evaluatePersistedV2ActionConfirmation(store, missingDocSession, forged))
       .toMatchObject({ applies: true, accepted: false, reasons: ['v2_intent_document_missing'] });
     expect(await store.listActionsBySession(session.id, session.tenantId)).toEqual([]);
+  });
+
+  it('allows pending provider transport but blocks unverified V2 terminal completion', async () => {
+    const { doc, session, pinned } = await makeFixture();
+    const scoped = initializeConfirmedV2Journey(newConversationState(), doc, () => 'new-opportunity');
+    const action: ActionRequest = {
+      id: randomUUID(), tenantId: session.tenantId, sessionId: session.id,
+      opportunityId: scoped.document.opportunityId, catalogVersionId: pinned.catalogVersionRef,
+      workflowKey: 'crm.lead.create', actionKey: 'lead.propose_creation',
+      actionRevision: 1, idempotencyKey: 'one-action',
+      state: 'processing', opaqueReference: 'opaque-123',
+      payload: { contactConsent: true }, result: null,
+      createdAt: new Date().toISOString(),
+    };
+    expect(evaluateV2CallbackStageCompletion(action, 'processing', scoped.document, true))
+      .toMatchObject({ applies: true, accepted: true, reason: null });
+    expect(evaluateV2CallbackStageCompletion(action, 'completed', scoped.document, true))
+      .toMatchObject({ applies: true, accepted: false, reason: 'v2_trusted_provider_readback_required' });
+    expect(evaluateV2CallbackStageCompletion(action, 'completed', null, true))
+      .toMatchObject({ applies: true, accepted: false, reason: 'v2_callback_scope_mismatch' });
+    expect(evaluateV2CallbackStageCompletion(action, 'completed', {
+      ...scoped.document, opportunityId: 'another-opportunity',
+    }, true)).toMatchObject({ accepted: false, reason: 'v2_callback_scope_mismatch' });
+    expect(evaluateV2CallbackStageCompletion(action, 'completed', null, false))
+      .toMatchObject({ applies: false, accepted: true });
   });
 });
