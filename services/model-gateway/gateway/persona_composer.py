@@ -32,8 +32,15 @@ def composer_instructions(envelope: TurnEnvelopeV2) -> str:
         "Include the exact citationId of each excerpt used. If none of the excerpts actually supports the requested detail, abstain specifically without inventing a process. "
         "Do not infer actions, costs, eligibility, or business outcomes. Use planning null and do not make a tool call. "
     ) if envelope.knowledgeRepair is not None else ""
+    evidence_guidance = (
+        "The server supplied approvedKnowledge excerpts for this turn. Answer the customer's immediate factual question from those excerpts, "
+        "not from general knowledge or catalog intent labels. Use concise source-close statements and list formation steps only if a cited excerpt actually supports each step. "
+        "Copy the exact citationId of each used excerpt into citationIds; do not add unsupported prices, timelines, licenses, or completed provider actions. "
+        "If the retrieved excerpts do not address the question, explain that specific coverage gap rather than inventing a process or offering a quote in place of the answer. "
+    ) if envelope.approvedKnowledge else ""
     return (
         repair_guidance
+        + evidence_guidance
         + "You are the final natural-language persona composer for this turn. "
         f"Use the configured assistant name {persona.assistantName!r}, role {persona.assistantRole!r}, "
         f"tone {tones!r}, and speaking style {persona.speakingStyle!r}. "
