@@ -1,3 +1,5 @@
+# Canonical single-file stack. Only Nginx publishes host port 80.
+# Preserve existing ./data bind mounts and optional ANCFZ named volumes.
 x-node-build: &node-build
   context: .
   dockerfile: Dockerfile
@@ -10,17 +12,18 @@ services:
     environment:
       POSTGRES_DB: agentic_rag
       POSTGRES_USER: agentic
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentic_local_only}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
     expose:
       - "5432"
     volumes:
       - ./data/postgres:/var/lib/postgresql/data:rw
       - ./infra/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agentic -d agentic_rag"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U agentic -d agentic_rag"]
       interval: 5s
       timeout: 5s
-      retries: 12
+      start_period: 30s
+      retries: 24
 
   redis:
     image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
@@ -47,12 +50,17 @@ services:
       N8N_HOST: "${N8N_HOST:-localhost}"
       N8N_PORT: "${N8N_PORT:-5678}"
       N8N_PROTOCOL: "${N8N_PROTOCOL:-http}"
-      N8N_PATH: "${N8N_PATH:-/}"
-      N8N_PROXY_HOPS: "${N8N_PROXY_HOPS:-0}"
-      N8N_EDITOR_BASE_URL: "${N8N_EDITOR_BASE_URL:-http://localhost:3000/n8n/}"
-      N8N_WEBHOOK_URL: "${N8N_WEBHOOK_URL:-http://localhost:3000/n8n/}"
+      N8N_PATH: "/n8n/"
+      N8N_PROXY_HOPS: "1"
+      N8N_EDITOR_BASE_URL: "${PUBLIC_ORIGIN:-http://localhost}/n8n/"
+      WEBHOOK_URL: "${PUBLIC_ORIGIN:-http://localhost}/n8n/"
       N8N_SECURE_COOKIE: "${N8N_SECURE_COOKIE:-false}"
-      N8N_WEBHOOK_SECRET: "${N8N_WEBHOOK_SECRET:-local-n8n-workflow-secret}"
+      N8N_INSTANCE_OWNER_MANAGED_BY_ENV: ${N8N_INSTANCE_OWNER_MANAGED_BY_ENV:-false}
+      N8N_INSTANCE_OWNER_EMAIL: ${N8N_INSTANCE_OWNER_EMAIL:-}
+      N8N_INSTANCE_OWNER_PASSWORD_HASH: ${N8N_INSTANCE_OWNER_PASSWORD_HASH:-}
+      N8N_INSTANCE_OWNER_FIRST_NAME: ${N8N_INSTANCE_OWNER_FIRST_NAME:-Admin}
+      N8N_INSTANCE_OWNER_LAST_NAME: ${N8N_INSTANCE_OWNER_LAST_NAME:-TechCarrot}
+      N8N_WEBHOOK_SECRET: "${N8N_WEBHOOK_SECRET:?N8N_WEBHOOK_SECRET required}"
       REMOTE_CRM_PROVIDER: ${REMOTE_CRM_PROVIDER-}
       REMOTE_CRM_LEAD_URL: ${REMOTE_CRM_LEAD_URL-}
       REMOTE_CRM_LEAD_ID_PATTERN: ${REMOTE_CRM_LEAD_ID_PATTERN-}
@@ -63,6 +71,37 @@ services:
     volumes:
       - ./data/n8n:/home/node/.n8n:rw
       - ./infra/n8n/workflows:/workflows:ro
+
+  model-gateway:
+    build:
+      context: .
+      dockerfile: services/model-gateway/Dockerfile
+    restart: unless-stopped
+    expose: ["8088"]
+    environment:
+      MODEL_MODE: ${MODEL_MODE:-azure}
+      AZURE_OPENAI_BASE_URL: ${AZURE_OPENAI_BASE_URL:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      MODEL_GATEWAY_SERVICE_KEY: ${MODEL_GATEWAY_SERVICE_KEY:?MODEL_GATEWAY_SERVICE_KEY required}
+      NODE_TOOL_GATEWAY_URL: http://api:4000
+      LANGGRAPH_CONVERSATION_ENABLED: "true"
+      MODEL_MAX_CONCURRENCY: ${MODEL_MAX_CONCURRENCY:-2}
+      MODEL_MIN_CALL_INTERVAL_SECONDS: ${MODEL_MIN_CALL_INTERVAL_SECONDS:-0.7}
+      MODEL_MAX_REQUESTS_PER_MINUTE: ${MODEL_MAX_REQUESTS_PER_MINUTE:-60}
+      MODEL_TURN_TIMEOUT_SECONDS: ${MODEL_TURN_TIMEOUT_SECONDS:-90}
+      MODEL_CIRCUIT_BREAKER_FAILURES: ${MODEL_CIRCUIT_BREAKER_FAILURES:-3}
+      MODEL_CIRCUIT_BREAKER_COOLDOWN_SECONDS: ${MODEL_CIRCUIT_BREAKER_COOLDOWN_SECONDS:-30}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os,urllib.request; r=urllib.request.Request('http://127.0.0.1:8088/internal/health/ready',headers={'X-Internal-Service-Key':os.environ['MODEL_GATEWAY_SERVICE_KEY']}); urllib.request.urlopen(r,timeout=3).close()"
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 15
 
   api:
     build:
@@ -75,32 +114,34 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      model-gateway:
+        condition: service_healthy
     expose:
       - "4000"
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 4000
       STORE: postgres
-      DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:-agentic_local_only}@postgres:5432/agentic_rag
+      DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/agentic_rag
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:-replace-with-a-long-local-secret}
-      CHANNEL_CREDENTIAL_KEY: ${CHANNEL_CREDENTIAL_KEY:-replace-with-a-long-channel-credential-key}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+      CHANNEL_CREDENTIAL_KEY: ${CHANNEL_CREDENTIAL_KEY:?CHANNEL_CREDENTIAL_KEY required}
       OMNI_CHANNEL_API_KEY: ${OMNI_CHANNEL_API_KEY:-}
       OMNI_CHANNEL_TENANT_ID: ${OMNI_CHANNEL_TENANT_ID:-}
       OMNI_CHANNEL_TENANT_SLUG: ${OMNI_CHANNEL_TENANT_SLUG:-}
       OMNI_CHANNEL_NAME: ${OMNI_CHANNEL_NAME:-omnichannel}
       OMNI_ALLOW_STATIC_API_KEY: ${OMNI_ALLOW_STATIC_API_KEY:-false}
-      PII_VAULT_KEY: ${PII_VAULT_KEY:-replace-with-a-long-vault-secret}
-      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
-      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:3000}
+      PII_VAULT_KEY: ${PII_VAULT_KEY:?PII_VAULT_KEY required}
+      WEB_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost}
+      ADMIN_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost}
       AZURE_AI_ENDPOINT: ${AZURE_AI_ENDPOINT:-}
       AZURE_AI_EMBEDDING_DEPLOYMENT: ${AZURE_AI_EMBEDDING_DEPLOYMENT:-}
       AZURE_AI_EMBEDDING_DIMENSION: ${AZURE_AI_EMBEDDING_DIMENSION:-1536}
       AZURE_AI_API_KEY: ${AZURE_AI_API_KEY:-}
       AZURE_AI_API_VERSION: ${AZURE_AI_API_VERSION:-2024-10-21}
-      N8N_INTERNAL_URL: ${N8N_INTERNAL_URL:-http://n8n:5678}
-      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-local-n8n-workflow-secret}
-      INGESTION_WORKER_SECRET: ${INGESTION_WORKER_SECRET:-local-ingestion-worker-secret}
+      N8N_INTERNAL_URL: http://n8n:5678/n8n
+      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:?N8N_WEBHOOK_SECRET required}
+      INGESTION_WORKER_SECRET: ${INGESTION_WORKER_SECRET:?INGESTION_WORKER_SECRET required}
       INGESTION_STAGING_ROOT: /app/data/ingestion-staging
       SUPPORTING_DOCUMENT_ROOT: /app/data/supporting-documents
       CHAT_RESPONSE_CACHE_TTL_SECONDS: ${CHAT_RESPONSE_CACHE_TTL_SECONDS:-60}
@@ -108,7 +149,16 @@ services:
       CHAT_SESSION_TTL_MS: ${CHAT_SESSION_TTL_MS:-600000}
       API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-600}
       API_RATE_LIMIT_WINDOW_MS: ${API_RATE_LIMIT_WINDOW_MS:-60000}
-      CHAT_MODEL_PROVIDER: ${CHAT_MODEL_PROVIDER:-deterministic}
+      CHAT_MODEL_PROVIDER: python-gpt
+      CONVERSATION_ENGINE_V2_ENABLED: "true"
+      CONVERSATION_ENGINE_V2_TENANTS: ${CONVERSATION_ENGINE_V2_TENANTS:-}
+      PYTHON_MODEL_URL: http://model-gateway:8088
+      MODEL_GATEWAY_SERVICE_KEY: ${MODEL_GATEWAY_SERVICE_KEY:?MODEL_GATEWAY_SERVICE_KEY required}
+      PYTHON_MODEL_TIMEOUT_MS: ${PYTHON_MODEL_TIMEOUT_MS:-90000}
+      ANCFZ_PDF_INTERNAL_URL: http://ancfz-pdf:8097/v1/render
+      ANCFZ_PDF_API_KEY: ${ANCFZ_PDF_API_KEY:-}
+      MOCK_PAYMENT_INTERNAL_URL: http://mock-payments:8098
+      MOCK_PAYMENT_API_KEY: ${MOCK_PAYMENT_API_KEY:-}
     volumes:
       - ./data/ingestion-staging:/app/data/ingestion-staging:rw
       - ./data/supporting-documents:/app/data/supporting-documents:rw
@@ -116,7 +166,8 @@ services:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/v1/health/live').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
       timeout: 5s
-      retries: 12
+      start_period: 25s
+      retries: 15
 
   event-relay:
     build:
@@ -131,7 +182,7 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: ${NODE_ENV:-development}
-      DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:-agentic_local_only}@postgres:5432/agentic_rag
+      DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/agentic_rag
       REDIS_URL: redis://redis:6379
     command: ["node", "services/api/dist/event-relay.js"]
 
@@ -148,10 +199,10 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: ${NODE_ENV:-development}
-      DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:-agentic_local_only}@postgres:5432/agentic_rag
+      DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/agentic_rag
       REDIS_URL: redis://redis:6379
-      N8N_INTERNAL_URL: ${N8N_INTERNAL_URL:-http://n8n:5678}
-      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-local-n8n-workflow-secret}
+      N8N_INTERNAL_URL: http://n8n:5678/n8n
+      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:?N8N_WEBHOOK_SECRET required}
       N8N_COMPLETION_DEADLINE_MS: ${N8N_COMPLETION_DEADLINE_MS:-900000}
       EVENT_WORKER_STREAMS: ${EVENT_WORKER_STREAMS:-rag:v2:crm,rag:v2:documents,rag:v2:actions,rag:v2:notifications}
     command: ["node", "services/api/dist/event-worker.js"]
@@ -161,7 +212,7 @@ services:
       <<: *node-build
       target: web-runtime
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/}
+        NEXT_PUBLIC_API_URL: /
     container_name: agentic-web
     restart: unless-stopped
     depends_on:
@@ -175,7 +226,7 @@ services:
       <<: *node-build
       target: admin-runtime
       args:
-        ADMIN_BASE_HREF: ${ADMIN_BASE_HREF:-/admin/}
+        ADMIN_BASE_HREF: /admin/
     container_name: agentic-admin
     restart: unless-stopped
     depends_on:
@@ -195,7 +246,7 @@ services:
         condition: service_healthy
     environment:
       INGESTION_API_BASE: http://api:4000
-      INGESTION_WORKER_SECRET: ${INGESTION_WORKER_SECRET:-local-ingestion-worker-secret}
+      INGESTION_WORKER_SECRET: ${INGESTION_WORKER_SECRET:?INGESTION_WORKER_SECRET required}
       INGESTION_POLL_INTERVAL_SECONDS: ${INGESTION_POLL_INTERVAL_SECONDS:-5}
       INGESTION_LEASE_MS: ${INGESTION_LEASE_MS:-120000}
       INGESTION_RESULT_TIMEOUT_SECONDS: ${INGESTION_RESULT_TIMEOUT_SECONDS:-600}
@@ -208,8 +259,8 @@ services:
     image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
     container_name: agentic-nginx
     restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    ports:
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:80:80"
     depends_on:
       api:
         condition: service_healthy
@@ -222,7 +273,42 @@ services:
     volumes:
       - ./infra/nginx/public.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
-      test: ["CMD", "nginx", "-t"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/api/v1/health/live"]
       interval: 10s
       timeout: 5s
       retries: 6
+
+  # Opt-in development-only ANCFZ simulators; no published host ports.
+  ancfz-pdf:
+    profiles: [ancfz]
+    build:
+      context: ./tools/anc/pdf_service
+    restart: unless-stopped
+    environment:
+      ANCFZ_PDF_ENABLED: "true"
+      ANCFZ_PDF_PRIVATE_DOCKER: "true"
+      ANCFZ_PDF_HOST: 0.0.0.0
+      ANCFZ_PDF_PORT: "8097"
+      ANCFZ_PDF_API_KEY: ${ANCFZ_PDF_API_KEY:-}
+      ANCFZ_PDF_OUTPUT_ROOT: /var/lib/ancfz-private
+    volumes:
+      - ancfz_mock_pdf_private:/var/lib/ancfz-private
+
+  mock-payments:
+    profiles: [ancfz]
+    build:
+      context: ./tools/anc/payment_mock
+    restart: unless-stopped
+    environment:
+      MOCK_PAYMENTS_ENABLED: "true"
+      MOCK_PAYMENT_PRIVATE_DOCKER: "true"
+      MOCK_PAYMENT_HOST: 0.0.0.0
+      MOCK_PAYMENT_PORT: "8098"
+      MOCK_PAYMENT_API_KEY: ${MOCK_PAYMENT_API_KEY:-}
+      MOCK_PAYMENT_DB: /var/lib/mockpay/mock-payments.sqlite3
+    volumes:
+      - ancfz_mock_payment_private:/var/lib/mockpay
+
+volumes:
+  ancfz_mock_pdf_private:
+  ancfz_mock_payment_private:

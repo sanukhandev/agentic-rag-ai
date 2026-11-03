@@ -40,13 +40,34 @@ Read these **in order before coding**: [seven-component architecture](docs/conve
 
 The target Python model gateway is an **additional isolated service**, not a replacement for Node authorization or the ingestion worker.
 
-## Current local development
+## Local Docker / deployment topology
 
-Existing Docker Desktop files: `docker-compose.yml`, `docker-compose.local-dev.yml`, plus VM overlay `docker-compose.vm-dev.yml`. Add `docker-compose.python-gpt.yml` **as an opt-in third overlay** for the private GPT gateway; do not expose the Python service publicly. The `python-gpt` provider is wired at bootstrap, but live use still requires Azure model credentials, running gateway and validation of the legacy conversation flow. It is not a seven-stage acceptance release.
+`docker-compose.yml` is the **only** Compose file needed. The default stack includes
+PostgreSQL/pgvector, Redis, n8n, Node API, event workers, ingestion, Next.js,
+Angular Admin, the private Python GPT/LangGraph gateway, and Nginx.
 
-Use `npm run test`, `npm run typecheck`, `npm run lint`, `npm run build` and `npm run verify:compose` as applicable. Existing `npm run qa:ancfz-single-journey` tests the **old Foundry runtime** until migrated; it is not evidence for the new Python gateway. The seven-stage acceptance is currently blocked on independently verified Salesforce Lead completion.
+**Only Nginx publishes a host port:** `127.0.0.1:80` by default. Public routes:
+`/` (chat), `/admin/`, `/api/`, `/n8n/`. Services use Docker DNS internally;
+PostgreSQL, Redis and the model gateway have no host-published ports. For an
+explicit non-local bind set `APP_BIND_ADDRESS=0.0.0.0`; public deployment must
+use HTTPS/TLS and appropriate access controls outside this HTTP-only stack.
 
-For Azure GPT-model API-key setup and the required initial+3 transient retry policy, see [Python model gateway](docs/model-gateway.md). Keep the key in the private Python environment, never Git, Docker layers or browser.
+Use `docker compose config --quiet` then `docker compose up -d --build --remove-orphans --wait`.
+For optional **non-production** PDF/payment simulators, add `--profile ancfz`.
+Copy `.env.example` to `.env` and provide strong local credentials and valid Azure
+configuration. The model gateway fails readiness when Azure configuration is
+missing (unless intentionally using its test-only mock mode).
+
+**Preserve local volumes:** existing `./data/postgres`, `./data/redis`,
+`./data/n8n`, `./data/ingestion-staging`, and `./data/supporting-documents`
+are unchanged. Do not use `docker compose down -v` or remove `./data`.
+PostgreSQL init SQL only runs on an empty volume; apply outstanding migrations
+to an existing database through a separately reviewed migration procedure.
+
+For Azure GPT model setup see [model gateway](docs/model-gateway.md).
+Passing container health checks is not seven-stage provider or Azure dialogue
+quality acceptance. Production V2 consent capture and trusted provider transition
+wiring still require integration verification.
 
 ## Acceptance
 

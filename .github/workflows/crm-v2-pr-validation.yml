@@ -13,6 +13,12 @@ on:
       - 'docs/development/**'
       - 'docs/engineering/**'
       - 'AGENTS.md'
+      - 'docker-compose.yml'
+      - 'Dockerfile'
+      - 'infra/nginx/**'
+      - '.env.example'
+      - 'scripts/verify-compose.mjs'
+      - 'scripts/deploy-vm.sh'
       - '.github/workflows/crm-v2-pr-validation.yml'
   push:
     branches: [feat/gpt-first-langgraph-unit-only]
@@ -37,6 +43,8 @@ jobs:
         run: |
           npm ci
           python -m pip install -r services/model-gateway/requirements-dev.txt
+      - name: Validate single-file Docker Compose (static only)
+        run: npm run verify:compose
       - name: Typecheck and lint
         run: |
           npm run typecheck
