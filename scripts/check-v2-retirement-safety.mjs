@@ -25,6 +25,7 @@ export const BASELINE_MIGRATIONS = `
 050-anc-account-conversion-catalog 051-anc-sandbox-pricebook
 052-anc-finance-contract-catalog 053-qualification-and-catalog-gates
 054-foundry-conversation-bindings 055-catalog-v2-versions 056-user-intent-document
+057-v2-business-goal-confirmation
 `.trim().split(/\s+/u).map(name => `infra/postgres/${name}.sql`);
 
 export const PROTECTED_V2_SOURCES = [

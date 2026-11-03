@@ -15,7 +15,7 @@ Applies to the **future deletion PR only**, not `chore/v2-legacy-cleanup-prep`. 
 
 ## Static checks added by the preparation branch
 
-Run `node scripts/check-v2-retirement-safety.mjs` and `node --test scripts/check-v2-retirement-safety.test.mjs` (Node 22+, offline). The guard checks: baseline **56** SQL migration filenames, **21** critical V2 source modules, unexpected new imports of `chat-model-adapter` outside the existing `index.ts` rollback allowance, calls to legacy planners from the two GPT-first routing modules, unapproved Python function-tool definitions / bypass of tool allowlisting, and obvious Python DB/direct-write capabilities. It scans code and files **without modifying them**.
+Run `node scripts/check-v2-retirement-safety.mjs` and `node --test scripts/check-v2-retirement-safety.test.mjs` (Node 22+, offline). The guard checks: baseline **57** SQL migration filenames, **21** critical V2 source modules, unexpected new imports of `chat-model-adapter` outside the existing `index.ts` rollback allowance, calls to legacy planners from the two GPT-first routing modules, unapproved Python function-tool definitions / bypass of tool allowlisting, and obvious Python DB/direct-write capabilities. It scans code and files **without modifying them**.
 
 The guard is a **lightweight tripwire, not a full dependency graph, parser, permission audit or proof of absence**. It deliberately does not delete files or block the still-active V1 rollback. Code search and peer review remain mandatory, especially for dynamic imports, Python aliases/multiline expressions and external callers.
 
@@ -33,3 +33,11 @@ PR checks on the integration branch use **unit tests, typecheck, lint, build, st
 - [ ] Offline guard and isolated unit tests pass; `npm run test:unit`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run verify:secrets` and Python unit tests report exact outcomes.
 - [ ] Tenant/session, RAG, vector DB, Redis/outbox, callback reconciliation, opportunity lifecycle, consent and action confirmation are unchanged.
 - [ ] Deletion remains blocked until confirmation, action gates, rollback approval, and V2 consumer migration are proven. A **separate** retirement PR performs any actual deletion.
+## Integration tip recheck — 2026-11-03
+
+- PRs #129, #130 and #131 have merged into `feat/gpt-first-langgraph-unit-only`; goal-confirmation persistence and deterministic action boundaries now exist.
+- Added the applied/additive migration `057-v2-business-goal-confirmation.sql` to the static deletion-protection baseline. Migration 055–057 remain mandatory.
+- GPT-first traffic routes via `runGPTFirstChatTurn`, but `app.ts` still contains the explicitly enabled legacy rollback planner and an older embedded V2 block. Both remain referenced; **this note does not authorize deleting them**.
+- Verified Node code bootstraps a confirmed V2 journey and checks persisted purpose consent at the public action confirmation boundary. Real provider execution, failure recovery, and live rollout parity are **not** established by these unit tests.
+- Removal of the old V1 adapter and endpoints remains blocked until the deployment owner approves rollback retirement and equivalent tenant/feature-flag recovery behavior is demonstrated. The next deletion PR must prove every remaining import/caller is migrated.
+- Unit-only CI and static guard passing is not live acceptance evidence.

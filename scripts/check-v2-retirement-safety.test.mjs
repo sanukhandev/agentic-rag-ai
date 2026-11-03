@@ -68,3 +68,10 @@ test('rejects direct Python database access', async () => fixture(async ({ root,
   await put('services/model-gateway/gateway/graph.py', 'import sqlalchemy\n');
   assert.ok(has(await checkV2RetirementSafety(root), 'PYTHON_WRITE_CAPABILITY'));
 }));
+
+test('protects the confirmed-goal migration added after the original baseline', async () => fixture(async ({ root }) => {
+  const latest = BASELINE_MIGRATIONS.at(-1);
+  assert.equal(latest, 'infra/postgres/057-v2-business-goal-confirmation.sql');
+  await rm(join(root, latest));
+  assert.ok(has(await checkV2RetirementSafety(root), 'MIGRATION_MISSING'));
+}));
