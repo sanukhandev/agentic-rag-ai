@@ -3,7 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
 import { IntentCatalogService } from '../../services/intent-catalog.service';
-import { IntentCatalogVersion, IngestionJob, Tenant } from '../../types/admin.types';
+import { IntentCatalogV2Version, IntentCatalogVersion, IngestionJob, Tenant } from '../../types/admin.types';
+import { summarizeV2Catalog, type V2CatalogSummary } from '../../services/intent-catalog-v2-utils';
 import { BadgeComponent } from '../shared/badge.component';
 import { IconComponent } from '../shared/icon.component';
 import { ConfirmDialogComponent } from '../shared/confirm-dialog.component';
@@ -84,13 +85,52 @@ import { apiErrorMessage } from '../../services/api-error';
       </div>
 
       <!-- Empty State -->
-      <div *ngIf="!catalogError && (!isPlatformAdmin || selectedTenant) && versions.length === 0" class="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center text-xs text-neutral-500 space-y-2">
+      <div *ngIf="!catalogError && (!isPlatformAdmin || selectedTenant) && versions.length === 0 && v2Versions.length === 0" class="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center text-xs text-neutral-500 space-y-2">
         <div class="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-100 text-neutral-600">
           <app-icon name="workflow" classNames="w-5 h-5"></app-icon>
         </div>
         <p class="font-semibold text-sm text-neutral-800">No Intent Catalog Versions Imported</p>
         <p class="max-w-md mx-auto text-neutral-500">Upload the standard Excel workbook contract containing sheets for Intents, Signals, Slots, and Workflows.</p>
       </div>
+
+      <section *ngIf="v2Versions.length > 0" class="space-y-3">
+        <div>
+          <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-500">Conversation Engine v2</p>
+          <p class="mt-1 text-xs text-neutral-500">Published v2 catalogs are read from the authoritative v2 contract and remain separate from the legacy editor.</p>
+        </div>
+        <article *ngFor="let version of v2Versions" class="rounded-2xl border border-neutral-200/90 bg-white p-6 shadow-card">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div class="flex items-center gap-2.5">
+                <span class="font-mono text-base font-bold text-neutral-900">v{{ version.version }}</span>
+                <app-badge [variant]="version.status === 'published' ? 'black' : 'outline'" [showDot]="version.status === 'published'" [text]="version.status | uppercase"></app-badge>
+              </div>
+              <p class="mt-1.5 text-xs text-neutral-600 font-medium">{{ version.sourceFileName }} · {{ v2Summary(version).signalCount }} signals · {{ v2Summary(version).stageCount }} stage rules</p>
+              <p class="mt-1 text-[11px] text-neutral-500 font-mono">{{ version.catalogVersionRef }}</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <p class="text-[11px] text-neutral-500">Published {{ version.publishedAt | date:'medium' }}</p>
+              <button
+                *ngIf="version.status === 'published'"
+                type="button"
+                (click)="exportV2Published(version)"
+                [disabled]="isV2Exporting"
+                class="flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:cursor-wait disabled:opacity-60 transition-colors button-press shadow-subtle"
+              >
+                <app-icon name="upload" classNames="w-3.5 h-3.5 rotate-180"></app-icon>
+                <span>{{ isV2Exporting ? 'Preparing Excel...' : 'Export Excel' }}</span>
+              </button>
+            </div>
+          </div>
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <div *ngFor="let goal of v2Summary(version).goals" class="rounded-xl border border-neutral-200/80 bg-neutral-50/70 p-4 text-xs">
+              <p class="font-bold text-neutral-900 text-sm">{{ goal.name }}</p>
+              <p class="mt-0.5 font-mono text-[11px] text-neutral-500">{{ goal.key }}</p>
+              <p class="mt-2 text-neutral-600">{{ goal.stageCount }} configured journey stages</p>
+            </div>
+          </div>
+        </article>
+      </section>
 
       <!-- Search & Filter Controls -->
       <div *ngIf="versions.length > 0" class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -260,6 +300,7 @@ export class IntentCatalogComponent {
   editError = '';
   isJsonValid = true;
   isExporting = false;
+  isV2Exporting = false;
 
   // Publish confirmation modal
   confirmPublishOpen = false;
@@ -272,6 +313,7 @@ export class IntentCatalogComponent {
   get catalogJob(): IngestionJob | null { return this.service.catalogJob(); }
   get catalogError(): string | null { return this.service.catalogError(); }
   get versions(): IntentCatalogVersion[] { return this.service.versions(); }
+  get v2Versions(): IntentCatalogV2Version[] { return this.service.v2Versions(); }
   get publishedVersion(): IntentCatalogVersion | null { return this.versions.find((version) => version.status === 'published') ?? null; }
 
   private lastLoadedTenantId: string | null = null;
@@ -317,6 +359,10 @@ export class IntentCatalogComponent {
 
   signalsFor(version: IntentCatalogVersion, intentKey: string): IntentCatalogVersion['catalog']['signals'] {
     return version.catalog.signals.filter((signal) => signal.intentKey === intentKey);
+  }
+
+  v2Summary(version: IntentCatalogV2Version): V2CatalogSummary {
+    return summarizeV2Catalog(version.catalog);
   }
 
   startEdit(version: IntentCatalogVersion): void {
@@ -388,6 +434,27 @@ export class IntentCatalogComponent {
       error: (error) => {
         this.isExporting = false;
         this.state.showToast('error', 'Export failed', apiErrorMessage(error, 'Could not export the published catalog.'));
+      }
+    });
+  }
+
+  exportV2Published(version: IntentCatalogV2Version): void {
+    if (this.isV2Exporting) return;
+    this.isV2Exporting = true;
+    this.service.exportV2Published().subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `${this.selectedTenant?.slug ?? 'tenant'}-intent-catalog-v2-${version.version}.xlsx`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+        this.isV2Exporting = false;
+        this.state.showToast('success', 'Catalog exported', `Published v2 intent catalog v${version.version} downloaded.`);
+      },
+      error: (error) => {
+        this.isV2Exporting = false;
+        this.state.showToast('error', 'Export failed', apiErrorMessage(error, 'Could not export the published v2 catalog.'));
       }
     });
   }

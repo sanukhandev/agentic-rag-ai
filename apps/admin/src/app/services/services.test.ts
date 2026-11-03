@@ -26,20 +26,45 @@ import { Subject, of } from 'rxjs';
 import { ToastService } from './toast.service';
 import { UiNavigationService, isNavSection } from './ui-navigation.service';
 import { canAccessAdminSection } from './admin-navigation';
-import { isCatalogJobPending } from './intent-catalog-utils';
+import { isCatalogJobPending, shouldRestoreCatalogJob } from './intent-catalog-utils';
 import { isValidTenantSlug, resolveTenantSlug } from '../components/customer-chat/customer-chat-utils';
 import { apiErrorMessage } from './api-error';
 import { filterPermittedCommands } from '../components/shared/command-palette-utils';
 import { AdminStateService } from './admin-state.service';
 import { Tenant, Source, NavSection, IngestionJob, Persona } from '../types/admin.types';
 import { isTrustedApiRequest } from './auth.interceptor';
-import { CATALOG_MIME_TYPE } from './intent-catalog.service';
+import { CATALOG_MIME_TYPE, IntentCatalogService } from './intent-catalog.service';
+import { summarizeV2Catalog } from './intent-catalog-v2-utils';
 import { AuthService } from './auth.service';
 import { PersonaService } from './persona.service';
 import { API_BASE_URL } from './tokens';
 import { AiStudioComponent } from '../components/ai-studio/ai-studio.component';
 
 describe('SOLID Services and Architecture Contracts', () => {
+  it('summarizes a v2 catalog without converting it to the legacy catalog shape', () => {
+    expect(summarizeV2Catalog({
+      sheets: {
+        BusinessGoals: [
+          { businessGoalKey: 'anc.company_formation', name: 'Company formation' },
+          { businessGoalKey: 'anc.company_renewal', name: 'Company renewal' }
+        ],
+        IntentSignals: [{ signalId: 'renewal', targetKey: 'goal.company_renewal' }],
+        BusinessStages: [
+          { businessGoalKey: 'anc.company_formation', stageKey: 'lead_generation', stageOrder: 1 },
+          { businessGoalKey: 'anc.company_renewal', stageKey: 'lead_generation', stageOrder: 1 },
+          { businessGoalKey: 'anc.company_renewal', stageKey: 'contract', stageOrder: 7 }
+        ]
+      }
+    })).toEqual({
+      goals: [
+        { key: 'anc.company_formation', name: 'Company formation', stageCount: 1 },
+        { key: 'anc.company_renewal', name: 'Company renewal', stageCount: 2 }
+      ],
+      signalCount: 1,
+      stageCount: 3
+    });
+  });
+
   it('ToastService adheres to Single Responsibility by managing toast notifications independently', () => {
     const toastService = new ToastService();
     let currentToasts: any[] = [];
@@ -125,6 +150,28 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(isCatalogJobPending('processing')).toBe(true);
     expect(isCatalogJobPending('completed')).toBe(false);
     expect(isCatalogJobPending('failed')).toBe(false);
+  });
+
+  it('does not restore historical failed catalog ingestion banners after reload', () => {
+    expect(shouldRestoreCatalogJob('queued')).toBe(true);
+    expect(shouldRestoreCatalogJob('processing')).toBe(true);
+    expect(shouldRestoreCatalogJob('completed')).toBe(false);
+    expect(shouldRestoreCatalogJob('failed')).toBe(false);
+  });
+
+  it('downloads the published v2 catalog from the authenticated v2 export route', () => {
+    const http = { get: vi.fn().mockReturnValue(of(new Blob())) };
+    const service = Object.assign(Object.create(IntentCatalogService.prototype), {
+      http,
+      apiBase: 'http://127.0.0.1:4000'
+    }) as IntentCatalogService;
+
+    service.exportV2Published().subscribe();
+
+    expect(http.get).toHaveBeenCalledWith(
+      'http://127.0.0.1:4000/api/v2/admin/intent-catalog/published/export',
+      { responseType: 'blob' }
+    );
   });
 
   it('shows structured API errors instead of silently replacing them with an empty catalog', () => {
@@ -235,6 +282,10 @@ describe('SOLID Services and Architecture Contracts', () => {
       isPublicAuth: false
     });
     expect(isTrustedApiRequest('http://127.0.0.1:4000/api/v1/admin/sources', trustedBase)).toEqual({
+      isApiRequest: true,
+      isPublicAuth: false
+    });
+    expect(isTrustedApiRequest('/api/v2/admin/intent-catalog/versions', trustedBase)).toEqual({
       isApiRequest: true,
       isPublicAuth: false
     });

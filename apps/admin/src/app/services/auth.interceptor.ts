@@ -12,7 +12,7 @@ export function isTrustedApiRequest(url: string, apiBaseUrl: string): { isApiReq
     if (resolved.origin !== trusted.origin) {
       return { isApiRequest: false, isPublicAuth: false };
     }
-    const isApi = resolved.pathname.startsWith('/api/v1/');
+    const isApi = /^\/api\/v(?:1|2)\//u.test(resolved.pathname);
     const isLogin = resolved.pathname === '/api/v1/auth/login';
     return { isApiRequest: isApi, isPublicAuth: isLogin };
   } catch {
