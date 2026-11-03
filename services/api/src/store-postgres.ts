@@ -7,14 +7,10 @@ import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
 import { HttpError } from './http/errors.js';
 import { assertSafeIntentTurn, assertSafeUserIntentDocument } from './user-intent-document.js';
+import { catalogVersionStorage } from './v2-catalog-identity.js';
 
 const iso = (value: Date | string): string => value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-const uuidVersionId = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/iu;
-const catalogVersionStorage = (version: string | null | undefined): { legacy: string | null; v2: string | null } => {
-  const value = version ?? null;
-  return { legacy: value && uuidVersionId.test(value) ? value : null,
-    v2: value && !uuidVersionId.test(value) ? value : null };
-};
+
 const vectorLiteral = (values: number[]): string => `[${values.join(',')}]`;
 const stringArray = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 const recordArray = (value: unknown): Array<Record<string, string | number>> => Array.isArray(value) ? value.filter((item): item is Record<string, string | number> => typeof item === 'object' && item !== null && Object.values(item).every((entry) => typeof entry === 'string' || typeof entry === 'number')) : [];
