@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { cacheKey, type CacheStore } from './cache.js';
-import { newConversationState, prompt } from './conversation-state.js';
+import { classifyScopedGoalDecision, newConversationState, prompt } from './conversation-state.js';
 import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 import { validateV2PlanningProposal } from './v2-planning.js';
 import { validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
@@ -11,7 +11,7 @@ import { assertSafeUserIntentDocument, assertSafeIntentTurn } from './user-inten
 import { type V2ConversationCoordinator, type V2CoordinatorRequest, type V2CoordinatorResult } from './v2-coordinator.js';
 import type { V2ApprovedEvidence, V2VerifiedFact } from './v2-evidence.js';
 import type { V2ApprovedFallbackTemplateSet } from './v2-fallbacks.js';
-import type { Citation, Message, PersonaVersion, Session, Store, Tenant, UserIntentDocument, UserIntentFact } from './types.js';
+import type { Citation, GoalConfirmationRecord, Message, PersonaVersion, Session, Store, Tenant, UserIntentDocument, UserIntentFact } from './types.js';
 
 /** A single guarded model turn. Never invokes the legacy planner or creates an action. */
 export const executeV2Turn = async (
@@ -105,6 +105,10 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   if (!session.personaVersionId) throw new HttpError(409, 'V2_PERSONA_NOT_PINNED', 'A published persona must be pinned to this session.');
   const persona = await store.getPersonaVersion(tenant.id, session.personaVersionId);
   if (!persona || persona.status !== 'published') throw new HttpError(409, 'V2_PERSONA_UNAVAILABLE', 'The pinned persona is not available.');
+  if (userMessage.response || (await store.listIntentTurns(tenant.id, session.id))
+    .some(turn => turn.clientMessageId === input.clientMessageId)) {
+    throw new HttpError(409, 'V2_TURN_REPLAY', 'This customer message has already been assessed.');
+  }
   const originalState = session.conversationState ?? newConversationState();
   const catalog = originalState.catalogVersionId
     ? await store.getIntentCatalogVersion(tenant.id, originalState.catalogVersionId)
@@ -179,7 +183,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       permittedLanguages: persona.permittedLanguages,
       tone: persona.tone.split(/[,;]+/u).map(x => x.trim()).filter(Boolean).slice(0, 12),
       speakingStyle: persona.speakingStyle, fallbackTemplateVersion: 'fallback-' + persona.id },
-    intentProjection: { primaryGoalKey: activeGoal, goalConfirmed: Boolean(originalState.selectedIntentKey || intentDocument?.goalConfirmed),
+    intentProjection: { primaryGoalKey: activeGoal, goalConfirmed: intentDocument?.catalogSource === 'v2' ? intentDocument.goalConfirmed : Boolean(originalState.selectedIntentKey || intentDocument?.goalConfirmed),
       currentStageKey: entry?.lifecycle?.currentStage ?? null, pendingRequirementKey: pendingRequirement, confirmedCustomerFacts: facts },
     toolAllowlist: [...V2_TOOL_NAMES],
     budgets: { maxModelRequests: 4, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + 90_000).toISOString() },
@@ -216,6 +220,25 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     && !planningDecision.score.ambiguous ? planningDecision.primaryGoalKey
     : intentDocument?.catalogSource === 'v2' ? intentDocument.businessGoalKey : null);
   const selectedTurnCategory = validPlan ? planningDecision?.proposal?.turnCategory ?? null : null;
+  // The model may propose a goal, but only Node may interpret a customer
+  // decision against the already persisted prompt and its optimistic cursor.
+  const previousDecision = intentDocument?.catalogSource === 'v2' ? intentDocument.goalConfirmation ?? null : null;
+  const pendingDecision = previousDecision?.status === 'pending' ? previousDecision : null;
+  if (pendingDecision) {
+    const requiredGoal = catalogV2?.sheets.BusinessGoals.find(goal =>
+      goal.active && goal.confirmationRequired && goal.businessGoalKey === pendingDecision.goalKey);
+    if (!requiredGoal || !intentDocument || intentDocument.businessGoalKey !== pendingDecision.goalKey
+      || pendingDecision.catalogVersionRef !== v2Version?.catalogVersionRef
+      || pendingDecision.personaVersionId !== persona.id
+      || pendingDecision.sessionRevision !== sessionRevision
+      || pendingDecision.intentRevision !== intentDocument.revision
+      || pendingDecision.proposalMessageId === userMessage.id
+      || !(await store.listMessages(session.id, tenant.id)).some(message =>
+        message.id === pendingDecision.promptId && message.role === 'assistant')) {
+      throw new HttpError(409, 'V2_GOAL_CONFIRMATION_STALE', 'The goal confirmation prompt is no longer current.');
+    }
+  }
+  const decision = pendingDecision ? classifyScopedGoalDecision(maskedMessage) : null;
   const selectedTurnIntent = validPlan && selectedV2Goal && selectedTurnCategory && catalogV2
     ? catalogV2.sheets.TurnIntents.find(turn =>
         turn.active && turn.businessGoalKey === selectedV2Goal && turn.categoryKey === selectedTurnCategory)?.turnIntentKey ?? null
@@ -232,10 +255,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       throw new HttpError(409, 'V2_CATALOG_PIN_STALE', 'The V2 catalog publication changed during the turn.');
     }
   }
-  const citations = await resolvePublicCitations(store, tenant.id, result.response.citationIds, result.approvedEvidence ?? []);
-  const answerMasked = maskPiiForSession(session, result.response.answer, input.tokenVault);
-  assertKnownTokens(session, answerMasked, input.tokenVault);
-  const grounded = result.response.citationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence');
+  const modelCitations = await resolvePublicCitations(store, tenant.id, result.response.citationIds, result.approvedEvidence ?? []);
   const responseId = randomUUID();
   // A model-authored next-question key can become durable only when it refers
   // to an existing, required slot in the active, pinned catalog. The model
@@ -259,13 +279,77 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     messageSequence: originalState.messageSequence + 1, summaryRevision: originalState.summaryRevision + 1,
     lastTurnAt: userMessage.createdAt };
   session.conversationState = state;
-  await input.updateSession(session);
-  const approvedResponse = { answer: answerMasked, grounded, citationRefs: result.response.citationIds,
-    pendingRequirementKey: effectivePendingRequirement };
   const at = new Date().toISOString();
+  const requirementGoal = catalogV2?.sheets.BusinessGoals.find(goal => goal.active
+    && goal.businessGoalKey === selectedV2Goal) ?? null;
+  // Advisory/knowledge-only turns cannot activate a business journey. A new
+  // prompt must be tied to observed, validated business-goal planning.
+  const shouldPrompt = Boolean(catalogV2 && requirementGoal?.confirmationRequired
+    && validPlan && selectedTurnCategory === 'business_goal'
+    && planningDecision?.score?.thresholdMet && !planningDecision.score.ambiguous
+    && !intentDocument?.goalConfirmed && !pendingDecision && !decision
+    && modelPlan?.nextMove === 'confirm_goal');
+  let goalConfirmation: GoalConfirmationRecord | null = previousDecision;
+  let goalConfirmed = Boolean(intentDocument?.goalConfirmed);
+  let nextGoalKey = intentDocument?.goalConfirmed ? intentDocument.businessGoalKey : selectedV2Goal;
+  let effectiveAnswer = result.response.answer;
+  let effectiveQuestion = result.response.nextQuestion;
+  let overrideResponse = false;
+  if (pendingDecision) {
+    const goalName = catalogV2?.sheets.BusinessGoals.find(goal => goal.businessGoalKey === pendingDecision.goalKey)?.name ?? 'this service';
+    if (decision === 'confirmed') {
+      goalConfirmed = true;
+      nextGoalKey = pendingDecision.goalKey;
+      goalConfirmation = { ...pendingDecision, status: 'confirmed', customerMessageId: userMessage.id,
+        customerClientMessageId: input.clientMessageId, decidedAt: at,
+        decisionSessionRevision: sessionRevision, decisionIntentRevision: intentDocument!.revision };
+      effectiveAnswer = 'Understood. We can focus on ' + goalName.toLowerCase() + '. What would you like to discuss first?';
+      effectiveQuestion = 'What would you like to discuss first?';
+      overrideResponse = true;
+    } else if (decision === 'rejected' || decision === 'corrected') {
+      goalConfirmed = false;
+      nextGoalKey = null;
+      goalConfirmation = { ...pendingDecision, status: decision, customerMessageId: userMessage.id,
+        customerClientMessageId: input.clientMessageId, decidedAt: at,
+        decisionSessionRevision: sessionRevision, decisionIntentRevision: intentDocument!.revision };
+      effectiveAnswer = decision === 'rejected'
+        ? 'Understood. I will keep this informational. What would you like to know?'
+        : 'Which service would you like to explore instead?';
+      effectiveQuestion = decision === 'rejected' ? 'What would you like to know?' : 'Which service would you like to explore instead?';
+      overrideResponse = true;
+    } else {
+      // Interruption: answer the knowledge question without consuming the
+      // original prompt. Ambiguity: ask exactly one scoped clarification.
+      goalConfirmation = { ...pendingDecision, sessionRevision: sessionRevision + 1,
+        intentRevision: (intentDocument?.revision ?? 0) + 1 };
+      nextGoalKey = pendingDecision.goalKey;
+      if (decision === 'ambiguous') {
+        effectiveAnswer = 'Would you like to proceed with ' + goalName.toLowerCase() + ', or only explore information?';
+        effectiveQuestion = effectiveAnswer;
+        overrideResponse = true;
+      }
+    }
+  } else if (shouldPrompt && requirementGoal && selectedV2Goal) {
+    goalConfirmed = false;
+    nextGoalKey = selectedV2Goal;
+    goalConfirmation = { status: 'pending', promptId: responseId, proposalMessageId: userMessage.id,
+      goalKey: selectedV2Goal, catalogVersionRef: v2Version!.catalogVersionRef,
+      personaVersionId: persona.id, sessionRevision: sessionRevision + 1,
+      intentRevision: (intentDocument?.revision ?? -1) + 1, issuedAt: at };
+    effectiveQuestion = 'Would you like to proceed with ' + requirementGoal.name.toLowerCase() + '?';
+    effectiveAnswer = 'I can help with ' + requirementGoal.name.toLowerCase() + '. ' + effectiveQuestion;
+    overrideResponse = true;
+  }
+  const effectiveCitationIds = overrideResponse ? [] : result.response.citationIds;
+  const citations = overrideResponse ? [] : modelCitations;
+  const grounded = effectiveCitationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence');
+  const answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
+  assertKnownTokens(session, answerMasked, input.tokenVault);
+  const approvedResponse = { answer: answerMasked, grounded, citationRefs: effectiveCitationIds,
+    pendingRequirementKey: effectivePendingRequirement };
   // Persist only facts that Node already verified in its session/intent store.
   // Never promote model-generated facts to verified customer facts.
-  const proposedFacts = validPlan && selectedV2Goal && modelPlan
+  const proposedFacts = validPlan && selectedV2Goal && modelPlan && !decision
     ? validateQuotedV2CustomerFacts(modelPlan.proposedFacts ?? [], maskedMessage, userMessage.id, state.messageSequence)
     : {};
   const incomingFacts = { ...factPatch(facts as Record<string, string>, state.messageSequence), ...proposedFacts };
@@ -275,11 +359,12 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       .map(([key, value]) => [key, { ...value, corrected: Boolean(intentDocument?.verifiedFacts[key]) }]),
   );
   const nextDoc: UserIntentDocument = intentDocument ? {
-    ...intentDocument, approvedResponse, lastQuestion: result.response.nextQuestion,
+    ...intentDocument, approvedResponse, lastQuestion: effectiveQuestion,
     verifiedFacts: { ...intentDocument.verifiedFacts, ...verifiedFactPatch },
-    businessGoalKey: intentDocument.goalConfirmed ? intentDocument.businessGoalKey
-      : intentDocument.catalogSource === 'v2' ? selectedV2Goal : intentDocument.businessGoalKey,
-    turnIntentKey: intentDocument.catalogSource === 'v2' ? selectedTurnIntent : intentDocument.turnIntentKey,
+    businessGoalKey: intentDocument.catalogSource === 'v2' ? nextGoalKey : intentDocument.businessGoalKey,
+    goalConfirmed: intentDocument.catalogSource === 'v2' ? goalConfirmed : intentDocument.goalConfirmed,
+    goalConfirmation: intentDocument.catalogSource === 'v2' ? goalConfirmation : intentDocument.goalConfirmation ?? null,
+    turnIntentKey: intentDocument.catalogSource === 'v2' ? (nextGoalKey ? selectedTurnIntent ?? intentDocument.turnIntentKey : null) : intentDocument.turnIntentKey,
     pendingRequirementKey: effectivePendingRequirement,
     toolRefs: result.toolTrace.map(trace => trace.toolCallId),
     sourceRefs: [...result.response.citationIds, ...catalogSignalRefs], summary: state.rollingSummary,
@@ -289,29 +374,61 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     id: randomUUID(), tenantId: tenant.id, sessionId: session.id, opportunityId,
     catalogSource: catalogV2 ? 'v2' : 'legacy_v1',
     catalogVersionRef: v2Version?.catalogVersionRef ?? catalog.id, personaVersionId: persona.id,
-    businessGoalKey: selectedV2Goal ?? activeGoal,
+    businessGoalKey: nextGoalKey ?? (catalogV2 ? null : activeGoal),
+    goalConfirmation: catalogV2 ? goalConfirmation : null,
     turnIntentKey: selectedTurnIntent, currentStageKey: entry?.lifecycle?.currentStage ?? null,
     stageRevision: entry?.lifecycle?.revision ?? 0,
-    goalConfirmed: catalogV2 ? false : Boolean(originalState.selectedIntentKey), verifiedFacts: incomingFacts,
-    pendingRequirementKey: effectivePendingRequirement, lastQuestion: result.response.nextQuestion, approvedResponse,
+    goalConfirmed: catalogV2 ? goalConfirmed : Boolean(originalState.selectedIntentKey), verifiedFacts: incomingFacts,
+    pendingRequirementKey: effectivePendingRequirement, lastQuestion: effectiveQuestion, approvedResponse,
     toolRefs: result.toolTrace.map(trace => trace.toolCallId), sourceRefs: [...result.response.citationIds, ...catalogSignalRefs],
     summary: state.rollingSummary, summaryRevision: 1, revision: 0, createdAt: at, updatedAt: at,
   };
   assertSafeUserIntentDocument(nextDoc);
-  if (intentDocument) {
-    const updated = await store.updateUserIntentDocument({ document: nextDoc, expectedRevision: intentDocument.revision });
-    if (!updated) throw new HttpError(409, 'V2_INTENT_REVISION_CONFLICT', 'The intent document changed concurrently.');
-  } else await store.createUserIntentDocument(nextDoc);
   const assessment = { id: randomUUID(), documentId: nextDoc.id, tenantId: tenant.id, sessionId: session.id,
     opportunityId, turnSequence: state.messageSequence, clientMessageId: input.clientMessageId,
     messageHash: input.messageHash,
     businessGoalKey: nextDoc.businessGoalKey, turnIntentKey: nextDoc.turnIntentKey,
     intentCategory: selectedTurnCategory,
-    verifiedFactPatch, pendingRequirementKey: effectivePendingRequirement, lastQuestion: result.response.nextQuestion,
+    verifiedFactPatch, pendingRequirementKey: effectivePendingRequirement, lastQuestion: effectiveQuestion,
     approvedResponse, toolRefs: result.toolTrace.map(trace => trace.toolCallId),
     sourceRefs: [...result.response.citationIds, ...catalogSignalRefs], createdAt: at };
   assertSafeIntentTurn(assessment);
-  await store.appendIntentTurn(assessment);
+  const transition = !pendingDecision && shouldPrompt ? 'prompted'
+    : decision === 'confirmed' || decision === 'rejected' || decision === 'corrected' ? decision : null;
+  const decisionAudit = transition && goalConfirmation ? { id: randomUUID(), tenantId: tenant.id,
+    actorId: null, eventName: 'v2.goal_confirmation.' + transition, createdAt: at,
+    metadata: { sessionId: session.id, promptId: goalConfirmation.promptId,
+      customerMessageId: transition === 'prompted' ? null : userMessage.id,
+      clientMessageId: input.clientMessageId, businessGoalKey: goalConfirmation.goalKey,
+      catalogVersionRef: goalConfirmation.catalogVersionRef, personaVersionId: persona.id,
+      sessionRevision, intentRevision: nextDoc.revision, actionAuthorized: false } } : null;
+  const response = {
+    messageId: responseId, sessionId: session.id, answer: rehydrateForSession(session, answerMasked, input.tokenVault),
+    grounded, conversational: !grounded, citations, actionProposal: null,
+    pendingPromptId: goalConfirmation?.status === 'pending' ? goalConfirmation.promptId : nextPendingPrompt?.id ?? null, pendingIntentKey: nextDoc.businessGoalKey,
+    pendingRequirementKey: effectivePendingRequirement, requestId: input.requestId,
+  };
+  const assistantMessage: Message = { id: responseId, sessionId: session.id, tenantId: tenant.id, role: 'assistant',
+    maskedContent: answerMasked, citations, clientMessageId: null,
+    response: { conversational: !grounded, catalogVersionId: catalog.id, catalogIntentKey: activeGoal, catalogOpportunityId: opportunityId },
+    createdAt: at };
+  const persisted = { ...response, answer: answerMasked };
+  const answeredCustomerMessage: Message = { ...userMessage, response: persisted };
+  if (catalogV2) {
+    const committed = await store.commitV2IntentTurn({ session, document: nextDoc,
+      expectedDocumentRevision: intentDocument?.revision ?? null, assessment, audit: decisionAudit,
+      assistantMessage, customerMessage: answeredCustomerMessage });
+    session.stateVersion = committed.session.stateVersion ?? sessionRevision + 1;
+  } else {
+    await input.updateSession(session);
+    if (intentDocument) {
+      const updated = await store.updateUserIntentDocument({ document: nextDoc, expectedRevision: intentDocument.revision });
+      if (!updated) throw new HttpError(409, 'V2_INTENT_REVISION_CONFLICT', 'The intent document changed concurrently.');
+    } else await store.createUserIntentDocument(nextDoc);
+    await store.appendIntentTurn(assessment);
+    await store.addMessage(assistantMessage);
+    await store.updateMessage(answeredCustomerMessage);
+  }
   if (modelPlan && v2Version) {
     await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: null,
       eventName: 'v2.catalog.planning_reviewed',
@@ -330,18 +447,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         actionAuthorized: false }, createdAt: at });
   }
 
-  const response = {
-    messageId: responseId, sessionId: session.id, answer: rehydrateForSession(session, answerMasked, input.tokenVault),
-    grounded, conversational: !grounded, citations, actionProposal: null,
-    pendingPromptId: nextPendingPrompt?.id ?? null, pendingIntentKey: nextDoc.businessGoalKey,
-    pendingRequirementKey: effectivePendingRequirement, requestId: input.requestId,
-  };
-  await store.addMessage({ id: responseId, sessionId: session.id, tenantId: tenant.id, role: 'assistant',
-    maskedContent: answerMasked, citations, clientMessageId: null,
-    response: { conversational: !grounded, catalogVersionId: catalog.id, catalogIntentKey: activeGoal, catalogOpportunityId: opportunityId },
-    createdAt: at });
-  const persisted = { ...response, answer: answerMasked };
-  await store.updateMessage({ ...userMessage, response: persisted });
+
   const responseCacheKey = cacheKey('tenant', tenant.id, 'chat-response', session.id, hash(input.clientMessageId));
   await input.cache.set(responseCacheKey, { messageHash: input.messageHash, response: persisted }, input.responseCacheTtlSeconds);
   await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: null, eventName: 'v2.gpt_first.turn',

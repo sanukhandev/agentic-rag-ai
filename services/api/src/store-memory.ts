@@ -171,6 +171,9 @@ export class MemoryStore implements Store {
     const key = intentDocumentKey(input.document.tenantId, input.document.sessionId);
     const current = this.intentDocuments.get(key);
     if (!current || current.id !== input.document.id || current.revision !== input.expectedRevision || !this.sessions.has(input.document.sessionId)) return null;
+    if (current.goalConfirmation?.status === 'confirmed'
+      && (JSON.stringify(current.goalConfirmation) !== JSON.stringify(input.document.goalConfirmation)
+        || !input.document.goalConfirmed || input.document.businessGoalKey !== current.businessGoalKey)) return null;
     const updated = { ...structuredClone(input.document), revision: input.expectedRevision + 1, updatedAt: now() };
     assertSafeUserIntentDocument(updated);
     this.intentDocuments.set(key, updated);
@@ -191,6 +194,60 @@ export class MemoryStore implements Store {
     this.intentTurns.set(stored.id, stored);
     return structuredClone(stored);
   }
+  async commitV2IntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null; assistantMessage?: Message; customerMessage?: Message }): Promise<{ session: Session; document: UserIntentDocument }> {
+    const { session, document, assessment } = input;
+    assertSafeUserIntentDocument(document);
+    assertSafeIntentTurn(assessment);
+    const previousSession = this.sessions.get(session.id);
+    const key = intentDocumentKey(document.tenantId, session.id);
+    const previousDocument = this.intentDocuments.get(key);
+    const published = (this.intentCatalogV2Versions.get(document.tenantId) ?? []).find(v => v.status === 'published');
+    if (!previousSession || previousSession.tenantId !== document.tenantId
+      || previousSession.stateVersion !== session.stateVersion || session.tenantId !== document.tenantId
+      || document.sessionId !== session.id || document.catalogSource !== 'v2'
+      || !published || published.catalogVersionRef !== document.catalogVersionRef
+      || assessment.tenantId !== document.tenantId || assessment.sessionId !== session.id
+      || assessment.documentId !== document.id || assessment.opportunityId !== document.opportunityId
+      || (previousDocument?.goalConfirmation?.status === 'confirmed'
+        && (JSON.stringify(previousDocument.goalConfirmation) !== JSON.stringify(document.goalConfirmation)
+          || !document.goalConfirmed || document.businessGoalKey !== previousDocument.businessGoalKey))
+      || (input.expectedDocumentRevision === null ? Boolean(previousDocument)
+        : !previousDocument || previousDocument.id !== document.id || previousDocument.revision !== input.expectedDocumentRevision)
+      || [...this.intentTurns.values()].some(turn => (turn.sessionId === session.id && turn.clientMessageId === assessment.clientMessageId)
+        || (turn.documentId === document.id && turn.turnSequence === assessment.turnSequence))) {
+      throw new HttpError(409, 'V2_INTENT_ATOMIC_CONFLICT', 'The confirmation state changed or a message was replayed.');
+    }
+    // Preserve a replayable model answer in the same synchronous commit as
+    // the confirmed goal. Validate all message invariants before any mutation.
+    if (Boolean(input.assistantMessage) !== Boolean(input.customerMessage)) {
+      throw new HttpError(409, 'V2_TURN_MESSAGE_PAIR_REQUIRED', 'Both conversation messages must be committed together.');
+    }
+    if (input.assistantMessage && input.customerMessage) {
+      const assistant = input.assistantMessage, customer = input.customerMessage;
+      const persistedCustomer = this.messages.get(customer.id);
+      if (!persistedCustomer || persistedCustomer.tenantId !== document.tenantId
+        || persistedCustomer.sessionId !== session.id || persistedCustomer.role !== 'user'
+        || persistedCustomer.clientMessageId !== assessment.clientMessageId || persistedCustomer.response !== null
+        || customer.response === null || customer.id === assistant.id
+        || assistant.role !== 'assistant' || assistant.tenantId !== document.tenantId
+        || assistant.sessionId !== session.id || assistant.clientMessageId !== null
+        || this.messages.has(assistant.id)) {
+        throw new HttpError(409, 'V2_TURN_MESSAGE_CONFLICT', 'A reply was already committed or the message scope changed.');
+      }
+    }
+    const savedSession = structuredClone({ ...session, stateVersion: (session.stateVersion ?? 0) + 1 });
+    const savedDocument = structuredClone({ ...document, revision: (input.expectedDocumentRevision ?? -1) + 1 });
+    this.sessions.set(session.id, savedSession);
+    this.intentDocuments.set(key, savedDocument);
+    this.intentTurns.set(assessment.id, structuredClone(assessment));
+    if (input.assistantMessage && input.customerMessage) {
+      this.messages.set(input.assistantMessage.id, structuredClone(input.assistantMessage));
+      this.messages.set(input.customerMessage.id, structuredClone(input.customerMessage));
+    }
+    if (input.audit) this.audits.push(structuredClone(input.audit));
+    return { session: structuredClone(savedSession), document: structuredClone(savedDocument) };
+  }
+
   async listIntentTurns(tenantId: string, sessionId: string, limit?: number): Promise<IntentTurnAssessment[]> {
     const turns = [...this.intentTurns.values()].filter((turn) => turn.tenantId === tenantId && turn.sessionId === sessionId).sort((left, right) => left.turnSequence - right.turnSequence);
     return structuredClone(limit === undefined ? turns : turns.slice(-limit));
