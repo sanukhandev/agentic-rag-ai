@@ -317,7 +317,8 @@ export class V2ConversationCoordinator {
           // A repair of a factual question must not also propose a business goal,
           // record customer facts, or authorize any stage action.
           const groundedRepair: PersonaComposedResponseV2 = { ...repaired, planning: null };
-          if (!groundedRepair.decisionRef.startsWith('fallback-')
+          if (groundedRepair.citationIds.length > 0
+            && !groundedRepair.decisionRef.startsWith('fallback-')
             && !hasPositiveBusinessOutcomeClaim(groundedRepair.answer)) {
             const verifiedRepair = guardV2Response(groundedRepair, guardContext);
             if (verifiedRepair.verdict.accepted && verifiedRepair.response) return {
