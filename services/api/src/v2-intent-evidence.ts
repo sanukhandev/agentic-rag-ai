@@ -127,7 +127,7 @@ export const resolveV2IntentEvidence = (request: V2IntentEvidenceRequest): V2Obs
     const goals = new Set<string>();
     for (const turn of previous) {
       const normalized = normalize(turn.text);
-      if (globalCancellation(normalized) || (hasRejection(normalized)
+      if (/\bchanged my mind\b/u.test(normalized) || globalCancellation(normalized) || (hasRejection(normalized)
         && observed(request.catalog, normalized).length > 0
         && activeClauses(normalized).length === 0)) break;
       for (const signal of activeClauses(normalized).flatMap(part => observed(request.catalog, part))) {
