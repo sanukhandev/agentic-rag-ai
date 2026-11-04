@@ -227,7 +227,7 @@ describe('V2 context-aware company formation confirmation (isolated unit)', () =
       const audit = (await ctx.store.listAudit(ctx.tenant.id)).find(e => e.eventName === 'v2.catalog.planning_reviewed');
       expect(audit?.metadata).toMatchObject({
         proposalValid: true, goalThresholdMet: true, initiationSupported: true,
-        validatedSignalIds: ['signal.company.register'], goalConfirmationPending: true, goalConfirmed: false,
+        validatedSignalIds: 'signal.company.register', goalConfirmationPending: true, goalConfirmed: false,
       });
     },
   );
@@ -247,7 +247,7 @@ describe('V2 context-aware company formation confirmation (isolated unit)', () =
     const ctx = await firstTurn('Tell me about company formation', {
       ...modelProposal, turnCategory: 'knowledge_advisory', nextMove: 'answer_knowledge',
     });
-    const next = await followUpTurn(ctx as Awaited<ReturnType<typeof proposalTurn>>, "Let's start the process");
+    const next = await followUpTurn(ctx as unknown as Awaited<ReturnType<typeof proposalTurn>>, "Let's start the process");
     ctx.coordinator.run.mockImplementationOnce(async () => ({
       modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
       response: { citationIds: [], answer: 'We can get started.', nextQuestion: null,
@@ -259,7 +259,7 @@ describe('V2 context-aware company formation confirmation (isolated unit)', () =
     expect(reply.actionProposal).toBeNull();
     const audit = (await ctx.store.listAudit(ctx.tenant.id)).filter(e => e.eventName === 'v2.catalog.planning_reviewed').at(-1);
     expect(audit?.metadata).toMatchObject({ contextSupported: true, initiationSupported: true,
-      validatedSignalIds: ['signal.company.register'], goalConfirmationPending: true });
+      validatedSignalIds: 'signal.company.register', goalConfirmationPending: true });
   });
 
   it('keeps an information-only turn informational even if GPT proposes a business goal', async () => {
