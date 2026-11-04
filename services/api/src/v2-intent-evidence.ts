@@ -53,6 +53,15 @@ const hasInformationRequest = (message: string): boolean =>
 const hasRejection = (message: string): boolean =>
   /\b(?:don't|do not|not going to|no longer|changed my mind|cancel|stop|never mind|not interested|not ready|not yet|only (?:want|need) information)\b/u.test(message);
 
+/** Do not let an unrelated negative preference erase a positive goal request.
+ * Contrasting clauses have separate polarity; conservatively treat global
+ * cancellations as a stop rather than an implicit new authorization. */
+const contrastClauses = (message: string): string[] =>
+  message.split(/\s*(?:[,;.]\s*)?\b(?:but|however|although|instead)\b\s*/u).map(part => part.trim()).filter(Boolean);
+const globalCancellation = (message: string): boolean =>
+  /^(?:no[.!]?|never mind[.!]?|stop[.!]?|cancel[.!]?|i changed my mind[.!]?|i'?m not interested[.!]?)$/u.test(message.trim());
+const activeClauses = (message: string): string[] =>
+  contrastClauses(message).filter(part => !hasRejection(part));
 const hasInitiationRequest = (message: string): boolean =>
   /(?:^|\b)(?:i (?:want|would like|need|am ready|m ready) to|let's|let us|please|go ahead and|we (?:want|need) to|i(?:'m| am) ready to)\s+(?:go ahead (?:and |to )?|now )?(?:start|begin|register|form|incorporate|set up|open|establish|proceed(?: with)?|get started(?: with)?)\b/u.test(message)
   || /^(?:start|begin|register|form|incorporate|set up|open|establish|proceed|let's go ahead|let us go ahead)\b/u.test(message);
@@ -82,15 +91,22 @@ const observed = (catalog: CatalogV2Document, text: string): Array<{ signalId: s
 
 export const resolveV2IntentEvidence = (request: V2IntentEvidenceRequest): V2ObservedIntentContext => {
   const normalizedCurrent = normalize(request.currentMessage);
-  const information = hasInformationRequest(normalizedCurrent);
-  const rejected = hasRejection(normalizedCurrent);
-  const explicit = !information && !rejected && hasInitiationRequest(normalizedCurrent);
+  const clauses = contrastClauses(normalizedCurrent);
+  const positives = activeClauses(normalizedCurrent);
+  const cancelled = globalCancellation(normalizedCurrent);
+  const negativeGoalKeys = new Set(clauses.filter(hasRejection)
+    .flatMap(part => observed(request.catalog, part).map(signal => signal.goalKey)));
+  const explicit = !cancelled && positives.some(hasInitiationRequest);
+  const information = !explicit && hasInformationRequest(normalizedCurrent);
+  const rejected = cancelled || (positives.length === 0 && clauses.some(hasRejection));
   const initiation: V2ObservedIntentContext['initiation'] = rejected ? 'none'
     : information ? 'information' : explicit ? 'explicit'
     : isContextReference(normalizedCurrent) ? 'ambiguous' : 'none';
 
-  // Explicit negation must not count the quoted positive phrase as customer intent.
-  const currentSignals = rejected ? [] : observed(request.catalog, request.currentMessage);
+  // Only affirmatively expressed catalog signals contribute. A negated visa
+  // preference never blocks an independently affirmative formation request.
+  const currentSignals = cancelled ? [] : positives.flatMap(part => observed(request.catalog, part))
+    .filter(signal => !negativeGoalKeys.has(signal.goalKey));
   const currentGoalKeys = [...new Set(currentSignals.map(signal => signal.goalKey))];
   const hasConflictingCurrentGoals = currentGoalKeys.length > 1;
 
@@ -111,8 +127,9 @@ export const resolveV2IntentEvidence = (request: V2IntentEvidenceRequest): V2Obs
     const goals = new Set<string>();
     for (const turn of previous) {
       const normalized = normalize(turn.text);
-      if (hasRejection(normalized)) break;
-      for (const signal of observed(request.catalog, turn.text)) {
+      if (globalCancellation(normalized) || hasRejection(normalized)
+        && activeClauses(normalized).length === 0) break;
+      for (const signal of activeClauses(normalized).flatMap(part => observed(request.catalog, part))) {
         goals.add(signal.goalKey);
         recent.push({ ...signal, sourceMessageId: turn.messageId, source: 'prior_customer_turn',
           catalogVersionRef: request.catalogVersionRef });
