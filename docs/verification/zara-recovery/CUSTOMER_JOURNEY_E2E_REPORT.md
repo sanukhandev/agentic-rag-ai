@@ -190,3 +190,9 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 - Result: **PASS** — 25/25 HTTP answers and 25 durable unique customer messages.
 - Automated objective score: **1.00 (10/10)**. No action proposal, internal payload leak, or false provider-completion claim was observed.
 - Human persona review: `NOT_RUN`. Salesforce, invoice, document, contract and full seven-stage provider completion remain `NOT_VERIFIED_BY_THIS_HARNESS`.
+
+## V2 Account callback safety regression — 2026-11-05
+
+- The legacy internal Account remote callback was exercised against a synthetic V2 action and pending Account.
+- Before the fix it returned HTTP 200 and mutated the Account to `verified` without V2 provider evidence. The regression now returns HTTP 409 `V2_PROVIDER_EVIDENCE_REQUIRED` and leaves the Account pending.
+- Focused route suite: 3/3 PASS. Full API suite: 61 files / 513 tests PASS. This closes the bypass only; it is not Account provider completion.

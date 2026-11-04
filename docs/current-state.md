@@ -100,7 +100,7 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 
 ## 2026-11-04 recovery checkpoint — explicit initiation and action-gate recovery
 
-- Latest API suite: **PASS** — 61 files / 512 tests; typecheck and lint pass.
+- Latest API suite: **PASS** — 61 files / 513 tests; typecheck and lint pass.
 - Natural initiation phrases now produce a durable formation confirmation prompt even when GPT labels the supporting turn as navigation.
 - Public replay now masks the bounded synthetic name phrase, preserves consent, hides internal requirement keys, and reports the disabled Salesforce provider truthfully without creating an action request.
 - Docker API rebuild and public Nginx/API action-gate replay: **PASS** for this boundary.
@@ -120,3 +120,4 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Docker rebuilt `api`, `admin`, and `web` from the refreshed lockfile; the API, web, admin, Nginx, Postgres, Redis, and model-gateway services are healthy, and `/api/v1/health/live` returned `{"status":"ok"}`.
 - Fresh public Nginx → API → Azure-backed model-gateway regression: `artifacts/ancfz/api-25-turns-post-dependency-scored.json` records 25/25 HTTP answers, 25 durable user messages, automated objective score **1.00 (10/10)**, no action proposal, no internal payload leak, and no false provider-completion claim. Human persona quality remains `NOT_RUN` and external provider completion remains `NOT_VERIFIED_BY_THIS_HARNESS`.
 - Runtime trace confirms deterministic Account, package, payment, and contract provider classes are currently unit-tested adapters only; the application wires the V2 Lead evidence route and document mock, while the generated lifecycle n8n workflows still mark the remaining lifecycle Node endpoints as inactive/new contracts. This is the concrete implementation gap behind the unverified seven-stage journey.
+- The legacy `/api/v1/internal/crm/accounts/:id/remote` callback is now blocked for V2 actions with `V2_PROVIDER_EVIDENCE_REQUIRED`; regression coverage proves it cannot mark a V2 Account verified without correlated provider evidence. This closes a false-completion bypass but does not implement the missing OTP plus Account/Contact/Opportunity provider adapter.

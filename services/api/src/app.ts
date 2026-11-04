@@ -2854,6 +2854,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const input = parse(crmAccountRemoteSchema, req.body);
       const account = await store.getCrmAccount(routeParam(req, 'id'), input.tenantId);
       const action = await store.getAction(input.actionId);
+      const v2Document = action ? await store.getUserIntentDocument(input.tenantId, action.sessionId) : null;
+      const isV2Action = Boolean(v2Document?.catalogSource === 'v2' || (action && (await store.listIntentCatalogV2Versions(input.tenantId)).some((version) => version.catalogVersionRef === action.catalogVersionId)));
+      if (isV2Action) throw new HttpError(409, 'V2_PROVIDER_EVIDENCE_REQUIRED', 'V2 Account conversion requires correlated provider evidence and readback.');
       if (!account || account.status !== 'pending' || !action || action.tenantId !== input.tenantId || action.opportunityId !== account.opportunityId || !['approved', 'processing'].includes(action.state) || action.payload.slotValues?.crmAccountId !== account.id) throw new HttpError(409, 'ACCOUNT_NOT_PENDING', 'This Account conversion is not awaiting a verified remote result.');
       const updated = await store.updateCrmAccount({ ...account, remoteAccountId: input.remoteAccountId, remoteContactId: input.remoteContactId, remoteOpportunityId: input.remoteOpportunityId, status: 'verified', verifiedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
       await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'crm.account.remote_verified', metadata: { accountId: account.id, opportunityId: account.opportunityId, remoteAccountId: input.remoteAccountId, remoteContactId: input.remoteContactId, remoteOpportunityId: input.remoteOpportunityId }, createdAt: new Date().toISOString() });

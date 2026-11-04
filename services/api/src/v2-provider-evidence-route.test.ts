@@ -84,4 +84,25 @@ describe('V2 provider evidence route', () => {
     expect((await test.store.getAction(test.action.id))?.state).toBe('reconcile_required');
     expect(await test.store.getCrmLeadByActionId(test.action.id, test.tenant.id)).toBeNull();
   });
+
+  it('does not let the legacy Account remote callback bypass V2 provider evidence', async () => {
+    const test = await makeFixture('deterministic_mock');
+    const account = await test.store.createCrmAccount({
+      id: randomUUID(), tenantId: test.tenant.id, opportunityId: test.action.opportunityId!,
+      leadId: randomUUID(), remoteAccountId: null, remoteContactId: null, remoteOpportunityId: null,
+      status: 'pending', conversionRule: 'qualification_verified', verifiedAt: null,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    const action = await test.store.createAction({
+      ...test.action, id: randomUUID(), workflowKey: 'crm.account.create', actionKey: 'account.propose_creation',
+      idempotencyKey: 'v2-provider-evidence-account', payload: { contactConsent: true, slotValues: { crmAccountId: account.id } },
+    });
+    const response = await request(test.runtime.app)
+      .put(`/api/v1/internal/crm/accounts/${account.id}/remote`)
+      .set('x-agentic-internal-secret', 'n'.repeat(64))
+      .send({ tenantId: test.tenant.id, actionId: action.id, remoteAccountId: 'mock-account-bypass', remoteContactId: 'mock-contact-bypass', remoteOpportunityId: 'mock-opportunity-bypass' });
+    expect(response.status, JSON.stringify(response.body)).toBe(409);
+    expect(response.body).toMatchObject({ error: { code: 'V2_PROVIDER_EVIDENCE_REQUIRED' } });
+    expect(await test.store.getCrmAccount(account.id, test.tenant.id)).toMatchObject({ status: 'pending', remoteAccountId: null });
+  });
 });
