@@ -77,5 +77,7 @@ jobs:
         run: |
           node scripts/check-v2-retirement-safety.mjs
           node --test scripts/check-v2-retirement-safety.test.mjs
+          node scripts/check-v2-runtime-safety.mjs
+          node --test scripts/check-v2-runtime-safety.test.mjs
       - name: Static secret scan
         run: npm run verify:secrets
