@@ -307,7 +307,14 @@ export class V2ConversationCoordinator {
     }
     const guarded = guardV2Response(candidateResponse, guardContext);
     candidateGuardReason = guarded.verdict.reasonCode;
-    const reviewClaims = buildV2GroundingReviewClaims(candidateResponse, guardContext.evidence ?? []);
+    // Independent review is restricted to the exact public excerpts approved
+    // and pinned by Node before the model turn. Other tool evidence cannot be
+    // smuggled into this relaxed language path.
+    const trustedReviewEvidence = (request.evidence ?? []).filter(approved =>
+      approved.approved && !approved.revoked && (envelope.approvedKnowledge ?? []).some(item =>
+        item.citationId === approved.citationId && item.sourceRef === approved.sourceRef
+        && item.sourceVersion === approved.sourceVersion && item.text === approved.text));
+    const reviewClaims = buildV2GroundingReviewClaims(candidateResponse, trustedReviewEvidence);
     const lexicalOverlap = v2MeanLexicalOverlapPercent(reviewClaims);
     if (guarded.verdict.accepted) return { response: guarded.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: guarded.claims, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason, groundingLexicalOverlapPercent: lexicalOverlap, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
     // An independent model reviewer can rescue a *lexical* false rejection only
