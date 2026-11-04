@@ -25,6 +25,18 @@ def test_composer_uses_dynamic_persona_and_hides_internal_protocol():
     assert "exactly once" in text
 
 
+def test_composer_restricts_topic_keys_to_pinned_catalog():
+    current = envelope()
+    current.catalogV2 = __import__("gateway.v2_contracts", fromlist=["CatalogV2Projection"]).CatalogV2Projection(
+        versionRef="anc:r2:verified-catalog", businessGoals=[], turnIntents=[], signals=[],
+        knowledgeTopics=[{"topicKey": "knowledge.company_setup", "goalKey": "anc.company_formation", "citationRequired": True}],
+        requirementKeys=[], enabledReadToolKeys=[],
+    )
+    instructions = composer_instructions(current)
+    assert "catalogV2.knowledgeTopics" in instructions
+    assert "not by an IntentSignals targetKey" in instructions
+
+
 def test_prefetched_public_evidence_is_given_explicit_citation_first_priority():
     from gateway.v2_contracts import ApprovedKnowledgeSnippetV2
 
