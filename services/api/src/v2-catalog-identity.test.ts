@@ -32,4 +32,12 @@ describe('Catalog V2 action/CRM/document reference storage', () => {
     expect(migration).toContain('package_offerings_one_catalog_identity');
     expect(migration).not.toMatch(/^\s*(?:DROP|DELETE|TRUNCATE|ALTER\s+COLUMN)/imu);
   });
+
+  it('publishes natural formation aliases as a new immutable development revision', () => {
+    const migration = readFileSync(new URL('../../../infra/postgres/061-anc-natural-formation-aliases.sql', import.meta.url), 'utf8');
+    expect(migration).toContain('anc:r3:1de595abd94fc134b5e457113e927c323a29b89da60ffa2cf9dae0574c0d0858');
+    expect(migration).toContain('set up a business');
+    expect(migration).toContain("p.package_key || '-r3'");
+    expect(migration).not.toMatch(/^\s*(?:DROP|DELETE|TRUNCATE|ALTER\s+COLUMN)/imu);
+  });
 });

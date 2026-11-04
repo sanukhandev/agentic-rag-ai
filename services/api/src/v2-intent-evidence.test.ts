@@ -31,6 +31,17 @@ describe('V2 catalog-backed contextual customer intent evidence', () => {
   );
 
   it.each([
+    'Hello, I want to set up a business.',
+    'I am opening a business in Ajman.',
+    'I need a company license.',
+  ])('recognizes approved natural formation wording in the published catalog: %s', text => {
+    const result = current(text, [], sevenStageCatalog);
+    expect(result.candidateGoalKeys).toEqual(['anc.company_formation']);
+    expect(result.initiation).toBe('explicit');
+    expect(result.initiationSupported).toBe(true);
+  });
+
+  it.each([
     'I want to start a technology consulting company in Ajman.',
     'I am opening a business.',
     'I need a company license.',

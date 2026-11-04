@@ -10,6 +10,8 @@
 4. `I want to start company formation` → explicit confirmation prompt; pending key `anc.company_formation`; no action.
 5. `No, not now` → informational acknowledgement; pending prompt cleared; no action.
 
+Final post-fix replay evidence (fresh session `58ddff43-47b7-43f3-a1f5-0eb506486eec`): turns 2 and 3 returned the same grounded ANCFZ registration-time sentence with the approved citation; turns 4 and 5 persisted the pending formation goal and then cleared it on refusal. This is a PASS for the historical intent/grounding/refusal regression, but not a complete process-overview quality pass.
+
 ## Public 25-turn conversation persistence harness
 
 **Result:** PASS after fixing the package-tool citation boundary.

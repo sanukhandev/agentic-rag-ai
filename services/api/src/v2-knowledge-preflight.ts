@@ -26,11 +26,39 @@ export const contextualizeV2KnowledgeQuery = (message: string, topicName: string
   return reference.test(trimmed) ? `${topicName}: ${trimmed}` : message;
 };
 
+const relevantEvidenceText = (text: string, query: string): string => {
+  const sentences = text.replace(/\s+(?=\d+\.\s+|(?:what|which)\s+(?:documents?|passport|proof of residence)\b)/giu, '\n')
+    .split(/(?<=[.!?])\s+|\n+/u).map(value => value.trim()).filter(Boolean);
+  const normalizedQuery = query.toLocaleLowerCase('en-US');
+  const asksDocuments = /\b(?:document|documents|passport|proof of residence|requirements?)\b/u.test(normalizedQuery);
+  const formationQuestion = /\b(?:formation|setup|set[- ]?up|registration|process|procedure|step|steps)\b/u.test(normalizedQuery);
+  if (!formationQuestion) return text;
+  if (!asksDocuments && text.trim().replace(/^\d+\.\s*/u, '').toLocaleLowerCase('en-US').startsWith('what documents')) return '';
+  if (sentences.length < 2) {
+    const value = text.toLocaleLowerCase('en-US');
+    return !asksDocuments && /document|passport|proof of residence|application form/u.test(value) ? '' : text;
+  }
+  const selected = sentences.filter(sentence => {
+    const value = sentence.toLocaleLowerCase('en-US');
+    const heading = value.replace(/^\d+\.\s*/u, '');
+    const processTerms = /\b(?:formation|setup|process|procedure|step|steps|structure|completed?|issued?|issuance|takes?|choose|select|apply|establish|incorporat\w*|licen[cs]e|registration)\b/u;
+    const documentOnlyLine = /^(?:passport|passport-size|proof of residence|application form|note:|additional documents)\b/u.test(value);
+    if (!asksDocuments && /^(?:what|which)\s+(?:documents?|passport|proof of residence)\b/u.test(heading)) return false;
+    if (!asksDocuments && documentOnlyLine) return false;
+    if (!asksDocuments && /\b(?:document|documents|passport|proof of residence|application form)\b/u.test(value)
+      && !processTerms.test(value)) return false;
+    return processTerms.test(value)
+      || (asksDocuments && /\b(?:application|document|documents?|passport|proof of residence|requirements?)\b/u.test(value));
+  });
+  if (selected.length > 0) return selected.join(' ');
+  return !asksDocuments && sentences.every(sentence => /\b(?:document|documents|passport|proof of residence|application form)\b/u.test(sentence.toLocaleLowerCase('en-US'))) ? '' : text;
+};
+
 /** Use the true persisted chunk ID as the citation key. Hashing this breaks
  * the public citation resolver even though the model evidence guard passes. */
-export const toV2KnowledgeEvidence = (item: ModelEvidence): V2ApprovedEvidence => ({
+export const toV2KnowledgeEvidence = (item: ModelEvidence, query?: string): V2ApprovedEvidence => ({
   citationId: item.citation.chunkId,
-  text: sanitizeKnowledgeText(item.content).slice(0, 1_500),
+  text: relevantEvidenceText(sanitizeKnowledgeText(item.content), query ?? '').slice(0, 1_500),
   sourceRef: item.citation.sourceId,
   sourceVersion: item.citation.versionId,
   approved: true,
@@ -49,7 +77,7 @@ export const prefetchV2ApprovedKnowledge = async (
     const source = await store.getSource(match.citation.sourceId);
     if (!source || source.tenantId !== tenantId || source.status !== 'active'
       || source.versionId !== match.citation.versionId) return null;
-    return toV2KnowledgeEvidence(match);
+    return toV2KnowledgeEvidence(match, message);
   }));
   return checked.filter((item): item is V2ApprovedEvidence => item !== null && item.text.trim().length > 0);
 };

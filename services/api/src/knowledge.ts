@@ -150,6 +150,8 @@ const rankWithEmbedding = <T extends { chunk: { content: string; embedding: numb
   const genericRetrievalTerms = new Set(['about', 'after', 'also', 'approved', 'are', 'available', 'can', 'company', 'could', 'cost', 'costs', 'does', 'fee', 'fees', 'from', 'guarantee', 'guaranteed', 'have', 'here', 'how', 'information', 'long', 'many', 'much', 'owner', 'package', 'packages', 'please', 'policy', 'policies', 'price', 'prices', 'pricing', 'service', 'services', 'setup', 'tell', 'that', 'the', 'this', 'what', 'which', 'visa', 'visas', 'with', 'would', 'your']);
   const specificTerms = terms.filter((term) => !genericRetrievalTerms.has(term));
   const requiredSpecificOverlap = Math.min(2, specificTerms.length);
+  const processQuery = /\b(?:formation|setup|set[- ]?up|registration|process|procedure|step|steps)\b/u.test(query.toLowerCase());
+  const visaQuery = /\bvisas?\b/u.test(query.toLowerCase());
   const ranked = rows.map((row) => {
     const content = presentKnowledgeText(row.chunk.content).toLowerCase();
     const overlap = terms.filter((term) => content.includes(term)).length;
@@ -159,7 +161,9 @@ const rankWithEmbedding = <T extends { chunk: { content: string; embedding: numb
       : /\b(?:package|packages|price|prices|cost|costs|fee|fees|visa|visas)\b/u.test(query.toLowerCase()) && /\b(?:package|packages|price|prices|cost|costs|fee|fees|visa|visas)\b/u.test(content)
         ? 0.3
         : 0;
-    return { row, score: cosine(queryEmbedding, row.chunk.embedding) + overlap * 0.1 + topicBoost, overlap, specificOverlap };
+    const formationBoost = processQuery && /\b(?:company|business|formation|setup|registration|application|structure|activit(?:y|ies))\b/u.test(content) ? 0.18 : 0;
+    const unrelatedVisaPenalty = processQuery && !visaQuery && /\bvisas?\b/u.test(content) ? 0.35 : 0;
+    return { row, score: cosine(queryEmbedding, row.chunk.embedding) + overlap * 0.1 + topicBoost + formationBoost - unrelatedVisaPenalty, overlap, specificOverlap };
   })
     .sort((left, right) => right.score - left.score)
     .filter(({ score, overlap, specificOverlap }) => (semanticOnlyThreshold !== Number.POSITIVE_INFINITY && semanticOnlyThreshold !== null && score >= semanticOnlyThreshold) || (overlap > 0 && (score >= 0.45 || overlap >= 2)) && (semanticOnlyThreshold !== Number.POSITIVE_INFINITY || specificTerms.length === 0 || specificOverlap >= requiredSpecificOverlap));

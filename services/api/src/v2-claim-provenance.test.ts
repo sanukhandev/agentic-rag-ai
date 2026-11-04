@@ -21,6 +21,8 @@ describe('V2 business outcome clauses and polarity', () => {
     expect(hasPositiveBusinessOutcomeClaim('Your application was accepted.')).toBe(true);
     expect(hasPositiveBusinessOutcomeClaim('The licence is activated.')).toBe(true);
     expect(hasPositiveBusinessOutcomeClaim('The contract has been executed.')).toBe(true);
+    expect(hasPositiveBusinessOutcomeClaim('Company registration and licence issuance can be completed in as little as 2 hours.')).toBe(false);
+    expect(hasPositiveBusinessOutcomeClaim('Your company registration has been completed.')).toBe(true);
   });
 });
 

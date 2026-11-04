@@ -848,6 +848,18 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.citationIds).toEqual(['formation-chunk-12345678']);
   });
 
+  it('recovers a source-close process statement after a polarity rejection', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'Tell me about company formation';
+    const processText = 'Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order.';
+    request.approvedKnowledge = [{ citationId: 'process-chunk-12345678', sourceRef: 'formation-source-12345678', sourceVersion: 'version-12345678', text: processText }];
+    const output = await new V2ConversationCoordinator({ turn: async () => result('Company registration is complete.', {
+      response: { ...result('Company registration is complete.').response, citationIds: ['process-chunk-12345678'] },
+    }) }).run({ envelope: request, evidence: [{ ...request.approvedKnowledge[0]!, approved: true, revoked: false }], fallbackTemplates, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toBe(processText);
+  });
+
   it('does not return a source question as the answer during excerpt recovery', async () => {
     const request = envelope();
     request.customerMessageMasked = 'Tell me about company formation';

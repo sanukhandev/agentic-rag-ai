@@ -213,3 +213,26 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Correction:** Added one shared V2/legacy binding resolver. V2 permits only the qualification-verified Account stage, requires an enabled catalog tool and workflow with a webhook path, and emits the canonical catalog reference; the real ANCFZ disabled binding still fails closed.
 - **Unit/integration/Docker/Azure result:** Focused lifecycle suite 4/4 PASS; API full suite 61 files / 485 tests PASS; lint/typecheck/build PASS; API Docker rebuild and public health/package smoke PASS; Salesforce, n8n and Azure acceptance remain unverified.
 - **Regression status:** FIXED for the V2 lifecycle identity boundary; provider Account execution/readback and full seven-stage completion remain unverified.
+
+## Failure ZARA-018 — natural formation phrase was rejected by independent intent evidence
+
+- **Customer message:** `Hello, I want to set up a business.`
+- **Expected behavior:** Recognize a potential formation goal and ask for explicit confirmation without creating a record.
+- **Actual behavior:** The GPT proposal used `signal.company.setup`, but Node rejected it as `unobserved_signal, insufficient_evidence` because the published ANCFZ catalog did not contain the exact natural alias.
+- **Failing runtime component:** `services/api/src/v2-intent-evidence.ts` and the published Catalog V2 revision.
+- **Root cause (confirmed):** Independent evidence validation intentionally observes only catalog-declared signal values/aliases. The live revision contained related phrases but not `set up a business`; this was a catalog coverage defect, not a reason to weaken Node validation.
+- **Correction:** Added the reviewed alias to the fixture and published immutable development revision 3 through `infra/postgres/061-anc-natural-formation-aliases.sql`. Existing sessions remain pinned to their prior revision.
+- **Evidence:** Fresh public Docker session reached `I can help with company formation. Would you like to proceed with company formation?`; the refusal turn cleared the pending prompt without an action.
+- **Regression status:** FIXED for the observed natural-formation phrase; unseen synonym coverage and the full journey remain open.
+
+## Failure ZARA-019 — mixed FAQ chunks polluted broad formation answers
+
+- **Customer messages:** `Tell me about company formation` and contextual `How does it work?`
+- **Expected behavior:** Return a relevant source-backed formation explanation, not an unrelated document-list note or generic fallback.
+- **Actual behavior:** Retrieval returned mixed FAQ chunks; the model could select a document caveat or a visa/provider-style statement. Claim validation then rejected the response as `claim_source_polarity_mismatch` or `single_source_support_not_established`, and bounded repair sometimes had no acceptable citation.
+- **Failing runtime components:** `services/api/src/knowledge.ts`, `services/api/src/v2-knowledge-preflight.ts`, `services/api/src/v2-claim-provenance.ts`.
+- **Root causes (confirmed):** Broad process ranking did not sufficiently down-rank unrelated visa/document material; query-aware projection returned the original chunk when all retained sentences were document-only; and modal source language such as `can be completed` was classified as an actual completed provider/customer outcome.
+- **Correction:** Added measured formation ranking/visa penalty, query-aware sentence projection, document-only fallback suppression, and modal-language handling in the outcome detector. Actual customer completion claims remain strict and require verified provider evidence.
+- **Regression tests:** `knowledge.test.ts`, `v2-knowledge-preflight.test.ts`, `v2-claim-provenance.test.ts`, and `v2-coordinator.test.ts`.
+- **Evidence:** Final Docker replay returned the exact approved sentence `Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order.` with a citation for both formation turns. The answer remains narrow because the source corpus does not expose a complete reviewed step-by-step procedure in the retrieved evidence.
+- **Regression status:** Core fallback cascade FIXED; answer completeness and formal Azure quality remain unverified.

@@ -1,0 +1,20 @@
+{
+  "runDate": "2026-11-04",
+  "environment": "local Docker development",
+  "tenant": "anc",
+  "status": "PASS",
+  "sessionId": "99bd3d29-4359-4f0b-b11a-0bf0475d6290",
+  "message": "hello",
+  "clientMessageId": "replay-check-20261104-01",
+  "firstMessageId": "eb21228d-b51c-4ca9-8d46-ed74ba901c32",
+  "duplicateMessageIdBeforeRestart": "eb21228d-b51c-4ca9-8d46-ed74ba901c32",
+  "duplicateMessageIdAfterRestart": "eb21228d-b51c-4ca9-8d46-ed74ba901c32",
+  "apiRestartHealth": "PASS",
+  "historyAfterRestart": {
+    "messageCount": 2,
+    "durableUserMessageCount": 1,
+    "clientMessageIds": ["replay-check-20261104-01"]
+  },
+  "providerSideEffects": "NONE",
+  "externalProviderVerification": "NOT_APPLICABLE"
+}

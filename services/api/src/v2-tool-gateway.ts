@@ -273,7 +273,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       const evidenceRefs = approved.map(item => item.citation.chunkId);
       const sourceVersions = [...new Set(approved.map((item) => item.citation.versionId))];
       // A mixed-version retrieval has per-citation provenance, not a single source version.
-      return result(request, 'ok', { grounded: approved.length > 0, evidence: approved.map(toV2KnowledgeEvidence) }, sourceVersions.length === 1 ? sourceVersions[0]! : null, evidenceRefs);
+      return result(request, 'ok', { grounded: approved.length > 0, evidence: approved.map(item => toV2KnowledgeEvidence(item, normalizedQuery)) }, sourceVersions.length === 1 ? sourceVersions[0]! : null, evidenceRefs);
     }
     case 'get_journey_state': {
       const lifecycle = entry?.lifecycle ?? null;

@@ -75,6 +75,7 @@ export const hasPositiveBusinessOutcomeClaim = (s: string): boolean => {
     const explicitlyApproved = /\b(?:company|business|entity|opportunity|application|licen[sc]e|registration|invoice|contract|account|lead|document|payment)\b.{0,40}\b(?:is|was|were|has been|have been)\s+(?:approved|accepted)\b/iu.test(part);
     if (!state.test(part) || (!completed.test(part) && !explicitlyApproved)) return false;
     if (/\b(?:don't|do not|will not|won't|must not|can't|cannot)\s+(?:assume|treat|consider|claim|confirm|infer)\b/iu.test(part)) return false;
+    if (/\b(?:can|could|may|might|would|will)\s+be\s+(?:created|complete|completed|paid|signed|registered|incorporated|uploaded|issued|successful|succeeded|processed|activated|executed|settled|refunded|transferred)\b/iu.test(part)) return false;
     if (/\b(?:not|never|without|won't|cannot|can't|isn't|wasn't|hasn't|have not|has not)\b.{0,65}\b(?:created|completed?|paid|signed|registered|incorporated|uploaded|issued|successful|succeeded|processed|approved|activated|executed|settled|accepted|refunded|transferred)\b/iu.test(part)) return false;
     return true;
   });

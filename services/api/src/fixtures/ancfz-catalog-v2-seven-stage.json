@@ -290,8 +290,9 @@
           "help me set up my company",
           "set up my business",
           "open a company",
-          "open a consultancy",
-          "establish a company"
+            "open a consultancy",
+            "establish a company",
+            "set up a business"
         ]
       },
       {

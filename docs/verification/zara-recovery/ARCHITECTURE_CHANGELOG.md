@@ -79,3 +79,10 @@ The published ANCFZ bindings remain disabled and the Salesforce workflow remains
 - API suite: 60 files / 480 tests PASS; Python ingestion suite: 35 tests PASS.
 
 The provider configuration remains unavailable, so no Salesforce completion is claimed; the authenticated evidence boundary is implemented in the next checkpoint below.
+## 2026-11-04 — natural formation and mixed-evidence recovery
+
+- Published ANCFZ Catalog V2 revision 3 with the reviewed `set up a business` formation alias; existing session/catalog pins remain immutable.
+- Kept customer-intent validation, claim grounding, question contracts and action authorization as separate decisions.
+- Added query-aware evidence projection for broad formation questions and corrected modal source-language classification so general policy statements are not treated as provider completion.
+- Added regression coverage at intent evidence, retrieval, claim provenance, coordinator and migration boundaries.
+- Final public five-turn replay passes the historical intent/grounding/refusal behavior; full seven-stage provider journey and formal Azure quality gates remain open.
