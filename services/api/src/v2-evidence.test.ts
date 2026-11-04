@@ -6,6 +6,25 @@ const approved: V2ApprovedEvidence[] = [{ citationId: 'source-a', text: 'The app
 const fact: V2VerifiedFact = { factId: 'fact-a-12345678', text: 'The provider status is verified.', sourceVersion: 'provider-version-12345678', verified: true };
 
 describe('v2 claim provenance and evidence verification', () => {
+
+  it('accepts pinned-persona non-factual greetings and optional questions without citations', () => {
+    const question = 'How can I help you today?';
+    const candidate = { ...response("Hi, I'm Zara. " + question, []),
+      nextQuestion: question, nextQuestionKey: 'conversation_focus', reasonNoQuestion: null };
+    const allowed = verifyV2ResponseEvidence(candidate, [], [], { allowNonFactualDialogue: true, assistantName: 'Zara' });
+    expect(allowed.verdict.accepted).toBe(true);
+    expect(allowed.claims).toEqual([]);
+    expect(verifyV2ResponseEvidence(candidate, [], [], { allowNonFactualDialogue: true, assistantName: 'Alex' }).verdict.accepted).toBe(false);
+    expect(verifyV2ResponseEvidence(candidate, [], [], { allowNonFactualDialogue: false, assistantName: 'Zara' }).verdict.accepted).toBe(false);
+  });
+
+  it('rejects an invented business claim appended to an otherwise safe greeting', () => {
+    const question = 'How can I help you today?';
+    const candidate = { ...response("Hi, I'm Zara. Your registration will finish in 2 days. " + question, []),
+      nextQuestion: question, nextQuestionKey: 'conversation_focus', reasonNoQuestion: null };
+    expect(verifyV2ResponseEvidence(candidate, [], [], { allowNonFactualDialogue: true, assistantName: 'Zara' }).verdict.reasonCode).toBe('unsupported_claim');
+  });
+
   it('accepts a grounded claim and returns claim-to-source provenance', () => {
     const result = verifyV2ResponseEvidence(response('The approved package costs 42 credits.'), approved);
     expect(result.verdict).toMatchObject({ accepted: true, reasonCode: 'accepted' });
