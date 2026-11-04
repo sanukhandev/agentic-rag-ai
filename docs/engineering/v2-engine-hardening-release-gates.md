@@ -3,7 +3,7 @@
 **Target tenant:** ANCFZ (published persona/catalog pinned).  
 **Base:** `b8b516b5f1851a9fd6d021142ecea20f4b975e15`.  
 **Merge destination:** `feat/gpt-first-langgraph-unit-only`.  
-**Status:** Code hardening staged in a separate integration branch; do not claim customer-facing acceptance from green unit CI alone.
+**Status:** This code may be merged into the WIP engineering branch after reviewed CI and security checks. A WIP merge is not a production release or proof of live conversation quality.
 
 ## A. Required code-integrity checks
 
@@ -50,7 +50,8 @@ Do not report this gate passed unless these executions and evidence are availabl
 - Confirm published `Catalog V2` version, enabled read-tool bindings, source availability and pinned persona.
 - New aliases and tool bindings require a new reviewed catalog revision.
 - Do not silently rebind sessions pinned to an older version; use a controlled drain or separately validated migration.
-- Only after gates A–D pass should the integration PR be merged and rolled out.
+- Merging to `feat/gpt-first-langgraph-unit-only` for continued engineering is allowed after code-integrity and review gates; it does not activate or deploy the new code.
+- Production rollout or a claim that the customer-facing engine is fixed requires gates A–D, including real Azure conversation evaluation and exact deployed catalog/image verification.
 - Maintain a rollback route to the previous image/catalog publication without deleting historical records.
 
 ## E. Security-audit interpretation
