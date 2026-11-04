@@ -28,6 +28,8 @@ The first run stopped at turn 12 with PostgreSQL `22P02` because synthetic `tool
 
 `npm run acceptance:local` published four synthetic file sources plus one approved HTTPS snapshot and verified a grounded public chat answer. The first attempt failed because the XLSX row was shorter than the deterministic fallback's prose-only threshold; this is recorded as ZARA-006.
 
+`npm run acceptance:seed` also passes for synthetic tenant A/B grounding, cross-tenant refusal, contact collection and idempotent mock action confirmation. The harness was updated to reflect the current one-contact-field-at-a-time policy; no action gate was removed.
+
 ## Full company-formation journey
 
 **Status:** NOT RUN. Lead creation, qualification, document/SF-02, package, quotation, Salesforce readback, restart/replay and browser acceptance remain unverified.

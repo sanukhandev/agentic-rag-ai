@@ -88,3 +88,11 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Correction:** The deterministic fallback now admits a query-relevant, non-boilerplate structured line of at least 8 characters; unrelated short lines remain excluded.
 - **Unit/integration/Docker/Azure result:** Model suite 21/21 PASS; `npm run acceptance:local` PASS. Latest Docker rebuild and live Azure three-run evaluation are pending this checkpoint.
 - **Regression status:** FIXED for the local ingestion acceptance path.
+
+## Harness mismatch ZARA-007 — stale combined contact prompt assertion
+
+- **Observed test:** `npm run acceptance:seed`.
+- **Expected by old harness:** The name response would ask for `email address or phone` together.
+- **Actual contract:** Contact requirements are collected one at a time; the action gate requires both fields.
+- **Correction:** `scripts/seed-local.mjs` now accepts either valid first contact prompt, supplies synthetic email and phone in separate turns, and retains the action confirmation/idempotency assertions.
+- **Result:** Synthetic tenant A/B acceptance PASS.
