@@ -2,9 +2,8 @@ import { evaluateV2ClaimProvenance, extractV2ConsequentialClauses, measureV2Lexi
 import type { V2ClaimProvenance } from './v2-claim-provenance.js';
 export type { V2ClaimProvenance } from './v2-claim-provenance.js';
 import { hasConflictingEvidence } from './knowledge.js';
-import { hasSufficientEvidence, type ModelEvidence } from './model.js';
+import { supportsV2SourceCloseClause } from './v2-claim-support.js';
 import { personaComposedResponseSchema, type PersonaComposedResponseV2, type ResponseGuardVerdictV2 } from './python-model/v2-contracts.js';
-import type { Citation } from './types.js';
 
 export interface V2ApprovedEvidence {
   citationId: string;
@@ -239,13 +238,13 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
     ...citedFacts.map((fact) => ({ citationId: fact.factId, text: fact.text, sourceVersion: fact.sourceVersion, sourceRef: fact.factId, kind: 'customer_fact' as const })),
   ];
   const supports = (part: string, source: V2ClaimSource): boolean => {
-    const modelEvidence: ModelEvidence[] = [{ citation: { sourceId: source.sourceRef ?? source.citationId, versionId: source.sourceVersion, chunkId: source.citationId, title: 'authorized source', locator: source.citationId }, content: source.text }];
-    const citations: Citation[] = modelEvidence.map((item) => item.citation);
     const reflectedFact: V2VerifiedFact = { factId: source.citationId, text: source.text, sourceVersion: source.sourceVersion, verified: true };
-    return hasSufficientEvidence(part, modelEvidence, citations, source.kind === 'customer_fact' ? source.text : '')
-      || hasSufficientEvidence(relaxedEvidenceText(part), modelEvidence, citations)
-      || safeCurrentStatusParaphrase(part, source.text)
-      || (source.kind === 'customer_fact' && factAppearsIn(part, reflectedFact) && customerFactReflection(part, [reflectedFact]));
+    // Source-close support must be attributable to THIS source. One matching
+    // word or a list of unrelated citations is never proof of a factual claim.
+    // Broader paraphrasing is permitted only with Node-bound entailment proofs.
+    return supportsV2SourceCloseClause(part, source.text)
+      || (source.kind === 'customer_fact' && factAppearsIn(part, reflectedFact)
+        && customerFactReflection(part, [reflectedFact]));
   };
   const evaluation = evaluateV2ClaimProvenance(answerForEvidence, sources,
     dialogueForClaims, supports, options.groundingProofs ?? []);
