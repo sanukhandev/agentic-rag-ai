@@ -9,7 +9,7 @@ import { validateV2PlanningProposal } from './v2-planning.js';
 import { validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
 import { initializeConfirmedV2Journey } from './v2-journey-bootstrap.js';
 import { HttpError } from './http/errors.js';
-import { prefetchV2ApprovedKnowledge } from './v2-knowledge-preflight.js';
+import { contextualizeV2KnowledgeQuery, prefetchV2ApprovedKnowledge } from './v2-knowledge-preflight.js';
 import { KnowledgeRetrievalError } from './knowledge.js';
 import type { EmbeddingProvider } from './embedding.js';
 import { assertKnownTokens, maskPiiForSession, rehydrateForSession, TokenVault } from './privacy.js';
@@ -200,10 +200,17 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       .map(msg => ({ messageId: msg.id, text: msg.maskedContent })),
     confirmedGoalKey: intentDocument?.goalConfirmed ? intentDocument.businessGoalKey : null,
   }) : null;
+  const contextualTopic = intentDocument?.catalogSource === 'v2'
+    && intentDocument.businessGoalKey && intentDocument.goalConfirmation?.status !== 'rejected'
+    && intentDocument.goalConfirmation?.status !== 'corrected'
+    ? catalogV2?.sheets.BusinessGoals.find(goal =>
+      goal.active && goal.businessGoalKey === intentDocument.businessGoalKey)?.name ?? null
+    : null;
+  const preflightQuery = contextualizeV2KnowledgeQuery(maskedMessage, contextualTopic);
   let approvedKnowledge: V2ApprovedEvidence[] = [];
   if (input.embedding) {
     try {
-      approvedKnowledge = await prefetchV2ApprovedKnowledge(store, input.embedding, tenant.id, maskedMessage);
+      approvedKnowledge = await prefetchV2ApprovedKnowledge(store, input.embedding, tenant.id, preflightQuery);
     } catch (error) {
       if (error instanceof KnowledgeRetrievalError) {
         throw new HttpError(503, 'V2_KNOWLEDGE_RETRIEVAL_UNAVAILABLE', 'Approved knowledge retrieval is unavailable. Please retry the question.');
