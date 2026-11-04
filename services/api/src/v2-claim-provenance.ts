@@ -67,7 +67,7 @@ const verifiedRecord = /\b(?:provider[_ ]record[_ ]verified|mock[_ ]verified|ver
 /** Each business-outcome clause is evaluated independently. An earlier
  * negated invoice status must not hide a later positive payment claim. */
 export const hasPositiveBusinessOutcomeClaim = (s: string): boolean => {
-  const pieces = s.split(/(?<=[.!?])\s+|\n+|[,;]\s*(?:but|and)\s+|\s+(?:but|and|while)\s+(?=(?:the|your|our|an?|this|that)\s+(?:account|lead|payment|invoice|contract|document|registration|company|business|licen[sc]e|application)))/iu);
+  const pieces = s.split(/(?<=[.!?])\s+|\n+|[,;]\s*(?:but|and)\s+|\s+(?:but|and|while)\s+(?=(?:the|your|our|an?|this|that)\s+(?:account|lead|payment|invoice|contract|document|registration|company|business|licen[sc]e|application))/iu);
   return pieces.some(part => {
     if (!state.test(part) || !completed.test(part)) return false;
     if (/\b(?:don't|do not|will not|won't|must not|can't|cannot)\s+(?:assume|treat|consider|claim|confirm|infer)\b/iu.test(part)) return false;
