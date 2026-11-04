@@ -8,6 +8,14 @@ export interface V2ClaimSource {
   kind: 'source' | 'customer_fact';
 }
 
+/** Node-minted, source-bound proof of independent entailment. Never accept from model-authored response JSON. */
+export interface V2GroundingProof {
+  claimDigest: string;
+  citationId: string;
+  sourceVersion: string;
+  sourceTextDigest: string;
+}
+
 export interface V2ClaimProvenance {
   claimDigest: string;
   citationIds: string[];
@@ -38,6 +46,14 @@ export interface V2ClaimEvaluation {
 
 const norm = (s: string): string => s.normalize('NFKC').toLowerCase().replace(/[_-]/gu, ' ').replace(/\s+/gu, ' ').trim();
 const digest = (s: string): string => createHash('sha256').update(s).digest('hex').slice(0, 32);
+export const digestV2GroundingText = digest;
+/** Reporting only. A 0% lexical overlap cannot reject a semantically supported claim. */
+export const measureV2LexicalOverlap = (claim: string, source: string): number => {
+  const wanted = tokens(claim);
+  if (wanted.length === 0) return norm(claim) === norm(source) ? 100 : 0;
+  const available = new Set(tokens(source));
+  return Math.round(wanted.filter(word => available.has(word)).length / wanted.length * 100);
+};
 const numbers = (s: string): string[] => norm(s).match(/\b\d+(?:[.,]\d+)?\b/gu) ?? [];
 const negative = (s: string): boolean => /\b(?:no|not|never|without|cannot|can't|won't|isn't|wasn't|doesn't)\b/iu.test(s);
 const filler = new Set('the a an i we you your our their this that these those there for from with about by into and but while can could would should will have has had been are was were being is as to of at on in it its my me also just still currently now here said stated customer requested request details detail information verified confirm confirmed checking noted note thanks sharing your exactly same setup count shows show showing'.split(' '));
@@ -62,7 +78,7 @@ const clauses = (s: string): string[] => s.split(/(?<=[.!?])\s+|\n+/u)
   .flatMap((part) => part.split(/\s+(?:and|but|while)\s+(?=(?:your|the|there|i\s|we\s|you\s|lead|account|workflow|registration|payment|document|includes?|requires?|costs?|takes?|provides?|has|is|are|was|were)\b)/iu))
   .map((part) => part.trim()).filter(Boolean);
 
-const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (clause: string, source: V2ClaimSource) => boolean): boolean => {
+const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (clause: string, source: V2ClaimSource) => boolean, proofs: readonly V2GroundingProof[] = []): boolean => {
   const subject = norm(clause);
   const text = norm(source.text);
   if (!source.sourceVersion.trim() || !text || numbers(subject).some((n) => !numbers(text).includes(n))) return false;
@@ -79,7 +95,10 @@ const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (c
   // Lexical-overlap gating is temporarily disabled. Preserve the independent
   // per-source support check and hard numeric, negation and outcome controls.
   // Semantic check is per-source, not a concatenation of unrelated citations.
-  return semanticCheck(clause, source) || subject === text || negativeStatus || journeyParaphrase;
+  const independentEntailment = proofs.some(proof => proof.claimDigest === digest(clause)
+    && proof.citationId === source.citationId && proof.sourceVersion === source.sourceVersion
+    && proof.sourceTextDigest === digest(source.text));
+  return independentEntailment || semanticCheck(clause, source) || subject === text || negativeStatus || journeyParaphrase;
 };
 
 /** Diagnoses which conservative check ruled out support; never changes the
@@ -100,23 +119,30 @@ const classifyUnsupportedClause = (part: string, sources: V2ClaimSource[]): V2Cl
   return 'single_source_support_not_established';
 };
 
+/** Uses the same claim boundaries as the enforcement loop; does not include non-factual dialogue. */
+export const extractV2ConsequentialClauses = (answer: string, isDialogue: (part: string) => boolean): string[] => {
+  const claims: string[] = [];
+  for (const sentence of answer.split(/(?<=[.!?])\s+|\n+/u).map(v => v.trim()).filter(Boolean)) {
+    if (isDialogue(sentence) && !hasPositiveBusinessOutcomeClaim(sentence)
+      && !/\b(?:but|and)\b[\s\S]{0,120}\b(?:package|account|payment|contract|costs?|eligible|available|required|requires?|includes?|registered|created|completed)\b/iu.test(sentence)) continue;
+    for (const part of clauses(sentence)) if (!isDialogue(part) || hasPositiveBusinessOutcomeClaim(part)) claims.push(part);
+  }
+  return claims;
+};
+
 export const evaluateV2ClaimProvenance = (
   answer: string,
   sources: V2ClaimSource[],
   isDialogue: (part: string) => boolean,
   semanticCheck: (part: string, source: V2ClaimSource) => boolean,
+  groundingProofs: readonly V2GroundingProof[] = [],
 ): V2ClaimEvaluation => {
   const claims: V2ClaimProvenance[] = [];
   const used = new Set<string>();
   let clauseOrdinal = 0;
-  for (const sentence of answer.split(/(?<=[.!?])\s+|\n+/u).map((value) => value.trim()).filter(Boolean)) {
-    // The scope of a negated process claim is the complete uncertainty sentence.
-    if (isDialogue(sentence) && !hasPositiveBusinessOutcomeClaim(sentence)
-      && !/\b(?:but|and)\b[\s\S]{0,120}\b(?:package|account|payment|contract|costs?|eligible|available|required|requires?|includes?|registered|created|completed)\b/iu.test(sentence)) continue;
-    for (const part of clauses(sentence)) {
-    if (isDialogue(part) && !hasPositiveBusinessOutcomeClaim(part)) continue;
+  for (const part of extractV2ConsequentialClauses(answer, isDialogue)) {
     clauseOrdinal += 1;
-    const matched = sources.find((source) => supportsSource(part, source, semanticCheck));
+    const matched = sources.find((source) => supportsSource(part, source, semanticCheck, groundingProofs));
     if (!matched) return {
       supported: false, claims: [], unusedCitationIds: [],
       firstFailure: { clauseOrdinal, reason: classifyUnsupportedClause(part, sources) },
@@ -126,7 +152,6 @@ export const evaluateV2ClaimProvenance = (
       claimDigest: digest(part), citationIds: [matched.citationId], sourceVersions: [matched.sourceVersion],
       ...(matched.sourceRef ? { sourceRefs: [matched.sourceRef] } : {}),
     });
-    }
   }
   return { supported: true, claims, unusedCitationIds: sources.filter((source) => !used.has(source.citationId)).map((source) => source.citationId) };
 };
