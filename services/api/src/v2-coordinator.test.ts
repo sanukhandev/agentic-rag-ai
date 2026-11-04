@@ -87,7 +87,7 @@ describe('V2ConversationCoordinator', () => {
     const coordinator = new V2ConversationCoordinator({ turn: async () => result('Hello, how can I help?') });
     const output = await coordinator.run({ envelope: envelope() });
     expect(output.draft).toEqual({ answer: 'Hello, how can I help?', citationIds: [], proposedIntent: null });
-    expect(output.guardReason).toBe('accepted');
+    expect(output.guardReason).toBe('accepted_model_dialogue');
     expect(output.toolCallCount).toBe(0);
   });
 
