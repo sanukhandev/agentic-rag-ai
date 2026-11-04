@@ -524,8 +524,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       candidateCitationCount: result.candidateResponse?.citationIds.length ?? 0,
       responseCitationCount: result.response.citationIds.length,
       failedReadToolCount: result.toolTrace.filter(trace => trace.status !== 'ok').length,
-      fallbackApplied: result.response.decisionRef?.startsWith('fallback-') === true
-        || result.response.decisionRef?.startsWith('guard-fallback-') === true,
+      fallbackApplied: ['fallback-', 'guard-fallback-', 'no-evidence-', 'missing-knowledge-']
+        .some(prefix => result.response.decisionRef?.startsWith(prefix)),
       executionPath: 'langgraph' }, createdAt: at });
   return response;
 };
