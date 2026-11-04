@@ -82,6 +82,17 @@ const uncitedConversation = (answer: string): boolean =>
   /^(?:hi|hello|hey)(?:[,!.\s]+(?:how can i help(?: you)?|what can i help (?:you )?with)\??)?[.!?\s]*$/iu.test(answer.trim())
   || /^(?:thanks|thank you|you're welcome|you’re welcome|nice to meet you)[.!?\s]*$/iu.test(answer.trim());
 
+
+/** Accept only an introduction of the pinned persona, not arbitrary uncited prose. */
+const safePersonaIntroduction = (segment: string, assistantName: string | undefined): boolean => {
+  if (!assistantName) return false;
+  const value = segment.trim().replace(/[.!]\s*$/u, '').trim();
+  const introduction = value.match(/^(?:(?:hi|hello|hey)(?: there)?[,!.\s]+)?(?:i(?:'|’)m|i am|my name is)\s+(.+)$/iu);
+  if (!introduction) return false;
+  const claimedName = introduction[1]!.replace(/,\s*(?:your (?:(?:ai|virtual) )?assistant|here to help|and i(?:'|’)m here to help)$/iu, '').trim();
+  return claimedName.toLocaleLowerCase('en-US') === assistantName.trim().toLocaleLowerCase('en-US');
+};
+
 const nonFactualPreface = (input: string): boolean => {
   const value = input.trim().replace(/[.!]\s*$/u, '').trim().replace(/\s+/gu, ' ');
   if (!value || value.length > 190) return false;
@@ -112,7 +123,7 @@ const uncitedQuestion = (answer: string, question: string | null): boolean => {
   return !preface || nonFactualPreface(preface);
 };
 
-const safeNoEvidenceDialogue = (answer: string, question: string | null, pendingRequirementKey: string | null = null): boolean => {
+const safeNoEvidenceDialogue = (answer: string, question: string | null, pendingRequirementKey: string | null = null, assistantName?: string): boolean => {
   // Disallow business consequences, authority claims, numbers, deadlines and links
   // without approved evidence even when the rest of the reply is conversational.
   const safeUncertaintyDialogue = sentences(answer).length <= 4
@@ -122,6 +133,7 @@ const safeNoEvidenceDialogue = (answer: string, question: string | null, pending
   if (containsBlockedClaim && !controlledUncertainty) return false;
   if (answer.length > 500) return false;
   if (!question && (uncitedConversation(answer) || safeOutcomeAbstention(answer) || safeUncertaintyDialogue || safeGoalAcknowledgement(answer)
+    || answer.split(/(?<=[.!])\s+/u).filter(Boolean).every(segment => safePersonaIntroduction(segment, assistantName) || uncitedConversation(segment) || nonFactualPreface(segment))
     || /^(?:of course|absolutely|sure)[,!.\s—-]+i(?:'|’)ll keep your company-formation request active while you ask your questions\.?$/iu.test(answer.trim())
     || (/^(?:in general,\s+)?(?:forming|setting up) (?:a|the) company means\b[\s\S]*$/iu.test(answer.trim())
       && !/\b(?:usually|typically|required|eligible|price|cost|licen[cs]e|legal|regulation|policy|timeline|days?|weeks?|months?)\b/iu.test(answer)))) return true;
@@ -141,7 +153,7 @@ const safeNoEvidenceDialogue = (answer: string, question: string | null, pending
   const pendingRequirementGuidance = (segment: string): boolean => pendingRequirementKey === 'business_activity' && /^(?:what i need from you first is|to move your setup forward, i first need) your business activity\b[\s\S]*$|^to guide you properly, i (?:first need your business activity|need your planned business activity first)\.?$/iu.test(segment.trim());
   const pendingEntityGuidance = (segment: string): boolean => pendingRequirementKey === 'entity_type' && /^to guide the setup properly, i still need to know what type of company you want to form\.?$/iu.test(segment.trim());
   const pendingContactCollection = (segment: string): boolean => pendingRequirementKey === 'email' && /^(?:i(?:'|’)m ready to take (?:your )?contact details?(?: needed for this request| for this request)?|i(?:'|’)m ready for it\s*[—-]\s*please share your email address)\.?$/iu.test(segment.trim());
-  return segments.length <= 4 && segments.every((segment) => nonFactualPreface(segment) || safeDialogueSegment(segment) || pendingRequirementPreface(segment) || pendingContactPreface(segment) || pendingRequirementGuidance(segment) || pendingEntityGuidance(segment) || pendingContactCollection(segment));
+  return segments.length <= 4 && segments.every((segment) => safePersonaIntroduction(segment, assistantName) || uncitedConversation(segment) || nonFactualPreface(segment) || safeDialogueSegment(segment) || pendingRequirementPreface(segment) || pendingContactPreface(segment) || pendingRequirementGuidance(segment) || pendingEntityGuidance(segment) || pendingContactCollection(segment));
 };
 export const addVerifiedFactCitations = (response: PersonaComposedResponseV2, facts: V2VerifiedFact[]): PersonaComposedResponseV2 => {
   const matching = facts.filter((fact) => fact.verified && factAppearsIn(response.answer, fact));
@@ -186,7 +198,7 @@ export const v2MeanLexicalOverlapPercent = (claims: V2GroundingReviewClaim[]): n
   return Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length);
 };
 
-export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvidence[], facts: V2VerifiedFact[] = [], options: { conversational?: boolean; allowUncitedQuestion?: boolean; allowNonFactualDialogue?: boolean; allowApprovedFallback?: boolean; pendingRequirementKey?: string | null; groundingProofs?: readonly V2GroundingProof[] } = {}): V2EvidenceDecision => {
+export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvidence[], facts: V2VerifiedFact[] = [], options: { conversational?: boolean; allowUncitedQuestion?: boolean; allowNonFactualDialogue?: boolean; allowApprovedFallback?: boolean; pendingRequirementKey?: string | null; assistantName?: string; groundingProofs?: readonly V2GroundingProof[] } = {}): V2EvidenceDecision => {
   const parsed = personaComposedResponseSchema.safeParse(input);
   if (!parsed.success) return { verdict: verdict(false, 'metadata_leak', null), claims: [] };
   const response = parsed.data;
@@ -218,7 +230,7 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
   const answerForEvidence = response.nextQuestion ? trailingQuestion(response.answer, response.nextQuestion) ?? response.answer : response.answer;
   if (citationIds.length === 0) {
     const grounded = options.allowApprovedFallback === true
-      || (options.allowNonFactualDialogue === true && safeNoEvidenceDialogue(response.answer, response.nextQuestion, options.pendingRequirementKey ?? null))
+      || (options.allowNonFactualDialogue === true && safeNoEvidenceDialogue(response.answer, response.nextQuestion, options.pendingRequirementKey ?? null, options.assistantName))
       || (options.conversational === true && (uncitedConversation(response.answer) || (options.allowUncitedQuestion === true && uncitedQuestion(response.answer, response.nextQuestion))));
     return { verdict: verdict(grounded, grounded ? 'accepted' : 'unsupported_claim', grounded ? response : null), claims: [] };
   }
