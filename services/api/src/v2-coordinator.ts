@@ -289,7 +289,18 @@ export class V2ConversationCoordinator {
     let candidateGuardReason = 'not_evaluated';
     // The Python gateway can return an internally generated fallback on model/tool
     // failure. Never relabel that failure as a successful no-knowledge dialogue.
-    if (candidateResponse.decisionRef.startsWith('fallback-') || agentResult.toolTrace.some((trace) => trace.status !== 'ok')) {
+    const failedReads = agentResult.toolTrace.filter(trace => trace.status !== 'ok');
+    const hardToolFailure = failedReads.some(trace => trace.status === 'stale_state' || trace.status === 'not_authorized');
+    const independentlyCited = candidateResponse.citationIds.length > 0
+      && candidateResponse.citationIds.every(id =>
+        (request.evidence ?? []).some(item => item.citationId === id && item.approved && !item.revoked)
+        || agentResult.toolTrace.some(trace => trace.status === 'ok' && trace.evidenceRefs.includes(id)));
+    // Optional read failures cannot invalidate an answer supported by a separate
+    // successful read or trusted Node prefetch. The normal evidence guard will
+    // still reject every unsupported, revoked, fabricated or mismatched citation.
+    // Scope denial, stale state and model-generated fallback remain hard stops.
+    if (candidateResponse.decisionRef.startsWith('fallback-') || hardToolFailure
+      || (failedReads.length > 0 && !independentlyCited)) {
       candidateGuardReason = 'model_or_tool_unavailable';
       const unavailable = guardV2OfflineFallback('tool_unavailable', guardContext);
       if (!unavailable.verdict.accepted || !unavailable.response) throw new Error('V2_MODEL_OR_TOOL_UNAVAILABLE');
