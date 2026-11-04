@@ -212,7 +212,12 @@ export class DeterministicGroundedModel implements ChatModel {
         .filter((sentence) => sentence.length > 24 && !boilerplate.test(sentence))
         .map((sentence) => ({ sentence, chunkId: item.citation.chunkId })));
       const queryTerms = query.match(/[a-z]{4,}/gu) ?? [];
-      const selected = [...new Map(sentences
+      const shortStructuredLines = input.evidence.flatMap((item) => item.content.split(/\n+/u)
+        .map((line) => line.trim())
+        .filter((line) => line.length >= 8 && !boilerplate.test(line)
+          && queryTerms.some((term) => line.toLocaleLowerCase('en-US').includes(term)))
+        .map((line) => ({ sentence: line, chunkId: item.citation.chunkId })));
+      const selected = [...new Map([...sentences, ...shortStructuredLines]
         .map((item) => ({ ...item, score: queryTerms.filter((term) => item.sentence.toLocaleLowerCase('en-US').includes(term)).length }))
         .filter((item) => item.score > 0)
         .sort((left, right) => right.score - left.score)

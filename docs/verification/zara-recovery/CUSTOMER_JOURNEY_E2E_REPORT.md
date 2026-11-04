@@ -22,6 +22,12 @@
 
 The first run stopped at turn 12 with PostgreSQL `22P02` because synthetic `tool-*` evidence was queried as a UUID source. That failure and its regression test are recorded as ZARA-005 in the root-cause report.
 
+## Local ingestion acceptance
+
+**Result:** PASS after correcting short structured-line grounding.
+
+`npm run acceptance:local` published four synthetic file sources plus one approved HTTPS snapshot and verified a grounded public chat answer. The first attempt failed because the XLSX row was shorter than the deterministic fallback's prose-only threshold; this is recorded as ZARA-006.
+
 ## Full company-formation journey
 
 **Status:** NOT RUN. Lead creation, qualification, document/SF-02, package, quotation, Salesforce readback, restart/replay and browser acceptance remain unverified.

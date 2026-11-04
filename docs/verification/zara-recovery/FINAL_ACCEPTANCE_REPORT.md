@@ -14,6 +14,7 @@
 - Public five-turn historical regression: 5/5 smoke PASS.
 - Public initiation/refusal state behavior: PASS.
 - Public 25-turn conversation/persistence harness: 25/25 turns and 25 durable unique customer messages PASS after ZARA-005 correction.
+- Local five-source ingestion acceptance: PASS after ZARA-006 correction.
 - API focused/full unit, typecheck, lint and Docker API/model-gateway build: PASS for executed runs.
 
 ## Unverified or blocked

@@ -74,3 +74,17 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Correction:** Public-source citation lookup now skips `tool-*` provenance while retaining the trusted tool evidence in the guarded response path.
 - **Unit/integration/Docker/Azure result:** Focused controller suite 31/31 PASS; rebuilt Docker API; rerun public harness 25/25 turns and durable history PASS. Live three-run Azure evaluation remains NOT RUN.
 - **Regression status:** FIXED for the reproduced public API path.
+
+## Failure ZARA-006 — short structured ingestion evidence was discarded
+
+- **Customer message:** `What is the XLSX plan?`
+- **Expected behavior:** The local ingestion acceptance source (`XLSX approved 30`) should produce a grounded answer with its authorized citation.
+- **Actual behavior:** `acceptance:local` returned a deterministic ungrounded abstention even though the source was published.
+- **Failing runtime component:** `services/api/src/model.ts` deterministic grounded fallback.
+- **Actual failure code:** No HTTP error; `grounded=false`, `citations=[]`.
+- **Root cause (confirmed):** The fallback only selected prose fragments longer than 24 characters. XLSX extraction preserved the relevant table row as a short line, so no evidence sentence was eligible for composition.
+- **Reproduction method:** `npm run acceptance:local`; direct model reproduction with `Plan Price\nXLSX approved 30`.
+- **Regression test:** `services/api/src/model.test.ts` verifies a relevant short structured line is cited and returned.
+- **Correction:** The deterministic fallback now admits a query-relevant, non-boilerplate structured line of at least 8 characters; unrelated short lines remain excluded.
+- **Unit/integration/Docker/Azure result:** Model suite 21/21 PASS; `npm run acceptance:local` PASS. Latest Docker rebuild and live Azure three-run evaluation are pending this checkpoint.
+- **Regression status:** FIXED for the local ingestion acceptance path.
