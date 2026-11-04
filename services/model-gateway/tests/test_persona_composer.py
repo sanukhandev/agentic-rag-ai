@@ -44,6 +44,15 @@ def test_composer_distinguishes_information_questions_from_authorized_goals():
     assert "An established topic alone" in instructions
 
 
+def test_composer_allows_goal_free_navigation_without_starting_a_journey():
+    instructions = composer_instructions(envelope())
+    assert "primaryGoalKey null" in instructions
+    assert "conversation_navigation or knowledge_advisory" in instructions
+    assert "information-only question as permission" in instructions
+    assert "one optional read tool fails" in instructions
+    assert "deprecated lexical-overlap threshold" not in instructions
+
+
 def test_prefetched_public_evidence_is_given_explicit_citation_first_priority():
     from gateway.v2_contracts import ApprovedKnowledgeSnippetV2
 
