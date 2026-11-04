@@ -213,6 +213,31 @@ describe('V2ConversationCoordinator', () => {
     await expect(agent.turn(envelope())).resolves.toMatchObject({ modelRequestCount: 1, toolCallCount: 0 });
   });
 
+  it('requires independent grounding even when a legacy lexical heuristic would accept the answer', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'What are the approved formation steps?';
+    request.budgets = { ...request.budgets, deadlineAt: new Date(Date.now() + 60_000).toISOString() };
+    const snippet = { citationId: 'chunk-12345678',
+      text: 'Choose your business activity and submit the required documents.',
+      sourceRef: 'source-12345678', sourceVersion: 'version-12345678' };
+    request.approvedKnowledge = [snippet];
+    const turn = vi.fn(async () => result(snippet.text, {
+      response: { ...result(snippet.text).response, citationIds: [snippet.citationId] },
+    }));
+    const coordinator = new V2ConversationCoordinator({ turn }, {
+      verify: async () => [{ claimId: '1', citationId: null, verdict: 'insufficient' }],
+    });
+    const output = await coordinator.run({ envelope: request,
+      evidence: [{ ...snippet, approved: true, revoked: false }], fallbackTemplates });
+    expect(output.candidateGuardReason).toBe('accepted');
+    expect(output.guardReason).toBe('grounding_review_rejected');
+    expect(output.groundingReviewStatus).toBe('rejected');
+    expect(output.response.answer).not.toBe(snippet.text);
+    expect(output.response.citationIds).toEqual([]);
+    expect(output.modelRequestCount).toBe(2);
+    expect(turn).toHaveBeenCalledTimes(1);
+  });
+
   it('accepts a legitimate paraphrase with independent source-bound entailment, counting the model request', async () => {
     const request = envelope();
     request.customerMessageMasked = 'What company registration documents are needed?';
