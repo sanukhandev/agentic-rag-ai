@@ -44,6 +44,7 @@ class CatalogV2Projection(StrictV2):
     businessGoals: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
     turnIntents: list[dict[str, Any]] = Field(default_factory=list, max_length=200)
     signals: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
+    knowledgeTopics: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
     requirementKeys: list[str] = Field(default_factory=list, max_length=500)
     enabledReadToolKeys: list[str] = Field(default_factory=list, max_length=32)
 
