@@ -44,6 +44,15 @@ export const supportsV2SourceCloseClause = (claim: string, sourceText: string): 
   // match the *same actual stage key* in authoritative evidence.
   const authoritativeStage = sourceText.toLocaleLowerCase('en-US').match(
     /\bauthoritative journey is currently at ([a-z_]+)\b/u)?.[1];
+  // An authoritative nonterminal journey stage establishes that this journey
+  // is not yet complete; it does NOT establish a provider operation's outcome.
+  if (authoritativeStage && new Set([
+    'lead_generation', 'lead_qualification', 'account_creation',
+    'package_selection', 'document_upload', 'billing_invoice',
+  ]).has(authoritativeStage)
+    && /^i can confirm your request is not complete from the approved information i have[.]?$/iu.test(claim.trim())) {
+    return true;
+  }
   const claimedStage = claim.toLocaleLowerCase('en-US').match(
     /\bjourney is currently at ([a-z_]+)\b/u)?.[1];
   if (authoritativeStage && claimedStage && authoritativeStage === claimedStage) {
