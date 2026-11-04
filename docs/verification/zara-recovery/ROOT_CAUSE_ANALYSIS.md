@@ -60,3 +60,17 @@
 ## Additional confirmed baseline gap
 
 The repository documentation explicitly marks the Python↔Node tool loop, final persona composer, full seven-stage provider verification, and live Azure acceptance as incomplete. These are not inferred from the four messages and remain separate acceptance gates after the focused corrections.
+
+## Failure ZARA-005 — correlated package evidence was queried as a UUID source
+
+- **Customer message:** `Show only officially approved package information.`
+- **Expected behavior:** A truthful approved-package response or a specific published-data limitation; the public chat request must complete and persist.
+- **Actual behavior:** HTTP 400 `INVALID_DATA` after 11 successful public turns in the existing 25-turn harness.
+- **Failing runtime component:** `services/api/src/v2-turn-controller.ts` citation resolution.
+- **Actual failure code:** PostgreSQL `22P02`; database log: `invalid input syntax for type uuid: "tool-get_available_packages"`.
+- **Root cause (confirmed):** Read-only tool evidence uses synthetic `tool-*` provenance and is trusted through the correlated tool trace. `resolvePublicCitations()` attempted to resolve that synthetic source reference through the PostgreSQL source table, whose identifier is a UUID.
+- **Reproduction method:** `python tools/anc/acceptance/api_25_turns.py --api-base http://127.0.0.1:80 --tenant anc --scenarios 1`; first run stopped at turn 12 and PostgreSQL recorded the exact error.
+- **Regression test:** `services/api/src/v2-turn-controller.test.ts` verifies tool evidence does not call `getSource()`.
+- **Correction:** Public-source citation lookup now skips `tool-*` provenance while retaining the trusted tool evidence in the guarded response path.
+- **Unit/integration/Docker/Azure result:** Focused controller suite 31/31 PASS; rebuilt Docker API; rerun public harness 25/25 turns and durable history PASS. Live three-run Azure evaluation remains NOT RUN.
+- **Regression status:** FIXED for the reproduced public API path.

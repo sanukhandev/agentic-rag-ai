@@ -36,7 +36,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { MemoryStore } from './store-memory.js';
 import { MemoryCache } from './cache.js';
 import { TokenVault } from './privacy.js';
-import { runGPTFirstChatTurn } from './v2-turn-controller.js';
+import { resolvePublicCitations, runGPTFirstChatTurn } from './v2-turn-controller.js';
 import { createV2ToolGateway, verifyV2Scope } from './v2-tool-gateway.js';
 import { DeterministicEmbeddingProvider } from './embedding.js';
 
@@ -98,6 +98,18 @@ const prepared = async () => {
 };
 
 describe('GPT-first controller full-turn unit behavior', () => {
+  it('does not treat correlated read-only tool evidence as a PostgreSQL source id', async () => {
+    const getSource = vi.fn(async () => { throw new Error('synthetic tool source must not be queried'); });
+    const citations = await resolvePublicCitations(
+      { getSource } as never,
+      'tenant-id',
+      ['tool-package-evidence'],
+      [{ citationId: 'tool-package-evidence', sourceRef: 'tool-get_available_packages', sourceVersion: 'catalog-v1', text: 'The approved package is available.', approved: true, revoked: false }],
+    );
+    expect(citations).toEqual([]);
+    expect(getSource).not.toHaveBeenCalled();
+  });
+
   it('uses one model decision and saves the guarded reply, intent ledger, and no action', async () => {
     const { store, tenant, session, coordinator, input } = await prepared();
     const reply = await runGPTFirstChatTurn(input);

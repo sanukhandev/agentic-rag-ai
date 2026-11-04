@@ -13,6 +13,7 @@
 - Candidate intent survives rejected response wording.
 - Public five-turn historical regression: 5/5 smoke PASS.
 - Public initiation/refusal state behavior: PASS.
+- Public 25-turn conversation/persistence harness: 25/25 turns and 25 durable unique customer messages PASS after ZARA-005 correction.
 - API focused/full unit, typecheck, lint and Docker API/model-gateway build: PASS for executed runs.
 
 ## Unverified or blocked
@@ -24,5 +25,6 @@
 - Docker restart/replay and full stack acceptance.
 - Three independent Azure evaluations at >=90% each.
 - Formal performance benchmark.
+- Full quote/package calculation and customer-facing quote revision journey.
 
 The branch is not ready to merge until the unverified gates are executed or explicitly accepted as external blockers.

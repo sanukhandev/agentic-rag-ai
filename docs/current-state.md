@@ -4,7 +4,7 @@
 
 ## Recovery checkpoint — 2026-11-04
 
-On `fix/zara-conversation-engine-end-to-end-recovery`, the V2 public path now independently validates optional questions, claims and candidate intent plans; accepts trusted evidence from correlated read tools; evaluates mixed-polarity source clauses; preserves the V2 prompt cursor across public turns; and contextualizes knowledge follow-ups from prior customer formation messages. Focused tests and a public five-turn smoke pass. The seven-stage journey, Salesforce sandbox, browser E2E and three-run Azure acceptance remain unverified; this checkpoint does not replace the migration gaps below.
+On `fix/zara-conversation-engine-end-to-end-recovery`, the V2 public path now independently validates optional questions, claims and candidate intent plans; accepts trusted evidence from correlated read tools; evaluates mixed-polarity source clauses; preserves the V2 prompt cursor across public turns; contextualizes knowledge follow-ups from prior customer formation messages; and keeps synthetic tool provenance out of PostgreSQL source UUID lookups. Focused tests, a public five-turn smoke and a 25-turn public persistence harness pass. The seven-stage journey, Salesforce sandbox, browser E2E and three-run Azure acceptance remain unverified; this checkpoint does not replace the migration gaps below.
 
 ## Existing code topology — IMPLEMENTED
 

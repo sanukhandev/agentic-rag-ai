@@ -86,12 +86,15 @@ const trustedFacts = (values: Record<string, string>, catalogVersionId: string):
   return { facts, evidence };
 };
 
-const resolvePublicCitations = async (store: Store, tenantId: string, ids: string[], evidence: V2ApprovedEvidence[]): Promise<Citation[]> => {
+export const resolvePublicCitations = async (store: Store, tenantId: string, ids: string[], evidence: V2ApprovedEvidence[]): Promise<Citation[]> => {
   const byId = new Map(evidence.map(item => [item.citationId, item]));
   const citations: Citation[] = [];
   for (const id of ids) {
     const item = byId.get(id);
     if (!item || !item.approved || item.revoked || !item.sourceRef) continue;
+    // Tool evidence is trusted through its correlated read-only trace, not by
+    // looking up a synthetic source id in the PostgreSQL source table.
+    if (item.sourceRef.startsWith('tool-')) continue;
     const source = await store.getSource(item.sourceRef);
     if (!source || source.tenantId !== tenantId || source.status !== 'active' || source.versionId !== item.sourceVersion) continue;
     citations.push({ sourceId: source.id, versionId: source.versionId, chunkId: id, title: source.title, locator: id });
