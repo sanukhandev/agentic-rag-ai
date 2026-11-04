@@ -146,7 +146,7 @@ export const scoreCatalogV2Turn = (catalog: Catalog, input: CatalogV2ScoreInput)
   const evidenceScore = Math.max(0, Math.min(100, catalog.sheets.IntentSignals.filter(row => goalIntentKeys.has(row.targetKey) && activeSignals.has(row.signalId)).reduce((total, row) => total + row.weight, 0)));
   const threshold = policy?.threshold ?? 100;
   const ambiguityMargin = policy?.ambiguityMargin ?? 0;
-  const ambiguous = input.runnerUpScore !== undefined && threshold > 0 && Math.abs(evidenceScore - input.runnerUpScore) <= ambiguityMargin;
+  const ambiguous = input.runnerUpScore !== undefined && input.runnerUpScore > 0 && evidenceScore > 0 && threshold > 0 && Math.abs(evidenceScore - input.runnerUpScore) <= ambiguityMargin;
   const stage = input.currentStageKey ? catalog.sheets.BusinessStages.find(row => row.businessGoalKey === input.businessGoalKey && row.stageKey === input.currentStageKey) : undefined;
   const required = stage?.entryRequirements ?? [];
   const verified = new Set(input.verifiedRequirementKeys);
