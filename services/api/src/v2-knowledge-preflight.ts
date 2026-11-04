@@ -22,7 +22,7 @@ export const contextualizeV2KnowledgeQuery = (message: string, topicName: string
   if (!topicName || isV2FactualKnowledgeQuestion(message)) return message;
   const trimmed = message.trim();
   if (trimmed.length === 0 || trimmed.length > 240 || topicName.length > 120) return message;
-  const reference = /^(?:(?:so|then|and|okay|ok)\\s+)*(?:how (?:does|do|can|would) (?:it|this|that|the process)\\b|what (?:about|are|is) (?:it|this|that|the|these|those|visas?|documents?|requirements?|costs?|prices?)\\b|can you (?:explain|clarify) (?:it|this|that)\\b|tell me more(?: about (?:it|that))?\\b)/iu;
+  const reference = /^(?:(?:so|then|and|okay|ok)\s+)*(?:how (?:does|do|can|would) (?:it|this|that|the process)\b|what (?:about|are|is) (?:it|this|that|the|these|those|visas?|documents?|requirements?|costs?|prices?)\b|can you (?:explain|clarify) (?:it|this|that)\b|tell me more(?: about (?:it|that))?\b)/iu;
   return reference.test(trimmed) ? `${topicName}: ${trimmed}` : message;
 };
 
