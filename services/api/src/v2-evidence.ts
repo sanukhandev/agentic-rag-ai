@@ -1,4 +1,4 @@
-import { evaluateV2ClaimProvenance, type V2ClaimSource, type V2ClaimFailure } from './v2-claim-provenance.js';
+import { evaluateV2ClaimProvenance, extractV2ConsequentialClauses, digestV2GroundingText, measureV2LexicalOverlap, type V2ClaimSource, type V2ClaimFailure, type V2GroundingProof } from './v2-claim-provenance.js';
 import type { V2ClaimProvenance } from './v2-claim-provenance.js';
 export type { V2ClaimProvenance } from './v2-claim-provenance.js';
 import { hasConflictingEvidence } from './knowledge.js';
@@ -155,7 +155,38 @@ const safeNonFactualTransition = (segment: string): boolean =>
   || /^(?:so\s+)?i (?:will|can) (?:share|provide|give you) (?:the )?(?:next|a) (?:verified )?(?:update|details?) when (?:it|they) (?:arrives?|are available)\.?$/iu.test(segment.trim());
 const verdict = (accepted: boolean, reasonCode: ResponseGuardVerdictV2['reasonCode'], response: PersonaComposedResponseV2 | null): ResponseGuardVerdictV2 => ({ schemaVersion: 2, accepted, reasonCode, response });
 
-export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvidence[], facts: V2VerifiedFact[] = [], options: { conversational?: boolean; allowUncitedQuestion?: boolean; allowNonFactualDialogue?: boolean; allowApprovedFallback?: boolean; pendingRequirementKey?: string | null } = {}): V2EvidenceDecision => {
+/** The only model-review input builder. The claim boundaries match the enforcement guard. */
+export interface V2GroundingReviewClaim {
+  claimId: string;
+  text: string;
+  evidence: Array<{ citationId: string; sourceVersion: string; text: string }>;
+}
+const dialogueForClaims = (part: string): boolean =>
+  safeDialogueSegment(part) || nonFactualPreface(part) || safeFactAcknowledgement(part) || safeNonFactualTransition(part);
+export const buildV2GroundingReviewClaims = (
+  response: PersonaComposedResponseV2, evidence: V2ApprovedEvidence[],
+): V2GroundingReviewClaim[] => {
+  if (response.citationIds.length === 0 || response.citationIds.length > 8) return [];
+  const byId = new Map(evidence.filter(item => item.approved && !item.revoked && item.sourceVersion && item.text).map(item => [item.citationId, item]));
+  if (response.citationIds.some(id => !byId.has(id))) return [];
+  const text = response.nextQuestion ? trailingQuestion(response.answer, response.nextQuestion) ?? response.answer : response.answer;
+  const clauses = extractV2ConsequentialClauses(text, dialogueForClaims);
+  if (clauses.length === 0 || clauses.length > 8) return [];
+  const sources = response.citationIds.map(id => byId.get(id)!);
+  return clauses.map((clause, index) => ({
+    claimId: String(index + 1), text: clause,
+    evidence: sources.map(source => ({ citationId: source.citationId, sourceVersion: source.sourceVersion, text: source.text })),
+  }));
+};
+
+/** Diagnostic only: zero overlap is permitted if independent entailment proves the claim. */
+export const v2MeanLexicalOverlapPercent = (claims: V2GroundingReviewClaim[]): number | null => {
+  if (claims.length === 0) return null;
+  const scores = claims.map(claim => Math.max(...claim.evidence.map(item => measureV2LexicalOverlap(claim.text, item.text)), 0));
+  return Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length);
+};
+
+export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvidence[], facts: V2VerifiedFact[] = [], options: { conversational?: boolean; allowUncitedQuestion?: boolean; allowNonFactualDialogue?: boolean; allowApprovedFallback?: boolean; pendingRequirementKey?: string | null; groundingProofs?: readonly V2GroundingProof[] } = {}): V2EvidenceDecision => {
   const parsed = personaComposedResponseSchema.safeParse(input);
   if (!parsed.success) return { verdict: verdict(false, 'metadata_leak', null), claims: [] };
   const response = parsed.data;
@@ -205,7 +236,7 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
       || (source.kind === 'customer_fact' && factAppearsIn(part, reflectedFact) && customerFactReflection(part, [reflectedFact]));
   };
   const evaluation = evaluateV2ClaimProvenance(answerForEvidence, sources,
-    (part) => safeDialogueSegment(part) || nonFactualPreface(part) || safeFactAcknowledgement(part) || safeNonFactualTransition(part), supports);
+    dialogueForClaims, supports, options.groundingProofs ?? []);
   if (!evaluation.supported) return { verdict: verdict(false, 'unsupported_claim', null), claims: [], ...(evaluation.firstFailure ? { firstFailure: evaluation.firstFailure } : {}) };
   if (evaluation.unusedCitationIds.length > 0) return { verdict: verdict(false, 'invalid_citation', null), claims: [] };
   return { verdict: verdict(true, 'accepted', response), claims: evaluation.claims };
