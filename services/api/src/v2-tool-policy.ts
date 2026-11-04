@@ -1,0 +1,28 @@
+import type { CatalogV2Document } from './catalog-v2.js';
+import { V2_TOOL_NAMES, type V2ToolName } from './v2-tool-gateway.js';
+
+/** Platform-scoped reads need no per-journey binding. All tenant-domain
+ * read capabilities require an explicit, enabled read-only catalog binding. */
+const catalogBindingByTool: Partial<Record<V2ToolName, string>> = {
+  search_knowledge: 'knowledge.search',
+  get_journey_state: 'journey.read_state',
+  get_available_packages: 'package.read_available',
+  get_document_requirements: 'document.read_requirements',
+  get_action_status: 'action.read_status',
+};
+const builtInTools = new Set<V2ToolName>([
+  'get_conversation_context', 'get_persona', 'get_intent_catalog', 'get_missing_requirements',
+]);
+
+export const isV2ReadToolEnabled = (catalog: CatalogV2Document, toolName: V2ToolName): boolean => {
+  if (builtInTools.has(toolName)) return true;
+  const bindingKey = catalogBindingByTool[toolName];
+  return Boolean(bindingKey && catalog.sheets.ToolBindings.some(binding =>
+    binding.toolKey === bindingKey && binding.enabled && binding.sideEffectClass === 'read_only'
+    && catalog.sheets.BusinessGoals.some(goal => goal.active && goal.businessGoalKey === binding.goalKey)));
+};
+
+/** Only the intersection of implemented reads and currently published policy
+ * may be signed into a model/tool scope. No tenant-authored arbitrary tool. */
+export const authorizedV2ReadTools = (catalog: CatalogV2Document): V2ToolName[] =>
+  V2_TOOL_NAMES.filter(name => isV2ReadToolEnabled(catalog, name));
