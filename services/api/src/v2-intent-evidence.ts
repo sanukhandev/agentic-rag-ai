@@ -127,8 +127,9 @@ export const resolveV2IntentEvidence = (request: V2IntentEvidenceRequest): V2Obs
     const goals = new Set<string>();
     for (const turn of previous) {
       const normalized = normalize(turn.text);
-      if (globalCancellation(normalized) || hasRejection(normalized)
-        && activeClauses(normalized).length === 0) break;
+      if (globalCancellation(normalized) || (hasRejection(normalized)
+        && observed(request.catalog, normalized).length > 0
+        && activeClauses(normalized).length === 0)) break;
       for (const signal of activeClauses(normalized).flatMap(part => observed(request.catalog, part))) {
         goals.add(signal.goalKey);
         recent.push({ ...signal, sourceMessageId: turn.messageId, source: 'prior_customer_turn',
