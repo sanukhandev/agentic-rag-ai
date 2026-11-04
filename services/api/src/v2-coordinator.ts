@@ -314,18 +314,22 @@ export class V2ConversationCoordinator {
         modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
         guardReason: 'accepted_model_dialogue', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
       };
-      const natural = noEvidenceReply(envelope, request.lastQuestionKey ?? null);
-      const safe = guardV2Response(natural, {
-        ...guardContext,
-        lastQuestionKey: null,
-        questionPolicy: natural.nextQuestion ? guardContext.questionPolicy : 'optional',
-        approvedNoEvidenceAnswer: natural.answer,
-      });
-      if (safe.verdict.accepted) return {
-        response: safe.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(safe.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: safe.claims,
-        modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
-        guardReason: 'safe_no_evidence_dialogue', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
-      };
+      // An unsupported provider/business completion must not be disguised as
+      // ordinary no-evidence conversation.
+      if (!hasPositiveBusinessOutcomeClaim(candidateResponse.answer)) {
+        const natural = noEvidenceReply(envelope, request.lastQuestionKey ?? null);
+        const safe = guardV2Response(natural, {
+          ...guardContext,
+          lastQuestionKey: null,
+          questionPolicy: natural.nextQuestion ? guardContext.questionPolicy : 'optional',
+          approvedNoEvidenceAnswer: natural.answer,
+        });
+        if (safe.verdict.accepted) return {
+          response: safe.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(safe.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: safe.claims,
+          modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
+          guardReason: 'safe_no_evidence_dialogue', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
+        };
+      }
     }
     const guarded = guardV2Response(candidateResponse, guardContext);
     candidateGuardReason = guarded.verdict.reasonCode;
