@@ -100,7 +100,7 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 
 ## 2026-11-04 recovery checkpoint — explicit initiation and action-gate recovery
 
-- Latest API suite: **PASS** — 61 files / 513 tests; typecheck and lint pass.
+- Latest API suite: **PASS** — 61 files / 515 tests; typecheck and lint pass.
 - Natural initiation phrases now produce a durable formation confirmation prompt even when GPT labels the supporting turn as navigation.
 - Public replay now masks the bounded synthetic name phrase, preserves consent, hides internal requirement keys, and reports the disabled Salesforce provider truthfully without creating an action request.
 - Docker API rebuild and public Nginx/API action-gate replay: **PASS** for this boundary.
@@ -121,3 +121,9 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Fresh public Nginx → API → Azure-backed model-gateway regression: `artifacts/ancfz/api-25-turns-post-dependency-scored.json` records 25/25 HTTP answers, 25 durable user messages, automated objective score **1.00 (10/10)**, no action proposal, no internal payload leak, and no false provider-completion claim. Human persona quality remains `NOT_RUN` and external provider completion remains `NOT_VERIFIED_BY_THIS_HARNESS`.
 - Runtime trace confirms deterministic Account, package, payment, and contract provider classes are currently unit-tested adapters only; the application wires the V2 Lead evidence route and document mock, while the generated lifecycle n8n workflows still mark the remaining lifecycle Node endpoints as inactive/new contracts. This is the concrete implementation gap behind the unverified seven-stage journey.
 - The legacy `/api/v1/internal/crm/accounts/:id/remote` callback is now blocked for V2 actions with `V2_PROVIDER_EVIDENCE_REQUIRED`; regression coverage proves it cannot mark a V2 Account verified without correlated provider evidence. This closes a false-completion bypass but does not implement the missing OTP plus Account/Contact/Opportunity provider adapter.
+
+## 2026-11-05 Account provider boundary checkpoint
+
+- Added protected development-only V2 Account OTP challenge/verification and `/api/v2/internal/provider-evidence/account`. A synthetic qualified verified Lead now reaches deterministic Account creation, stores opaque Account/Contact/Opportunity IDs, completes the correlated action, advances the User Intent Document from `account_creation` to `package_selection`, and accepts a replay without a duplicate operation.
+- Trusted V2 provider completion now advances both the session lifecycle projection and the pinned User Intent Document; transport callbacks without trusted evidence remain `reconcile_required`.
+- This proves only the deterministic development provider path. Salesforce Account/Contact/Opportunity creation and independent sandbox readback remain unavailable; the OTP service is in-memory and therefore not restart-durable until a real provider challenge store/adapter is configured.

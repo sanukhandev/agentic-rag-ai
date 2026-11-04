@@ -73,6 +73,12 @@ The published ANCFZ bindings remain disabled and the Salesforce workflow remains
 
 - Added a regression proving the legacy internal Account remote callback could otherwise mark a V2 Account verified without the V2 provider-evidence/correlation boundary.
 - The callback now fails closed with `V2_PROVIDER_EVIDENCE_REQUIRED` before mutating the Account. This is a safety correction, not a provider-completion claim; OTP verification and the Account/Contact/Opportunity adapter remain unimplemented/unverified.
+
+## V2 Account deterministic provider checkpoint — 2026-11-05
+
+- Added protected development-only OTP issue/verify and `/api/v2/internal/provider-evidence/account`, reusing the typed Account provider request/result, exact action correlation and idempotent deterministic adapter.
+- Added an integration regression for verified Lead → qualified Lead → OTP → Account provider readback → lifecycle/document advancement and replay; the route never accepts Salesforce as a mock result.
+- Corrected trusted V2 completion handling so the session lifecycle and pinned User Intent Document advance together. Real Salesforce Account/Contact/Opportunity creation and restart-durable OTP remain external/unverified gates.
 - Regression coverage proves deterministic mock completion and Salesforce fail-closed behavior. The published ANCFZ Salesforce binding remains disabled.
 - API full suite: 61 files / 483 tests PASS; typecheck and lint PASS; API image rebuild PASS; rebuilt container healthy and public health endpoint returned HTTP 200; fresh public 25-turn persistence harness PASS.
 

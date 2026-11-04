@@ -196,3 +196,9 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 - The legacy internal Account remote callback was exercised against a synthetic V2 action and pending Account.
 - Before the fix it returned HTTP 200 and mutated the Account to `verified` without V2 provider evidence. The regression now returns HTTP 409 `V2_PROVIDER_EVIDENCE_REQUIRED` and leaves the Account pending.
 - Focused route suite: 3/3 PASS. Full API suite: 61 files / 513 tests PASS. This closes the bypass only; it is not Account provider completion.
+
+## Deterministic V2 Account provider integration — 2026-11-05
+
+- Synthetic path exercised: verified deterministic Lead, qualified Lead, Account action in `processing`, OTP challenge/verification, exact execution correlation, deterministic Account/Contact/Opportunity readback, action completion and lifecycle/document advancement to `package_selection`.
+- Result: **PASS** — focused provider-evidence route suite 5/5; API suite 61 files / 515 tests; replay returned the existing verified result without another operation.
+- Evidence boundary: **DEVELOPMENT MOCK ONLY**. Salesforce sandbox Account/Contact/Opportunity creation, provider readback and restart-durable OTP remain `BLOCKED_EXTERNAL_DEPENDENCY`/unverified.

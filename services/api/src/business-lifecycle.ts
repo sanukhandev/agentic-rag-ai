@@ -47,7 +47,7 @@ export const accountConversionBinding = async (store: Store, session: Session, c
   if (v2) {
     if (conversionRule !== 'qualification_verified') return null;
     const goalKey = session.conversationState?.intentProgress?.activeIntentKey ?? session.conversationState?.selectedIntentKey;
-    const tool = v2.catalog.sheets.ToolBindings.find((candidate) => candidate.toolKey === 'account.propose_creation' && candidate.goalKey === goalKey && candidate.stageKey === 'account_creation' && candidate.enabled && candidate.sideEffectClass !== 'read_only' && candidate.registryKey);
+    const tool = v2.catalog.sheets.ToolBindings.find((candidate) => candidate.goalKey === goalKey && candidate.stageKey === 'account_creation' && candidate.enabled && candidate.sideEffectClass !== 'read_only' && candidate.registryKey === 'crm.account.create');
     const workflow = tool ? v2.catalog.sheets.WorkflowBindings.find((candidate) => candidate.registryKey === tool.registryKey && candidate.enabled && candidate.webhookPath) : null;
     return tool && workflow ? { workflowKey: workflow.registryKey, webhookPath: workflow.webhookPath!, intentKey: tool.goalKey, actionKey: tool.toolKey, catalogVersionId: v2.catalogVersionRef } : null;
   }
