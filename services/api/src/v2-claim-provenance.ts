@@ -94,7 +94,14 @@ const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (c
   // The prohibition does not negate the separately stated decline event.
   const optOutStatus = /\baction\b.{0,20}\bdeclin\w*\b/iu.test(subject) && /\bdeclin\w*\b/iu.test(text) && /\bmust not proceed\b/iu.test(text);
   const journeyParaphrase = /\bjourney\b.{0,50}\b(?:currently\s+)?at\b/iu.test(subject) && /\bauthoritative journey\b.{0,50}\bcurrently at\b/iu.test(text) && tokens(subject).filter((word) => tokens(text).includes(word)).length >= 3;
-  if (negative(subject) !== negative(text) && !negativeStatus && !unrelatedProviderNegation && !optOutStatus) return false;
+  // A source can contain both a positive invoice state and an unrelated
+  // negative payment state. Evaluate the relevant positive source clause rather
+  // than letting unrelated negation contaminate this claim's polarity.
+  const independentPositiveClause = !negative(subject) && negative(text)
+    && source.text.split(/\s+(?:and|but|while)\s+(?=(?:the\s+)?(?:payment|invoice|contract|account|lead|document|registration|licen[sc]e|status)\b)/iu)
+      .some(part => !negative(part) && semanticCheck(clause, { ...source, text: part }));
+  if (negative(subject) !== negative(text) && !negativeStatus
+    && !unrelatedProviderNegation && !optOutStatus && !independentPositiveClause) return false;
   if (hasPositiveBusinessOutcomeClaim(subject)) {
     if (source.kind === 'customer_fact' || !verifiedRecord.test(text) || !state.test(text) || !completed.test(text)) return false;
   }
