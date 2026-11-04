@@ -248,6 +248,14 @@ describe('V2 context-aware company formation confirmation (isolated unit)', () =
     },
   );
 
+  it('uses independently observed initiation evidence when the model turn category is navigation', async () => {
+    const ctx = await firstTurn('I am planning to start a technology consulting company in Ajman', {
+      ...modelProposal, turnCategory: 'conversation_navigation' as const,
+    });
+    expect(ctx.reply.answer).toContain('Would you like to proceed with company formation?');
+    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.goalConfirmation?.status).toBe('pending');
+  });
+
   it('does not prompt for goal confirmation during a formation information-only question', async () => {
     const ctx = await firstTurn('Tell me about company formation', {
       ...modelProposal, turnCategory: 'knowledge_advisory', nextMove: 'answer_knowledge',
@@ -657,6 +665,40 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.verifiedFacts.lead_action_confirmation).toMatchObject({ maskedValue: 'true', source: 'visitor' });
   });
 
+  it('keeps disabled Lead submission truthful and hides internal requirement keys', async () => {
+    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json');
+    await runGPTFirstChatTurn({ ...await followUpTurn(ctx, 'Yes, proceed.'), coordinator: ctx.coordinator });
+    const confirmed = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    if (!confirmed) throw new Error('UNIT_INTENT_DOCUMENT_MISSING');
+    const updated = await ctx.store.updateUserIntentDocument({
+      document: {
+        ...confirmed,
+        pendingRequirementKey: 'lead_action_confirmation',
+        verifiedFacts: {
+          ...confirmed.verifiedFacts,
+          lead_contact_name: { maskedValue: '[NAME_1]', source: 'visitor', messageSequence: 2, evidenceRefs: ['customer-message:test'], corrected: false },
+          lead_contact_channel: { maskedValue: '[EMAIL_1]', source: 'visitor', messageSequence: 2, evidenceRefs: ['customer-message:test'], corrected: false },
+          lead_crm_consent: { maskedValue: 'true', source: 'visitor', messageSequence: 2, evidenceRefs: ['customer-message:test'], corrected: false },
+        },
+      },
+      expectedRevision: confirmed.revision,
+    });
+    if (!updated) throw new Error('UNIT_INTENT_DOCUMENT_UPDATE_FAILED');
+    const current = await ctx.store.getSession(ctx.session.id);
+    if (!current) throw new Error('UNIT_SESSION_MISSING');
+    await ctx.store.updateSession({ ...current, conversationState: { ...current.conversationState!, contactConsent: 'granted', slotValues: { ...current.conversationState!.slotValues, name: '[NAME_1]', email: '[EMAIL_1]' } } });
+    const request = await followUpTurn(ctx, 'Please create my Lead');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'The server-authorized pending requirement is lead_action_confirmation.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn({ ...request, coordinator: ctx.coordinator });
+    expect(reply.answer).toContain('explicitly confirm');
+    expect(reply.answer).not.toContain('lead_action_confirmation');
+    expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
+  });
+
   it('does not commit a confirmed goal when the original customer reply was already answered', async () => {
     const ctx = await proposalTurn();
     const confirmation = await followUpTurn(ctx, 'Yes, proceed.');
@@ -775,7 +817,7 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect(document?.goalConfirmation).toBeNull();
   });
 
-  it('does not ask for company-formation confirmation on a knowledge-only turn', async () => {
+  it('does not let a model knowledge answer erase explicit formation initiation', async () => {
     const ctx = await prepared();
     await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
     const message = 'I want to register a company for technology consulting';
@@ -794,9 +836,10 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     }) as unknown as V2CoordinatorResult);
     const reply = await runGPTFirstChatTurn(ctx.input);
     const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
-    expect(reply.pendingPromptId).toBeNull();
+    expect(reply.answer).toContain('Would you like to proceed with company formation?');
+    expect(reply.pendingPromptId).not.toBeNull();
     expect(document?.goalConfirmed).toBe(false);
-    expect(document?.goalConfirmation).toBeNull();
+    expect(document?.goalConfirmation?.status).toBe('pending');
     expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
   });
 });

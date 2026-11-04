@@ -34,3 +34,11 @@ The public harness now records redacted answer digests, grounded/citation flags,
 - Automated objective score: **1.00 (10/10)**, including no fallback cascade, masked privacy handling and budget preference handling.
 - Human persona-quality review: `NOT_RUN`; this objective scorer is not the mandatory three-run human-quality gate.
 - Provider completion: `NOT_VERIFIED_BY_THIS_HARNESS`; no CRM, invoice, document or contract completion was claimed.
+
+## Latest code and public replay checkpoint — 2026-11-04
+
+- API regression suite: **PASS**, 61 files / 512 tests.
+- Typecheck and lint: **PASS**.
+- Docker API rebuild: **PASS**.
+- Public action-gate replay: **PASS** for goal confirmation, masked contact persistence, explicit action confirmation and truthful disabled-provider handling; zero action requests were persisted.
+- This is not a live Azure conversation-quality score. The required three independent human-scored Azure runs at >=90% each remain `NOT_RUN`.

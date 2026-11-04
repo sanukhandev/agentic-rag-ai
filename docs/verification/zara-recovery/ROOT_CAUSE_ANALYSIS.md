@@ -273,3 +273,25 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Correction:** Added bounded persona-safe acknowledgements for those non-action preferences; no goal confirmation, consent, CRM action or provider claim is produced.
 - **Verification:** Focused controller tests 41/41, full API suite 61 files / 507 tests, typecheck, lint and Docker API build PASS. Fresh public 25-turn run `artifacts/ancfz/azure-eval-after-budget-privacy-recovery-scored.json` completed 25/25 durable turns with automated objective score 1.00 (10/10).
 - **Regression status:** FIXED for the reproduced phrases. Human Azure quality scoring, browser E2E, Salesforce/provider readback and the full seven-stage journey remain unverified.
+
+## Failure ZARA-023 — explicit formation initiation was coupled to the model turn category
+
+- **Customer message:** `I am planning to start a technology consulting company in Ajman.`
+- **Expected behavior:** Recognize the independently observed formation intent and ask for explicit goal confirmation.
+- **Actual behavior:** GPT proposed `conversation_navigation`; Node required `turnCategory=business_goal`, so no confirmation prompt was issued and the next `Yes` turn fell into generic recovery.
+- **Failing runtime component:** `services/api/src/v2-turn-controller.ts` and the published ANCFZ V2 signal aliases.
+- **Root cause (confirmed):** `shouldPrompt` treated the model's supporting turn category as authoritative instead of combining it with Node's independently observed initiation evidence. The published catalog also lacked `planning to start` and `thinking of setting up` aliases.
+- **Correction:** Added reviewed catalog aliases, bounded natural initiation detection, and made confirmation eligibility depend on validated customer evidence plus catalog goal membership—not the model category alone. Existing sessions remain pinned; migrations 062/063 preserve the canonical `anc:r4:<sha256>` identity.
+- **Verification:** Focused intent/controller tests PASS; full API suite 61 files / 512 tests PASS; public Docker session `30fc6300-8c6e-4e2f-951e-ff457a748a26` reached the confirmation prompt and `goal_confirmed=true`.
+- **Regression status:** FIXED for the reproduced and tested natural phrases; unseen paraphrases and formal Azure quality remain unverified.
+
+## Failure ZARA-024 — contact collection and disabled Lead action recovery leaked internal state
+
+- **Customer messages:** `My name for this synthetic test is Journey Acceptance.`, `Please create my Lead`, and `I confirm the authorized submission.`
+- **Expected behavior:** Tokenize the synthetic name, ask for action confirmation without exposing catalog keys, then truthfully report that a disabled provider was not called.
+- **Actual behavior:** The name phrase was not recognized; a tool-evidence sentence could be repeated as `lead_action_confirmation`; final confirmation fell through to a generic unsupported-claim fallback.
+- **Failing runtime components:** `services/api/src/privacy.ts`, `services/api/src/v2-tool-gateway.ts`, `services/api/src/v2-response-guard.ts`, and `services/api/src/v2-turn-controller.ts`.
+- **Root cause (confirmed):** The tokenizer covered only `my name is`/`I am` forms; trusted tool evidence narrated internal requirement keys; and the controller had no persona-safe response for an explicit Lead request while the published `lead.create` binding was disabled.
+- **Correction:** Added the bounded synthetic-test name form, removed requirement-key narration from tool evidence, rejected known internal requirement keys at the final response guard, and added Node-authored confirmation/provider-unavailable recovery that leaves the action pending and does not dispatch a write.
+- **Verification:** Privacy, guard and controller regressions PASS; full API suite 61 files / 512 tests PASS. Public replay returned a confirmation question, then `I have recorded your confirmation, but the Salesforce connection for this development tenant is not enabled. I have not submitted the Lead...`; PostgreSQL reported zero `action_requests` for the session.
+- **Regression status:** FIXED for the observed leak/fallback; Salesforce sandbox creation/readback remains blocked by the disabled binding and missing provider evidence path.

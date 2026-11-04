@@ -97,3 +97,11 @@ The GPT-first path now preserves pending company-formation confirmation across a
 ## 2026-11-04 recovery checkpoint — pending non-action recovery
 
 The pending formation-confirmation path now also handles unfixed budget preferences and privacy refusals after PII masking, while preserving the pending goal and withholding action authorization. Verification: 61 API test files / 507 tests, typecheck/lint/Docker API build PASS, and a fresh public 25-turn Azure-backed run with 25/25 transport, 25 durable messages and automated objective score 1.00/1.00. This is not the mandatory human-quality gate. Salesforce/provider readback, browser E2E, quotation lifecycle, complete seven-stage journey and three independent >=90% Azure quality runs remain unverified; status remains `NOT_READY`.
+
+## 2026-11-04 recovery checkpoint — explicit initiation and action-gate recovery
+
+- Latest API suite: **PASS** — 61 files / 512 tests; typecheck and lint pass.
+- Natural initiation phrases now produce a durable formation confirmation prompt even when GPT labels the supporting turn as navigation.
+- Public replay now masks the bounded synthetic name phrase, preserves consent, hides internal requirement keys, and reports the disabled Salesforce provider truthfully without creating an action request.
+- Docker API rebuild and public Nginx/API action-gate replay: **PASS** for this boundary.
+- Overall status remains **NOT_READY**: Salesforce sandbox/readback, SF-02, browser E2E, quotation lifecycle, full seven-stage journey and three independently human-scored Azure >=90% runs remain unverified or blocked.

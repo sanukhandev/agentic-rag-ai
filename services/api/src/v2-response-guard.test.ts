@@ -118,6 +118,14 @@ describe('guardV2Response', () => {
     expect(result.verdict.reasonCode).toBe('persona_mismatch');
   });
 
+  it('rejects internal requirement keys in customer-visible dialogue', () => {
+    const result = guardV2Response(response({
+      answer: 'The server-authorized pending requirement is lead_action_confirmation.',
+    }), context({ conversational: false }));
+    expect(result.verdict.reasonCode).toBe('metadata_leak');
+    expect(result.response.answer).not.toContain('lead_action_confirmation');
+  });
+
   it('blocks a repeated or irrelevant question', () => {
     const result = guardV2Response(response({ answer: 'What is your activity?', nextQuestion: 'What is your activity?', nextQuestionKey: 'other_requirement', reasonNoQuestion: null }), context({ pendingRequirementKey: 'business_activity', lastQuestionKey: 'other_requirement', questionPolicy: 'required' }));
     expect(result.verdict.reasonCode).toBe('invalid_question');

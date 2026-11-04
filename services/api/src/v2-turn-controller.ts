@@ -126,6 +126,10 @@ const explicitLeadSubmissionRequest = (message: string): boolean =>
   /\b(?:create|submit|register|send|make)\b[\s\S]{0,80}\blead\b|\blead\b[\s\S]{0,80}\b(?:create|submit|register|send|make)\b/iu.test(message)
   || /\bgo\s+ahead\b[\s\S]{0,40}\b(?:with|and)\b[\s\S]{0,40}\blead\b/iu.test(message);
 
+const explicitLeadActionConfirmation = (message: string): boolean =>
+  /\b(?:confirm|confirmed|authorize|authorized|approve|approved)\b[\s\S]{0,80}\b(?:lead|submission|submit)\b/iu.test(message)
+  || /\bconfirm\s+the\s+authorized\s+submission\b/iu.test(message);
+
 /** Called after HTTP authentication and durable message-idempotency checks. */
 export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const { store, session, tenant, userMessage, coordinator, maskedMessage } = input;
@@ -436,6 +440,13 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     priorRequirementKey: actionProposalRequested ? null : priorPendingRequirement,
     goalDecision: decision,
   }) : nextPendingPrompt?.requirementKey ?? selectedRequirement ?? pendingRequirement;
+  const leadCreateBinding = catalogV2?.sheets.ToolBindings.find(binding => binding.toolKey === 'lead.create') ?? null;
+  const leadActionRequested = explicitLeadSubmissionRequest(maskedMessage);
+  const leadActionConfirmed = explicitLeadActionConfirmation(maskedMessage);
+  const leadActionPending = Boolean(contactActive && contactConsent === 'granted'
+    && actionConfirmationRequirementKey && effectivePendingRequirement === actionConfirmationRequirementKey);
+  const leadProviderUnavailable = leadActionPending && (leadActionRequested || leadActionConfirmed)
+    && leadCreateBinding?.enabled !== true;
   const state = { ...originalState, catalogVersionId: catalog.id,
     slotValues: contactActive ? { ...originalState.slotValues, ...contactSlots, ...(contactDecision ? { contact_consent: contactDecision === 'granted' ? 'true' : 'false' } : {}) } : originalState.slotValues,
     contactConsent,
@@ -452,8 +463,9 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   // Advisory/knowledge-only turns cannot activate a business journey. A new
   // prompt must be tied to observed, validated business-goal planning.
   const shouldPrompt = Boolean(catalogV2 && requirementGoal?.confirmationRequired
-    && validPlan && selectedTurnCategory === 'business_goal'
+    && validPlan
     && planningDecision?.score?.thresholdMet && !planningDecision.score.ambiguous
+    && intentEvidence?.initiation === 'explicit'
     && intentEvidence?.initiationSupported === true
     && intentEvidence.ambiguous === false
     && intentEvidence.candidateGoalKeys.length === 1
@@ -465,6 +477,16 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   let effectiveAnswer = result.response.answer;
   let effectiveQuestion = result.response.nextQuestion;
   let overrideResponse = false;
+  if (leadProviderUnavailable) {
+    if (leadActionConfirmed) {
+      effectiveAnswer = 'I have recorded your confirmation, but the Salesforce connection for this development tenant is not enabled. I have not submitted the Lead, and your information remains saved in this conversation.';
+      effectiveQuestion = null;
+    } else {
+      effectiveAnswer = 'I have your contact consent. Before I submit the Lead, please explicitly confirm that you want me to submit it.';
+      effectiveQuestion = 'Please explicitly confirm that you want me to submit the Lead.';
+    }
+    overrideResponse = true;
+  }
   if (pendingDecision) {
     const goalName = catalogV2?.sheets.BusinessGoals.find(goal => goal.businessGoalKey === pendingDecision.goalKey)?.name ?? 'this service';
     if (decision === 'confirmed') {
@@ -758,6 +780,15 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         rejectedSignalIds: (planningDecision?.rejectedSignalIds ?? []).slice(0, 32).join(',').slice(0, 600),
         validatedTopicKeys: (planningDecision?.validatedTopicKeys ?? []).slice(0, 16).join(',').slice(0, 600),
         rejectedTopicKeys: (planningDecision?.rejectedTopicKeys ?? []).slice(0, 16).join(',').slice(0, 600),
+        goalPromptEligible: shouldPrompt,
+        goalPromptHasRequiredCatalogGoal: Boolean(requirementGoal?.confirmationRequired),
+        goalPromptValidPlan: validPlan,
+        goalPromptSelectedCategory: selectedTurnCategory,
+        goalPromptSelectedGoal: selectedV2Goal,
+        goalPromptIntentCandidate: intentEvidence?.candidateGoalKeys[0] ?? null,
+        goalPromptIntentDecision: decision,
+        goalPromptPendingBeforeTurn: Boolean(pendingDecision),
+        goalPromptDocumentConfirmed: Boolean(intentDocument?.goalConfirmed),
         goalConfirmationPending: goalConfirmation?.status === 'pending',
         goalConfirmed,
         acceptedCustomerFactKeys: Object.keys(acceptedCustomerFacts).join(','),

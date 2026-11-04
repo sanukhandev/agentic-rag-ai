@@ -101,6 +101,14 @@ The provider configuration remains unavailable, so no Salesforce completion is c
 - Added a redacted objective Azure conversation scorer and public-harness fields for groundedness, citations, action proposals and pending intent.
 - Live result: 25/25 transport, 25 durable turns, 0.90 objective score (9/10); fallback absence remains the only failed objective check in the final run.
 
+## Explicit initiation and action-gate recovery checkpoint — 2026-11-04
+
+- Node confirmation eligibility now combines independently observed customer initiation evidence with validated catalog membership; GPT's supporting turn category cannot erase a valid formation intent.
+- ANCFZ revision 4 adds reviewed natural initiation aliases and uses the canonical SHA-derived catalog reference; migration 063 repairs the local development pin without changing historical migrations.
+- Privacy tokenization accepts the bounded synthetic-test name phrase used by the public journey.
+- The final response guard rejects known internal requirement keys, and the tool gateway no longer narrates them as customer-facing evidence.
+- Disabled Lead bindings now produce a truthful Node-authored response and preserve the pending state; no provider write is attempted.
+
 ## Pending non-action recovery checkpoint — 2026-11-04
 
 - Added the smallest Node-side recovery for non-action preferences independent of goal confirmation: advisor preference, privacy refusal after PII masking, contact preference and unfixed budget.

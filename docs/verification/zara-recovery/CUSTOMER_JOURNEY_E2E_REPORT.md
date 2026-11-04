@@ -171,3 +171,14 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 - Public nginx/API/model-gateway route: **PASS** — 25/25 answers and 25 durable user messages.
 - Automated objective score: **1.00 (10/10)**. Budget uncertainty and PII-masked privacy refusal now receive truthful pending-goal acknowledgements; no action proposal was emitted.
 - This remains a conversation/persistence regression run, not proof of Salesforce, quotation, document, browser or seven-stage completion.
+
+## Latest public action-gate replay — 2026-11-04
+
+**Result:** PASS through the Lead consent boundary; provider completion NOT VERIFIED.
+
+- Session: `30fc6300-8c6e-4e2f-951e-ff457a748a26`.
+- Public Nginx/API replay reached `goal_confirmed=true`, persisted masked name/email and contact consent, and retained `lead_action_confirmation` as the pending requirement.
+- `Please create my Lead` produced a customer-facing explicit-confirmation question with no action proposal.
+- `I confirm the authorized submission.` produced a truthful provider-unavailable response stating that the Lead was not submitted.
+- PostgreSQL showed zero `action_requests` for the session. No Salesforce write or completion claim was made.
+- The published ANCFZ `lead.create` binding remains disabled; Salesforce sandbox create/readback and the complete seven-stage journey remain `BLOCKED_EXTERNAL_DEPENDENCY` / `NOT_RUN`.

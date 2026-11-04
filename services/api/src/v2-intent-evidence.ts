@@ -83,7 +83,9 @@ const hasInitiationRequest = (message: string): boolean =>
   /(?:^|\b)(?:i (?:want|would like|need|am ready|m ready) to|let's|let us|please|go ahead and|we (?:want|need) to|i(?:'m| am) ready to)\s+(?:go ahead (?:and |to )?|now )?(?:start|begin|register|form|incorporate|set up|open|establish|proceed(?: with)?|get started(?: with)?)\b/u.test(message)
   || /^(?:start|begin|register|form|incorporate|set up|open|establish|proceed|let's go ahead|let us go ahead)\b/u.test(message)
   || /\b(?:i (?:want|would like|need)(?: to)?\s+)?(?:a|my|the)\s+(?:company|trade|business)\s+(?:license|licence)\b/u.test(message)
-  || /\bi(?:'m| am)\s+(?:opening|starting|registering|establishing|forming|incorporating)\b/u.test(message);
+  || /\bi(?:'m| am)\s+(?:opening|starting|registering|establishing|forming|incorporating)\b/u.test(message)
+  || /\bi(?:'m| am)\s+(?:planning|thinking|considering)\s+(?:(?:of|about|to)\s+)?(?:start(?:ing)?|setting up|opening|establishing|forming|registering)\b/u.test(message)
+  || /\bi plan to\s+(?:start|set up|open|establish|form|register)\b/u.test(message);
 
 const isContextReference = (message: string): boolean =>
   /\b(?:the process|this process|that process|the setup|this setup|it|this|that|go ahead|proceed|get started|start|begin)\b/u.test(message);

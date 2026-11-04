@@ -255,11 +255,11 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         const document = await store.getUserIntentDocument(scope.tenantId, scope.sessionId);
         const pending = document?.pendingRequirementKey ?? state?.pendingPrompt?.requirementKey ?? entry?.currentRequirementKey ?? null;
         return resultWithToolEvidence(request, { intentKey, requirement: pending ? { key: pending, type: 'pending', promptKey: null, documentType: null } : null }, request.toolName as V2ToolName, stateSourceVersion,
-          [pending ? `The server-authorized pending requirement is ${pending}.` : 'No server-authorized requirement is currently pending.']);
+          [pending ? 'A server-authorized requirement is currently pending.' : 'No server-authorized requirement is currently pending.']);
       }
       const requirement = catalogNextJourneyRequirement(legacyCatalog, intentKey, values, completed) ?? catalogNextFollowUpRequirement(legacyCatalog, intentKey, values, completed);
       return resultWithToolEvidence(request, { intentKey, requirement: requirement ? { key: requirement.requirementKey, type: requirement.requirementType, promptKey: requirement.promptKey, documentType: requirement.documentType ?? null } : null }, request.toolName as V2ToolName, stateSourceVersion, [
-        requirement ? `The next server-authorized requirement is ${requirement.requirementKey}.` : 'No server-authorized requirement is currently pending.',
+        requirement ? 'A server-authorized requirement is ready to collect.' : 'No server-authorized requirement is currently pending.',
       ]);
     }
     case 'search_knowledge': {

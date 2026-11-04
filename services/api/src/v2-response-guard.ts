@@ -56,6 +56,7 @@ export interface V2OfflineFallbackDecision {
 }
 
 const DEFAULT_FALLBACK = 'I’m unable to verify that response from the approved information yet. I can continue once the verified information is available.';
+const INTERNAL_REQUIREMENT_KEY = /\b(?:lead_(?:contact_name|contact_channel|crm_consent|action_confirmation)|account_(?:confirmation|crm_consent)|package_(?:choice|confirmation|action_consent)|document_(?:processing_consent|attachment_confirmation)|invoice_(?:request_confirmation|data_consent)|payment_(?:authorization|confirmation)|contract_(?:review_confirmation|signature_consent))\b/iu;
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 32);
 const rejected = (reasonCode: ResponseGuardVerdictV2['reasonCode']): ResponseGuardVerdictV2 => ({ schemaVersion: 2, accepted: false, reasonCode, response: null });
 
@@ -125,6 +126,10 @@ export const guardV2Response = (input: unknown, context: V2ResponseGuardContext)
   const response = parsed.data;
   if (response.personaVersionId !== context.personaVersionId || !context.permittedLanguages.includes(response.language)) {
     const reasonCode: ResponseGuardVerdictV2['reasonCode'] = 'persona_mismatch';
+    return { verdict: rejected(reasonCode), response: fallback(context, reasonCode), claims: [], feedback: feedback(reasonCode, input) };
+  }
+  if (INTERNAL_REQUIREMENT_KEY.test(response.answer) || INTERNAL_REQUIREMENT_KEY.test(response.nextQuestion ?? '')) {
+    const reasonCode: ResponseGuardVerdictV2['reasonCode'] = 'metadata_leak';
     return { verdict: rejected(reasonCode), response: fallback(context, reasonCode), claims: [], feedback: feedback(reasonCode, input) };
   }
   const claimedName = response.answer.match(/^(?:(?:hi|hello|hey)[,! ]+)?(?:my name is|i am called|i'm called)\s+([\p{L}\p{N} .'-]{1,80})[.!]/iu)?.[1]?.trim();
