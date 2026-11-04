@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { catalogV2VersionRef, validateCatalogV2 } from './catalog-v2.js';
-import { evaluateCatalogV2Stage, scoreCatalogV2Turn, validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
+import { evaluateCatalogV2Stage, scoreCatalogV2CompetingGoals, scoreCatalogV2Turn, validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as Record<string, unknown>;
 const catalog = fixture as never;
+
+describe('catalog-scored competing goals', () => {
+  it('uses validated per-goal catalog signals and ignores model runner-up estimates', () => {
+    const result = scoreCatalogV2CompetingGoals(catalog, ['signal.company.register'], 'anc.company_formation');
+    expect(result.runnerUpScore).toBe(0);
+    expect(result.competingGoalKey).toBeNull();
+    expect(result.scores['anc.company_formation']).toBe(80);
+  });
+});
 
 describe('catalog v2 runtime policy', () => {
   it('accepts only the trusted published tenant and canonical version pin', () => {
