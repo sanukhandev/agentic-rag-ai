@@ -426,7 +426,7 @@ export class PostgresStore implements Store {
         const row = actionResult.rows[0];
         if (!row || row.tenant_id !== input.tenantId) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the authorized tenant action.');
         if (!['approved', 'processing'].includes(row.state) || (input.workflowKey && row.workflow_key !== input.workflowKey)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the active workflow action.');
-        const binding = await client.query<{ workflow_key: string }>(`SELECT binding.item->>'workflowKey' AS workflow_key
+        let binding = await client.query<{ workflow_key: string }>(`SELECT binding.item->>'workflowKey' AS workflow_key
           FROM intent_catalog_versions AS catalog
           CROSS JOIN LATERAL jsonb_array_elements(COALESCE(catalog.catalog_json->'workflowBindings', '[]'::jsonb)) AS binding(item)
           WHERE catalog.id=$1 AND catalog.tenant_id=$2
@@ -435,6 +435,20 @@ export class PostgresStore implements Store {
             AND binding.item->>'active' = 'true'
             AND lower(binding.item->>'sideEffectClass') IN ('crm_write', 'crm', 'human_review')
           LIMIT 1`, [row.catalog_version_id, row.tenant_id, row.workflow_key, input.n8nWorkflowId]);
+        if (!binding.rows[0] && row.catalog_v2_version_ref) {
+          binding = await client.query<{ workflow_key: string }>(`SELECT workflow.item->>'workflowKey' AS workflow_key
+            FROM intent_catalog_v2_versions AS catalog
+            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(catalog.catalog_json->'WorkflowBindings', '[]'::jsonb)) AS workflow(item)
+            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(catalog.catalog_json->'ToolBindings', '[]'::jsonb)) AS tool(item)
+            WHERE catalog.tenant_id=$1 AND catalog.catalog_version_ref=$2 AND catalog.status='published'
+              AND workflow.item->>'workflowKey'=$3
+              AND workflow.item->>'n8nWorkflowId'=$4
+              AND workflow.item->>'enabled'='true'
+              AND tool.item->>'registryKey'=workflow.item->>'registryKey'
+              AND tool.item->>'enabled'='true'
+              AND tool.item->>'sideEffectClass' <> 'read_only'
+            LIMIT 1`, [row.tenant_id, row.catalog_v2_version_ref, row.workflow_key, input.n8nWorkflowId]);
+        }
         if (!binding.rows[0]) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the published workflow binding.');
         const executionResult = await client.query<ActionExecutionRow>('SELECT * FROM action_executions WHERE action_id=$1 AND tenant_id=$2 AND idempotency_key=$3 FOR UPDATE', [row.id, row.tenant_id, row.idempotency_key]);
         const execution = executionResult.rows[0];

@@ -116,6 +116,9 @@ const sheetSchemas = {
     payloadSchemaRef: key,
     callbackSchemaRef: key,
     evidencePolicyKey: key,
+    n8nWorkflowId: z.string().trim().min(1).max(120).nullable().optional(),
+    webhookPath: z.string().trim().regex(/^[A-Za-z0-9._/-]{1,120}$/u).nullable().optional(),
+    payloadContract: z.string().trim().min(1).max(120).nullable().optional(),
     enabled: z.boolean(),
   }).strict()).max(200),
   FollowUpPolicies: z.array(z.object({

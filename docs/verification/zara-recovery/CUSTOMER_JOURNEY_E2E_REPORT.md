@@ -55,6 +55,14 @@ This is a partial journey gate, not full completion. The database has zero appro
 - The test verifies purpose-specific consent, idempotent action revision handling and no direct provider dispatch.
 - The development ANCFZ publication still has disabled Lead bindings, so the public environment cannot execute this path until Salesforce workflow configuration and provider evidence are available.
 
+## V2 outbox and n8n claim boundary
+
+**Result:** PASS in focused memory-store/bridge tests; live n8n execution not run.
+
+- Canonical V2 catalog references now resolve only published bindings with explicit n8n workflow identity, webhook path and payload contract.
+- Claims require a matching durable action execution tuple and return masked approved payload plus Node authorization flags.
+- The development publication remains disabled and lacks those transport identities; the trusted provider-evidence endpoint is still absent.
+
 ## Rebuilt Docker regression after Catalog V2 package identity fix
 
 **Result:** PASS for the public conversation persistence boundary.
@@ -75,6 +83,16 @@ This is a partial journey gate, not full completion. The database has zero appro
 - Synthetic name and email → masked facts persisted under `lead_contact_name` and `lead_contact_channel`.
 - Contact consent → `lead_crm_consent` persisted, session consent `granted`, pending requirement advanced to `lead_action_confirmation`.
 - No Salesforce action was created or claimed; the published V2 `lead.create` binding remains disabled and external provider verification was not attempted.
+
+## Fresh public persistence rerun after V2 dispatch-boundary correction
+
+**Result:** PASS for the public conversation persistence boundary; external business outcomes remain unverified.
+
+- Artifact: `artifacts/ancfz/api-25-turns-v2-dispatch-bridge.json`.
+- Tenant: `anc`; session: `f80f0173-d500-4ce7-a693-68be0fe52682`.
+- 25/25 customer turns returned HTTP answers and 25 unique customer messages were durable in the history endpoint.
+- The harness explicitly reports `external_crm_invoice_document_signing: NOT_VERIFIED_BY_THIS_HARNESS`.
+- This rerun verifies the deployed conversation path only; it does not claim Salesforce, n8n, package, quotation, document, invoice or contract completion.
 
 ## Final public persistence rerun at commit `58fb319`
 

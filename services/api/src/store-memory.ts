@@ -6,6 +6,7 @@ import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
 import { HttpError } from './http/errors.js';
 import { isWorkflowClaimableBinding } from './intent-catalog.js';
+import { resolveV2WorkflowRoute } from './v2-workflow-bridge.js';
 import { assertSafeIntentTurn, assertSafeUserIntentDocument } from './user-intent-document.js';
 
 const now = (): string => new Date().toISOString();
@@ -529,7 +530,10 @@ export class MemoryStore implements Store {
       if (!['approved', 'processing'].includes(action.state) || (input.workflowKey && action.workflowKey !== input.workflowKey)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the active workflow action.');
       const version = action.catalogVersionId ? this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId) : null;
       const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-      if (!binding?.active || !isWorkflowClaimableBinding(binding) || binding.n8nWorkflowId !== input.n8nWorkflowId) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the published workflow binding.');
+      const v2Version = action.catalogVersionId ? this.intentCatalogV2Versions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId) : null;
+      const v2Route = v2Version ? resolveV2WorkflowRoute(v2Version, action.workflowKey) : null;
+      const claimable = binding ? binding.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId : Boolean(v2Route?.n8nWorkflowId === input.n8nWorkflowId);
+      if (!claimable) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the published workflow binding.');
       const execution = [...this.actionExecutions.values()].find((item) => item.actionId === action.id && item.tenantId === action.tenantId && item.idempotencyKey === action.idempotencyKey);
       if (!execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.attempt || ['completed', 'failed', 'reconcile_required'].includes(execution.providerStatus)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the durable workflow execution.');
       if (execution.n8nExecutionRef) {
@@ -549,7 +553,10 @@ export class MemoryStore implements Store {
         if (!action.catalogVersionId || [...this.actionExecutions.values()].some((execution) => execution.actionId === action.id && execution.tenantId === action.tenantId)) return false;
         const version = this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId);
         const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId);
+        const v2Version = this.intentCatalogV2Versions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId);
+        const v2Route = v2Version ? resolveV2WorkflowRoute(v2Version, action.workflowKey) : null;
+        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId)
+          || Boolean(v2Route?.n8nWorkflowId === input.n8nWorkflowId);
       })
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
       .slice(0, input.limit);
@@ -581,7 +588,10 @@ export class MemoryStore implements Store {
         if (!action.catalogVersionId) return false;
         const version = this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId);
         const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === n8nWorkflowId);
+        const v2Version = this.intentCatalogV2Versions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId);
+        const v2Route = v2Version ? resolveV2WorkflowRoute(v2Version, action.workflowKey) : null;
+        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === n8nWorkflowId)
+          || Boolean(v2Route?.n8nWorkflowId === n8nWorkflowId);
       })
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
     const claimed: ActionRequest[] = [];

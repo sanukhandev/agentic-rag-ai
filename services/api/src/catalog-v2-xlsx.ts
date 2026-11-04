@@ -12,7 +12,7 @@ const headers: Record<string, string[]> = {
   RequirementPolicies: ['requirement_key', 'goal_key', 'stage_key', 'type', 'required', 'dependencies', 'validation', 'source_of_truth', 'prompt_key', 'priority'],
   BusinessStages: ['business_goal_key', 'stage_key', 'stage_order', 'entry_requirements', 'completion_evidence_policy_key', 'active'],
   ToolBindings: ['tool_key', 'goal_key', 'stage_key', 'side_effect_class', 'arguments_schema_ref', 'required_keys', 'consent', 'confirmation', 'registry_key', 'enabled'],
-  WorkflowBindings: ['workflow_key', 'registry_key', 'provider_type', 'payload_schema_ref', 'callback_schema_ref', 'evidence_policy_key', 'enabled'],
+  WorkflowBindings: ['workflow_key', 'registry_key', 'provider_type', 'payload_schema_ref', 'callback_schema_ref', 'evidence_policy_key', 'n8n_workflow_id', 'webhook_path', 'payload_contract', 'enabled'],
   FollowUpPolicies: ['policy_key', 'goal_key', 'stage_key', 'requirement_key', 'priority', 'no_question_reasons'],
   KnowledgeTopics: ['topic_key', 'goal_key', 'source_scope', 'citation_required', 'active'],
   PersonaPolicies: ['persona_policy_key', 'persona_version_id', 'permitted_languages', 'fallback_template_ref', 'enabled'],

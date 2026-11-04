@@ -2536,6 +2536,23 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       for (const claim of claims) {
         const { action, execution } = claim;
         const session = await store.getSession(action.sessionId);
+        const v2Version = (await store.listIntentCatalogV2Versions(action.tenantId)).find(version => version.status === 'published' && version.catalogVersionRef === action.catalogVersionId);
+        if (v2Version) {
+          const document = session ? await store.getUserIntentDocument(action.tenantId, action.sessionId) : null;
+          const workflow = v2Version.catalog.sheets.WorkflowBindings.find(binding => binding.workflowKey === action.workflowKey && binding.enabled);
+          const tool = workflow ? v2Version.catalog.sheets.ToolBindings.find(binding => binding.registryKey === workflow.registryKey && binding.enabled && binding.sideEffectClass !== 'read_only') : null;
+          const authorization = session && document && workflow && tool
+            ? await evaluatePersistedV2ActionConfirmation(store, session, { ...action, state: 'awaiting_confirmation' })
+            : { applies: true, accepted: false, reasons: ['v2_workflow_binding_missing'] };
+          if (!session || !document || !workflow || !tool || !workflow.n8nWorkflowId || !workflow.webhookPath || !workflow.payloadContract || !authorization.accepted) {
+            const failed = await store.transitionActionWithExecution({ actionId: action.id, tenantId: action.tenantId, fromState: action.state, toState: 'failed', result: null, providerStatus: 'failed', n8nExecutionRef: execution.n8nExecutionRef ?? input.executionReference, eventId: execution.eventId!, correlationId: execution.correlationId!, expectedAttempt: execution.attempt, outcome: { reason: authorization.reasons.join(',') || 'v2_workflow_authorization_failed' } });
+            if (failed) await store.addAudit({ id: randomUUID(), tenantId: action.tenantId, actorId: null, eventName: 'workflow.failed', metadata: { actionId: action.id, workflowKey: action.workflowKey, reason: authorization.reasons.join(',') || 'v2_workflow_authorization_failed' }, createdAt: new Date().toISOString() });
+            continue;
+          }
+          const conversation = (await store.listMessages(action.sessionId, action.tenantId)).map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt }));
+          items.push({ actionId: action.id, tenantId: action.tenantId, sessionId: action.sessionId, opportunityId: action.opportunityId, workflowKey: workflow.registryKey, contract: input.contract ?? workflow.payloadContract, stageKey: document.currentStageKey, catalogVersionId: v2Version.catalogVersionRef, idempotencyKey: action.idempotencyKey, actionKey: action.actionKey, actionRevision: action.actionRevision, approvedPayload: action.payload.slotValues ?? {}, providerEnabled: true, v2Authorized: authorization.accepted, purposeConsentVerified: true, actionConfirmationVerified: true, eventId: execution.eventId ?? null, correlationId: execution.correlationId ?? null, attempt: execution.attempt, executionReference: execution.n8nExecutionRef ?? input.executionReference, conversation, catalog: v2Version.catalog });
+          continue;
+        }
         const version = action.catalogVersionId ? await store.getIntentCatalogVersion(action.tenantId, action.catalogVersionId) : null;
         const intent = version?.catalog.intents.find((item) => item.intentKey === action.intentKey);
         const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);

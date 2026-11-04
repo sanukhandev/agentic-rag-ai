@@ -48,3 +48,12 @@ No synthetic ANCFZ pricebook was re-enabled: the development database still has 
 - API lint, typecheck and full suite: PASS (59 files / 477 tests); model-gateway suite: PASS (38 tests); Docker API/model-gateway build: PASS.
 
 The published ANCFZ bindings remain disabled and the Salesforce workflow remains unverified, so this checkpoint does not establish Lead creation.
+
+## M5 dispatch-bridge checkpoint — 2026-11-04
+
+- Added catalog-declared V2 n8n transport identity fields and preserved blank values as unbound rather than inventing routes.
+- The outbox router and action-claim stores now recognize canonical V2 catalog references; PostgreSQL and memory claims require a published enabled workflow, enabled non-read-only tool, matching n8n workflow identity and durable execution correlation.
+- V2 claims return masked approved payloads plus Node-verified authorization flags for the n8n stage guard.
+- API suite: 60 files / 480 tests PASS; Python ingestion suite: 35 tests PASS.
+
+The trusted provider-evidence endpoint and provider configuration remain unimplemented/unavailable, so no Salesforce completion is claimed.

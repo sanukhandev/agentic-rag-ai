@@ -163,3 +163,12 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Correction:** Project enabled action keys for planning, validate the binding and explicit request in Node, and route the request through `proposeV2CatalogAction`; no Python or model output can dispatch a provider write.
 - **Unit/integration/Docker/Azure result:** Regression PASS; API full suite 477/477 PASS; Docker build PASS; live Salesforce/Azure result NOT RUN.
 - **Regression status:** FIXED for the proposal boundary; provider execution and readback remain externally blocked.
+
+## Failure ZARA-013 — V2 approved actions could not reach the n8n claim boundary
+
+- **Customer-visible impact:** A confirmed V2 Lead proposal could be approved locally, but the outbox/action-claim path only resolved legacy Catalog V1 UUID bindings.
+- **Expected behavior:** Route a V2 action by its pinned canonical catalog reference, require a catalog-declared n8n identity, and return only Node-authorized masked payload data.
+- **Actual behavior:** V2 action refs were treated as legacy catalog UUIDs; PostgreSQL could reject the lookup or return no claim, and the V2 workflow templates could not safely identify their binding.
+- **Root cause (confirmed):** V2 `WorkflowBindings` had no transport identity fields and `event-bus`/claim stores queried only `intent_catalog_versions`.
+- **Correction:** Added optional reviewed transport fields, V2 route resolution, memory/PostgreSQL claim support and a fail-closed bridge test. The current ANCFZ publication remains disabled/unbound.
+- **Regression status:** FIXED at the Node dispatch/claim boundary; provider evidence and Salesforce readback remain blocked.
