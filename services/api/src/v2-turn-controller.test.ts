@@ -370,7 +370,8 @@ describe('published Catalog V2 planning in the GPT-first controller', () => {
     expect(await store.listActionsBySession(session.id, tenant.id)).toEqual([]);
     const audit = (await store.listAudit(tenant.id)).find(event => event.eventName === 'v2.catalog.planning_reviewed');
     expect(audit?.metadata).toMatchObject({ accepted: true, actionAuthorized: false,
-      catalogVersionRef: catalog.catalogVersionRef, score: 80 });
+      catalogVersionRef: catalog.catalogVersionRef, score: 100,
+      goalThresholdMet: true, validatedSignalIds: 'signal.company.register,signal.activity.technology,signal.activity.consulting' });
     expect(typeof audit?.metadata.sessionRevision).toBe('number');
   });
 
@@ -390,7 +391,12 @@ describe('published Catalog V2 planning in the GPT-first controller', () => {
     expect(document?.businessGoalKey).toBeNull();
     expect(document?.goalConfirmed).toBe(false);
     const audit = (await store.listAudit(tenant.id)).find(event => event.eventName === 'v2.catalog.planning_reviewed');
-    expect(audit?.metadata).toMatchObject({ accepted: false, actionAuthorized: false });
+    expect(audit?.metadata).toMatchObject({
+      accepted: true, proposalValid: true, actionAuthorized: false,
+      goalThresholdMet: false, initiationSupported: false, score: 0,
+      validatedSignalIds: '', rejectedSignalIds: 'signal.company.register',
+      goalConfirmationPending: false, goalConfirmed: false,
+    });
   });
 });
 
