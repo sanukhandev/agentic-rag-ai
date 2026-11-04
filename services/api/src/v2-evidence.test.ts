@@ -5,6 +5,21 @@ const response = (answer: string, citationIds: string[] = ['source-a']): Record<
 const approved: V2ApprovedEvidence[] = [{ citationId: 'source-a', text: 'The approved package costs 42 credits.', sourceVersion: 'version-12345678', approved: true, revoked: false }];
 const fact: V2VerifiedFact = { factId: 'fact-a-12345678', text: 'The provider status is verified.', sourceVersion: 'provider-version-12345678', verified: true };
 
+describe('V2 strict source-bound claims', () => {
+  it('rejects invented business location sharing a single catalog source word', () => {
+    const cited = [{ citationId: 'source-a', text: 'The company requires a passport.',
+      sourceVersion: 'version-12345678', approved: true, revoked: false }];
+    const invalid = verifyV2ResponseEvidence(response('The company is located on Mars.'), cited);
+    expect(invalid.verdict.reasonCode).toBe('unsupported_claim');
+    expect(invalid.firstFailure?.reason).toBe('single_source_support_not_established');
+  });
+  it('accepts a source-close fact supported by exactly one approved source', () => {
+    const output = verifyV2ResponseEvidence(response('The package costs 42 credits.'), approved);
+    expect(output.verdict.accepted).toBe(true);
+    expect(output.claims).toHaveLength(1);
+  });
+});
+
 describe('v2 claim provenance and evidence verification', () => {
 
   it('accepts pinned-persona non-factual greetings and optional questions without citations', () => {
