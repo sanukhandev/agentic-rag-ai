@@ -208,3 +208,9 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 - Reused the same synthetic session after verified Account completion and exercised the public package proposal, quote and selection-confirmation routes.
 - Result: **PASS** — approved development offering and source-backed deterministic quote were returned; both session lifecycle and pinned User Intent Document advanced to `document_upload`.
 - Commercial evidence: **DEVELOPMENT ONLY**. No official ANCFZ pricebook or live package-provider verification is claimed.
+
+## V2 document/SF-02 development path — 2026-11-05
+
+- Synthetic path exercised: approved package and quote, public document configuration, customer upload, authenticated worker claim, OCR/review result, deterministic SF-02 attachment readback and lifecycle advancement from `document_upload` to `payment_invoice`.
+- Result: **PASS** — the API integration regression passes with 61 files / 516 tests; the persisted document is completed and the audit records `document.sf02_attachment_verified`.
+- Evidence boundary: **DEVELOPMENT MOCK ONLY**. No Salesforce sandbox attachment, payment, contract, browser or formal Azure quality completion is claimed.

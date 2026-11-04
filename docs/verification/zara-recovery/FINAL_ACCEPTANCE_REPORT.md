@@ -71,3 +71,9 @@
 - Overall status remains **NOT_READY**. The mandatory three independent human Azure quality runs, Salesforce sandbox/readback, browser E2E, quotation lifecycle and complete seven-stage journey are still unverified or blocked.
 
 The branch is not ready to merge until the unverified gates are executed or explicitly accepted as external blockers.
+
+## 2026-11-05 document/SF-02 checkpoint
+
+- Deterministic development document path: **PASS** — public V2 upload, worker processing, review completion, mock SF-02 readback and lifecycle advance to `payment_invoice`.
+- API suite: **61 files / 516 tests PASS**; typecheck and lint PASS.
+- Acceptance remains **NOT_READY**: live Salesforce Lead/Account/SF-02 readback, official ANCFZ pricing, payment, contract, browser E2E and three human-scored Azure runs remain unverified.

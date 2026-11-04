@@ -443,6 +443,7 @@ export interface AppDependencies {
   v2Coordinator?: V2ConversationCoordinator;
   v2AccountOtp?: V2OtpChallengeService;
   v2AccountProvider?: DeterministicV2AccountProvider;
+  v2DocumentProvider?: DeterministicV2DocumentProvider;
 }
 
 export const v2ModelAuditMetadata = (input: { sessionId: string; clientMessageId: string }) => ({
@@ -503,7 +504,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const ingestionWorkerSecret = dependencies.ingestionWorkerSecret ?? process.env.INGESTION_WORKER_SECRET ?? '';
   const ingestionStaging = new IngestionStaging(dependencies.ingestionStagingRoot ?? process.env.INGESTION_STAGING_ROOT ?? join(process.cwd(), 'data', 'ingestion-staging'));
   const documentStorage = new PrivateDocumentStorage(dependencies.documentStorageRoot ?? process.env.SUPPORTING_DOCUMENT_ROOT ?? join(process.cwd(), 'data', 'supporting-documents'));
-  const mockDocumentProvider = process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2DocumentProvider() : null;
+  const mockDocumentProvider = dependencies.v2DocumentProvider ?? (process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2DocumentProvider() : null);
   const v2AccountOtp = dependencies.v2AccountOtp ?? new V2OtpChallengeService(process.env.V2_OTP_SECRET ?? 'local-development-v2-otp-secret');
   const mockAccountProvider = dependencies.v2AccountProvider ?? (process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2AccountProvider() : null);
   if (nodeEnv === 'production' && !dependencies.v2AccountOtp && !process.env.V2_OTP_SECRET) throw new Error('V2_OTP_SECRET is required in production.');
@@ -574,9 +575,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (!account) return false;
     const idempotencyKey = `sf02:${document.id}`;
     try {
-      const request = buildV2DocumentProviderRequest({ session, document, account, idempotencyKey, providerType: 'deterministic_mock' });
+      // V2 sessions pin the catalog row UUID while provider evidence carries the canonical ref.
+      const providerSession: Session = session.conversationState && session.conversationState.catalogVersionId !== document.catalogVersionId
+        ? { ...session, conversationState: { ...session.conversationState, catalogVersionId: document.catalogVersionId ?? null } }
+        : session;
+      const request = buildV2DocumentProviderRequest({ session: providerSession, document, account, idempotencyKey, providerType: 'deterministic_mock' });
       const result = mockDocumentProvider.execute(request);
-      const validation = validateV2DocumentProviderResult(request, result);
+      const readback = { tenantId: request.tenantId, sessionId: request.sessionId, opportunityId: request.opportunityId, providerType: request.providerType, idempotencyKey: request.idempotencyKey, recordRef: result.attachmentId, verificationStatus: 'verified' as const, evidenceTier: 'mock_verified' as const };
+      const validation = validateV2DocumentProviderResult(request, result, readback);
       await store.addAudit({ id: randomUUID(), tenantId: document.tenantId, actorId: null, eventName: validation.accepted ? 'document.sf02_attachment_verified' : 'document.sf02_attachment_rejected', metadata: { documentId: document.id, sessionId: document.sessionId, opportunityId: document.opportunityId, leadId: document.leadId, attachmentId: result.attachmentId, idempotencyKey, attachmentStatus: result.attachmentStatus, evidenceTier: result.evidenceTier, validationStatus: validation.status }, createdAt: new Date().toISOString() });
       return validation.accepted;
     } catch (error) {
@@ -914,6 +920,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
 
   const publicDocument = (document: SupportingDocument) => ({ id: document.id, sessionId: document.sessionId, leadId: document.leadId, requirementKey: document.requirementKey ?? null, expectedDocumentType: document.expectedDocumentType ?? null, fileName: document.fileName, mimeType: document.mimeType, sizeBytes: document.sizeBytes, status: document.status, summary: null, errorCode: document.errorCode, createdAt: document.createdAt, updatedAt: document.updatedAt });
   const documentConfig = async (tenantId: string) => {
+    const v2Version = (await store.listIntentCatalogV2Versions(tenantId)).find((candidate) => candidate.status === 'published');
+    if (v2Version) {
+      const policies = v2Version.catalog.sheets.DocumentPolicies;
+      const binding = v2Version.catalog.sheets.WorkflowBindings.find((candidate) => candidate.registryKey === 'document.sf02.upload' && candidate.enabled);
+      const enabledTools = new Set(v2Version.catalog.sheets.ToolBindings.filter((candidate) => candidate.toolKey === 'document.sf02_upload' && candidate.enabled).map((candidate) => candidate.goalKey));
+      const allowedMimeTypes = [...new Set(policies.flatMap((policy) => policy.mimeTypes))];
+      const requirements = policies.filter((policy) => policy.required && policy.enabled && enabledTools.has(policy.goalKey)).map((policy) => ({ intentKey: policy.goalKey, requirementKey: policy.policyKey, documentType: policy.docType, allowedDocumentTypes: [policy.docType] }));
+      return { enabled: Boolean(binding && enabledTools.size), requireUploadConsent: true, maxFileBytes: MAX_DOCUMENT_BYTES, maxFilesPerRequest: 1, maxPdfPages: 20, allowedMimeTypes, policies: policies.filter((policy) => policy.enabled && enabledTools.has(policy.goalKey)).map((policy) => ({ intentKey: policy.goalKey, requestMode: 'explicit_upload' as const, allowedDocumentTypes: [policy.docType], consentRequired: true })), requirements, workflowKey: binding?.workflowKey ?? null, binding: binding ? { webhookPath: binding.webhookPath ?? '', payloadContract: binding.payloadContract ?? null } : null };
+    }
     const version = await store.getPublishedIntentCatalog(tenantId);
     const settings = version?.catalog.documentSettings;
     const policies = version?.catalog.documentPolicies ?? [];
@@ -1580,10 +1595,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           const selected = selections.find((item) => item.status === 'confirmed' && item.sessionId === session.id && item.quoteId);
           const offering = selected ? await store.getPackageOffering(selected.packageOfferingId, document.tenantId) : null;
           const quote = selected?.quoteId ? await store.getQuote(selected.quoteId, document.tenantId) : null;
+          const pinnedV2 = document.catalogVersionId
+            ? (await store.listIntentCatalogV2Versions(document.tenantId)).find((candidate) => candidate.status === 'published' && (candidate.id === document.catalogVersionId || candidate.catalogVersionRef === document.catalogVersionId))
+            : null;
           if (selected && offering && quote && quote.status === 'approved'
             && Date.parse(quote.validUntil) > Date.now() && quote.opportunityId === document.opportunityId
             && quote.packageOfferingId === offering.id && offering.approvalStatus === 'approved'
-            && offering.catalogVersionId === document.catalogVersionId) {
+            && (pinnedV2 ? offering.catalogVersionRef === pinnedV2.catalogVersionRef : offering.catalogVersionId === document.catalogVersionId)) {
             const documents = await store.listSupportingDocuments(document.tenantId, session.id);
             const allProcessed = requiredDocumentSetComplete(offering.requiredDocuments, documents, {
               tenantId: document.tenantId, sessionId: session.id,
@@ -3077,14 +3095,31 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const activeIntentKeys = new Set([conversationState.selectedIntentKey, conversationState.activeFollowUpIntentKey, ...conversationState.candidateIntentKeys].filter((value): value is string => Boolean(value)));
       const requestedIntentKey = input.primaryIntentKey ?? conversationState.activeFollowUpIntentKey ?? conversationState.selectedIntentKey ?? existingLead?.intent ?? null;
       if (!requestedIntentKey || (!activeIntentKeys.has(requestedIntentKey) && existingLead?.intent !== requestedIntentKey)) throw new HttpError(409, 'DOCUMENT_INTENT_NOT_ACTIVE', 'The document must belong to the active conversation request.');
-      const version = conversationState.catalogVersionId
+      const v2Version = conversationState.catalogVersionId
+        ? (await store.listIntentCatalogV2Versions(session.tenantId)).find((candidate) => candidate.status === 'published' && (candidate.id === conversationState.catalogVersionId || candidate.catalogVersionRef === conversationState.catalogVersionId))
+        : null;
+      const version = v2Version ? null : conversationState.catalogVersionId
         ? await store.getIntentCatalogVersion(session.tenantId, conversationState.catalogVersionId)
         : await store.getPublishedIntentCatalog(session.tenantId);
-      if (conversationState.catalogVersionId && !version) throw new HttpError(409, 'CATALOG_VERSION_UNAVAILABLE', 'This conversation uses an unavailable catalog version. Please start a new request.');
-      const settings = version?.catalog.documentSettings;
-      const binding = settings ? version.catalog.workflowBindings.find((candidate) => candidate.workflowKey === settings.workflowKey && candidate.active) : undefined;
-      const policy = version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === requestedIntentKey) ?? version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === 'anc.document.supporting_upload');
-      const journeyRequirement = version?.catalog.journeyRequirements?.find((candidate) => candidate.intentKey === requestedIntentKey && candidate.requirementKey === input.requirementKey && candidate.requirementType === 'document') ?? null;
+      if (conversationState.catalogVersionId && !version && !v2Version) throw new HttpError(409, 'CATALOG_VERSION_UNAVAILABLE', 'This conversation uses an unavailable catalog version. Please start a new request.');
+      const v2PolicyRow = v2Version?.catalog.sheets.DocumentPolicies.find((item) => item.goalKey === requestedIntentKey);
+      const settings = v2Version
+        ? { enabled: true, requireUploadConsent: true, maxFileBytes: MAX_DOCUMENT_BYTES, allowedMimeTypes: v2PolicyRow?.mimeTypes ?? DEFAULT_DOCUMENT_MIME_TYPES, workflowKey: 'document.sf02.upload' }
+        : version?.catalog.documentSettings;
+      const binding = v2Version
+        ? v2Version.catalog.sheets.WorkflowBindings.find((candidate) => candidate.registryKey === 'document.sf02.upload' && candidate.enabled)
+        : settings ? version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === settings.workflowKey && candidate.active) : undefined;
+      const policy = v2Version
+        ? (() => {
+          const candidate = v2PolicyRow;
+          const tool = v2Version.catalog.sheets.ToolBindings.find((item) => item.toolKey === 'document.sf02_upload' && item.goalKey === requestedIntentKey);
+          return candidate && tool ? { enabled: candidate.enabled && tool.enabled, allowUserInitiated: true, consentRequired: tool.consent === 'purpose_specific', storeExtractedText: false, allowedDocumentTypes: [candidate.docType] } : undefined;
+        })()
+        : version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === requestedIntentKey) ?? version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === 'anc.document.supporting_upload');
+      const journeyRequirement = v2Version
+        ? (input.requirementKey && (v2Version.catalog.sheets.RequirementPolicies.some((candidate) => candidate.goalKey === requestedIntentKey && candidate.requirementKey === input.requirementKey && candidate.type === 'document') || v2PolicyRow?.policyKey === input.requirementKey) ? { requirementKey: input.requirementKey, documentType: v2PolicyRow?.docType ?? null } : null)
+        : version?.catalog.journeyRequirements?.find((candidate) => candidate.intentKey === requestedIntentKey && candidate.requirementKey === input.requirementKey && candidate.requirementType === 'document') ?? null;
+      const catalogVersionKey = v2Version?.catalogVersionRef ?? version?.id ?? null;
       if (input.requirementKey && (!journeyRequirement || !journeyRequirement.documentType || !policy?.allowedDocumentTypes.includes(journeyRequirement.documentType))) throw new HttpError(409, 'DOCUMENT_REQUIREMENT_NOT_ACTIVE', 'The requested document requirement is not active for this conversation.');
       const documentOpportunityId = conversationState.intentProgress?.entries[requestedIntentKey]?.journeyId ?? null;
       if (!documentOpportunityId) throw new HttpError(409, 'DOCUMENT_PACKAGE_NOT_CONFIRMED', 'A confirmed package selection is required before document upload.');
@@ -3095,7 +3130,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!confirmedPackage || !packageOffering || !quote || quote.status !== 'approved'
         || quote.opportunityId !== documentOpportunityId || quote.packageOfferingId !== packageOffering.id
         || Date.parse(quote.validUntil) <= Date.now() || packageOffering.approvalStatus !== 'approved'
-        || packageOffering.catalogVersionId !== version?.id)
+        || (v2Version ? packageOffering.catalogVersionRef !== v2Version.catalogVersionRef : packageOffering.catalogVersionId !== version?.id))
         throw new HttpError(409, 'DOCUMENT_PACKAGE_NOT_CONFIRMED', 'A current approved quotation and confirmed package are required before document upload.');
       // Legacy single-document intake may omit requirementKey. Multi-document
       // packages must supply an explicit catalog requirement to avoid ambiguity.
@@ -3115,13 +3150,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const duplicate = (await store.listSupportingDocuments(session.tenantId, session.id)).find((candidate) => candidate.sha256 === sha256
         && (candidate.opportunityId ?? null) === documentOpportunityId
         && candidate.intentKey === requestedIntentKey
-        && (candidate.catalogVersionId ?? null) === (version?.id ?? null)
+        && (candidate.catalogVersionId ?? null) === catalogVersionKey
         && (candidate.requirementKey ?? null) === (journeyRequirement?.requirementKey ?? input.requirementKey ?? null));
       if (duplicate?.status === 'failed') {
         const retryAt = new Date().toISOString();
         await documentStorage.replace(duplicate.storageKey, content);
         const queuedDocument: SupportingDocument = { ...duplicate, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, status: 'queued', extractedText: null, summary: null, errorCode: null, updatedAt: retryAt };
-        const retryJob: DocumentProcessingJob = { id: randomUUID(), documentId: duplicate.id, tenantId: session.tenantId, workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, status: 'queued', attempts: 0, leaseExpiresAt: null, executionReference: null, createdAt: retryAt, updatedAt: retryAt };
+        const retryJob: DocumentProcessingJob = { id: randomUUID(), documentId: duplicate.id, tenantId: session.tenantId, workflowKey: binding.workflowKey, webhookPath: binding.webhookPath ?? '', status: 'queued', attempts: 0, leaseExpiresAt: null, executionReference: null, createdAt: retryAt, updatedAt: retryAt };
         const queuedJob = await store.requeueSupportingDocumentWithJob(queuedDocument, retryJob);
         await store.addAudit({ id: randomUUID(), tenantId: session.tenantId, actorId: null, eventName: 'document.retry_queued', metadata: { documentId: duplicate.id, jobId: queuedJob.id, workflowKey: queuedJob.workflowKey }, createdAt: retryAt });
         res.status(202).json({ accepted: true, idempotent: true, retried: true, document: publicDocument(queuedDocument), jobId: queuedJob.id });
@@ -3132,8 +3167,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const storageKey = documentStorage.key(session.tenantId, documentId, input.mimeType);
       await documentStorage.write(storageKey, content);
       const createdAt = new Date().toISOString();
-      const document: SupportingDocument = { id: documentId, tenantId: session.tenantId, sessionId: session.id, leadId: existingLead?.id ?? null, opportunityId: conversationState.intentProgress?.entries[requestedIntentKey]?.journeyId ?? null, intentKey: requestedIntentKey, catalogVersionId: version?.id ?? null, requirementKey: journeyRequirement?.requirementKey ?? input.requirementKey ?? null, expectedDocumentType, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, sha256, storageKey, status: 'queued', workflowKey: binding.workflowKey, storeExtractedText: policy.storeExtractedText, extractedText: null, summary: null, errorCode: null, consentAt: createdAt, createdAt, updatedAt: createdAt };
-      const job: DocumentProcessingJob = { id: randomUUID(), documentId, tenantId: session.tenantId, workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, status: 'queued', attempts: 0, leaseExpiresAt: null, executionReference: null, createdAt, updatedAt: createdAt };
+      const document: SupportingDocument = { id: documentId, tenantId: session.tenantId, sessionId: session.id, leadId: existingLead?.id ?? null, opportunityId: conversationState.intentProgress?.entries[requestedIntentKey]?.journeyId ?? null, intentKey: requestedIntentKey, catalogVersionId: catalogVersionKey, requirementKey: journeyRequirement?.requirementKey ?? input.requirementKey ?? null, expectedDocumentType, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, sha256, storageKey, status: 'queued', workflowKey: binding.workflowKey, storeExtractedText: policy.storeExtractedText, extractedText: null, summary: null, errorCode: null, consentAt: createdAt, createdAt, updatedAt: createdAt };
+      const job: DocumentProcessingJob = { id: randomUUID(), documentId, tenantId: session.tenantId, workflowKey: binding.workflowKey, webhookPath: binding.webhookPath ?? '', status: 'queued', attempts: 0, leaseExpiresAt: null, executionReference: null, createdAt, updatedAt: createdAt };
       try { await store.createSupportingDocumentWithJob(document, job); } catch (error) {
         await documentStorage.purge(storageKey);
         const concurrent = (error as { code?: unknown }).code === '23505'

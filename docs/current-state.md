@@ -128,3 +128,9 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Trusted V2 provider completion now advances both the session lifecycle projection and the pinned User Intent Document; transport callbacks without trusted evidence remain `reconcile_required`.
 - This proves only the deterministic development provider path. Salesforce Account/Contact/Opportunity creation and independent sandbox readback remain unavailable; the OTP service is in-memory and therefore not restart-durable until a real provider challenge store/adapter is configured.
 - The public development package route now has an integration regression for approved offering → quote → selection confirmation; the pinned journey advances from `package_selection` to `document_upload` rather than leaving the User Intent Document stale. Quote values remain development catalog data, not official ANCFZ pricing.
+
+## 2026-11-05 document/SF-02 development checkpoint
+
+- Public document routes now resolve a pinned V2 catalog by either row UUID or canonical version reference; package scope and stored document identity use the canonical V2 reference.
+- The V2 document configuration is exposed to the customer route, and the synthetic path passes upload → worker claim → OCR/review result → deterministic SF-02 attachment readback → lifecycle advance to `payment_invoice`.
+- API suite: **61 files / 516 tests PASS**; API typecheck and lint PASS. This is deterministic development evidence only. Salesforce sandbox SF-02 readback, payment, contract, browser E2E and formal Azure scoring remain unverified.

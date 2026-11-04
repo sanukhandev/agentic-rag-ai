@@ -88,6 +88,12 @@ The published ANCFZ bindings remain disabled and the Salesforce workflow remains
 - Regression coverage proves deterministic mock completion and Salesforce fail-closed behavior. The published ANCFZ Salesforce binding remains disabled.
 - API full suite: 61 files / 483 tests PASS; typecheck and lint PASS; API image rebuild PASS; rebuilt container healthy and public health endpoint returned HTTP 200; fresh public 25-turn persistence harness PASS.
 
+## V2 document/SF-02 development checkpoint — 2026-11-05
+
+- Public document configuration and upload now support a session-pinned V2 catalog, resolving either the catalog row UUID or canonical version reference and comparing package scope by canonical reference.
+- Added a public-route/worker regression covering upload, authenticated worker claim, OCR/review completion, deterministic SF-02 attachment readback and lifecycle advancement to `payment_invoice`.
+- API suite: **61 files / 516 tests PASS**; API typecheck and lint PASS. The result is **DEVELOPMENT MOCK ONLY**; Salesforce SF-02 readback, payment and contract providers remain unverified.
+
 ## M5 dispatch-bridge checkpoint — 2026-11-04
 
 - Added catalog-declared V2 n8n transport identity fields and preserved blank values as unbound rather than inventing routes.
