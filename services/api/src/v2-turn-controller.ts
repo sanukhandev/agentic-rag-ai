@@ -212,6 +212,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         .map(turn => ({ key: turn.turnIntentKey, categoryKey: turn.categoryKey, businessGoalKey: turn.businessGoalKey })),
       signals: catalogV2.sheets.IntentSignals
         .map(signal => ({ signalId: signal.signalId, targetKey: signal.targetKey, value: signal.value })),
+      knowledgeTopics: catalogV2.sheets.KnowledgeTopics.filter(topic => topic.active)
+        .map(topic => ({ topicKey: topic.topicKey, goalKey: topic.goalKey, citationRequired: topic.citationRequired })),
       requirementKeys: catalogV2.sheets.RequirementPolicies.filter(req => req.required).map(req => req.requirementKey),
       enabledReadToolKeys: catalogV2.sheets.ToolBindings.filter(tool => tool.enabled && tool.sideEffectClass === 'read_only')
         .map(tool => tool.toolKey).slice(0, 32),
