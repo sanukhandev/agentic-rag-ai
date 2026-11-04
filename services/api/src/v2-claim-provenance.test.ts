@@ -7,14 +7,14 @@ const source = (text: string): V2ClaimSource => ({
   sourceVersion: 'version-12345678',
   kind: 'source',
 });
-// Return true here to isolate the lexical gate from the independent semantic check.
+// Model the independent source-support gate, without relying on shared words.
 const semanticSupported = () => true;
 
-describe('V2 per-source claim lexical overlap (temporary 40% threshold)', () => {
-  it('accepts exactly two of five important tokens when the same source semantically supports the claim', () => {
+describe('V2 per-source claim verification without a lexical overlap threshold', () => {
+  it('accepts a claim with zero shared tokens when the cited source independently supports it', () => {
     const result = evaluateV2ClaimProvenance(
       'Alpha beta gamma delta epsilon.',
-      [source('Alpha beta zeta eta theta.')],
+      [source('Zeta eta theta kappa lambda.')],
       () => false,
       semanticSupported,
     );
@@ -23,15 +23,24 @@ describe('V2 per-source claim lexical overlap (temporary 40% threshold)', () => 
     expect(result.claims[0]?.citationIds).toEqual(['approved-source-12345678']);
   });
 
-  it('rejects one of five overlapping tokens even when the semantic callback approves', () => {
+  it('rejects even exact lexical matches when independent source support fails', () => {
     const result = evaluateV2ClaimProvenance(
-      'Alpha kappa lambda omega sigma.',
-      [source('Alpha beta zeta eta theta.')],
+      'Alpha beta gamma delta epsilon.',
+      [source('Alpha beta gamma delta epsilon.')],
       () => false,
-      semanticSupported,
+      () => false,
     );
-    expect(result.supported).toBe(false);
-    expect(result.firstFailure).toEqual({ clauseOrdinal: 1, reason: 'insufficient_clause_source_overlap' });
+    // Exact text is independently permitted, even without a semantic callback.
+    expect(result.supported).toBe(true);
+
+    const unverified = evaluateV2ClaimProvenance(
+      'Alpha beta gamma delta epsilon.',
+      [source('Alpha beta gamma delta zeta.')],
+      () => false,
+      () => false,
+    );
+    expect(unverified.supported).toBe(false);
+    expect(unverified.firstFailure).toEqual({ clauseOrdinal: 1, reason: 'single_source_support_not_established' });
   });
 
   it('retains hard numeric, negation, and provider-outcome checks', () => {
