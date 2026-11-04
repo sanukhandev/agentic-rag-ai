@@ -46,6 +46,29 @@ describe('v2 bounded intent and stage planning', () => {
 });
 
 
+describe('catalog-scoped optional topic validation', () => {
+  it('drops an unknown or goal-unrelated optional topic without discarding valid goal evidence', () => {
+    const decision = validateV2PlanningProposal({
+      ...base, supportingTopicKeys: ['knowledge.unknown', 'knowledge.company_setup'],
+    }, catalog, { ...context, observedText: 'I want to register a company.' });
+    expect(decision.accepted).toBe(true);
+    expect(decision.validatedTopicKeys).toEqual(['knowledge.company_setup']);
+    expect(decision.rejectedTopicKeys).toEqual(['knowledge.unknown']);
+    expect(decision.reasons).toContain('unknown_or_unrelated_topic');
+    expect(decision.score?.thresholdMet).toBe(true);
+    expect(decision.score?.actionReadiness.eligible).toBe(false);
+  });
+
+  it('does not let a topic error suppress unrelated signal or tool rejection', () => {
+    const decision = validateV2PlanningProposal({ ...base,
+      supportingTopicKeys: ['knowledge.unknown'], matchedSignalIds: ['signal.company.register'],
+    }, catalog, { ...context, observedText: 'hello' });
+    expect(decision.accepted).toBe(false);
+    expect(decision.reasons).toContain('unobserved_signal');
+    expect(decision.rejectedTopicKeys).toEqual(['knowledge.unknown']);
+  });
+});
+
 describe('server-observed evidence gates for model planning', () => {
   it('accepts a genuinely observed signal without authorizing any side effect', () => {
     const decision = validateV2PlanningProposal(base, catalog, { ...context, observedText: 'I want to register a company for consulting.' });
