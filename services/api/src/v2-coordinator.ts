@@ -180,12 +180,12 @@ const safeFirstContactGreeting = (envelope: TurnEnvelopeV2): PersonaComposedResp
     || envelope.intentProjection.pendingRequirementKey !== null) return null;
   const name = envelope.persona.assistantName.trim();
   const utterance = envelope.customerMessageMasked.normalize('NFKC').toLocaleLowerCase('en-US')
-    .replace(/[!.,?]/gu, ' ').replace(/\\s+/gu, ' ').trim();
-  const normalizedName = name.toLocaleLowerCase('en-US').replace(/\\s+/gu, ' ').trim();
+    .replace(/[!.,?]/gu, ' ').replace(/\s+/gu, ' ').trim();
+  const normalizedName = name.toLocaleLowerCase('en-US').replace(/\s+/gu, ' ').trim();
   const greeting = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening']
     .some(value => utterance === value || (normalizedName && utterance === value + ' ' + normalizedName));
   if (!greeting) return null;
-  const safeName = /^[\\p{L}\\p{N}][\\p{L}\\p{N} .’'-]{0,59}$/u.test(name) ? name : null;
+  const safeName = /^[\p{L}\p{N}][\p{L}\p{N} .’'-]{0,59}$/u.test(name) ? name : null;
   const question = 'How can I help you today?';
   return {
     schemaVersion: 2, personaVersionId: envelope.personaVersionId,
