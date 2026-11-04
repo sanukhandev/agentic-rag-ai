@@ -27,12 +27,13 @@
 - V2 package/lifecycle boundary: PASS for canonical development-only package listing and deterministic quote contract tests; public package retrieval returned two V2-pinned offerings. Verified Account, official pricebook and provider completion remain unverified.
 - V2 outbox/n8n claim boundary: PASS in focused memory/bridge coverage — canonical V2 refs, catalog-declared transport identity and durable execution correlation are enforced; live n8n/provider execution remains unverified.
 - V2 provider-evidence boundary: PASS for deterministic mock verification and fail-closed Salesforce reconciliation; canonical V2 provider contracts accept pinned catalog refs; live Salesforce readback remains unverified.
-- Latest API full suite: PASS — 61 test files / 494 tests; lint, typecheck and build PASS; rebuilt API health endpoint HTTP 200.
+- Latest API full suite: PASS — 61 test files / 495 tests; lint, typecheck and build PASS; rebuilt API health endpoint HTTP 200.
 - Final post-fix historical five-turn replay: PASS — grounded formation response, grounded contextual follow-up, natural formation confirmation prompt, and refusal without action.
 - Catalog V2 revision 3: PASS in the development database; existing revisions remain draft/pinned and new sessions resolve `anc:r3:1de595abd94fc134b5e457113e927c323a29b89da60ffa2cf9dae0574c0d0858`.
 - V2 Account lifecycle identity boundary: PASS in the enabled synthetic binding regression; the real ANCFZ Account binding remains disabled and no provider completion is claimed.
 - Docker API restart/duplicate replay: PASS — the same client message ID returned the same assistant message before and after an API restart, with one durable user message and no provider side effect.
 - Live provider boundary check: BLOCKED_EXTERNAL_DEPENDENCY — `.env` selects Salesforce, but the published ANCFZ V2 `lead.create` and `crm.lead.create` bindings are disabled; the inactive n8n template has a placeholder provider URL/no credential, and the evidence endpoint deliberately reconciles until independent Salesforce readback is configured.
+- Three fresh Azure-backed public persistence runs after the final evidence-merge fix: PASS — each completed 25/25 turns with 25 durable user messages. This proves transport/persistence only; the required >=90% conversation-quality score is still unverified because the harness has no frozen rubric scorer.
 
 ## Unverified or blocked
 

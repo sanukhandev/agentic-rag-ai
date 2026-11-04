@@ -651,6 +651,19 @@ describe('V2ConversationCoordinator', () => {
     expect(output.claimProvenance[0]).toMatchObject({ citationIds: ['search-source'], sourceVersions: ['version-12345678'], sourceRefs: ['source-12345678'] });
   });
 
+  it('keeps prefetched evidence when a trusted tool returns a different text projection', async () => {
+    const prefetched = { citationId: 'search-source', text: 'The approved package costs 42 credits.', sourceVersion: 'version-12345678', approved: true, revoked: false, sourceRef: 'source-12345678' };
+    const output = await new V2ConversationCoordinator({
+      turn: async () => result(prefetched.text, {
+        response: { ...result(prefetched.text).response, citationIds: [prefetched.citationId] },
+        approvedEvidence: [{ ...prefetched, text: 'Package pricing is projected for this query.' }],
+        toolTrace: [{ toolCallId: 'call-12345678', toolName: 'search_knowledge', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: [prefetched.citationId] }],
+      }),
+    }).run({ envelope: envelope(), evidence: [prefetched], fallbackTemplates, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted');
+    expect(output.approvedEvidence).toEqual([prefetched]);
+  });
+
   it('repairs a rejected answer from evidence returned by a successful search tool', async () => {
     const request = envelope();
     request.customerMessageMasked = 'How does the company formation process work?';

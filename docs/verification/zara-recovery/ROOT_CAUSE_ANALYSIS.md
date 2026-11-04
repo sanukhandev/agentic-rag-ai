@@ -236,3 +236,15 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Regression tests:** `knowledge.test.ts`, `v2-knowledge-preflight.test.ts`, `v2-claim-provenance.test.ts`, and `v2-coordinator.test.ts`.
 - **Evidence:** Final Docker replay returned the exact approved sentence `Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order.` with a citation for both formation turns. The answer remains narrow because the source corpus does not expose a complete reviewed step-by-step procedure in the retrieved evidence.
 - **Regression status:** Core fallback cascade FIXED; answer completeness and formal Azure quality remain unverified.
+
+## Failure ZARA-020 — identical authorized evidence projections were treated as a security conflict
+
+- **Customer impact:** A live Azure-backed 25-turn run returned HTTP 500 `INTERNAL_ERROR` at turn 21 even though the same authorized citation had been retrieved through Node prefetch and a successful read-only tool.
+- **Failing runtime component:** `services/api/src/v2-coordinator.ts` evidence merge boundary.
+- **Actual failure code:** `V2_EVIDENCE_CONFLICT`.
+- **Root cause (confirmed):** The merge identity compared the full projected text. Query-aware evidence projection legitimately produces different text slices for the same citation/source/version, so a text-only difference was incorrectly treated as a provenance conflict.
+- **Reproduction method:** `python tools/anc/acceptance/api_25_turns.py --api-base http://127.0.0.1:80 --tenant anc --origin http://localhost --scenarios 1`; intermediate artifact `artifacts/ancfz/azure-eval-postfix-run-3.json` failed at turn 21. The audit recorded matching authorized citation identity and `V2_EVIDENCE_CONFLICT`.
+- **Regression test:** `services/api/src/v2-coordinator.test.ts` verifies that a trusted tool's different text projection does not replace Node-prefetched text or fail the turn.
+- **Correction:** Evidence conflict now compares citation ID, source reference, source version and authorization/revocation state. Node-prefetched evidence remains authoritative text; mismatched identity still fails closed.
+- **Verification:** Focused coordinator suite 51/51 PASS; API suite 61 files / 495 tests PASS; three fresh final Azure-backed public runs each completed 25/25 turns with 25 durable user messages.
+- **Regression status:** FIXED for the reproduced public path; formal conversation-quality scoring, Salesforce and full seven-stage acceptance remain unverified.

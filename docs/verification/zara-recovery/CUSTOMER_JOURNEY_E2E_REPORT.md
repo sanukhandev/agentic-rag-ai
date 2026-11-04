@@ -139,3 +139,13 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 - 25/25 public HTTP turns returned answers and 25 unique customer messages were durable in the history endpoint.
 - The public package route smoke separately returned two offerings pinned to the canonical V2 catalog; both were marked `development_only`.
 - The harness reports `external_crm_invoice_document_signing: NOT_VERIFIED_BY_THIS_HARNESS`.
+
+## Final Azure-backed public persistence runs after evidence-merge fix
+
+**Result:** PASS for transport, guarded response completion and durable conversation persistence; formal quality score is not claimed.
+
+- `artifacts/ancfz/azure-eval-final-run-1.json`: 25/25 answers, 25 durable unique user messages.
+- `artifacts/ancfz/azure-eval-final-run-2.json`: 25/25 answers, 25 durable unique user messages.
+- `artifacts/ancfz/azure-eval-final-run-3.json`: 25/25 answers, 25 durable unique user messages.
+- The same harness reports `external_crm_invoice_document_signing: NOT_VERIFIED_BY_THIS_HARNESS` for all three runs.
+- The formal >=90% natural-conversation score remains unverified because this harness records HTTP/persistence gates, not rubric judgments.

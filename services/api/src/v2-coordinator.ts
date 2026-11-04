@@ -144,8 +144,7 @@ export const assertConversationEngineV2Configuration = (nodeEnv: string, env: No
   }
 };
 
-const sameEvidence = (left: V2ApprovedEvidence, right: V2ApprovedEvidence): boolean => left.citationId === right.citationId
-  && left.text === right.text
+const sameEvidenceIdentity = (left: V2ApprovedEvidence, right: V2ApprovedEvidence): boolean => left.citationId === right.citationId
   && left.sourceVersion === right.sourceVersion
   && left.approved === right.approved
   && left.revoked === right.revoked
@@ -159,13 +158,14 @@ const mergeEvidence = (requestEvidence: V2ApprovedEvidence[], result: AgentTurnR
   const merged = new Map<string, V2ApprovedEvidence>();
   for (const item of requestEvidence) {
     const previous = merged.get(item.citationId);
-    if (previous && !sameEvidence(previous, item)) throw new Error('V2_EVIDENCE_CONFLICT');
+    if (previous && !sameEvidenceIdentity(previous, item)) throw new Error('V2_EVIDENCE_CONFLICT');
     merged.set(item.citationId, item);
   }
   for (const item of evidenceFromTrustedToolTrace(result)) {
     const existing = merged.get(item.citationId);
-    if (existing && !sameEvidence(existing, item)) throw new Error('V2_EVIDENCE_CONFLICT');
-    merged.set(item.citationId, item);
+    if (existing && !sameEvidenceIdentity(existing, item)) throw new Error('V2_EVIDENCE_CONFLICT');
+    // Keep Node-prefetched text authoritative when a tool returns a query-specific projection.
+    if (!existing) merged.set(item.citationId, item);
   }
   return [...merged.values()];
 };

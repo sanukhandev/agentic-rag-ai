@@ -86,3 +86,9 @@ The provider configuration remains unavailable, so no Salesforce completion is c
 - Added query-aware evidence projection for broad formation questions and corrected modal source-language classification so general policy statements are not treated as provider completion.
 - Added regression coverage at intent evidence, retrieval, claim provenance, coordinator and migration boundaries.
 - Final public five-turn replay passes the historical intent/grounding/refusal behavior; full seven-stage provider journey and formal Azure quality gates remain open.
+
+## 2026-11-04 — trusted evidence projection merge correction
+
+- Evidence merging now treats citation/source/version/authorization identity as the conflict boundary, not query-specific projected text.
+- Node-prefetched evidence remains authoritative when the same approved citation is returned by a trusted read-only tool with a narrower or different projection.
+- Added regression coverage and verified three fresh Azure-backed public 25-turn runs after rebuild: each returned 25/25 answers and persisted 25 unique customer messages.
