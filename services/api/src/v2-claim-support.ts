@@ -67,14 +67,14 @@ export const supportsV2SourceCloseClause = (claim: string, sourceText: string): 
   // or provider outcomes. Never assemble a claim from terms distributed across
   // unrelated sentences or records. Reordering material terms can reverse a
   // relationship, even when every word is present in the excerpt.
-  const statements = sourceText.split(/(?<=[.!?])\\s+|[;\\n]+/u)
-    .flatMap(part => part.split(/[,]\\s+(?=(?:the\\s+)?(?:package|plan|offer|application|invoice|payment|account|contract)\\b)/iu))
-    .flatMap(part => part.split(/\\s+(?:and|but|while)\\s+(?=(?:the\\s+)?(?:package|plan|offer|application|invoice|payment|account|contract)\\b)/iu))
+  const statements = sourceText.split(/(?<=[.!?])\s+|[;\n]+/u)
+    .flatMap(part => part.split(/[,]\s+(?=(?:the\s+)?(?:package|plan|offer|application|invoice|payment|account|contract)\b)/iu))
+    .flatMap(part => part.split(/\s+(?:and|but|while)\s+(?=(?:the\s+)?(?:package|plan|offer|application|invoice|payment|account|contract)\b)/iu))
     .map(part => part.trim()).filter(Boolean);
-  const claimedNumbers = claim.match(/\\b\\d+(?:[.,]\\d+)?\\b/gu) ?? [];
+  const claimedNumbers = claim.match(/\b\d+(?:[.,]\d+)?\b/gu) ?? [];
   return statements.some(statement => {
     const available = tokens(statement);
-    const statementNumbers = statement.match(/\\b\\d+(?:[.,]\\d+)?\\b/gu) ?? [];
+    const statementNumbers = statement.match(/\b\d+(?:[.,]\d+)?\b/gu) ?? [];
     // A statement with more numbers than the claim needs independent
     // entailment: otherwise "Alpha costs 40; Beta costs 80" can prove
     // "Alpha costs 80" through the whole chunk's combined vocabulary.
