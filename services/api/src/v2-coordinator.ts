@@ -1,7 +1,8 @@
 import { agentTurnResultSchema, turnEnvelopeSchema, type AgentTurnResultV2, type PersonaComposedResponseV2, type TurnEnvelopeV2 } from './python-model/v2-contracts.js';
 import { guardV2OfflineFallback, guardV2Response, type V2ResponseGuardContext } from './v2-response-guard.js';
 import type { ModelDraft } from './model.js';
-import { addVerifiedFactCitations, type V2ApprovedEvidence, type V2VerifiedFact } from './v2-evidence.js';
+import { addVerifiedFactCitations, buildV2GroundingReviewClaims, v2MeanLexicalOverlapPercent, type V2ApprovedEvidence, type V2VerifiedFact } from './v2-evidence.js';
+import { proofsFromV2GroundingReview, type V2GroundingVerifier } from './v2-grounding-verifier.js';
 import type { V2ApprovedFallbackTemplateSet, V2FallbackFamily } from './v2-fallbacks.js';
 import { hasPositiveBusinessOutcomeClaim, type V2ClaimProvenance } from './v2-claim-provenance.js';
 
@@ -62,6 +63,9 @@ export interface V2CoordinatorResult {
   repairFailureReason?: string | null;
   repairClaimFailureReason?: string | null;
   repairFailedClauseOrdinal?: number | null;
+  groundingReviewStatus?: 'not_configured' | 'not_eligible' | 'skipped_budget' | 'accepted' | 'rejected' | 'error';
+  /** Lexical similarity is telemetry only, never a guard threshold. */
+  groundingLexicalOverlapPercent?: number | null;
   /** Optional bounded Python-side candidate capture for explicit UAT diagnostics. */
   diagnosticCandidate?: string | null;
 }
@@ -205,7 +209,7 @@ const noEvidenceReply = (envelope: TurnEnvelopeV2, previousQuestionKey: string |
 };
 
 export class V2ConversationCoordinator {
-  constructor(private readonly agent: V2ConversationAgent) {}
+  constructor(private readonly agent: V2ConversationAgent, private readonly groundingVerifier?: V2GroundingVerifier) {}
 
   async run(request: V2CoordinatorRequest): Promise<V2CoordinatorResult> {
     const envelope = turnEnvelopeSchema.parse(request.envelope);
@@ -303,7 +307,48 @@ export class V2ConversationCoordinator {
     }
     const guarded = guardV2Response(candidateResponse, guardContext);
     candidateGuardReason = guarded.verdict.reasonCode;
-    if (guarded.verdict.accepted) return { response: guarded.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: guarded.claims, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
+    const reviewClaims = buildV2GroundingReviewClaims(candidateResponse, guardContext.evidence ?? []);
+    const lexicalOverlap = v2MeanLexicalOverlapPercent(reviewClaims);
+    if (guarded.verdict.accepted) return { response: guarded.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: guarded.claims, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason, groundingLexicalOverlapPercent: lexicalOverlap, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
+    // An independent model reviewer can rescue a *lexical* false rejection only
+    // after Node has authenticated the source versions, resolved exact citations
+    // and rejected no business outcome. It may not authorize a stage transition.
+    let groundingReviewStatus: NonNullable<V2CoordinatorResult['groundingReviewStatus']> = this.groundingVerifier ? 'not_eligible' : 'not_configured';
+    let groundingReviewRequests = 0;
+    const eligibleForEntailment = this.groundingVerifier && guarded.verdict.reasonCode === 'unsupported_claim'
+      && guarded.firstFailure?.reason === 'single_source_support_not_established'
+      && hasTrustedPrefetch && !hasPositiveBusinessOutcomeClaim(candidateResponse.answer)
+      && reviewClaims.length > 0;
+    if (eligibleForEntailment) {
+      const remaining = Date.parse(envelope.budgets.deadlineAt) - Date.now();
+      if (agentResult.modelRequestCount >= envelope.budgets.maxModelRequests || remaining < 3_500) {
+        groundingReviewStatus = 'skipped_budget';
+      } else {
+        // Count this review pessimistically even if the HTTP call fails after dispatch.
+        groundingReviewRequests = 1;
+        try {
+          const results = await this.groundingVerifier!.verify({
+            requestId: envelope.requestId, deadlineAt: envelope.budgets.deadlineAt, claims: reviewClaims,
+          });
+          const proofs = proofsFromV2GroundingReview(reviewClaims, results);
+          if (proofs) {
+            const verified = guardV2Response(candidateResponse, { ...guardContext, groundingProofs: proofs });
+            if (verified.verdict.accepted) return {
+              response: verified.response, candidateResponse: agentResult.response,
+              repairApplied, draft: toDraft(verified.response), toolTrace: agentResult.toolTrace,
+              approvedEvidence: guardContext.evidence ?? [], claimProvenance: verified.claims,
+              modelRequestCount: agentResult.modelRequestCount + groundingReviewRequests,
+              toolCallCount: agentResult.toolCallCount, guardReason: 'accepted_entailment',
+              candidateGuardReason, groundingReviewStatus: 'accepted',
+              groundingLexicalOverlapPercent: lexicalOverlap, diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
+            };
+          }
+          groundingReviewStatus = 'rejected';
+        } catch {
+          groundingReviewStatus = 'error';
+        }
+      }
+    }
     // A factual answer rejected for insufficient claim support can receive ONE
     // independent, read-only evidence repair. The failed draft is never returned.
     // All source identities must match the trusted Node prefetch (not untrusted
@@ -319,7 +364,7 @@ export class V2ConversationCoordinator {
       && (envelope.approvedKnowledge?.length ?? 0) > 0) {
       if (!hasTrustedPrefetch) {
         knowledgeRepairStatus = 'skipped_untrusted_evidence';
-      } else if (agentResult.modelRequestCount >= envelope.budgets.maxModelRequests || timeLeft < 2_500) {
+      } else if (agentResult.modelRequestCount + groundingReviewRequests >= envelope.budgets.maxModelRequests || timeLeft < 2_500) {
         knowledgeRepairStatus = 'skipped_budget';
       } else {
         // The original answer is already rejected. We can safely repair even
@@ -405,7 +450,7 @@ export class V2ConversationCoordinator {
     }
     const fallback = guardV2OfflineFallback(fallbackFamilyFor(guarded.verdict.reasonCode), guardContext);
     if (!fallback.verdict.accepted || !fallback.response) throw new Error('V2_RESPONSE_REJECTED');
-    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: [], modelRequestCount: agentResult.modelRequestCount + repairModelRequests, toolCallCount: agentResult.toolCallCount, guardReason: guarded.verdict.reasonCode, candidateGuardReason, knowledgeRepairStatus,
+    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: [], modelRequestCount: agentResult.modelRequestCount + repairModelRequests + groundingReviewRequests, toolCallCount: agentResult.toolCallCount, guardReason: guarded.verdict.reasonCode, candidateGuardReason, knowledgeRepairStatus, groundingReviewStatus, groundingLexicalOverlapPercent: lexicalOverlap,
       initialClaimFailureReason: guarded.firstFailure?.reason ?? null,
       initialFailedClauseOrdinal: guarded.firstFailure?.clauseOrdinal ?? null,
       repairCitationCount, repairFailureReason, repairClaimFailureReason, repairFailedClauseOrdinal,
