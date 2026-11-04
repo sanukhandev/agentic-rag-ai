@@ -42,3 +42,10 @@ The public harness now records redacted answer digests, grounded/citation flags,
 - Docker API rebuild: **PASS**.
 - Public action-gate replay: **PASS** for goal confirmation, masked contact persistence, explicit action confirmation and truthful disabled-provider handling; zero action requests were persisted.
 - This is not a live Azure conversation-quality score. The required three independent human-scored Azure runs at >=90% each remain `NOT_RUN`.
+
+## Rebuilt-stack persistence checkpoint — 2026-11-05
+
+- Artifact: `artifacts/ancfz/api-25-turns-post-dependency-scored.json`.
+- Result: **PASS** for transport and persistence — 25/25 answers and 25 durable messages through public Nginx/API/model-gateway.
+- Automated objective score: **1.00 (10/10)**.
+- This remains objective evidence only; human persona-quality scoring and the three independent >=90% Azure quality gates remain `NOT_RUN`, and no provider completion is claimed.

@@ -182,3 +182,11 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 - `I confirm the authorized submission.` produced a truthful provider-unavailable response stating that the Lead was not submitted.
 - PostgreSQL showed zero `action_requests` for the session. No Salesforce write or completion claim was made.
 - The published ANCFZ `lead.create` binding remains disabled; Salesforce sandbox create/readback and the complete seven-stage journey remain `BLOCKED_EXTERNAL_DEPENDENCY` / `NOT_RUN`.
+
+## Fresh rebuilt-stack persistence run — 2026-11-05
+
+- Artifact: `artifacts/ancfz/api-25-turns-post-dependency-scored.json`.
+- Docker rebuilt `api`, `admin`, and `web` from the refreshed lockfile; the public Nginx/API/model-gateway route was healthy.
+- Result: **PASS** — 25/25 HTTP answers and 25 durable unique customer messages.
+- Automated objective score: **1.00 (10/10)**. No action proposal, internal payload leak, or false provider-completion claim was observed.
+- Human persona review: `NOT_RUN`. Salesforce, invoice, document, contract and full seven-stage provider completion remain `NOT_VERIFIED_BY_THIS_HARNESS`.
