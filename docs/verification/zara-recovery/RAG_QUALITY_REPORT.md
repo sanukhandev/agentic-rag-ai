@@ -22,3 +22,7 @@ Claim-level tests cover numeric values, provider outcomes, polarity and source-b
 ## Remaining quality risk
 
 The current corpus contains fragmented retrieval-ready records and the contextual answer can select a narrow supported detail rather than a complete process overview. A reviewed source-quality pass and three fixed Azure evaluations are still required.
+
+## Additional recovery check
+
+Retrieval-only instructional scaffolds are now filtered from final ranked evidence when a chunk contains only template guidance (for example, “Use this knowledge domain” or “Response pattern”). The regression test passes. Public five-turn smoke still returns grounded evidence, but response completeness remains a quality risk; this is not a claim of corpus-wide quality.

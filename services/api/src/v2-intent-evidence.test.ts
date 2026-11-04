@@ -4,6 +4,7 @@ import type { CatalogV2Document } from './catalog-v2.js';
 import { resolveV2IntentEvidence } from './v2-intent-evidence.js';
 
 const catalog = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
+const sevenStageCatalog = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2-seven-stage.json', import.meta.url), 'utf8')) as CatalogV2Document;
 const current = (message: string, recentCustomerTurns: Array<{ messageId: string; text: string }> = [], document = catalog) =>
   resolveV2IntentEvidence({ catalog: document, catalogVersionRef: 'anc:r1:verified-catalog',
     currentMessage: message, currentMessageId: 'current-message-12345678', recentCustomerTurns });
@@ -28,6 +29,18 @@ describe('V2 catalog-backed contextual customer intent evidence', () => {
       expect(result.initiationSupported).toBe(true);
     },
   );
+
+  it.each([
+    'I want to start a technology consulting company in Ajman.',
+    'I am opening a business.',
+    'I need a company license.',
+    'I want to open a small IT consultancy.',
+  ])('recognizes reviewed natural formation variants: %s', text => {
+    const result = current(text, [], sevenStageCatalog);
+    expect(result.candidateGoalKeys).toEqual(['anc.company_formation']);
+    expect(result.initiation).toBe('explicit');
+    expect(result.initiationSupported).toBe(true);
+  });
 
   it('uses an earlier CUSTOMER formation signal only for an explicit contextual start', () => {
     const history = [{ messageId: 'previous-customer-12345678', text: 'Tell me about company formation' }];

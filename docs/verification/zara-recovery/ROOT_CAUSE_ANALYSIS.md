@@ -96,3 +96,29 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Actual contract:** Contact requirements are collected one at a time; the action gate requires both fields.
 - **Correction:** `scripts/seed-local.mjs` now accepts either valid first contact prompt, supplies synthetic email and phone in separate turns, and retains the action confirmation/idempotency assertions.
 - **Result:** Synthetic tenant A/B acceptance PASS.
+
+## Failure ZARA-008 — confirmation grammar rejected natural approval
+
+- **Customer message:** `Yes, let's proceed.` after a scoped company-formation confirmation prompt.
+- **Expected behavior:** Confirm the proposed goal, initialize the authoritative journey, and continue without repeating the prompt.
+- **Actual behavior:** The classifier returned `ambiguous`; the prompt was repeated.
+- **Failing runtime component:** `services/api/src/conversation-state.ts`.
+- **Actual failure code:** `ambiguous` scoped goal decision.
+- **Root cause (confirmed):** The confirmation grammar accepted `Yes, proceed.` but not the natural contraction `let's proceed`.
+- **Reproduction method:** Fresh public Docker session with `I want to open a company in Ajman.` followed by `Yes, let's proceed.`.
+- **Regression test:** `services/api/src/conversation-state.test.ts` covers the exact contraction.
+- **Correction:** Added bounded `let's proceed` / `let us proceed` confirmation forms; no consent or side effect is inferred.
+- **Result:** Focused coordinator/state suites PASS; public confirmation persists `goalConfirmed=true` and creates no action.
+
+## Failure ZARA-009 — invalid journey citation erased safe continuity
+
+- **Customer message:** `My business is technology consulting.` or `I need two visas.` after confirmed formation.
+- **Expected behavior:** Preserve independently verified facts and return a safe persona acknowledgement when a non-knowledge citation is invalid.
+- **Actual behavior:** `invalid_citation` could fall through to the generic “cannot verify” response, despite Node persisting the fact.
+- **Failing runtime component:** `services/api/src/v2-coordinator.ts`.
+- **Actual failure code:** `invalid_citation` / `unsupported_claim` on a non-factual journey statement.
+- **Root cause (confirmed):** Factual citation recovery and non-factual journey dialogue shared the same terminal fallback.
+- **Reproduction method:** Fresh public Docker session; audit showed a candidate citation while the intent document retained the visitor fact.
+- **Regression test:** `services/api/src/v2-coordinator.test.ts` covers an unavailable citation on a verified customer fact.
+- **Correction:** Bounded journey-shaped, non-knowledge statements now discard the bad citation and use guarded non-factual acknowledgement; knowledge and provider/action claims remain strict.
+- **Result:** Coordinator suite PASS; public smoke returns safe acknowledgements and preserves state.

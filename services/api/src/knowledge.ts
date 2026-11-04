@@ -98,6 +98,12 @@ const evidenceMetadataLine = /^(?:File|Format|Primary intent|Suggested routing|R
 const evidenceMetadataHeader = /^(?:Knowledge Records|Detailed retrieval-ready knowledge records|tenantScope|sourceKey|sourceFile|sourceSha256|visibility|piiScreening|---)$/iu;
 const evidenceRecordHeader = /^[A-Z][A-Z0-9_.-]*-\d+\s*(?:[—-]|\|)/u;
 const sourceBackedLine = /^Source-backed\s+(?:content|knowledge):/iu;
+const retrievalScaffoldLine = /^(?:Use this knowledge domain|The assistant should|Where the answer depends|If two sources conflict|Do not treat user-provided|Legal, AML, UBO, tax|Heading \d|Detection examples:|Clarification:|Response pattern:|Next action:)/iu;
+
+const isRetrievalScaffold = (input: string): boolean => {
+  const lines = input.split('\n').map(line => line.trim()).filter(Boolean);
+  return lines.length > 0 && lines.every(line => retrievalScaffoldLine.test(line) || evidenceMetadataLine.test(line) || evidenceMetadataHeader.test(line));
+};
 
 /** Removes ingestion/template metadata while preserving the approved source-backed facts. */
 export const presentKnowledgeText = (input: string): string => {
@@ -157,8 +163,9 @@ const rankWithEmbedding = <T extends { chunk: { content: string; embedding: numb
   })
     .sort((left, right) => right.score - left.score)
     .filter(({ score, overlap, specificOverlap }) => (semanticOnlyThreshold !== Number.POSITIVE_INFINITY && semanticOnlyThreshold !== null && score >= semanticOnlyThreshold) || (overlap > 0 && (score >= 0.45 || overlap >= 2)) && (semanticOnlyThreshold !== Number.POSITIVE_INFINITY || specificTerms.length === 0 || specificOverlap >= requiredSpecificOverlap));
+  const rankedEvidence = ranked.filter(({ row }) => !isRetrievalScaffold(presentKnowledgeText(row.chunk.content)));
   const seen = new Set<string>();
-  return ranked.filter(({ row }) => {
+  return rankedEvidence.filter(({ row }) => {
     const key = presentKnowledgeText(row.chunk.content);
     if (seen.has(key)) return false;
     seen.add(key);

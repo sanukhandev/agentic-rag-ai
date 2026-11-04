@@ -43,8 +43,25 @@ const normalize = (value: string): string => value.normalize('NFKC').toLocaleLow
   .replace(/[’']/gu, "'").replace(/[-_]/gu, ' ').replace(/[^\p{L}\p{N}'\s]/gu, ' ')
   .replace(/\s+/gu, ' ').trim();
 
-const containsPhrase = (text: string, phrase: string): boolean =>
-  Boolean(phrase && (' ' + text + ' ').includes(' ' + phrase + ' '));
+const containsPhrase = (text: string, phrase: string): boolean => {
+  if (!phrase) return false;
+  if ((' ' + text + ' ').includes(' ' + phrase + ' ')) return true;
+  const phraseWords = phrase.split(' ').filter(Boolean);
+  if (phraseWords.length < 3) return false;
+  const textWords = text.split(' ').filter(Boolean);
+  for (let start = 0; start < textWords.length; start += 1) {
+    if (textWords[start] !== phraseWords[0]) continue;
+    let cursor = start;
+    let matched = true;
+    for (const word of phraseWords.slice(1)) {
+      const next = textWords.slice(cursor + 1, cursor + 6).indexOf(word);
+      if (next < 0) { matched = false; break; }
+      cursor += next + 1;
+    }
+    if (matched) return true;
+  }
+  return false;
+};
 
 const hasInformationRequest = (message: string): boolean =>
   /^(?:(?:so|then|and|okay|ok|please)\s+)*(?:how|what|why|when|where|which|who|can you (?:explain|tell|show)|could you (?:explain|tell|show)|tell me|show me|explain|i (?:want|would like|need) (?:to )?(?:know|learn|understand|explore|compare)|i(?:'m| am) (?:just )?(?:exploring|looking|browsing))/u.test(message)
@@ -64,7 +81,9 @@ const activeClauses = (message: string): string[] =>
   contrastClauses(message).filter(part => !hasRejection(part));
 const hasInitiationRequest = (message: string): boolean =>
   /(?:^|\b)(?:i (?:want|would like|need|am ready|m ready) to|let's|let us|please|go ahead and|we (?:want|need) to|i(?:'m| am) ready to)\s+(?:go ahead (?:and |to )?|now )?(?:start|begin|register|form|incorporate|set up|open|establish|proceed(?: with)?|get started(?: with)?)\b/u.test(message)
-  || /^(?:start|begin|register|form|incorporate|set up|open|establish|proceed|let's go ahead|let us go ahead)\b/u.test(message);
+  || /^(?:start|begin|register|form|incorporate|set up|open|establish|proceed|let's go ahead|let us go ahead)\b/u.test(message)
+  || /\b(?:i (?:want|would like|need)(?: to)?\s+)?(?:a|my|the)\s+(?:company|trade|business)\s+(?:license|licence)\b/u.test(message)
+  || /\bi(?:'m| am)\s+(?:opening|starting|registering|establishing|forming|incorporating)\b/u.test(message);
 
 const isContextReference = (message: string): boolean =>
   /\b(?:the process|this process|that process|the setup|this setup|it|this|that|go ahead|proceed|get started|start|begin)\b/u.test(message);

@@ -1,5 +1,5 @@
 {
-  "started_at": "2026-11-04T10:22:00.863046+00:00",
+  "started_at": "2026-11-04T11:32:46.684242+00:00",
   "tenant": "anc",
   "scenarios_requested": 1,
   "scenarios_executed": 1,
@@ -8,7 +8,7 @@
   "external_crm_invoice_document_signing": "NOT_VERIFIED_BY_THIS_HARNESS",
   "runs": [
     {
-      "session_id": "ab1c9e70-ca82-4dfb-930d-bd30d10750d0",
+      "session_id": "1f269df6-5918-4aac-8b6a-1dde68ece7c5",
       "turns_sent": 25,
       "all_http_answers": true,
       "history_http_status": 200,

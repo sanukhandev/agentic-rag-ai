@@ -12,3 +12,12 @@
 - Added contextual knowledge retrieval from prior customer formation turns, without treating context as goal confirmation.
 
 No business-action authorization, tenant scope, provider verification or consent gate was removed.
+
+## M5 checkpoint — 2026-11-04
+
+- Added reviewed ANCFZ natural formation aliases to the source fixture and published development Catalog V2 version 2; old sessions remain pinned.
+- Accepted natural scoped confirmation forms including `Yes, let's proceed.` without treating confirmation as action consent.
+- Added bounded safe recovery for non-knowledge journey statements whose model citation is invalid; factual knowledge and provider outcomes remain fail-closed.
+- Excluded question-only and unpunctuated list fragments from source-excerpt recovery.
+
+The public smoke and 25-turn harness pass. Full stage/provider completion is still unverified.

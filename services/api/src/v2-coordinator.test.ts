@@ -704,6 +704,23 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.answer).toBe(answer);
   });
 
+  it('preserves a verified customer fact when the model cites an unavailable source', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'My business is technology consulting.';
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true,
+      currentStageKey: 'lead_generation', pendingRequirementKey: null,
+      confirmedCustomerFacts: { business_activity: 'technology consulting' } };
+    const candidate = result('I have noted that. What would you like to discuss next?', {
+      response: { ...result('I have noted that. What would you like to discuss next?').response, citationIds: ['missing-source-12345678'] },
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate })
+      .run({ envelope: request, fallbackTemplates, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('safe_no_evidence_dialogue');
+    expect(output.candidateGuardReason).toBe('invalid_citation');
+    expect(output.response.answer).toContain('technology consulting');
+    expect(output.response.answer).not.toContain('cannot verify');
+  });
+
   it('accepts an exact, cited customer-stated fact only from Node verified context', async () => {
     const request = envelope();
     request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true,
@@ -829,5 +846,17 @@ describe('V2ConversationCoordinator', () => {
     expect(output.guardReason).toBe('accepted_knowledge_excerpt');
     expect(output.response.answer).toBe('Company formation requires an application form and proof of residence.');
     expect(output.response.citationIds).toEqual(['formation-chunk-12345678']);
+  });
+
+  it('does not return a source question as the answer during excerpt recovery', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'Tell me about company formation';
+    request.approvedKnowledge = [{ citationId: 'formation-chunk-12345678', sourceRef: 'formation-source-12345678', sourceVersion: 'version-12345678', text: 'What documents are required for company registration? Company formation requires an application form and proof of residence.' }];
+    const output = await new V2ConversationCoordinator({ turn: async () => result('Formation is guaranteed in one day.', {
+      response: { ...result('Formation is guaranteed in one day.').response, citationIds: ['formation-chunk-12345678'] },
+    }) }).run({ envelope: request, evidence: [{ ...request.approvedKnowledge[0]!, approved: true, revoked: false }], fallbackTemplates, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toBe('Company formation requires an application form and proof of residence.');
+    expect(output.response.answer).not.toMatch(/\?$/u);
   });
 });

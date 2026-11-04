@@ -33,3 +33,15 @@ The first run stopped at turn 12 with PostgreSQL `22P02` because synthetic `tool
 ## Full company-formation journey
 
 **Status:** NOT RUN. Lead creation, qualification, document/SF-02, package, quotation, Salesforce readback, restart/replay and browser acceptance remain unverified.
+
+## Confirmation and verified-fact smoke
+
+**Result:** PASS through the public Nginx/API path on a fresh synthetic session.
+
+- `I want to open a company in Ajman.` → `anc.company_formation` pending confirmation; no action.
+- `Yes, let's proceed.` → confirmation persisted; prompt cleared; no action consent inferred.
+- `My business is technology consulting.` → visitor fact persisted; safe acknowledgement returned.
+- `I need two visas.` → visitor fact persisted; safe acknowledgement returned.
+- PostgreSQL inspection confirmed `goal_confirmed=true`, `business_goal_key=anc.company_formation`, and verified activity, visa and timeline facts on the exercised journey.
+
+This is a partial journey gate, not full completion. The database has zero approved package offerings, and Salesforce/provider verification was not available in this run.

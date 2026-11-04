@@ -175,7 +175,7 @@ const sourceExcerptResponse = (envelope: TurnEnvelopeV2, evidence: V2ApprovedEvi
   const queryTerms = new Set((queryText.toLocaleLowerCase('en-US').match(/[a-z]{5,}/gu) ?? [])
     .filter(term => !new Set(['about', 'could', 'does', 'hello', 'how', 'please', 'tell', 'that', 'what', 'would']).has(term)));
   const candidates = evidence.flatMap(item => {
-    const sentences = item.text.split(/(?<=[.!?])\s+|\n+/u).map(value => value.trim()).filter(value => value.length >= 24 && value.length <= 500 && !hasPositiveBusinessOutcomeClaim(value));
+    const sentences = item.text.split(/(?<=[.!?])\s+|\n+/u).map(value => value.trim()).filter(value => value.length >= 24 && value.length <= 500 && /[.!]$/u.test(value) && !value.endsWith('?') && !hasPositiveBusinessOutcomeClaim(value));
     return sentences.map(sentence => ({ item, sentence, score: [...queryTerms].filter(term => sentence.toLocaleLowerCase('en-US').includes(term)).length }));
   }).sort((left, right) => right.score - left.score);
   const selected = candidates.find(candidate => candidate.score > 0) ?? candidates[0];
@@ -227,7 +227,8 @@ const noEvidenceReply = (envelope: TurnEnvelopeV2, previousQuestionKey: string |
   const greeting = safeFirstContactGreeting(envelope);
   if (greeting) return greeting;
   const message = envelope.customerMessageMasked.toLocaleLowerCase('en-US');
-  const specificFactsRequested = /\b(?:price|pricing|cost|fees?|aed|eligib\w*|licen[cs]e|how long|timeline|policy|regulation|law|how much)\b/u.test(message);
+  const specificFactsRequested = isV2FactualKnowledgeQuestion(message)
+    || /[?؟]/u.test(message) && /\b(?:price|pricing|cost|fees?|aed|eligib\w*|licen[cs]e|how long|timeline|policy|regulation|law|how much)\b/u.test(message);
   const goal = envelope.intentProjection.primaryGoalKey;
   const pending = envelope.intentProjection.pendingRequirementKey;
   const questionByRequirement: Record<string, string> = {
@@ -250,7 +251,20 @@ const noEvidenceReply = (envelope: TurnEnvelopeV2, previousQuestionKey: string |
   const repeated = Boolean(pending && pending === previousQuestionKey);
   const stage = envelope.intentProjection.currentStageKey ?? '';
   const questionKey = pending ?? (stage ? `stage:${stage}` : 'conversation_focus');
-  const question = pending ? (questionByRequirement[pending] ?? 'Could you tell me more about that requirement?') : questionByStage[stage] ?? (goal ? 'Which part of your setup would you like to discuss first?' : 'What would you like help with?');
+  const facts = envelope.intentProjection.confirmedCustomerFacts ?? {};
+  const normalizedMessage = message.normalize('NFKC');
+  const acknowledgedFact = facts.business_activity && /\b(?:business|activity|company|consulting|business is)\b/iu.test(normalizedMessage)
+    ? `Thanks, I’ve noted your business activity as ${facts.business_activity}.`
+    : facts.entity_type && /\b(?:company type|company structure|entity|fze|fze|llc)\b/iu.test(normalizedMessage)
+      ? `Thanks, I’ve noted your company structure as ${facts.entity_type}.`
+      : facts.visa_count && /\bvisa(?:s)?\b/iu.test(normalizedMessage)
+        ? `Thanks, I’ve noted that you expect to need ${facts.visa_count} visa${facts.visa_count === '1' ? '' : 's'}.`
+        : facts.timeline && /\b(?:start|timeline|next month|next week|asap|immediately)\b/iu.test(normalizedMessage)
+          ? `Thanks, I’ve noted your requested start timeline as ${facts.timeline}.`
+          : /^(?:my|i(?:'m| am| need| want| would like| have)|we(?:'re| are| need| want))\b/iu.test(normalizedMessage)
+            ? 'Thanks for sharing that.'
+          : null;
+  const question = pending ? (questionByRequirement[pending] ?? 'Could you tell me more about that requirement?') : questionByStage[stage] ?? (goal ? (acknowledgedFact ? 'What detail would you like to add next?' : 'Which part of your setup would you like to discuss first?') : 'What would you like help with?');
   const stageContext = stage === 'account_creation'
       ? /\bdocument\b/iu.test(message)
       ? 'Account creation is still the next verified step; document handling follows package confirmation.'
@@ -266,9 +280,9 @@ const noEvidenceReply = (envelope: TurnEnvelopeV2, previousQuestionKey: string |
     : stage === 'package_selection' && /\b(?:document|package|option|choice)\b/iu.test(message)
       ? 'The approved package choice must be confirmed before document collection can begin.'
       : null;
-  const prefix = specificFactsRequested
+  const prefix = specificFactsRequested && !repeated
     ? 'I don’t have a verified answer to that specific detail yet, so I don’t want to guess.'
-    : stageContext ?? (repeated
+    : acknowledgedFact ?? stageContext ?? (repeated
       ? 'I’m keeping your company-formation request moving.'
       : 'I can help you work through that.');
   return {
@@ -558,11 +572,13 @@ export class V2ConversationCoordinator {
     // A missing RAG source must not block conversation. Never use this path when
     // evidence exists, citations are invalid, or the model/tool failed.
     const unverifiedActionOutcome = hasPositiveBusinessOutcomeClaim(candidateResponse.answer);
-    if (['unsupported_claim', 'invalid_question'].includes(guarded.verdict.reasonCode)
+    if (['unsupported_claim', 'invalid_question', 'invalid_citation'].includes(guarded.verdict.reasonCode)
       && !unverifiedActionOutcome
-      && candidateResponse.citationIds.length === 0
-      && (request.evidence?.length ?? 0) === 0
-      && !agentResult.response.decisionRef.startsWith('fallback-')) {
+      && (candidateResponse.citationIds.length === 0 || guarded.verdict.reasonCode === 'invalid_citation')
+      && ((request.evidence?.length ?? 0) === 0 || guarded.verdict.reasonCode === 'invalid_citation')
+      && !isV2FactualKnowledgeQuestion(envelope.customerMessageMasked)
+      && !/^\s*(?:hi|hello|hey)\b/iu.test(envelope.customerMessageMasked)
+      && /^(?:my|i(?:'m| am| need| want| would like| have)|we(?:'re| are| need| want))\b/iu.test(envelope.customerMessageMasked)) {
       const natural = noEvidenceReply(envelope, request.lastQuestionKey ?? null);
       const safe = guardV2Response(natural, {
         ...guardContext,
@@ -570,6 +586,7 @@ export class V2ConversationCoordinator {
         // the model's repeated question is not allowed through this path.
         lastQuestionKey: null,
         questionPolicy: natural.nextQuestion ? guardContext.questionPolicy : 'optional',
+        allowNonFactualDialogue: true,
         approvedNoEvidenceAnswer: natural.answer,
       });
       if (safe.verdict.accepted) return {

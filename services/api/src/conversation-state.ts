@@ -186,6 +186,6 @@ export const classifyScopedGoalDecision = (message: string): ScopedGoalDecision 
     || /\?\s*$/u.test(text)) return 'interruption';
   if (/^(?:actually\b|instead\b|i (?:want|would like|need) to (?:explore|change|switch|consider)\b|i(?:'d| would) rather\b)/u.test(text)) return 'corrected';
   if (/^(?:no(?:[, ]+(?:thanks|thank you|i only need information|just information|not now))?|not now|only information|just information|i (?:only|just) (?:need|want) information)[.! ]*$/u.test(text)) return 'rejected';
-  if (/^(?:yes(?:[, ]+(?:please|proceed|go ahead))?|please proceed|proceed|go ahead|i (?:want|would like) to proceed|i confirm|confirm)[.! ]*$/u.test(text)) return 'confirmed';
+  if (/^(?:yes(?:[, ]+(?:please|proceed|go ahead|let(?:'|’)s proceed))?|please proceed|(?:let(?:'|’)s|let us) proceed|proceed|go ahead|i (?:want|would like) to proceed|i confirm|confirm)[.! ]*$/u.test(text)) return 'confirmed';
   return 'ambiguous';
 };

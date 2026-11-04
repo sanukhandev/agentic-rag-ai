@@ -13,6 +13,9 @@
 - Candidate intent survives rejected response wording.
 - Public five-turn historical regression: 5/5 smoke PASS.
 - Public initiation/refusal state behavior: PASS.
+- Natural `Yes, let's proceed.` goal confirmation: PASS; confirmed goal persisted and no action consent inferred.
+- Verified business activity and visa facts survive post-confirmation turns: PASS in public smoke and PostgreSQL intent-document inspection.
+- Invalid non-knowledge journey citations no longer erase safe continuity: PASS in coordinator regression and public smoke.
 - Public 25-turn conversation/persistence harness: 25/25 turns and 25 durable unique customer messages PASS after ZARA-005 correction.
 - Local five-source ingestion acceptance: PASS after ZARA-006 correction.
 - Synthetic tenant A/B/idempotent mock workflow acceptance: PASS after aligning the harness with one-field-at-a-time contact collection.
@@ -28,5 +31,7 @@
 - Three independent Azure evaluations at >=90% each.
 - Formal performance benchmark.
 - Full quote/package calculation and customer-facing quote revision journey.
+- ANCFZ approved package offerings: BLOCKED_EXTERNAL_DEPENDENCY — development database contains zero `package_offerings` rows.
+- `npm audit --omit=dev`: FAIL — one high `undici` advisory remains on the workspace OpenAI/Angular resolution path; no security gate was weakened.
 
 The branch is not ready to merge until the unverified gates are executed or explicitly accepted as external blockers.

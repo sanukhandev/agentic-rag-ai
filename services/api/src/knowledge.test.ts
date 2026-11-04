@@ -22,6 +22,13 @@ describe('knowledge pipeline primitives', () => {
     expect(rankChunks('What is the office location?', rows)).toHaveLength(0);
   });
 
+  it('does not return retrieval instructions as customer evidence', () => {
+    const source = { id: 'source', tenantId: 'tenant', versionId: 'version' };
+    const chunks = buildChunks(source, 'Use this knowledge domain when the customer asks about company formation.\n\nWhere the answer depends on company structure, collect the missing input.');
+    const rows = [{ source: { id: 'source', title: 'Rules' }, chunk: chunks[0]! }];
+    expect(rankChunks('Tell me about company formation', rows)).toHaveLength(0);
+  });
+
   it('keeps an exact text match when the provider vector is weak', () => {
     const source = { id: 'source', tenantId: 'tenant', versionId: 'version' };
     const chunks = buildChunks(source, 'Business setup packages include timeline guidance.');
