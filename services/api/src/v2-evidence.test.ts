@@ -5,6 +5,21 @@ const response = (answer: string, citationIds: string[] = ['source-a']): Record<
 const approved: V2ApprovedEvidence[] = [{ citationId: 'source-a', text: 'The approved package costs 42 credits.', sourceVersion: 'version-12345678', approved: true, revoked: false }];
 const fact: V2VerifiedFact = { factId: 'fact-a-12345678', text: 'The provider status is verified.', sourceVersion: 'provider-version-12345678', verified: true };
 
+describe('V2 strict source-bound claims', () => {
+  it('rejects invented business location sharing a single catalog source word', () => {
+    const cited = [{ citationId: 'source-a', text: 'The company requires a passport.',
+      sourceVersion: 'version-12345678', approved: true, revoked: false }];
+    const invalid = verifyV2ResponseEvidence(response('The company is located on Mars.'), cited);
+    expect(invalid.verdict.reasonCode).toBe('unsupported_claim');
+    expect(invalid.firstFailure?.reason).toBe('single_source_support_not_established');
+  });
+  it('accepts a source-close fact supported by exactly one approved source', () => {
+    const output = verifyV2ResponseEvidence(response('The package costs 42 credits.'), approved);
+    expect(output.verdict.accepted).toBe(true);
+    expect(output.claims).toHaveLength(1);
+  });
+});
+
 describe('v2 claim provenance and evidence verification', () => {
 
   it('accepts pinned-persona non-factual greetings and optional questions without citations', () => {
@@ -165,9 +180,11 @@ describe('v2 claim provenance and evidence verification', () => {
       { citationId: 'action-12345678', text: 'Lead registration is awaiting verified provider evidence.', sourceVersion: 'catalog-12345678', approved: true, revoked: false },
     ];
     const journey = response('I can help with that. I can confirm your request is not complete from the approved information I have. Your company-formation journey is currently at account_creation, and there is no server-authorized requirement pending right now.', ['journey-12345678', 'pending-12345678']);
-    expect(verifyV2ResponseEvidence(journey, evidence).verdict.accepted).toBe(true);
+    const journeyDecision = verifyV2ResponseEvidence(journey, evidence);
+    expect(journeyDecision.verdict.accepted, JSON.stringify(journeyDecision.firstFailure)).toBe(true);
     const action = response('Thanks for checking. Your contact consent is granted, and the workflow status shows succeeded, but lead registration is still awaiting verified provider evidence. I can’t verify any further outcome after registration yet.', ['consent-12345678', 'workflow-12345678', 'action-12345678']);
-    expect(verifyV2ResponseEvidence(action, evidence).verdict.accepted).toBe(true);
+    const actionDecision = verifyV2ResponseEvidence(action, evidence);
+    expect(actionDecision.verdict.accepted, JSON.stringify(actionDecision.firstFailure)).toBe(true);
   });
 
   it('accepts bounded uncertainty and all verified qualification facts before the next question', () => {

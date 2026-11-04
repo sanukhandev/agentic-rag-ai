@@ -10,6 +10,17 @@ const source = (text: string): V2ClaimSource => ({
 // Model the independent source-support gate, without relying on shared words.
 const semanticSupported = () => true;
 
+describe('V2 business outcome clauses and polarity', () => {
+  it('detects a positive payment outcome following a denied invoice outcome', async () => {
+    const { hasPositiveBusinessOutcomeClaim } = await import('./v2-claim-provenance.js');
+    expect(hasPositiveBusinessOutcomeClaim('The invoice is not complete, but the payment has been processed.')).toBe(true);
+    expect(hasPositiveBusinessOutcomeClaim('The account is not created.')).toBe(false);
+    expect(hasPositiveBusinessOutcomeClaim("I won't assume that the account is complete.")).toBe(false);
+    expect(hasPositiveBusinessOutcomeClaim('The licence is activated.')).toBe(true);
+    expect(hasPositiveBusinessOutcomeClaim('The contract has been executed.')).toBe(true);
+  });
+});
+
 describe('V2 per-source claim verification without a lexical overlap threshold', () => {
   it('accepts a claim with zero shared tokens when the cited source independently supports it', () => {
     const result = evaluateV2ClaimProvenance(
