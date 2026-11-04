@@ -180,9 +180,11 @@ describe('v2 claim provenance and evidence verification', () => {
       { citationId: 'action-12345678', text: 'Lead registration is awaiting verified provider evidence.', sourceVersion: 'catalog-12345678', approved: true, revoked: false },
     ];
     const journey = response('I can help with that. I can confirm your request is not complete from the approved information I have. Your company-formation journey is currently at account_creation, and there is no server-authorized requirement pending right now.', ['journey-12345678', 'pending-12345678']);
-    expect(verifyV2ResponseEvidence(journey, evidence).verdict.accepted).toBe(true);
+    const journeyDecision = verifyV2ResponseEvidence(journey, evidence);
+    expect(journeyDecision.verdict.accepted, JSON.stringify(journeyDecision.firstFailure)).toBe(true);
     const action = response('Thanks for checking. Your contact consent is granted, and the workflow status shows succeeded, but lead registration is still awaiting verified provider evidence. I can’t verify any further outcome after registration yet.', ['consent-12345678', 'workflow-12345678', 'action-12345678']);
-    expect(verifyV2ResponseEvidence(action, evidence).verdict.accepted).toBe(true);
+    const actionDecision = verifyV2ResponseEvidence(action, evidence);
+    expect(actionDecision.verdict.accepted, JSON.stringify(actionDecision.firstFailure)).toBe(true);
   });
 
   it('accepts bounded uncertainty and all verified qualification facts before the next question', () => {
