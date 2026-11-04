@@ -44,10 +44,12 @@ export interface V2PlanningDecision {
   nextRequirementKey: string | null;
   proposedToolKey: string | null;
   preservedConfirmedGoal: boolean;
+  validatedTopicKeys: string[];
+  rejectedTopicKeys: string[];
   reasons: string[];
 }
 
-const rejected = (reasons: string[], proposal: V2PlanningProposal | null = null): V2PlanningDecision => ({ accepted: false, proposal, primaryGoalKey: null, score: null, currentStage: null, nextRequirementKey: null, proposedToolKey: null, preservedConfirmedGoal: false, reasons });
+const rejected = (reasons: string[], proposal: V2PlanningProposal | null = null): V2PlanningDecision => ({ accepted: false, proposal, primaryGoalKey: null, score: null, currentStage: null, nextRequirementKey: null, proposedToolKey: null, preservedConfirmedGoal: false, validatedTopicKeys: [], rejectedTopicKeys: [], reasons });
 
 export const validateV2PlanningProposal = (input: unknown, catalog: CatalogV2Document, context: V2PlanningContext): V2PlanningDecision => {
   const parsed = v2PlanningProposalSchema.safeParse(input);
@@ -68,8 +70,14 @@ export const validateV2PlanningProposal = (input: unknown, catalog: CatalogV2Doc
       return !signal || signal.signalType === 'exclusion' || !utterance.includes(signal.value.normalize('NFKC').toLocaleLowerCase('en-US').replace(/\s+/gu, ' ').trim());
     })) reasons.push('unobserved_signal');
   }
-  if (proposal.supportingTopicKeys.some((key) => !activeTopics.has(key))) reasons.push('unknown_topic');
-  if (reasons.length) return rejected(reasons, proposal);
+  const validatedTopicKeys = [...new Set(proposal.supportingTopicKeys.filter(key => activeTopics.has(key)
+    && (catalog.sheets.KnowledgeTopics.find(topic => topic.topicKey === key)?.goalKey === null
+      || catalog.sheets.KnowledgeTopics.find(topic => topic.topicKey === key)?.goalKey === (context.confirmedGoalKey ?? proposal.primaryGoalKey))))];
+  const rejectedTopicKeys = [...new Set(proposal.supportingTopicKeys.filter(key => !validatedTopicKeys.includes(key)))];
+  if (rejectedTopicKeys.length) reasons.push('unknown_or_unrelated_topic');
+  if (reasons.some(reason => ['unknown_goal_candidate', 'unknown_primary_goal', 'primary_goal_not_proposed', 'unknown_signal', 'unobserved_signal'].includes(reason))) {
+    return { ...rejected(reasons, proposal), validatedTopicKeys, rejectedTopicKeys };
+  }
 
   const preservedConfirmedGoal = Boolean(context.confirmedGoalKey && proposal.turnCategory !== 'business_goal' && proposal.primaryGoalKey !== context.confirmedGoalKey);
   const primaryGoalKey = preservedConfirmedGoal ? context.confirmedGoalKey : proposal.primaryGoalKey;
@@ -100,6 +108,6 @@ export const validateV2PlanningProposal = (input: unknown, catalog: CatalogV2Doc
     : null;
   if (proposal.proposedToolKey && !allowedTool) reasons.push('tool_not_allowed');
   const ambiguous = score.ambiguous;
-  const accepted = !ambiguous && reasons.every((reason) => !['unknown_goal_candidate', 'unknown_primary_goal', 'primary_goal_not_proposed', 'unknown_signal', 'unobserved_signal', 'unknown_topic', 'tool_not_allowed'].includes(reason));
-  return { accepted, proposal, primaryGoalKey, score, currentStage, nextRequirementKey: ambiguous ? null : nextRequirementKey, proposedToolKey: allowedTool, preservedConfirmedGoal, reasons };
+  const accepted = !ambiguous && reasons.every((reason) => !['unknown_goal_candidate', 'unknown_primary_goal', 'primary_goal_not_proposed', 'unknown_signal', 'unobserved_signal', 'tool_not_allowed'].includes(reason));
+  return { accepted, proposal, primaryGoalKey, score, currentStage, nextRequirementKey: ambiguous ? null : nextRequirementKey, proposedToolKey: allowedTool, preservedConfirmedGoal, validatedTopicKeys, rejectedTopicKeys, reasons };
 };
