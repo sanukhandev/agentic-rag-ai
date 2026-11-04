@@ -124,6 +124,7 @@ describe('scoped Business Goal reply classifier', () => {
   it.each([
     ['Yes, proceed.', 'confirmed'],
     ["Yes, let's proceed.", 'confirmed'],
+    ['Yes, let us proceed.', 'confirmed'],
     ['No, I only need information.', 'rejected'],
     ['Actually, I want to explore another service.', 'corrected'],
     ['What are the fees?', 'interruption'],

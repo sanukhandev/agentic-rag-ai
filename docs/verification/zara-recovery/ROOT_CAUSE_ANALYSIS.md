@@ -135,3 +135,17 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Correction:** Added `catalog_v2_version_ref`, tenant-scoped FK/check constraint, store support for V2 refs, and V2 gateway filtering by `catalogVersionRef`.
 - **Unit/integration/Docker/Azure result:** 23 focused tests PASS; API typecheck PASS; migration applied and constraints verified in PostgreSQL; API Docker rebuild and health check PASS; live pricebook/Azure/Salesforce acceptance remains unverified.
 - **Regression status:** FIXED for catalog identity; package/quotation outcome remains blocked by missing authoritative ANCFZ offerings.
+
+## Failure ZARA-011 — V2 contact facts were not connected to the catalog cursor
+
+- **Customer messages:** synthetic name, email and contact-consent turns after confirmed company formation.
+- **Expected behavior:** Persist masked contact facts under the approved requirement keys, ask for consent, then ask for explicit Lead submission confirmation.
+- **Actual behavior:** The earlier public path discarded contact fields from V2 verified facts and repeated generic or model-safety responses; the requirement remained `lead_contact_channel`/`lead_crm_consent`.
+- **Failing runtime component:** `services/api/src/v2-turn-controller.ts`.
+- **Actual failure code:** `safe_no_evidence_dialogue` / `unsupported_claim` on wording, with no independent contact-state transition.
+- **Root cause (confirmed):** V2 planning exposed only non-PII business facts and never projected Node’s masked contact tokens into `lead_contact_name`/`lead_contact_channel`; consent was likewise not advanced independently of model wording.
+- **Reproduction method:** Fresh public Docker session through `/api/v1/chat/messages`; PostgreSQL inspection of `user_intent_documents` and `intent_turn_assessments`.
+- **Regression test:** `services/api/src/v2-turn-controller.test.ts` contact-cursor test; `conversation-state.test.ts` covers `Yes, let us proceed.`.
+- **Correction:** Node-side masked contact extraction, durable catalog-keyed fact patches, contact cursor advancement and bounded verified contact acknowledgements. Action authorization remains separate and disabled by the published development binding.
+- **Unit/integration/Docker/Azure result:** 51/51 focused tests PASS; API full suite 476/476 PASS; public Docker contact smoke PASS through consent and `lead_action_confirmation`; Azure/Salesforce live acceptance NOT RUN.
+- **Regression status:** FIXED at masked contact persistence/public smoke boundary; full Lead/provider journey remains unverified.

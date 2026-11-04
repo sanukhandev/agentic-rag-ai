@@ -183,8 +183,8 @@ describe('GPT-first controller full-turn unit behavior', () => {
 import { readFileSync } from 'node:fs';
 import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2, type CatalogV2Document } from './catalog-v2.js';
 
-const publishPlannerFixture = async (store: MemoryStore, tenantId: string, tenantScope: string) => {
-  const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
+const publishPlannerFixture = async (store: MemoryStore, tenantId: string, tenantScope: string, fixture = 'ancfz-catalog-v2.json') => {
+  const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/' + fixture, import.meta.url), 'utf8')));
   if (!parsed.ok || !parsed.document) throw new Error('UNIT_CATALOG_FIXTURE_INVALID');
   const catalogV2: CatalogV2Document = parsed.document;
   catalogV2.manifest.tenantScope = tenantScope;
@@ -467,9 +467,9 @@ describe('quoted customer fact provenance (pure unit)', () => {
 });
 
 
-const proposalTurn = async () => {
+const proposalTurn = async (fixture = 'ancfz-catalog-v2.json') => {
   const ctx = await prepared();
-  await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+  await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug, fixture);
   const message = 'I want to register a company for technology consulting';
   const user = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
   if (!user) throw new Error('UNIT_MESSAGE_MISSING');
@@ -566,6 +566,45 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect(document?.businessGoalKey).toBeNull();
     expect(document?.verifiedFacts.business_activity?.maskedValue).toBe('technology consulting');
     expect(reply.actionProposal).toBeNull();
+  });
+
+  it('persists masked contact requirements and advances the V2 contact cursor', async () => {
+    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json');
+    await runGPTFirstChatTurn({
+      ...await followUpTurn(ctx, 'Yes, proceed.'),
+      coordinator: ctx.coordinator,
+    });
+    const confirmed = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    if (!confirmed) throw new Error('UNIT_INTENT_DOCUMENT_MISSING');
+    await ctx.store.updateUserIntentDocument({
+      document: { ...confirmed, pendingRequirementKey: 'lead_contact_name' },
+      expectedRevision: confirmed.revision,
+    });
+    const contactTurn = async (message: string, answer: string) => {
+      const next = await followUpTurn(ctx, message);
+      ctx.coordinator.run.mockImplementationOnce(async () => ({
+        modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+        response: { citationIds: [], answer, nextQuestion: null, nextQuestionKey: null },
+        guardReason: 'accepted',
+      }) as unknown as V2CoordinatorResult);
+      return runGPTFirstChatTurn(next);
+    };
+    await contactTurn('[NAME_1]', 'Thanks. What email address should I use?');
+    let document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document?.verifiedFacts.lead_contact_name).toMatchObject({ maskedValue: '[NAME_1]', source: 'visitor' });
+    expect(document?.pendingRequirementKey).toBe('lead_contact_channel');
+    expect((await ctx.store.getSession(ctx.session.id))?.conversationState?.slotValues.name).toBe('[NAME_1]');
+
+    await contactTurn('[EMAIL_1]', 'Thanks. Please explicitly consent to sharing your contact details.');
+    document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document?.verifiedFacts.lead_contact_channel).toMatchObject({ maskedValue: '[EMAIL_1]', source: 'visitor' });
+    expect(document?.pendingRequirementKey).toBe('lead_crm_consent');
+
+    await contactTurn('I explicitly consent to sharing my contact details for this enquiry.', 'Thanks.');
+    document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document?.verifiedFacts.lead_crm_consent).toMatchObject({ maskedValue: 'true', source: 'visitor' });
+    expect((await ctx.store.getSession(ctx.session.id))?.conversationState?.contactConsent).toBe('granted');
+    expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
   });
 
   it('does not commit a confirmed goal when the original customer reply was already answered', async () => {

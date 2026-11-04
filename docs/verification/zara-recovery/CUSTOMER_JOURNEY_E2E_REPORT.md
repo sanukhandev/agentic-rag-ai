@@ -55,3 +55,14 @@ This is a partial journey gate, not full completion. The database has zero appro
 - Session: `1c36ec5f-b09f-4ec5-a8b7-1b5fc4877d13`.
 - Migration 059 was applied and its V2 package identity constraints were verified directly in PostgreSQL.
 - This run did not claim Lead, Salesforce, package, quote, document, invoice or contract completion.
+
+## Rebuilt Docker contact-collection smoke
+
+**Result:** PASS through the public Nginx/API path for the independently verified contact boundary.
+
+- Session: `c3853c27-0483-44a1-ae85-0bccf14bef40`.
+- Formation initiation and `Yes, let's proceed.` → `goal_confirmed=true`, no action.
+- Activity, visa count and timeline → verified visitor facts.
+- Synthetic name and email → masked facts persisted under `lead_contact_name` and `lead_contact_channel`.
+- Contact consent → `lead_crm_consent` persisted, session consent `granted`, pending requirement advanced to `lead_action_confirmation`.
+- No Salesforce action was created or claimed; the published V2 `lead.create` binding remains disabled and external provider verification was not attempted.

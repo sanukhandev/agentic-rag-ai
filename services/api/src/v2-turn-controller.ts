@@ -8,6 +8,7 @@ import { authorizedV2ReadTools } from './v2-tool-policy.js';
 import { validateV2PlanningProposal } from './v2-planning.js';
 import { validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
 import { initializeConfirmedV2Journey } from './v2-journey-bootstrap.js';
+import { extractLeadData } from './model.js';
 import { HttpError } from './http/errors.js';
 import { contextualizeV2KnowledgeQuery, prefetchV2ApprovedKnowledge } from './v2-knowledge-preflight.js';
 import { KnowledgeRetrievalError } from './knowledge.js';
@@ -108,6 +109,16 @@ const factPatch = (facts: Record<string, string>, sequence: number): Record<stri
   }]),
 );
 
+const contactRequirementKey = (catalog: NonNullable<ReturnType<typeof validatePublishedCatalogV2>['catalog']>, goalKey: string | null, suffix: string): string | null =>
+  catalog.sheets.RequirementPolicies.find(requirement => requirement.goalKey === goalKey && requirement.requirementKey.endsWith(suffix))?.requirementKey ?? null;
+
+const explicitContactConsent = (message: string): 'granted' | 'denied' | null => {
+  if (/^(?:no|n|nope|nah|no thanks|do not|don't|not now|not interested|decline|cancel|stop|i do not consent|i don't consent|i refuse)[.!\s]*$/iu.test(message.trim())) return 'denied';
+  return /^(?:yes|y|yeah|yep|sure|ok|okay|absolutely|confirmed|confirm|i confirm|of course|sounds good|please do|go ahead|you may contact me)[.!\s]*$/iu.test(message.trim())
+    || /\bi\s+(?:(?:do|explicitly)\s+)?consent\b/iu.test(message)
+    || /\bi\s+(?:agree|authorize)\b/iu.test(message) ? 'granted' : null;
+};
+
 /** Called after HTTP authentication and durable message-idempotency checks. */
 export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const { store, session, tenant, userMessage, coordinator, maskedMessage } = input;
@@ -181,11 +192,29 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const opportunityId = entry?.journeyId ?? intentDocument?.opportunityId ?? null;
   // Interest in a goal is not a confirmed journey. Never expose a stale
   // qualification requirement on a knowledge-only or unconfirmed V2 turn.
-  const pendingRequirement = catalogV2 && (!intentDocument?.goalConfirmed || !intentDocument.currentStageKey)
+  const priorPendingRequirement = catalogV2 && (!intentDocument?.goalConfirmed || !intentDocument.currentStageKey)
     ? null : originalState.pendingPrompt?.requirementKey ?? entry?.currentRequirementKey ?? intentDocument?.pendingRequirementKey ?? null;
   const documentFacts = intentDocument ? Object.fromEntries(Object.entries(intentDocument.verifiedFacts)
     .filter(([, item]) => item.source === 'node' || item.source === 'visitor')
     .map(([key, item]) => [key, item.maskedValue])) : {};
+  const persistedContact = { ...originalState.slotValues, ...(entry?.slotValues ?? {}) };
+  const contactFromMessage = extractLeadData(maskedMessage);
+  const contactSlots: Record<string, string> = Object.fromEntries(Object.entries(contactFromMessage).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+  const contactValues = { ...persistedContact, ...contactSlots };
+  const contactActive = Boolean(catalogV2 && intentDocument?.goalConfirmed
+    && (/(?:contact|crm_consent)/iu.test(priorPendingRequirement ?? '') || Object.keys(contactFromMessage).length > 0));
+  const nameRequirementKey = catalogV2 ? contactRequirementKey(catalogV2, intentDocument?.businessGoalKey ?? null, 'contact_name') : null;
+  const channelRequirementKey = catalogV2 ? contactRequirementKey(catalogV2, intentDocument?.businessGoalKey ?? null, 'contact_channel') : null;
+  const consentRequirementKey = catalogV2 ? contactRequirementKey(catalogV2, intentDocument?.businessGoalKey ?? null, 'crm_consent') : null;
+  const actionConfirmationRequirementKey = catalogV2 ? contactRequirementKey(catalogV2, intentDocument?.businessGoalKey ?? null, 'action_confirmation') : null;
+  const resolvedConsentRequirementKey = consentRequirementKey ?? (/contact.*consent/iu.test(priorPendingRequirement ?? '') ? priorPendingRequirement : null);
+  const nextContactRequirement = contactActive
+    ? !contactValues.name ? nameRequirementKey
+      : !contactValues.email && !contactValues.phone ? channelRequirementKey
+        : originalState.contactConsent !== 'granted' ? consentRequirementKey
+          : actionConfirmationRequirementKey
+    : null;
+  const pendingRequirement = nextContactRequirement ?? priorPendingRequirement;
   const { facts, evidence } = trustedFacts({ ...documentFacts, ...originalState.slotValues, ...(entry?.slotValues ?? {}) }, catalog.id);
   const sessionRevision = session.stateVersion ?? 0;
   const priorMessages = (await store.listMessages(session.id, tenant.id, 12))
@@ -367,14 +396,27 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       proposedRequirement && activeGoal
         ? prompt('slot', activeGoal, proposedRequirement.slotKey, proposedRequirement.requirementKey)
         : null);
+  const contactDecision = contactActive && (pendingRequirement === resolvedConsentRequirementKey || nextContactRequirement === resolvedConsentRequirementKey)
+    ? explicitContactConsent(maskedMessage) : null;
+  const contactConsent = contactDecision ?? originalState.contactConsent;
+  const contactRequirementAfterDecision = contactActive
+    ? !contactValues.name ? nameRequirementKey
+      : !contactValues.email && !contactValues.phone ? channelRequirementKey
+        : contactConsent !== 'granted' ? resolvedConsentRequirementKey
+          : actionConfirmationRequirementKey
+    : null;
   const effectivePendingRequirement = catalogV2 ? authorizedPendingRequirement({
     catalogSource: 'v2', goalConfirmed: Boolean(intentDocument?.goalConfirmed),
     businessGoalKey: intentDocument?.businessGoalKey ?? null,
     currentStageKey: intentDocument?.currentStageKey ?? null,
-    selectedRequirementKey: selectedRequirement, priorRequirementKey: pendingRequirement,
+    selectedRequirementKey: contactRequirementAfterDecision ?? selectedRequirement, priorRequirementKey: priorPendingRequirement,
     goalDecision: decision,
   }) : nextPendingPrompt?.requirementKey ?? selectedRequirement ?? pendingRequirement;
-  const state = { ...originalState, catalogVersionId: catalog.id, pendingPrompt: nextPendingPrompt,
+  const state = { ...originalState, catalogVersionId: catalog.id,
+    slotValues: contactActive ? { ...originalState.slotValues, ...contactSlots, ...(contactDecision ? { contact_consent: contactDecision === 'granted' ? 'true' : 'false' } : {}) } : originalState.slotValues,
+    contactConsent,
+    consentCapturedAt: contactDecision ? new Date().toISOString() : originalState.consentCapturedAt,
+    pendingPrompt: nextPendingPrompt,
     rollingSummary: (originalState.rollingSummary + '\nCustomer: ' + maskedMessage.slice(0, 1_000)).trim().slice(-4_000),
     messageSequence: originalState.messageSequence + 1, summaryRevision: originalState.summaryRevision + 1,
     lastTurnAt: userMessage.createdAt };
@@ -443,6 +485,22 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     effectiveAnswer = 'I can help with ' + requirementGoal.name.toLowerCase() + '. ' + effectiveQuestion;
     overrideResponse = true;
   }
+  if (contactActive && !pendingDecision && (Object.keys(contactFromMessage).length > 0 || contactDecision)) {
+    if (!contactValues.name) {
+      effectiveAnswer = 'I’m ready to record this enquiry. What name should I use?';
+      effectiveQuestion = 'What name should I use?';
+    } else if (!contactValues.email && !contactValues.phone) {
+      effectiveAnswer = 'Thanks, I’ve noted the name for this enquiry. What email address or phone number should I use?';
+      effectiveQuestion = 'What email address or phone number should I use?';
+    } else if (contactConsent !== 'granted') {
+      effectiveAnswer = 'Thanks, I’ve noted the contact details. Do I have your permission to use them for this company-formation enquiry?';
+      effectiveQuestion = 'Do I have your permission to use them for this company-formation enquiry?';
+    } else {
+      effectiveAnswer = 'Thanks, I’ve recorded your contact consent. When you are ready, please explicitly confirm that you want me to submit the Lead.';
+      effectiveQuestion = 'Would you like me to submit the Lead?';
+    }
+    overrideResponse = true;
+  }
   const effectiveCitationIds = overrideResponse ? [] : result.response.citationIds;
   const citations = overrideResponse ? [] : modelCitations;
   const grounded = effectiveCitationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence');
@@ -455,7 +513,21 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const proposedFacts = validPlan && selectedV2Goal && modelPlan && !decision
     ? validateQuotedV2CustomerFacts(modelPlan.proposedFacts ?? [], maskedMessage, userMessage.id, state.messageSequence)
     : {};
-  const incomingFacts = { ...factPatch(facts as Record<string, string>, state.messageSequence), ...proposedFacts };
+  const contactFactPatch = contactActive ? {
+    ...(contactValues.name && nameRequirementKey ? { [nameRequirementKey]: {
+      maskedValue: contactValues.name, source: 'visitor' as const, messageSequence: state.messageSequence,
+      evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
+    } } : {}),
+    ...((contactValues.email || contactValues.phone) && channelRequirementKey ? { [channelRequirementKey]: {
+      maskedValue: contactValues.email ?? contactValues.phone!, source: 'visitor' as const, messageSequence: state.messageSequence,
+      evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
+    } } : {}),
+    ...(contactDecision === 'granted' && resolvedConsentRequirementKey ? { [resolvedConsentRequirementKey]: {
+      maskedValue: 'true', source: 'visitor' as const, messageSequence: state.messageSequence,
+      evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
+    } } : {}),
+  } : {};
+  const incomingFacts = { ...(intentDocument?.verifiedFacts ?? {}), ...factPatch(facts as Record<string, string>, state.messageSequence), ...contactFactPatch, ...proposedFacts };
   const verifiedFactPatch: Record<string, UserIntentFact> = Object.fromEntries(
     Object.entries(incomingFacts).filter(([key, value]) =>
       !intentDocument?.verifiedFacts[key] || intentDocument.verifiedFacts[key]?.maskedValue !== value.maskedValue)
@@ -493,6 +565,10 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   if (bootstrap.created) {
     session.conversationState = bootstrap.state;
     nextDoc = bootstrap.document;
+  }
+  if (contactActive && nextDoc.businessGoalKey) {
+    const contactEntry = bootstrap.state.intentProgress?.entries[nextDoc.businessGoalKey];
+    if (contactEntry) contactEntry.slotValues = { ...(contactEntry.slotValues ?? {}), ...contactSlots, ...(contactDecision ? { contact_consent: contactDecision === 'granted' ? 'true' : 'false' } : {}) };
   }
   assertSafeUserIntentDocument(nextDoc);
   const assessment = { id: randomUUID(), documentId: nextDoc.id, tenantId: tenant.id, sessionId: session.id,

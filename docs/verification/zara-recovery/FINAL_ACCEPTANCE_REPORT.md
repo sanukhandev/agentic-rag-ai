@@ -21,6 +21,7 @@
 - Synthetic tenant A/B/idempotent mock workflow acceptance: PASS after aligning the harness with one-field-at-a-time contact collection.
 - API focused/full unit, typecheck, lint and Docker API/model-gateway build: PASS for executed runs.
 - V2 package catalog identity boundary: PASS — migration 059 applied, tenant-scoped FK/check constraint verified, V2 gateway/store regression coverage PASS; no pricebook data was fabricated.
+- V2 masked contact collection boundary: PASS — name/email facts persisted under catalog requirement keys, explicit contact consent advanced to Lead action confirmation, and no action was created.
 
 ## Unverified or blocked
 

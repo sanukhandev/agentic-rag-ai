@@ -30,3 +30,11 @@ The public smoke and 25-turn harness pass. Full stage/provider completion is sti
 - Applied migration 059 to the development PostgreSQL instance and rebuilt the API image successfully.
 
 No synthetic ANCFZ pricebook was re-enabled: the development database still has zero approved offerings, so pricing and quotation acceptance remain blocked on reviewed authoritative data.
+
+## M5 contact-cursor checkpoint — 2026-11-04
+
+- Node maps already-masked `[NAME_n]`, `[EMAIL_n]` and `[PHONE_n]` tokens to the published V2 contact requirement keys, persists them in the User Intent Document and session journey slots, and advances `lead_contact_name` → `lead_contact_channel` → `lead_crm_consent` → `lead_action_confirmation`.
+- Explicit contact consent is persisted as a visitor fact and session consent state, but it does not satisfy the separate purpose-specific Salesforce action gate.
+- Contact events with a rejected model citation/answer now receive a bounded verified-state acknowledgement instead of the generic knowledge fallback.
+- Added V2 controller coverage for masked contact persistence, cursor advancement, consent and no-action behavior; added `let us proceed` confirmation coverage.
+- Focused suites: 51/51 tests PASS; API full suite: 59 files / 476 tests PASS; Docker public contact smoke reached `lead_action_confirmation` with no action.
