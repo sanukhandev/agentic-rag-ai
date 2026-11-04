@@ -213,6 +213,28 @@ describe('V2ConversationCoordinator', () => {
     await expect(agent.turn(envelope())).resolves.toMatchObject({ modelRequestCount: 1, toolCallCount: 0 });
   });
 
+  it('fails closed rather than bypassing an enforced reviewer for oversized factual answers', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'What are the company formation steps?';
+    request.budgets = { ...request.budgets, deadlineAt: new Date(Date.now() + 60_000).toISOString() };
+    const snippet = { citationId: 'chunk-12345678',
+      text: 'Choose your business activity and submit the required documents.',
+      sourceRef: 'source-12345678', sourceVersion: 'version-12345678' };
+    request.approvedKnowledge = [snippet];
+    const answer = Array(9).fill(snippet.text).join(' ');
+    const review = vi.fn(async () => [{ claimId: '1', citationId: snippet.citationId, verdict: 'supported' as const }]);
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer, {
+      response: { ...result(answer).response, citationIds: [snippet.citationId] },
+    }) }, { verify: review });
+    const output = await coordinator.run({ envelope: request,
+      evidence: [{ ...snippet, approved: true, revoked: false }], fallbackTemplates });
+    expect(output.candidateGuardReason).toBe('accepted');
+    expect(output.guardReason).toBe('grounding_review_rejected');
+    expect(output.groundingReviewStatus).toBe('unreviewable');
+    expect(output.response.citationIds).toEqual([]);
+    expect(review).not.toHaveBeenCalled();
+  });
+
   it('requires independent grounding even when a legacy lexical heuristic would accept the answer', async () => {
     const request = envelope();
     request.customerMessageMasked = 'What are the approved formation steps?';
