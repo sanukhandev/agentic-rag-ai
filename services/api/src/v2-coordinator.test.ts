@@ -82,10 +82,11 @@ describe('V2ConversationCoordinator', () => {
     const request = envelope();
     request.persona.assistantName = 'Zara';
     request.latestTurns = [{ role: 'customer', content: 'hello' }, { role: 'assistant', content: 'Hello!' }];
-    const output = await new V2ConversationCoordinator({ turn: async () => result('Hello, your registration is complete.') })
+    const output = await new V2ConversationCoordinator({ turn: async () => result("Hello, I'm Alex. How can I help you today?") })
       .run({ envelope: request, questionPolicy: 'optional' });
     expect(output.response.answer).not.toContain("I'm Zara.");
-    expect(output.response.answer).not.toContain('registration is complete');
+    expect(output.response.answer).not.toContain("I'm Alex.");
+    expect(output.guardReason).toBe('safe_no_evidence_dialogue');
   });
 
   it('does not turn a greeting with an invented license price into accepted dialogue', async () => {
