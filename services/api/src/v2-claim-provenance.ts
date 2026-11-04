@@ -79,7 +79,7 @@ export const hasPositiveBusinessOutcomeClaim = (s: string): boolean => {
 
 // Only split on clause conjunctions when a new subject follows; do not split
 // customer values such as "software consulting and AI services".
-const clauses = (s: string): string[] => s.split(/(?<=[.!?])\s+|\n+/u)
+const clauses = (s: string): string[] => s.split(/(?<=[.!?])\s+|\n+|;\s*/u)
   .flatMap((part) => part.split(/,\s+(?=(?:(?:and|but|so)\s+)?(?:your|the|there|i\s|we\s|a\s|an\s|lead|account|workflow|contact|visa|timeline|entity))/iu))
   .flatMap((part) => part.split(/\s+(?:and|but|while)\s+(?=(?:your|the|there|i\s|we\s|you\s|lead|account|workflow|registration|payment|document|includes?|requires?|costs?|takes?|provides?|has|is|are|was|were)\b)/iu))
   .map((part) => part.trim()).filter(Boolean);
