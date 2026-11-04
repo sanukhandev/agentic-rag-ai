@@ -39,6 +39,8 @@ import { TokenVault } from './privacy.js';
 import { resolvePublicCitations, runGPTFirstChatTurn } from './v2-turn-controller.js';
 import { createV2ToolGateway, verifyV2Scope } from './v2-tool-gateway.js';
 import { DeterministicEmbeddingProvider } from './embedding.js';
+import { ActionGateway } from './actions.js';
+import { evaluatePersistedV2ActionConfirmation } from './v2-journey-bootstrap.js';
 
 const prepared = async () => {
   const store = new MemoryStore();
@@ -93,6 +95,7 @@ const prepared = async () => {
     cache: new MemoryCache(5), tokenVault: new TokenVault('unit-test-vault-key'),
     responseCacheTtlSeconds: 60,
     updateSession: async (candidate: typeof session) => store.updateSession(candidate),
+    actionGateway: new ActionGateway(store),
   };
   return { store, tenant, session, coordinator, input };
 };
@@ -183,12 +186,13 @@ describe('GPT-first controller full-turn unit behavior', () => {
 import { readFileSync } from 'node:fs';
 import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2, type CatalogV2Document } from './catalog-v2.js';
 
-const publishPlannerFixture = async (store: MemoryStore, tenantId: string, tenantScope: string, fixture = 'ancfz-catalog-v2.json') => {
+const publishPlannerFixture = async (store: MemoryStore, tenantId: string, tenantScope: string, fixture = 'ancfz-catalog-v2.json', configure?: (catalog: CatalogV2Document) => void) => {
   const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/' + fixture, import.meta.url), 'utf8')));
   if (!parsed.ok || !parsed.document) throw new Error('UNIT_CATALOG_FIXTURE_INVALID');
   const catalogV2: CatalogV2Document = parsed.document;
   catalogV2.manifest.tenantScope = tenantScope;
   catalogV2.sheets.CatalogManifest[0]!.tenantScope = tenantScope;
+  configure?.(catalogV2);
   const version = await store.createIntentCatalogV2Version({
     tenantId, status: 'draft', sourceFileName: 'reviewed-v2.json',
     sourceHash: catalogV2Sha256(catalogV2), parserVersion: 'unit',
@@ -467,9 +471,9 @@ describe('quoted customer fact provenance (pure unit)', () => {
 });
 
 
-const proposalTurn = async (fixture = 'ancfz-catalog-v2.json') => {
+const proposalTurn = async (fixture = 'ancfz-catalog-v2.json', configure?: (catalog: CatalogV2Document) => void) => {
   const ctx = await prepared();
-  await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug, fixture);
+  await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug, fixture, configure);
   const message = 'I want to register a company for technology consulting';
   const user = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
   if (!user) throw new Error('UNIT_MESSAGE_MISSING');
@@ -605,6 +609,47 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect(document?.verifiedFacts.lead_crm_consent).toMatchObject({ maskedValue: 'true', source: 'visitor' });
     expect((await ctx.store.getSession(ctx.session.id))?.conversationState?.contactConsent).toBe('granted');
     expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
+  });
+
+  it('creates a catalog-gated Lead proposal only after contact consent and an explicit submission request', async () => {
+    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json', catalog => {
+      catalog.sheets.ToolBindings.find(binding => binding.toolKey === 'lead.create')!.enabled = true;
+      catalog.sheets.WorkflowBindings.find(binding => binding.workflowKey === 'crm.lead.create')!.enabled = true;
+    });
+    await runGPTFirstChatTurn({ ...await followUpTurn(ctx, 'Yes, proceed.'), coordinator: ctx.coordinator });
+    const confirmed = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    if (!confirmed) throw new Error('UNIT_INTENT_DOCUMENT_MISSING');
+    await ctx.store.updateUserIntentDocument({
+      document: { ...confirmed, pendingRequirementKey: 'lead_contact_name' }, expectedRevision: confirmed.revision,
+    });
+    const turn = async (message: string, answer = 'Thanks.') => {
+      const next = await followUpTurn(ctx, message);
+      ctx.coordinator.run.mockImplementationOnce(async () => ({
+        modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+        response: { citationIds: [], answer, nextQuestion: null, nextQuestionKey: null }, guardReason: 'accepted',
+      }) as unknown as V2CoordinatorResult);
+      return runGPTFirstChatTurn(next);
+    };
+    await turn('[NAME_1]');
+    await turn('[EMAIL_1]');
+    await turn('I explicitly consent to sharing my contact details for this enquiry.');
+    const request = await followUpTurn(ctx, 'Please create my Lead');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'I can submit that.', nextQuestion: null, nextQuestionKey: null,
+        planning: { ...modelProposal, turnCategory: 'service_execution', nextMove: 'propose_action', proposedToolKey: 'lead.create', matchedSignalIds: ['signal.lead'], proposedFacts: [] } },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn({ ...request, coordinator: ctx.coordinator });
+    expect(reply.actionProposal).toMatchObject({ intent: 'crm.lead.create', consentRequired: false });
+    const actions = await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id);
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({ actionKey: 'lead.create', workflowKey: 'crm.lead.create', state: 'awaiting_confirmation' });
+    const persistedSession = await ctx.store.getSession(ctx.session.id);
+    if (!persistedSession || !actions[0]) throw new Error('UNIT_ACTION_STATE_MISSING');
+    await expect(evaluatePersistedV2ActionConfirmation(ctx.store, persistedSession, actions[0])).resolves.toMatchObject({ applies: true, accepted: true });
+    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.pendingRequirementKey).toBeNull();
+    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.verifiedFacts.lead_action_confirmation).toMatchObject({ maskedValue: 'true', source: 'visitor' });
   });
 
   it('does not commit a confirmed goal when the original customer reply was already answered', async () => {

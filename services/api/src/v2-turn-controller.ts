@@ -6,8 +6,10 @@ import { resolveV2IntentEvidence } from './v2-intent-evidence.js';
 import { authorizedPendingRequirement } from './v2-conversation-decision.js';
 import { authorizedV2ReadTools } from './v2-tool-policy.js';
 import { validateV2PlanningProposal } from './v2-planning.js';
+import { proposeV2CatalogAction, v2ActionConsentScope } from './v2-action-gate.js';
 import { validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
-import { initializeConfirmedV2Journey } from './v2-journey-bootstrap.js';
+import { contextForConfirmedV2Action, initializeConfirmedV2Journey } from './v2-journey-bootstrap.js';
+import type { ActionGateway } from './actions.js';
 import { extractLeadData } from './model.js';
 import { HttpError } from './http/errors.js';
 import { contextualizeV2KnowledgeQuery, prefetchV2ApprovedKnowledge } from './v2-knowledge-preflight.js';
@@ -56,6 +58,7 @@ export interface GPTFirstTurnInput {
   requestId: string;
   responseCacheTtlSeconds: number;
   coordinator: Pick<V2ConversationCoordinator, 'run'>;
+  actionGateway?: Pick<ActionGateway, 'propose'>;
   scopeSecret: string;
   updateSession: (session: Session) => Promise<Session>;
 }
@@ -118,6 +121,10 @@ const explicitContactConsent = (message: string): 'granted' | 'denied' | null =>
     || /\bi\s+(?:(?:do|explicitly)\s+)?consent\b/iu.test(message)
     || /\bi\s+(?:agree|authorize)\b/iu.test(message) ? 'granted' : null;
 };
+
+const explicitLeadSubmissionRequest = (message: string): boolean =>
+  /\b(?:create|submit|register|send|make)\b[\s\S]{0,80}\blead\b|\blead\b[\s\S]{0,80}\b(?:create|submit|register|send|make)\b/iu.test(message)
+  || /\bgo\s+ahead\b[\s\S]{0,40}\b(?:with|and)\b[\s\S]{0,40}\blead\b/iu.test(message);
 
 /** Called after HTTP authentication and durable message-idempotency checks. */
 export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
@@ -185,6 +192,10 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   }
   const catalogV2 = validatedV2?.catalog ?? null;
   const authorizedReadTools = catalogV2 ? authorizedV2ReadTools(catalogV2, V2_TOOL_NAMES) : [...V2_TOOL_NAMES];
+  const enabledActionToolKeys = catalogV2
+    ? catalogV2.sheets.ToolBindings.filter(tool => tool.enabled && tool.sideEffectClass !== 'read_only')
+      .map(tool => tool.toolKey).slice(0, 32)
+    : [];
   const activeGoal = (intentDocument?.catalogSource === 'v2' ? intentDocument.businessGoalKey : null)
     ?? originalState.activeFollowUpIntentKey ?? originalState.intentProgress?.activeIntentKey
     ?? originalState.selectedIntentKey ?? intentDocument?.businessGoalKey ?? null;
@@ -202,7 +213,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const contactSlots: Record<string, string> = Object.fromEntries(Object.entries(contactFromMessage).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
   const contactValues = { ...persistedContact, ...contactSlots };
   const contactActive = Boolean(catalogV2 && intentDocument?.goalConfirmed
-    && (/(?:contact|crm_consent)/iu.test(priorPendingRequirement ?? '') || Object.keys(contactFromMessage).length > 0));
+    && (/(?:contact|crm_consent|action_confirmation)/iu.test(priorPendingRequirement ?? '') || Object.keys(contactFromMessage).length > 0));
   const nameRequirementKey = catalogV2 ? contactRequirementKey(catalogV2, intentDocument?.businessGoalKey ?? null, 'contact_name') : null;
   const channelRequirementKey = catalogV2 ? contactRequirementKey(catalogV2, intentDocument?.businessGoalKey ?? null, 'contact_channel') : null;
   const consentRequirementKey = catalogV2 ? contactRequirementKey(catalogV2, intentDocument?.businessGoalKey ?? null, 'crm_consent') : null;
@@ -278,6 +289,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       requirementKeys: catalogV2.sheets.RequirementPolicies.filter(req => req.required).map(req => req.requirementKey),
       enabledReadToolKeys: catalogV2.sheets.ToolBindings.filter(tool => tool.enabled && tool.sideEffectClass === 'read_only')
         .map(tool => tool.toolKey).slice(0, 32),
+      enabledActionToolKeys,
     } } : {}),
     persona: { personaVersionId: persona.id, assistantName: persona.name, assistantRole: 'AI assistant',
       permittedLanguages: persona.permittedLanguages,
@@ -315,7 +327,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       ? intentDocument.currentStageKey : null,
     verifiedRequirementKeys: Object.keys(intentDocument?.catalogSource === 'v2' ? intentDocument.verifiedFacts : facts),
     goalConfirmed: Boolean(existingConfirmedGoal),
-    allowedToolKeys: catalogV2.sheets.ToolBindings.filter(tool => tool.enabled && tool.sideEffectClass === 'read_only')
+    allowedToolKeys: catalogV2.sheets.ToolBindings.filter(tool => tool.enabled)
       .map(tool => tool.toolKey),
     observedText: maskedMessage,
     ...(intentEvidence ? {
@@ -405,16 +417,29 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         : contactConsent !== 'granted' ? resolvedConsentRequirementKey
           : actionConfirmationRequirementKey
     : null;
+  const proposedActionToolKey = validPlan && planningDecision?.proposal?.nextMove === 'propose_action'
+    ? planningDecision.proposedToolKey : null;
+  const proposedActionBinding = proposedActionToolKey && catalogV2
+    ? catalogV2.sheets.ToolBindings.find(binding => binding.toolKey === proposedActionToolKey) ?? null : null;
+  const actionProposalRequested = Boolean(input.actionGateway && catalogV2 && v2Version && selectedV2Goal
+    && proposedActionToolKey && proposedActionBinding
+    && proposedActionBinding.sideEffectClass !== 'read_only'
+    && contactConsent === 'granted'
+    && explicitLeadSubmissionRequest(maskedMessage));
+  const actionPurposeConsentScope = actionProposalRequested && proposedActionToolKey && catalogV2
+    ? v2ActionConsentScope({ catalogVersionId: v2Version?.catalogVersionRef ?? catalog.id }, proposedActionToolKey) : originalState.consentVersion;
   const effectivePendingRequirement = catalogV2 ? authorizedPendingRequirement({
     catalogSource: 'v2', goalConfirmed: Boolean(intentDocument?.goalConfirmed),
     businessGoalKey: intentDocument?.businessGoalKey ?? null,
     currentStageKey: intentDocument?.currentStageKey ?? null,
-    selectedRequirementKey: contactRequirementAfterDecision ?? selectedRequirement, priorRequirementKey: priorPendingRequirement,
+    selectedRequirementKey: actionProposalRequested ? null : contactRequirementAfterDecision ?? selectedRequirement,
+    priorRequirementKey: actionProposalRequested ? null : priorPendingRequirement,
     goalDecision: decision,
   }) : nextPendingPrompt?.requirementKey ?? selectedRequirement ?? pendingRequirement;
   const state = { ...originalState, catalogVersionId: catalog.id,
     slotValues: contactActive ? { ...originalState.slotValues, ...contactSlots, ...(contactDecision ? { contact_consent: contactDecision === 'granted' ? 'true' : 'false' } : {}) } : originalState.slotValues,
     contactConsent,
+    consentVersion: actionPurposeConsentScope,
     consentCapturedAt: contactDecision ? new Date().toISOString() : originalState.consentCapturedAt,
     pendingPrompt: nextPendingPrompt,
     rollingSummary: (originalState.rollingSummary + '\nCustomer: ' + maskedMessage.slice(0, 1_000)).trim().slice(-4_000),
@@ -527,7 +552,13 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
     } } : {}),
   } : {};
-  const incomingFacts = { ...(intentDocument?.verifiedFacts ?? {}), ...factPatch(facts as Record<string, string>, state.messageSequence), ...contactFactPatch, ...proposedFacts };
+  const actionConfirmationFactPatch = actionProposalRequested && actionConfirmationRequirementKey ? {
+    [actionConfirmationRequirementKey]: {
+      maskedValue: 'true', source: 'visitor' as const, messageSequence: state.messageSequence,
+      evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
+    },
+  } : {};
+  const incomingFacts = { ...(intentDocument?.verifiedFacts ?? {}), ...factPatch(facts as Record<string, string>, state.messageSequence), ...contactFactPatch, ...actionConfirmationFactPatch, ...proposedFacts };
   const verifiedFactPatch: Record<string, UserIntentFact> = Object.fromEntries(
     Object.entries(incomingFacts).filter(([key, value]) =>
       !intentDocument?.verifiedFacts[key] || intentDocument.verifiedFacts[key]?.maskedValue !== value.maskedValue)
@@ -570,6 +601,36 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     const contactEntry = bootstrap.state.intentProgress?.entries[nextDoc.businessGoalKey];
     if (contactEntry) contactEntry.slotValues = { ...(contactEntry.slotValues ?? {}), ...contactSlots, ...(contactDecision ? { contact_consent: contactDecision === 'granted' ? 'true' : 'false' } : {}) };
   }
+  let actionDecision: Awaited<ReturnType<typeof proposeV2CatalogAction>> | null = null;
+  if (actionProposalRequested && input.actionGateway && proposedActionToolKey && proposedActionBinding && v2Version && nextDoc.opportunityId && nextDoc.businessGoalKey) {
+    const priorActions = await store.listActionsBySession(session.id, tenant.id);
+    const reusable = priorActions
+      .filter(action => action.opportunityId === nextDoc.opportunityId && action.actionKey === proposedActionToolKey
+        && !['failed', 'reconcile_required'].includes(action.state))
+      .sort((left, right) => (right.actionRevision ?? 1) - (left.actionRevision ?? 1))[0] ?? null;
+    const actionRevision = reusable?.actionRevision ?? Math.max(0, ...priorActions
+      .filter(action => action.opportunityId === nextDoc.opportunityId && action.actionKey === proposedActionToolKey)
+      .map(action => action.actionRevision ?? 1)) + 1;
+    const actionSession: Session = { ...session, conversationState: bootstrap.state };
+    const purposeScope = v2ActionConsentScope({ catalogVersionId: v2Version.catalogVersionRef }, proposedActionToolKey);
+    const context = contextForConfirmedV2Action({
+      session: actionSession, document: nextDoc, catalog: v2Version,
+      expectedActionRevision: actionRevision, purposeConsentGranted: state.consentVersion === purposeScope,
+      purposeConsentScope: state.consentVersion === purposeScope ? purposeScope : null,
+    });
+    if (context) {
+      const factValue = (key: string): string => nextDoc.verifiedFacts[key]?.maskedValue ?? '';
+      actionDecision = await proposeV2CatalogAction({
+        schemaVersion: 2, toolKey: proposedActionToolKey, goalKey: nextDoc.businessGoalKey,
+        stageKey: nextDoc.currentStageKey ?? 'lead_generation', actionRevision,
+        arguments: {
+          lead_contact_name: factValue(nameRequirementKey ?? 'lead_contact_name'),
+          lead_contact_channel: factValue(channelRequirementKey ?? 'lead_contact_channel'),
+          lead_crm_consent: true, lead_action_confirmation: true,
+        },
+      }, catalogV2!, context, { gateway: input.actionGateway, store });
+    }
+  }
   assertSafeUserIntentDocument(nextDoc);
   const assessment = { id: randomUUID(), documentId: nextDoc.id, tenantId: tenant.id, sessionId: session.id,
     opportunityId: nextDoc.opportunityId, turnSequence: state.messageSequence, clientMessageId: input.clientMessageId,
@@ -591,7 +652,12 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       sessionRevision, intentRevision: nextDoc.revision, actionAuthorized: false } } : null;
   const response = {
     messageId: responseId, sessionId: session.id, answer: rehydrateForSession(session, answerMasked, input.tokenVault),
-    grounded, conversational: !grounded, citations, actionProposal: null,
+    grounded, conversational: !grounded, citations,
+    actionProposal: actionDecision?.accepted && actionDecision.action ? {
+      id: actionDecision.action.id, intent: actionDecision.action.workflowKey, consentRequired: false,
+      confirmation: 'Your Lead submission is ready to confirm.',
+      expiresAt: new Date(Date.parse(actionDecision.action.createdAt) + 15 * 60_000).toISOString(),
+    } : null,
     pendingPromptId: goalConfirmation?.status === 'pending' ? goalConfirmation.promptId : nextPendingPrompt?.id ?? null, pendingIntentKey: nextDoc.businessGoalKey,
     pendingRequirementKey: effectivePendingRequirement, requestId: input.requestId,
   };
@@ -602,10 +668,19 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const persisted = { ...response, answer: answerMasked };
   const answeredCustomerMessage: Message = { ...userMessage, response: persisted };
   if (catalogV2) {
-    const committed = await store.commitV2IntentTurn({ session, document: nextDoc,
-      expectedDocumentRevision: intentDocument?.revision ?? null, assessment, audit: decisionAudit,
-      assistantMessage, customerMessage: answeredCustomerMessage });
-    session.stateVersion = committed.session.stateVersion ?? sessionRevision + 1;
+    try {
+      const committed = await store.commitV2IntentTurn({ session, document: nextDoc,
+        expectedDocumentRevision: intentDocument?.revision ?? null, assessment, audit: decisionAudit,
+        assistantMessage, customerMessage: answeredCustomerMessage });
+      session.stateVersion = committed.session.stateVersion ?? sessionRevision + 1;
+    } catch (error) {
+      // A proposal is not dispatchable until this V2 turn commits. If the
+      // optimistic commit loses a race, leave no executable orphan behind.
+      if (actionDecision?.action && ['awaiting_confirmation', 'awaiting_customer'].includes(actionDecision.action.state)) {
+        await store.updateAction({ ...actionDecision.action, state: 'failed', result: null });
+      }
+      throw error;
+    }
   } else {
     await input.updateSession(session);
     if (intentDocument) {
@@ -643,7 +718,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         proposedToolKey: modelPlan.proposedToolKey,
         validatedReadToolKey: validPlan ? planningDecision?.proposedToolKey ?? null : null,
         reasons: planningDecision?.reasons.join(',').slice(0, 600) ?? '',
-        actionAuthorized: false }, createdAt: at });
+        actionAuthorized: Boolean(actionDecision?.accepted), actionProposalStatus: actionDecision?.status ?? null,
+        actionProposalReasons: actionDecision?.reasons.join(',') ?? '' }, createdAt: at });
   }
 
 

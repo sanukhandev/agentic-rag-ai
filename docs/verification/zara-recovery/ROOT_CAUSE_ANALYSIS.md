@@ -149,3 +149,17 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Correction:** Node-side masked contact extraction, durable catalog-keyed fact patches, contact cursor advancement and bounded verified contact acknowledgements. Action authorization remains separate and disabled by the published development binding.
 - **Unit/integration/Docker/Azure result:** 51/51 focused tests PASS; API full suite 476/476 PASS; public Docker contact smoke PASS through consent and `lead_action_confirmation`; Azure/Salesforce live acceptance NOT RUN.
 - **Regression status:** FIXED at masked contact persistence/public smoke boundary; full Lead/provider journey remains unverified.
+
+## Failure ZARA-012 — V2 contact completion had no catalog-gated Lead proposal boundary
+
+- **Customer message:** `Please create my Lead` after confirmed formation, contact details and contact consent.
+- **Expected behavior:** Preserve the confirmed goal and verified contact facts, then create a purpose-authorized awaiting-confirmation proposal only when the published Catalog V2 binding and explicit request permit it.
+- **Actual behavior:** The V2 controller completed the contact cursor but did not project enabled action bindings or call the existing Node action gate.
+- **Failing runtime component:** `services/api/src/v2-turn-controller.ts` and the Python/Node V2 catalog projection.
+- **Actual failure code:** No provider error; the action boundary was absent from this path.
+- **Root cause (confirmed):** The planner envelope exposed only enabled read tools, while V2 turn handling had no handoff from an explicit Lead request to the existing consent/idempotency gate.
+- **Reproduction method:** In-memory V2 catalog fixture with Lead bindings enabled; complete goal, contact and consent requirements, then submit an explicit Lead request with a `propose_action` plan.
+- **Regression test:** `services/api/src/v2-turn-controller.test.ts` — `creates a catalog-gated Lead proposal only after contact consent and an explicit submission request`.
+- **Correction:** Project enabled action keys for planning, validate the binding and explicit request in Node, and route the request through `proposeV2CatalogAction`; no Python or model output can dispatch a provider write.
+- **Unit/integration/Docker/Azure result:** Regression PASS; API full suite 477/477 PASS; Docker build PASS; live Salesforce/Azure result NOT RUN.
+- **Regression status:** FIXED for the proposal boundary; provider execution and readback remain externally blocked.

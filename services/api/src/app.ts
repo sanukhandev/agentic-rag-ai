@@ -1600,6 +1600,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (gptFirstEligible && v2Coordinator) {
         const response = await runGPTFirstChatTurn({
           store, embedding, cache, tokenVault, session, tenant, userMessage, coordinator: v2Coordinator,
+          actionGateway: gateway,
           clientMessageId: input.clientMessageId, messageHash, maskedMessage: masked.masked,
           requestId: (req as AuthedRequest).requestId ?? randomUUID(),
           responseCacheTtlSeconds: chatResponseCacheTtlSeconds,

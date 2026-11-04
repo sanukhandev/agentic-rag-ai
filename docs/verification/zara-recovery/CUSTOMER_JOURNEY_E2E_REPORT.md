@@ -46,6 +46,15 @@ The first run stopped at turn 12 with PostgreSQL `22P02` because synthetic `tool
 
 This is a partial journey gate, not full completion. The database has zero approved package offerings, and Salesforce/provider verification was not available in this run.
 
+## Catalog-gated Lead proposal boundary
+
+**Result:** PASS in the V2 controller regression fixture; not a live provider result.
+
+- Confirmed goal, verified contact facts and explicit contact consent were required.
+- An explicit `Please create my Lead` request with an enabled published binding produced one awaiting-confirmation proposal through Node's existing action gate.
+- The test verifies purpose-specific consent, idempotent action revision handling and no direct provider dispatch.
+- The development ANCFZ publication still has disabled Lead bindings, so the public environment cannot execute this path until Salesforce workflow configuration and provider evidence are available.
+
 ## Rebuilt Docker regression after Catalog V2 package identity fix
 
 **Result:** PASS for the public conversation persistence boundary.

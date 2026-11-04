@@ -38,3 +38,13 @@ No synthetic ANCFZ pricebook was re-enabled: the development database still has 
 - Contact events with a rejected model citation/answer now receive a bounded verified-state acknowledgement instead of the generic knowledge fallback.
 - Added V2 controller coverage for masked contact persistence, cursor advancement, consent and no-action behavior; added `let us proceed` confirmation coverage.
 - Focused suites: 51/51 tests PASS; API full suite: 59 files / 476 tests PASS; Docker public contact smoke reached `lead_action_confirmation` with no action.
+
+## M5 action-proposal checkpoint — 2026-11-04
+
+- Projected enabled non-read-only Catalog V2 bindings into the planner envelope without making them executable model tools.
+- Routed an explicit, consented Lead-submission request through the existing Node `ActionGateway` and V2 action gate.
+- The gate requires a confirmed goal, published enabled binding, contact consent, purpose-specific consent and an explicit submission request; it creates an awaiting-confirmation proposal only.
+- Added regression coverage for the complete contact-consent → explicit Lead-request boundary. No provider dispatch or completion claim was added.
+- API lint, typecheck and full suite: PASS (59 files / 477 tests); model-gateway suite: PASS (38 tests); Docker API/model-gateway build: PASS.
+
+The published ANCFZ bindings remain disabled and the Salesforce workflow remains unverified, so this checkpoint does not establish Lead creation.
