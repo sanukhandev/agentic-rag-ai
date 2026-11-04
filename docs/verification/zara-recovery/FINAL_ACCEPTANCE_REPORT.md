@@ -77,3 +77,9 @@ The branch is not ready to merge until the unverified gates are executed or expl
 - Deterministic development document path: **PASS** — public V2 upload, worker processing, review completion, mock SF-02 readback and lifecycle advance to `payment_invoice`.
 - API suite: **61 files / 516 tests PASS**; typecheck and lint PASS.
 - Acceptance remains **NOT_READY**: live Salesforce Lead/Account/SF-02 readback, official ANCFZ pricing, payment, contract, browser E2E and three human-scored Azure runs remain unverified.
+
+## 2026-11-05 payment/contract checkpoint
+
+- Deterministic development payment/contract path: **PASS** — invoice issuance, payment settlement and contract signing now use pinned V2 catalog bindings, provider correlation and scoped mock readback; invoice issuance does not prematurely advance the lifecycle.
+- Verification: focused provider route regression **6/6 PASS**; API **61 files / 516 tests PASS**; API typecheck PASS; repository `verify:local` PASS.
+- Acceptance remains **NOT_READY**. Live Salesforce Lead/Account/SF-02, official ANCFZ pricebook, payment/signature provider readback, browser E2E and three independent human-scored Azure runs remain unverified or externally blocked.

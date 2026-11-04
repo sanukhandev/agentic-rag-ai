@@ -10,6 +10,8 @@ import { MemoryStore } from './store-memory.js';
 import { TokenVault } from './privacy.js';
 import { DeterministicV2AccountProvider, V2OtpChallengeService } from './v2-account-provider.js';
 import { DeterministicV2DocumentProvider } from './v2-document-provider.js';
+import { DeterministicV2PaymentProvider } from './v2-payment-provider.js';
+import { DeterministicV2ContractProvider } from './v2-contract-provider.js';
 import { completeLifecycleStage } from './lifecycle-state.js';
 
 const catalog = (providerType: string): CatalogV2Document => {
@@ -43,6 +45,29 @@ const catalog = (providerType: string): CatalogV2Document => {
   documentWorkflow.n8nWorkflowId = 'ancfzV2DocumentUploadR1';
   documentWorkflow.webhookPath = 'ancfz/v2/document-upload';
   documentWorkflow.payloadContract = 'ancfz-v2-document-upload-v1';
+  const invoiceTool = document.sheets.ToolBindings.find((candidate) => candidate.toolKey === 'invoice.issue');
+  const invoiceWorkflow = document.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === 'invoice.issue');
+  if (!invoiceTool || !invoiceWorkflow) throw new Error('invoice binding missing');
+  invoiceTool.enabled = true;
+  invoiceWorkflow.enabled = true;
+  invoiceWorkflow.providerType = providerType;
+  invoiceWorkflow.n8nWorkflowId = 'ancfzV2InvoiceIssueR1';
+  invoiceWorkflow.webhookPath = 'ancfz/v2/invoice-issue';
+  invoiceWorkflow.payloadContract = 'ancfz-v2-invoice-issue-v1';
+  for (const [toolKey, workflowKey, workflowId, webhookPath, payloadContract] of [
+    ['payment.authorize', 'payment.authorize', 'ancfzV2PaymentAuthorizeR1', 'ancfz/v2/payment-authorize', 'ancfz-v2-payment-authorize-v1'],
+    ['contract.send', 'contract.send', 'ancfzV2ContractSendR1', 'ancfz/v2/contract-send', 'ancfz-v2-contract-send-v1'],
+  ] as const) {
+    const paymentTool = document.sheets.ToolBindings.find((candidate) => candidate.toolKey === toolKey);
+    const paymentWorkflow = document.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === workflowKey);
+    if (!paymentTool || !paymentWorkflow) throw new Error(`${toolKey} binding missing`);
+    paymentTool.enabled = true;
+    paymentWorkflow.enabled = true;
+    paymentWorkflow.providerType = providerType;
+    paymentWorkflow.n8nWorkflowId = workflowId;
+    paymentWorkflow.webhookPath = webhookPath;
+    paymentWorkflow.payloadContract = payloadContract;
+  }
   return document;
 };
 
@@ -52,7 +77,9 @@ async function makeFixture(providerType: string) {
   const otp = new V2OtpChallengeService('provider-evidence-route-otp-secret');
   const accountProvider = new DeterministicV2AccountProvider();
   const documentProvider = new DeterministicV2DocumentProvider();
-  const runtime = createApp({ store, nodeEnv: 'test', tokenVault, n8nCallbackSecret: 'n'.repeat(64), ingestionWorkerSecret: 'i'.repeat(64), v2AccountOtp: otp, v2AccountProvider: accountProvider, v2DocumentProvider: documentProvider });
+  const paymentProvider = new DeterministicV2PaymentProvider();
+  const contractProvider = new DeterministicV2ContractProvider();
+  const runtime = createApp({ store, nodeEnv: 'test', tokenVault, n8nCallbackSecret: 'n'.repeat(64), ingestionWorkerSecret: 'i'.repeat(64), v2AccountOtp: otp, v2AccountProvider: accountProvider, v2DocumentProvider: documentProvider, v2PaymentProvider: paymentProvider, v2ContractProvider: contractProvider });
   const tenant = await store.createTenant({ name: 'Provider Evidence', slug: `provider-evidence-${randomUUID()}` });
   const session = await store.createSession(tenant.id);
   const document = catalog(providerType);
@@ -217,6 +244,46 @@ describe('V2 provider evidence route', () => {
     expect(result.body.document).toMatchObject({ status: 'completed', id: upload.body.document.id });
     expect((await test.store.listAudit(test.tenant.id)).some((event) => event.eventName === 'document.sf02_attachment_verified' && event.metadata.documentId === upload.body.document.id)).toBe(true);
     expect((await test.store.getUserIntentDocument(test.tenant.id, test.session.id))?.currentStageKey).toBe('payment_invoice');
+    const invoiceResponse = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/invoices`).set('origin', 'http://localhost').send({ opportunityId: account.opportunityId, quoteId: quote.body.quote.id });
+    expect(invoiceResponse.status, JSON.stringify(invoiceResponse.body)).toBe(202);
+    const invoiceAction = await test.store.getAction(invoiceResponse.body.actionProposal.id);
+    expect(invoiceAction).toMatchObject({ workflowKey: 'invoice.issue', actionKey: 'invoice.issue' });
+    const invoiceEventId = randomUUID();
+    const invoiceCorrelationId = randomUUID();
+    await test.store.transitionAction(invoiceAction!.id, test.tenant.id, 'awaiting_confirmation', 'processing', null);
+    await test.store.claimActionExecution({ id: randomUUID(), actionId: invoiceAction!.id, tenantId: test.tenant.id, workflowKey: invoiceAction!.workflowKey, catalogVersionId: invoiceAction!.catalogVersionId ?? null, providerStatus: 'processing', n8nExecutionRef: 'n8n-invoice-test', eventId: invoiceEventId, correlationId: invoiceCorrelationId, idempotencyKey: invoiceAction!.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() + 60_000).toISOString(), outcome: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    const invoiceRecordId = `mock-invoice-${createHash('sha256').update(invoiceAction!.idempotencyKey).digest('hex').slice(0, 24)}`;
+    const invoiceEvidence = await request(test.runtime.app).post('/api/v2/internal/provider-evidence/invoice').set('x-agentic-internal-secret', 'n'.repeat(64)).send({ actionId: invoiceAction!.id, tenantId: test.tenant.id, sessionId: test.session.id, opportunityId: invoiceAction!.opportunityId, stageKey: 'payment_invoice', workflowKey: invoiceAction!.workflowKey, providerType: 'deterministic_mock', providerRecordId: invoiceRecordId, eventId: invoiceEventId, correlationId: invoiceCorrelationId, attempt: 1, idempotencyKey: invoiceAction!.idempotencyKey, catalogVersionId: test.published.catalogVersionRef, actionKey: invoiceAction!.actionKey, actionRevision: invoiceAction!.actionRevision });
+    expect(invoiceEvidence.status, JSON.stringify(invoiceEvidence.body)).toBe(200);
+    expect(invoiceEvidence.body.invoice).toMatchObject({ externalInvoiceId: invoiceRecordId, status: 'pending' });
+    expect((await test.store.getUserIntentDocument(test.tenant.id, test.session.id))?.currentStageKey).toBe('payment_invoice');
+    const invoice = invoiceEvidence.body.invoice;
+    const paymentProposal = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/payments`).set('origin', 'http://localhost').send({ opportunityId: account.opportunityId, invoiceId: invoice.id, paymentConfirmation: true });
+    expect(paymentProposal.status, JSON.stringify(paymentProposal.body)).toBe(202);
+    const paymentAction = await test.store.getAction(paymentProposal.body.actionProposal.id);
+    expect(paymentAction).toMatchObject({ workflowKey: 'payment.authorize', actionKey: 'payment.authorize' });
+    const paymentEventId = randomUUID();
+    const paymentCorrelationId = randomUUID();
+    await test.store.transitionAction(paymentAction!.id, test.tenant.id, 'awaiting_confirmation', 'processing', null);
+    await test.store.claimActionExecution({ id: randomUUID(), actionId: paymentAction!.id, tenantId: test.tenant.id, workflowKey: paymentAction!.workflowKey, catalogVersionId: paymentAction!.catalogVersionId ?? null, providerStatus: 'processing', n8nExecutionRef: 'n8n-payment-test', eventId: paymentEventId, correlationId: paymentCorrelationId, idempotencyKey: paymentAction!.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() + 60_000).toISOString(), outcome: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    const paymentRecordId = `mockpay_${createHash('sha256').update(paymentAction!.idempotencyKey).digest('hex').slice(0, 32)}`;
+    const paymentEvidence = await request(test.runtime.app).post('/api/v2/internal/provider-evidence/payment').set('x-agentic-internal-secret', 'n'.repeat(64)).send({ actionId: paymentAction!.id, tenantId: test.tenant.id, sessionId: test.session.id, opportunityId: paymentAction!.opportunityId, stageKey: 'payment_invoice', workflowKey: paymentAction!.workflowKey, providerType: 'deterministic_mock', providerRecordId: paymentRecordId, eventId: paymentEventId, correlationId: paymentCorrelationId, attempt: 1, idempotencyKey: paymentAction!.idempotencyKey, catalogVersionId: test.published.catalogVersionRef, actionKey: paymentAction!.actionKey, actionRevision: paymentAction!.actionRevision, settle: true, paymentConfirmation: true });
+    expect(paymentEvidence.status, JSON.stringify(paymentEvidence.body)).toBe(200);
+    expect(paymentEvidence.body).toMatchObject({ accepted: true, paymentVerified: true, invoice: { status: 'paid' } });
+    expect((await test.store.getUserIntentDocument(test.tenant.id, test.session.id))?.currentStageKey).toBe('contract');
+    const contractProposal = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/contracts`).set('origin', 'http://localhost').send({ opportunityId: account.opportunityId, packageSelectionId: proposal.body.selection.id, invoiceId: invoice.id });
+    expect(contractProposal.status, JSON.stringify(contractProposal.body)).toBe(202);
+    const contractAction = await test.store.getAction(contractProposal.body.actionProposal.id);
+    expect(contractAction).toMatchObject({ workflowKey: 'contract.send', actionKey: 'contract.send' });
+    const contractEventId = randomUUID();
+    const contractCorrelationId = randomUUID();
+    await test.store.transitionAction(contractAction!.id, test.tenant.id, 'awaiting_confirmation', 'processing', null);
+    await test.store.claimActionExecution({ id: randomUUID(), actionId: contractAction!.id, tenantId: test.tenant.id, workflowKey: contractAction!.workflowKey, catalogVersionId: contractAction!.catalogVersionId ?? null, providerStatus: 'processing', n8nExecutionRef: 'n8n-contract-test', eventId: contractEventId, correlationId: contractCorrelationId, idempotencyKey: contractAction!.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() + 60_000).toISOString(), outcome: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    const contractRecordId = `mock-contract-${createHash('sha256').update(contractAction!.idempotencyKey).digest('hex').slice(0, 24)}`;
+    const contractEvidence = await request(test.runtime.app).post('/api/v2/internal/provider-evidence/contract').set('x-agentic-internal-secret', 'n'.repeat(64)).send({ actionId: contractAction!.id, tenantId: test.tenant.id, sessionId: test.session.id, opportunityId: contractAction!.opportunityId, stageKey: 'contract', workflowKey: contractAction!.workflowKey, providerType: 'deterministic_mock', providerRecordId: contractRecordId, eventId: contractEventId, correlationId: contractCorrelationId, attempt: 1, idempotencyKey: contractAction!.idempotencyKey, catalogVersionId: test.published.catalogVersionRef, actionKey: contractAction!.actionKey, actionRevision: contractAction!.actionRevision, sign: true, customerApproval: true, signatoryRef: 'synthetic-customer', signingExpiresAt: new Date(Date.now() + 86_400_000).toISOString() });
+    expect(contractEvidence.status, JSON.stringify(contractEvidence.body)).toBe(200);
+    expect(contractEvidence.body).toMatchObject({ accepted: true, contractVerified: true, contract: { status: 'signed', externalContractId: contractRecordId } });
+    expect((await test.store.getAction(contractAction!.id))?.state).toBe('completed');
   });
 
   it('moves a Salesforce Account result to reconciliation without claiming completion', async () => {

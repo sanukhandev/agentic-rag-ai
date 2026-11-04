@@ -40,6 +40,20 @@ const requireApprovedPackage = async (store: Store, session: Session, packageOff
 
 export type AccountConversionBinding = { workflowKey: string; webhookPath: string; intentKey: string; actionKey: string; catalogVersionId: string };
 
+export type V2LifecycleActionBinding = AccountConversionBinding & { stageKey: string; providerType: string };
+
+export const v2LifecycleActionBinding = async (store: Store, session: Session, toolKey: string, stageKey: string): Promise<V2LifecycleActionBinding | null> => {
+  const catalogVersionId = session.conversationState?.catalogVersionId;
+  if (!catalogVersionId) return null;
+  const version = await store.getIntentCatalogV2Version(session.tenantId, catalogVersionId);
+  if (!version) return null;
+  const goalKey = session.conversationState?.intentProgress?.activeIntentKey ?? session.conversationState?.selectedIntentKey;
+  const tool = version.catalog.sheets.ToolBindings.find((candidate) => candidate.toolKey === toolKey
+    && candidate.goalKey === goalKey && candidate.stageKey === stageKey && candidate.enabled && candidate.sideEffectClass !== 'read_only' && candidate.registryKey);
+  const workflow = tool ? version.catalog.sheets.WorkflowBindings.find((candidate) => candidate.registryKey === tool.registryKey && candidate.enabled && candidate.webhookPath) : null;
+  return tool && workflow ? { workflowKey: workflow.registryKey, webhookPath: workflow.webhookPath!, intentKey: tool.goalKey, actionKey: tool.toolKey, catalogVersionId: version.catalogVersionRef, stageKey, providerType: workflow.providerType } : null;
+};
+
 export const accountConversionBinding = async (store: Store, session: Session, conversionRule: CrmAccountConversionRule): Promise<AccountConversionBinding | null> => {
   const catalogVersionId = session.conversationState?.catalogVersionId;
   if (!catalogVersionId) return null;

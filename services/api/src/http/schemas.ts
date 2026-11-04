@@ -139,6 +139,9 @@ export const v2AccountOtpIssueSchema = z.object({
 export const v2AccountProviderEvidenceSchema = v2ProviderEvidenceVerifySchema.extend({
   otpChallengeId: z.string().guid(), otpCode: z.string().regex(/^\d{4,8}$/u), explicitConfirmation: z.literal(true),
 }).strict();
+export const v2InvoiceProviderEvidenceSchema = v2ProviderEvidenceVerifySchema.strict();
+export const v2PaymentProviderEvidenceSchema = v2ProviderEvidenceVerifySchema.extend({ settle: z.boolean().default(true), paymentConfirmation: z.literal(true) }).strict();
+export const v2ContractProviderEvidenceSchema = v2ProviderEvidenceVerifySchema.extend({ sign: z.boolean().default(true), customerApproval: z.literal(true), signatoryRef: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), signingExpiresAt: z.string().datetime({ offset: true }) }).strict();
 export const workflowTransitionSchema = z.object({ state: z.enum(['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review']), externalReference: opaqueReference, executionReference: opaqueReference, ...workflowCorrelationFields });
 export const crmQualitySchema = z.object({ tenantId: z.string().guid(), score: z.number().int().min(0).max(100), qualityWorkflowKey: z.string().trim().min(1).max(80), catalogVersionId: z.string().guid(), intentKey: z.string().trim().min(1).max(80) });
 export const documentUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.string().trim().min(1).max(160), contentBase64: z.string().min(1).max(MAX_DOCUMENT_BASE64_CHARS), processingConsent: z.literal(true), primaryIntentKey: z.string().trim().min(1).max(80).optional(), requirementKey: z.string().trim().min(1).max(120).optional() });
@@ -150,6 +153,7 @@ export const lifecyclePackageProposalSchema = lifecycleOpportunitySchema.extend(
 export const lifecycleQuoteSchema = lifecyclePackageProposalSchema;
 export const lifecycleSelectionConfirmationSchema = z.object({ quoteId: z.string().guid() }).strict();
 export const lifecycleInvoiceSchema = z.object({ opportunityId: z.string().guid(), quoteId: z.string().guid() }).strict();
+export const lifecyclePaymentSchema = z.object({ opportunityId: z.string().guid(), invoiceId: z.string().guid(), paymentConfirmation: z.literal(true) }).strict();
 export const lifecycleContractSchema = z.object({ opportunityId: z.string().guid(), packageSelectionId: z.string().guid(), invoiceId: z.string().guid() }).strict();
 export const lifecycleAccountProposalSchema = lifecycleOpportunitySchema.extend({ conversionRule: z.enum(['qualification_verified', 'package_confirmed', 'invoice_paid', 'manual_approval']) }).strict();
 export const crmAccountRemoteSchema = z.object({ tenantId: z.string().guid(), actionId: z.string().guid(), remoteAccountId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteContactId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteOpportunityId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u) }).strict();

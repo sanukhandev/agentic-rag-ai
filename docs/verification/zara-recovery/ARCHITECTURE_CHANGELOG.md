@@ -138,3 +138,10 @@ The provider configuration remains unavailable, so no Salesforce completion is c
 - These branches preserve the pending goal prompt and cannot confirm a goal, grant action consent or dispatch a workflow.
 - Focused controller tests: 41/41. Full API suite: 61 files / 507 tests. Typecheck, lint and Docker API build: PASS.
 - Fresh public 25-turn regression: 25/25 transport, 25 durable turns, automated objective score 1.00 (10/10). Human Azure quality and provider completion remain unverified.
+
+## 2026-11-05 — deterministic payment and contract boundary
+
+- Reused the pinned Catalog V2 binding identity for public invoice and contract proposals, and added the missing public payment proposal route with explicit payment confirmation.
+- Added protected, correlated provider-evidence routes for invoice issuance, payment settlement and contract signing. Provider type, tenant/session/opportunity/catalog/action identity, execution correlation and stage are checked before any local state update.
+- Deterministic development providers update invoice/contract records only after scoped mock readback validation. Non-deterministic/unconfigured providers move to reconciliation and never claim completion.
+- Invoice issuance does not advance the lifecycle; verified payment advances `payment_invoice` to `contract`, and verified signing completes the final stage.

@@ -28,6 +28,8 @@ import { requiredDocumentSetComplete } from './document-stage-evidence.js';
 import { buildV2DocumentProviderRequest, DeterministicV2DocumentProvider, validateV2DocumentProviderResult } from './v2-document-provider.js';
 import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, V2OtpChallengeService, validateV2AccountProviderResult } from './v2-account-provider.js';
 import { buildV2LeadProviderRequest, DeterministicV2LeadProvider, validateV2LeadProviderResult } from './v2-lead-provider.js';
+import { buildV2PaymentProviderRequest, DeterministicV2PaymentProvider, validateV2PaymentProviderResult } from './v2-payment-provider.js';
+import { buildV2ContractProviderRequest, DeterministicV2ContractProvider, validateV2ContractProviderResult } from './v2-contract-provider.js';
 import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
@@ -76,6 +78,9 @@ import {
   v2ProviderEvidenceVerifySchema,
   v2AccountOtpIssueSchema,
   v2AccountProviderEvidenceSchema,
+  v2InvoiceProviderEvidenceSchema,
+  v2PaymentProviderEvidenceSchema,
+  v2ContractProviderEvidenceSchema,
   workflowTransitionSchema,
 } from './http/schemas.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -444,6 +449,8 @@ export interface AppDependencies {
   v2AccountOtp?: V2OtpChallengeService;
   v2AccountProvider?: DeterministicV2AccountProvider;
   v2DocumentProvider?: DeterministicV2DocumentProvider;
+  v2PaymentProvider?: DeterministicV2PaymentProvider;
+  v2ContractProvider?: DeterministicV2ContractProvider;
 }
 
 export const v2ModelAuditMetadata = (input: { sessionId: string; clientMessageId: string }) => ({
@@ -507,6 +514,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const mockDocumentProvider = dependencies.v2DocumentProvider ?? (process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2DocumentProvider() : null);
   const v2AccountOtp = dependencies.v2AccountOtp ?? new V2OtpChallengeService(process.env.V2_OTP_SECRET ?? 'local-development-v2-otp-secret');
   const mockAccountProvider = dependencies.v2AccountProvider ?? (process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2AccountProvider() : null);
+  const mockPaymentProvider = dependencies.v2PaymentProvider ?? (process.env.REMOTE_PAYMENT_PROVIDER === 'deterministic_mock' ? new DeterministicV2PaymentProvider() : null);
+  const mockContractProvider = dependencies.v2ContractProvider ?? (process.env.REMOTE_SIGNATURE_PROVIDER === 'deterministic_mock' ? new DeterministicV2ContractProvider() : null);
   if (nodeEnv === 'production' && !dependencies.v2AccountOtp && !process.env.V2_OTP_SECRET) throw new Error('V2_OTP_SECRET is required in production.');
   const chatSessionTtlMs = dependencies.chatSessionTtlMs ?? Number(process.env.CHAT_SESSION_TTL_MS ?? 10 * 60 * 1000);
   const readRate = (value: number | undefined, name: string): number | null => { const raw = value ?? process.env[name]; if (raw === undefined || raw === '') return null; const parsed = Number(raw); if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative number.`); return parsed; };
@@ -590,7 +599,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       return false;
     }
   };
-  const syncWorkflowState = async (action: Pick<ActionRequest, 'id' | 'tenantId' | 'sessionId' | 'intentKey' | 'catalogVersionId' | 'workflowKey' | 'opportunityId'>, status: ActionState, trustedProviderEvidence = false): Promise<void> => {
+  const syncWorkflowState = async (action: Pick<ActionRequest, 'id' | 'tenantId' | 'sessionId' | 'intentKey' | 'actionKey' | 'catalogVersionId' | 'workflowKey' | 'opportunityId'>, status: ActionState, trustedProviderEvidence = false): Promise<void> => {
     const session = await store.getSession(action.sessionId);
     if (!session || session.tenantId !== action.tenantId) return;
     const currentState = session.conversationState;
@@ -625,7 +634,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
             stageKey: v2Document.currentStageKey, actionStatus: status },
           createdAt: new Date().toISOString() });
       }
-      if (status === 'completed' && trustedProviderEvidence && v2Document.currentStageKey) {
+      // Invoice issuance is a provider sub-operation inside payment_invoice;
+      // only verified payment completion may advance that stage.
+      if (status === 'completed' && trustedProviderEvidence && v2Document.currentStageKey && action.actionKey !== 'invoice.issue') {
         const stage = v2Document.currentStageKey === 'payment_invoice' ? 'billing_invoice' : v2Document.currentStageKey;
         const lifecycleStages: LifecycleStage[] = ['lead_generation', 'lead_qualification', 'account_creation', 'package_selection', 'document_upload', 'billing_invoice', 'contract'];
         if (lifecycleStages.includes(stage as LifecycleStage)) {
@@ -2799,6 +2810,141 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         await store.updateCrmAccount({ ...verifiedAccount, status: 'reconcile_required', updatedAt: new Date().toISOString() });
         throw error;
       }
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v2/internal/provider-evidence/invoice', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(v2InvoiceProviderEvidenceSchema, req.body);
+      const action = await store.getAction(input.actionId);
+      const session = await store.getSession(input.sessionId);
+      const document = session ? await store.getUserIntentDocument(input.tenantId, input.sessionId) : null;
+      const version = (await store.listIntentCatalogV2Versions(input.tenantId)).find((candidate) => candidate.status === 'published' && candidate.catalogVersionRef === input.catalogVersionId);
+      const workflowBinding = version?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === input.workflowKey && candidate.enabled);
+      const toolBinding = workflowBinding ? version?.catalog.sheets.ToolBindings.find((candidate) => candidate.enabled && candidate.toolKey === input.actionKey && candidate.registryKey === workflowBinding.registryKey && candidate.stageKey === 'payment_invoice' && candidate.sideEffectClass !== 'read_only') : null;
+      const invoiceId = action?.payload.slotValues?.invoiceId;
+      const invoice = typeof invoiceId === 'string' ? await store.getInvoice(invoiceId, input.tenantId) : null;
+      const completedReplay = action?.state === 'completed' && invoice?.externalInvoiceId !== null && invoice?.paymentUrl !== null;
+      if (!action || !session || !document || !version || !workflowBinding || !toolBinding || !invoice
+        || action.tenantId !== input.tenantId || action.sessionId !== input.sessionId || action.workflowKey !== input.workflowKey
+        || action.opportunityId !== input.opportunityId || action.catalogVersionId !== input.catalogVersionId || action.actionKey !== input.actionKey
+        || action.actionRevision !== input.actionRevision || invoice.opportunityId !== input.opportunityId
+        || document.catalogSource !== 'v2' || document.catalogVersionRef !== action.catalogVersionId || document.opportunityId !== input.opportunityId
+        || (!completedReplay && (document.currentStageKey !== 'payment_invoice' || input.stageKey !== 'payment_invoice' || invoice.status !== 'pending'))) {
+        throw new HttpError(403, 'V2_INVOICE_PROVIDER_EVIDENCE_FORBIDDEN', 'Provider evidence does not match the pinned V2 invoice action.');
+      }
+      await assertV2ProviderCorrelation(action, input);
+      const execution = await store.getActionExecution(action.id, action.tenantId);
+      if (!execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.attempt) throw new HttpError(409, 'WORKFLOW_CORRELATION_MISMATCH', 'Provider evidence does not match the current workflow execution.');
+      if (completedReplay) { res.json({ accepted: true, status: 'mock_verified', evidenceTier: 'mock_verified', stageKey: input.stageKey, providerRecordRef: invoice.externalInvoiceId, invoice, action }); return; }
+      if (action.state !== 'processing') throw new HttpError(409, 'V2_PROVIDER_ACTION_NOT_PROCESSING', 'Provider evidence can only finalize a claimed V2 action.');
+      const providerType = workflowBinding.providerType;
+      if (input.providerType && input.providerType !== providerType) throw new HttpError(409, 'V2_PROVIDER_TYPE_MISMATCH', 'Provider evidence type does not match the published workflow binding.');
+      if (providerType !== 'deterministic_mock' || !mockPaymentProvider || nodeEnv === 'production') {
+        const reconciledInvoice = await store.updateInvoice({ ...invoice, status: 'reconcile_required', provider: providerType, updatedAt: new Date().toISOString() });
+        const reconciled = await transitionWorkflowAction(action, 'reconcile_required', undefined, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input);
+        res.status(409).json({ accepted: false, status: 'reconciliation_required', reason: 'invoice_provider_readback_requires_configured_node_adapter', invoice: reconciledInvoice, action: reconciled });
+        return;
+      }
+      const providerRecordId = `mock-invoice-${createHash('sha256').update(action.idempotencyKey).digest('hex').slice(0, 24)}`;
+      if (input.providerRecordId !== providerRecordId) throw new HttpError(409, 'V2_PROVIDER_RECORD_MISMATCH', 'The provider Invoice record does not match the deterministic readback.');
+      const updatedInvoice = await store.updateInvoice({ ...invoice, externalInvoiceId: providerRecordId, paymentUrl: `https://sandbox.invalid/pay/${providerRecordId}`, provider: 'deterministic_mock', status: 'pending', updatedAt: new Date().toISOString() });
+      const completed = await transitionWorkflowAction(action, 'completed', providerRecordId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, true);
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'invoice.provider_readback_verified', metadata: { actionId: action.id, invoiceId: invoice.id, providerRecordId, evidenceTier: 'mock_verified' }, createdAt: new Date().toISOString() });
+      res.json({ accepted: true, status: 'mock_verified', evidenceTier: 'mock_verified', stageKey: input.stageKey, providerRecordRef: providerRecordId, invoice: updatedInvoice, action: completed });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v2/internal/provider-evidence/payment', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(v2PaymentProviderEvidenceSchema, req.body);
+      const action = await store.getAction(input.actionId);
+      const session = await store.getSession(input.sessionId);
+      const document = session ? await store.getUserIntentDocument(input.tenantId, input.sessionId) : null;
+      const version = (await store.listIntentCatalogV2Versions(input.tenantId)).find((candidate) => candidate.status === 'published' && candidate.catalogVersionRef === input.catalogVersionId);
+      const workflowBinding = version?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === input.workflowKey && candidate.enabled);
+      const toolBinding = workflowBinding ? version?.catalog.sheets.ToolBindings.find((candidate) => candidate.enabled && candidate.toolKey === input.actionKey && candidate.registryKey === workflowBinding.registryKey && candidate.stageKey === 'payment_invoice' && candidate.sideEffectClass !== 'read_only') : null;
+      const invoiceId = action?.payload.slotValues?.invoiceId;
+      const invoice = typeof invoiceId === 'string' ? await store.getInvoice(invoiceId, input.tenantId) : null;
+      const quote = invoice ? await store.getQuote(invoice.quoteId, input.tenantId) : null;
+      if (!action || !session || !document || !version || !workflowBinding || !toolBinding || !invoice || !quote
+        || action.tenantId !== input.tenantId || action.sessionId !== input.sessionId || action.workflowKey !== input.workflowKey
+        || action.opportunityId !== input.opportunityId || action.catalogVersionId !== input.catalogVersionId || action.actionKey !== input.actionKey
+        || action.actionRevision !== input.actionRevision || invoice.opportunityId !== input.opportunityId || quote.opportunityId !== input.opportunityId
+        || document.catalogSource !== 'v2' || document.catalogVersionRef !== action.catalogVersionId || document.opportunityId !== input.opportunityId
+        || document.currentStageKey !== 'payment_invoice' || input.stageKey !== 'payment_invoice') {
+        throw new HttpError(403, 'V2_PAYMENT_PROVIDER_EVIDENCE_FORBIDDEN', 'Provider evidence does not match the pinned V2 payment action.');
+      }
+      await assertV2ProviderCorrelation(action, input);
+      const execution = await store.getActionExecution(action.id, action.tenantId);
+      if (!execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.attempt) throw new HttpError(409, 'WORKFLOW_CORRELATION_MISMATCH', 'Provider evidence does not match the current workflow execution.');
+      if (action.state !== 'processing') throw new HttpError(409, 'V2_PROVIDER_ACTION_NOT_PROCESSING', 'Provider evidence can only finalize a claimed V2 action.');
+      const providerType = workflowBinding.providerType;
+      if (input.providerType && input.providerType !== providerType) throw new HttpError(409, 'V2_PROVIDER_TYPE_MISMATCH', 'Provider evidence type does not match the published workflow binding.');
+      if (providerType !== 'deterministic_mock' || !mockPaymentProvider || nodeEnv === 'production') {
+        const reconciledInvoice = await store.updateInvoice({ ...invoice, status: 'reconcile_required', provider: providerType, updatedAt: new Date().toISOString() });
+        const reconciled = await transitionWorkflowAction(action, 'reconcile_required', undefined, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input);
+        res.status(409).json({ accepted: false, status: 'reconciliation_required', reason: 'payment_provider_readback_requires_configured_node_adapter', invoice: reconciledInvoice, action: reconciled });
+        return;
+      }
+      const artifactSha256 = contentHash(JSON.stringify({ invoiceId: invoice.id, externalInvoiceId: invoice.externalInvoiceId, amountMinor: invoice.amountMinor, currency: invoice.currency }));
+      const providerRequest = buildV2PaymentProviderRequest({ invoice, quote, sessionId: session.id, tenantId: input.tenantId, artifactSha256, idempotencyKey: action.idempotencyKey, providerType: 'deterministic_mock' });
+      const result = input.settle ? mockPaymentProvider.settle(providerRequest) : mockPaymentProvider.execute(providerRequest);
+      if (input.providerRecordId !== result.paymentId) throw new HttpError(409, 'V2_PROVIDER_RECORD_MISMATCH', 'The provider Payment record does not match the provider readback.');
+      const readback = result.status === 'mock_paid' ? { tenantId: input.tenantId, sessionId: session.id, opportunityId: input.opportunityId, providerType: 'deterministic_mock', idempotencyKey: action.idempotencyKey, recordRef: result.paymentId, evidenceTier: 'mock_verified' as const, verificationStatus: 'verified' as const } : undefined;
+      const validation = validateV2PaymentProviderResult(providerRequest, result, readback);
+      if (!validation.accepted) throw new HttpError(409, 'V2_PROVIDER_EVIDENCE_INVALID', `Deterministic Payment provider evidence was rejected (${validation.reasons.join(',')}).`);
+      const updatedInvoice = await store.updateInvoice({ ...invoice, provider: 'deterministic_mock', status: validation.paymentVerified ? 'paid' : 'pending', updatedAt: new Date().toISOString() });
+      const updatedAction = validation.paymentVerified
+        ? await transitionWorkflowAction(action, 'completed', result.paymentId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, true)
+        : await transitionWorkflowAction(action, 'processing', result.paymentId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, false);
+      res.json({ accepted: true, status: validation.status, paymentVerified: validation.paymentVerified, evidenceTier: validation.status, stageKey: input.stageKey, providerRecordRef: result.paymentId, invoice: updatedInvoice, action: updatedAction });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v2/internal/provider-evidence/contract', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(v2ContractProviderEvidenceSchema, req.body);
+      const action = await store.getAction(input.actionId);
+      const session = await store.getSession(input.sessionId);
+      const document = session ? await store.getUserIntentDocument(input.tenantId, input.sessionId) : null;
+      const version = (await store.listIntentCatalogV2Versions(input.tenantId)).find((candidate) => candidate.status === 'published' && candidate.catalogVersionRef === input.catalogVersionId);
+      const workflowBinding = version?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === input.workflowKey && candidate.enabled);
+      const toolBinding = workflowBinding ? version?.catalog.sheets.ToolBindings.find((candidate) => candidate.enabled && candidate.toolKey === input.actionKey && candidate.registryKey === workflowBinding.registryKey && candidate.stageKey === 'contract' && candidate.sideEffectClass !== 'read_only') : null;
+      const contractId = action?.payload.slotValues?.contractId;
+      const contract = typeof contractId === 'string' ? await store.getContract(contractId, input.tenantId) : null;
+      const selection = contract ? await store.getPackageSelection(contract.packageSelectionId, input.tenantId) : null;
+      const invoice = contract?.invoiceId ? await store.getInvoice(contract.invoiceId, input.tenantId) : null;
+      const account = contract ? await store.getCrmAccountByOpportunity(contract.opportunityId, input.tenantId) : null;
+      if (!action || !session || !document || !version || !workflowBinding || !toolBinding || !contract || !selection || !invoice || !account
+        || action.tenantId !== input.tenantId || action.sessionId !== input.sessionId || action.workflowKey !== input.workflowKey
+        || action.opportunityId !== input.opportunityId || action.catalogVersionId !== input.catalogVersionId || action.actionKey !== input.actionKey
+        || action.actionRevision !== input.actionRevision || contract.opportunityId !== input.opportunityId
+        || document.catalogSource !== 'v2' || document.catalogVersionRef !== action.catalogVersionId || document.opportunityId !== input.opportunityId
+        || document.currentStageKey !== 'contract' || input.stageKey !== 'contract') {
+        throw new HttpError(403, 'V2_CONTRACT_PROVIDER_EVIDENCE_FORBIDDEN', 'Provider evidence does not match the pinned V2 contract action.');
+      }
+      await assertV2ProviderCorrelation(action, input);
+      const execution = await store.getActionExecution(action.id, action.tenantId);
+      if (!execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.attempt) throw new HttpError(409, 'WORKFLOW_CORRELATION_MISMATCH', 'Provider evidence does not match the current workflow execution.');
+      if (action.state !== 'processing') throw new HttpError(409, 'V2_PROVIDER_ACTION_NOT_PROCESSING', 'Provider evidence can only finalize a claimed V2 action.');
+      const providerType = workflowBinding.providerType;
+      if (input.providerType && input.providerType !== providerType) throw new HttpError(409, 'V2_PROVIDER_TYPE_MISMATCH', 'Provider evidence type does not match the published workflow binding.');
+      if (providerType !== 'deterministic_mock' || !mockContractProvider || nodeEnv === 'production') {
+        const reconciledContract = await store.updateContract({ ...contract, status: 'reconcile_required', provider: providerType, updatedAt: new Date().toISOString() });
+        const reconciled = await transitionWorkflowAction(action, 'reconcile_required', undefined, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input);
+        res.status(409).json({ accepted: false, status: 'reconciliation_required', reason: 'contract_provider_readback_requires_configured_node_adapter', contract: reconciledContract, action: reconciled });
+        return;
+      }
+      const artifactSha256 = contentHash(JSON.stringify({ contractId: contract.id, packageSelectionId: selection.id, invoiceId: invoice.id, templateKey: contract.templateKey }));
+      const providerRequest = buildV2ContractProviderRequest({ session, contract, selection, invoice, account, artifactSha256, signatoryRef: input.signatoryRef, signingExpiresAt: input.signingExpiresAt, customerApproval: input.customerApproval, paymentEvidenceTier: 'mock_verified', idempotencyKey: action.idempotencyKey, providerType: 'deterministic_mock' });
+      const result = input.sign ? mockContractProvider.sign(providerRequest) : mockContractProvider.execute(providerRequest);
+      if (input.providerRecordId !== result.remoteContractId) throw new HttpError(409, 'V2_PROVIDER_RECORD_MISMATCH', 'The provider Contract record does not match the provider readback.');
+      const readback = result.status === 'signed' ? { tenantId: input.tenantId, sessionId: session.id, opportunityId: input.opportunityId, providerType: 'deterministic_mock', idempotencyKey: action.idempotencyKey, recordRef: result.remoteContractId, evidenceTier: 'mock_verified' as const, verificationStatus: 'verified' as const } : undefined;
+      const validation = validateV2ContractProviderResult(providerRequest, result, readback);
+      if (!validation.accepted) throw new HttpError(409, 'V2_PROVIDER_EVIDENCE_INVALID', `Deterministic Contract provider evidence was rejected (${validation.reasons.join(',')}).`);
+      const updatedContract = await store.updateContract({ ...contract, externalContractId: result.remoteContractId, signingUrl: `https://sandbox.invalid/sign/${result.remoteContractId}`, status: validation.stageCompletionEligible ? 'signed' : 'sent', provider: 'deterministic_mock', updatedAt: new Date().toISOString() });
+      const updatedAction = validation.stageCompletionEligible
+        ? await transitionWorkflowAction(action, 'completed', result.remoteContractId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, true)
+        : await transitionWorkflowAction(action, 'processing', result.remoteContractId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, false);
+      res.json({ accepted: true, status: validation.status, contractVerified: validation.stageCompletionEligible, evidenceTier: validation.status, stageKey: input.stageKey, providerRecordRef: result.remoteContractId, contract: updatedContract, action: updatedAction });
     } catch (error) { next(error); }
   });
   app.post('/api/v1/internal/workflow-events/complete', n8nInternalApi, async (req, res, next) => {

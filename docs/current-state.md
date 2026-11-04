@@ -134,3 +134,10 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Public document routes now resolve a pinned V2 catalog by either row UUID or canonical version reference; package scope and stored document identity use the canonical V2 reference.
 - The V2 document configuration is exposed to the customer route, and the synthetic path passes upload → worker claim → OCR/review result → deterministic SF-02 attachment readback → lifecycle advance to `payment_invoice`.
 - API suite: **61 files / 516 tests PASS**; API typecheck and lint PASS. This is deterministic development evidence only. Salesforce sandbox SF-02 readback, payment, contract, browser E2E and formal Azure scoring remain unverified.
+
+## 2026-11-05 payment/contract development checkpoint
+
+- Added catalog-gated public V2 invoice, payment and contract proposals. V2 sessions no longer fall back to legacy workflow identities when an active binding is missing.
+- Added correlated internal provider-evidence routes for deterministic invoice issuance, payment settlement and contract signing. Invoice issuance remains within `payment_invoice`; only trusted payment completion advances the journey to `contract`.
+- The focused document → invoice → payment → contract regression passes with deterministic development providers; API typecheck and the full 61-file / 516-test suite pass.
+- This is **DEVELOPMENT MOCK ONLY**. Live Salesforce Lead/Account/SF-02, payment settlement, signature provider readback, browser E2E and formal Azure quality remain unverified; overall status remains `NOT_READY`.

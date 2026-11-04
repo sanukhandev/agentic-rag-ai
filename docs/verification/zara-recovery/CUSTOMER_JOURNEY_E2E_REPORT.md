@@ -214,3 +214,10 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 - Synthetic path exercised: approved package and quote, public document configuration, customer upload, authenticated worker claim, OCR/review result, deterministic SF-02 attachment readback and lifecycle advancement from `document_upload` to `payment_invoice`.
 - Result: **PASS** — the API integration regression passes with 61 files / 516 tests; the persisted document is completed and the audit records `document.sf02_attachment_verified`.
 - Evidence boundary: **DEVELOPMENT MOCK ONLY**. No Salesforce sandbox attachment, payment, contract, browser or formal Azure quality completion is claimed.
+
+## V2 payment and contract development path — 2026-11-05
+
+- Synthetic path exercised: completed document stage → public invoice proposal → correlated deterministic invoice readback → public payment proposal with explicit confirmation → correlated deterministic mock settlement → public contract proposal → correlated deterministic signature readback.
+- Result: **PASS** — invoice remains pending at `payment_invoice`; verified mock payment changes the invoice to `paid` and advances the pinned User Intent Document to `contract`; verified mock signature changes the contract to `signed` and completes the final lifecycle stage.
+- API focused route suite: **6/6 tests PASS**; API full suite: **61 files / 516 tests PASS**; API typecheck PASS; `npm run verify:local` PASS.
+- Evidence boundary: **DEVELOPMENT MOCK ONLY**. No live payment processor, signature provider, Salesforce readback, browser customer journey or formal Azure quality result is claimed.
