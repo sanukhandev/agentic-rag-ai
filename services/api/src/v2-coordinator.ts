@@ -1,3 +1,4 @@
+import { isV2FactualKnowledgeQuestion } from './v2-knowledge-preflight.js';
 import { agentTurnResultSchema, turnEnvelopeSchema, type AgentTurnResultV2, type PersonaComposedResponseV2, type TurnEnvelopeV2 } from './python-model/v2-contracts.js';
 import { guardV2OfflineFallback, guardV2Response, type V2ResponseGuardContext } from './v2-response-guard.js';
 import type { ModelDraft } from './model.js';
@@ -103,6 +104,26 @@ const repairTrailingQuestionContract = (response: PersonaComposedResponseV2): Pe
   return !answer.includes('?') && !answerLower.includes(questionLower)
     ? { ...response, answer: `${answer} ${question}` }
     : response;
+};
+
+
+/** Repair only first-contact question metadata; never infer authoritative stage or requirement keys. */
+const repairFirstContactQuestionContract = (response: PersonaComposedResponseV2, envelope: TurnEnvelopeV2): PersonaComposedResponseV2 => {
+  if (!/^\s*(?:hi|hello|hey)\b/iu.test(envelope.customerMessageMasked)
+    || envelope.intentProjection.primaryGoalKey !== null
+    || envelope.intentProjection.currentStageKey !== null
+    || envelope.intentProjection.pendingRequirementKey !== null
+    || response.citationIds.length !== 0
+    || response.decisionRef.startsWith('fallback-')) return response;
+  const answer = response.answer.trim();
+  if ((answer.match(/\?/gu) ?? []).length !== 1) return response;
+  const match = answer.match(/(?:^|[.!]\s+)((?:what|which|who|when|where|how|could you|would you|can you|do you|are you|is there|please|tell me|have you)\b[^.!?]{0,150}\?)\s*$/iu);
+  const question = response.nextQuestion?.trim() ?? match?.[1];
+  if (!question || !match || question.toLocaleLowerCase('en-US') !== match[1]!.toLocaleLowerCase('en-US')
+    || (response.nextQuestionKey !== null && response.nextQuestionKey !== 'conversation_focus')) return response;
+  if (response.nextQuestion === question && response.nextQuestionKey === 'conversation_focus'
+    && response.reasonNoQuestion === null) return response;
+  return { ...response, nextQuestion: question, nextQuestionKey: 'conversation_focus', reasonNoQuestion: null };
 };
 
 export const conversationEngineV2Configured = (env: NodeJS.ProcessEnv = process.env): boolean => Boolean(
@@ -217,7 +238,7 @@ export class V2ConversationCoordinator {
     const parsed = agentTurnResultSchema.safeParse(rawResult);
     if (!parsed.success) throw new Error('V2_MODEL_INVALID_RESPONSE');
     const agentResult = parsed.data;
-    const candidateResponse = repairTrailingQuestionContract(repairAuthoritativeStagePlaceholder(addVerifiedFactCitations(agentResult.response, request.verifiedFacts ?? []), envelope.intentProjection.currentStageKey));
+    const candidateResponse = repairFirstContactQuestionContract(repairTrailingQuestionContract(repairAuthoritativeStagePlaceholder(addVerifiedFactCitations(agentResult.response, request.verifiedFacts ?? []), envelope.intentProjection.currentStageKey)), envelope);
     const repairApplied = candidateResponse !== agentResult.response;
     const guardContext: V2ResponseGuardContext = {
       personaVersionId: envelope.personaVersionId,
@@ -233,8 +254,7 @@ export class V2ConversationCoordinator {
       fallbackTemplateVersion: envelope.persona.fallbackTemplateVersion,
       ...(request.fallbackTemplates ? { fallbackTemplates: request.fallbackTemplates } : {}),
     };
-    const uncitedDialogueCandidate = Boolean(envelope.intentProjection.primaryGoalKey)
-      && candidateResponse.citationIds.length === 0;
+    const uncitedDialogueCandidate = candidateResponse.citationIds.length === 0;
     let candidateGuardReason = 'not_evaluated';
     // The Python gateway can return an internally generated fallback on model/tool
     // failure. Never relabel that failure as a successful no-knowledge dialogue.
@@ -282,7 +302,9 @@ export class V2ConversationCoordinator {
     // Do not substitute a generic no-evidence question when verified public
     // knowledge is available for a factual process question. Evaluate and,
     // if necessary, repair the cited factual answer instead.
-    if (uncitedDialogueCandidate && !hasTrustedPrefetch) {
+    // Keep the factual-knowledge prefetch boundary: greetings and simple chat need
+    // no citations, but model dialogue must not replace a sourced factual answer.
+    if (uncitedDialogueCandidate && (!hasTrustedPrefetch || !isV2FactualKnowledgeQuestion(envelope.customerMessageMasked))) {
       // A safe question and acknowledgement can be authored by the model without
       // RAG citations. Constrain the accepted text shape and forbid factual claims.
       const authored = guardV2Response(candidateResponse, { ...guardContext, allowNonFactualDialogue: true });
@@ -292,18 +314,22 @@ export class V2ConversationCoordinator {
         modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
         guardReason: 'accepted_model_dialogue', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
       };
-      const natural = noEvidenceReply(envelope, request.lastQuestionKey ?? null);
-      const safe = guardV2Response(natural, {
-        ...guardContext,
-        lastQuestionKey: null,
-        questionPolicy: natural.nextQuestion ? guardContext.questionPolicy : 'optional',
-        approvedNoEvidenceAnswer: natural.answer,
-      });
-      if (safe.verdict.accepted) return {
-        response: safe.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(safe.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: safe.claims,
-        modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
-        guardReason: 'safe_no_evidence_dialogue', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
-      };
+      // An unsupported provider/business completion must not be disguised as
+      // ordinary no-evidence conversation.
+      if (!hasPositiveBusinessOutcomeClaim(candidateResponse.answer)) {
+        const natural = noEvidenceReply(envelope, request.lastQuestionKey ?? null);
+        const safe = guardV2Response(natural, {
+          ...guardContext,
+          lastQuestionKey: null,
+          questionPolicy: natural.nextQuestion ? guardContext.questionPolicy : 'optional',
+          approvedNoEvidenceAnswer: natural.answer,
+        });
+        if (safe.verdict.accepted) return {
+          response: safe.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(safe.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: safe.claims,
+          modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
+          guardReason: 'safe_no_evidence_dialogue', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
+        };
+      }
     }
     const guarded = guardV2Response(candidateResponse, guardContext);
     candidateGuardReason = guarded.verdict.reasonCode;

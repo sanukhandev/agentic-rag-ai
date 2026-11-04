@@ -125,7 +125,7 @@ export const guardV2Response = (input: unknown, context: V2ResponseGuardContext)
     && response.citationIds.length === 0
     && (context.evidence?.length ?? 0) === 0
     && (context.verifiedFacts?.length ?? 0) === 0;
-  const evidenceOptions: { conversational?: boolean; allowUncitedQuestion: boolean; allowNonFactualDialogue?: boolean; allowApprovedFallback?: boolean; pendingRequirementKey?: string | null; groundingProofs?: readonly V2GroundingProof[] } = { allowUncitedQuestion: context.questionPolicy === 'required', allowNonFactualDialogue: context.allowNonFactualDialogue === true, pendingRequirementKey: context.pendingRequirementKey, groundingProofs: context.groundingProofs ?? [] };
+  const evidenceOptions: { conversational?: boolean; allowUncitedQuestion: boolean; allowNonFactualDialogue?: boolean; allowApprovedFallback?: boolean; pendingRequirementKey?: string | null; assistantName?: string; groundingProofs?: readonly V2GroundingProof[] } = { ...(context.assistantName ? { assistantName: context.assistantName } : {}), allowUncitedQuestion: context.questionPolicy === 'required', allowNonFactualDialogue: context.allowNonFactualDialogue === true, pendingRequirementKey: context.pendingRequirementKey, groundingProofs: context.groundingProofs ?? [] };
   if (approvedNoEvidenceAnswer) evidenceOptions.allowApprovedFallback = true;
   if (context.conversational !== undefined) evidenceOptions.conversational = context.conversational;
   const evidence = verifyV2ResponseEvidence(response, context.evidence ?? [], context.verifiedFacts ?? [], evidenceOptions);

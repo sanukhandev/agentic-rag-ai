@@ -31,11 +31,63 @@ describe('V2ConversationCoordinator', () => {
     expect(() => assertConversationEngineV2Configuration('production', { CONVERSATION_ENGINE_V2_ENABLED: 'false' })).not.toThrow();
   });
 
+
+  it('preserves Zara first-contact dialogue when the model omits question metadata', async () => {
+    const request = envelope();
+    request.persona.assistantName = 'Zara';
+    const answer = "Hi, I'm Zara. How can I help you today?";
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer) });
+    const output = await coordinator.run({ envelope: request, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted_model_dialogue');
+    expect(output.candidateGuardReason).toBe('accepted');
+    expect(output.response.answer).toBe(answer);
+    expect(output.response.nextQuestion).toBe('How can I help you today?');
+    expect(output.response.nextQuestionKey).toBe('conversation_focus');
+    expect(output.response.reasonNoQuestion).toBeNull();
+    expect(output.repairApplied).toBe(true);
+    expect(output.claimProvenance).toEqual([]);
+  });
+
+  it('retains the model greeting when an optional first-contact question is correctly keyed', async () => {
+    const request = envelope();
+    request.persona.assistantName = 'Zara';
+    const answer = "Hello, I'm Zara, your AI assistant. What would you like help with?";
+    const question = 'What would you like help with?';
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer, { response: {
+      ...result(answer).response, nextQuestion: question, nextQuestionKey: 'conversation_focus', reasonNoQuestion: null,
+    } }) });
+    const output = await coordinator.run({ envelope: request, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted_model_dialogue');
+    expect(output.response.answer).toBe(answer);
+    expect(output.repairApplied).toBe(false);
+  });
+
+  it('does not turn a greeting with an invented license price into accepted dialogue', async () => {
+    const request = envelope();
+    request.persona.assistantName = 'Zara';
+    const answer = "Hi, I'm Zara. A license costs AED 999. How can I help you today?";
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer) });
+    const output = await coordinator.run({ envelope: request, questionPolicy: 'optional' });
+    expect(output.candidateGuardReason).toBe('unsupported_claim');
+    expect(output.guardReason).toBe('safe_no_evidence_dialogue');
+    expect(output.response.answer).not.toContain('999');
+  });
+
+  it('rejects a different unverified persona introduction', async () => {
+    const request = envelope();
+    request.persona.assistantName = 'Zara';
+    const answer = "Hi, I'm Alex. How can I help you today?";
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result(answer) });
+    const output = await coordinator.run({ envelope: request, questionPolicy: 'optional' });
+    expect(output.candidateGuardReason).toBe('unsupported_claim');
+    expect(output.response.answer).not.toContain("I'm Alex");
+  });
+
   it('returns only a guarded draft and preserves the agent trace', async () => {
     const coordinator = new V2ConversationCoordinator({ turn: async () => result('Hello, how can I help?') });
     const output = await coordinator.run({ envelope: envelope() });
     expect(output.draft).toEqual({ answer: 'Hello, how can I help?', citationIds: [], proposedIntent: null });
-    expect(output.guardReason).toBe('accepted');
+    expect(output.guardReason).toBe('accepted_model_dialogue');
     expect(output.toolCallCount).toBe(0);
   });
 

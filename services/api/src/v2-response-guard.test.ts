@@ -43,6 +43,26 @@ const fallbackTemplates = (): V2ApprovedFallbackTemplateSet => ({
 });
 
 describe('guardV2Response', () => {
+
+  it('accepts a pinned assistant name and optional first-contact question without RAG', () => {
+    const answer = "Hi, I'm Zara. How can I help you today?";
+    const input = response({ answer, nextQuestion: 'How can I help you today?',
+      nextQuestionKey: 'conversation_focus', reasonNoQuestion: null });
+    const accepted = guardV2Response(input, context({ assistantName: 'Zara', allowNonFactualDialogue: true }));
+    expect(accepted.verdict.accepted).toBe(true);
+    expect(accepted.response.answer).toBe(answer);
+    const rejected = guardV2Response(input, context({ assistantName: 'Alex', allowNonFactualDialogue: true }));
+    expect(rejected.verdict.reasonCode).toBe('unsupported_claim');
+  });
+
+  it('never accepts an unsupported factual price merely because it follows a valid greeting', () => {
+    const question = 'How can I help you today?';
+    const input = response({ answer: "Hi, I'm Zara. Registration costs AED 999. " + question,
+      nextQuestion: question, nextQuestionKey: 'conversation_focus', reasonNoQuestion: null });
+    const decision = guardV2Response(input, context({ assistantName: 'Zara', allowNonFactualDialogue: true }));
+    expect(decision.verdict.reasonCode).toBe('unsupported_claim');
+  });
+
   it('delivers a safe conversational response', () => {
     const result = guardV2Response(response(), context());
     expect(result.verdict.accepted).toBe(true);
