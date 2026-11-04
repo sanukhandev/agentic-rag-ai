@@ -79,6 +79,12 @@ The published ANCFZ bindings remain disabled and the Salesforce workflow remains
 - Added protected development-only OTP issue/verify and `/api/v2/internal/provider-evidence/account`, reusing the typed Account provider request/result, exact action correlation and idempotent deterministic adapter.
 - Added an integration regression for verified Lead → qualified Lead → OTP → Account provider readback → lifecycle/document advancement and replay; the route never accepts Salesforce as a mock result.
 - Corrected trusted V2 completion handling so the session lifecycle and pinned User Intent Document advance together. Real Salesforce Account/Contact/Opportunity creation and restart-durable OTP remain external/unverified gates.
+
+## V2 package/quote state checkpoint — 2026-11-05
+
+- Added a public-route regression for package proposal, approved deterministic quote creation and package confirmation after the verified Account stage.
+- Lifecycle advancement now updates the session projection and the pinned V2 User Intent Document together; the tested transition is `package_selection` → `document_upload`.
+- This is a development catalog/quote boundary only. Official ANCFZ pricebook, package-provider readback, payment, document review and contract completion remain unverified.
 - Regression coverage proves deterministic mock completion and Salesforce fail-closed behavior. The published ANCFZ Salesforce binding remains disabled.
 - API full suite: 61 files / 483 tests PASS; typecheck and lint PASS; API image rebuild PASS; rebuilt container healthy and public health endpoint returned HTTP 200; fresh public 25-turn persistence harness PASS.
 

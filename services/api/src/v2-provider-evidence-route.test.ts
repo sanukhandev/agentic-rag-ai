@@ -157,6 +157,14 @@ describe('V2 provider evidence route', () => {
     expect((await test.store.getSession(test.session.id))?.conversationState).toMatchObject({ workflowStatus: 'succeeded', phase: 'SUCCEEDED' });
     const replay = await request(test.runtime.app).post('/api/v2/internal/provider-evidence/account').set('x-agentic-internal-secret', 'n'.repeat(64)).send({ actionId: accountAction.id, tenantId: test.tenant.id, sessionId: test.session.id, opportunityId: accountAction.opportunityId, stageKey: 'account_creation', workflowKey: accountAction.workflowKey, providerType: 'deterministic_mock', providerRecordId, eventId: accountEventId, correlationId: accountCorrelationId, attempt: 1, idempotencyKey: accountAction.idempotencyKey, catalogVersionId: test.published.catalogVersionRef, actionKey: accountAction.actionKey, actionRevision: accountAction.actionRevision, otpChallengeId: challengeId, otpCode: '123456', explicitConfirmation: true });
     expect(replay.status, JSON.stringify(replay.body)).toBe(200);
+    const offering = await test.store.createPackageOffering({ id: randomUUID(), tenantId: test.tenant.id, catalogVersionId: null, catalogVersionRef: test.published.catalogVersionRef, packageKey: 'anc-development-standard', name: 'ANCFZ Development Standard', eligibleEntityTypes: [], eligibleActivities: [], includedVisaQuantity: 1, officeRequirement: 'shared', inclusions: ['synthetic development offering'], priceMinor: 250000, currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [], processingTime: 'development fixture', requiredDocuments: [], exclusions: ['not an official ANCFZ price'], availability: 'development_only', approvalStatus: 'approved', sourceRefs: ['pricebook:ancfz-development-v1'], createdAt: new Date().toISOString() });
+    const proposal = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/packages/proposals`).set('origin', 'http://localhost').send({ opportunityId: accountAction.opportunityId, packageOfferingId: offering.id });
+    expect(proposal.status, JSON.stringify(proposal.body)).toBe(201);
+    const quote = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/packages/quotes`).set('origin', 'http://localhost').send({ opportunityId: accountAction.opportunityId, packageOfferingId: offering.id });
+    expect(quote.status, JSON.stringify(quote.body)).toBe(201);
+    const confirmed = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/packages/selections/${proposal.body.selection.id}/confirm`).set('origin', 'http://localhost').send({ quoteId: quote.body.quote.id });
+    expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(200);
+    expect((await test.store.getUserIntentDocument(test.tenant.id, test.session.id))?.currentStageKey).toBe('document_upload');
   });
 
   it('moves a Salesforce Account result to reconciliation without claiming completion', async () => {

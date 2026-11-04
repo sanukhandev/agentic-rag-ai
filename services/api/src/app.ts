@@ -554,6 +554,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const nextEntry = { ...entry, lifecycle, revision: entry.revision + 1 };
     const nextProgress = { ...(state.intentProgress!), entries: { ...(state.intentProgress?.entries ?? {}), [intentKey!]: nextEntry }, journeys: { ...(state.intentProgress?.journeys ?? {}), [entry.journeyId]: nextEntry }, journeyRevision: Math.max(state.intentProgress?.journeyRevision ?? 0, lifecycle.revision) };
     await updateSessionSafely({ ...current, conversationState: { ...state, intentProgress: nextProgress } }, true, 'workflow');
+    const document = await store.getUserIntentDocument(session.tenantId, session.id);
+    const documentStage = document?.currentStageKey === 'payment_invoice' ? 'billing_invoice' : document?.currentStageKey;
+    if (document?.catalogSource === 'v2' && document.opportunityId === entry.journeyId && documentStage === stage) {
+      const nextDocumentStage = lifecycle.currentStage === 'billing_invoice' ? 'payment_invoice' : lifecycle.currentStage;
+      const updated = await store.updateUserIntentDocument({
+        document: { ...document, currentStageKey: nextDocumentStage, stageRevision: lifecycle.stages[lifecycle.currentStage].revision, revision: document.revision + 1, updatedAt: new Date().toISOString() },
+        expectedRevision: document.revision,
+      });
+      if (!updated) throw new HttpError(409, 'V2_STAGE_DOCUMENT_CONFLICT', 'The lifecycle stage changed before its pinned journey revision could be updated.');
+    }
   };
   const verifyMockSf02Attachment = async (session: Session, document: SupportingDocument): Promise<boolean> => {
     if (!mockDocumentProvider || !document.opportunityId || !document.leadId) return false;

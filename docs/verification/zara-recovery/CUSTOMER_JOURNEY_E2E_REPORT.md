@@ -202,3 +202,9 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 - Synthetic path exercised: verified deterministic Lead, qualified Lead, Account action in `processing`, OTP challenge/verification, exact execution correlation, deterministic Account/Contact/Opportunity readback, action completion and lifecycle/document advancement to `package_selection`.
 - Result: **PASS** — focused provider-evidence route suite 5/5; API suite 61 files / 515 tests; replay returned the existing verified result without another operation.
 - Evidence boundary: **DEVELOPMENT MOCK ONLY**. Salesforce sandbox Account/Contact/Opportunity creation, provider readback and restart-durable OTP remain `BLOCKED_EXTERNAL_DEPENDENCY`/unverified.
+
+## Public package and quote state boundary — 2026-11-05
+
+- Reused the same synthetic session after verified Account completion and exercised the public package proposal, quote and selection-confirmation routes.
+- Result: **PASS** — approved development offering and source-backed deterministic quote were returned; both session lifecycle and pinned User Intent Document advanced to `document_upload`.
+- Commercial evidence: **DEVELOPMENT ONLY**. No official ANCFZ pricebook or live package-provider verification is claimed.
