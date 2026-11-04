@@ -240,6 +240,9 @@ describe('V2 context-aware company formation confirmation (isolated unit)', () =
     const doc = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
     expect(doc?.goalConfirmed).toBe(false);
     expect(doc?.goalConfirmation).toBeNull();
+    expect(doc?.pendingRequirementKey).toBeNull();
+    expect(doc?.approvedResponse?.pendingRequirementKey).toBeNull();
+    expect(ctx.reply.pendingRequirementKey).toBeNull();
     expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
   });
 

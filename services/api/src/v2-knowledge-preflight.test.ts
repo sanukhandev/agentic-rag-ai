@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isV2FactualKnowledgeQuestion, prefetchV2ApprovedKnowledge, toV2KnowledgeEvidence } from './v2-knowledge-preflight.js';
+import { contextualizeV2KnowledgeQuery, isV2FactualKnowledgeQuestion, prefetchV2ApprovedKnowledge, toV2KnowledgeEvidence } from './v2-knowledge-preflight.js';
 import { DeterministicEmbeddingProvider } from './embedding.js';
 import { buildChunksWithEmbeddings } from './knowledge.js';
 import type { Source, Store } from './types.js';
@@ -12,6 +12,21 @@ describe('V2 knowledge preflight', () => {
     expect(isV2FactualKnowledgeQuestion('Hello')).toBe(false);
     expect(isV2FactualKnowledgeQuestion('Yes, I confirm the goal')).toBe(false);
   });
+  it('contextualizes anaphoric knowledge follow-ups without treating consent as retrieval', () => {
+    expect(contextualizeV2KnowledgeQuery('How does it work?', 'Company formation'))
+      .toBe('Company formation: How does it work?');
+    expect(contextualizeV2KnowledgeQuery('What about visas?', 'Company formation'))
+      .toBe('Company formation: What about visas?');
+    expect(isV2FactualKnowledgeQuestion(
+      contextualizeV2KnowledgeQuery('How does it work?', 'Company formation'))).toBe(true);
+    expect(contextualizeV2KnowledgeQuery('Yes, proceed', 'Company formation'))
+      .toBe('Yes, proceed');
+    expect(contextualizeV2KnowledgeQuery('How long to drive to Abu Dhabi?', 'Company formation'))
+      .toBe('How long to drive to Abu Dhabi?');
+    expect(contextualizeV2KnowledgeQuery('How does it work?', null))
+      .toBe('How does it work?');
+  });
+
   it('preserves actual source chunk IDs and source revision, not digests', () => {
     const original = {
       citation: {sourceId:'source-12345678',versionId:'version-12345678',chunkId:'chunk-12345678',title:'ANCFZ setup guide',locator:'section 1'},

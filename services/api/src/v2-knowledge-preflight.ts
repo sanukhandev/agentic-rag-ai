@@ -14,6 +14,18 @@ export const isV2FactualKnowledgeQuestion = (message: string): boolean => {
   return factual && subject;
 };
 
+/** The model may understand "How does it work?" from conversation history,
+ * but vector retrieval cannot. Add only a previously customer-anchored, active
+ * catalog goal label for bounded anaphoric knowledge follow-ups. This is query
+ * context, never evidence or confirmation of a goal or provider operation. */
+export const contextualizeV2KnowledgeQuery = (message: string, topicName: string | null): string => {
+  if (!topicName || isV2FactualKnowledgeQuestion(message)) return message;
+  const trimmed = message.trim();
+  if (trimmed.length === 0 || trimmed.length > 240 || topicName.length > 120) return message;
+  const reference = /^(?:(?:so|then|and|okay|ok)\s+)*(?:how (?:does|do|can|would) (?:it|this|that|the process)\b|what (?:about|are|is) (?:it|this|that|the|these|those|visas?|documents?|requirements?|costs?|prices?)\b|can you (?:explain|clarify) (?:it|this|that)\b|tell me more(?: about (?:it|that))?\b)/iu;
+  return reference.test(trimmed) ? `${topicName}: ${trimmed}` : message;
+};
+
 /** Use the true persisted chunk ID as the citation key. Hashing this breaks
  * the public citation resolver even though the model evidence guard passes. */
 export const toV2KnowledgeEvidence = (item: ModelEvidence): V2ApprovedEvidence => ({

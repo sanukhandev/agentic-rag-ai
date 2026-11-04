@@ -2,9 +2,8 @@ import { evaluateV2ClaimProvenance, extractV2ConsequentialClauses, measureV2Lexi
 import type { V2ClaimProvenance } from './v2-claim-provenance.js';
 export type { V2ClaimProvenance } from './v2-claim-provenance.js';
 import { hasConflictingEvidence } from './knowledge.js';
-import { hasSufficientEvidence, type ModelEvidence } from './model.js';
+import { supportsV2SourceCloseClause } from './v2-claim-support.js';
 import { personaComposedResponseSchema, type PersonaComposedResponseV2, type ResponseGuardVerdictV2 } from './python-model/v2-contracts.js';
-import type { Citation } from './types.js';
 
 export interface V2ApprovedEvidence {
   citationId: string;
@@ -64,9 +63,6 @@ const customerFactReflection = (sentence: string, facts: V2VerifiedFact[]): bool
   const vocabulary = new Set([...matching.flatMap((fact) => factWords(fact.text)), 'thanks', 'checking', 'clarifying', 'confirming', 'correction', 'corrected', 'sharing', 'noted', 'note', 'setup', 'keep', 'keeping', 'unchanged', 'current', 'still', 'view', 'details', 'detail', 'target', 'start', 'started', 'expect', 'expected', 'want', 'get', 'moving', 'move', 'outline', 'general', 'process', 'once', 'continue', 'file', 'rather', 'may', 'need', 'needs', 'have', 'has', 'planned', 'don', 'can', 'help', 'with', 'that', 'from', 'share', 'verified', 'official', 'approval', 'provider', 'side', 'retention', 'phone', 'email', 'address', 'your', 'company', 'formation', 'request', 'forward', 'and', 'structure', 'activity', 'visa', 'visas', 'count', 'timeline', 'number', 'type', 'guide', 'options', 'option', 'entity', 'form', 'rules', 'qualifies', 'qualify', 'see', 'here', 'things', 'said', 'told', 'mentioned', 'requested', 'information', 'summary', 'quote', 'quoted', 'exact', 'needed']);
   return factWords(sentence).every((word) => vocabulary.has(word));
 };
-const relaxedEvidenceText = (value: string): string => value.replace(/\b(?:i|can|help|with|that|the|only|see|shows?|confirm|request|company|formation|journey|specific|process|option|details?|review|information|currently|from|have|your|our|still|yet|right|now|further|outcome|after|things|moving|keep|keeping|what|would|like|this|these|those|into|before|once|continue|general|outline|rather|may)\b/giu, ' ').replace(/\s+/gu, ' ').trim();
-const safeCurrentStatusParaphrase = (sentence: string, citedText: string): boolean => /\b(?:not complete|currently at|no server-authorized requirement|no further verified action)\b/iu.test(sentence)
-  && /\b(?:authoritative journey|current (?:workflow )?status|current(?:ly)? at|server-authorized requirement|verified action|awaiting verified provider evidence)\b/iu.test(citedText);
 const unsafeOutput = (answer: string): boolean => {
   const normalized = answer.toLocaleLowerCase('en-US');
   return normalized.includes('ignore all previous instructions')
@@ -164,7 +160,8 @@ export const addVerifiedFactCitations = (response: PersonaComposedResponseV2, fa
 const safeNonFactualTransition = (segment: string): boolean =>
   /^(?:to keep things moving|for now|whenever you're ready)[,.]?$/iu.test(segment.trim())
   || /^(?:so\s+)?i (?:will not|won't|won’t|do not|don't|don’t) proceed\.?$/iu.test(segment.trim())
-  || /^(?:so\s+)?i (?:will|can) (?:share|provide|give you) (?:the )?(?:next|a) (?:verified )?(?:update|details?) when (?:it|they) (?:arrives?|are available)\.?$/iu.test(segment.trim());
+  || /^(?:so\s+)?i (?:will|can) (?:share|provide|give you) (?:the )?(?:next|a) (?:verified )?(?:update|details?) when (?:it|they) (?:arrives?|are available)\.?$/iu.test(segment.trim())
+  || /^i (?:will not|won't|won’t) (?:claim|present|describe) (?:payment|invoice|contract|account|registration) (?:completion|approval|settlement|signature) until it is (?:verified|confirmed)\.?$/iu.test(segment.trim());
 const verdict = (accepted: boolean, reasonCode: ResponseGuardVerdictV2['reasonCode'], response: PersonaComposedResponseV2 | null): ResponseGuardVerdictV2 => ({ schemaVersion: 2, accepted, reasonCode, response });
 
 /** The only model-review input builder. The claim boundaries match the enforcement guard. */
@@ -239,13 +236,13 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
     ...citedFacts.map((fact) => ({ citationId: fact.factId, text: fact.text, sourceVersion: fact.sourceVersion, sourceRef: fact.factId, kind: 'customer_fact' as const })),
   ];
   const supports = (part: string, source: V2ClaimSource): boolean => {
-    const modelEvidence: ModelEvidence[] = [{ citation: { sourceId: source.sourceRef ?? source.citationId, versionId: source.sourceVersion, chunkId: source.citationId, title: 'authorized source', locator: source.citationId }, content: source.text }];
-    const citations: Citation[] = modelEvidence.map((item) => item.citation);
     const reflectedFact: V2VerifiedFact = { factId: source.citationId, text: source.text, sourceVersion: source.sourceVersion, verified: true };
-    return hasSufficientEvidence(part, modelEvidence, citations, source.kind === 'customer_fact' ? source.text : '')
-      || hasSufficientEvidence(relaxedEvidenceText(part), modelEvidence, citations)
-      || safeCurrentStatusParaphrase(part, source.text)
-      || (source.kind === 'customer_fact' && factAppearsIn(part, reflectedFact) && customerFactReflection(part, [reflectedFact]));
+    // Source-close support must be attributable to THIS source. One matching
+    // word or a list of unrelated citations is never proof of a factual claim.
+    // Broader paraphrasing is permitted only with Node-bound entailment proofs.
+    return supportsV2SourceCloseClause(part, source.text)
+      || (source.kind === 'customer_fact' && factAppearsIn(part, reflectedFact)
+        && customerFactReflection(part, [reflectedFact]));
   };
   const evaluation = evaluateV2ClaimProvenance(answerForEvidence, sources,
     dialogueForClaims, supports, options.groundingProofs ?? []);

@@ -60,20 +60,26 @@ const filler = new Set('the a an i we you your our their this that these those t
 const tokens = (s: string): string[] => [...new Set((norm(s).match(/[a-z\u00c0-\u024f0-9]+/gu) ?? [])
   .filter((w) => w.length >= 3 && !filler.has(w) && !/^\d/u.test(w))
   .map((w) => { const stem = w.replace(/(?:ing|ed|es|s)$/u, ''); return stem === 'updat' ? 'correct' : stem; }))];
-const state = /\b(?:account|lead|payment|invoice|contract|signature|document|registration|company|business|entity|opportunity)\b/iu;
-const completed = /\b(?:created|complete|completed|paid|signed|registered|uploaded|issued|successful|succeeded)\b/iu;
+const state = /\b(?:account|lead|payment|invoice|contract|signature|document|registration|company|business|entity|opportunity|licen[sc]e|application|refund|transfer)\b/iu;
+const completed = /\b(?:created|complete|completed|paid|signed|registered|incorporated|uploaded|issued|successful|succeeded|processed|activated|executed|settled|refunded|transferred)\b/iu;
 const verifiedRecord = /\b(?:provider[_ ]record[_ ]verified|mock[_ ]verified|verified\s+(?:provider|government|registry|salesforce|payment|invoice|contract|registration)\s+(?:record|receipt|confirmation|evidence)|(?:government|provider|registry|payment|contract)\s+(?:registration\s+)?record\s+confirms)\b/iu;
 
+/** Each business-outcome clause is evaluated independently. An earlier
+ * negated invoice status must not hide a later positive payment claim. */
 export const hasPositiveBusinessOutcomeClaim = (s: string): boolean => {
-  if (!state.test(s) || !completed.test(s)) return false;
-  if (/\b(?:not|never|without|won't|cannot|can't|isn't|wasn't)\b.{0,60}\b(?:created|completed|complete|paid|signed|registered|uploaded|issued|successful|succeeded)\b/iu.test(s)) return false;
-  if (/\b(?:don't|do not|will not|won't)\s+(?:assume|treat|consider|claim|confirm)\b/iu.test(s)) return false;
-  return true;
+  const pieces = s.split(/(?<=[.!?])\s+|\n+|[,;]\s*(?:but|and)\s+|\s+(?:but|and|while)\s+(?=(?:the|your|our|an?|this|that)\s+(?:account|lead|payment|invoice|contract|document|registration|company|business|licen[sc]e|application))/iu);
+  return pieces.some(part => {
+    const explicitlyApproved = /\b(?:company|business|entity|opportunity|application|licen[sc]e|registration|invoice|contract|account|lead|document|payment)\b.{0,40}\b(?:is|was|were|has been|have been)\s+(?:approved|accepted)\b/iu.test(part);
+    if (!state.test(part) || (!completed.test(part) && !explicitlyApproved)) return false;
+    if (/\b(?:don't|do not|will not|won't|must not|can't|cannot)\s+(?:assume|treat|consider|claim|confirm|infer)\b/iu.test(part)) return false;
+    if (/\b(?:not|never|without|won't|cannot|can't|isn't|wasn't|hasn't|have not|has not)\b.{0,65}\b(?:created|completed?|paid|signed|registered|incorporated|uploaded|issued|successful|succeeded|processed|approved|activated|executed|settled|accepted|refunded|transferred)\b/iu.test(part)) return false;
+    return true;
+  });
 };
 
 // Only split on clause conjunctions when a new subject follows; do not split
 // customer values such as "software consulting and AI services".
-const clauses = (s: string): string[] => s.split(/(?<=[.!?])\s+|\n+/u)
+const clauses = (s: string): string[] => s.split(/(?<=[.!?])\s+|\n+|;\s*/u)
   .flatMap((part) => part.split(/,\s+(?=(?:(?:and|but|so)\s+)?(?:your|the|there|i\s|we\s|a\s|an\s|lead|account|workflow|contact|visa|timeline|entity))/iu))
   .flatMap((part) => part.split(/\s+(?:and|but|while)\s+(?=(?:your|the|there|i\s|we\s|you\s|lead|account|workflow|registration|payment|document|includes?|requires?|costs?|takes?|provides?|has|is|are|was|were)\b)/iu))
   .map((part) => part.trim()).filter(Boolean);
@@ -88,7 +94,14 @@ const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (c
   // The prohibition does not negate the separately stated decline event.
   const optOutStatus = /\baction\b.{0,20}\bdeclin\w*\b/iu.test(subject) && /\bdeclin\w*\b/iu.test(text) && /\bmust not proceed\b/iu.test(text);
   const journeyParaphrase = /\bjourney\b.{0,50}\b(?:currently\s+)?at\b/iu.test(subject) && /\bauthoritative journey\b.{0,50}\bcurrently at\b/iu.test(text) && tokens(subject).filter((word) => tokens(text).includes(word)).length >= 3;
-  if (negative(subject) !== negative(text) && !negativeStatus && !unrelatedProviderNegation && !optOutStatus) return false;
+  // A source can contain both a positive invoice state and an unrelated
+  // negative payment state. Evaluate the relevant positive source clause rather
+  // than letting unrelated negation contaminate this claim's polarity.
+  const independentPositiveClause = !negative(subject) && negative(text)
+    && source.text.split(/\s+(?:and|but|while)\s+(?=(?:the\s+)?(?:payment|invoice|contract|account|lead|document|registration|licen[sc]e|status)\b)/iu)
+      .some(part => !negative(part) && semanticCheck(clause, { ...source, text: part }));
+  if (negative(subject) !== negative(text) && !negativeStatus
+    && !unrelatedProviderNegation && !optOutStatus && !independentPositiveClause) return false;
   if (hasPositiveBusinessOutcomeClaim(subject)) {
     if (source.kind === 'customer_fact' || !verifiedRecord.test(text) || !state.test(text) || !completed.test(text)) return false;
   }
@@ -98,7 +111,7 @@ const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (c
   const independentEntailment = proofs.some(proof => proof.claimDigest === digest(clause)
     && proof.citationId === source.citationId && proof.sourceVersion === source.sourceVersion
     && proof.sourceTextDigest === digest(source.text));
-  return independentEntailment || semanticCheck(clause, source) || subject === text || negativeStatus || journeyParaphrase;
+  return independentEntailment || semanticCheck(clause, source) || subject === text || negativeStatus || journeyParaphrase || optOutStatus;
 };
 
 /** Diagnoses which conservative check ruled out support; never changes the

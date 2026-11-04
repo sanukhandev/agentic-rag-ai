@@ -8,6 +8,7 @@ import { normalizeConversationQuery } from './model.js';
 import type { EmbeddingProvider } from './embedding.js';
 import type { IntentCatalogVersion, IntentCatalogV2Version, Session, Store } from './types.js';
 import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
+import { isV2ReadToolEnabled } from './v2-tool-policy.js';
 import { toolRequestSchema, type ToolRequestV2, type ToolResultV2 } from './python-model/v2-contracts.js';
 import { HttpError } from './http/errors.js';
 import { deriveV2ProviderEvidenceStatus, v2StageCompletionEligible } from './v2-provider-evidence.js';
@@ -294,8 +295,37 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       ]);
     }
     case 'get_available_packages': {
-      // V2 has no published pricing registry yet; legacy prices must not leak.
-      if (!legacyCatalog) return sanitizedToolError(request, 'temporarily_unavailable', 'V2_PACKAGE_REGISTRY_NOT_INTEGRATED', scope.stateRevision);
+      if (v2Catalog) {
+        const approvedGoalKeys = new Set(v2Catalog.catalog.sheets.BusinessGoals
+          .filter(goal => goal.active).map(goal => goal.businessGoalKey));
+        const all = await store.listPackageOfferings(scope.tenantId, { catalogVersionId: v2Catalog.id });
+        const now = Date.now();
+        const approved = all.filter(offering => offering.tenantId === scope.tenantId
+          && offering.catalogVersionId === v2Catalog.id && offering.approvalStatus === 'approved'
+          && (!offering.pricingEffectiveFrom || Date.parse(offering.pricingEffectiveFrom) <= now)
+          && (!offering.pricingEffectiveTo || Date.parse(offering.pricingEffectiveTo) > now));
+        const selected = approved.slice(0, 20);
+        const packages = selected.map(offering => ({
+          key: offering.packageKey, name: bounded(offering.name, 160),
+          visas: offering.includedVisaQuantity, availability: offering.availability,
+          officeRequirement: offering.officeRequirement,
+          inclusions: offering.inclusions.slice(0, 12).map(text => bounded(text, 240)),
+          priceMinor: offering.priceMinor, currency: offering.currency,
+          sourceRefs: offering.sourceRefs.slice(0, 12),
+        }));
+        const status = selected.length > 0 ? 'available' : 'not_published';
+        // Never reinterpret a legacy offering as approved pricing for V2.
+        return resultWithToolEvidence(request,
+          { status, catalogVersionRef: v2Catalog.catalogVersionRef,
+            packages, truncated: approved.length > selected.length,
+            availableGoals: [...approvedGoalKeys].slice(0, 20) },
+          request.toolName as V2ToolName, sourceVersion,
+          selected.length > 0 ? selected.map(offering =>
+            `The published approved package ${bounded(offering.name, 160)} has availability ${offering.availability}${offering.priceMinor !== null && offering.currency
+              ? ` and a listed price of ${offering.currency} ${(offering.priceMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}.`)
+            : ['No approved package offerings are published under this pinned Catalog V2 version.']);
+      }
+      if (!legacyCatalog) return sanitizedToolError(request, 'temporarily_unavailable', 'PACKAGE_CATALOG_UNAVAILABLE', scope.stateRevision);
       const offerings = await store.listPackageOfferings(scope.tenantId, { catalogVersionId: legacyCatalog.id, ...(values.business_activity ? { activity: values.business_activity } : {}), ...(values.entity_type ? { entityType: values.entity_type } : {}) });
       // Keep tool responses bounded even when a tenant has a large published catalog.
       const selected = offerings.slice(0, 20);
@@ -305,7 +335,32 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         : ['No approved package is currently available for this setup.']);
     }
     case 'get_document_requirements': {
-      if (!legacyCatalog) return sanitizedToolError(request, 'temporarily_unavailable', 'V2_DOCUMENT_REQUIREMENTS_NOT_INTEGRATED', scope.stateRevision);
+      if (v2Catalog) {
+        const document = await store.getUserIntentDocument(scope.tenantId, scope.sessionId);
+        const confirmedGoal = document?.catalogSource === 'v2' && document.goalConfirmed
+          && document.catalogVersionRef === v2Catalog.catalogVersionRef
+          ? document.businessGoalKey : null;
+        const activeGoals = v2Catalog.catalog.sheets.BusinessGoals.filter(goal => goal.active);
+        const goalKey = confirmedGoal ?? (activeGoals.length === 1 ? activeGoals[0]!.businessGoalKey : null);
+        if (!goalKey) return result(request, 'ok', {
+          selectionStatus: 'goal_selection_required', documents: [], packageSpecific: false,
+        }, sourceVersion);
+        const policies = v2Catalog.catalog.sheets.DocumentPolicies
+          .filter(policy => policy.enabled && policy.goalKey === goalKey);
+        const documents = policies.slice(0, 30).map(policy => ({
+          documentType: policy.docType, stageKey: policy.stageKey,
+          required: policy.required, mimeTypes: policy.mimeTypes.slice(0, 8),
+          reviewPolicy: policy.reviewPolicy, policyKey: policy.policyKey,
+        }));
+        return resultWithToolEvidence(request, {
+          selectionStatus: documents.length ? 'published_general_policy' : 'no_published_policy',
+          goalKey, documents, packageSpecific: false, truncated: policies.length > documents.length,
+        }, request.toolName as V2ToolName, sourceVersion,
+        documents.length ? documents.map(policy =>
+          `The published ${goalKey} policy lists ${policy.documentType} as ${policy.required ? 'a required' : 'an optional'} document at ${policy.stageKey}.`)
+          : [`No general document requirements are published for ${goalKey} in this catalog version.`]);
+      }
+      if (!legacyCatalog) return sanitizedToolError(request, 'temporarily_unavailable', 'DOCUMENT_CATALOG_UNAVAILABLE', scope.stateRevision);
       // Read only documents for the confirmed package and approved quotation in this opportunity.
       if (!scope.opportunityId) return resultWithToolEvidence(request, { selectionStatus: 'opportunity_required', documents: [] }, request.toolName as V2ToolName, sourceVersion, ['An opportunity is required before document requirements can be verified.']);
       const selections = await store.listPackageSelections(scope.tenantId, scope.opportunityId);
@@ -380,6 +435,11 @@ export const createV2ToolGateway = ({ store, embedding, serviceKey }: V2ToolGate
     if (scope.opportunityId && entry?.journeyId !== scope.opportunityId) return sanitizedToolError(request, 'not_authorized', 'OPPORTUNITY_SCOPE_DENIED', scope.stateRevision);
     const catalog = await catalogForScope(store, scope);
     if (!catalog) return sanitizedToolError(request, 'temporarily_unavailable', 'CATALOG_UNAVAILABLE', scope.stateRevision);
+    // Signed model scope and current published tenant policy must BOTH permit the read.
+    // Publication revocation or permission changes cannot be bypassed by replay.
+    if (catalog.kind === 'v2' && !isV2ReadToolEnabled(catalog.version.catalog, request.toolName as V2ToolName)) {
+      return sanitizedToolError(request, 'not_authorized', 'V2_READ_TOOL_NOT_PUBLISHED', scope.stateRevision);
+    }
     // Replay data is safe only AFTER the current state, persona, opportunity and catalog
     // are re-authorized. Otherwise an old cached success can survive a revocation.
     const cacheKey = `${request.scopeRef}:${request.toolCallId}`;

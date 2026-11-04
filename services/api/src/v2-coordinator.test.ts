@@ -239,6 +239,28 @@ describe('V2ConversationCoordinator', () => {
     expect(output.guardReason).toBe('model_or_tool_unavailable');
   });
 
+  it('preserves independently grounded knowledge when an optional package tool fails', async () => {
+    const answer = 'The approved package costs 42 credits.';
+    const response = result(answer, {
+      response: { ...result(answer).response, citationIds: ['valid-public-12345678'] },
+      approvedEvidence: [{ citationId: 'valid-public-12345678', text: answer,
+        sourceVersion: 'version-12345678', sourceRef: 'source-12345678',
+        approved: true, revoked: false }],
+      toolTrace: [
+        { toolCallId: 'search-12345678', toolName: 'search_knowledge', status: 'ok',
+          resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: ['valid-public-12345678'] },
+        { toolCallId: 'optional-12345678', toolName: 'get_available_packages',
+          status: 'temporarily_unavailable', resultDigest: 'b'.repeat(64),
+          elapsedMs: 2, evidenceRefs: [] },
+      ],
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => response })
+      .run({ envelope: envelope(), fallbackTemplates });
+    expect(output.guardReason).toBe('accepted');
+    expect(output.response.answer).toBe(answer);
+    expect(output.response.citationIds).toEqual(['valid-public-12345678']);
+  });
+
   it('keeps a pending requirement useful after a repeated knowledge interruption', async () => {
     const request = envelope();
     request.customerMessageMasked = 'Could you explain the formation process?';

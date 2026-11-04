@@ -3,11 +3,13 @@ import { cacheKey, type CacheStore } from './cache.js';
 import { classifyScopedGoalDecision, newConversationState, prompt } from './conversation-state.js';
 import { scoreCatalogV2CompetingGoals, validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 import { resolveV2IntentEvidence } from './v2-intent-evidence.js';
+import { authorizedPendingRequirement } from './v2-conversation-decision.js';
+import { authorizedV2ReadTools } from './v2-tool-policy.js';
 import { validateV2PlanningProposal } from './v2-planning.js';
 import { validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
 import { initializeConfirmedV2Journey } from './v2-journey-bootstrap.js';
 import { HttpError } from './http/errors.js';
-import { prefetchV2ApprovedKnowledge } from './v2-knowledge-preflight.js';
+import { contextualizeV2KnowledgeQuery, prefetchV2ApprovedKnowledge } from './v2-knowledge-preflight.js';
 import { KnowledgeRetrievalError } from './knowledge.js';
 import type { EmbeddingProvider } from './embedding.js';
 import { assertKnownTokens, maskPiiForSession, rehydrateForSession, TokenVault } from './privacy.js';
@@ -168,12 +170,16 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     throw new HttpError(409, 'V2_CATALOG_INVALID', 'The published V2 catalog cannot be validated.');
   }
   const catalogV2 = validatedV2?.catalog ?? null;
+  const authorizedReadTools = catalogV2 ? authorizedV2ReadTools(catalogV2, V2_TOOL_NAMES) : [...V2_TOOL_NAMES];
   const activeGoal = (intentDocument?.catalogSource === 'v2' ? intentDocument.businessGoalKey : null)
     ?? originalState.activeFollowUpIntentKey ?? originalState.intentProgress?.activeIntentKey
     ?? originalState.selectedIntentKey ?? intentDocument?.businessGoalKey ?? null;
   const entry = activeGoal ? originalState.intentProgress?.entries[activeGoal] : null;
   const opportunityId = entry?.journeyId ?? intentDocument?.opportunityId ?? null;
-  const pendingRequirement = originalState.pendingPrompt?.requirementKey ?? entry?.currentRequirementKey ?? intentDocument?.pendingRequirementKey ?? null;
+  // Interest in a goal is not a confirmed journey. Never expose a stale
+  // qualification requirement on a knowledge-only or unconfirmed V2 turn.
+  const pendingRequirement = catalogV2 && (!intentDocument?.goalConfirmed || !intentDocument.currentStageKey)
+    ? null : originalState.pendingPrompt?.requirementKey ?? entry?.currentRequirementKey ?? intentDocument?.pendingRequirementKey ?? null;
   const documentFacts = intentDocument ? Object.fromEntries(Object.entries(intentDocument.verifiedFacts)
     .filter(([, item]) => item.source === 'node' || item.source === 'visitor')
     .map(([key, item]) => [key, item.maskedValue])) : {};
@@ -194,10 +200,17 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       .map(msg => ({ messageId: msg.id, text: msg.maskedContent })),
     confirmedGoalKey: intentDocument?.goalConfirmed ? intentDocument.businessGoalKey : null,
   }) : null;
+  const contextualTopic = intentDocument?.catalogSource === 'v2'
+    && intentDocument.businessGoalKey && intentDocument.goalConfirmation?.status !== 'rejected'
+    && intentDocument.goalConfirmation?.status !== 'corrected'
+    ? catalogV2?.sheets.BusinessGoals.find(goal =>
+      goal.active && goal.businessGoalKey === intentDocument.businessGoalKey)?.name ?? null
+    : null;
+  const preflightQuery = contextualizeV2KnowledgeQuery(maskedMessage, contextualTopic);
   let approvedKnowledge: V2ApprovedEvidence[] = [];
   if (input.embedding) {
     try {
-      approvedKnowledge = await prefetchV2ApprovedKnowledge(store, input.embedding, tenant.id, maskedMessage);
+      approvedKnowledge = await prefetchV2ApprovedKnowledge(store, input.embedding, tenant.id, preflightQuery);
     } catch (error) {
       if (error instanceof KnowledgeRetrievalError) {
         throw new HttpError(503, 'V2_KNOWLEDGE_RETRIEVAL_UNAVAILABLE', 'Approved knowledge retrieval is unavailable. Please retry the question.');
@@ -207,7 +220,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   }
   const scopeRef = issueV2Scope({
     tenantId: tenant.id, sessionId: session.id, opportunityId, catalogVersionId: catalog.id,
-    personaVersionId: persona.id, stateRevision: sessionRevision, toolAllowlist: [...V2_TOOL_NAMES],
+    personaVersionId: persona.id, stateRevision: sessionRevision, toolAllowlist: authorizedReadTools,
   }, input.scopeSecret);
   const envelope: V2CoordinatorRequest['envelope'] = {
     schemaVersion: 2, requestId: input.requestId, clientMessageId: input.clientMessageId, scopeRef,
@@ -238,7 +251,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       speakingStyle: persona.speakingStyle, fallbackTemplateVersion: 'fallback-' + persona.id },
     intentProjection: { primaryGoalKey: activeGoal, goalConfirmed: intentDocument?.catalogSource === 'v2' ? intentDocument.goalConfirmed : Boolean(originalState.selectedIntentKey || intentDocument?.goalConfirmed),
       currentStageKey: entry?.lifecycle?.currentStage ?? null, pendingRequirementKey: pendingRequirement, confirmedCustomerFacts: facts },
-    toolAllowlist: [...V2_TOOL_NAMES],
+    toolAllowlist: authorizedReadTools,
     budgets: { maxModelRequests: 4, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + 90_000).toISOString() },
   };
   const result = await executeV2Turn(coordinator, {
@@ -253,8 +266,14 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
 
   // Model planning is advisory until checked against the exact canonical,
   // published V2 catalog. Never accept a fabricated signal as score evidence.
+  // Validated intent and the final factual answer are distinct artifacts.
+  // Recover the original model's advisory plan after safe entailment/knowledge
+  // repair, but ALWAYS pass it through Node's catalog and customer-evidence
+  // validators below. A rejected answer never becomes authorization.
   const modelPlan = result.guardReason === 'accepted' || result.guardReason === 'accepted_model_dialogue'
-    ? result.response.planning ?? null : null;
+    ? result.response.planning ?? null
+    : (result.guardReason === 'accepted_entailment' || result.guardReason === 'accepted_knowledge_repair')
+      ? result.candidateResponse?.planning ?? null : null;
   const existingConfirmedGoal = intentDocument?.catalogSource === 'v2' && intentDocument.goalConfirmed
     ? intentDocument.businessGoalKey : null;
   const planningDecision = modelPlan && catalogV2 ? validateV2PlanningProposal(modelPlan, catalogV2, {
@@ -336,11 +355,20 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     : null;
   // V2 requirements are kept in the authoritative intent document; they
   // cannot create a legacy action or stage transition by themselves.
-  const nextPendingPrompt = originalState.pendingPrompt ?? (
-    proposedRequirement && activeGoal
-      ? prompt('slot', activeGoal, proposedRequirement.slotKey, proposedRequirement.requirementKey)
-      : null);
-  const effectivePendingRequirement = nextPendingPrompt?.requirementKey ?? selectedRequirement ?? pendingRequirement;
+  const nextPendingPrompt = catalogV2
+    ? (intentDocument?.goalConfirmed && decision !== 'rejected' && decision !== 'corrected'
+      ? originalState.pendingPrompt : null)
+    : originalState.pendingPrompt ?? (
+      proposedRequirement && activeGoal
+        ? prompt('slot', activeGoal, proposedRequirement.slotKey, proposedRequirement.requirementKey)
+        : null);
+  const effectivePendingRequirement = catalogV2 ? authorizedPendingRequirement({
+    catalogSource: 'v2', goalConfirmed: Boolean(intentDocument?.goalConfirmed),
+    businessGoalKey: intentDocument?.businessGoalKey ?? null,
+    currentStageKey: intentDocument?.currentStageKey ?? null,
+    selectedRequirementKey: selectedRequirement, priorRequirementKey: pendingRequirement,
+    goalDecision: decision,
+  }) : nextPendingPrompt?.requirementKey ?? selectedRequirement ?? pendingRequirement;
   const state = { ...originalState, catalogVersionId: catalog.id, pendingPrompt: nextPendingPrompt,
     rollingSummary: (originalState.rollingSummary + '\nCustomer: ' + maskedMessage.slice(0, 1_000)).trim().slice(-4_000),
     messageSequence: originalState.messageSequence + 1, summaryRevision: originalState.summaryRevision + 1,
@@ -561,7 +589,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       candidateCitationCount: result.candidateResponse?.citationIds.length ?? 0,
       responseCitationCount: result.response.citationIds.length,
       failedReadToolCount: result.toolTrace.filter(trace => trace.status !== 'ok').length,
-      fallbackApplied: ['fallback-', 'guard-fallback-', 'no-evidence-', 'missing-knowledge-']
+      fallbackApplied: ['fallback-', 'offline-', 'guard-fallback-', 'no-evidence-', 'missing-knowledge-']
         .some(prefix => result.response.decisionRef?.startsWith(prefix)),
       executionPath: 'langgraph' }, createdAt: at });
   return response;
