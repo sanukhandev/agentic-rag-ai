@@ -33,6 +33,10 @@ export interface V2PlanningContext {
   allowedToolKeys: string[];
   /** Only a server-observed customer signal can contribute scoring evidence. */
   observedText?: string;
+  /** Server-resolved, catalog-backed customer signals; replaces model signal claims. */
+  serverObservedSignalIds?: readonly string[];
+  /** Calculated by Node across published goals; never trust model runner-up score. */
+  serverRunnerUpScore?: number;
 }
 
 export interface V2PlanningDecision {
@@ -46,10 +50,12 @@ export interface V2PlanningDecision {
   preservedConfirmedGoal: boolean;
   validatedTopicKeys: string[];
   rejectedTopicKeys: string[];
+  validatedSignalIds: string[];
+  rejectedSignalIds: string[];
   reasons: string[];
 }
 
-const rejected = (reasons: string[], proposal: V2PlanningProposal | null = null): V2PlanningDecision => ({ accepted: false, proposal, primaryGoalKey: null, score: null, currentStage: null, nextRequirementKey: null, proposedToolKey: null, preservedConfirmedGoal: false, validatedTopicKeys: [], rejectedTopicKeys: [], reasons });
+const rejected = (reasons: string[], proposal: V2PlanningProposal | null = null): V2PlanningDecision => ({ accepted: false, proposal, primaryGoalKey: null, score: null, currentStage: null, nextRequirementKey: null, proposedToolKey: null, preservedConfirmedGoal: false, validatedTopicKeys: [], rejectedTopicKeys: [], validatedSignalIds: [], rejectedSignalIds: [], reasons });
 
 export const validateV2PlanningProposal = (input: unknown, catalog: CatalogV2Document, context: V2PlanningContext): V2PlanningDecision => {
   const parsed = v2PlanningProposalSchema.safeParse(input);
@@ -62,10 +68,19 @@ export const validateV2PlanningProposal = (input: unknown, catalog: CatalogV2Doc
   if (proposal.candidateGoalKeys.some((key) => !activeGoals.has(key))) reasons.push('unknown_goal_candidate');
   if (proposal.primaryGoalKey && !activeGoals.has(proposal.primaryGoalKey)) reasons.push('unknown_primary_goal');
   if (proposal.primaryGoalKey && proposal.candidateGoalKeys.length > 0 && !proposal.candidateGoalKeys.includes(proposal.primaryGoalKey)) reasons.push('primary_goal_not_proposed');
-  if (proposal.matchedSignalIds.some((id) => !knownSignals.has(id))) reasons.push('unknown_signal');
-  if (context.observedText !== undefined) {
+  const hasAuthoritativeSignals = context.serverObservedSignalIds !== undefined;
+  const validatedSignalIds = hasAuthoritativeSignals
+    ? [...new Set((context.serverObservedSignalIds ?? []).filter(id => {
+      const signal = knownSignals.get(id);
+      return signal && signal.signalType !== 'exclusion';
+    }))]
+    : [...new Set(proposal.matchedSignalIds.filter(id => knownSignals.has(id)))];
+  const rejectedSignalIds = [...new Set(proposal.matchedSignalIds.filter(id => !validatedSignalIds.includes(id)))];
+  if (proposal.matchedSignalIds.some(id => !knownSignals.has(id))) reasons.push('unknown_signal');
+  if (hasAuthoritativeSignals && rejectedSignalIds.length) reasons.push('unobserved_signal');
+  if (!hasAuthoritativeSignals && context.observedText !== undefined) {
     const utterance = context.observedText.normalize('NFKC').toLocaleLowerCase('en-US').replace(/\s+/gu, ' ').trim();
-    if (proposal.matchedSignalIds.some((id) => {
+    if (proposal.matchedSignalIds.some(id => {
       const signal = knownSignals.get(id);
       return !signal || signal.signalType === 'exclusion' || !utterance.includes(signal.value.normalize('NFKC').toLocaleLowerCase('en-US').replace(/\s+/gu, ' ').trim());
     })) reasons.push('unobserved_signal');
@@ -75,22 +90,35 @@ export const validateV2PlanningProposal = (input: unknown, catalog: CatalogV2Doc
       || catalog.sheets.KnowledgeTopics.find(topic => topic.topicKey === key)?.goalKey === (context.confirmedGoalKey ?? proposal.primaryGoalKey))))];
   const rejectedTopicKeys = [...new Set(proposal.supportingTopicKeys.filter(key => !validatedTopicKeys.includes(key)))];
   if (rejectedTopicKeys.length) reasons.push('unknown_or_unrelated_topic');
-  if (reasons.some(reason => ['unknown_goal_candidate', 'unknown_primary_goal', 'primary_goal_not_proposed', 'unknown_signal', 'unobserved_signal'].includes(reason))) {
-    return { ...rejected(reasons, proposal), validatedTopicKeys, rejectedTopicKeys };
+  const fatalSignals = hasAuthoritativeSignals ? [] : ['unknown_signal', 'unobserved_signal'];
+  if (reasons.some(reason => ['unknown_goal_candidate', 'unknown_primary_goal', 'primary_goal_not_proposed', ...fatalSignals].includes(reason))) {
+    return { ...rejected(reasons, proposal), validatedTopicKeys, rejectedTopicKeys, validatedSignalIds, rejectedSignalIds };
   }
 
   const preservedConfirmedGoal = Boolean(context.confirmedGoalKey && proposal.turnCategory !== 'business_goal' && proposal.primaryGoalKey !== context.confirmedGoalKey);
   const primaryGoalKey = preservedConfirmedGoal ? context.confirmedGoalKey : proposal.primaryGoalKey;
-  if (!primaryGoalKey) return rejected(['goal_unconfirmed'], proposal);
+  if (!primaryGoalKey) {
+    if (proposal.turnCategory === 'conversation_navigation' || proposal.turnCategory === 'knowledge_advisory') {
+      return { accepted: true, proposal, primaryGoalKey: null, score: null,
+        currentStage: null, nextRequirementKey: null, proposedToolKey: null,
+        preservedConfirmedGoal: false, validatedTopicKeys, rejectedTopicKeys,
+        validatedSignalIds, rejectedSignalIds, reasons: [...reasons, 'no_goal_candidate'] };
+    }
+    return { ...rejected([...reasons, 'goal_unconfirmed'], proposal),
+      validatedTopicKeys, rejectedTopicKeys, validatedSignalIds, rejectedSignalIds };
+  }
   if (preservedConfirmedGoal && proposal.primaryGoalKey && proposal.primaryGoalKey !== context.confirmedGoalKey) reasons.push('confirmed_goal_preserved');
 
   const goalSignals = new Set(catalog.sheets.TurnIntents.filter((intent) => intent.businessGoalKey === primaryGoalKey).map((intent) => intent.turnIntentKey));
-  const matchedSignalIds = proposal.matchedSignalIds.filter((id) => {
+  const matchedSignalIds = validatedSignalIds.filter((id) => {
     const signal = knownSignals.get(id);
     return signal ? signal.targetKey === primaryGoalKey || goalSignals.has(signal.targetKey) : false;
   });
-  if (matchedSignalIds.length !== proposal.matchedSignalIds.length) reasons.push('signal_outside_goal');
-  const score = scoreCatalogV2Turn(catalog, { businessGoalKey: primaryGoalKey, matchedSignalIds, ...(proposal.runnerUpScore === null ? {} : { runnerUpScore: proposal.runnerUpScore }), verifiedRequirementKeys: context.verifiedRequirementKeys, currentStageKey: context.currentStageKey, goalConfirmed: context.goalConfirmed });
+  if (matchedSignalIds.length !== validatedSignalIds.length) reasons.push('signal_outside_goal');
+  const runnerUpScore = hasAuthoritativeSignals ? (context.serverRunnerUpScore ?? 0) : proposal.runnerUpScore;
+  const score = scoreCatalogV2Turn(catalog, { businessGoalKey: primaryGoalKey, matchedSignalIds,
+    ...(runnerUpScore === null ? {} : { runnerUpScore }), verifiedRequirementKeys: context.verifiedRequirementKeys,
+    currentStageKey: context.currentStageKey, goalConfirmed: context.goalConfirmed });
   const currentStage = context.currentStageKey ? evaluateCatalogV2Stage(catalog, primaryGoalKey, context.currentStageKey, context.verifiedRequirementKeys) : null;
   if (score.ambiguous) reasons.push('ambiguous_goal');
   if (!score.thresholdMet) reasons.push('insufficient_evidence');
@@ -108,6 +136,10 @@ export const validateV2PlanningProposal = (input: unknown, catalog: CatalogV2Doc
     : null;
   if (proposal.proposedToolKey && !allowedTool) reasons.push('tool_not_allowed');
   const ambiguous = score.ambiguous;
-  const accepted = !ambiguous && reasons.every((reason) => !['unknown_goal_candidate', 'unknown_primary_goal', 'primary_goal_not_proposed', 'unknown_signal', 'unobserved_signal', 'tool_not_allowed'].includes(reason));
-  return { accepted, proposal, primaryGoalKey, score, currentStage, nextRequirementKey: ambiguous ? null : nextRequirementKey, proposedToolKey: allowedTool, preservedConfirmedGoal, validatedTopicKeys, rejectedTopicKeys, reasons };
+  const fatal = hasAuthoritativeSignals ? ['tool_not_allowed'] : ['unknown_signal', 'unobserved_signal', 'tool_not_allowed'];
+  const accepted = !ambiguous && reasons.every(reason => !fatal.includes(reason));
+  return { accepted, proposal, primaryGoalKey, score, currentStage,
+    nextRequirementKey: ambiguous ? null : nextRequirementKey, proposedToolKey: allowedTool,
+    preservedConfirmedGoal, validatedTopicKeys, rejectedTopicKeys, validatedSignalIds: matchedSignalIds,
+    rejectedSignalIds, reasons };
 };
