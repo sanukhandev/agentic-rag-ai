@@ -1,7 +1,7 @@
 name: GPT-first unit-only validation
 on:
   pull_request:
-    branches: [main, feat/gpt-first-langgraph-unit-only]
+    branches: [main, feat/gpt-first-langgraph-unit-only, feat/v2-engine-hardening-integration]
     paths:
       - 'services/api/**'
       - 'services/model-gateway/**'
