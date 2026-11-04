@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { personaComposedResponseSchema, type PersonaComposedResponseV2, type ResponseGuardVerdictV2 } from './python-model/v2-contracts.js';
 import { verifyV2ResponseEvidence, type V2ApprovedEvidence, type V2ClaimProvenance, type V2VerifiedFact } from './v2-evidence.js';
-import type { V2ClaimFailure } from './v2-claim-provenance.js';
+import type { V2ClaimFailure, V2GroundingProof } from './v2-claim-provenance.js';
 import { selectV2OfflineFallback, type V2ApprovedFallbackTemplateSet, type V2FallbackFamily } from './v2-fallbacks.js';
 import type { V2LegalRegistrationState } from './v2-registration.js';
 import { hasPositiveBusinessOutcomeClaim } from './v2-claim-provenance.js';
@@ -19,6 +19,8 @@ export interface V2ResponseGuardContext {
   questionPolicy: V2QuestionPolicy;
   evidence?: V2ApprovedEvidence[];
   verifiedFacts?: V2VerifiedFact[];
+  /** Node-minted results of independent per-claim entailment only. Model response JSON cannot set this. */
+  groundingProofs?: readonly V2GroundingProof[];
   conversational?: boolean;
   fallbackAnswer?: string;
   fallbackTemplateVersion?: string;
@@ -123,7 +125,7 @@ export const guardV2Response = (input: unknown, context: V2ResponseGuardContext)
     && response.citationIds.length === 0
     && (context.evidence?.length ?? 0) === 0
     && (context.verifiedFacts?.length ?? 0) === 0;
-  const evidenceOptions: { conversational?: boolean; allowUncitedQuestion: boolean; allowNonFactualDialogue?: boolean; allowApprovedFallback?: boolean; pendingRequirementKey?: string | null } = { allowUncitedQuestion: context.questionPolicy === 'required', allowNonFactualDialogue: context.allowNonFactualDialogue === true, pendingRequirementKey: context.pendingRequirementKey };
+  const evidenceOptions: { conversational?: boolean; allowUncitedQuestion: boolean; allowNonFactualDialogue?: boolean; allowApprovedFallback?: boolean; pendingRequirementKey?: string | null; groundingProofs?: readonly V2GroundingProof[] } = { allowUncitedQuestion: context.questionPolicy === 'required', allowNonFactualDialogue: context.allowNonFactualDialogue === true, pendingRequirementKey: context.pendingRequirementKey, groundingProofs: context.groundingProofs ?? [] };
   if (approvedNoEvidenceAnswer) evidenceOptions.allowApprovedFallback = true;
   if (context.conversational !== undefined) evidenceOptions.conversational = context.conversational;
   const evidence = verifyV2ResponseEvidence(response, context.evidence ?? [], context.verifiedFacts ?? [], evidenceOptions);
