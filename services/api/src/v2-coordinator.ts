@@ -55,6 +55,8 @@ export interface V2CoordinatorResult {
   guardReason: string;
   /** Original model candidate verdict, retained even when Node emits a safe fallback. */
   candidateGuardReason: string;
+  /** Preserves an optional-question failure when the answer was independently accepted. */
+  questionFailureReason?: string | null;
   /** The bounded knowledge repair's outcome, with no answer or source text. */
   knowledgeRepairStatus?: 'not_eligible' | 'skipped_untrusted_evidence' | 'skipped_budget'
     | 'attempted_invalid_result' | 'attempted_rejected' | 'attempted_error' | 'accepted';
@@ -167,6 +169,28 @@ const mergeEvidence = (requestEvidence: V2ApprovedEvidence[], result: AgentTurnR
   }
   return [...merged.values()];
 };
+
+const sourceExcerptResponse = (envelope: TurnEnvelopeV2, evidence: V2ApprovedEvidence[]): PersonaComposedResponseV2 | null => {
+  const queryText = [envelope.customerMessageMasked, ...envelope.latestTurns.filter(turn => turn.role === 'customer').map(turn => turn.content)].join(' ');
+  const queryTerms = new Set((queryText.toLocaleLowerCase('en-US').match(/[a-z]{5,}/gu) ?? [])
+    .filter(term => !new Set(['about', 'could', 'does', 'hello', 'how', 'please', 'tell', 'that', 'what', 'would']).has(term)));
+  const candidates = evidence.flatMap(item => {
+    const sentences = item.text.split(/(?<=[.!?])\s+|\n+/u).map(value => value.trim()).filter(value => value.length >= 24 && value.length <= 500 && !hasPositiveBusinessOutcomeClaim(value));
+    return sentences.map(sentence => ({ item, sentence, score: [...queryTerms].filter(term => sentence.toLocaleLowerCase('en-US').includes(term)).length }));
+  }).sort((left, right) => right.score - left.score);
+  const selected = candidates.find(candidate => candidate.score > 0) ?? candidates[0];
+  if (selected) return {
+    schemaVersion: 2, personaVersionId: envelope.personaVersionId,
+    language: envelope.persona.permittedLanguages[0] ?? 'en', answer: selected.sentence,
+    citationIds: [selected.item.citationId], nextQuestion: null, nextQuestionKey: null,
+    reasonNoQuestion: 'knowledge_answer', decisionRef: `evidence-excerpt-${envelope.requestId.slice(0, 48)}`,
+    planning: null,
+  };
+  return null;
+};
+
+const diagnosticGuardReason = (decision: ReturnType<typeof guardV2Response>): string =>
+  decision.questionFailureReason ?? decision.verdict.reasonCode;
 
 /**
  * Recover a bare first-contact greeting with the pinned persona, never a
@@ -318,11 +342,15 @@ export class V2ConversationCoordinator {
     // knowledge. Do not reclassify it with a narrower process-only regex:
     // otherwise questions such as "How does incorporation work?" retrieve
     // sources but are ineligible for a grounded response repair.
-    const hasTrustedPrefetch = (envelope.approvedKnowledge ?? []).some(item =>
-      (request.evidence ?? []).some(approved =>
-        approved.approved && !approved.revoked && approved.citationId === item.citationId
-        && approved.sourceRef === item.sourceRef && approved.sourceVersion === item.sourceVersion
-        && approved.text === item.text));
+    const trustedPrefetchEvidence = (request.evidence ?? []).filter(approved =>
+      approved.approved && !approved.revoked && (envelope.approvedKnowledge ?? []).some(item =>
+        approved.citationId === item.citationId && approved.sourceRef === item.sourceRef
+        && approved.sourceVersion === item.sourceVersion && approved.text === item.text));
+    const trustedToolEvidence = evidenceFromTrustedToolTrace(agentResult);
+    const trustedEvidence = [...trustedPrefetchEvidence, ...trustedToolEvidence.filter(item =>
+      !trustedPrefetchEvidence.some(existing => existing.citationId === item.citationId))];
+    const trustedReviewEvidence = trustedEvidence;
+    const hasTrustedEvidence = trustedEvidence.length > 0;
     if (asksForProcess && !envelope.intentProjection.pendingRequirementKey && !knowledgeEvidenceAvailable && candidateResponse.citationIds.length === 0) {
       const unavailableAnswer = 'I couldn’t find approved company-formation process guidance to verify the steps. Once the official setup guide is published in the knowledge base, I can explain the process without guessing.';
       const unavailableResponse: PersonaComposedResponseV2 = {
@@ -346,11 +374,11 @@ export class V2ConversationCoordinator {
     // if necessary, repair the cited factual answer instead.
     // Keep the factual-knowledge prefetch boundary: greetings and simple chat need
     // no citations, but model dialogue must not replace a sourced factual answer.
-    if (uncitedDialogueCandidate && (!hasTrustedPrefetch || !isV2FactualKnowledgeQuestion(envelope.customerMessageMasked))) {
+    if (uncitedDialogueCandidate && (!hasTrustedEvidence || !isV2FactualKnowledgeQuestion(envelope.customerMessageMasked))) {
       // A safe question and acknowledgement can be authored by the model without
       // RAG citations. Constrain the accepted text shape and forbid factual claims.
       const authored = guardV2Response(candidateResponse, { ...guardContext, allowNonFactualDialogue: true });
-      candidateGuardReason = authored.verdict.reasonCode;
+      candidateGuardReason = diagnosticGuardReason(authored);
       if (authored.verdict.accepted) return {
         response: authored.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(authored.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: authored.claims,
         modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
@@ -374,26 +402,22 @@ export class V2ConversationCoordinator {
       }
     }
     const guarded = guardV2Response(candidateResponse, guardContext);
-    candidateGuardReason = guarded.verdict.reasonCode;
+    candidateGuardReason = diagnosticGuardReason(guarded);
     // Independent review is restricted to the exact public excerpts approved
     // and pinned by Node before the model turn. Other tool evidence cannot be
     // smuggled into this relaxed language path.
-    const trustedReviewEvidence = (request.evidence ?? []).filter(approved =>
-      approved.approved && !approved.revoked && (envelope.approvedKnowledge ?? []).some(item =>
-        item.citationId === approved.citationId && item.sourceRef === approved.sourceRef
-        && item.sourceVersion === approved.sourceVersion && item.text === approved.text));
     const hasTrustedCitedEvidence = candidateResponse.citationIds.some(id =>
       trustedReviewEvidence.some(evidence => evidence.citationId === id));
     const reviewClaims = buildV2GroundingReviewClaims(candidateResponse, trustedReviewEvidence);
     const lexicalOverlap = v2MeanLexicalOverlapPercent(reviewClaims);
-    if (guarded.verdict.accepted && (!this.groundingVerifier || !hasTrustedCitedEvidence)) return { response: guarded.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: guarded.claims, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason, groundingLexicalOverlapPercent: lexicalOverlap, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
+    if (guarded.verdict.accepted && (!this.groundingVerifier || !hasTrustedCitedEvidence)) return { response: guarded.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: guarded.claims, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason, questionFailureReason: guarded.questionFailureReason ?? null, groundingLexicalOverlapPercent: lexicalOverlap, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
     // When enabled, independent entailment must also review already accepted
     // public-source claims. Otherwise a high-overlap yet unsupported statement
     // would bypass grounding merely by matching keywords. Node's business
     // authority and deterministic checks remain final.
     let groundingReviewStatus: NonNullable<V2CoordinatorResult['groundingReviewStatus']> = this.groundingVerifier ? (hasTrustedCitedEvidence && reviewClaims.length === 0 ? 'unreviewable' : 'not_eligible') : 'not_configured';
     let groundingReviewRequests = 0;
-    const eligibleForEntailment = this.groundingVerifier && hasTrustedPrefetch
+    const eligibleForEntailment = this.groundingVerifier && hasTrustedEvidence
       && !hasPositiveBusinessOutcomeClaim(candidateResponse.answer) && reviewClaims.length > 0
       && (guarded.verdict.accepted || (guarded.verdict.reasonCode === 'unsupported_claim'
         && guarded.firstFailure?.reason === 'single_source_support_not_established'));
@@ -442,8 +466,8 @@ export class V2ConversationCoordinator {
       // In enforcement mode never bypass a failed independent review by
       // accepting a separate unreviewed legacy repair.
       && !eligibleForEntailment
-      && (envelope.approvedKnowledge?.length ?? 0) > 0) {
-      if (!hasTrustedPrefetch) {
+      && trustedEvidence.length > 0) {
+      if (!hasTrustedEvidence) {
         knowledgeRepairStatus = 'skipped_untrusted_evidence';
       } else if (agentResult.modelRequestCount + groundingReviewRequests >= envelope.budgets.maxModelRequests || timeLeft < 2_500) {
         knowledgeRepairStatus = 'skipped_budget';
@@ -457,6 +481,7 @@ export class V2ConversationCoordinator {
           const repairEnvelope = turnEnvelopeSchema.parse({
             ...envelope,
             knowledgeRepair: { reason: 'unsupported_claim', strategy: 'source_close' },
+            approvedKnowledge: trustedEvidence.map(item => ({ citationId: item.citationId, sourceRef: item.sourceRef ?? 'tool-evidence', sourceVersion: item.sourceVersion, text: item.text })),
             toolAllowlist: [],
             budgets: { ...envelope.budgets, maxModelRequests: 1, maxToolCalls: 0, maxToolRounds: 0 },
           });
@@ -506,6 +531,30 @@ export class V2ConversationCoordinator {
         }
       }
     }
+    if (guarded.verdict.reasonCode === 'unsupported_claim'
+      && ['single_source_support_not_established', 'claim_source_polarity_mismatch', 'unverified_provider_outcome'].includes(guarded.firstFailure?.reason ?? '')
+      && trustedEvidence.length > 0 && !eligibleForEntailment) {
+      const excerpt = sourceExcerptResponse(envelope, trustedEvidence);
+      if (excerpt) {
+        const excerptEvidence = trustedEvidence.find(item => item.citationId === excerpt.citationIds[0]);
+        const verifiedExcerpt = excerptEvidence
+          ? guardV2Response(excerpt, { ...guardContext, evidence: [excerptEvidence] })
+          : guardV2Response(excerpt, guardContext);
+        if (verifiedExcerpt.verdict.accepted && verifiedExcerpt.response) return {
+          response: verifiedExcerpt.response, candidateResponse: agentResult.response,
+          repairApplied, draft: toDraft(verifiedExcerpt.response), toolTrace: agentResult.toolTrace,
+          approvedEvidence: guardContext.evidence ?? [], claimProvenance: verifiedExcerpt.claims,
+          modelRequestCount: agentResult.modelRequestCount + repairModelRequests + groundingReviewRequests,
+          toolCallCount: agentResult.toolCallCount, guardReason: 'accepted_knowledge_excerpt', candidateGuardReason,
+          questionFailureReason: guarded.questionFailureReason ?? null, knowledgeRepairStatus,
+          repairCitationCount, repairFailureReason, repairClaimFailureReason, repairFailedClauseOrdinal,
+          initialClaimFailureReason: guarded.firstFailure?.reason ?? null,
+          initialFailedClauseOrdinal: guarded.firstFailure?.clauseOrdinal ?? null,
+          groundingReviewStatus, groundingLexicalOverlapPercent: lexicalOverlap,
+          diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
+        };
+      }
+    }
     // A missing RAG source must not block conversation. Never use this path when
     // evidence exists, citations are invalid, or the model/tool failed.
     const unverifiedActionOutcome = hasPositiveBusinessOutcomeClaim(candidateResponse.answer);
@@ -532,7 +581,7 @@ export class V2ConversationCoordinator {
     const failedIndependentReview = guarded.verdict.accepted && this.groundingVerifier && hasTrustedCitedEvidence;
     const fallback = guardV2OfflineFallback(failedIndependentReview ? 'invalid_model' : fallbackFamilyFor(guarded.verdict.reasonCode), guardContext);
     if (!fallback.verdict.accepted || !fallback.response) throw new Error('V2_RESPONSE_REJECTED');
-    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: [], modelRequestCount: agentResult.modelRequestCount + repairModelRequests + groundingReviewRequests, toolCallCount: agentResult.toolCallCount, guardReason: failedIndependentReview ? 'grounding_review_rejected' : guarded.verdict.reasonCode, candidateGuardReason, knowledgeRepairStatus, groundingReviewStatus, groundingLexicalOverlapPercent: lexicalOverlap,
+    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: [], modelRequestCount: agentResult.modelRequestCount + repairModelRequests + groundingReviewRequests, toolCallCount: agentResult.toolCallCount, guardReason: failedIndependentReview ? 'grounding_review_rejected' : guarded.verdict.reasonCode, candidateGuardReason, questionFailureReason: guarded.questionFailureReason ?? null, knowledgeRepairStatus, groundingReviewStatus, groundingLexicalOverlapPercent: lexicalOverlap,
       initialClaimFailureReason: guarded.firstFailure?.reason ?? null,
       initialFailedClauseOrdinal: guarded.firstFailure?.clauseOrdinal ?? null,
       repairCitationCount, repairFailureReason, repairClaimFailureReason, repairFailedClauseOrdinal,

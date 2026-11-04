@@ -1590,7 +1590,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (racedDuplicate && userMessage.response && userMessage.response.retryable !== true) { res.setHeader('X-Chat-Engine', 'cached'); res.json(rehydrateStoredResponse(session, userMessage.response)); return; }
       if (racedDuplicate && !userMessage.response) throw new HttpError(409, 'MESSAGE_IN_PROGRESS', 'A request with this client message ID is already being processed.');
       session.lastActivityAt = new Date().toISOString();
-      await updateSessionSafely(session, false);
+      // V2 commits the session atomically with the intent turn; reserving an
+      // extra cursor here would make a valid pending goal prompt look stale.
+      if (!gptFirstEligible) await updateSessionSafely(session, false);
       pendingMessage = userMessage;
       // GPT-first mode has a single response owner: authenticate/dedupe above, then
       // delegate the entire model/tool/evidence/persistence turn. Never run the

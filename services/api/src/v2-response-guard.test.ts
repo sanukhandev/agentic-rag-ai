@@ -148,6 +148,25 @@ describe('guardV2Response', () => {
     expect(result.verdict.accepted).toBe(true);
   });
 
+  it('keeps a grounded answer when optional question metadata is malformed', () => {
+    const answer = 'The approved package costs AED 42. What would you like to review next?';
+    const result = guardV2Response(response({
+      answer,
+      citationIds: ['package-source-12345678'],
+      nextQuestion: 'What would you like to review next?',
+      nextQuestionKey: null,
+      reasonNoQuestion: null,
+    }), context({
+      questionPolicy: 'optional',
+      evidence: [{ citationId: 'package-source-12345678', text: 'The approved package costs AED 42.', sourceVersion: 'catalog-12345678', approved: true, revoked: false, sourceRef: 'source-12345678' }],
+    }));
+    expect(result.verdict.accepted).toBe(true);
+    expect(result.response.answer).toBe('The approved package costs AED 42.');
+    expect(result.response.nextQuestion).toBeNull();
+    expect(result.response.nextQuestionKey).toBeNull();
+    expect(result.feedback?.reasonCode).toBe('invalid_question');
+  });
+
   it('delivers every approved outage fallback family through the same guard', () => {
     for (const family of Object.keys(fallbackTemplates().templates) as Array<keyof V2ApprovedFallbackTemplateSet['templates']>) {
       const result = guardV2OfflineFallback(family, context({ fallbackTemplates: fallbackTemplates(), fallbackTemplateVersion: 'fallback-12345678' }));

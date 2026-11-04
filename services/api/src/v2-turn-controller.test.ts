@@ -272,6 +272,31 @@ describe('V2 context-aware company formation confirmation (isolated unit)', () =
     expect(audit?.metadata).toMatchObject({ initiationSupported: false });
   });
 
+  it('persists a valid candidate goal proposal when the final draft fails question validation', async () => {
+    const ctx = await prepared();
+    await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+    const message = 'I want to start company formation';
+    const current = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+    if (!current) throw new Error('UNIT_CUSTOMER_MESSAGE_MISSING');
+    await ctx.store.updateMessage({ ...current, maskedContent: message });
+    ctx.input.userMessage = { ...current, maskedContent: message };
+    ctx.input.maskedMessage = message;
+    ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
+    const candidate = { citationIds: [], answer: 'I can help with company formation.', nextQuestion: 'Would you like to proceed?', nextQuestionKey: null, planning: { ...modelProposal, proposedFacts: [] } };
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      candidateResponse: candidate,
+      response: { citationIds: [], answer: 'I could not verify that response just now.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'invalid_question', candidateGuardReason: 'invalid_question',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(ctx.input);
+    expect(reply.answer).toContain('Would you like to proceed with company formation?');
+    const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document).toMatchObject({ businessGoalKey: 'anc.company_formation', goalConfirmed: false });
+    expect(document?.goalConfirmation?.status).toBe('pending');
+    expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
+  });
+
   it('cannot trigger from a fabricated model signal with no observed customer evidence', async () => {
     const ctx = await firstTurn('Hello', {
       ...modelProposal, matchedSignalIds: ['signal.company.register'], confidenceBand: 'high',

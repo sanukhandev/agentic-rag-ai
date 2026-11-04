@@ -2,6 +2,10 @@
 
 **Current baseline:** `main` after merged PRs #79 and #78 (2026-10-30), containing the initial Python GPT gateway/Node adapter and retired Foundry-agent runtime files. This is **not** a tested seven-stage runtime; the original lead-first `app.ts` still controls the chat. This document records source inspection and target gaps, not live acceptance.
 
+## Recovery checkpoint — 2026-11-04
+
+On `fix/zara-conversation-engine-end-to-end-recovery`, the V2 public path now independently validates optional questions, claims and candidate intent plans; accepts trusted evidence from correlated read tools; evaluates mixed-polarity source clauses; preserves the V2 prompt cursor across public turns; and contextualizes knowledge follow-ups from prior customer formation messages. Focused tests and a public five-turn smoke pass. The seven-stage journey, Salesforce sandbox, browser E2E and three-run Azure acceptance remain unverified; this checkpoint does not replace the migration gaps below.
+
 ## Existing code topology — IMPLEMENTED
 
 | Responsibility | Verified location | What exists |

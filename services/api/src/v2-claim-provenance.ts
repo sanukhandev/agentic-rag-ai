@@ -63,6 +63,9 @@ const tokens = (s: string): string[] => [...new Set((norm(s).match(/[a-z\u00c0-\
 const state = /\b(?:account|lead|payment|invoice|contract|signature|document|registration|company|business|entity|opportunity|licen[sc]e|application|refund|transfer)\b/iu;
 const completed = /\b(?:created|complete|completed|paid|signed|registered|incorporated|uploaded|issued|successful|succeeded|processed|activated|executed|settled|refunded|transferred)\b/iu;
 const verifiedRecord = /\b(?:provider[_ ]record[_ ]verified|mock[_ ]verified|verified\s+(?:provider|government|registry|salesforce|payment|invoice|contract|registration)\s+(?:record|receipt|confirmation|evidence)|(?:government|provider|registry|payment|contract)\s+(?:registration\s+)?record\s+confirms)\b/iu;
+const sourceStatements = (text: string): string[] => text.split(/(?<=[.!?])\s+|[;\n]+/u)
+  .flatMap(part => part.split(/\s+(?:and|but|while)\s+(?=(?:the\s+)?(?:payment|invoice|contract|account|lead|document|registration|licen[sc]e|status)\b)/iu))
+  .map(part => part.trim()).filter(Boolean);
 
 /** Each business-outcome clause is evaluated independently. An earlier
  * negated invoice status must not hide a later positive payment claim. */
@@ -88,8 +91,12 @@ const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (c
   const subject = norm(clause);
   const text = norm(source.text);
   if (!source.sourceVersion.trim() || !text || numbers(subject).some((n) => !numbers(text).includes(n))) return false;
+  const relevantSource = sourceStatements(source.text)
+    .map(statement => ({ ...source, text: statement }))
+    .find(candidate => semanticCheck(clause, candidate) || norm(candidate.text) === subject);
+  const polarityText = norm(relevantSource?.text ?? source.text);
   const negativeStatus = /\bnot complete\b/iu.test(subject) && /\b(?:authoritative journey|current workflow status)\b/iu.test(text);
-  const unrelatedProviderNegation = !negative(subject) && /\b(?:no|not)\s+(?:provider|further|additional|other)\b/iu.test(text);
+  const unrelatedProviderNegation = !negative(subject) && /\b(?:no|not)\s+(?:provider|further|additional|other)\b/iu.test(polarityText);
   // A refusal record may say both 'action declined' and 'must not proceed'.
   // The prohibition does not negate the separately stated decline event.
   const optOutStatus = /\baction\b.{0,20}\bdeclin\w*\b/iu.test(subject) && /\bdeclin\w*\b/iu.test(text) && /\bmust not proceed\b/iu.test(text);
@@ -97,11 +104,8 @@ const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (c
   // A source can contain both a positive invoice state and an unrelated
   // negative payment state. Evaluate the relevant positive source clause rather
   // than letting unrelated negation contaminate this claim's polarity.
-  const independentPositiveClause = !negative(subject) && negative(text)
-    && source.text.split(/\s+(?:and|but|while)\s+(?=(?:the\s+)?(?:payment|invoice|contract|account|lead|document|registration|licen[sc]e|status)\b)/iu)
-      .some(part => !negative(part) && semanticCheck(clause, { ...source, text: part }));
-  if (negative(subject) !== negative(text) && !negativeStatus
-    && !unrelatedProviderNegation && !optOutStatus && !independentPositiveClause) return false;
+  if (negative(subject) !== negative(polarityText) && !negativeStatus
+    && !unrelatedProviderNegation && !optOutStatus) return false;
   if (hasPositiveBusinessOutcomeClaim(subject)) {
     if (source.kind === 'customer_fact' || !verifiedRecord.test(text) || !state.test(text) || !completed.test(text)) return false;
   }
@@ -111,7 +115,7 @@ const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (c
   const independentEntailment = proofs.some(proof => proof.claimDigest === digest(clause)
     && proof.citationId === source.citationId && proof.sourceVersion === source.sourceVersion
     && proof.sourceTextDigest === digest(source.text));
-  return independentEntailment || semanticCheck(clause, source) || subject === text || negativeStatus || journeyParaphrase || optOutStatus;
+  return independentEntailment || semanticCheck(clause, relevantSource ?? source) || subject === text || negativeStatus || journeyParaphrase || optOutStatus;
 };
 
 /** Diagnoses which conservative check ruled out support; never changes the

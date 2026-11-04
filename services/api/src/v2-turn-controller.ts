@@ -205,8 +205,10 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     && intentDocument.goalConfirmation?.status !== 'corrected'
     ? catalogV2?.sheets.BusinessGoals.find(goal =>
       goal.active && goal.businessGoalKey === intentDocument.businessGoalKey)?.name ?? null
-    : null;
-  const preflightQuery = contextualizeV2KnowledgeQuery(maskedMessage, contextualTopic);
+    : priorMessages.some(message => message.role === 'user' && /\b(?:company|business|formation|incorporat\w*|register\w*|setup)\b/iu.test(message.maskedContent))
+      ? 'Company formation' : null;
+  const contextualizedQuery = contextualizeV2KnowledgeQuery(maskedMessage, contextualTopic);
+  const preflightQuery = contextualizedQuery === maskedMessage ? contextualizedQuery : `${contextualizedQuery} process steps`;
   let approvedKnowledge: V2ApprovedEvidence[] = [];
   if (input.embedding) {
     try {
@@ -270,10 +272,10 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   // Recover the original model's advisory plan after safe entailment/knowledge
   // repair, but ALWAYS pass it through Node's catalog and customer-evidence
   // validators below. A rejected answer never becomes authorization.
-  const modelPlan = result.guardReason === 'accepted' || result.guardReason === 'accepted_model_dialogue'
-    ? result.response.planning ?? null
-    : (result.guardReason === 'accepted_entailment' || result.guardReason === 'accepted_knowledge_repair')
-      ? result.candidateResponse?.planning ?? null : null;
+  // Response wording and customer-intent planning are independent decisions.
+  // A rejected draft must not erase a valid, still-unconfirmed goal proposal;
+  // Node revalidates the candidate against catalog membership and customer text.
+  const modelPlan = result.candidateResponse?.planning ?? result.response.planning ?? null;
   const existingConfirmedGoal = intentDocument?.catalogSource === 'v2' && intentDocument.goalConfirmed
     ? intentDocument.businessGoalKey : null;
   const planningDecision = modelPlan && catalogV2 ? validateV2PlanningProposal(modelPlan, catalogV2, {
@@ -575,6 +577,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       // Counts and decision codes only. Never persist model draft text or RAG excerpts
       // in audit metadata; those may contain personal data or unsafe instructions.
       candidateGuardReason: result.candidateGuardReason ?? null,
+      questionFailureReason: result.questionFailureReason ?? null,
       knowledgeRepairStatus: result.knowledgeRepairStatus ?? null,
       groundingReviewStatus: result.groundingReviewStatus ?? null,
       groundingLexicalOverlapPercent: result.groundingLexicalOverlapPercent ?? null,

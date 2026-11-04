@@ -10,10 +10,10 @@
 - **Actual failure code:** `invalid_question`; final fallback was selected.
 - **Root cause (confirmed):** `questionFailure()` ran before evidence validation and returned a rejected whole-response verdict. The coordinator then treated the candidate as unusable instead of independently validating the factual answer and removing only the optional question.
 - **Reproduction method:** Fresh public API session; diagnostic audit showed 4 prefetched excerpts and `invalid_question`.
-- **Regression test:** To be added before the correction: cited answer + malformed optional question metadata must return the answer with `nextQuestion=null` and retain `invalid_question` diagnostics.
-- **Correction:** Pending in M2.
-- **Unit/integration/Docker/Azure result:** Baseline unit PASS; regression NOT RUN; live Docker reproduction FAIL; Azure acceptance NOT RUN.
-- **Regression status:** OPEN.
+- **Regression test:** `services/api/src/v2-response-guard.test.ts` — malformed optional question is suppressed while the grounded answer survives.
+- **Correction:** Optional question validation is now independent; required question identity remains strict. The original question failure is retained as diagnostic metadata.
+- **Unit/integration/Docker/Azure result:** Unit PASS; public Docker API PASS after correction; three-run Azure evaluation NOT RUN.
+- **Regression status:** FIXED at code/unit/public smoke boundary; full acceptance remains open.
 
 ## Failure ZARA-002 — contextual formation follow-up rejected as `unsupported_claim`
 
@@ -24,10 +24,10 @@
 - **Actual failure codes:** `unsupported_claim`; historical audit also recorded `claim_source_polarity_mismatch`.
 - **Root cause (confirmed):** Grounding repair/independent review was gated by exact Node prefetch (`hasTrustedPrefetch`). Evidence returned by a successful correlated read tool was merged for citation checking but was not eligible for the same bounded repair/review path. The existing per-source polarity logic also evaluates source text at a broader boundary than the individual relevant clause in mixed-polarity excerpts.
 - **Reproduction method:** Fresh/public and historical diagnostic rows; `search_knowledge` status `ok`, citations present in candidate trace, final evidence/fallback rejected.
-- **Regression test:** To be added before the correction: correlated successful `search_knowledge` evidence must be passed into one no-tool repair attempt and accepted only if the repaired answer cites the exact evidence.
-- **Correction:** Pending in M3; source-clause polarity test also required.
-- **Unit/integration/Docker/Azure result:** Baseline unit PASS; regression NOT RUN; live Docker reproduction FAIL; Azure acceptance NOT RUN.
-- **Regression status:** OPEN.
+- **Regression test:** `services/api/src/v2-coordinator.test.ts` — successful correlated read-tool evidence is eligible for one bounded repair; `v2-claim-provenance.test.ts` covers mixed-polarity source clauses.
+- **Correction:** Trusted evidence now includes exact prefetch plus successful correlated read-tool evidence. Repair is source-bound; a bounded exact excerpt can be returned only when independent review is not active. Source polarity is evaluated against the relevant source clause.
+- **Unit/integration/Docker/Azure result:** Focused tests PASS; public Docker contextual follow-up returns grounded cited text on repeated runs; three-run Azure evaluation NOT RUN.
+- **Regression status:** FIXED at code/unit/public smoke boundary; retrieval quality and full evaluation remain open.
 
 ## Failure ZARA-003 — explicit initiation did not reach goal confirmation
 
@@ -38,10 +38,10 @@
 - **Actual failure code:** Candidate final answer was rejected/replaced as `unsupported_claim`/`safe_no_evidence_dialogue`.
 - **Root cause (confirmed):** `modelPlan` was read only when `result.guardReason` was `accepted`, `accepted_model_dialogue`, `accepted_entailment`, or `accepted_knowledge_repair`. A valid model planning proposal contained in the rejected candidate response was therefore discarded before Node catalog/evidence validation. The read tool was allowed to run, but it was not an authorization decision and could not create the goal.
 - **Reproduction method:** Fresh public API session; `get_missing_requirements` returned `ok`; no goal confirmation was persisted.
-- **Regression test:** To be added before the correction: rejected final answer + valid candidate plan must still create a pending confirmation prompt and no action.
-- **Correction:** Pending in M3.
-- **Unit/integration/Docker/Azure result:** Baseline unit PASS; regression NOT RUN; live Docker reproduction FAIL; Azure acceptance NOT RUN.
-- **Regression status:** OPEN.
+- **Regression test:** `services/api/src/v2-turn-controller.test.ts` — rejected final answer with a valid candidate plan still creates a pending confirmation prompt and no action.
+- **Correction:** Node now validates the candidate plan independently of final response acceptance and persists only catalog/evidence-validated proposals.
+- **Unit/integration/Docker/Azure result:** Unit PASS; public Docker API creates `anc.company_formation` pending confirmation with no action; three-run Azure evaluation NOT RUN.
+- **Regression status:** FIXED at code/unit/public smoke boundary; journey completion remains open.
 
 ## Failure ZARA-004 — refusal repeated the generic response
 
@@ -52,12 +52,11 @@
 - **Actual failure code:** `safe_no_evidence_dialogue`; no pending confirmation existed.
 - **Root cause (confirmed):** Because the initiation turn did not persist `goalConfirmation.status=pending`, `classifyScopedGoalDecision()` had no scoped prompt to evaluate. The coordinator then produced another generic no-evidence dialogue and the controller persisted no refusal transition.
 - **Reproduction method:** Two-turn fresh public API session; both turns returned the same generic response; the intent document had no goal key or confirmation record.
-- **Regression test:** To be added before the correction: initiation creates a pending prompt; `No, not now` transitions that prompt to rejected without creating an opportunity/action and responds naturally.
-- **Correction:** Pending in M5, enabled by the independent-plan fix.
-- **Unit/integration/Docker/Azure result:** Baseline unit PASS; regression NOT RUN; live Docker reproduction FAIL; Azure acceptance NOT RUN.
-- **Regression status:** OPEN.
+- **Regression test:** `services/api/src/v2-turn-controller.test.ts` covers scoped rejection and no action; public Docker API reproduced `No, not now` after the pending prompt.
+- **Correction:** The public route no longer increments the session cursor before the atomic V2 turn commit; this preserves the prompt cursor and prevents false `V2_GOAL_CONFIRMATION_STALE` errors.
+- **Unit/integration/Docker/Azure result:** Unit PASS; public Docker API PASS with cleared pending prompt and no action; three-run Azure evaluation NOT RUN.
+- **Regression status:** FIXED at code/unit/public smoke boundary; full acceptance remains open.
 
 ## Additional confirmed baseline gap
 
 The repository documentation explicitly marks the Python↔Node tool loop, final persona composer, full seven-stage provider verification, and live Azure acceptance as incomplete. These are not inferred from the four messages and remain separate acceptance gates after the focused corrections.
-
