@@ -15,3 +15,7 @@ Full prompt-injection corpus, cross-tenant live probes, Docker restart/replay, d
 ## Current security gate
 
 `npm audit --omit=dev` reports one high `undici` advisory from the workspace resolution path. The attempted lock-only audit remediation failed with npm’s `edgesOut` error; no unsafe override or audit suppression was retained. `verify:local` therefore remains NOT_READY at the dependency-audit gate.
+
+## Catalog identity boundary
+
+Migration 059 adds only a tenant-scoped foreign key and mutual-exclusion check for canonical V2 package references. It does not repin existing offerings, enable synthetic price data, or bypass approval status/effective-date checks. Direct PostgreSQL verification returned both constraints; the full cross-tenant live replay remains NOT RUN.

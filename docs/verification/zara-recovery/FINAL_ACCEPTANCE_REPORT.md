@@ -20,6 +20,7 @@
 - Local five-source ingestion acceptance: PASS after ZARA-006 correction.
 - Synthetic tenant A/B/idempotent mock workflow acceptance: PASS after aligning the harness with one-field-at-a-time contact collection.
 - API focused/full unit, typecheck, lint and Docker API/model-gateway build: PASS for executed runs.
+- V2 package catalog identity boundary: PASS — migration 059 applied, tenant-scoped FK/check constraint verified, V2 gateway/store regression coverage PASS; no pricebook data was fabricated.
 
 ## Unverified or blocked
 
@@ -31,7 +32,7 @@
 - Three independent Azure evaluations at >=90% each.
 - Formal performance benchmark.
 - Full quote/package calculation and customer-facing quote revision journey.
-- ANCFZ approved package offerings: BLOCKED_EXTERNAL_DEPENDENCY — development database contains zero `package_offerings` rows.
+- ANCFZ approved package offerings: BLOCKED_EXTERNAL_DEPENDENCY — development database contains zero approved `package_offerings` rows; the identity boundary is repaired but authoritative price/catalog input is absent.
 - `npm audit --omit=dev`: FAIL — one high `undici` advisory remains on the workspace OpenAI/Angular resolution path; no security gate was weakened.
 
 The branch is not ready to merge until the unverified gates are executed or explicitly accepted as external blockers.

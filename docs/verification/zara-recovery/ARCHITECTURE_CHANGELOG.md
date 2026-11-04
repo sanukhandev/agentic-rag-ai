@@ -21,3 +21,12 @@ No business-action authorization, tenant scope, provider verification or consent
 - Excluded question-only and unpunctuated list fragments from source-excerpt recovery.
 
 The public smoke and 25-turn harness pass. Full stage/provider completion is still unverified.
+
+## M7 preparation checkpoint — 2026-11-04
+
+- Added additive `package_offerings.catalog_v2_version_ref` storage with a tenant-scoped FK and one-catalog-identity check; legacy UUID package rows remain supported.
+- Updated PostgreSQL and memory stores plus the V2 trusted package read to filter by the pinned canonical V2 catalog reference.
+- Added migration-boundary, memory-store isolation and V2 tool-gateway regression coverage.
+- Applied migration 059 to the development PostgreSQL instance and rebuilt the API image successfully.
+
+No synthetic ANCFZ pricebook was re-enabled: the development database still has zero approved offerings, so pricing and quotation acceptance remain blocked on reviewed authoritative data.

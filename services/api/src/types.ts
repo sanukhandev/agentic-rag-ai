@@ -647,6 +647,7 @@ export interface PackageOffering {
   id: string;
   tenantId: string;
   catalogVersionId: string | null;
+  catalogVersionRef?: string | null;
   packageKey: string;
   name: string;
   eligibleEntityTypes: string[];
@@ -1015,7 +1016,7 @@ export interface Store {
   renewDocumentProcessingJob(id: string, tenantId: string, leaseMs: number): Promise<DocumentProcessingJob | null>;
   updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
   linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void>;
-  listPackageOfferings(tenantId: string, input?: { catalogVersionId?: string | null; activity?: string; entityType?: string }): Promise<PackageOffering[]>;
+  listPackageOfferings(tenantId: string, input?: { catalogVersionId?: string | null; catalogVersionRef?: string | null; activity?: string; entityType?: string }): Promise<PackageOffering[]>;
   getPackageOffering(id: string, tenantId: string): Promise<PackageOffering | null>;
   createPackageOffering(offering: PackageOffering): Promise<PackageOffering>;
   createPackageSelection(selection: PackageSelection): Promise<PackageSelection>;

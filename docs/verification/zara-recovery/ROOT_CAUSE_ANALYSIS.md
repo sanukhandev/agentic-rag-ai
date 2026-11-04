@@ -122,3 +122,16 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Regression test:** `services/api/src/v2-coordinator.test.ts` covers an unavailable citation on a verified customer fact.
 - **Correction:** Bounded journey-shaped, non-knowledge statements now discard the bad citation and use guarded non-factual acknowledgement; knowledge and provider/action claims remain strict.
 - **Result:** Coordinator suite PASS; public smoke returns safe acknowledgements and preserves state.
+
+## Failure ZARA-010 — V2 package reads used the legacy catalog UUID column
+
+- **Customer message:** `Show me packages.`
+- **Expected behavior:** Read approved package offerings scoped to the session-pinned Catalog V2 publication, or state specifically that no approved offerings are published.
+- **Actual behavior:** The V2 package tool queried `package_offerings.catalog_version_id` with the V2 publication UUID. That column is a legacy `intent_catalog_versions` foreign key, so V2 offerings could not be represented or returned safely.
+- **Failing runtime component:** `services/api/src/store-postgres.ts` and `services/api/src/v2-tool-gateway.ts`.
+- **Actual failure code:** No customer-visible exception; the read was an empty/not-published result even when a correctly versioned V2 offering could not be stored. The development database currently has zero approved offerings, so no price was fabricated.
+- **Reproduction method:** PostgreSQL inspection showed active Catalog V2 `b63b931f-0713-4d18-bcea-88621bd1b5ed`, legacy-only package identity, and zero ANCFZ offerings; the V2 gateway passed the V2 UUID to the legacy filter.
+- **Regression test:** `services/api/src/v2-tool-gateway.unit.test.ts` stores a package with a canonical V2 ref and retrieves it through `get_available_packages`; `store-memory.test.ts` verifies ref scoping; `v2-catalog-identity.test.ts` verifies migration 059.
+- **Correction:** Added `catalog_v2_version_ref`, tenant-scoped FK/check constraint, store support for V2 refs, and V2 gateway filtering by `catalogVersionRef`.
+- **Unit/integration/Docker/Azure result:** 23 focused tests PASS; API typecheck PASS; migration applied and constraints verified in PostgreSQL; API Docker rebuild and health check PASS; live pricebook/Azure/Salesforce acceptance remains unverified.
+- **Regression status:** FIXED for catalog identity; package/quotation outcome remains blocked by missing authoritative ANCFZ offerings.

@@ -45,3 +45,13 @@ The first run stopped at turn 12 with PostgreSQL `22P02` because synthetic `tool
 - PostgreSQL inspection confirmed `goal_confirmed=true`, `business_goal_key=anc.company_formation`, and verified activity, visa and timeline facts on the exercised journey.
 
 This is a partial journey gate, not full completion. The database has zero approved package offerings, and Salesforce/provider verification was not available in this run.
+
+## Rebuilt Docker regression after Catalog V2 package identity fix
+
+**Result:** PASS for the public conversation persistence boundary.
+
+- API image rebuilt from the recovery branch; `/api/v1/health/live` returned 200.
+- Fresh Nginx → API → model-gateway → PostgreSQL run answered 25/25 turns and persisted 25 unique customer messages.
+- Session: `1c36ec5f-b09f-4ec5-a8b7-1b5fc4877d13`.
+- Migration 059 was applied and its V2 package identity constraints were verified directly in PostgreSQL.
+- This run did not claim Lead, Salesforce, package, quote, document, invoice or contract completion.

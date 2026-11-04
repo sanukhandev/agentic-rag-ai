@@ -24,4 +24,12 @@ describe('Catalog V2 action/CRM/document reference storage', () => {
     expect(migration).not.toMatch(/^\s*(?:DROP|DELETE|TRUNCATE|ALTER\s+COLUMN)/imu);
     expect(migration).toContain('REFERENCES intent_catalog_v2_versions(tenant_id, catalog_version_ref)');
   });
+
+  it('gives package offerings the same additive V2 identity boundary', () => {
+    const migration = readFileSync(new URL('../../../infra/postgres/059-package-v2-catalog-identity.sql', import.meta.url), 'utf8');
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS catalog_v2_version_ref');
+    expect(migration).toContain('package_offerings_catalog_v2_fk');
+    expect(migration).toContain('package_offerings_one_catalog_identity');
+    expect(migration).not.toMatch(/^\s*(?:DROP|DELETE|TRUNCATE|ALTER\s+COLUMN)/imu);
+  });
 });

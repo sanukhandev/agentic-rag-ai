@@ -298,10 +298,10 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       if (v2Catalog) {
         const approvedGoalKeys = new Set(v2Catalog.catalog.sheets.BusinessGoals
           .filter(goal => goal.active).map(goal => goal.businessGoalKey));
-        const all = await store.listPackageOfferings(scope.tenantId, { catalogVersionId: v2Catalog.id });
+        const all = await store.listPackageOfferings(scope.tenantId, { catalogVersionRef: v2Catalog.catalogVersionRef });
         const now = Date.now();
         const approved = all.filter(offering => offering.tenantId === scope.tenantId
-          && offering.catalogVersionId === v2Catalog.id && offering.approvalStatus === 'approved'
+          && offering.catalogVersionRef === v2Catalog.catalogVersionRef && offering.approvalStatus === 'approved'
           && (!offering.pricingEffectiveFrom || Date.parse(offering.pricingEffectiveFrom) <= now)
           && (!offering.pricingEffectiveTo || Date.parse(offering.pricingEffectiveTo) > now));
         const selected = approved.slice(0, 20);
