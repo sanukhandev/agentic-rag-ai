@@ -1,5 +1,5 @@
 import type { CatalogV2Document } from './catalog-v2.js';
-import { V2_TOOL_NAMES, type V2ToolName } from './v2-tool-gateway.js';
+import type { V2ToolName } from './v2-tool-gateway.js';
 
 /** Platform-scoped reads need no per-journey binding. All tenant-domain
  * read capabilities require an explicit, enabled read-only catalog binding. */
@@ -24,5 +24,5 @@ export const isV2ReadToolEnabled = (catalog: CatalogV2Document, toolName: V2Tool
 
 /** Only the intersection of implemented reads and currently published policy
  * may be signed into a model/tool scope. No tenant-authored arbitrary tool. */
-export const authorizedV2ReadTools = (catalog: CatalogV2Document): V2ToolName[] =>
-  V2_TOOL_NAMES.filter(name => isV2ReadToolEnabled(catalog, name));
+export const authorizedV2ReadTools = (catalog: CatalogV2Document, implementedTools: readonly V2ToolName[]): V2ToolName[] =>
+  implementedTools.filter(name => isV2ReadToolEnabled(catalog, name));
