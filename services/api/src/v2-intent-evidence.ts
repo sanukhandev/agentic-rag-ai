@@ -51,7 +51,7 @@ const hasInformationRequest = (message: string): boolean =>
   || /\b(?:just (?:information|exploring|looking)|only (?:information|researching)|not (?:ready|yet)|before i decide)\b/u.test(message);
 
 const hasRejection = (message: string): boolean =>
-  /\b(?:don't|do not|not going to|no longer|changed my mind|cancel|stop|never mind|not interested|only (?:want|need) information)\b/u.test(message);
+  /\b(?:don't|do not|not going to|no longer|changed my mind|cancel|stop|never mind|not interested|not ready|not yet|only (?:want|need) information)\b/u.test(message);
 
 const hasInitiationRequest = (message: string): boolean =>
   /(?:^|\b)(?:i (?:want|would like|need|am ready|m ready) to|let's|let us|please|go ahead and|we (?:want|need) to|i(?:'m| am) ready to)\s+(?:go ahead (?:and |to )?|now )?(?:start|begin|register|form|incorporate|set up|open|establish|proceed(?: with)?|get started(?: with)?)\b/u.test(message)
@@ -89,7 +89,8 @@ export const resolveV2IntentEvidence = (request: V2IntentEvidenceRequest): V2Obs
     : information ? 'information' : explicit ? 'explicit'
     : isContextReference(normalizedCurrent) ? 'ambiguous' : 'none';
 
-  const currentSignals = observed(request.catalog, request.currentMessage);
+  // Explicit negation must not count the quoted positive phrase as customer intent.
+  const currentSignals = rejected ? [] : observed(request.catalog, request.currentMessage);
   const currentGoalKeys = [...new Set(currentSignals.map(signal => signal.goalKey))];
   const hasConflictingCurrentGoals = currentGoalKeys.length > 1;
 
