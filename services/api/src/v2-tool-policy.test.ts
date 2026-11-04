@@ -2,13 +2,14 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { CatalogV2Document } from './catalog-v2.js';
 import { authorizedV2ReadTools, isV2ReadToolEnabled } from './v2-tool-policy.js';
+import { V2_TOOL_NAMES } from './v2-tool-gateway.js';
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url),'utf8')) as CatalogV2Document;
 describe('published catalog controls V2 domain reads', () => {
   it('allows only implemented, enabled tenant reads and safe platform context', () => {
-    expect(authorizedV2ReadTools(fixture)).toContain('search_knowledge');
-    expect(authorizedV2ReadTools(fixture)).toContain('get_journey_state');
-    expect(authorizedV2ReadTools(fixture)).toContain('get_conversation_context');
-    expect(authorizedV2ReadTools(fixture)).not.toContain('get_action_status');
+    expect(authorizedV2ReadTools(fixture, V2_TOOL_NAMES)).toContain('search_knowledge');
+    expect(authorizedV2ReadTools(fixture, V2_TOOL_NAMES)).toContain('get_journey_state');
+    expect(authorizedV2ReadTools(fixture, V2_TOOL_NAMES)).toContain('get_conversation_context');
+    expect(authorizedV2ReadTools(fixture, V2_TOOL_NAMES)).not.toContain('get_action_status');
   });
   it('disables a published tool without losing platform context', () => {
     const catalog = structuredClone(fixture);
