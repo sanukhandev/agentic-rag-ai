@@ -8,7 +8,7 @@
     "dev": "node --env-file-if-exists=.env --import tsx/esm --watch src/index.ts",
     "start": "node --env-file-if-exists=.env dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run src",
     "lint": "eslint src --max-warnings 0"
   },
   "dependencies": {
@@ -36,6 +36,6 @@
     "supertest": "^7.1.1",
     "tsx": "^4.19.3",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.12"
   }
 }
