@@ -48,6 +48,28 @@ describe('V2 catalog-backed contextual customer intent evidence', () => {
     },
   );
 
+  it('recognizes affirmative formation intent after unrelated negative visa preference', () => {
+    const result = current("I don't need visas, but I want to register a company");
+    expect(result.currentSignalIds).toContain('signal.company.register');
+    expect(result.initiation).toBe('explicit');
+    expect(result.initiationSupported).toBe(true);
+  });
+
+  it('does not allow a negated formation request to trigger a goal through another clause', () => {
+    const result = current("I don't want to register a company, but please tell me what the options are");
+    expect(result.currentSignalIds).toEqual([]);
+    expect(result.initiationSupported).toBe(false);
+  });
+
+  it('preserves previous formation context across unrelated visa refusal', () => {
+    const result = current("Let's start the process", [
+      { messageId: 'customer-old', text: 'company formation' },
+      { messageId: 'customer-latest', text: "I don't need visas" },
+    ]);
+    expect(result.contextSupported).toBe(true);
+    expect(result.initiationSupported).toBe(true);
+  });
+
   it('does not score a formation phrase when the customer explicitly rejects it', () => {
     for (const message of ["I don't want to start a company", "I'm not ready to form a company"]) {
       const result = current(message);
