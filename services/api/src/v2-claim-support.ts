@@ -8,7 +8,7 @@
 const filler = new Set([
   'the','a','an','and','or','but','is','are','was','were','be','been','being',
   'i','me','my','you','your','we','our','they','their','that','this','those',
-  'these','of','to','for','with','from','by','on','at','in','as','it','its',
+  'these','there','of','to','for','with','from','by','on','at','in','as','it','its',
   'have','has','had','will','would','could','should','can','may','might',
   'said','says','stated','states','currently','now','still','right','yet',
   'show','shows','showing','requested',
