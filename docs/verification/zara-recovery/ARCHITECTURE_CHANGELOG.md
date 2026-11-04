@@ -100,3 +100,10 @@ The provider configuration remains unavailable, so no Salesforce completion is c
 - Node-authored correction/recap acknowledgements are used only at the pending-goal boundary when model wording cannot pass the response guard; no action authorization is added.
 - Added a redacted objective Azure conversation scorer and public-harness fields for groundedness, citations, action proposals and pending intent.
 - Live result: 25/25 transport, 25 durable turns, 0.90 objective score (9/10); fallback absence remains the only failed objective check in the final run.
+
+## Pending non-action recovery checkpoint — 2026-11-04
+
+- Added the smallest Node-side recovery for non-action preferences independent of goal confirmation: advisor preference, privacy refusal after PII masking, contact preference and unfixed budget.
+- These branches preserve the pending goal prompt and cannot confirm a goal, grant action consent or dispatch a workflow.
+- Focused controller tests: 41/41. Full API suite: 61 files / 507 tests. Typecheck, lint and Docker API build: PASS.
+- Fresh public 25-turn regression: 25/25 transport, 25 durable turns, automated objective score 1.00 (10/10). Human Azure quality and provider completion remain unverified.

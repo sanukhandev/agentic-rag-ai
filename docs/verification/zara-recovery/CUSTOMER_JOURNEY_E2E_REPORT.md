@@ -164,3 +164,10 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 - The customer’s timeline correction was acknowledged as `two months`; the recap retained the visa and timeline facts.
 - No action proposal or provider-completion claim was emitted.
 - Automated objective score: 0.90 (9/10); three generic fallback responses remained on non-action turns. Human persona review, browser E2E and the full seven-stage journey are not verified.
+
+## Latest non-action recovery rerun — 2026-11-04
+
+- Artifact: `artifacts/ancfz/azure-eval-after-budget-privacy-recovery-scored.json`.
+- Public nginx/API/model-gateway route: **PASS** — 25/25 answers and 25 durable user messages.
+- Automated objective score: **1.00 (10/10)**. Budget uncertainty and PII-masked privacy refusal now receive truthful pending-goal acknowledgements; no action proposal was emitted.
+- This remains a conversation/persistence regression run, not proof of Salesforce, quotation, document, browser or seven-stage completion.

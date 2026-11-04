@@ -60,4 +60,11 @@
 - Remaining live quality defect: three generic fallbacks on package-information, adviser-preference and privacy turns in the final stochastic run. Human persona scoring is NOT_RUN.
 - Overall status remains `NOT_READY`; Salesforce, browser E2E, full seven-stage journey, formal three-run >=90% quality gate and provider readback remain unverified or blocked.
 
+## Current implementation checkpoint — 2026-11-04
+
+- Latest API suite: **PASS** — 61 files / 507 tests; typecheck, lint and Docker API build PASS.
+- Latest public 25-turn recovery: **PASS** — 25/25 answers, 25 durable messages, automated objective score **1.00 (10/10)**.
+- ZARA-022 is fixed: PII-masked privacy refusal and unfixed budget preference no longer trigger the generic fallback cascade.
+- Overall status remains **NOT_READY**. The mandatory three independent human Azure quality runs, Salesforce sandbox/readback, browser E2E, quotation lifecycle and complete seven-stage journey are still unverified or blocked.
+
 The branch is not ready to merge until the unverified gates are executed or explicitly accepted as external blockers.

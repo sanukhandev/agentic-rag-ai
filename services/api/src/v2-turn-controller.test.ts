@@ -707,6 +707,27 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect(document?.verifiedFacts.timeline?.maskedValue).toBe('next month');
   });
 
+  it.each([
+    ['I prefer to speak to an advisor.', 'adviser'],
+    ['Please do not disclose any other customer information.', 'other customers'],
+    ['Please do not disclose any other [ID_2].', 'other customers'],
+    ['I consent to contact only for this company formation enquiry in this sandbox.', 'contact preference'],
+    ['My budget is not fixed yet.', 'budget is not fixed'],
+    ['Show only officially approved package information.', 'reliable package summary'],
+  ])('uses a truthful persona recovery for pending non-action turn: %s', async (message, expected) => {
+    const ctx = await proposalTurn();
+    const interruption = await followUpTurn(ctx, message);
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'I cannot verify that answer safely. I can continue with confirmed information.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: message.includes('package') ? 'policy_denied' : 'unsupported_claim',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(interruption);
+    expect(reply.answer.toLocaleLowerCase('en-US')).toContain(expected);
+    expect(reply.answer).not.toContain('temporarily unavailable');
+    expect(reply.answer).not.toContain('cannot verify that answer safely');
+  });
+
   it('rejects stale session cursors and cross-tenant decisions', async () => {
     const ctx = await proposalTurn();
     const stored = await ctx.store.getSession(ctx.session.id);

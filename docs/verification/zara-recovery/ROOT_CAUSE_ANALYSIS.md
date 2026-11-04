@@ -261,3 +261,15 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Correction:** Added an `interruption` classification for advisory/requirement statements, checked explicit rejection before advisory terms, retained the pending prompt, validated quoted visa/timeline values, marked changed facts as corrected, and authored bounded Node acknowledgements for correction/recap recovery.
 - **Verification:** Focused API tests 58/58, full API suite 61 files / 501 tests, typecheck/lint/build PASS. Final live public Azure-backed run: 25/25 HTTP answers, 25 durable user messages, automated objective score 0.90 (9/10). Correction and recap checks PASS; human persona review is NOT_RUN.
 - **Remaining:** Some unrelated non-action turns still fall back (`package information`, adviser preference, privacy refusal). No unauthorized action was observed; full Azure quality and seven-stage/provider acceptance remain unverified.
+
+## Failure ZARA-022 — masked privacy and budget preferences fell through pending-goal recovery
+
+- **Customer messages:** `My budget is not fixed yet.` and `Please do not disclose any other customer information.` while formation confirmation was pending.
+- **Expected behavior:** Acknowledge the non-action preference, preserve the pending confirmation, and avoid generic knowledge/tool failure language.
+- **Actual behavior:** The live run used the generic `I cannot verify that answer safely` response for both turns in one stochastic path.
+- **Failing runtime component:** `services/api/src/v2-turn-controller.ts` pending-goal non-action recovery.
+- **Root cause (confirmed):** Budget preferences had no bounded Node acknowledgement. The privacy message was PII-masked before matching, changing `customer information` to `[ID_2]`, so the raw-text matcher did not recognize it.
+- **Regression test:** `services/api/src/v2-turn-controller.test.ts` covers the raw privacy phrase, its `[ID_2]` masked form, consent preference and an unfixed budget.
+- **Correction:** Added bounded persona-safe acknowledgements for those non-action preferences; no goal confirmation, consent, CRM action or provider claim is produced.
+- **Verification:** Focused controller tests 41/41, full API suite 61 files / 507 tests, typecheck, lint and Docker API build PASS. Fresh public 25-turn run `artifacts/ancfz/azure-eval-after-budget-privacy-recovery-scored.json` completed 25/25 durable turns with automated objective score 1.00 (10/10).
+- **Regression status:** FIXED for the reproduced phrases. Human Azure quality scoring, browser E2E, Salesforce/provider readback and the full seven-stage journey remain unverified.

@@ -93,3 +93,7 @@ The authoritative proposed design now has **seven logical components**: Python C
 ## 2026-11-04 recovery checkpoint
 
 The GPT-first path now preserves pending company-formation confirmation across advisory/requirement interruptions, retains quote-validated visa/timeline facts, and handles timeline correction plus recap through bounded Node acknowledgements. This is verified by 61 API test files / 501 tests and a live public Azure-backed 25-turn run (25/25 transport, 25 durable messages, objective score 0.90/1.00). Remaining gaps are generic fallbacks on some non-action turns, formal human Azure scoring, browser E2E, Salesforce/provider readback and the full seven-stage journey; status remains `NOT_READY`.
+
+## 2026-11-04 recovery checkpoint — pending non-action recovery
+
+The pending formation-confirmation path now also handles unfixed budget preferences and privacy refusals after PII masking, while preserving the pending goal and withholding action authorization. Verification: 61 API test files / 507 tests, typecheck/lint/Docker API build PASS, and a fresh public 25-turn Azure-backed run with 25/25 transport, 25 durable messages and automated objective score 1.00/1.00. This is not the mandatory human-quality gate. Salesforce/provider readback, browser E2E, quotation lifecycle, complete seven-stage journey and three independent >=90% Azure quality runs remain unverified; status remains `NOT_READY`.

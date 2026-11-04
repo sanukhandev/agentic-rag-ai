@@ -555,6 +555,30 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     effectiveQuestion = 'Would you like to proceed with company formation?';
     overrideResponse = true;
   }
+  if (pendingDecision && decision !== 'confirmed' && decision !== 'rejected' && decision !== 'corrected' && !overrideResponse
+      && !['accepted', 'accepted_entailment', 'accepted_knowledge_excerpt', 'accepted_knowledge_repair', 'accepted_model_dialogue'].includes(result.guardReason)) {
+    if (/\b(?:prefer|would like|want)\b[\s\S]{0,50}\b(?:advisor|adviser)\b/iu.test(maskedMessage)) {
+      effectiveAnswer = 'Of course. I’ve noted that you prefer to speak with an adviser. Would you like to proceed with company formation?';
+      effectiveQuestion = 'Would you like to proceed with company formation?';
+      overrideResponse = true;
+    } else if (/\b(?:do not|don’t|don't)\b[\s\S]{0,60}\b(?:disclose|share)\b[\s\S]{0,60}(?:\bcustomer\b|\binformation\b|\bother\b|\[(?:ID|EMAIL|PHONE)_\d+\])/iu.test(maskedMessage)) {
+      effectiveAnswer = 'Understood. I won’t disclose information about other customers. Would you like to proceed with company formation?';
+      effectiveQuestion = 'Would you like to proceed with company formation?';
+      overrideResponse = true;
+    } else if (/\b(?:consent|permission)\b/iu.test(maskedMessage)) {
+      effectiveAnswer = 'I’ve noted your contact preference. It will not authorize any action until you confirm company formation. Would you like to proceed with company formation?';
+      effectiveQuestion = 'Would you like to proceed with company formation?';
+      overrideResponse = true;
+    } else if (/\bbudget\b[\s\S]{0,40}\b(?:not fixed|uncertain|undecided|open)\b/iu.test(maskedMessage)) {
+      effectiveAnswer = 'I’ve noted that your budget is not fixed yet. We can keep exploring the approved options without treating a budget as confirmed. Would you like to proceed with company formation?';
+      effectiveQuestion = 'Would you like to proceed with company formation?';
+      overrideResponse = true;
+    } else if (result.guardReason === 'policy_denied' && /\bpackage(?:s)?\b/iu.test(maskedMessage)) {
+      effectiveAnswer = 'I can’t provide a reliable package summary from the approved sources yet, so I won’t guess. Would you like to proceed with company formation?';
+      effectiveQuestion = 'Would you like to proceed with company formation?';
+      overrideResponse = true;
+    }
+  }
   const contactFactPatch = contactActive ? {
     ...(contactValues.name && nameRequirementKey ? { [nameRequirementKey]: {
       maskedValue: contactValues.name, source: 'visitor' as const, messageSequence: state.messageSequence,
