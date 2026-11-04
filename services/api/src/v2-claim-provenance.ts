@@ -61,7 +61,7 @@ const tokens = (s: string): string[] => [...new Set((norm(s).match(/[a-z\u00c0-\
   .filter((w) => w.length >= 3 && !filler.has(w) && !/^\d/u.test(w))
   .map((w) => { const stem = w.replace(/(?:ing|ed|es|s)$/u, ''); return stem === 'updat' ? 'correct' : stem; }))];
 const state = /\b(?:account|lead|payment|invoice|contract|signature|document|registration|company|business|entity|opportunity|licen[sc]e|application|refund|transfer)\b/iu;
-const completed = /\b(?:created|complete|completed|paid|signed|registered|uploaded|issued|successful|succeeded|processed|activated|executed|settled|refunded|transferred)\b/iu;
+const completed = /\b(?:created|complete|completed|paid|signed|registered|incorporated|uploaded|issued|successful|succeeded|processed|activated|executed|settled|refunded|transferred)\b/iu;
 const verifiedRecord = /\b(?:provider[_ ]record[_ ]verified|mock[_ ]verified|verified\s+(?:provider|government|registry|salesforce|payment|invoice|contract|registration)\s+(?:record|receipt|confirmation|evidence)|(?:government|provider|registry|payment|contract)\s+(?:registration\s+)?record\s+confirms)\b/iu;
 
 /** Each business-outcome clause is evaluated independently. An earlier
@@ -69,10 +69,10 @@ const verifiedRecord = /\b(?:provider[_ ]record[_ ]verified|mock[_ ]verified|ver
 export const hasPositiveBusinessOutcomeClaim = (s: string): boolean => {
   const pieces = s.split(/(?<=[.!?])\s+|\n+|[,;]\s*(?:but|and)\s+|\s+(?:but|and|while)\s+(?=(?:the|your|our|an?|this|that)\s+(?:account|lead|payment|invoice|contract|document|registration|company|business|licen[sc]e|application))/iu);
   return pieces.some(part => {
-    const explicitlyApproved = /\b(?:application|licen[sc]e|registration|invoice|contract|account|lead|document|payment)\b.{0,40}\b(?:is|was|were|has been|have been)\s+(?:approved|accepted)\b/iu.test(part);
+    const explicitlyApproved = /\b(?:company|business|entity|opportunity|application|licen[sc]e|registration|invoice|contract|account|lead|document|payment)\b.{0,40}\b(?:is|was|were|has been|have been)\s+(?:approved|accepted)\b/iu.test(part);
     if (!state.test(part) || (!completed.test(part) && !explicitlyApproved)) return false;
     if (/\b(?:don't|do not|will not|won't|must not|can't|cannot)\s+(?:assume|treat|consider|claim|confirm|infer)\b/iu.test(part)) return false;
-    if (/\b(?:not|never|without|won't|cannot|can't|isn't|wasn't|hasn't|have not|has not)\b.{0,65}\b(?:created|completed?|paid|signed|registered|uploaded|issued|successful|succeeded|processed|approved|activated|executed|settled|accepted|refunded|transferred)\b/iu.test(part)) return false;
+    if (/\b(?:not|never|without|won't|cannot|can't|isn't|wasn't|hasn't|have not|has not)\b.{0,65}\b(?:created|completed?|paid|signed|registered|incorporated|uploaded|issued|successful|succeeded|processed|approved|activated|executed|settled|accepted|refunded|transferred)\b/iu.test(part)) return false;
     return true;
   });
 };
