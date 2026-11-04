@@ -33,6 +33,18 @@ describe('conversation engine v2 contracts', () => {
     expect(turnEnvelopeSchema.safeParse({ ...envelope, tenantId: 'must-not-cross-boundary' }).success).toBe(false);
   });
 
+  it('accepts only bounded, published-topic projection fields', () => {
+    const catalogV2 = {
+      versionRef: 'anc:r2:verified-catalog', businessGoals: [], turnIntents: [], signals: [],
+      knowledgeTopics: [{ topicKey: 'knowledge.company_setup', goalKey: 'anc.company_formation', citationRequired: true }],
+      requirementKeys: [], enabledReadToolKeys: [],
+    };
+    expect(turnEnvelopeSchema.safeParse({ ...envelope, catalogV2 }).success).toBe(true);
+    expect(turnEnvelopeSchema.safeParse({ ...envelope, catalogV2: { ...catalogV2,
+      knowledgeTopics: [{ topicKey: 'knowledge.company_setup', goalKey: 'anc.company_formation', citationRequired: true, rawText: 'not allowed' }],
+    } }).success).toBe(false);
+  });
+
   it('rejects persona pin and model-provided identity scope mismatches', () => {
     expect(turnEnvelopeSchema.safeParse({ ...envelope, personaVersionId: 'persona-other-12345678' }).success).toBe(false);
     expect(toolRequestSchema.safeParse({
