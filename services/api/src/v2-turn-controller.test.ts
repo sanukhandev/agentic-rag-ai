@@ -194,6 +194,90 @@ const modelProposal = {
   proposedFacts: [{ key: 'business_activity' as const, maskedValue: 'technology consulting', supportingQuote: 'technology consulting' }],
 };
 
+
+describe('V2 context-aware company formation confirmation (isolated unit)', () => {
+  const firstTurn = async (message: string, plan: Record<string, unknown>) => {
+    const ctx = await prepared();
+    await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+    const current = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+    if (!current) throw Error('UNIT_CUSTOMER_MESSAGE_MISSING');
+    await ctx.store.updateMessage({ ...current, maskedContent: message });
+    ctx.input.userMessage = { ...current, maskedContent: message };
+    ctx.input.maskedMessage = message;
+    ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'I can help with that.', nextQuestion: null,
+        nextQuestionKey: null, planning: { ...plan, proposedFacts: [] } },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(ctx.input);
+    return { ...ctx, reply };
+  };
+
+  it.each(['I want to form a company', 'I want to start a company', 'Please incorporate a company'])(
+    'prompts for explicit goal confirmation from reviewed natural phrase: %s', async message => {
+      const ctx = await firstTurn(message, modelProposal);
+      expect(ctx.reply.answer).toContain('Would you like to proceed with company formation?');
+      expect(ctx.reply.actionProposal).toBeNull();
+      const doc = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+      expect(doc?.goalConfirmed).toBe(false);
+      expect(doc?.goalConfirmation?.status).toBe('pending');
+      expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
+      const audit = (await ctx.store.listAudit(ctx.tenant.id)).find(e => e.eventName === 'v2.catalog.planning_reviewed');
+      expect(audit?.metadata).toMatchObject({
+        proposalValid: true, goalThresholdMet: true, initiationSupported: true,
+        validatedSignalIds: ['signal.company.register'], goalConfirmationPending: true, goalConfirmed: false,
+      });
+    },
+  );
+
+  it('does not prompt for goal confirmation during a formation information-only question', async () => {
+    const ctx = await firstTurn('Tell me about company formation', {
+      ...modelProposal, turnCategory: 'knowledge_advisory', nextMove: 'answer_knowledge',
+    });
+    expect(ctx.reply.pendingPromptId).toBeNull();
+    const doc = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(doc?.goalConfirmed).toBe(false);
+    expect(doc?.goalConfirmation).toBeNull();
+    expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
+  });
+
+  it('accepts a contextual initiation only after a previous customer formation statement', async () => {
+    const ctx = await firstTurn('Tell me about company formation', {
+      ...modelProposal, turnCategory: 'knowledge_advisory', nextMove: 'answer_knowledge',
+    });
+    const next = await followUpTurn(ctx as Awaited<ReturnType<typeof proposalTurn>>, "Let's start the process");
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'We can get started.', nextQuestion: null,
+        nextQuestionKey: null, planning: { ...modelProposal, matchedSignalIds: [], proposedFacts: [] } },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(next);
+    expect(reply.answer).toContain('Would you like to proceed with company formation?');
+    expect(reply.actionProposal).toBeNull();
+    const audit = (await ctx.store.listAudit(ctx.tenant.id)).filter(e => e.eventName === 'v2.catalog.planning_reviewed').at(-1);
+    expect(audit?.metadata).toMatchObject({ contextSupported: true, initiationSupported: true,
+      validatedSignalIds: ['signal.company.register'], goalConfirmationPending: true });
+  });
+
+  it('keeps an information-only turn informational even if GPT proposes a business goal', async () => {
+    const ctx = await firstTurn('How do I start company formation?', modelProposal);
+    expect(ctx.reply.pendingPromptId).toBeNull();
+    const audit = (await ctx.store.listAudit(ctx.tenant.id)).find(e => e.eventName === 'v2.catalog.planning_reviewed');
+    expect(audit?.metadata).toMatchObject({ initiationSupported: false });
+  });
+
+  it('cannot trigger from a fabricated model signal with no observed customer evidence', async () => {
+    const ctx = await firstTurn('Hello', {
+      ...modelProposal, matchedSignalIds: ['signal.company.register'], confidenceBand: 'high',
+    });
+    expect(ctx.reply.pendingPromptId).toBeNull();
+    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.goalConfirmed).toBe(false);
+    expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
+  });
+});
 describe('V2-only publication without a legacy V1 catalog', () => {
   it('pins a published V2 catalog and exposes its read-only catalog and RAG tools', async () => {
     const { store, tenant, coordinator, input, session } = await prepared();
