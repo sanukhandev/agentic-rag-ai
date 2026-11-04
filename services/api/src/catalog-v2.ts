@@ -57,6 +57,8 @@ const sheetSchemas = {
     targetKey: key,
     signalType: z.enum(['phrase', 'keyword', 'exclusion']),
     value: label,
+    /** Reviewed catalog synonyms only. Each alias shares its signal ID/weight. */
+    aliases: z.array(label).max(12).optional(),
     language: z.string().trim().regex(/^[a-z]{2}(?:-[A-Z]{2})?$/u),
     weight: z.number().min(-100).max(100),
     minWeight: z.number().min(-100).max(100),
