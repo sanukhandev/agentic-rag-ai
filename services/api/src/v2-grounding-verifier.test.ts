@@ -47,7 +47,7 @@ describe('independent claim entailment is separate from lexical overlap', () => 
   });
 
   it('calls only the authenticated private verifier endpoint with a bounded deadline', async () => {
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ results: supported }) }));
+    const fetchMock = vi.fn(async (_input: string, _init?: RequestInit) => ({ ok: true, json: async () => ({ results: supported }) }));
     vi.stubGlobal('fetch', fetchMock);
     const verifier = new HttpV2GroundingVerifier('http://model-gateway:8088', 'secret-12345678');
     const results = await verifier.verify({
