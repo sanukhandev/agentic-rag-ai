@@ -10,14 +10,19 @@ const filler = new Set([
   'i','me','my','you','your','we','our','they','their','that','this','those',
   'these','of','to','for','with','from','by','on','at','in','as','it','its',
   'have','has','had','will','would','could','should','can','may','might',
-  'said','says','stated','states','currently','now',
+  'said','says','stated','states','currently','now','still','right','yet',
+  'show','shows','showing','requested',
 ]);
 const canonical = (token: string): string => {
+  // Acknowledging a customer-stated fact does not assert a provider outcome.
+  if (/^not(?:e|ed|ing)$/u.test(token)) return 'confirm';
   const bare = token.replace(/(?:ing|ed|es|s)$/u, '');
   const aliases: Record<string, string> = {
     cost: 'price', pric: 'price', fee: 'price', charg: 'price',
     contain: 'include', includ: 'include', requir: 'require',
     need: 'require', document: 'document', doc: 'document',
+    updat: 'correct', correct: 'correct', confirm: 'confirm',
+    request: 'action', process: 'process',
     registr: 'register', register: 'register', creat: 'create', create: 'create',
     pay: 'pay', paid: 'pay', purchas: 'purchase',
   };
