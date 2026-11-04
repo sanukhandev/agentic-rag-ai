@@ -17,6 +17,7 @@
 - Verified business activity and visa facts survive post-confirmation turns: PASS in public smoke and PostgreSQL intent-document inspection.
 - Invalid non-knowledge journey citations no longer erase safe continuity: PASS in coordinator regression and public smoke.
 - Public 25-turn conversation/persistence harness: 25/25 turns and 25 durable unique customer messages PASS after ZARA-005 correction.
+- Final public 25-turn persistence rerun at commit `58fb319`: PASS, session `b4c17814-8b2f-4af1-90a0-5d6ec9b6a8ee`, 25/25 answers and 25 durable unique customer messages.
 - Local five-source ingestion acceptance: PASS after ZARA-006 correction.
 - Synthetic tenant A/B/idempotent mock workflow acceptance: PASS after aligning the harness with one-field-at-a-time contact collection.
 - API focused/full unit, typecheck, lint and Docker API/model-gateway build: PASS for executed runs.

@@ -66,3 +66,12 @@ This is a partial journey gate, not full completion. The database has zero appro
 - Synthetic name and email → masked facts persisted under `lead_contact_name` and `lead_contact_channel`.
 - Contact consent → `lead_crm_consent` persisted, session consent `granted`, pending requirement advanced to `lead_action_confirmation`.
 - No Salesforce action was created or claimed; the published V2 `lead.create` binding remains disabled and external provider verification was not attempted.
+
+## Final public persistence rerun at commit `58fb319`
+
+**Result:** PASS.
+
+- Session: `b4c17814-8b2f-4af1-90a0-5d6ec9b6a8ee`.
+- 25/25 public HTTP turns returned answers through Nginx → API → model gateway.
+- History endpoint returned HTTP 200 with 25 durable unique customer messages.
+- External CRM, invoice, document and signing outcomes: `NOT_VERIFIED_BY_THIS_HARNESS`.
