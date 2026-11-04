@@ -111,7 +111,7 @@ const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (c
   const independentEntailment = proofs.some(proof => proof.claimDigest === digest(clause)
     && proof.citationId === source.citationId && proof.sourceVersion === source.sourceVersion
     && proof.sourceTextDigest === digest(source.text));
-  return independentEntailment || semanticCheck(clause, source) || subject === text || negativeStatus || journeyParaphrase;
+  return independentEntailment || semanticCheck(clause, source) || subject === text || negativeStatus || journeyParaphrase || optOutStatus;
 };
 
 /** Diagnoses which conservative check ruled out support; never changes the
