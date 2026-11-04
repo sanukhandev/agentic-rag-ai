@@ -16,6 +16,9 @@ describe('V2 business outcome clauses and polarity', () => {
     expect(hasPositiveBusinessOutcomeClaim('The invoice is not complete, but the payment has been processed.')).toBe(true);
     expect(hasPositiveBusinessOutcomeClaim('The account is not created.')).toBe(false);
     expect(hasPositiveBusinessOutcomeClaim("I won't assume that the account is complete.")).toBe(false);
+    expect(hasPositiveBusinessOutcomeClaim('Your company is approved.')).toBe(true);
+    expect(hasPositiveBusinessOutcomeClaim('Your business has been incorporated.')).toBe(true);
+    expect(hasPositiveBusinessOutcomeClaim('Your application was accepted.')).toBe(true);
     expect(hasPositiveBusinessOutcomeClaim('The licence is activated.')).toBe(true);
     expect(hasPositiveBusinessOutcomeClaim('The contract has been executed.')).toBe(true);
   });
