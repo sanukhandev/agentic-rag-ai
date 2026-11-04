@@ -171,7 +171,7 @@ export const buildV2GroundingReviewClaims = (
   if (response.citationIds.some(id => !byId.has(id))) return [];
   const text = response.nextQuestion ? trailingQuestion(response.answer, response.nextQuestion) ?? response.answer : response.answer;
   const clauses = extractV2ConsequentialClauses(text, dialogueForClaims);
-  if (clauses.length === 0 || clauses.length > 8) return [];
+  if (clauses.length === 0 || clauses.length > 8 || clauses.some(clause => clause.length > 1_500)) return [];
   const sources = response.citationIds.map(id => byId.get(id)!);
   return clauses.map((clause, index) => ({
     claimId: String(index + 1), text: clause,
