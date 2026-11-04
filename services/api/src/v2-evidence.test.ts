@@ -13,6 +13,18 @@ describe('V2 strict source-bound claims', () => {
     expect(invalid.verdict.reasonCode).toBe('unsupported_claim');
     expect(invalid.firstFailure?.reason).toBe('single_source_support_not_established');
   });
+  it('rejects cross-package price fabrication even when the cited source contains that number', () => {
+    const cited: V2ApprovedEvidence[] = [{
+      citationId: 'source-a',
+      text: 'Package Alpha costs 40 AED. Package Beta costs 80 AED.',
+      sourceVersion: 'version-12345678', approved: true, revoked: false,
+    }];
+    const invalid = verifyV2ResponseEvidence(response('Package Alpha costs 80 AED.'), cited);
+    expect(invalid.verdict.reasonCode).toBe('unsupported_claim');
+    expect(invalid.firstFailure?.reason).toBe('single_source_support_not_established');
+    const valid = verifyV2ResponseEvidence(response('Package Alpha costs 40 AED.'), cited);
+    expect(valid.verdict.reasonCode).toBe('accepted');
+  });
   it('accepts a source-close fact supported by exactly one approved source', () => {
     const output = verifyV2ResponseEvidence(response('The package costs 42 credits.'), approved);
     expect(output.verdict.accepted).toBe(true);
