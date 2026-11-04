@@ -316,16 +316,17 @@ export class V2ConversationCoordinator {
         && item.sourceVersion === approved.sourceVersion && item.text === approved.text));
     const reviewClaims = buildV2GroundingReviewClaims(candidateResponse, trustedReviewEvidence);
     const lexicalOverlap = v2MeanLexicalOverlapPercent(reviewClaims);
-    if (guarded.verdict.accepted) return { response: guarded.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: guarded.claims, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason, groundingLexicalOverlapPercent: lexicalOverlap, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
-    // An independent model reviewer can rescue a *lexical* false rejection only
-    // after Node has authenticated the source versions, resolved exact citations
-    // and rejected no business outcome. It may not authorize a stage transition.
+    if (guarded.verdict.accepted && (!this.groundingVerifier || reviewClaims.length === 0)) return { response: guarded.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: guarded.claims, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason, groundingLexicalOverlapPercent: lexicalOverlap, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
+    // When enabled, independent entailment must also review already accepted
+    // public-source claims. Otherwise a high-overlap yet unsupported statement
+    // would bypass grounding merely by matching keywords. Node's business
+    // authority and deterministic checks remain final.
     let groundingReviewStatus: NonNullable<V2CoordinatorResult['groundingReviewStatus']> = this.groundingVerifier ? 'not_eligible' : 'not_configured';
     let groundingReviewRequests = 0;
-    const eligibleForEntailment = this.groundingVerifier && guarded.verdict.reasonCode === 'unsupported_claim'
-      && guarded.firstFailure?.reason === 'single_source_support_not_established'
-      && hasTrustedPrefetch && !hasPositiveBusinessOutcomeClaim(candidateResponse.answer)
-      && reviewClaims.length > 0;
+    const eligibleForEntailment = this.groundingVerifier && hasTrustedPrefetch
+      && !hasPositiveBusinessOutcomeClaim(candidateResponse.answer) && reviewClaims.length > 0
+      && (guarded.verdict.accepted || (guarded.verdict.reasonCode === 'unsupported_claim'
+        && guarded.firstFailure?.reason === 'single_source_support_not_established'));
     if (eligibleForEntailment) {
       const remaining = Date.parse(envelope.budgets.deadlineAt) - Date.now();
       if (agentResult.modelRequestCount >= envelope.budgets.maxModelRequests || remaining < 3_500) {
@@ -455,9 +456,10 @@ export class V2ConversationCoordinator {
         guardReason: 'safe_no_evidence_dialogue', candidateGuardReason, diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
       };
     }
-    const fallback = guardV2OfflineFallback(fallbackFamilyFor(guarded.verdict.reasonCode), guardContext);
+    const failedIndependentReview = guarded.verdict.accepted && this.groundingVerifier && reviewClaims.length > 0;
+    const fallback = guardV2OfflineFallback(failedIndependentReview ? 'invalid_model' : fallbackFamilyFor(guarded.verdict.reasonCode), guardContext);
     if (!fallback.verdict.accepted || !fallback.response) throw new Error('V2_RESPONSE_REJECTED');
-    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: [], modelRequestCount: agentResult.modelRequestCount + repairModelRequests + groundingReviewRequests, toolCallCount: agentResult.toolCallCount, guardReason: guarded.verdict.reasonCode, candidateGuardReason, knowledgeRepairStatus, groundingReviewStatus, groundingLexicalOverlapPercent: lexicalOverlap,
+    return { response: fallback.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(fallback.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: [], modelRequestCount: agentResult.modelRequestCount + repairModelRequests + groundingReviewRequests, toolCallCount: agentResult.toolCallCount, guardReason: failedIndependentReview ? 'grounding_review_rejected' : guarded.verdict.reasonCode, candidateGuardReason, knowledgeRepairStatus, groundingReviewStatus, groundingLexicalOverlapPercent: lexicalOverlap,
       initialClaimFailureReason: guarded.firstFailure?.reason ?? null,
       initialFailedClauseOrdinal: guarded.firstFailure?.clauseOrdinal ?? null,
       repairCitationCount, repairFailureReason, repairClaimFailureReason, repairFailedClauseOrdinal,
