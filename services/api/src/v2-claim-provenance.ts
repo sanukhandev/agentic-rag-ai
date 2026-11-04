@@ -36,6 +36,9 @@ export interface V2ClaimEvaluation {
   firstFailure?: V2ClaimFailure;
 }
 
+/** Temporary lexical matching gate; independent of citation, numeric, negation and outcome checks. */
+const MIN_CLAIM_SOURCE_TOKEN_OVERLAP = 0.4;
+
 const norm = (s: string): string => s.normalize('NFKC').toLowerCase().replace(/[_-]/gu, ' ').replace(/\s+/gu, ' ').trim();
 const digest = (s: string): string => createHash('sha256').update(s).digest('hex').slice(0, 32);
 const numbers = (s: string): string[] => norm(s).match(/\b\d+(?:[.,]\d+)?\b/gu) ?? [];
@@ -80,7 +83,7 @@ const supportsSource = (clause: string, source: V2ClaimSource, semanticCheck: (c
   const available = new Set(tokens(text));
   const matchCount = important.filter((word) => available.has(word)).length;
   const customerReflection = source.kind === 'customer_fact' && matchCount > 0 && semanticCheck(clause, source);
-  if (!negativeStatus && !journeyParaphrase && !customerReflection && (important.length === 0 ? subject !== text : matchCount === 0 || matchCount / important.length < 0.7)) return false;
+  if (!negativeStatus && !journeyParaphrase && !customerReflection && (important.length === 0 ? subject !== text : matchCount === 0 || matchCount / important.length < MIN_CLAIM_SOURCE_TOKEN_OVERLAP)) return false;
   // Semantic check is per-source, not a concatenation of unrelated citations.
   return semanticCheck(clause, source) || subject === text || negativeStatus || journeyParaphrase;
 };
@@ -104,7 +107,7 @@ const classifyUnsupportedClause = (part: string, sources: V2ClaimSource[]): V2Cl
   if (important.length > 0 && sources.every(source => {
     const available = new Set(tokens(source.text));
     const count = important.filter(word => available.has(word)).length;
-    return count === 0 || count / important.length < 0.7;
+    return count === 0 || count / important.length < MIN_CLAIM_SOURCE_TOKEN_OVERLAP;
   })) return 'insufficient_clause_source_overlap';
   return 'single_source_support_not_established';
 };
