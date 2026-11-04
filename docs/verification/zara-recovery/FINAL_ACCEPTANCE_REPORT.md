@@ -23,6 +23,7 @@
 - API focused/full unit, typecheck, lint and Docker API/model-gateway build: PASS for executed runs.
 - V2 package catalog identity boundary: PASS — migration 059 applied, tenant-scoped FK/check constraint verified, V2 gateway/store regression coverage PASS; no pricebook data was fabricated.
 - V2 masked contact collection boundary: PASS — name/email facts persisted under catalog requirement keys, explicit contact consent advanced to Lead action confirmation, and no action was created.
+- Live provider boundary check: BLOCKED_EXTERNAL_DEPENDENCY — `.env` selects Salesforce, but the published ANCFZ V2 `lead.create` and `crm.lead.create` bindings are disabled; the inactive n8n template has a placeholder provider URL/no credential and targets an unimplemented provider-evidence endpoint.
 
 ## Unverified or blocked
 
