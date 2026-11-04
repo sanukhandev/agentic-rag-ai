@@ -11,8 +11,10 @@ bounded knowledge-repair behavior remain active.
 ## Runtime contract
 
 - `V2_GROUNDING_ENTAILMENT_MODE=enforce` (API environment) enables one additional
-  independent review when the existing V2 guard rejects a cited factual clause
-  for `single_source_support_not_established`.
+  independent review of eligible cited public-knowledge claims, both when the
+  legacy guard already accepted them and when it rejected a clause for
+  `single_source_support_not_established`. A rejected review cannot become
+  accepted merely because the old lexical heuristic liked the wording.
 - The reviewer is invoked only when the exact server-prefetched, tenant-scoped,
   approved source IDs, versions and texts match Node's trusted prefetch. The
   review is not used to override other guard failures, including invalid citation,
