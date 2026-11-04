@@ -52,4 +52,12 @@
 - `npm audit --omit=dev --audit-level=high`: FAIL — one high `undici` advisory remains on the workspace OpenAI/Angular resolution path. `npm audit fix --dry-run` hits an Angular peer-resolution conflict; no security gate was weakened and no forced dependency upgrade was applied.
 - Browser host automation: BLOCKED_EXTERNAL_DEPENDENCY — no usable browser tab/host was available for the required customer UI run.
 
+## Latest recovery checkpoint — 2026-11-04
+
+- Pending-goal interruption classifier and quoted fact recovery: PASS in focused tests and public live replay.
+- Latest API full suite: PASS — 61 test files / 501 tests; typecheck, lint and Docker API build PASS.
+- Latest public Azure-backed run: PASS transport/persistence — 25/25 answers and 25 durable messages; automated objective score 0.90 (9/10).
+- Remaining live quality defect: three generic fallbacks on package-information, adviser-preference and privacy turns in the final stochastic run. Human persona scoring is NOT_RUN.
+- Overall status remains `NOT_READY`; Salesforce, browser E2E, full seven-stage journey, formal three-run >=90% quality gate and provider readback remain unverified or blocked.
+
 The branch is not ready to merge until the unverified gates are executed or explicitly accepted as external blockers.

@@ -92,3 +92,11 @@ The provider configuration remains unavailable, so no Salesforce completion is c
 - Evidence merging now treats citation/source/version/authorization identity as the conflict boundary, not query-specific projected text.
 - Node-prefetched evidence remains authoritative when the same approved citation is returned by a trusted read-only tool with a narrower or different projection.
 - Added regression coverage and verified three fresh Azure-backed public 25-turn runs after rebuild: each returned 25/25 answers and persisted 25 unique customer messages.
+
+## 2026-11-04 — pending confirmation continuity and quoted fact recovery
+
+- Scoped pending-goal decisions now distinguish advisory/requirement interruptions from explicit rejection, correction and confirmation.
+- Node preserves the pending goal prompt while accepting only quote-validated, non-sensitive visa/timeline facts; corrections replace the prior fact with `corrected=true`.
+- Node-authored correction/recap acknowledgements are used only at the pending-goal boundary when model wording cannot pass the response guard; no action authorization is added.
+- Added a redacted objective Azure conversation scorer and public-harness fields for groundedness, citations, action proposals and pending intent.
+- Live result: 25/25 transport, 25 durable turns, 0.90 objective score (9/10); fallback absence remains the only failed objective check in the final run.

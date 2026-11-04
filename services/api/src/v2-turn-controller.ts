@@ -7,7 +7,7 @@ import { authorizedPendingRequirement } from './v2-conversation-decision.js';
 import { authorizedV2ReadTools } from './v2-tool-policy.js';
 import { validateV2PlanningProposal } from './v2-planning.js';
 import { proposeV2CatalogAction, v2ActionConsentScope } from './v2-action-gate.js';
-import { validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
+import { extractQuotedV2CustomerFacts, validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
 import { contextForConfirmedV2Action, initializeConfirmedV2Journey } from './v2-journey-bootstrap.js';
 import type { ActionGateway } from './actions.js';
 import { extractLeadData } from './model.js';
@@ -526,18 +526,35 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     }
     overrideResponse = true;
   }
-  const effectiveCitationIds = overrideResponse ? [] : result.response.citationIds;
-  const citations = overrideResponse ? [] : modelCitations;
-  const grounded = effectiveCitationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence');
-  const answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
-  assertKnownTokens(session, answerMasked, input.tokenVault);
-  const approvedResponse = { answer: answerMasked, grounded, citationRefs: effectiveCitationIds,
-    pendingRequirementKey: effectivePendingRequirement };
   // Persist only facts that Node already verified in its session/intent store.
   // Never promote model-generated facts to verified customer facts.
-  const proposedFacts = validPlan && selectedV2Goal && modelPlan && !decision
+  const proposedFacts = validPlan && selectedV2Goal && modelPlan
+    && (decision === null || decision === 'interruption')
     ? validateQuotedV2CustomerFacts(modelPlan.proposedFacts ?? [], maskedMessage, userMessage.id, state.messageSequence)
     : {};
+  const extractedFacts = selectedV2Goal && (decision === null || decision === 'interruption')
+    ? extractQuotedV2CustomerFacts(maskedMessage, userMessage.id, state.messageSequence)
+    : {};
+  const acceptedCustomerFacts = { ...extractedFacts, ...proposedFacts };
+  const currentCustomerFacts = { ...(intentDocument?.verifiedFacts ?? {}), ...acceptedCustomerFacts };
+  const factLabels: Record<string, string> = { visa_count: 'your visa requirement', timeline: 'your requested start timeline', business_activity: 'your business activity', entity_type: 'your company structure' };
+  const factSummary = Object.entries(currentCustomerFacts).map(([key, value]) => `${factLabels[key] ?? key} as ${value.maskedValue}`);
+  const isCorrection = /\b(?:actually|changed?|make that|instead)\b/iu.test(maskedMessage);
+  const isRecap = /\b(?:recap|summari[sz]e|what did i tell)\b/iu.test(maskedMessage);
+  const modelFailedDialogue = !['accepted', 'accepted_entailment', 'accepted_knowledge_excerpt', 'accepted_knowledge_repair', 'accepted_model_dialogue'].includes(result.guardReason);
+  if (pendingDecision && decision === 'interruption'
+      && ((isRecap && factSummary.length > 0)
+        || (Object.keys(acceptedCustomerFacts).length > 0 && (isCorrection || modelFailedDialogue)))) {
+    const changed = Object.keys(acceptedCustomerFacts).filter(key => intentDocument?.verifiedFacts[key]?.maskedValue !== acceptedCustomerFacts[key]!.maskedValue);
+    const values = (isRecap ? Object.entries(currentCustomerFacts) : changed.map(key => [key, acceptedCustomerFacts[key]!] as const))
+      .map(([key, value]) => `${factLabels[key] ?? key} as ${value.maskedValue}`);
+    const verb = changed.length > 0 ? 'updated' : 'noted';
+    effectiveAnswer = isRecap
+      ? `Here’s what I have noted: ${values.join('; ')}. Would you like to proceed with company formation?`
+      : `Thanks, I’ve ${verb} ${values.join(' and ')}. Would you like to proceed with company formation?`;
+    effectiveQuestion = 'Would you like to proceed with company formation?';
+    overrideResponse = true;
+  }
   const contactFactPatch = contactActive ? {
     ...(contactValues.name && nameRequirementKey ? { [nameRequirementKey]: {
       maskedValue: contactValues.name, source: 'visitor' as const, messageSequence: state.messageSequence,
@@ -558,7 +575,14 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
     },
   } : {};
-  const incomingFacts = { ...(intentDocument?.verifiedFacts ?? {}), ...factPatch(facts as Record<string, string>, state.messageSequence), ...contactFactPatch, ...actionConfirmationFactPatch, ...proposedFacts };
+  const incomingFacts = { ...(intentDocument?.verifiedFacts ?? {}), ...factPatch(facts as Record<string, string>, state.messageSequence), ...contactFactPatch, ...actionConfirmationFactPatch, ...acceptedCustomerFacts };
+  const effectiveCitationIds = overrideResponse ? [] : result.response.citationIds;
+  const citations = overrideResponse ? [] : modelCitations;
+  const grounded = effectiveCitationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence');
+  const answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
+  assertKnownTokens(session, answerMasked, input.tokenVault);
+  const approvedResponse = { answer: answerMasked, grounded, citationRefs: effectiveCitationIds,
+    pendingRequirementKey: effectivePendingRequirement };
   const verifiedFactPatch: Record<string, UserIntentFact> = Object.fromEntries(
     Object.entries(incomingFacts).filter(([key, value]) =>
       !intentDocument?.verifiedFacts[key] || intentDocument.verifiedFacts[key]?.maskedValue !== value.maskedValue)
@@ -712,7 +736,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         rejectedTopicKeys: (planningDecision?.rejectedTopicKeys ?? []).slice(0, 16).join(',').slice(0, 600),
         goalConfirmationPending: goalConfirmation?.status === 'pending',
         goalConfirmed,
-        acceptedCustomerFactKeys: Object.keys(proposedFacts).join(','),
+        acceptedCustomerFactKeys: Object.keys(acceptedCustomerFacts).join(','),
         score: planningDecision?.score?.evidenceScore ?? null,
         modelConfidenceBand: modelPlan.confidenceBand,
         proposedToolKey: modelPlan.proposedToolKey,

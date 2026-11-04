@@ -248,3 +248,16 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Correction:** Evidence conflict now compares citation ID, source reference, source version and authorization/revocation state. Node-prefetched evidence remains authoritative text; mismatched identity still fails closed.
 - **Verification:** Focused coordinator suite 51/51 PASS; API suite 61 files / 495 tests PASS; three fresh final Azure-backed public runs each completed 25/25 turns with 25 durable user messages.
 - **Regression status:** FIXED for the reproduced public path; formal conversation-quality scoring, Salesforce and full seven-stage acceptance remain unverified.
+
+## Failure ZARA-021 — pending goal prompts consumed natural requirement statements
+
+- **Customer messages:** `I may need one visa for the business.`, `I am thinking of a next-month timeline.`, and `Actually, my planned timeline is two months, not next month.` while company-formation confirmation was pending.
+- **Expected behavior:** Preserve the pending confirmation, retain explicitly quoted non-sensitive facts, accept corrections, and answer a recap without restarting or authorizing an action.
+- **Actual behavior:** Non-question statements were classified as ambiguous/corrected; the controller repeated the confirmation, cleared the pending goal on a correction, or let an uncited acknowledgement fall through to a generic guard fallback. Facts could also be lost when Azure omitted `planning.proposedFacts`.
+- **Failing runtime components:** `services/api/src/conversation-state.ts` and `services/api/src/v2-turn-controller.ts`.
+- **Actual failure codes:** `safe_no_evidence_dialogue`, `unsupported_claim`, and `invalid_question` on the original path.
+- **Root cause (confirmed):** `classifyScopedGoalDecision` had only question/yes/no/goal-switch/ambiguous outcomes. The pending-confirmation branch treated ordinary requirement/advisory language as ambiguity or correction, and fact persistence was gated on a model proposal even though the customer message itself contained a safely quotable value.
+- **Regression tests:** `conversation-state.test.ts` covers advisory interruptions and refusal/correction boundaries; `v2-turn-controller.test.ts` covers quoted facts during an interruption and deterministic provenance extraction; `tools/anc/acceptance/test_score_azure_conversation.py` covers the objective scorer.
+- **Correction:** Added an `interruption` classification for advisory/requirement statements, checked explicit rejection before advisory terms, retained the pending prompt, validated quoted visa/timeline values, marked changed facts as corrected, and authored bounded Node acknowledgements for correction/recap recovery.
+- **Verification:** Focused API tests 58/58, full API suite 61 files / 501 tests, typecheck/lint/build PASS. Final live public Azure-backed run: 25/25 HTTP answers, 25 durable user messages, automated objective score 0.90 (9/10). Correction and recap checks PASS; human persona review is NOT_RUN.
+- **Remaining:** Some unrelated non-action turns still fall back (`package information`, adviser preference, privacy refusal). No unauthorized action was observed; full Azure quality and seven-stage/provider acceptance remain unverified.

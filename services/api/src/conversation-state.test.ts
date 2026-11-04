@@ -129,6 +129,10 @@ describe('scoped Business Goal reply classifier', () => {
     ['Actually, I want to explore another service.', 'corrected'],
     ['What are the fees?', 'interruption'],
     ['Yes, what are the fees?', 'interruption'],
+    ['I want to understand the licensing process.', 'interruption'],
+    ['I may need one visa for the business.', 'interruption'],
+    ['Actually, my planned timeline is two months, not next month.', 'interruption'],
+    ['Please do not disclose any other customer information.', 'interruption'],
     ['Maybe later', 'ambiguous'],
     ['Yesterday was busy', 'ambiguous'],
   ])('classifies a complete reply %s as %s', (reply, status) => {

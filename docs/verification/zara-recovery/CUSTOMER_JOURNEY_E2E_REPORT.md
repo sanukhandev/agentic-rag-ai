@@ -156,3 +156,11 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 
 - The private ANCFZ PDF simulator and mock-payment simulator now remain running with local-only keys stored in the ignored development `.env`.
 - This does not authorize Salesforce, create a real payment, or establish provider completion; those remain separately gated and unverified.
+
+## Pending-goal live recovery checkpoint
+
+- Final public artifact: `artifacts/ancfz/azure-eval-final-correction-detector.json`.
+- 25/25 customer turns returned HTTP answers and 25 unique customer messages were durable.
+- The customer’s timeline correction was acknowledged as `two months`; the recap retained the visa and timeline facts.
+- No action proposal or provider-completion claim was emitted.
+- Automated objective score: 0.90 (9/10); three generic fallback responses remained on non-action turns. Human persona review, browser E2E and the full seven-stage journey are not verified.

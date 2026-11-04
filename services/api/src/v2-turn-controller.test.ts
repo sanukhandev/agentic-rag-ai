@@ -445,7 +445,7 @@ describe('published Catalog V2 planning in the GPT-first controller', () => {
 });
 
 
-import { validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
+import { extractQuotedV2CustomerFacts, validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
 
 describe('quoted customer fact provenance (pure unit)', () => {
   it('accepts only facts supported by an exact customer quote', () => {
@@ -467,6 +467,11 @@ describe('quoted customer fact provenance (pure unit)', () => {
       { key: 'timeline', maskedValue: 'next week', supportingQuote: 'customer@example.com next week' },
     ], 'I need not three visas; I run consulting, and LLC or FZE suits me, customer@example.com next week.', 'message-12345678', 4);
     expect(facts).toEqual({});
+  });
+  it('extracts explicit non-sensitive visa and correction timeline values', () => {
+    const facts = extractQuotedV2CustomerFacts('I need one visa and two months, not next month.', 'message-12345678', 4);
+    expect(facts.visa_count?.maskedValue).toBe('1');
+    expect(facts.timeline?.maskedValue).toBe('two months');
   });
 });
 
@@ -679,6 +684,27 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     const valid = await followUpTurn(ctx, 'Yes, proceed.');
     await runGPTFirstChatTurn(valid);
     expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.goalConfirmed).toBe(true);
+  });
+
+  it('retains quoted requirement facts during an advisory interruption', async () => {
+    const ctx = await proposalTurn();
+    const interruption = await followUpTurn(ctx, 'I want to register a company and need one visa next month.');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'I have noted those preferences.', nextQuestion: null, nextQuestionKey: null,
+        planning: { ...modelProposal, turnCategory: 'qualification_requirement', nextMove: 'ask_more_help',
+          proposedFacts: [
+            { key: 'visa_count', maskedValue: '1', supportingQuote: 'one visa' },
+            { key: 'timeline', maskedValue: 'next month', supportingQuote: 'next month' },
+          ] } },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    await runGPTFirstChatTurn(interruption);
+    const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document?.goalConfirmation?.status).toBe('pending');
+    expect(document?.goalConfirmed).toBe(false);
+    expect(document?.verifiedFacts.visa_count?.maskedValue).toBe('1');
+    expect(document?.verifiedFacts.timeline?.maskedValue).toBe('next month');
   });
 
   it('rejects stale session cursors and cross-tenant decisions', async () => {
