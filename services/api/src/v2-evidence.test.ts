@@ -25,6 +25,15 @@ describe('V2 strict source-bound claims', () => {
     const valid = verifyV2ResponseEvidence(response('Package Alpha costs 40 AED.'), cited);
     expect(valid.verdict.reasonCode).toBe('accepted');
   });
+  it('does not treat a generic company approval policy as provider proof of the customer\'s approval', () => {
+    const policy: V2ApprovedEvidence[] = [{
+      citationId: 'source-a', text: 'A company is approved following a complete application.',
+      sourceVersion: 'policy-12345678', approved: true, revoked: false,
+    }];
+    const candidate = verifyV2ResponseEvidence(response('Your company is approved.'), policy);
+    expect(candidate.verdict.reasonCode).toBe('unsupported_claim');
+    expect(candidate.firstFailure?.reason).toBe('unverified_provider_outcome');
+  });
   it('accepts a source-close fact supported by exactly one approved source', () => {
     const output = verifyV2ResponseEvidence(response('The package costs 42 credits.'), approved);
     expect(output.verdict.accepted).toBe(true);
