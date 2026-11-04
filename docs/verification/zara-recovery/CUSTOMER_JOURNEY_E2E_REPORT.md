@@ -61,7 +61,16 @@ This is a partial journey gate, not full completion. The database has zero appro
 
 - Canonical V2 catalog references now resolve only published bindings with explicit n8n workflow identity, webhook path and payload contract.
 - Claims require a matching durable action execution tuple and return masked approved payload plus Node authorization flags.
-- The development publication remains disabled and lacks those transport identities; the trusted provider-evidence endpoint is still absent.
+- The development publication remains disabled and lacks those transport identities; Salesforce provider readback remains unavailable.
+
+## V2 provider-evidence boundary
+
+**Result:** PASS for deterministic mock verification; Salesforce remains blocked and fail-closed.
+
+- The authenticated Node endpoint validates the pinned V2 action and durable execution tuple before accepting evidence.
+- A deterministic mock record is accepted only when its expected idempotent reference matches; the local Lead is masked, deduplicated and linked before terminal action completion.
+- A Salesforce binding without a configured Node readback adapter transitions to `reconcile_required` and does not create or claim a local Lead.
+- No live Salesforce completion is claimed.
 
 ## Rebuilt Docker regression after Catalog V2 package identity fix
 
@@ -93,6 +102,16 @@ This is a partial journey gate, not full completion. The database has zero appro
 - 25/25 customer turns returned HTTP answers and 25 unique customer messages were durable in the history endpoint.
 - The harness explicitly reports `external_crm_invoice_document_signing: NOT_VERIFIED_BY_THIS_HARNESS`.
 - This rerun verifies the deployed conversation path only; it does not claim Salesforce, n8n, package, quotation, document, invoice or contract completion.
+
+## Fresh public persistence rerun after provider-evidence route correction
+
+**Result:** PASS for the rebuilt public conversation persistence boundary; external business outcomes remain unverified.
+
+- Artifact: `artifacts/ancfz/api-25-turns-v2-provider-evidence-route.json`.
+- Tenant: `anc`; session: `c67e8537-d6ee-479e-a6b7-6e7c3706e35d`.
+- 25/25 customer turns returned answers, and the history endpoint confirmed 25 durable unique customer messages.
+- The harness reports `external_crm_invoice_document_signing: NOT_VERIFIED_BY_THIS_HARNESS`.
+- The rebuilt API container became healthy and `/api/v1/health/live` returned HTTP 200 before this run.
 
 ## Final public persistence rerun at commit `58fb319`
 

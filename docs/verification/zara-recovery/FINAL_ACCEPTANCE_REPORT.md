@@ -25,7 +25,9 @@
 - V2 masked contact collection boundary: PASS — name/email facts persisted under catalog requirement keys, explicit contact consent advanced to Lead action confirmation, and no action was created.
 - V2 catalog-gated Lead proposal boundary: PASS in the regression fixture — explicit submission plus purpose-specific consent produced one awaiting-confirmation proposal through Node's existing gate; no provider dispatch was claimed.
 - V2 outbox/n8n claim boundary: PASS in focused memory/bridge coverage — canonical V2 refs, catalog-declared transport identity and durable execution correlation are enforced; live n8n/provider execution remains unverified.
-- Live provider boundary check: BLOCKED_EXTERNAL_DEPENDENCY — `.env` selects Salesforce, but the published ANCFZ V2 `lead.create` and `crm.lead.create` bindings are disabled; the inactive n8n template has a placeholder provider URL/no credential and targets an unimplemented provider-evidence endpoint.
+- V2 provider-evidence boundary: PASS for deterministic mock verification and fail-closed Salesforce reconciliation; canonical V2 provider contracts accept pinned catalog refs; live Salesforce readback remains unverified.
+- Latest API full suite: PASS — 61 test files / 483 tests; typecheck and lint PASS; rebuilt API health endpoint HTTP 200; fresh public 25-turn persistence run PASS with 25 durable unique user messages.
+- Live provider boundary check: BLOCKED_EXTERNAL_DEPENDENCY — `.env` selects Salesforce, but the published ANCFZ V2 `lead.create` and `crm.lead.create` bindings are disabled; the inactive n8n template has a placeholder provider URL/no credential, and the evidence endpoint deliberately reconciles until independent Salesforce readback is configured.
 
 ## Unverified or blocked
 
@@ -38,7 +40,7 @@
 - Formal performance benchmark.
 - Full quote/package calculation and customer-facing quote revision journey.
 - Live Lead proposal/provider execution from the published ANCFZ catalog remains blocked because its Lead bindings are disabled and the n8n template has no configured Salesforce provider evidence path.
-- V2 trusted provider-evidence endpoint remains NOT_IMPLEMENTED; completion callbacks must remain fail-closed until it is implemented and tested.
+- V2 Salesforce provider-evidence completion remains BLOCKED_EXTERNAL_DEPENDENCY until a configured Node provider adapter performs independent sandbox readback; the implemented endpoint deliberately fails closed.
 - ANCFZ approved package offerings: BLOCKED_EXTERNAL_DEPENDENCY — development database contains zero approved `package_offerings` rows; the identity boundary is repaired but authoritative price/catalog input is absent.
 - `npm audit --omit=dev`: FAIL — one high `undici` advisory remains on the workspace OpenAI/Angular resolution path; no security gate was weakened.
 

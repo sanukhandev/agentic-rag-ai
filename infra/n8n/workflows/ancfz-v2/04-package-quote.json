@@ -155,7 +155,7 @@
           "timeout": 30000
         }
       },
-      "notes": "PLANNED TRUSTED NODE ENDPOINT; NOT IMPLEMENTED in current V2 API. This intentionally blocks all completion until a security-reviewed adapter performs provider readback, correlation and evidence checks. Assign internal Header Auth credential."
+      "notes": "PLANNED PROVIDER-SPECIFIC NODE ADAPTER; NOT WIRED in current V2 API. This intentionally blocks all completion until a security-reviewed adapter performs provider readback, correlation and evidence checks. Assign internal Header Auth credential."
     },
     {
       "id": "ancfzV2PackageQuoteR1-attest",
@@ -286,5 +286,5 @@
   },
   "pinData": {},
   "staticData": null,
-  "notes": "UNPUBLISHED / INERT TEMPLATE. Only catalog-approved, versioned pricing. Package selection remains Node-owned. Verify quote/selection revision. Node V2 claim/dispatch and trusted provider evidence endpoint are not wired. No credentials are included; never enable without Node gate, provider credentials, readback, callbacks and synthetic E2E tests."
+  "notes": "UNPUBLISHED / INERT TEMPLATE. Only catalog-approved, versioned pricing. Package selection remains Node-owned. Verify quote/selection revision. Node V2 claim/dispatch and provider-specific readback adapter are not wired. No credentials are included; never enable without Node gate, provider credentials, readback, callbacks and synthetic E2E tests."
 }

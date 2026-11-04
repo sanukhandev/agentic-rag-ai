@@ -49,6 +49,14 @@ No synthetic ANCFZ pricebook was re-enabled: the development database still has 
 
 The published ANCFZ bindings remain disabled and the Salesforce workflow remains unverified, so this checkpoint does not establish Lead creation.
 
+## M6 provider-evidence checkpoint — 2026-11-04
+
+- V2 provider contracts now accept the authoritative canonical Catalog V2 reference (`anc:r2:<hash>`) instead of incorrectly requiring a legacy UUID.
+- Added the authenticated `/api/v2/internal/provider-evidence/verify` boundary. It validates the pinned tenant/session/opportunity/catalog/action/execution tuple, creates the masked local Lead idempotently, and completes only a deterministic mock record whose expected external reference matches the action idempotency key.
+- Salesforce and other non-mock provider types are moved to `reconcile_required` until a configured Node provider adapter performs independent readback; no provider assertion is trusted as completion.
+- Regression coverage proves deterministic mock completion and Salesforce fail-closed behavior. The published ANCFZ Salesforce binding remains disabled.
+- API full suite: 61 files / 483 tests PASS; typecheck and lint PASS; API image rebuild PASS; rebuilt container healthy and public health endpoint returned HTTP 200; fresh public 25-turn persistence harness PASS.
+
 ## M5 dispatch-bridge checkpoint — 2026-11-04
 
 - Added catalog-declared V2 n8n transport identity fields and preserved blank values as unbound rather than inventing routes.
@@ -56,4 +64,4 @@ The published ANCFZ bindings remain disabled and the Salesforce workflow remains
 - V2 claims return masked approved payloads plus Node-verified authorization flags for the n8n stage guard.
 - API suite: 60 files / 480 tests PASS; Python ingestion suite: 35 tests PASS.
 
-The trusted provider-evidence endpoint and provider configuration remain unimplemented/unavailable, so no Salesforce completion is claimed.
+The provider configuration remains unavailable, so no Salesforce completion is claimed; the authenticated evidence boundary is implemented in the next checkpoint below.

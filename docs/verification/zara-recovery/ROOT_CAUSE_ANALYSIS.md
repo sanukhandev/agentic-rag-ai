@@ -172,3 +172,17 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Root cause (confirmed):** V2 `WorkflowBindings` had no transport identity fields and `event-bus`/claim stores queried only `intent_catalog_versions`.
 - **Correction:** Added optional reviewed transport fields, V2 route resolution, memory/PostgreSQL claim support and a fail-closed bridge test. The current ANCFZ publication remains disabled/unbound.
 - **Regression status:** FIXED at the Node dispatch/claim boundary; provider evidence and Salesforce readback remain blocked.
+
+## Failure ZARA-014 — V2 provider contracts rejected canonical catalog references
+
+- **Customer-visible impact:** A valid V2 action using the pinned `anc:r2:<hash>` catalog reference could reach the claim boundary but could not be represented by the Lead, document, account or quote provider contracts, which still required a UUID.
+- **Root cause (confirmed):** Provider-specific Zod schemas duplicated a legacy UUID constraint instead of using the canonical V2 catalog identity contract.
+- **Correction:** Added one shared canonical-reference schema and applied it to the V2 Lead, document, account and package provider request/result contracts.
+- **Regression:** Canonical reference parsing and all affected provider suites PASS.
+
+## Failure ZARA-015 — trusted evidence was validated but terminal transition still rejected it
+
+- **Customer-visible impact:** The new evidence boundary could validate a deterministic provider record, but the shared V2 transition helper rejected every terminal completion before persisting the verified result.
+- **Root cause (confirmed):** `evaluateV2CallbackStageCompletion` intentionally denied all V2 `completed` transitions and had no explicit input for a separately validated provider readback.
+- **Correction:** Added an explicit trusted-evidence flag passed only by the evidence route after exact deterministic validation. Ordinary callbacks and unverified Salesforce results remain fail-closed.
+- **Regression:** Deterministic mock route completes the action and links the local Lead; Salesforce route enters `reconcile_required` without creating a Lead.

@@ -176,6 +176,7 @@ export const evaluateV2CallbackStageCompletion = (
   status: ActionState,
   document: UserIntentDocument | null,
   knownCanonicalCatalogRef: boolean,
+  trustedProviderEvidence = false,
 ): { applies: boolean; accepted: boolean; reason: string | null } => {
   const applies = document?.catalogSource === 'v2' || knownCanonicalCatalogRef;
   if (!applies) return { applies: false, accepted: true, reason: null };
@@ -186,7 +187,9 @@ export const evaluateV2CallbackStageCompletion = (
     return { applies: true, accepted: false, reason: 'v2_callback_scope_mismatch' };
   }
   if (status === 'completed') {
-    return { applies: true, accepted: false, reason: 'v2_trusted_provider_readback_required' };
+    return trustedProviderEvidence
+      ? { applies: true, accepted: true, reason: null }
+      : { applies: true, accepted: false, reason: 'v2_trusted_provider_readback_required' };
   }
   return { applies: true, accepted: true, reason: null };
 };

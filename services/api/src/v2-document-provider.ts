@@ -1,4 +1,5 @@
 import { v2TrustedReadbackMatches, type V2TrustedProviderReadback } from './v2-provider-evidence.js';
+import { v2CatalogVersionRefSchema } from './v2-provider-correlation.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { activeOpportunityId } from './business-lifecycle.js';
@@ -15,7 +16,7 @@ export const v2DocumentProviderRequestSchema = z.object({
   tenantId: id,
   sessionId: id,
   opportunityId: id,
-  catalogVersionId: id,
+  catalogVersionId: v2CatalogVersionRefSchema,
   documentId: id,
   leadId: id,
   documentSha256: sha256,
@@ -38,7 +39,7 @@ export const v2DocumentProviderResultSchema = z.object({
   tenantId: id,
   sessionId: id,
   opportunityId: id,
-  catalogVersionId: id,
+  catalogVersionId: v2CatalogVersionRefSchema,
   documentId: id,
   leadId: id,
   attachmentId: opaque,

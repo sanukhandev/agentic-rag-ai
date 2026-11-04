@@ -119,6 +119,19 @@ export const workflowCompletionSchema = z.object({ actionId: z.string().guid(), 
     if (value.attempt === undefined) context.addIssue({ code: z.ZodIssueCode.custom, path: ['attempt'], message: 'Provider terminal transitions require an attempt.' });
   }
 });
+export const v2ProviderEvidenceVerifySchema = z.object({
+  actionId: z.string().guid(),
+  tenantId: z.string().guid(),
+  stageKey: z.string().trim().regex(/^[a-z][a-z0-9._-]{1,79}$/u),
+  workflowKey: z.string().trim().regex(/^[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)+$/iu),
+  providerType: z.string().trim().regex(/^[a-z][a-z0-9._-]{1,79}$/iu).optional(),
+  providerRecordId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u),
+  providerReadback: z.record(z.string(), z.unknown()).optional().refine((value) => value === undefined || JSON.stringify(value).length <= 100_000, 'Provider readback exceeds the diagnostic budget.'),
+  eventId: z.string().guid(),
+  correlationId: z.string().guid(),
+  attempt: z.number().int().min(1).max(100_000),
+  ...v2ProviderCorrelationSchema.shape,
+}).strict();
 export const workflowTransitionSchema = z.object({ state: z.enum(['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review']), externalReference: opaqueReference, executionReference: opaqueReference, ...workflowCorrelationFields });
 export const crmQualitySchema = z.object({ tenantId: z.string().guid(), score: z.number().int().min(0).max(100), qualityWorkflowKey: z.string().trim().min(1).max(80), catalogVersionId: z.string().guid(), intentKey: z.string().trim().min(1).max(80) });
 export const documentUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.string().trim().min(1).max(160), contentBase64: z.string().min(1).max(MAX_DOCUMENT_BASE64_CHARS), processingConsent: z.literal(true), primaryIntentKey: z.string().trim().min(1).max(80).optional(), requirementKey: z.string().trim().min(1).max(120).optional() });

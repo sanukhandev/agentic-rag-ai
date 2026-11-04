@@ -26,6 +26,7 @@ import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } fro
 import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
 import { requiredDocumentSetComplete } from './document-stage-evidence.js';
 import { buildV2DocumentProviderRequest, DeterministicV2DocumentProvider, validateV2DocumentProviderResult } from './v2-document-provider.js';
+import { buildV2LeadProviderRequest, DeterministicV2LeadProvider, validateV2LeadProviderResult } from './v2-lead-provider.js';
 import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
@@ -71,6 +72,7 @@ import {
   uploadSchema,
   workflowClaimSchema,
   workflowCompletionSchema,
+  v2ProviderEvidenceVerifySchema,
   workflowTransitionSchema,
 } from './http/schemas.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -234,6 +236,58 @@ const crmDedupeKey = (tenantId: string, leadData: { email?: string; phone?: stri
   if (!email || !phone) throw new HttpError(422, 'LEAD_IDENTITY_REQUIRED', 'A lead requires both an email address and phone number.');
   const identity = `email:${email}:phone:${phone}`;
   return createHmac('sha256', secret).update(`crm-lead:${tenantId}:${identity}`).digest('hex');
+};
+
+const ensureV2LocalLead = async (input: {
+  store: Store;
+  action: ActionRequest;
+  session: Session;
+  tokenVault: TokenVault;
+  vaultSecret: string;
+}): Promise<CrmLead> => {
+  const { store, action, session, tokenVault, vaultSecret } = input;
+  const existing = await store.getCrmLeadByActionId(action.id, action.tenantId);
+  if (existing) return existing;
+  const leadData: LeadData = {
+    ...(action.payload.name ? { name: action.payload.name } : {}),
+    ...(action.payload.email ? { email: action.payload.email } : {}),
+    ...(action.payload.phone ? { phone: action.payload.phone } : {}),
+    ...(action.payload.interest ? { interest: action.payload.interest } : {}),
+    ...(action.payload.slotValues ? { slotValues: action.payload.slotValues } : {}),
+  };
+  assertKnownTokens(session, JSON.stringify(leadData), tokenVault);
+  const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm');
+  const name = leadData.name ? rehydrate(leadData.name) : '';
+  const email = leadData.email ? rehydrate(leadData.email) : '';
+  const phone = leadData.phone ? rehydrate(leadData.phone) : '';
+  const validName = Boolean(name && isValidLeadName(name));
+  const validEmail = Boolean(email && isValidLeadEmail(email));
+  const validPhone = Boolean(phone && isValidLeadPhone(phone));
+  const conversation = (await store.listMessages(action.sessionId, action.tenantId)).map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt }));
+  const conversationText = conversation.filter((message) => message.role === 'user').map((message) => message.content).join(' ');
+  const score = scoreCrmLead({
+    commercialIntent: true,
+    timelineMentioned: /\b(?:today|tomorrow|urgent|asap|next\s+(?:week|month)|this\s+(?:week|month)|deadline|quarter)\b/i.test(conversationText),
+    businessFit: /\b(?:company|business|licen[cs]e|visa|it|software|platform|quote|demo|service|setup)\b/i.test(conversationText),
+    validName,
+    validContact: validEmail && validPhone,
+    engagedUserTurns: conversation.filter((message) => message.role === 'user').length,
+  }).total;
+  if (!validName || !validEmail || !validPhone || action.payload.contactConsent !== true || score < 70) throw new HttpError(422, 'LEAD_VALIDATION_FAILED', 'The authorized V2 action does not contain a complete verified lead.');
+  const now = new Date().toISOString();
+  const lead: CrmLead = {
+    id: randomUUID(), tenantId: action.tenantId, actionId: action.id, sessionId: action.sessionId,
+    intent: action.intentKey ?? action.workflowKey, secondaryIntentKeys: [], intentScore: action.intentScore ?? 0,
+    intentConfidence: action.intentConfidence ?? 0, catalogVersionId: action.catalogVersionId ?? null, score,
+    contactCompletenessScore: contactCompletenessScore({ validName, validEmail, validPhone }), validationPass: true,
+    qualificationStatus: 'pending', qualificationEvidence: {}, leadData, conversation, summary: null,
+    summaryStatus: 'pending', createdAt: now, updatedAt: now,
+  };
+  const created = await store.upsertCrmLead(lead, crmDedupeKey(action.tenantId, leadData, session, tokenVault, vaultSecret));
+  if (created.actionId !== action.id) throw new HttpError(409, 'LEAD_DEDUPE_RECONCILIATION_REQUIRED', 'A matching lead belongs to another authorized action and requires reconciliation.');
+  await store.createCrmLeadAssociation({ id: randomUUID(), tenantId: action.tenantId, crmLeadId: created.id, actionId: action.id, sessionId: action.sessionId, opportunityId: action.opportunityId ?? null, associationType: 'canonical', createdAt: now });
+  await store.linkSessionDocuments(action.sessionId, action.tenantId, created.id);
+  return created;
 };
 
 const pendingCatalogSlotValue = (validationRule: string, rawInput: string, maskedInput: string, session: Session, tokenVault: TokenVault): string | null => {
@@ -594,7 +648,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const reason = validateV2ProviderCorrelation(action, parsed.data);
     if (reason) throw new HttpError(409, 'V2_PROVIDER_CORRELATION_MISMATCH', `The v2 provider callback correlation is invalid (${reason}).`);
   };
-  const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null, executionReference?: string, eventId?: string, correlationId?: string, attempt?: number, providerCorrelation?: V2ProviderCorrelation): Promise<ActionRequest> => {
+  const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null, executionReference?: string, eventId?: string, correlationId?: string, attempt?: number, providerCorrelation?: V2ProviderCorrelation, trustedProviderEvidence = false): Promise<ActionRequest> => {
     const resolvingReconciliation = action.state === 'reconcile_required' && status === 'completed';
     const providerTerminal = actorId === null && ['completed', 'failed'].includes(status);
     if (providerCorrelation || providerTerminal) await assertV2ProviderCorrelation(action, providerCorrelation);
@@ -612,7 +666,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       ? (await store.listIntentCatalogV2Versions(action.tenantId))
         .some(version => version.catalogVersionRef === action.catalogVersionId)
       : false;
-    const completion = evaluateV2CallbackStageCompletion(action, status, scopeDocument, isCanonicalV2);
+    const completion = evaluateV2CallbackStageCompletion(action, status, scopeDocument, isCanonicalV2, trustedProviderEvidence);
     if (!completion.accepted) {
       throw new HttpError(409, 'V2_PROVIDER_EVIDENCE_REQUIRED',
         'The provider callback cannot finalize a V2 action without a trusted provider-record verification.');
@@ -2567,6 +2621,41 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         items.push({ actionId: action.id, tenantId: action.tenantId, sessionId: action.sessionId, workflowKey: action.workflowKey, contract: input.contract ?? binding.payloadContract, intent: intent.intentKey, intentSummary: `${intent.displayName}: ${intent.description}`, intentScore: action.intentScore ?? 0, intentConfidence: action.intentConfidence ?? 0, catalogVersionId: version.id, qualityWorkflowKey: qualityRule?.qualityWorkflowKey ?? null, idempotencyKey: action.idempotencyKey, opaqueReference: action.opaqueReference, eventId: execution.eventId ?? null, correlationId: execution.correlationId ?? null, attempt: execution.attempt, executionReference: execution.n8nExecutionRef ?? null, leadData: action.payload, conversation, catalog: version.catalog });
       }
       res.json({ items });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v2/internal/provider-evidence/verify', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(v2ProviderEvidenceVerifySchema, req.body);
+      const action = await store.getAction(input.actionId);
+      const session = await store.getSession(input.sessionId);
+      const document = session ? await store.getUserIntentDocument(input.tenantId, input.sessionId) : null;
+      const version = (await store.listIntentCatalogV2Versions(input.tenantId)).find((candidate) => candidate.status === 'published' && candidate.catalogVersionRef === input.catalogVersionId);
+      const workflowBinding = version?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === input.workflowKey && candidate.enabled);
+      const toolBinding = workflowBinding ? version?.catalog.sheets.ToolBindings.find((candidate) => candidate.enabled && candidate.registryKey === workflowBinding.registryKey && candidate.sideEffectClass !== 'read_only') : null;
+      if (!action || !session || !document || !version || !workflowBinding || !toolBinding || action.tenantId !== input.tenantId || action.sessionId !== input.sessionId || action.workflowKey !== input.workflowKey || action.opportunityId !== input.opportunityId || action.catalogVersionId !== input.catalogVersionId || action.actionKey !== input.actionKey || action.actionRevision !== input.actionRevision) throw new HttpError(403, 'V2_PROVIDER_EVIDENCE_FORBIDDEN', 'Provider evidence does not match the pinned V2 action.');
+      const correlationReason = validateV2ProviderCorrelation(action, input);
+      if (correlationReason) throw new HttpError(409, 'V2_PROVIDER_CORRELATION_MISMATCH', `Provider evidence correlation is invalid (${correlationReason}).`);
+      const execution = await store.getActionExecution(action.id, action.tenantId);
+      if (!execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.attempt) throw new HttpError(409, 'WORKFLOW_CORRELATION_MISMATCH', 'Provider evidence does not match the current workflow execution.');
+      if (action.state !== 'processing') throw new HttpError(409, 'V2_PROVIDER_ACTION_NOT_PROCESSING', 'Provider evidence can only finalize a claimed V2 action.');
+      const providerType = workflowBinding.providerType;
+      if (input.providerType && input.providerType !== providerType) throw new HttpError(409, 'V2_PROVIDER_TYPE_MISMATCH', 'Provider evidence type does not match the published workflow binding.');
+      if (providerType !== 'deterministic_mock') {
+        const reconciled = await transitionWorkflowAction(action, 'reconcile_required', undefined, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input);
+        res.status(409).json({ accepted: false, status: 'reconciliation_required', reason: 'provider_readback_requires_configured_node_adapter', action: reconciled });
+        return;
+      }
+      const lead = await ensureV2LocalLead({ store, action, session, tokenVault, vaultSecret });
+      if (lead.leadId && lead.leadId !== input.providerRecordId) throw new HttpError(409, 'V2_PROVIDER_RECORD_MISMATCH', 'The action is already linked to a different provider record.');
+      const request = buildV2LeadProviderRequest({ action, lead, providerType: 'deterministic_mock' });
+      const expected = new DeterministicV2LeadProvider().execute(request);
+      const result = { ...expected, externalLeadId: input.providerRecordId };
+      const readback = { tenantId: action.tenantId, sessionId: action.sessionId, opportunityId: action.opportunityId!, providerType: 'deterministic_mock', idempotencyKey: action.idempotencyKey, recordRef: input.providerRecordId, evidenceTier: 'mock_verified' as const, verificationStatus: 'verified' as const };
+      const validation = validateV2LeadProviderResult(request, result, readback);
+      if (!validation.accepted) throw new HttpError(409, 'V2_PROVIDER_EVIDENCE_INVALID', `Deterministic provider evidence was rejected (${validation.reasons.join(',')}).`);
+      await store.updateCrmLeadRemote({ id: lead.id, tenantId: action.tenantId, leadId: input.providerRecordId, remoteCrm: 'deterministic_mock' });
+      const completed = await transitionWorkflowAction(action, 'completed', input.providerRecordId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, true);
+      res.json({ accepted: true, status: validation.status, evidenceTier: validation.status, stageKey: input.stageKey, providerRecordRef: input.providerRecordId, action: completed });
     } catch (error) { next(error); }
   });
   app.post('/api/v1/internal/workflow-events/complete', n8nInternalApi, async (req, res, next) => {

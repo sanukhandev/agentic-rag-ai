@@ -155,7 +155,7 @@
           "timeout": 30000
         }
       },
-      "notes": "PLANNED TRUSTED NODE ENDPOINT; NOT IMPLEMENTED in current V2 API. This intentionally blocks all completion until a security-reviewed adapter performs provider readback, correlation and evidence checks. Assign internal Header Auth credential."
+      "notes": "The Node endpoint validates correlation and evidence. Deterministic mock evidence can complete only in development; Salesforce evidence remains reconciliation_required until a configured Node provider adapter performs independent readback. Assign internal Header Auth credential."
     },
     {
       "id": "ancfzV2LeadCreateR1-attest",
@@ -286,5 +286,5 @@
   },
   "pinData": {},
   "staticData": null,
-  "notes": "UNPUBLISHED / INERT TEMPLATE. Salesforce Lead: deduplicate and read back Lead before any completion; notification is a distinct action. Node V2 claim/dispatch and trusted provider evidence endpoint are not wired. No credentials are included; never enable without Node gate, provider credentials, readback, callbacks and synthetic E2E tests."
+  "notes": "UNPUBLISHED / INERT TEMPLATE. Salesforce Lead: deduplicate and read back Lead before any completion; notification is a distinct action. Node V2 claim/dispatch and evidence endpoint are wired for validation, but the Salesforce provider adapter/readback is not configured. No credentials are included; never enable without Node gate, provider credentials, readback, callbacks and synthetic E2E tests."
 }

@@ -1,4 +1,5 @@
 import { v2TrustedReadbackMatches, type V2TrustedProviderReadback } from './v2-provider-evidence.js';
+import { v2CatalogVersionRefSchema } from './v2-provider-correlation.js';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import type { ActionRequest, CrmLead } from './types.js';
@@ -29,7 +30,7 @@ export const v2AccountProviderRequestSchema = z.object({
   opportunityId: id,
   leadId: id,
   actionId: id,
-  catalogVersionId: id,
+  catalogVersionId: v2CatalogVersionRefSchema,
   actionKey: opaque,
   actionRevision: z.number().int().positive(),
   idempotencyKey: opaque,
@@ -53,7 +54,7 @@ export const v2AccountProviderResultSchema = z.object({
   opportunityId: id,
   leadId: id,
   actionId: id,
-  catalogVersionId: id,
+  catalogVersionId: v2CatalogVersionRefSchema,
   actionKey: opaque,
   actionRevision: z.number().int().positive(),
   idempotencyKey: opaque,
