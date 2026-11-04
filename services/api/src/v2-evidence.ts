@@ -1,4 +1,4 @@
-import { evaluateV2ClaimProvenance, extractV2ConsequentialClauses, digestV2GroundingText, measureV2LexicalOverlap, type V2ClaimSource, type V2ClaimFailure, type V2GroundingProof } from './v2-claim-provenance.js';
+import { evaluateV2ClaimProvenance, extractV2ConsequentialClauses, measureV2LexicalOverlap, type V2ClaimSource, type V2ClaimFailure, type V2GroundingProof } from './v2-claim-provenance.js';
 import type { V2ClaimProvenance } from './v2-claim-provenance.js';
 export type { V2ClaimProvenance } from './v2-claim-provenance.js';
 import { hasConflictingEvidence } from './knowledge.js';
