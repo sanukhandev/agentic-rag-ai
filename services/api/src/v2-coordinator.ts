@@ -369,6 +369,9 @@ export class V2ConversationCoordinator {
     let repairFailedClauseOrdinal: number | null = null;
     const timeLeft = Date.parse(envelope.budgets.deadlineAt) - Date.now();
     if (guarded.verdict.reasonCode === 'unsupported_claim'
+      // In enforcement mode never bypass a failed independent review by
+      // accepting a separate unreviewed legacy repair.
+      && !eligibleForEntailment
       && (envelope.approvedKnowledge?.length ?? 0) > 0) {
       if (!hasTrustedPrefetch) {
         knowledgeRepairStatus = 'skipped_untrusted_evidence';
