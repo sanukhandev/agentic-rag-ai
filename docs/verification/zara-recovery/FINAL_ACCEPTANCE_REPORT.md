@@ -34,6 +34,7 @@
 - Docker API restart/duplicate replay: PASS — the same client message ID returned the same assistant message before and after an API restart, with one durable user message and no provider side effect.
 - Live provider boundary check: BLOCKED_EXTERNAL_DEPENDENCY — `.env` selects Salesforce, but the published ANCFZ V2 `lead.create` and `crm.lead.create` bindings are disabled; the inactive n8n template has a placeholder provider URL/no credential, and the evidence endpoint deliberately reconciles until independent Salesforce readback is configured.
 - Three fresh Azure-backed public persistence runs after the final evidence-merge fix: PASS — each completed 25/25 turns with 25 durable user messages. This proves transport/persistence only; the required >=90% conversation-quality score is still unverified because the harness has no frozen rubric scorer.
+- Opt-in local ANCFZ PDF and mock-payment simulators: PASS after supplying ignored development-only API keys; both containers remain running. This is local simulator health, not provider or payment completion.
 
 ## Unverified or blocked
 

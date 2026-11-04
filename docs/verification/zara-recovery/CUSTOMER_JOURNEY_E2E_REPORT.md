@@ -149,3 +149,10 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 - `artifacts/ancfz/azure-eval-final-run-3.json`: 25/25 answers, 25 durable unique user messages.
 - The same harness reports `external_crm_invoice_document_signing: NOT_VERIFIED_BY_THIS_HARNESS` for all three runs.
 - The formal >=90% natural-conversation score remains unverified because this harness records HTTP/persistence gates, not rubric judgments.
+
+## Opt-in local simulator health
+
+**Result:** PASS for process health only.
+
+- The private ANCFZ PDF simulator and mock-payment simulator now remain running with local-only keys stored in the ignored development `.env`.
+- This does not authorize Salesforce, create a real payment, or establish provider completion; those remain separately gated and unverified.
