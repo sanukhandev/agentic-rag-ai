@@ -268,7 +268,7 @@ describe('V2ConversationCoordinator', () => {
   it('fails closed when an independent reviewer cannot substantiate a paraphrase', async () => {
     const request = envelope();
     request.customerMessageMasked = 'What company registration documents are needed?';
-    request.budgets = { ...request.budgets, deadlineAt: new Date(Date.now() + 60_000).toISOString() };
+    request.budgets = { ...request.budgets, maxModelRequests: 4, deadlineAt: new Date(Date.now() + 60_000).toISOString() };
     const snippet = { citationId: 'chunk-12345678',
       text: 'Submit your passport and choose software consulting.',
       sourceRef: 'source-12345678', sourceVersion: 'version-12345678' };
