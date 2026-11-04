@@ -62,6 +62,33 @@ describe('V2ConversationCoordinator', () => {
     expect(output.repairApplied).toBe(false);
   });
 
+  it('uses a pinned greeting instead of robotic fallback when a bare first-contact hello is rejected', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'hello';
+    request.persona.assistantName = 'Zara';
+    const candidate = "Hello! I'm Zara, your highly experienced company registration advisor. How can I help?";
+    const output = await new V2ConversationCoordinator({ turn: async () => result(candidate) })
+      .run({ envelope: request, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('safe_no_evidence_dialogue');
+    expect(output.candidateGuardReason).toBe('unsupported_claim');
+    expect(output.response.answer).toBe("Hello! I'm Zara. How can I help you today?");
+    expect(output.response.nextQuestion).toBe('How can I help you today?');
+    expect(output.response.nextQuestionKey).toBe('conversation_focus');
+    expect(output.response.citationIds).toEqual([]);
+    expect(output.response.answer).not.toContain('highly experienced');
+  });
+
+  it('does not repeat a first-contact introduction after prior conversation turns', async () => {
+    const request = envelope();
+    request.persona.assistantName = 'Zara';
+    request.latestTurns = [{ role: 'customer', content: 'hello' }, { role: 'assistant', content: 'Hello!' }];
+    const output = await new V2ConversationCoordinator({ turn: async () => result("Hello, I'm Alex. How can I help you today?") })
+      .run({ envelope: request, questionPolicy: 'optional' });
+    expect(output.response.answer).not.toContain("I'm Zara.");
+    expect(output.response.answer).not.toContain("I'm Alex.");
+    expect(output.guardReason).toBe('safe_no_evidence_dialogue');
+  });
+
   it('does not turn a greeting with an invented license price into accepted dialogue', async () => {
     const request = envelope();
     request.persona.assistantName = 'Zara';

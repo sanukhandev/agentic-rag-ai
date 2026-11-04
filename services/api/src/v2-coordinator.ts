@@ -168,9 +168,40 @@ const mergeEvidence = (requestEvidence: V2ApprovedEvidence[], result: AgentTurnR
   return [...merged.values()];
 };
 
+/**
+ * Recover a bare first-contact greeting with the pinned persona, never a
+ * generic "work through that" message. This is an *explicit* server fallback:
+ * the model candidate remains rejected and its guard reason stays in audits.
+ * Only greet when no customer goal, stage, requirement or prior turns exist.
+ */
+const safeFirstContactGreeting = (envelope: TurnEnvelopeV2): PersonaComposedResponseV2 | null => {
+  if (envelope.latestTurns.length > 0 || envelope.intentProjection.primaryGoalKey !== null
+    || envelope.intentProjection.currentStageKey !== null
+    || envelope.intentProjection.pendingRequirementKey !== null) return null;
+  const name = envelope.persona.assistantName.trim();
+  const utterance = envelope.customerMessageMasked.normalize('NFKC').toLocaleLowerCase('en-US')
+    .replace(/[!.,?]/gu, ' ').replace(/\s+/gu, ' ').trim();
+  const normalizedName = name.toLocaleLowerCase('en-US').replace(/\s+/gu, ' ').trim();
+  const greeting = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening']
+    .some(value => utterance === value || (normalizedName && utterance === value + ' ' + normalizedName));
+  if (!greeting) return null;
+  const safeName = /^[\p{L}\p{N}][\p{L}\p{N} .’'-]{0,59}$/u.test(name) ? name : null;
+  const question = 'How can I help you today?';
+  return {
+    schemaVersion: 2, personaVersionId: envelope.personaVersionId,
+    language: envelope.persona.permittedLanguages[0] ?? 'en',
+    answer: safeName ? `Hello! I'm ${safeName}. ${question}` : `Hello! ${question}`,
+    citationIds: [], nextQuestion: question, nextQuestionKey: 'conversation_focus',
+    reasonNoQuestion: null,
+    decisionRef: `no-evidence-${envelope.requestId.slice(0, 80)}`,
+  };
+};
+
 /** A deterministic no-evidence reply: acknowledge uncertainty and continue the dialogue,
  * without asking the model to invent factual claims or alter any journey/action state. */
 const noEvidenceReply = (envelope: TurnEnvelopeV2, previousQuestionKey: string | null): PersonaComposedResponseV2 => {
+  const greeting = safeFirstContactGreeting(envelope);
+  if (greeting) return greeting;
   const message = envelope.customerMessageMasked.toLocaleLowerCase('en-US');
   const specificFactsRequested = /\b(?:price|pricing|cost|fees?|aed|eligib\w*|licen[cs]e|how long|timeline|policy|regulation|law|how much)\b/u.test(message);
   const goal = envelope.intentProjection.primaryGoalKey;
