@@ -213,6 +213,58 @@ describe('V2ConversationCoordinator', () => {
     await expect(agent.turn(envelope())).resolves.toMatchObject({ modelRequestCount: 1, toolCallCount: 0 });
   });
 
+  it('accepts a legitimate paraphrase with independent source-bound entailment, counting the model request', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'What company registration documents are needed?';
+    request.budgets = { ...request.budgets, deadlineAt: new Date(Date.now() + 60_000).toISOString() };
+    const snippet = { citationId: 'chunk-12345678',
+      text: 'Submit your passport and choose software consulting.',
+      sourceRef: 'source-12345678', sourceVersion: 'version-12345678' };
+    const answer = 'Provide travel identification and select technology advisory.';
+    request.approvedKnowledge = [snippet];
+    const turn = vi.fn(async () => result(answer, {
+      response: { ...result(answer).response, citationIds: [snippet.citationId] },
+    }));
+    const review = vi.fn(async () => [{ claimId: '1', citationId: snippet.citationId, verdict: 'supported' as const }]);
+    const coordinator = new V2ConversationCoordinator({ turn }, { verify: review });
+    const output = await coordinator.run({ envelope: request,
+      evidence: [{ ...snippet, approved: true, revoked: false }], fallbackTemplates });
+    expect(output.guardReason).toBe('accepted_entailment');
+    expect(output.candidateGuardReason).toBe('unsupported_claim');
+    expect(output.groundingReviewStatus).toBe('accepted');
+    expect(output.modelRequestCount).toBe(2);
+    expect(output.claimProvenance).toHaveLength(1);
+    expect(output.claimProvenance[0]?.sourceRefs).toEqual([snippet.sourceRef]);
+    expect(output.response.answer).toBe(answer);
+    expect(turn).toHaveBeenCalledTimes(1);
+    expect(review).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when an independent reviewer cannot substantiate a paraphrase', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'What company registration documents are needed?';
+    request.budgets = { ...request.budgets, deadlineAt: new Date(Date.now() + 60_000).toISOString() };
+    const snippet = { citationId: 'chunk-12345678',
+      text: 'Submit your passport and choose software consulting.',
+      sourceRef: 'source-12345678', sourceVersion: 'version-12345678' };
+    request.approvedKnowledge = [snippet];
+    const answer = 'Provide travel identification and select technology advisory.';
+    const turn = vi.fn(async () => result(answer, {
+      response: { ...result(answer).response, citationIds: [snippet.citationId] },
+    }));
+    const coordinator = new V2ConversationCoordinator({ turn }, {
+      verify: async () => [{ claimId: '1', citationId: null, verdict: 'insufficient' }],
+    });
+    const output = await coordinator.run({ envelope: request,
+      evidence: [{ ...snippet, approved: true, revoked: false }], fallbackTemplates });
+    expect(output.guardReason).toBe('unsupported_claim');
+    expect(output.groundingReviewStatus).toBe('rejected');
+    expect(output.modelRequestCount).toBe(2);
+    expect(output.response.citationIds).toEqual([]);
+    expect(output.response.answer).not.toContain('technology advisory');
+    expect(turn).toHaveBeenCalledTimes(1);
+  });
+
   it('answers a factual knowledge detour with citations even if a goal is already active', async () => {
     const request = envelope();
     request.customerMessageMasked = 'What are the steps for forming a company?';
