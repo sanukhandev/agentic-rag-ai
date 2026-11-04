@@ -69,6 +69,40 @@ describe('catalog-scoped optional topic validation', () => {
   });
 });
 
+describe('authoritative customer-evidence validation', () => {
+  it('scores reviewed aliases from Node evidence regardless of missing model signals', () => {
+    const input = { ...base, matchedSignalIds: [], runnerUpScore: 80, nextMove: 'confirm_goal' };
+    const result = validateV2PlanningProposal(input, catalog, {
+      ...context, observedText: 'I want to form a company',
+      serverObservedSignalIds: ['signal.company.register'], serverRunnerUpScore: 0,
+    });
+    expect(result.accepted).toBe(true);
+    expect(result.score).toMatchObject({ evidenceScore: 80, ambiguous: false, thresholdMet: true });
+    expect(result.validatedSignalIds).toEqual(['signal.company.register']);
+  });
+
+  it('does not allow fabricated model signals to increase authoritative goal score', () => {
+    const result = validateV2PlanningProposal({ ...base, matchedSignalIds: ['signal.company.register', 'signal.fake'] }, catalog, {
+      ...context, observedText: 'Hello', serverObservedSignalIds: [], serverRunnerUpScore: 0,
+    });
+    expect(result.score?.evidenceScore).toBe(0);
+    expect(result.score?.thresholdMet).toBe(false);
+    expect(result.rejectedSignalIds).toContain('signal.fake');
+    expect(result.reasons).toContain('unobserved_signal');
+  });
+
+  it('accepts navigation without a Business Goal or implicit consent', () => {
+    const result = validateV2PlanningProposal({
+      ...base, primaryGoalKey: null, candidateGoalKeys: [], turnCategory: 'conversation_navigation',
+      nextMove: 'ask_more_help', matchedSignalIds: [], runnerUpScore: null, supportingTopicKeys: [],
+    }, catalog, { ...context, observedText: 'Hello', serverObservedSignalIds: [], serverRunnerUpScore: 0 });
+    expect(result.accepted).toBe(true);
+    expect(result.primaryGoalKey).toBeNull();
+    expect(result.score).toBeNull();
+    expect(result.proposedToolKey).toBeNull();
+  });
+});
+
 describe('server-observed evidence gates for model planning', () => {
   it('accepts a genuinely observed signal without authorizing any side effect', () => {
     const decision = validateV2PlanningProposal(base, catalog, { ...context, observedText: 'I want to register a company for consulting.' });

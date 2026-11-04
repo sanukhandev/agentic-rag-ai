@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { cacheKey, type CacheStore } from './cache.js';
 import { classifyScopedGoalDecision, newConversationState, prompt } from './conversation-state.js';
-import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
+import { scoreCatalogV2CompetingGoals, validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
+import { resolveV2IntentEvidence } from './v2-intent-evidence.js';
 import { validateV2PlanningProposal } from './v2-planning.js';
 import { validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
 import { initializeConfirmedV2Journey } from './v2-journey-bootstrap.js';
@@ -178,8 +179,21 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     .map(([key, item]) => [key, item.maskedValue])) : {};
   const { facts, evidence } = trustedFacts({ ...documentFacts, ...originalState.slotValues, ...(entry?.slotValues ?? {}) }, catalog.id);
   const sessionRevision = session.stateVersion ?? 0;
-  const history = (await store.listMessages(session.id, tenant.id, 12)).filter(msg => msg.id !== userMessage.id).slice(-8)
-    .map(msg => ({ role: msg.role === 'user' ? 'customer' as const : 'assistant' as const, content: msg.maskedContent.slice(0, 2_000) }));
+  const priorMessages = (await store.listMessages(session.id, tenant.id, 12))
+    .filter(msg => msg.id !== userMessage.id).slice(-8);
+  const history = priorMessages.map(msg => ({
+    role: msg.role === 'user' ? 'customer' as const : 'assistant' as const,
+    content: msg.maskedContent.slice(0, 2_000),
+  }));
+  // Only prior customer-authored messages in this tenant/session may supply
+  // bounded context evidence. Model/assistant text cannot create intent proof.
+  const intentEvidence = catalogV2 && v2Version ? resolveV2IntentEvidence({
+    catalog: catalogV2, catalogVersionRef: v2Version.catalogVersionRef,
+    currentMessage: maskedMessage, currentMessageId: userMessage.id,
+    recentCustomerTurns: priorMessages.filter(msg => msg.role === 'user')
+      .map(msg => ({ messageId: msg.id, text: msg.maskedContent })),
+    confirmedGoalKey: intentDocument?.goalConfirmed ? intentDocument.businessGoalKey : null,
+  }) : null;
   let approvedKnowledge: V2ApprovedEvidence[] = [];
   if (input.embedding) {
     try {
@@ -211,7 +225,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       turnIntents: catalogV2.sheets.TurnIntents.filter(turn => turn.active)
         .map(turn => ({ key: turn.turnIntentKey, categoryKey: turn.categoryKey, businessGoalKey: turn.businessGoalKey })),
       signals: catalogV2.sheets.IntentSignals
-        .map(signal => ({ signalId: signal.signalId, targetKey: signal.targetKey, value: signal.value })),
+        .map(signal => ({ signalId: signal.signalId, targetKey: signal.targetKey, value: signal.value, ...(signal.aliases ? { aliases: signal.aliases } : {}) })),
       knowledgeTopics: catalogV2.sheets.KnowledgeTopics.filter(topic => topic.active)
         .map(topic => ({ topicKey: topic.topicKey, goalKey: topic.goalKey, citationRequired: topic.citationRequired })),
       requirementKeys: catalogV2.sheets.RequirementPolicies.filter(req => req.required).map(req => req.requirementKey),
@@ -251,6 +265,12 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     allowedToolKeys: catalogV2.sheets.ToolBindings.filter(tool => tool.enabled && tool.sideEffectClass === 'read_only')
       .map(tool => tool.toolKey),
     observedText: maskedMessage,
+    ...(intentEvidence ? {
+      serverObservedSignalIds: intentEvidence.observedSignals.map(signal => signal.signalId),
+      serverRunnerUpScore: scoreCatalogV2CompetingGoals(catalogV2,
+        intentEvidence.observedSignals.map(signal => signal.signalId),
+        modelPlan.primaryGoalKey ?? existingConfirmedGoal ?? '').runnerUpScore,
+    } : {}),
   }) : null;
   // Only validated proposals and independently observed signals influence
   // the candidate goal. High model confidence never confirms a goal.
@@ -284,7 +304,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     : null;
   const selectedRequirement = validPlan && selectedV2Goal && planningDecision?.score?.thresholdMet
     ? planningDecision.nextRequirementKey : null;
-  const catalogSignalRefs = validPlan ? (planningDecision?.proposal?.matchedSignalIds ?? [])
+  const catalogSignalRefs = validPlan ? (planningDecision?.validatedSignalIds ?? [])
     .map(signal => 'catalog-signal:' + signal) : [];
   // Publication can change during a model/tool turn. Fail closed rather than
   // attributing a new decision to a no-longer-published version.
@@ -334,8 +354,11 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const shouldPrompt = Boolean(catalogV2 && requirementGoal?.confirmationRequired
     && validPlan && selectedTurnCategory === 'business_goal'
     && planningDecision?.score?.thresholdMet && !planningDecision.score.ambiguous
-    && !intentDocument?.goalConfirmed && !pendingDecision && !decision
-    && modelPlan?.nextMove === 'confirm_goal');
+    && intentEvidence?.initiationSupported === true
+    && intentEvidence.ambiguous === false
+    && intentEvidence.candidateGoalKeys.length === 1
+    && intentEvidence.candidateGoalKeys[0] === selectedV2Goal
+    && !intentDocument?.goalConfirmed && !pendingDecision && !decision);
   let goalConfirmation: GoalConfirmationRecord | null = previousDecision;
   let goalConfirmed = Boolean(intentDocument?.goalConfirmed);
   let nextGoalKey = intentDocument?.goalConfirmed ? intentDocument.businessGoalKey : selectedV2Goal;
@@ -493,6 +516,18 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         accepted: validPlan, candidateGoalKey: selectedV2Goal,
         turnCategory: selectedTurnCategory, nextMove: validPlan ? modelPlan.nextMove : null,
         matchedSignalIds: catalogSignalRefs.join(',').slice(0, 600),
+        proposalValid: validPlan,
+        goalThresholdMet: planningDecision?.score?.thresholdMet ?? false,
+        goalAmbiguous: planningDecision?.score?.ambiguous ?? false,
+        initiationSupported: intentEvidence?.initiationSupported ?? false,
+        contextSupported: intentEvidence?.contextSupported ?? false,
+        contextAnchorMessageId: intentEvidence?.contextAnchorMessageId ?? null,
+        validatedSignalIds: (planningDecision?.validatedSignalIds ?? []).slice(0, 32).join(',').slice(0, 600),
+        rejectedSignalIds: (planningDecision?.rejectedSignalIds ?? []).slice(0, 32).join(',').slice(0, 600),
+        validatedTopicKeys: (planningDecision?.validatedTopicKeys ?? []).slice(0, 16).join(',').slice(0, 600),
+        rejectedTopicKeys: (planningDecision?.rejectedTopicKeys ?? []).slice(0, 16).join(',').slice(0, 600),
+        goalConfirmationPending: goalConfirmation?.status === 'pending',
+        goalConfirmed,
         acceptedCustomerFactKeys: Object.keys(proposedFacts).join(','),
         score: planningDecision?.score?.evidenceScore ?? null,
         modelConfidenceBand: modelPlan.confidenceBand,

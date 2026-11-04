@@ -45,6 +45,17 @@ describe('conversation engine v2 contracts', () => {
     } }).success).toBe(false);
   });
 
+  it('admits bounded reviewed intent aliases without model-authorized state', () => {
+    const catalogV2 = { versionRef: 'anc:r2:verified', businessGoals: [], turnIntents: [],
+      signals: [{ signalId: 'signal.company.register', value: 'register a company',
+        targetKey: 'goal.company_formation', aliases: ['form a company'] }],
+      knowledgeTopics: [], requirementKeys: [], enabledReadToolKeys: [] };
+    expect(turnEnvelopeSchema.safeParse({ ...envelope, catalogV2 }).success).toBe(true);
+    expect(turnEnvelopeSchema.safeParse({ ...envelope, catalogV2: { ...catalogV2,
+      signals: [{ ...catalogV2.signals[0], aliases: Array(13).fill('unsafe') }],
+    } }).success).toBe(false);
+  });
+
   it('rejects persona pin and model-provided identity scope mismatches', () => {
     expect(turnEnvelopeSchema.safeParse({ ...envelope, personaVersionId: 'persona-other-12345678' }).success).toBe(false);
     expect(toolRequestSchema.safeParse({

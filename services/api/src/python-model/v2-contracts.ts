@@ -72,7 +72,7 @@ export const turnEnvelopeSchema = z.object({
     versionRef: z.string().trim().min(8).max(240),
     businessGoals: z.array(z.object({ key: boundedKey, name: z.string().max(120), confirmationRequired: z.boolean() }).strict()).max(100),
     turnIntents: z.array(z.object({ key: boundedKey, categoryKey: boundedKey, businessGoalKey: boundedKey.nullable() }).strict()).max(200),
-    signals: z.array(z.object({ signalId: boundedKey, value: z.string().max(500), targetKey: boundedKey }).strict()).max(500),
+    signals: z.array(z.object({ signalId: boundedKey, value: z.string().max(500), targetKey: boundedKey, aliases: z.array(z.string().trim().max(500)).max(12).optional() }).strict()).max(500),
     knowledgeTopics: z.array(z.object({ topicKey: boundedKey, goalKey: boundedKey.nullable(), citationRequired: z.boolean() }).strict()).max(500).default([]),
     requirementKeys: z.array(boundedKey).max(500),
     enabledReadToolKeys: z.array(boundedKey).max(32),

@@ -48,6 +48,14 @@ describe('V2 catalog-backed contextual customer intent evidence', () => {
     },
   );
 
+  it('does not score a formation phrase when the customer explicitly rejects it', () => {
+    for (const message of ["I don't want to start a company", "I'm not ready to form a company"]) {
+      const result = current(message);
+      expect(result.currentSignalIds).toEqual([]);
+      expect(result.initiationSupported).toBe(false);
+    }
+  });
+
   it('does not treat a standalone yes or conversational greeting as consent', () => {
     for (const message of ['Yes', 'Hello', 'Sure']) {
       const result = current(message, [{ messageId: 'previous-customer-12345678', text: 'company formation' }]);

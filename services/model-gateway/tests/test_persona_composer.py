@@ -37,6 +37,13 @@ def test_composer_restricts_topic_keys_to_pinned_catalog():
     assert "not by an IntentSignals targetKey" in instructions
 
 
+def test_composer_distinguishes_information_questions_from_authorized_goals():
+    instructions = composer_instructions(envelope())
+    assert "information-only requests" in instructions
+    assert "Node independently validates customer evidence" in instructions
+    assert "An established topic alone" in instructions
+
+
 def test_prefetched_public_evidence_is_given_explicit_citation_first_priority():
     from gateway.v2_contracts import ApprovedKnowledgeSnippetV2
 
