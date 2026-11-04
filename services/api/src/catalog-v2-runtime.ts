@@ -121,6 +121,22 @@ export const evaluateCatalogV2Stage = (catalog: Catalog, businessGoalKey: string
   return { stageKey, missingEntryRequirements, eligible: missingEntryRequirements.length === 0 };
 };
 
+/** All competing goal scores are calculated by Node from published signal IDs. */
+export const scoreCatalogV2CompetingGoals = (catalog: Catalog, matchedSignalIds: readonly string[], selectedGoalKey: string): { runnerUpScore: number; competingGoalKey: string | null; scores: Record<string, number> } => {
+  const matched = new Set(matchedSignalIds);
+  const scores: Record<string, number> = {};
+  for (const goal of catalog.sheets.BusinessGoals.filter(item => item.active)) {
+    const targets = new Set([goal.businessGoalKey,
+      ...catalog.sheets.TurnIntents.filter(item => item.active && item.businessGoalKey === goal.businessGoalKey).map(item => item.turnIntentKey)]);
+    scores[goal.businessGoalKey] = Math.max(0, Math.min(100, catalog.sheets.IntentSignals
+      .filter(item => targets.has(item.targetKey) && matched.has(item.signalId) && item.signalType !== 'exclusion')
+      .reduce((total, item) => total + item.weight, 0)));
+  }
+  const competition = Object.entries(scores).filter(([key]) => key !== selectedGoalKey)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0];
+  return { runnerUpScore: competition?.[1] ?? 0, competingGoalKey: competition?.[0] ?? null, scores };
+};
+
 export const scoreCatalogV2Turn = (catalog: Catalog, input: CatalogV2ScoreInput): CatalogV2Score => {
   const policy = catalog.sheets.ScoringPolicies.find(row => row.businessGoalKey === input.businessGoalKey);
   const goal = catalog.sheets.BusinessGoals.find(row => row.businessGoalKey === input.businessGoalKey);
