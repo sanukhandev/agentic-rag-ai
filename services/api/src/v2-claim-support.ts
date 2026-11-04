@@ -30,8 +30,8 @@ const canonical = (token: string): string => {
 };
 const tokens = (value: string): string[] => value.normalize('NFKC').toLocaleLowerCase('en-US')
   .replace(/[_-]/gu,' ')
-  .match(/[\p{L}\p{N}]+/gu)?.map(canonical)
-  .filter(token => token.length >= 2 && !filler.has(token)) ?? [];
+  .match(/[\p{L}\p{N}]+/gu)?.filter(token => !filler.has(token))
+  .map(canonical).filter(token => token.length >= 2 && !filler.has(token)) ?? [];
 
 /**
  * A citation supports a claim without independent entailment only when every
@@ -40,6 +40,17 @@ const tokens = (value: string): string[] => value.normalize('NFKC').toLocaleLowe
  * Sentence-boundary, numeric, polarity and provider rules remain in provenance.
  */
 export const supportsV2SourceCloseClause = (claim: string, sourceText: string): boolean => {
+  // Formation is an already established journey label; stage assertions must
+  // match the *same actual stage key* in authoritative evidence.
+  const authoritativeStage = sourceText.toLocaleLowerCase('en-US').match(
+    /\bauthoritative journey is currently at ([a-z_]+)\b/u)?.[1];
+  const claimedStage = claim.toLocaleLowerCase('en-US').match(
+    /\bjourney is currently at ([a-z_]+)\b/u)?.[1];
+  if (authoritativeStage && claimedStage && authoritativeStage === claimedStage) {
+    const cleaned = claim.replace(/\bcompany[- ]formation\b/giu, '');
+    const availableStage = new Set(tokens(sourceText));
+    return tokens(cleaned).every(token => availableStage.has(token));
+  }
   const wanted = tokens(claim);
   if (wanted.length === 0) return false;
   const available = new Set(tokens(sourceText));
