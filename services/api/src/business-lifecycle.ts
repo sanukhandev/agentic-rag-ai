@@ -20,20 +20,58 @@ const requireVerifiedAccount = async (store: Store, session: Session, opportunit
   return account;
 };
 
+const pinnedPackageScope = async (store: Store, session: Session): Promise<{ catalogVersionId?: string | null; catalogVersionRef?: string }> => {
+  const catalogVersionId = session.conversationState?.catalogVersionId ?? null;
+  if (catalogVersionId) {
+    const v2 = await store.getIntentCatalogV2Version(session.tenantId, catalogVersionId);
+    if (v2) return { catalogVersionRef: v2.catalogVersionRef };
+  }
+  return { catalogVersionId };
+};
+
+const requireApprovedPackage = async (store: Store, session: Session, packageOfferingId: string): Promise<PackageOffering> => {
+  const offering = await store.getPackageOffering(packageOfferingId, session.tenantId);
+  if (!offering || offering.approvalStatus !== 'approved') throw new HttpError(409, 'PACKAGE_NOT_ELIGIBLE', 'That package is not approved for this tenant and opportunity.');
+  const scope = await pinnedPackageScope(store, session);
+  if (scope.catalogVersionRef && offering.catalogVersionRef !== scope.catalogVersionRef) throw new HttpError(409, 'PACKAGE_CATALOG_MISMATCH', 'That package is not part of the session-pinned catalog.');
+  if (!scope.catalogVersionRef && scope.catalogVersionId !== undefined && offering.catalogVersionId !== scope.catalogVersionId) throw new HttpError(409, 'PACKAGE_CATALOG_MISMATCH', 'That package is not part of the session-pinned catalog.');
+  return offering;
+};
+
+export type AccountConversionBinding = { workflowKey: string; webhookPath: string; intentKey: string; actionKey: string; catalogVersionId: string };
+
+export const accountConversionBinding = async (store: Store, session: Session, conversionRule: CrmAccountConversionRule): Promise<AccountConversionBinding | null> => {
+  const catalogVersionId = session.conversationState?.catalogVersionId;
+  if (!catalogVersionId) return null;
+  const v2 = await store.getIntentCatalogV2Version(session.tenantId, catalogVersionId);
+  if (v2) {
+    if (conversionRule !== 'qualification_verified') return null;
+    const goalKey = session.conversationState?.intentProgress?.activeIntentKey ?? session.conversationState?.selectedIntentKey;
+    const tool = v2.catalog.sheets.ToolBindings.find((candidate) => candidate.toolKey === 'account.propose_creation' && candidate.goalKey === goalKey && candidate.stageKey === 'account_creation' && candidate.enabled && candidate.sideEffectClass !== 'read_only' && candidate.registryKey);
+    const workflow = tool ? v2.catalog.sheets.WorkflowBindings.find((candidate) => candidate.registryKey === tool.registryKey && candidate.enabled && candidate.webhookPath) : null;
+    return tool && workflow ? { workflowKey: workflow.registryKey, webhookPath: workflow.webhookPath!, intentKey: tool.goalKey, actionKey: tool.toolKey, catalogVersionId: v2.catalogVersionRef } : null;
+  }
+  const catalog = await store.getIntentCatalogVersion(session.tenantId, catalogVersionId);
+  const policy = catalog?.catalog.crmAccountConversionPolicies?.find((candidate) => candidate.intentKey === 'account.registration' && candidate.workflowKey === 'crm.account.convert' && candidate.conversionRule === conversionRule && candidate.active);
+  return policy ? { workflowKey: policy.workflowKey, webhookPath: 'anc-account-conversion-wf-1', intentKey: policy.intentKey, actionKey: policy.intentKey, catalogVersionId } : null;
+};
+
 export const listEligiblePackages = async (store: Store, session: Session): Promise<PackageOffering[]> => {
   const state = session.conversationState;
+  const scope = await pinnedPackageScope(store, session);
+  const entry = state?.selectedIntentKey ? state.intentProgress?.entries[state.selectedIntentKey] : null;
+  const values = { ...(state?.slotValues ?? {}), ...(entry?.slotValues ?? {}) };
   return store.listPackageOfferings(session.tenantId, {
-    catalogVersionId: state?.catalogVersionId ?? null,
-    ...(state?.slotValues.business_activity ? { activity: state.slotValues.business_activity } : {}),
-    ...(state?.slotValues.entity_type ? { entityType: state.slotValues.entity_type } : {}),
+    ...scope,
+    ...(values.business_activity ? { activity: values.business_activity } : {}),
+    ...(values.entity_type ? { entityType: values.entity_type } : {}),
   });
 };
 
 export const createApprovedQuote = async (store: Store, session: Session, opportunityId: string, packageOfferingId: string): Promise<Quote> => {
   requireOpportunity(session, opportunityId);
   await requireVerifiedAccount(store, session, opportunityId);
-  const offering = await store.getPackageOffering(packageOfferingId, session.tenantId);
-  if (!offering || offering.approvalStatus !== 'approved') throw new HttpError(409, 'PACKAGE_NOT_ELIGIBLE', 'That package is not approved for this tenant and opportunity.');
+  const offering = await requireApprovedPackage(store, session, packageOfferingId);
   if (offering.priceMinor === null || !offering.currency) throw new HttpError(409, 'AUTHORITATIVE_PRICE_UNAVAILABLE', 'An approved price is not available for that package yet.');
   const nowMs = Date.now();
   if (offering.pricingEffectiveFrom && Date.parse(offering.pricingEffectiveFrom) > nowMs) throw new HttpError(409, 'PRICE_NOT_ACTIVE', 'The package price is not effective yet.');
@@ -44,8 +82,7 @@ export const createApprovedQuote = async (store: Store, session: Session, opport
 export const proposePackageSelection = async (store: Store, session: Session, opportunityId: string, packageOfferingId: string): Promise<PackageSelection> => {
   requireOpportunity(session, opportunityId);
   await requireVerifiedAccount(store, session, opportunityId);
-  const offering = await store.getPackageOffering(packageOfferingId, session.tenantId);
-  if (!offering || offering.approvalStatus !== 'approved') throw new HttpError(409, 'PACKAGE_NOT_ELIGIBLE', 'That package is not approved for this tenant and opportunity.');
+  await requireApprovedPackage(store, session, packageOfferingId);
   return store.createPackageSelection({ id: randomUUID(), tenantId: session.tenantId, sessionId: session.id, opportunityId, packageOfferingId, quoteId: null, status: 'proposed', confirmedAt: null, createdAt: now(), updatedAt: now() });
 };
 
@@ -62,10 +99,7 @@ export const confirmPackageSelection = async (store: Store, session: Session, se
 
 export const proposeAccountConversion = async (store: Store, session: Session, opportunityId: string, conversionRule: CrmAccountConversionRule): Promise<CrmAccount> => {
   requireOpportunity(session, opportunityId);
-  const catalogVersionId = session.conversationState?.catalogVersionId;
-  const catalog = catalogVersionId ? await store.getIntentCatalogVersion(session.tenantId, catalogVersionId) : null;
-  const conversionPolicy = catalog?.catalog.crmAccountConversionPolicies?.find((policy) => policy.intentKey === 'account.registration' && policy.workflowKey === 'crm.account.convert' && policy.conversionRule === conversionRule && policy.active);
-  if (!conversionPolicy) throw new HttpError(409, 'ACCOUNT_CONVERSION_NOT_CONFIGURED', 'Account conversion is not enabled for this catalog and conversion rule.');
+  if (!await accountConversionBinding(store, session, conversionRule)) throw new HttpError(409, 'ACCOUNT_CONVERSION_NOT_CONFIGURED', 'Account conversion is not enabled for this catalog and conversion rule.');
   const existing = await store.getCrmAccountByOpportunity(opportunityId, session.tenantId);
   if (existing) return existing;
   const actions = await store.listActionsBySession(session.id, session.tenantId);

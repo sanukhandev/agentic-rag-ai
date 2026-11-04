@@ -44,7 +44,13 @@ The first run stopped at turn 12 with PostgreSQL `22P02` because synthetic `tool
 - `I need two visas.` → visitor fact persisted; safe acknowledgement returned.
 - PostgreSQL inspection confirmed `goal_confirmed=true`, `business_goal_key=anc.company_formation`, and verified activity, visa and timeline facts on the exercised journey.
 
-This is a partial journey gate, not full completion. The database has zero approved package offerings, and Salesforce/provider verification was not available in this run.
+This is a partial journey gate, not full completion. A later checkpoint added two development-only V2 package fixtures, but Salesforce/provider verification and a complete customer-facing package/quotation journey were not available in this run.
+
+## V2 development pricebook and lifecycle boundary
+
+- Migration 060 was applied after this public smoke and returned two ANCFZ offerings pinned to the published canonical V2 catalog reference.
+- The V2 lifecycle regression now lists the canonical offerings and creates a deterministic development quote only after a verified Account is present; the focused lifecycle suite passed 3/3 tests.
+- These values are explicitly development-only and are not evidence of official ANCFZ pricing, Salesforce completion, or a full customer journey.
 
 ## Catalog-gated Lead proposal boundary
 
@@ -121,3 +127,13 @@ This is a partial journey gate, not full completion. The database has zero appro
 - 25/25 public HTTP turns returned answers through Nginx → API → model gateway.
 - History endpoint returned HTTP 200 with 25 durable unique customer messages.
 - External CRM, invoice, document and signing outcomes: `NOT_VERIFIED_BY_THIS_HARNESS`.
+
+## Post-migration public persistence rerun with V2 development pricebook
+
+**Result:** PASS for the deployed conversation persistence boundary; external business outcomes remain unverified.
+
+- Artifact: `artifacts/ancfz/api-25-turns-v2-pricebook.json`.
+- Tenant: `anc`; session: `313cfa10-e01c-4fd5-bdce-602cf72f46b3`.
+- 25/25 public HTTP turns returned answers and 25 unique customer messages were durable in the history endpoint.
+- The public package route smoke separately returned two offerings pinned to the canonical V2 catalog; both were marked `development_only`.
+- The harness reports `external_crm_invoice_document_signing: NOT_VERIFIED_BY_THIS_HARNESS`.

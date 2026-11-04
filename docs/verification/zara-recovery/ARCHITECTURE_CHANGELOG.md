@@ -29,7 +29,21 @@ The public smoke and 25-turn harness pass. Full stage/provider completion is sti
 - Added migration-boundary, memory-store isolation and V2 tool-gateway regression coverage.
 - Applied migration 059 to the development PostgreSQL instance and rebuilt the API image successfully.
 
-No synthetic ANCFZ pricebook was re-enabled: the development database still has zero approved offerings, so pricing and quotation acceptance remain blocked on reviewed authoritative data.
+No official ANCFZ pricebook was fabricated. At this checkpoint the database still had zero V2 offerings; the later M7 checkpoint adds only the existing development-only sandbox fixture under a canonical V2 identity.
+
+## M7 V2 package/lifecycle checkpoint — 2026-11-04
+
+- Added migration 060, which reuses the explicitly development-only values from migration 051 as two canonical V2 `package_offerings` rows (`availability=development_only`, source `sandbox-pricebook-v1`, and exclusions stating that they are not official ANCFZ pricing). No production or live-Salesforce pricebook was created.
+- Updated the customer-facing package lifecycle helpers to resolve a session-pinned V2 catalog reference and reject offerings from another catalog revision. V2 package listing, selection and deterministic quote creation now share the same tenant/catalog boundary.
+- PostgreSQL verification returned exactly two ANCFZ V2 development offerings, both pinned to `anc:r2:1b7342efc6ed15e10c811dd462e192a08bbdf41ea4c89ba6fac9843974b73a67`.
+- The formal customer journey remains unverified: package actions still require an authoritative verified Account, and official pricing/Salesforce provider readback are not available in this environment.
+
+## M6/M7 V2 Account lifecycle checkpoint — 2026-11-04
+
+- Replaced the legacy-only Account conversion lookup at the customer lifecycle boundary with a shared resolver for Catalog V2 tool/workflow bindings while preserving legacy catalog behavior.
+- V2 Account proposals now carry the bound workflow key, tool action key and canonical `catalogVersionRef`; disabled or incomplete bindings remain unavailable rather than falling back to a hardcoded route.
+- Added a regression using an enabled synthetic V2 binding and a qualified synthetic Lead. The real ANCFZ publication remains disabled because its Salesforce/n8n transport is not configured, so no live Account action is claimed.
+- API full suite: 61 files / 485 tests PASS; lint, typecheck, build, Docker health and public V2 package smoke PASS. Azure, Salesforce and full seven-stage execution remain unverified.
 
 ## M5 contact-cursor checkpoint — 2026-11-04
 

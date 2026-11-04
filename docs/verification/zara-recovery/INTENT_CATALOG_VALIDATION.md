@@ -23,4 +23,4 @@
 
 ## Known catalog/data blocker
 
-ANCFZ `package_offerings` currently contains zero rows in the development database. Package selection and formal quotation therefore remain correctly blocked; no prices or package entitlements were invented.
+ANCFZ now contains two canonical V2 development-only `package_offerings` rows from migration 060. They reuse the reviewed sandbox fixture values from migration 051, are marked `availability=development_only`, cite `sandbox-pricebook-v1`, and explicitly exclude official ANCFZ pricing. They support deterministic local package/quote contract tests only; they do not establish an official pricebook.

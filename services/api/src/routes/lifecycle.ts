@@ -3,7 +3,7 @@ import type { LifecycleStage, Session, Store } from '../types.js';
 import type { ActionGateway } from '../actions.js';
 import { parse, HttpError } from '../http/errors.js';
 import { lifecycleAccountProposalSchema, lifecycleContractSchema, lifecycleInvoiceSchema, lifecyclePackageProposalSchema, lifecycleQuoteSchema, lifecycleSelectionConfirmationSchema } from '../http/schemas.js';
-import { activeOpportunityId, confirmPackageSelection, createApprovedQuote, createContractDraft, createInvoiceDraft, listEligiblePackages, proposeAccountConversion, proposePackageSelection } from '../business-lifecycle.js';
+import { accountConversionBinding, activeOpportunityId, confirmPackageSelection, createApprovedQuote, createContractDraft, createInvoiceDraft, listEligiblePackages, proposeAccountConversion, proposePackageSelection } from '../business-lifecycle.js';
 
 export interface LifecycleRouteDependencies {
   store: Store;
@@ -39,7 +39,9 @@ export const registerLifecycleRoutes = (app: Pick<Application, 'get' | 'post'>, 
       const input = parse(lifecycleAccountProposalSchema, req.body);
       const account = await proposeAccountConversion(dependencies.store, session, input.opportunityId, input.conversionRule);
       if (account.status === 'verified') { res.status(200).json({ account, verified: true }); return; }
-      const action = await dependencies.gateway.propose(session.tenantId, session.id, `crm-account:${account.id}`, { contactConsent: true, slotValues: { crmAccountId: account.id } }, { workflowKey: 'crm.account.convert', webhookPath: 'anc-account-conversion-wf-1', intentKey: 'account.registration', actionKey: 'account.registration', catalogVersionId: session.conversationState?.catalogVersionId ?? null, opportunityId: input.opportunityId });
+      const binding = await accountConversionBinding(dependencies.store, session, input.conversionRule);
+      if (!binding) throw new HttpError(409, 'ACCOUNT_CONVERSION_NOT_CONFIGURED', 'Account conversion is not enabled for this catalog and conversion rule.');
+      const action = await dependencies.gateway.propose(session.tenantId, session.id, `crm-account:${account.id}`, { contactConsent: true, slotValues: { crmAccountId: account.id } }, { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, intentKey: binding.intentKey, actionKey: binding.actionKey, catalogVersionId: binding.catalogVersionId, opportunityId: input.opportunityId });
       res.status(202).json({ account, verified: false, actionProposal: { id: action.id, state: action.state } });
     } catch (error) { next(error); }
   });

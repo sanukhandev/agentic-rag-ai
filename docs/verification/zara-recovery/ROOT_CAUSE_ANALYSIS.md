@@ -133,8 +133,21 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Reproduction method:** PostgreSQL inspection showed active Catalog V2 `b63b931f-0713-4d18-bcea-88621bd1b5ed`, legacy-only package identity, and zero ANCFZ offerings; the V2 gateway passed the V2 UUID to the legacy filter.
 - **Regression test:** `services/api/src/v2-tool-gateway.unit.test.ts` stores a package with a canonical V2 ref and retrieves it through `get_available_packages`; `store-memory.test.ts` verifies ref scoping; `v2-catalog-identity.test.ts` verifies migration 059.
 - **Correction:** Added `catalog_v2_version_ref`, tenant-scoped FK/check constraint, store support for V2 refs, and V2 gateway filtering by `catalogVersionRef`.
-- **Unit/integration/Docker/Azure result:** 23 focused tests PASS; API typecheck PASS; migration applied and constraints verified in PostgreSQL; API Docker rebuild and health check PASS; live pricebook/Azure/Salesforce acceptance remains unverified.
-- **Regression status:** FIXED for catalog identity; package/quotation outcome remains blocked by missing authoritative ANCFZ offerings.
+- **Unit/integration/Docker/Azure result:** 23 focused tests PASS; API typecheck PASS; migration 059 applied and constraints verified in PostgreSQL; API Docker rebuild and health check PASS; live pricebook/Azure/Salesforce acceptance remains unverified.
+- **Regression status:** FIXED for catalog identity; the later development-only V2 fixture removes the local empty-catalog condition without claiming official pricing.
+
+## Failure ZARA-016 — V2 customer package routes resolved only legacy catalog UUIDs
+
+- **Customer message:** `Show me packages.` followed by a package selection or quotation request.
+- **Expected behavior:** Customer-facing package listing, selection and deterministic quote creation must use the session-pinned Catalog V2 publication and reject offerings from another revision.
+- **Actual behavior:** `business-lifecycle.ts` passed `conversationState.catalogVersionId` to the legacy UUID filter. A V2 session therefore could retrieve packages through `v2-tool-gateway.ts` but receive an empty list or cross-boundary selection failure through lifecycle routes.
+- **Failing runtime component:** `services/api/src/business-lifecycle.ts`.
+- **Actual failure code:** Empty V2 package result; direct selection/quote paths had no canonical V2 identity check.
+- **Reproduction method:** A MemoryStore session pinned to a V2 version ID with an offering stored under `catalog_v2_version_ref` returned `[]` before the fix.
+- **Regression test:** `services/api/src/business-lifecycle.test.ts` now covers V2 listing, verified-account gating, selection and deterministic quote creation.
+- **Correction:** Resolve the V2 version ID to its canonical ref for reads and require the selected offering to match the pinned tenant/catalog identity.
+- **Unit/integration/Docker/Azure result:** Focused lifecycle suite 3/3 PASS; typecheck PASS; migration 060 and PostgreSQL verification PASS; live official pricebook/Salesforce/Azure acceptance remains unverified.
+- **Regression status:** FIXED for the local V2 package/lifecycle boundary; full customer-facing quote journey remains unverified.
 
 ## Failure ZARA-011 — V2 contact facts were not connected to the catalog cursor
 
@@ -186,3 +199,17 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Root cause (confirmed):** `evaluateV2CallbackStageCompletion` intentionally denied all V2 `completed` transitions and had no explicit input for a separately validated provider readback.
 - **Correction:** Added an explicit trusted-evidence flag passed only by the evidence route after exact deterministic validation. Ordinary callbacks and unverified Salesforce results remain fail-closed.
 - **Regression:** Deterministic mock route completes the action and links the local Lead; Salesforce route enters `reconcile_required` without creating a Lead.
+
+## Failure ZARA-017 — V2 Account conversion used legacy policy and transport identity
+
+- **Customer-visible impact:** A V2 journey with a catalog-declared Account capability could not reach the Account proposal boundary because the lifecycle helper searched only legacy `crmAccountConversionPolicies` rows; if it did reach the route, the route would still emit legacy `crm.account.convert` / `account.registration` identity.
+- **Expected behavior:** Resolve the enabled V2 `account.propose_creation` tool and its enabled `crm.account.create` workflow binding, preserve the canonical V2 catalog reference, and remain fail-closed when the binding is disabled or the provider transport is unavailable.
+- **Actual behavior:** V2 sessions returned `ACCOUNT_CONVERSION_NOT_CONFIGURED` even when an enabled V2 binding was present in the pinned catalog.
+- **Failing runtime components:** `services/api/src/business-lifecycle.ts` and `services/api/src/routes/lifecycle.ts`.
+- **Actual failure code:** `ACCOUNT_CONVERSION_NOT_CONFIGURED`.
+- **Root cause (confirmed):** The lifecycle route predated Catalog V2 and treated Account conversion as a legacy policy/workflow concern. It did not resolve V2 tool/workflow bindings or carry `catalogVersionRef` into the action.
+- **Reproduction method:** A MemoryStore V2 catalog with the Account tool/workflow enabled, a qualified synthetic Lead and a pinned V2 session failed before the fix with `ACCOUNT_CONVERSION_NOT_CONFIGURED`.
+- **Regression test:** `services/api/src/business-lifecycle.test.ts` enables the fixture binding and verifies a pending Account proposal from a qualified Lead; legacy conversion coverage remains in the same suite.
+- **Correction:** Added one shared V2/legacy binding resolver. V2 permits only the qualification-verified Account stage, requires an enabled catalog tool and workflow with a webhook path, and emits the canonical catalog reference; the real ANCFZ disabled binding still fails closed.
+- **Unit/integration/Docker/Azure result:** Focused lifecycle suite 4/4 PASS; API full suite 61 files / 485 tests PASS; lint/typecheck/build PASS; API Docker rebuild and public health/package smoke PASS; Salesforce, n8n and Azure acceptance remain unverified.
+- **Regression status:** FIXED for the V2 lifecycle identity boundary; provider Account execution/readback and full seven-stage completion remain unverified.
