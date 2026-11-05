@@ -16,3 +16,21 @@ Additional live development checks (2026-11-04):
 - Therefore enabling the binding or reporting a deterministic mock as Salesforce success would violate the provider-verification gate.
 
 Resume procedure: provide verified development Salesforce sandbox credentials and permissions, run the existing CRM workflow through the public API with a unique synthetic identity, then capture Lead create/readback, duplicate handling, update/readback and correlation evidence.
+
+## Exact blocker audit — 2026-11-05
+
+The live gate is blocked by a chain of missing runtime dependencies, not by a failed Salesforce response:
+
+1. The local environment selects `REMOTE_CRM_PROVIDER=salesforce`, but exposes no configured Salesforce instance URL, OAuth client/token material, or provider permission set to the API runtime.
+2. The Node implementation contains the typed `salesforce_sandbox` result validator and fail-closed evidence routes, but no outbound Salesforce REST/Composite adapter that can search, create, update, and read back a Lead.
+3. The published ANCFZ catalog keeps `lead.create` and `crm.lead.create` disabled, so Node correctly refuses to dispatch the Lead action.
+4. The repository n8n workflow is inactive, uses `https://configure-provider.invalid/...`, and has no Salesforce credential. Enabling the catalog binding now would create an unauthorized/unverifiable side-effect path.
+
+Required evidence to unblock the gate:
+
+- A development-only Salesforce sandbox endpoint and authenticated integration credential with Lead search/create/update/read permissions.
+- A configured outbound adapter or active n8n workflow that preserves tenant/session/opportunity/action/idempotency correlation.
+- A fresh synthetic Lead run proving create-or-dedupe, provider readback, qualification, update/readback, and replay idempotency.
+- Only after those checks pass: a reviewed catalog revision enabling the bindings, without repinning existing sessions.
+
+The 2026-11-05 API/model/worker restart replay passed locally, but it does not satisfy any of the provider requirements above.
