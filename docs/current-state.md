@@ -161,3 +161,11 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Node now responds with privacy-safe confirmation guidance, keeps the pending goal decision, and does not persist/use contact slots until the goal and contact workflow are authorized.
 - API verification: **61 files / 519 tests PASS**; Docker API rebuild and health check PASS.
 - Three fresh public Azure-backed 25-turn runs each passed **25/25 HTTP**, **25 durable user messages**, and **10/10 objective checks**. Human persona scoring, Salesforce/provider readback and the full seven-stage journey remain unverified; overall status remains `NOT_READY`.
+
+## 2026-11-05 semantic recovery and embedding reliability checkpoint
+
+- Fixed three reproduced live response defects in the pending formation-confirmation path: timeline statements are acknowledged, adviser preference is acknowledged without internal journey text, and pre-confirmation status reports no submitted Lead/CRM action.
+- Added regression coverage for grounded-but-semantically-unrelated excerpts and Azure embedding 503 recovery.
+- Azure embedding retries now cover bounded transient 408/409/429/5xx responses and transient fetch failures.
+- Verification: API 61 files / 523 tests PASS; typecheck, lint, build and Docker API rebuild/health PASS; three post-retry public Azure-backed 25-turn runs PASS with 25/25 answers, 25 durable messages and 10/10 deterministic objective checks each.
+- Two pre-retry captures are retained as failed evidence for `V2_KNOWLEDGE_RETRIEVAL_UNAVAILABLE`; formal human Azure scoring, Salesforce/provider readback, browser E2E, official pricing and complete seven-stage completion remain unverified. Overall status: `NOT_READY`.

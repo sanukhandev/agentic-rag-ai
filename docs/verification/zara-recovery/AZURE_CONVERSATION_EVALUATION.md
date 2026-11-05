@@ -58,3 +58,11 @@ The public harness now records redacted answer digests, grounded/citation flags,
 - `artifacts/ancfz/azure-eval-contact-fix-run-2-scored.json` — 25/25 HTTP answers, 25 durable user messages, automated objective score **1.00 (10/10)**.
 - `artifacts/ancfz/azure-eval-contact-fix-run-3-scored.json` — 25/25 HTTP answers, 25 durable user messages, automated objective score **1.00 (10/10)**.
 - All three runs report `human_persona_quality_review: NOT_RUN` and `provider_completion: NOT_VERIFIED_BY_THIS_HARNESS`. These are live Azure-backed transport/state/objective results, not the mandatory human-scored >=90% quality gate.
+
+## Semantic recovery and embedding retry checkpoint — 2026-11-05
+
+- Added regressions for the live timeline/package mismatch, adviser-preference internal-state response, and pre-confirmation status misanswer.
+- `azure-eval-semantic-fix-run-1` and `...run-2` passed 25/25 HTTP turns, durable history and 10/10 objective checks.
+- `azure-eval-semantic-fix-run-3` and `...run-4` are retained as **FAIL** evidence: they stopped at turns 8 and 5 with `V2_KNOWLEDGE_RETRIEVAL_UNAVAILABLE`; Docker services remained healthy. The Azure embedding adapter only retried 429 at that point.
+- The adapter now retries bounded 408/409/429/5xx and transient fetch failures. After the rebuild, `azure-eval-post-retry-run-1`, `...run-2` and `...run-3` each passed 25/25 turns, durable history and 10/10 objective checks.
+- Human persona-quality scoring remains `NOT_RUN`; objective 10/10 is not the required human >=90% quality gate. Salesforce/provider completion remains `NOT_VERIFIED_BY_THIS_HARNESS`.

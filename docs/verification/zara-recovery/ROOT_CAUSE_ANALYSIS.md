@@ -295,3 +295,25 @@ The repository documentation explicitly marks the Python↔Node tool loop, final
 - **Correction:** Added the bounded synthetic-test name form, removed requirement-key narration from tool evidence, rejected known internal requirement keys at the final response guard, and added Node-authored confirmation/provider-unavailable recovery that leaves the action pending and does not dispatch a write.
 - **Verification:** Privacy, guard and controller regressions PASS; full API suite 61 files / 512 tests PASS. Public replay returned a confirmation question, then `I have recorded your confirmation, but the Salesforce connection for this development tenant is not enabled. I have not submitted the Lead...`; PostgreSQL reported zero `action_requests` for the session.
 - **Regression status:** FIXED for the observed leak/fallback; Salesforce sandbox creation/readback remains blocked by the disabled binding and missing provider evidence path.
+
+## Failure ZARA-025 — grounded excerpt overrode independently valid pending-goal dialogue
+
+- **Customer messages:** `I am thinking of a next-month timeline.`, `I prefer to speak with an advisor.`, and `What is the current status of my enquiry, without assuming the CRM succeeded?` while formation confirmation was pending.
+- **Expected behavior:** Preserve the quoted timeline, acknowledge the adviser preference, and report that no Lead/CRM action has been submitted; do not expose internal journey state.
+- **Actual behavior:** A grounded-looking model excerpt returned a package sentence, `No opportunity is currently bound to the requested journey state.`, or unrelated registration timing.
+- **Failing runtime component:** `services/api/src/v2-turn-controller.ts` pending-goal response recovery.
+- **Root cause (confirmed):** Recovery only overrode rejected model responses. `accepted_knowledge_excerpt` was treated as sufficient even when the independently validated customer intent/fact was unrelated to the excerpt.
+- **Regression test:** `services/api/src/v2-turn-controller.test.ts` covers all three responses with `accepted_knowledge_excerpt`.
+- **Correction:** Node now gives independently validated quoted facts and safe non-action/status intents precedence over unrelated grounded excerpts while leaving goal confirmation and action authorization unchanged.
+- **Verification:** Focused and full API suites pass; three post-retry public Azure-backed runs each passed 25/25 turns and 10/10 objective checks.
+- **Regression status:** FIXED for the reproduced live path; formal human quality scoring remains unverified.
+
+## Failure ZARA-026 — Azure embedding transient failures became customer-visible retrieval 503s
+
+- **Customer impact:** Independent public runs stopped at turns 5 and 8 with `V2_KNOWLEDGE_RETRIEVAL_UNAVAILABLE` despite healthy Docker services.
+- **Failing runtime component:** `services/api/src/embedding.ts` Azure embedding adapter.
+- **Root cause (confirmed):** The adapter retried only HTTP 429. Transient 5xx/fetch failures were immediately raised as `KnowledgeRetrievalError`, and the controller correctly—but too rigidly for a transient provider fault—returned HTTP 503.
+- **Regression test:** `services/api/src/embedding.test.ts` simulates 503 then 200 and requires a successful embedding.
+- **Correction:** Bounded retry now covers 408/409/429/5xx and transient fetch failures, with retry-after, exponential backoff and jitter within the existing retry budget.
+- **Verification:** API suite 61 files / 523 tests, typecheck, lint, build and Docker health pass. Three post-retry public Azure-backed runs each completed 25/25 turns and 10/10 objective checks.
+- **Regression status:** FIXED for the observed transient failure class; Azure availability and formal human quality remain external/unverified dependencies.

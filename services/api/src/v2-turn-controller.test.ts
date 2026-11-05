@@ -749,6 +749,46 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect(document?.verifiedFacts.timeline?.maskedValue).toBe('next month');
   });
 
+  it('keeps a quoted timeline acknowledgement when a grounded excerpt is semantically unrelated', async () => {
+    const ctx = await proposalTurn();
+    const interruption = await followUpTurn(ctx, 'I want to start next month.');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: ['approved-evidence-a'], answer: 'Discover business setup packages.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted_knowledge_excerpt',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(interruption);
+    expect(reply.answer).toContain('requested start timeline as next month');
+    expect(reply.answer).toContain('Would you like to proceed with company formation?');
+  });
+
+  it('keeps a pending-goal preference acknowledgement when a grounded excerpt is semantically unrelated', async () => {
+    const ctx = await proposalTurn();
+    const interruption = await followUpTurn(ctx, 'I prefer to speak with an adviser.');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: ['approved-evidence-a'], answer: 'No opportunity is currently bound to the requested journey state.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted_knowledge_excerpt',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(interruption);
+    expect(reply.answer).toContain('prefer to speak with an adviser');
+    expect(reply.answer).toContain('Would you like to proceed with company formation?');
+  });
+
+  it('answers pre-confirmation status questions with truthful local state', async () => {
+    const ctx = await proposalTurn();
+    const interruption = await followUpTurn(ctx, 'What is my current status without CRM?');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 1, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: ['approved-evidence-a'], answer: 'Company registration can be completed in two hours.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted_knowledge_excerpt',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(interruption);
+    expect(reply.answer).toContain('still exploratory');
+    expect(reply.answer).toContain('no Lead or CRM action has been submitted');
+    expect(reply.answer).not.toContain('registration can be completed');
+  });
+
   it.each([
     ['I prefer to speak to an advisor.', 'adviser'],
     ['Please do not disclose any other customer information.', 'other customers'],

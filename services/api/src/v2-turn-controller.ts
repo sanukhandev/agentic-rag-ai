@@ -12,7 +12,7 @@ import { contextForConfirmedV2Action, initializeConfirmedV2Journey } from './v2-
 import type { ActionGateway } from './actions.js';
 import { extractLeadData } from './model.js';
 import { HttpError } from './http/errors.js';
-import { contextualizeV2KnowledgeQuery, prefetchV2ApprovedKnowledge } from './v2-knowledge-preflight.js';
+import { contextualizeV2KnowledgeQuery, isV2FactualKnowledgeQuestion, prefetchV2ApprovedKnowledge } from './v2-knowledge-preflight.js';
 import { KnowledgeRetrievalError } from './knowledge.js';
 import type { EmbeddingProvider } from './embedding.js';
 import { assertKnownTokens, maskPiiForSession, rehydrateForSession, TokenVault } from './privacy.js';
@@ -543,6 +543,13 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     effectiveAnswer = 'I can help with ' + requirementGoal.name.toLowerCase() + '. ' + effectiveQuestion;
     overrideResponse = true;
   }
+  if (pendingDecision && !overrideResponse
+      && (selectedTurnCategory === 'service_status_support'
+        || /\b(?:current status|without (?:crm|salesforce))\b/iu.test(maskedMessage))) {
+    effectiveAnswer = 'Your company-formation enquiry is still exploratory; no Lead or CRM action has been submitted. Would you like to proceed with company formation?';
+    effectiveQuestion = 'Would you like to proceed with company formation?';
+    overrideResponse = true;
+  }
   if (contactActive && !pendingDecision && (Object.keys(contactFromMessage).length > 0 || contactDecision)) {
     if (!contactValues.name) {
       effectiveAnswer = 'I’m ready to record this enquiry. What name should I use?';
@@ -562,22 +569,22 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   // Persist only facts that Node already verified in its session/intent store.
   // Never promote model-generated facts to verified customer facts.
   const proposedFacts = validPlan && selectedV2Goal && modelPlan
-    && (decision === null || decision === 'interruption')
+    && decision !== 'confirmed' && decision !== 'rejected' && decision !== 'corrected'
     ? validateQuotedV2CustomerFacts(modelPlan.proposedFacts ?? [], maskedMessage, userMessage.id, state.messageSequence)
     : {};
-  const extractedFacts = selectedV2Goal && (decision === null || decision === 'interruption')
+  const extractedFacts = selectedV2Goal
+    && decision !== 'confirmed' && decision !== 'rejected' && decision !== 'corrected'
     ? extractQuotedV2CustomerFacts(maskedMessage, userMessage.id, state.messageSequence)
     : {};
   const acceptedCustomerFacts = { ...extractedFacts, ...proposedFacts };
   const currentCustomerFacts = { ...(intentDocument?.verifiedFacts ?? {}), ...acceptedCustomerFacts };
   const factLabels: Record<string, string> = { visa_count: 'your visa requirement', timeline: 'your requested start timeline', business_activity: 'your business activity', entity_type: 'your company structure' };
   const factSummary = Object.entries(currentCustomerFacts).map(([key, value]) => `${factLabels[key] ?? key} as ${value.maskedValue}`);
-  const isCorrection = /\b(?:actually|changed?|make that|instead)\b/iu.test(maskedMessage);
   const isRecap = /\b(?:recap|summari[sz]e|what did i tell)\b/iu.test(maskedMessage);
-  const modelFailedDialogue = !['accepted', 'accepted_entailment', 'accepted_knowledge_excerpt', 'accepted_knowledge_repair', 'accepted_model_dialogue'].includes(result.guardReason);
-  if (pendingDecision && decision === 'interruption'
+  if (pendingDecision && decision !== 'confirmed' && decision !== 'rejected' && decision !== 'corrected'
       && ((isRecap && factSummary.length > 0)
-        || (Object.keys(acceptedCustomerFacts).length > 0 && (isCorrection || modelFailedDialogue)))) {
+        || (Object.keys(acceptedCustomerFacts).length > 0
+          && !isV2FactualKnowledgeQuestion(maskedMessage)))) {
     const changed = Object.keys(acceptedCustomerFacts).filter(key => intentDocument?.verifiedFacts[key]?.maskedValue !== acceptedCustomerFacts[key]!.maskedValue);
     const values = (isRecap ? Object.entries(currentCustomerFacts) : changed.map(key => [key, acceptedCustomerFacts[key]!] as const))
       .map(([key, value]) => `${factLabels[key] ?? key} as ${value.maskedValue}`);
@@ -588,8 +595,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     effectiveQuestion = 'Would you like to proceed with company formation?';
     overrideResponse = true;
   }
-  if (pendingDecision && decision !== 'confirmed' && decision !== 'rejected' && decision !== 'corrected' && !overrideResponse
-      && !['accepted', 'accepted_entailment', 'accepted_knowledge_excerpt', 'accepted_knowledge_repair', 'accepted_model_dialogue'].includes(result.guardReason)) {
+  if (pendingDecision && decision !== 'confirmed' && decision !== 'rejected' && decision !== 'corrected' && !overrideResponse) {
     if (/\b(?:prefer|would like|want)\b[\s\S]{0,50}\b(?:advisor|adviser)\b/iu.test(maskedMessage)) {
       effectiveAnswer = 'Of course. I’ve noted that you prefer to speak with an adviser. Would you like to proceed with company formation?';
       effectiveQuestion = 'Would you like to proceed with company formation?';

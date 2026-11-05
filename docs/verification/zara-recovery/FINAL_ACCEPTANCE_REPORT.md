@@ -39,6 +39,15 @@
 - Three fresh Azure-backed public persistence runs after the final evidence-merge fix: PASS — each completed 25/25 turns with 25 durable user messages. This proves transport/persistence only; the required >=90% conversation-quality score is still unverified because the harness has no frozen rubric scorer.
 - Opt-in local ANCFZ PDF and mock-payment simulators: PASS after supplying ignored development-only API keys; both containers remain running. This is local simulator health, not provider or payment completion.
 
+## 2026-11-05 semantic recovery and embedding reliability checkpoint
+
+- Added Node recovery regressions for the package-sentence/timeline mismatch, adviser-preference internal-state response, and pre-confirmation status misanswer.
+- The controller preserves customer-quoted facts and safe non-action preferences independently of a grounded-but-unrelated model excerpt; it does not confirm the goal or authorize a side effect.
+- Added bounded Azure embedding retries for transient 408/409/429/5xx and fetch failures.
+- Post-retry public Azure-backed runs: **3/3 PASS**, each 25/25 HTTP answers, 25 durable user messages and 10/10 deterministic objective checks.
+- Earlier same-image retrieval failures remain recorded as failed evidence; they stopped at turns 8 and 5 with `V2_KNOWLEDGE_RETRIEVAL_UNAVAILABLE` before the retry correction.
+- Acceptance remains **NOT_READY**: human Azure quality scoring, Salesforce sandbox/readback, official pricing, browser E2E, live payment/signature providers and complete seven-stage provider completion are not verified.
+
 ## Unverified or blocked
 
 - Full seven-stage customer journey.
