@@ -14,7 +14,7 @@ COPY apps ./apps
 COPY packages ./packages
 COPY services ./services
 COPY docs ./docs
-COPY openapi ./openapi
+# The openapi/ directory is not tracked; do not make clean builds depend on it.
 
 FROM node-source AS api-build
 RUN npm run build --workspace services/api
@@ -35,12 +35,14 @@ CMD ["node", "services/api/dist/index.js"]
 FROM node-source AS web-build
 ARG NEXT_PUBLIC_API_URL=/
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build --workspace packages/chat-utils
 RUN npm run build --workspace apps/web
 
 FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS web-runtime
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 COPY --from=web-build /workspace/apps/web/.next/standalone ./
 COPY --from=web-build /workspace/apps/web/.next/static ./apps/web/.next/static

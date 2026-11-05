@@ -1,0 +1,283 @@
+{
+  "id": "ancfzV2AccountCreateR1",
+  "name": "ANCFZ V2 | 03c | Account Contact Opportunity creation | CONFIG REQUIRED",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none"
+  },
+  "nodes": [
+    {
+      "id": "ancfzV2AccountCreateR1-webhook",
+      "name": "Receive Node Dispatch",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ancfz/v2/account-create",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "responseCode": 202,
+        "options": {}
+      },
+      "webhookId": "ancfz-v2-account-create",
+      "notes": "REQUIRED: configure Webhook Header Auth credential with X-Agentic-Internal-Secret (same value as the Node event-dispatch authentication header). Do not publish until all backend gates are ready."
+    },
+    {
+      "id": "ancfzV2AccountCreateR1-validate",
+      "name": "Validate Dispatch Envelope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nconst uuid = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(v);\nif (input.workflowKey !== \"crm.account.create\" || input.contract !== \"ancfz-v2-stage-action-v1\") throw new Error('Unsupported workflow contract.');\nfor (const k of ['actionId','tenantId','sessionId','eventId','correlationId']) if (!uuid(input[k])) throw new Error('Missing server-issued '+k);\nif (!Number.isInteger(input.attempt) || input.attempt < 1) throw new Error('Missing attempt.');\nreturn [{json: {actionId:input.actionId,tenantId:input.tenantId,sessionId:input.sessionId,eventId:input.eventId,correlationId:input.correlationId,attempt:input.attempt,workflowKey:input.workflowKey,contract:input.contract}}];"
+      }
+    },
+    {
+      "id": "ancfzV2AccountCreateR1-claim",
+      "name": "Claim Authorized Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/claim",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({...$json,executionReference:$execution.id,n8nWorkflowId:$workflow.id,limit:1}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "notes": "Credential deliberately not assigned; configure via the n8n Credentials UI, never in this repository."
+    },
+    {
+      "id": "ancfzV2AccountCreateR1-guard",
+      "name": "Require V2 Stage Authorization",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const rows = $json.items;\nif (!Array.isArray(rows) || rows.length !== 1) throw new Error('Expected one authorized Node action; no bulk execution.');\nconst action = rows[0];\nconst env = $('Validate Dispatch Envelope').first().json;\nif (action.workflowKey !== \"crm.account.create\" || action.stageKey !== \"account_creation\" || action.contract !== env.contract) throw new Error('Stage/action contract mismatch.');\nfor (const k of ['actionId','tenantId','sessionId','eventId','correlationId']) if (action[k] !== env[k]) throw new Error('Claim correlation mismatch: '+k);\nif (action.attempt !== env.attempt || !Number.isInteger(action.actionRevision) || action.actionRevision < 1) throw new Error('Stale action revision or attempt.');\nfor (const k of ['opportunityId','catalogVersionId','idempotencyKey','actionKey','approvedPayload']) if (!action[k]) throw new Error('Missing approved Node field: '+k);\nif (action.actionKey !== \"crm.account.create\") throw new Error('Action identity mismatch.');\nif (action.providerEnabled !== true || action.v2Authorized !== true || action.purposeConsentVerified !== true || action.actionConfirmationVerified !== true) throw new Error('Node did not explicitly authorize this V2 side effect.');\nif (typeof action.approvedPayload !== 'object' || Array.isArray(action.approvedPayload)) throw new Error('Approved payload missing.');\nreturn [{json:action}];"
+      }
+    },
+    {
+      "id": "ancfzV2AccountCreateR1-provider",
+      "name": "Call Provider - Configure Credential",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.REMOTE_CRM_ACCOUNT_URL }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "oAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const source=$('Require V2 Stage Authorization').first().json; const p=source.providerPayload||{}; const name=String(p.name||'ANCFZ Customer').trim(); const leadId=String(p.leadExternalId||'').trim(); const opportunityName='ANCFZ '+name+' '+source.actionId.slice(0,8); return JSON.stringify({allOrNone:true,compositeRequest:[{method:'POST',url:'/services/data/v68.0/sobjects/Account',referenceId:'account',body:{Name:opportunityName,Description:'Agentic account for Lead '+leadId+' Action '+source.actionId}},{method:'POST',url:'/services/data/v68.0/sobjects/Contact',referenceId:'contact',body:{LastName:name,Email:String(p.email||''),AccountId:'@{account.id}'}},{method:'POST',url:'/services/data/v68.0/sobjects/Opportunity',referenceId:'opportunity',body:{Name:opportunityName+' Opportunity',StageName:'Prospecting',CloseDate:'2026-12-31',AccountId:'@{account.id}',Description:'Agentic opportunity for Lead '+leadId+' Action '+source.actionId}}]}); })() }}",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Require V2 Stage Authorization').first().json.idempotencyKey }}"
+            },
+            {
+              "name": "X-Action-Reference",
+              "value": "={{ $('Require V2 Stage Authorization').first().json.actionId }}"
+            }
+          ]
+        }
+      },
+      "notes": "Uses the configured Salesforce OAuth2 credential and Composite API to create linked Account, Contact and Opportunity records. Node independently reads back all three records before accepting completion."
+    },
+    {
+      "id": "ancfzV2AccountCreateR1-readback",
+      "name": "Read Back Provider State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 4.2,
+      "position": [
+        1300,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const body=$('Call Provider - Configure Credential').first().json; const rows=body.compositeResponse; if(!Array.isArray(rows)||rows.length!==3) throw new Error('Salesforce Composite API did not return the Account, Contact and Opportunity results.'); const refs=new Map(rows.map(row=>[row.referenceId,row])); const ids=['account','contact','opportunity'].map(ref=>{const row=refs.get(ref); if(!row||row.httpStatusCode<200||row.httpStatusCode>=300||typeof row.body?.id!=='string') throw new Error('Salesforce Composite API relationship creation failed.'); return row.body.id;}); return [{json:{accountId:ids.join(':'),remoteAccountId:ids[0],remoteContactId:ids[1],remoteOpportunityId:ids[2]}}];"
+      },
+      "notes": "This packages the three provider IDs into an opaque correlation reference. Node performs the authoritative Salesforce GET readback for each exact ID; no broad search is used."
+    },
+    {
+      "id": "ancfzV2AccountCreateR1-verify",
+      "name": "Ask Node to Verify Provider Evidence",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1570,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v2/internal/provider-evidence/account",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({actionId:$('Require V2 Stage Authorization').first().json.actionId,tenantId:$('Require V2 Stage Authorization').first().json.tenantId,sessionId:$('Require V2 Stage Authorization').first().json.sessionId,opportunityId:$('Require V2 Stage Authorization').first().json.opportunityId,catalogVersionId:$('Require V2 Stage Authorization').first().json.catalogVersionId,idempotencyKey:$('Require V2 Stage Authorization').first().json.idempotencyKey,actionKey:$('Require V2 Stage Authorization').first().json.actionKey,actionRevision:$('Require V2 Stage Authorization').first().json.actionRevision,stageKey:\"account_creation\",workflowKey:\"crm.account.create\",providerRecordId:$('Call Provider - Configure Credential').first().json[\"accountId\"],providerReadback:$('Read Back Provider State').first().json,otpChallengeId:$('Require V2 Stage Authorization').first().json.approvedPayload.otpChallengeId,otpCode:$('Require V2 Stage Authorization').first().json.approvedPayload.otpCode,explicitConfirmation:$('Require V2 Stage Authorization').first().json.approvedPayload.explicitConfirmation === true,eventId:$('Require V2 Stage Authorization').first().json.eventId,correlationId:$('Require V2 Stage Authorization').first().json.correlationId,attempt:$('Require V2 Stage Authorization').first().json.attempt}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "notes": "Node now performs Account/Contact/Opportunity readback and OTP validation. Keep inactive until the approved provider contract, credential and end-to-end synthetic test are available; never log or send OTP values to GPT."
+    },
+    {
+      "id": "ancfzV2AccountCreateR1-attest",
+      "name": "Require Trusted Node Attestation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const source = $('Require V2 Stage Authorization').first().json;\nconst result = $json;\nif (result.accepted !== true || result.evidenceTier !== 'provider_record_verified' || result.stageKey !== \"account_creation\") throw new Error('Node has not independently verified provider state.');\nfor (const key of ['actionId','tenantId','sessionId','opportunityId','catalogVersionId','idempotencyKey','actionKey','actionRevision','eventId','correlationId','attempt']) if (result[key] !== source[key]) throw new Error('Node attestation scope mismatch: '+key);\nif (typeof result.providerRecordRef !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(result.providerRecordRef)) throw new Error('Invalid provider attestation record reference.');\nreturn [{json:{...result,executionReference:$execution.id}}];"
+      }
+    },
+    {
+      "id": "ancfzV2AccountCreateR1-complete",
+      "name": "Complete Correlated Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2110,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/complete",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({actionId:$json.actionId,tenantId:$json.tenantId,sessionId:$json.sessionId,opportunityId:$json.opportunityId,catalogVersionId:$json.catalogVersionId,idempotencyKey:$json.idempotencyKey,actionKey:$json.actionKey,actionRevision:$json.actionRevision,state:'completed',externalReference:$json.providerRecordRef,executionReference:$execution.id,eventId:$json.eventId,correlationId:$json.correlationId,attempt:$json.attempt}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "notes": "Credential deliberately not assigned; configure via the n8n Credentials UI, never in this repository."
+    }
+  ],
+  "connections": {
+    "Receive Node Dispatch": {
+      "main": [
+        [
+          {
+            "node": "Validate Dispatch Envelope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Dispatch Envelope": {
+      "main": [
+        [
+          {
+            "node": "Claim Authorized Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Authorized Action": {
+      "main": [
+        [
+          {
+            "node": "Require V2 Stage Authorization",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Require V2 Stage Authorization": {
+      "main": [
+        [
+          {
+            "node": "Call Provider - Configure Credential",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Provider - Configure Credential": {
+      "main": [
+        [
+          {
+            "node": "Read Back Provider State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Back Provider State": {
+      "main": [
+        [
+          {
+            "node": "Ask Node to Verify Provider Evidence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Node to Verify Provider Evidence": {
+      "main": [
+        [
+          {
+            "node": "Require Trusted Node Attestation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Require Trusted Node Attestation": {
+      "main": [
+        [
+          {
+            "node": "Complete Correlated Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "staticData": null,
+  "notes": "UNPUBLISHED / INERT TEMPLATE. Salesforce Lead-qualified Account/Contact/Opportunity creation. Node must verify all three linked provider records and original Lead. Node V2 claim/dispatch and provider-specific readback adapter are not wired. No credentials are included; never enable without Node gate, provider credentials, readback, callbacks and synthetic E2E tests."
+}

@@ -46,7 +46,8 @@ export const assertSafeEvent = (event: OutboxEvent): OutboxEvent => {
   const parsed = outboxEventSchema.parse(event);
   for (const [key, value] of Object.entries(parsed.payload)) {
     const looksLikeIdentifier = typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
-    if (/(?:^|_)(?:name|email|phone|message|content|text|ocr|file|leaddata)(?:$|_)/i.test(key) || (typeof value === 'string' && !looksLikeIdentifier && (value.includes('@') || /\+?\d[\d\s().-]{7,}/u.test(value)))) throw new Error('Event payload may contain routing references only.');
+    const looksLikeCatalogReference = key === 'catalogVersionId' && typeof value === 'string' && /^[A-Za-z0-9._:-]{8,256}$/u.test(value);
+    if (/(?:^|_)(?:name|email|phone|message|content|text|ocr|file|leaddata)(?:$|_)/i.test(key) || (typeof value === 'string' && !looksLikeIdentifier && !looksLikeCatalogReference && (value.includes('@') || /\+?\d[\d\s().-]{7,}/u.test(value)))) throw new Error('Event payload may contain routing references only.');
   }
   return parsed;
 };

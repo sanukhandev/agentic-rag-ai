@@ -176,3 +176,24 @@ export const phaseFor = (input: { intentKey: string | null; missingSlot: string 
   if (input.intentKey) return 'QUEUED';
   return 'DISCOVERY';
 };
+
+/** A closed, full-message decision grammar; invoke ONLY for an active, scoped V2 prompt. */
+export type ScopedGoalDecision = 'confirmed' | 'rejected' | 'corrected' | 'interruption' | 'ambiguous';
+export const classifyScopedGoalDecision = (message: string): ScopedGoalDecision => {
+  const text = message.trim().toLowerCase().replace(/\s+/gu, ' ');
+  if (!text || text.length > 240) return 'ambiguous';
+  if (/^(?:what|why|how|where|when|which|who|can|could|would|does|do|is|are|tell me)\b/u.test(text)
+    || /\?\s*$/u.test(text)) return 'interruption';
+  if (/^(?:no(?:[, ]+(?:thanks|thank you|i only need information|just information|not now))?|not now|only information|just information|i (?:only|just) (?:need|want) information)[.! ]*$/u.test(text)) return 'rejected';
+  // A pending confirmation must survive natural requirement/advisory statements.
+  // Only an explicit confirmation/rejection or a clear goal switch may consume it.
+  if (/\b(?:understand|explain|process|eligib(?:ility|le)|requirement|visa|timeline|budget|activity|document|package|price|pricing|cost|fee|advisor|adviser|contact|consent|privacy|sensitive|information|disclose|share|name|email|phone)\b/iu.test(text)
+    && !/\b(?:proceed|confirm|go ahead)\b/iu.test(text)) return 'interruption';
+  if (/^(?:actually\b|instead\b|i (?:want|would like|need) to (?:explore|change|switch|consider)\b|i(?:'d| would) rather\b)/u.test(text)) return 'corrected';
+  if (/\b(?:confirm|confirmed)\b[\s\S]{0,120}\b(?:goal|company formation|proceed|start|begin)\b/iu.test(text)
+    || /^(?:yes|please)\b[\s\S]{0,120}\b(?:proceed|go ahead)\b/iu.test(text)
+    || /^i\s+(?:confirm|agree|accept)\b[\s\S]{0,120}\b(?:goal|company formation|proceed|start|begin)\b/iu.test(text)
+    || /^let(?:'|’)s\s+(?:proceed|go ahead|start|begin)\b|^let us\s+(?:proceed|go ahead|start|begin)\b/iu.test(text)) return 'confirmed';
+  if (/^(?:yes(?:[, ]+(?:please|proceed|go ahead|let(?:'|’)s proceed|let us proceed|i (?:want|would like) to proceed))?|please proceed|(?:let(?:'|’)s|let us) proceed|proceed|go ahead|i (?:want|would like) to proceed|i confirm|confirm)[.! ]*$/u.test(text)) return 'confirmed';
+  return 'ambiguous';
+};

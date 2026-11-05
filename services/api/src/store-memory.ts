@@ -1,24 +1,31 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, FoundryConversationBinding, IngestionJob, IntentCatalogVersion, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, WorkflowActionClaim } from './types.js';
+import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, FoundryConversationBinding, IngestionJob, IntentCatalogV2Version, IntentCatalogVersion, IntentTurnAssessment, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, UserIntentDocument, V2OtpChallengeRecord, WorkflowActionClaim } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
 import { HttpError } from './http/errors.js';
 import { isWorkflowClaimableBinding } from './intent-catalog.js';
+import { resolveV2WorkflowRoute } from './v2-workflow-bridge.js';
+import { assertSafeIntentTurn, assertSafeUserIntentDocument } from './user-intent-document.js';
 
 const now = (): string => new Date().toISOString();
 const isUuid = (value: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
+const intentDocumentKey = (tenantId: string, sessionId: string): string => `${tenantId}:${sessionId}`;
 
 export class MemoryStore implements Store {
   private readonly tenants = new Map<string, Tenant>();
   private readonly users = new Map<string, User>();
   private readonly domains = new Map<string, TenantDomain>();
   private readonly authSessions = new Map<string, AuthSession>();
+  private readonly v2OtpChallenges = new Map<string, V2OtpChallengeRecord>();
   private readonly callbackNonces = new Map<string, string>();
   private readonly channelCredentials = new Map<string, ChannelCredential>();
   private readonly personas = new Map<string, Persona>();
   private readonly intentCatalogVersions = new Map<string, IntentCatalogVersion[]>();
+  private readonly intentCatalogV2Versions = new Map<string, IntentCatalogV2Version[]>();
+  private readonly intentDocuments = new Map<string, UserIntentDocument>();
+  private readonly intentTurns = new Map<string, IntentTurnAssessment>();
   private readonly personaVersions = new Map<string, PersonaVersion[]>();
   private readonly sources = new Map<string, Source>();
   private readonly sourceVersions = new Map<string, SourceVersion[]>();
@@ -97,6 +104,9 @@ export class MemoryStore implements Store {
 
   async getUserByEmail(email: string): Promise<User | null> { return [...this.users.values()].find((user) => user.email === email.toLowerCase()) ?? null; }
   async getUser(id: string): Promise<User | null> { return this.users.get(id) ?? null; }
+  async createV2OtpChallenge(challenge: V2OtpChallengeRecord): Promise<V2OtpChallengeRecord> { if (this.v2OtpChallenges.has(challenge.challengeId)) throw new HttpError(409, 'V2_OTP_CHALLENGE_EXISTS', 'The OTP challenge already exists.'); this.v2OtpChallenges.set(challenge.challengeId, structuredClone(challenge)); return structuredClone(challenge); }
+  async getV2OtpChallenge(tenantId: string, challengeId: string): Promise<V2OtpChallengeRecord | null> { const challenge = this.v2OtpChallenges.get(challengeId); return challenge?.tenantId === tenantId ? structuredClone(challenge) : null; }
+  async updateV2OtpChallenge(challenge: V2OtpChallengeRecord): Promise<V2OtpChallengeRecord> { const current = this.v2OtpChallenges.get(challenge.challengeId); if (!current || current.tenantId !== challenge.tenantId) throw new HttpError(404, 'V2_OTP_CHALLENGE_NOT_FOUND', 'The OTP challenge was not found.'); this.v2OtpChallenges.set(challenge.challengeId, structuredClone(challenge)); return structuredClone(challenge); }
   async createAuthSession(session: AuthSession): Promise<AuthSession> { this.authSessions.set(session.tokenHash, session); return session; }
   async getAuthSession(tokenHash: string): Promise<AuthSession | null> { return this.authSessions.get(tokenHash) ?? null; }
   async revokeAuthSession(tokenHash: string): Promise<void> { const session = this.authSessions.get(tokenHash); if (session) this.authSessions.set(tokenHash, { ...session, revokedAt: now() }); }
@@ -130,6 +140,132 @@ export class MemoryStore implements Store {
     const updated = versions.map((version) => ({ ...version, status: version.id === versionId ? 'published' as const : 'draft' as const, publishedAt: version.id === versionId ? publishedAt : version.publishedAt }));
     this.intentCatalogVersions.set(tenantId, updated);
     return updated.find((version) => version.id === versionId) ?? null;
+  }
+  async createIntentCatalogV2Version(input: Omit<IntentCatalogV2Version, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<IntentCatalogV2Version> {
+    const versions = this.intentCatalogV2Versions.get(input.tenantId) ?? [];
+    const version: IntentCatalogV2Version = { ...input, id: randomUUID(), version: versions.length + 1, createdAt: now(), publishedAt: null };
+    this.intentCatalogV2Versions.set(input.tenantId, [...versions, version]);
+    return version;
+  }
+  async listIntentCatalogV2Versions(tenantId: string): Promise<IntentCatalogV2Version[]> { return [...(this.intentCatalogV2Versions.get(tenantId) ?? [])].sort((left, right) => right.version - left.version); }
+  async getIntentCatalogV2Version(tenantId: string, versionId: string): Promise<IntentCatalogV2Version | null> { return (this.intentCatalogV2Versions.get(tenantId) ?? []).find((version) => version.id === versionId) ?? null; }
+  async publishIntentCatalogV2Version(tenantId: string, versionId: string): Promise<IntentCatalogV2Version | null> {
+    const versions = this.intentCatalogV2Versions.get(tenantId) ?? [];
+    if (!versions.some((version) => version.id === versionId)) return null;
+    const publishedAt = now();
+    const updated = versions.map((version) => ({ ...version, status: version.id === versionId ? 'published' as const : 'draft' as const, publishedAt: version.id === versionId ? publishedAt : version.publishedAt }));
+    this.intentCatalogV2Versions.set(tenantId, updated);
+    return updated.find((version) => version.id === versionId) ?? null;
+  }
+  async createUserIntentDocument(document: UserIntentDocument): Promise<UserIntentDocument> {
+    assertSafeUserIntentDocument(document);
+    const session = this.sessions.get(document.sessionId);
+    if (!session || session.tenantId !== document.tenantId) throw new HttpError(403, 'INTENT_DOCUMENT_SESSION_FORBIDDEN', 'User intent document session access denied.');
+    const key = intentDocumentKey(document.tenantId, document.sessionId);
+    if (this.intentDocuments.has(key)) throw new HttpError(409, 'INTENT_DOCUMENT_EXISTS', 'A user intent document already exists for this session.');
+    const stored = structuredClone(document);
+    this.intentDocuments.set(key, stored);
+    return structuredClone(stored);
+  }
+  async getUserIntentDocument(tenantId: string, sessionId: string): Promise<UserIntentDocument | null> {
+    const document = this.intentDocuments.get(intentDocumentKey(tenantId, sessionId));
+    return document ? structuredClone(document) : null;
+  }
+  async updateUserIntentDocument(input: { document: UserIntentDocument; expectedRevision: number }): Promise<UserIntentDocument | null> {
+    assertSafeUserIntentDocument(input.document);
+    const key = intentDocumentKey(input.document.tenantId, input.document.sessionId);
+    const current = this.intentDocuments.get(key);
+    if (!current || current.id !== input.document.id || current.revision !== input.expectedRevision || !this.sessions.has(input.document.sessionId)) return null;
+    if (current.goalConfirmation?.status === 'confirmed'
+      && (JSON.stringify(current.goalConfirmation) !== JSON.stringify(input.document.goalConfirmation)
+        || !input.document.goalConfirmed || input.document.businessGoalKey !== current.businessGoalKey)) return null;
+    const updated = { ...structuredClone(input.document), revision: input.expectedRevision + 1, updatedAt: now() };
+    assertSafeUserIntentDocument(updated);
+    this.intentDocuments.set(key, updated);
+    return structuredClone(updated);
+  }
+  async appendIntentTurn(assessment: IntentTurnAssessment): Promise<IntentTurnAssessment> {
+    assertSafeIntentTurn(assessment);
+    const document = this.intentDocuments.get(intentDocumentKey(assessment.tenantId, assessment.sessionId));
+    if (!document || document.id !== assessment.documentId) throw new HttpError(404, 'INTENT_DOCUMENT_NOT_FOUND', 'User intent document not found.');
+    if (document.opportunityId !== assessment.opportunityId) throw new HttpError(409, 'INTENT_TURN_SCOPE_CONFLICT', 'The intent turn opportunity does not match the document scope.');
+    const existing = [...this.intentTurns.values()].find((turn) => turn.tenantId === assessment.tenantId && turn.sessionId === assessment.sessionId && turn.clientMessageId === assessment.clientMessageId);
+    if (existing) {
+      if (existing.messageHash !== assessment.messageHash) throw new HttpError(409, 'INTENT_TURN_REUSED', 'The client message id is already bound to different content.');
+      return structuredClone(existing);
+    }
+    if ([...this.intentTurns.values()].some((turn) => turn.documentId === assessment.documentId && turn.turnSequence === assessment.turnSequence)) throw new HttpError(409, 'INTENT_TURN_SEQUENCE_CONFLICT', 'The intent turn sequence is already recorded.');
+    const stored = structuredClone(assessment);
+    this.intentTurns.set(stored.id, stored);
+    return structuredClone(stored);
+  }
+  async commitV2IntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null; assistantMessage?: Message; customerMessage?: Message; actionApproval?: ActionRequest }): Promise<{ session: Session; document: UserIntentDocument }> {
+    const { session, document, assessment } = input;
+    assertSafeUserIntentDocument(document);
+    assertSafeIntentTurn(assessment);
+    const previousSession = this.sessions.get(session.id);
+    const key = intentDocumentKey(document.tenantId, session.id);
+    const previousDocument = this.intentDocuments.get(key);
+    const currentAction = input.actionApproval ? this.actions.get(input.actionApproval.id) : null;
+    const published = (this.intentCatalogV2Versions.get(document.tenantId) ?? []).find(v => v.status === 'published');
+    if (!previousSession || previousSession.tenantId !== document.tenantId
+      || previousSession.stateVersion !== session.stateVersion || session.tenantId !== document.tenantId
+      || document.sessionId !== session.id || document.catalogSource !== 'v2'
+      || !published || published.catalogVersionRef !== document.catalogVersionRef
+      || assessment.tenantId !== document.tenantId || assessment.sessionId !== session.id
+      || assessment.documentId !== document.id || assessment.opportunityId !== document.opportunityId
+      || (previousDocument?.goalConfirmation?.status === 'confirmed'
+        && (JSON.stringify(previousDocument.goalConfirmation) !== JSON.stringify(document.goalConfirmation)
+          || !document.goalConfirmed || document.businessGoalKey !== previousDocument.businessGoalKey))
+      || (input.expectedDocumentRevision === null ? Boolean(previousDocument)
+        : !previousDocument || previousDocument.id !== document.id || previousDocument.revision !== input.expectedDocumentRevision)
+      || (input.actionApproval !== undefined && (!currentAction || currentAction.tenantId !== document.tenantId
+        || currentAction.sessionId !== session.id || input.actionApproval.state !== 'approved'
+        || !['awaiting_confirmation', 'unknown', 'approved', 'processing', 'completed'].includes(currentAction.state)))
+      || [...this.intentTurns.values()].some(turn => (turn.sessionId === session.id && turn.clientMessageId === assessment.clientMessageId)
+        || (turn.documentId === document.id && turn.turnSequence === assessment.turnSequence))) {
+      throw new HttpError(409, 'V2_INTENT_ATOMIC_CONFLICT', 'The confirmation state changed or a message was replayed.');
+    }
+    // Preserve a replayable model answer in the same synchronous commit as
+    // the confirmed goal. Validate all message invariants before any mutation.
+    if (Boolean(input.assistantMessage) !== Boolean(input.customerMessage)) {
+      throw new HttpError(409, 'V2_TURN_MESSAGE_PAIR_REQUIRED', 'Both conversation messages must be committed together.');
+    }
+    if (input.assistantMessage && input.customerMessage) {
+      const assistant = input.assistantMessage, customer = input.customerMessage;
+      const persistedCustomer = this.messages.get(customer.id);
+      if (!persistedCustomer || persistedCustomer.tenantId !== document.tenantId
+        || persistedCustomer.sessionId !== session.id || persistedCustomer.role !== 'user'
+        || persistedCustomer.clientMessageId !== assessment.clientMessageId || persistedCustomer.response !== null
+        || customer.response === null || customer.id === assistant.id
+        || assistant.role !== 'assistant' || assistant.tenantId !== document.tenantId
+        || assistant.sessionId !== session.id || assistant.clientMessageId !== null
+        || this.messages.has(assistant.id)) {
+        throw new HttpError(409, 'V2_TURN_MESSAGE_CONFLICT', 'A reply was already committed or the message scope changed.');
+      }
+    }
+    const savedSession = structuredClone({ ...session, stateVersion: (session.stateVersion ?? 0) + 1 });
+    const savedDocument = structuredClone({ ...document, revision: (input.expectedDocumentRevision ?? -1) + 1 });
+    this.sessions.set(session.id, savedSession);
+    this.intentDocuments.set(key, savedDocument);
+    this.intentTurns.set(assessment.id, structuredClone(assessment));
+    if (input.assistantMessage && input.customerMessage) {
+      this.messages.set(input.assistantMessage.id, structuredClone(input.assistantMessage));
+      this.messages.set(input.customerMessage.id, structuredClone(input.customerMessage));
+    }
+    if (input.audit) this.audits.push(structuredClone(input.audit));
+    if (input.actionApproval && currentAction && ['awaiting_confirmation', 'unknown'].includes(currentAction.state)) {
+      this.actions.set(input.actionApproval.id, structuredClone(input.actionApproval));
+      if (isUuid(input.actionApproval.tenantId) && isUuid(input.actionApproval.sessionId) && isUuid(input.actionApproval.id)) {
+        await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: input.actionApproval.tenantId, sessionId: input.actionApproval.sessionId, actionId: input.actionApproval.id, aggregateId: input.actionApproval.id, workflowKey: input.actionApproval.workflowKey, payloadRef: input.actionApproval.opaqueReference, idempotencyKey: input.actionApproval.idempotencyKey, payload: { actionId: input.actionApproval.id, sessionId: input.actionApproval.sessionId, workflowKey: input.actionApproval.workflowKey, webhookPath: input.actionApproval.webhookPath ?? null, catalogVersionId: input.actionApproval.catalogVersionId ?? null, opportunityId: input.actionApproval.opportunityId ?? null, actionKey: input.actionApproval.actionKey ?? null, actionRevision: input.actionApproval.actionRevision ?? 1 } }));
+      }
+    }
+    return { session: structuredClone(savedSession), document: structuredClone(savedDocument) };
+  }
+
+  async listIntentTurns(tenantId: string, sessionId: string, limit?: number): Promise<IntentTurnAssessment[]> {
+    const turns = [...this.intentTurns.values()].filter((turn) => turn.tenantId === tenantId && turn.sessionId === sessionId).sort((left, right) => left.turnSequence - right.turnSequence);
+    return structuredClone(limit === undefined ? turns : turns.slice(-limit));
   }
   async createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion> {
     const versions = this.personaVersions.get(input.tenantId) ?? [];
@@ -317,7 +453,12 @@ export class MemoryStore implements Store {
     this.sessions.set(session.id, structuredClone(session));
     return session;
   }
-  async addMessage(message: Message): Promise<Message> { this.messages.set(message.id, message); return message; }
+  async addMessage(message: Message): Promise<Message> {
+    const existing = [...this.messages.values()].find((candidate) => candidate.sessionId === message.sessionId && candidate.clientMessageId === message.clientMessageId);
+    if (existing) return existing;
+    this.messages.set(message.id, message);
+    return message;
+  }
   async updateMessage(message: Message): Promise<Message> { this.messages.set(message.id, message); return message; }
   async listMessages(sessionId: string, tenantId: string, limit?: number): Promise<Message[]> {
     const messages = [...this.messages.values()].filter((message) => message.sessionId === sessionId && message.tenantId === tenantId).sort((left, right) => left.createdAt.localeCompare(right.createdAt));
@@ -403,7 +544,10 @@ export class MemoryStore implements Store {
       if (!['approved', 'processing'].includes(action.state) || (input.workflowKey && action.workflowKey !== input.workflowKey)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the active workflow action.');
       const version = action.catalogVersionId ? this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId) : null;
       const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-      if (!binding?.active || !isWorkflowClaimableBinding(binding) || binding.n8nWorkflowId !== input.n8nWorkflowId) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the published workflow binding.');
+      const v2Version = action.catalogVersionId ? this.intentCatalogV2Versions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId) : null;
+      const v2Route = v2Version ? resolveV2WorkflowRoute(v2Version, action.workflowKey) : null;
+      const claimable = binding ? binding.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId : Boolean(v2Route?.n8nWorkflowId === input.n8nWorkflowId);
+      if (!claimable) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the published workflow binding.');
       const execution = [...this.actionExecutions.values()].find((item) => item.actionId === action.id && item.tenantId === action.tenantId && item.idempotencyKey === action.idempotencyKey);
       if (!execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.attempt || ['completed', 'failed', 'reconcile_required'].includes(execution.providerStatus)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the durable workflow execution.');
       if (execution.n8nExecutionRef) {
@@ -423,7 +567,10 @@ export class MemoryStore implements Store {
         if (!action.catalogVersionId || [...this.actionExecutions.values()].some((execution) => execution.actionId === action.id && execution.tenantId === action.tenantId)) return false;
         const version = this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId);
         const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId);
+        const v2Version = this.intentCatalogV2Versions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId);
+        const v2Route = v2Version ? resolveV2WorkflowRoute(v2Version, action.workflowKey) : null;
+        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId)
+          || Boolean(v2Route?.n8nWorkflowId === input.n8nWorkflowId);
       })
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
       .slice(0, input.limit);
@@ -455,7 +602,10 @@ export class MemoryStore implements Store {
         if (!action.catalogVersionId) return false;
         const version = this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId);
         const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === n8nWorkflowId);
+        const v2Version = this.intentCatalogV2Versions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId);
+        const v2Route = v2Version ? resolveV2WorkflowRoute(v2Version, action.workflowKey) : null;
+        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === n8nWorkflowId)
+          || Boolean(v2Route?.n8nWorkflowId === n8nWorkflowId);
       })
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
     const claimed: ActionRequest[] = [];
@@ -563,8 +713,8 @@ export class MemoryStore implements Store {
   }
   async updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob> { this.documentJobs.set(job.id, job); return job; }
   async linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void> { for (const document of await this.listSupportingDocuments(tenantId, sessionId)) this.supportingDocuments.set(document.id, { ...document, leadId, updatedAt: now() }); }
-  async listPackageOfferings(tenantId: string, input: { catalogVersionId?: string | null; activity?: string; entityType?: string } = {}): Promise<PackageOffering[]> {
-    return [...this.packageOfferings.values()].filter((offering) => offering.tenantId === tenantId && offering.approvalStatus === 'approved' && (input.catalogVersionId === undefined || offering.catalogVersionId === input.catalogVersionId) && (!input.activity || offering.eligibleActivities.length === 0 || offering.eligibleActivities.some((value) => input.activity?.toLocaleLowerCase('en-US').includes(value.toLocaleLowerCase('en-US')))) && (!input.entityType || offering.eligibleEntityTypes.length === 0 || offering.eligibleEntityTypes.includes(input.entityType))).sort((left, right) => left.packageKey.localeCompare(right.packageKey));
+  async listPackageOfferings(tenantId: string, input: { catalogVersionId?: string | null; catalogVersionRef?: string | null; activity?: string; entityType?: string } = {}): Promise<PackageOffering[]> {
+    return [...this.packageOfferings.values()].filter((offering) => offering.tenantId === tenantId && offering.approvalStatus === 'approved' && (input.catalogVersionId === undefined && input.catalogVersionRef === undefined || input.catalogVersionId !== undefined && offering.catalogVersionId === input.catalogVersionId || input.catalogVersionRef !== undefined && offering.catalogVersionRef === input.catalogVersionRef) && (!input.activity || offering.eligibleActivities.length === 0 || offering.eligibleActivities.some((value) => input.activity?.toLocaleLowerCase('en-US').includes(value.toLocaleLowerCase('en-US')))) && (!input.entityType || offering.eligibleEntityTypes.length === 0 || offering.eligibleEntityTypes.includes(input.entityType))).sort((left, right) => left.packageKey.localeCompare(right.packageKey));
   }
   async createCrmLeadAssociation(association: CrmLeadAssociation): Promise<CrmLeadAssociation> {
     const existing = [...this.crmLeadAssociations.values()].find((candidate) => candidate.tenantId === association.tenantId && candidate.actionId === association.actionId);
@@ -592,7 +742,7 @@ export class MemoryStore implements Store {
   async createContract(contract: Contract): Promise<Contract> { this.contracts.set(contract.id, contract); return contract; }
   async getContract(id: string, tenantId: string): Promise<Contract | null> { const contract = this.contracts.get(id); return contract?.tenantId === tenantId ? contract : null; }
   async updateContract(contract: Contract): Promise<Contract> { this.contracts.set(contract.id, contract); return contract; }
-  async enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent> { const existing = this.outbox.get(event.eventId); if (existing) return existing; this.outbox.set(event.eventId, event); return event; }
+  async enqueueOutboxEvent(event: OutboxEvent): Promise<OutboxEvent> { const existing = [...this.outbox.values()].find((candidate) => candidate.stream === event.stream && candidate.idempotencyKey === event.idempotencyKey); if (existing) return existing; this.outbox.set(event.eventId, event); return event; }
   async claimOutboxEvents(limit: number, leaseMs: number): Promise<OutboxEvent[]> {
     const current = Date.now();
     const claimed = [...this.outbox.values()].filter((event) => !event.publishedAt && !this.deadLetteredOutbox.has(event.eventId) && (!event.leaseExpiresAt || Date.parse(event.leaseExpiresAt) <= current)).sort((left, right) => left.occurredAt.localeCompare(right.occurredAt)).slice(0, limit).map((event) => ({ ...event, attempts: event.attempts + 1, leaseExpiresAt: new Date(current + leaseMs).toISOString() }));

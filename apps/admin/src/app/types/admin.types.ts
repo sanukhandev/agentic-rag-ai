@@ -237,3 +237,31 @@ export interface IntentCatalogVersion {
   createdAt: string;
   publishedAt: string | null;
 }
+
+/** The independently persisted V2 catalog; never interpret it as a legacy V1 workbook. */
+export interface IntentCatalogV2Version {
+  id: string;
+  tenantId: string;
+  version: number;
+  status: 'draft' | 'published';
+  sourceFileName: string;
+  sourceHash: string;
+  parserVersion: string;
+  catalogVersionRef: string;
+  createdAt: string;
+  publishedAt: string | null;
+  catalog: {
+    schemaVersion: 2;
+    manifest: { catalogKey: string; tenantScope: string; revision: number; policyVersion: string };
+    sheets: {
+      BusinessGoals: Array<{ businessGoalKey: string; name: string; active: boolean; confirmationRequired: boolean }>;
+      BusinessStages: Array<{ businessGoalKey: string; stageKey: string; stageOrder: number; active: boolean; completionEvidencePolicyKey: string }>;
+      TurnIntents: Array<{ turnIntentKey: string; categoryKey: string; businessGoalKey: string | null; active: boolean }>;
+      IntentSignals: Array<{ signalId: string; targetKey: string; signalType: string; value: string; weight: number }>;
+      RequirementPolicies: Array<{ requirementKey: string; goalKey: string; stageKey: string; required: boolean }>;
+      ToolBindings: Array<{ toolKey: string; stageKey: string; sideEffectClass: 'read_only' | 'proposal' | 'external_write'; enabled: boolean }>;
+      WorkflowBindings: Array<{ workflowKey: string; enabled: boolean }>;
+      [sheetName: string]: unknown;
+    };
+  };
+}

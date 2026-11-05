@@ -88,6 +88,23 @@ describe('MemoryStore tenant and lifecycle boundaries', () => {
     expect(persisted?.conversationState?.slotValues.name).toBe('[NAME_1]');
   });
 
+  it('scopes approved package reads by canonical V2 catalog reference', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'Package Tenant', slug: `package-${randomUUID()}` });
+    const base = {
+      tenantId: tenant.id, catalogVersionId: null, packageKey: 'sandbox-package', name: 'Sandbox package',
+      eligibleEntityTypes: [], eligibleActivities: [], includedVisaQuantity: 1, officeRequirement: null,
+      inclusions: ['company registration'], priceMinor: 100, currency: 'AED', pricingEffectiveFrom: null,
+      pricingEffectiveTo: null, additionalFees: [], processingTime: 'development only', requiredDocuments: [],
+      exclusions: [], availability: 'development_only', approvalStatus: 'approved' as const,
+      sourceRefs: ['deterministic-mock-pricebook'], createdAt: new Date().toISOString(),
+    };
+    await store.createPackageOffering({ ...base, id: randomUUID(), catalogVersionRef: 'anc:r2:' + 'a'.repeat(64) });
+    await store.createPackageOffering({ ...base, id: randomUUID(), packageKey: 'other-package', catalogVersionRef: 'anc:r2:' + 'b'.repeat(64) });
+    await expect(store.listPackageOfferings(tenant.id, { catalogVersionRef: 'anc:r2:' + 'a'.repeat(64) })).resolves.toHaveLength(1);
+    await expect(store.listPackageOfferings(tenant.id, { catalogVersionRef: 'anc:r2:' + 'missing'.padEnd(64, 'c') })).resolves.toEqual([]);
+  });
+
   it('binds a legacy pending action once without overwriting execution state', async () => {
     const store = new MemoryStore();
     const tenant = await store.createTenant({ name: 'Legacy Tenant', slug: `legacy-${randomUUID()}` });

@@ -89,16 +89,16 @@ export class ActionGateway {
     }
   }
 
-  async confirm(actionId: string, tenantId: string, session?: Session): Promise<ActionRequest> {
+  async confirm(actionId: string, tenantId: string, session?: Session, options: { deferPersistence?: boolean } = {}): Promise<ActionRequest> {
     const key = `${tenantId}:${actionId}`;
     const pending = this.confirmations.get(key);
     if (pending) return pending;
-    const confirmation = this.confirmInternal(actionId, tenantId, session);
+    const confirmation = this.confirmInternal(actionId, tenantId, session, options);
     this.confirmations.set(key, confirmation);
     try { return await confirmation; } finally { this.confirmations.delete(key); }
   }
 
-  private async confirmInternal(actionId: string, tenantId: string, session?: Session): Promise<ActionRequest> {
+  private async confirmInternal(actionId: string, tenantId: string, session?: Session, options: { deferPersistence?: boolean } = {}): Promise<ActionRequest> {
     const action = await this.store.getAction(actionId);
     if (!action || action.tenantId !== tenantId) throw new Error('Action not found.');
     if (action.state === 'completed' || action.state === 'approved' || action.state === 'processing') {
@@ -115,6 +115,9 @@ export class ActionGateway {
     }
     const consentGranted = action.payload.contactConsent === false;
     const approved = { ...action, state: 'approved' as const, result: null, payload: consentGranted ? { ...action.payload, contactConsent: true } : action.payload };
+    // V2 turns persist the approval and conversation response in one store transaction.
+    // The deferred result is validated here but has no side effect until that commit.
+    if (options.deferPersistence) return approved;
     if (session) await this.store.approveActionAndSession(approved, session);
     else await this.store.approveAction(approved);
     if (consentGranted) await this.store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName: 'workflow.consent_granted', metadata: { actionId }, createdAt: new Date().toISOString() });

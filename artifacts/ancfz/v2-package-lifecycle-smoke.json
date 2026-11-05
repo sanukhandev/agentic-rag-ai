@@ -1,0 +1,16 @@
+{
+  "run_date": "2026-11-04",
+  "environment": "local Docker development",
+  "tenant": "anc",
+  "public_route": "GET /api/v1/chat/sessions/:id/packages",
+  "result": "PASS",
+  "catalog_version_ref": "anc:r2:1b7342efc6ed15e10c811dd462e192a08bbdf41ea4c89ba6fac9843974b73a67",
+  "package_count": 2,
+  "packages": [
+    { "package_key": "anc-v2-sandbox-basic", "price_minor": 250000, "currency": "AED", "availability": "development_only", "source_refs": ["sandbox-pricebook-v1"] },
+    { "package_key": "anc-v2-sandbox-growth", "price_minor": 450000, "currency": "AED", "availability": "development_only", "source_refs": ["sandbox-pricebook-v1"] }
+  ],
+  "official_pricebook": "NOT_VERIFIED",
+  "quote_route": "NOT_RUN — verified Account and active opportunity are required",
+  "salesforce": "NOT_VERIFIED"
+}

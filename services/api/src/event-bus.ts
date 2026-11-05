@@ -2,6 +2,7 @@ import { createClient } from 'redis';
 import { randomUUID } from 'node:crypto';
 import type { ActionExecution, Store, OutboxEvent } from './types.js';
 import { eventFields, eventFromFields } from './events.js';
+import { resolveV2WorkflowRoute } from './v2-workflow-bridge.js';
 
 export interface StreamMessage {
   id: string;
@@ -126,10 +127,18 @@ export class N8nEventBridge {
       }
       throw new PermanentEventDispatchError(`No authorized route exists for event type ${event.eventType}.`);
     }
-    const body = JSON.stringify({ ...event.payload, eventId: event.eventId, eventType: event.eventType, tenantId: event.tenantId, sessionId: event.sessionId, actionId: event.actionId, aggregateId: event.aggregateId, payloadRef: event.payloadRef, webhookPath: route.webhookPath, workflowKey: route.workflowKey, n8nWorkflowId: route.n8nWorkflowId ?? null, contract: route.payloadContract ?? (event.eventType === 'document.extraction.requested.v1' ? 'anc-document-ocr-v1' : 'crm-lead-capture-v1'), correlationId: event.correlationId, attempt });
+    const actionForDispatch = event.actionId ? await this.store.getAction(event.actionId) : null;
+    const correlationPayload = actionForDispatch && actionForDispatch.tenantId === event.tenantId ? {
+      idempotencyKey: actionForDispatch.idempotencyKey,
+      opportunityId: actionForDispatch.opportunityId,
+      catalogVersionId: actionForDispatch.catalogVersionId,
+      actionKey: actionForDispatch.actionKey,
+      actionRevision: actionForDispatch.actionRevision,
+    } : {};
+    const body = JSON.stringify({ ...event.payload, ...correlationPayload, eventId: event.eventId, eventType: event.eventType, tenantId: event.tenantId, sessionId: event.sessionId, actionId: event.actionId, aggregateId: event.aggregateId, payloadRef: event.payloadRef, webhookPath: route.webhookPath, workflowKey: route.workflowKey, n8nWorkflowId: route.n8nWorkflowId ?? null, contract: route.payloadContract ?? (event.eventType === 'document.extraction.requested.v1' ? 'anc-document-ocr-v1' : 'crm-lead-capture-v1'), correlationId: event.correlationId, attempt });
     try {
       if (event.actionId) {
-        const action = await this.store.getAction(event.actionId);
+        const action = actionForDispatch ?? await this.store.getAction(event.actionId);
         if (action && action.tenantId === event.tenantId) {
           let claim: { execution: ActionExecution; claimed: boolean };
           try {
@@ -188,9 +197,14 @@ export class N8nEventBridge {
     const action = await this.store.getAction(event.actionId);
     if (!action || action.tenantId !== event.tenantId || !['approved', 'processing'].includes(action.state)) return null;
     if (!action.catalogVersionId) return { workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? 'lead-capture' };
+    const v2Version = (await this.store.listIntentCatalogV2Versions(action.tenantId)).find(candidate => candidate.status === 'published' && candidate.catalogVersionRef === action.catalogVersionId);
+    const v2Route = v2Version ? resolveV2WorkflowRoute(v2Version, action.workflowKey) : null;
+    if (v2Version) return v2Route ? { workflowKey: v2Route.workflowKey, webhookPath: v2Route.webhookPath, n8nWorkflowId: v2Route.n8nWorkflowId, payloadContract: v2Route.payloadContract } : null;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(action.catalogVersionId)) return null;
     const version = await this.store.getIntentCatalogVersion(action.tenantId, action.catalogVersionId);
     const binding = version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === action.workflowKey && candidate.active);
-    return binding ? { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, n8nWorkflowId: binding.n8nWorkflowId, payloadContract: binding.payloadContract } : null;
+    if (binding) return { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, n8nWorkflowId: binding.n8nWorkflowId, payloadContract: binding.payloadContract };
+    return null;
   }
 
   private async documentRoute(event: OutboxEvent): Promise<{ workflowKey: string; webhookPath: string; n8nWorkflowId?: string; payloadContract?: string } | null> {

@@ -14,13 +14,14 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
-git switch main
-git pull --ff-only origin main
+BRANCH="$(git branch --show-current)"
+[[ -n "$BRANCH" ]] || { echo "Detached HEAD is not deployable." >&2; exit 1; }
+git pull --ff-only origin "$BRANCH"
 
 # No service list: this deliberately builds every service with a Dockerfile target.
-COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.vm-dev.yml)
+COMPOSE_FILES=(-f docker-compose.yml)
 docker compose --env-file .env "${COMPOSE_FILES[@]}" config --quiet
-docker compose --env-file .env "${COMPOSE_FILES[@]}" build --pull --no-cache
+docker compose --env-file .env "${COMPOSE_FILES[@]}" build --pull
 docker compose --env-file .env "${COMPOSE_FILES[@]}" up --detach --force-recreate --remove-orphans --wait
 
 printf 'DEPLOYED_COMMIT=%s\n' "$(git rev-parse HEAD)"

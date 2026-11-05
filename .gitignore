@@ -25,6 +25,7 @@ docs/feature-specs
 /DELIVERY_MANIFEST.json
 /outputs/
 *.inspect.ndjson
+**.ps1
 
 # Local acceptance-run output; committed historical reports remain tracked.
 /artifacts/agentic-e2e/run-*.json

@@ -1,0 +1,1437 @@
+{
+  "schemaVersion": 2,
+  "manifest": {
+    "schemaVersion": 2,
+    "catalogKey": "ancfz",
+    "tenantScope": "ancfz",
+    "revision": 2,
+    "policyVersion": "ancfz-seven-stage-v2-draft"
+  },
+  "sheets": {
+    "README": [
+      {
+        "key": "status",
+        "value": "DRAFT. Review and publish through the tenant admin; remote writes are disabled until verified."
+      },
+      {
+        "key": "goal",
+        "value": "One explicitly confirmed company formation Business Goal across seven consecutive stages, interrupted by knowledge and support questions without losing context."
+      },
+      {
+        "key": "safety",
+        "value": "Do not collect contacts or issue CRM writes for knowledge-only dialogue. All side effects require separate purpose-specific consent, explicit confirmation, idempotency, and Node-verified provider evidence."
+      },
+      {
+        "key": "stage_order",
+        "value": "lead_generation > lead_qualification > account_creation > package_selection > document_upload > payment_invoice > contract"
+      },
+      {
+        "key": "facts",
+        "value": "Prices, fees, eligibility and policy claims must originate from authorized versioned RAG sources; this draft contains no fees or authoritative regulatory advice."
+      },
+      {
+        "key": "publication",
+        "value": "Workflows and external-write tools are deliberately disabled pending provider integration and tenant review."
+      }
+    ],
+    "CatalogManifest": [
+      {
+        "schemaVersion": 2,
+        "catalogKey": "ancfz",
+        "tenantScope": "ancfz",
+        "revision": 2,
+        "policyVersion": "ancfz-seven-stage-v2-draft"
+      }
+    ],
+    "BusinessGoals": [
+      {
+        "businessGoalKey": "anc.company_formation",
+        "name": "Company formation",
+        "description": "Guide a customer who explicitly confirms a company-formation goal through seven ordered stages with separate action consent and authoritative provider verification.",
+        "active": true,
+        "confirmationRequired": true,
+        "completionPolicyKey": "contract.verified"
+      }
+    ],
+    "IntentCategories": [
+      {
+        "categoryKey": "business_goal",
+        "name": "Business goal",
+        "active": true
+      },
+      {
+        "categoryKey": "knowledge_advisory",
+        "name": "Knowledge and advisory",
+        "active": true
+      },
+      {
+        "categoryKey": "qualification_requirement",
+        "name": "Qualification and requirement",
+        "active": true
+      },
+      {
+        "categoryKey": "service_execution",
+        "name": "Service execution",
+        "active": true
+      },
+      {
+        "categoryKey": "service_status_support",
+        "name": "Service status and support",
+        "active": true
+      },
+      {
+        "categoryKey": "conversation_navigation",
+        "name": "Conversation navigation",
+        "active": true
+      }
+    ],
+    "TurnIntents": [
+      {
+        "turnIntentKey": "goal.company_formation",
+        "categoryKey": "business_goal",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "knowledge.setup_options",
+        "categoryKey": "knowledge_advisory",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "knowledge.eligibility",
+        "categoryKey": "knowledge_advisory",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "knowledge.package_pricing",
+        "categoryKey": "knowledge_advisory",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "knowledge.required_documents",
+        "categoryKey": "knowledge_advisory",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "knowledge.timeline",
+        "categoryKey": "knowledge_advisory",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "requirement.business_activity",
+        "categoryKey": "qualification_requirement",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "requirement.visa_count",
+        "categoryKey": "qualification_requirement",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "requirement.entity_type",
+        "categoryKey": "qualification_requirement",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "requirement.lead_contact",
+        "categoryKey": "qualification_requirement",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "service.lead_creation",
+        "categoryKey": "service_execution",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "service.qualify_lead",
+        "categoryKey": "service_execution",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "service.create_account",
+        "categoryKey": "service_execution",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "service.select_package",
+        "categoryKey": "service_execution",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "service.upload_sf02",
+        "categoryKey": "service_execution",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "service.issue_invoice",
+        "categoryKey": "service_execution",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "service.authorize_payment",
+        "categoryKey": "service_execution",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "service.sign_contract",
+        "categoryKey": "service_execution",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "status.journey",
+        "categoryKey": "service_status_support",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "status.document",
+        "categoryKey": "service_status_support",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "status.payment",
+        "categoryKey": "service_status_support",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "support.human_handoff",
+        "categoryKey": "service_status_support",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "navigation.confirm_goal",
+        "categoryKey": "conversation_navigation",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "navigation.correct_fact",
+        "categoryKey": "conversation_navigation",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "navigation.pause",
+        "categoryKey": "conversation_navigation",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "navigation.resume",
+        "categoryKey": "conversation_navigation",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "navigation.decline_action",
+        "categoryKey": "conversation_navigation",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      },
+      {
+        "turnIntentKey": "navigation.switch_goal",
+        "categoryKey": "conversation_navigation",
+        "businessGoalKey": "anc.company_formation",
+        "active": true
+      }
+    ],
+    "IntentSignals": [
+      {
+        "signalId": "signal.company.register",
+        "targetKey": "goal.company_formation",
+        "signalType": "phrase",
+        "value": "register a company",
+        "language": "en",
+        "weight": 80,
+        "minWeight": 55,
+        "maxWeight": 100,
+        "aliases": [
+          "register my business",
+          "get a company license",
+          "get a trade license",
+          "open my company",
+          "start my business",
+          "establish a business"
+        ]
+      },
+      {
+        "signalId": "signal.company.setup",
+        "targetKey": "goal.company_formation",
+        "signalType": "phrase",
+        "value": "set up a company",
+        "language": "en",
+        "weight": 80,
+        "minWeight": 55,
+        "maxWeight": 100,
+        "aliases": [
+          "start a company",
+          "start a business",
+          "start company formation",
+          "help me set up my company",
+          "set up my business",
+          "open a company",
+            "open a consultancy",
+            "establish a company",
+            "set up a business",
+            "planning to start a business",
+            "thinking of setting up a business"
+        ]
+      },
+      {
+        "signalId": "signal.company.formation",
+        "targetKey": "goal.company_formation",
+        "signalType": "phrase",
+        "value": "company formation",
+        "language": "en",
+        "weight": 80,
+        "minWeight": 55,
+        "maxWeight": 100,
+        "aliases": [
+          "company registration",
+          "company setup",
+          "incorporate a business",
+          "opening a business",
+          "company license",
+          "trade license"
+        ]
+      },
+      {
+        "signalId": "signal.knowledge.option",
+        "targetKey": "knowledge.setup_options",
+        "signalType": "keyword",
+        "value": "options",
+        "language": "en",
+        "weight": 30,
+        "minWeight": 5,
+        "maxWeight": 50
+      },
+      {
+        "signalId": "signal.knowledge.price",
+        "targetKey": "knowledge.package_pricing",
+        "signalType": "keyword",
+        "value": "cost",
+        "language": "en",
+        "weight": 30,
+        "minWeight": 5,
+        "maxWeight": 50
+      },
+      {
+        "signalId": "signal.knowledge.docs",
+        "targetKey": "knowledge.required_documents",
+        "signalType": "phrase",
+        "value": "what documents",
+        "language": "en",
+        "weight": 40,
+        "minWeight": 15,
+        "maxWeight": 60
+      },
+      {
+        "signalId": "signal.knowledge.eligible",
+        "targetKey": "knowledge.eligibility",
+        "signalType": "phrase",
+        "value": "am I eligible",
+        "language": "en",
+        "weight": 40,
+        "minWeight": 15,
+        "maxWeight": 60
+      },
+      {
+        "signalId": "signal.knowledge.timeline",
+        "targetKey": "knowledge.timeline",
+        "signalType": "phrase",
+        "value": "how long",
+        "language": "en",
+        "weight": 30,
+        "minWeight": 5,
+        "maxWeight": 50
+      },
+      {
+        "signalId": "signal.activity",
+        "targetKey": "requirement.business_activity",
+        "signalType": "keyword",
+        "value": "business activity",
+        "language": "en",
+        "weight": 25,
+        "minWeight": 0,
+        "maxWeight": 45
+      },
+      {
+        "signalId": "signal.visa",
+        "targetKey": "requirement.visa_count",
+        "signalType": "keyword",
+        "value": "visa",
+        "language": "en",
+        "weight": 20,
+        "minWeight": -5,
+        "maxWeight": 40
+      },
+      {
+        "signalId": "signal.lead",
+        "targetKey": "service.lead_creation",
+        "signalType": "phrase",
+        "value": "create my lead",
+        "language": "en",
+        "weight": 40,
+        "minWeight": 15,
+        "maxWeight": 60
+      },
+      {
+        "signalId": "signal.qualification",
+        "targetKey": "service.qualify_lead",
+        "signalType": "phrase",
+        "value": "check my eligibility",
+        "language": "en",
+        "weight": 35,
+        "minWeight": 10,
+        "maxWeight": 55
+      },
+      {
+        "signalId": "signal.account",
+        "targetKey": "service.create_account",
+        "signalType": "phrase",
+        "value": "create my account",
+        "language": "en",
+        "weight": 40,
+        "minWeight": 15,
+        "maxWeight": 60
+      },
+      {
+        "signalId": "signal.package",
+        "targetKey": "service.select_package",
+        "signalType": "phrase",
+        "value": "I select this package",
+        "language": "en",
+        "weight": 55,
+        "minWeight": 30,
+        "maxWeight": 75
+      },
+      {
+        "signalId": "signal.document",
+        "targetKey": "service.upload_sf02",
+        "signalType": "phrase",
+        "value": "upload my documents",
+        "language": "en",
+        "weight": 50,
+        "minWeight": 25,
+        "maxWeight": 70
+      },
+      {
+        "signalId": "signal.invoice",
+        "targetKey": "service.issue_invoice",
+        "signalType": "phrase",
+        "value": "send an invoice",
+        "language": "en",
+        "weight": 50,
+        "minWeight": 25,
+        "maxWeight": 70
+      },
+      {
+        "signalId": "signal.payment",
+        "targetKey": "service.authorize_payment",
+        "signalType": "phrase",
+        "value": "I authorize payment",
+        "language": "en",
+        "weight": 55,
+        "minWeight": 30,
+        "maxWeight": 75
+      },
+      {
+        "signalId": "signal.contract",
+        "targetKey": "service.sign_contract",
+        "signalType": "phrase",
+        "value": "sign the agreement",
+        "language": "en",
+        "weight": 55,
+        "minWeight": 30,
+        "maxWeight": 75
+      },
+      {
+        "signalId": "signal.status",
+        "targetKey": "status.journey",
+        "signalType": "phrase",
+        "value": "application status",
+        "language": "en",
+        "weight": 40,
+        "minWeight": 15,
+        "maxWeight": 60
+      },
+      {
+        "signalId": "signal.document.status",
+        "targetKey": "status.document",
+        "signalType": "phrase",
+        "value": "document status",
+        "language": "en",
+        "weight": 40,
+        "minWeight": 15,
+        "maxWeight": 60
+      },
+      {
+        "signalId": "signal.payment.status",
+        "targetKey": "status.payment",
+        "signalType": "phrase",
+        "value": "payment status",
+        "language": "en",
+        "weight": 40,
+        "minWeight": 15,
+        "maxWeight": 60
+      },
+      {
+        "signalId": "signal.correct",
+        "targetKey": "navigation.correct_fact",
+        "signalType": "phrase",
+        "value": "I need to correct",
+        "language": "en",
+        "weight": 35,
+        "minWeight": 10,
+        "maxWeight": 55
+      },
+      {
+        "signalId": "signal.pause",
+        "targetKey": "navigation.pause",
+        "signalType": "phrase",
+        "value": "pause my application",
+        "language": "en",
+        "weight": 45,
+        "minWeight": 20,
+        "maxWeight": 65
+      },
+      {
+        "signalId": "signal.resume",
+        "targetKey": "navigation.resume",
+        "signalType": "phrase",
+        "value": "resume my application",
+        "language": "en",
+        "weight": 45,
+        "minWeight": 20,
+        "maxWeight": 65
+      },
+      {
+        "signalId": "signal.no",
+        "targetKey": "navigation.decline_action",
+        "signalType": "phrase",
+        "value": "I do not consent",
+        "language": "en",
+        "weight": 60,
+        "minWeight": 35,
+        "maxWeight": 80
+      }
+    ],
+    "ScoringPolicies": [
+      {
+        "scoringPolicyKey": "score.company.formation",
+        "businessGoalKey": "anc.company_formation",
+        "threshold": 70,
+        "ambiguityMargin": 15,
+        "policyVersion": "ancfz-seven-stage-v2-draft"
+      }
+    ],
+    "RequirementPolicies": [
+      {
+        "requirementKey": "business_activity",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_qualification",
+        "type": "fact",
+        "required": true,
+        "dependencies": [],
+        "validation": "catalog.activity",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.business_activity",
+        "priority": 10
+      },
+      {
+        "requirementKey": "account_confirmation",
+        "goalKey": "anc.company_formation",
+        "stageKey": "account_creation",
+        "type": "confirmation",
+        "required": true,
+        "dependencies": [
+          "business_activity"
+        ],
+        "validation": "explicit.customer.confirmation",
+        "sourceOfTruth": "node",
+        "promptKey": "confirm.account_creation",
+        "priority": 20
+      },
+      {
+        "requirementKey": "entity_type",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_qualification",
+        "type": "fact",
+        "required": true,
+        "dependencies": [
+          "business_activity"
+        ],
+        "validation": "catalog.entity_type",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.entity_type",
+        "priority": 20
+      },
+      {
+        "requirementKey": "visa_count",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_qualification",
+        "type": "fact",
+        "required": true,
+        "dependencies": [
+          "business_activity"
+        ],
+        "validation": "integer.nonnegative",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.visa_count",
+        "priority": 30
+      },
+      {
+        "requirementKey": "timeline",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_qualification",
+        "type": "fact",
+        "required": true,
+        "dependencies": [
+          "business_activity"
+        ],
+        "validation": "catalog.timeline",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.timeline",
+        "priority": 40
+      },
+      {
+        "requirementKey": "lead_contact_name",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_generation",
+        "type": "fact",
+        "required": true,
+        "dependencies": [],
+        "validation": "catalog.or_customer_validated",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.lead_contact_name",
+        "priority": 10
+      },
+      {
+        "requirementKey": "lead_contact_channel",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_generation",
+        "type": "fact",
+        "required": true,
+        "dependencies": [],
+        "validation": "catalog.or_customer_validated",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.lead_contact_channel",
+        "priority": 20
+      },
+      {
+        "requirementKey": "lead_crm_consent",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_generation",
+        "type": "consent",
+        "required": true,
+        "dependencies": [
+          "lead_contact_channel"
+        ],
+        "validation": "explicit.purpose_specific.opt_in",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.lead_crm_consent",
+        "priority": 50
+      },
+      {
+        "requirementKey": "lead_action_confirmation",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_generation",
+        "type": "confirmation",
+        "required": true,
+        "dependencies": [
+          "lead_crm_consent"
+        ],
+        "validation": "explicit.customer.confirmation",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.lead_action_confirmation",
+        "priority": 50
+      },
+      {
+        "requirementKey": "qualification_confirmation",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_qualification",
+        "type": "confirmation",
+        "required": true,
+        "dependencies": [
+          "business_activity",
+          "entity_type",
+          "visa_count",
+          "timeline"
+        ],
+        "validation": "explicit.customer.confirmation",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.qualification_confirmation",
+        "priority": 50
+      },
+      {
+        "requirementKey": "account_crm_consent",
+        "goalKey": "anc.company_formation",
+        "stageKey": "account_creation",
+        "type": "consent",
+        "required": true,
+        "dependencies": [
+          "qualification_confirmation"
+        ],
+        "validation": "explicit.purpose_specific.opt_in",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.account_crm_consent",
+        "priority": 50
+      },
+      {
+        "requirementKey": "package_choice",
+        "goalKey": "anc.company_formation",
+        "stageKey": "package_selection",
+        "type": "fact",
+        "required": true,
+        "dependencies": [
+          "qualification_confirmation"
+        ],
+        "validation": "catalog.or_customer_validated",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.package_choice",
+        "priority": 50
+      },
+      {
+        "requirementKey": "package_confirmation",
+        "goalKey": "anc.company_formation",
+        "stageKey": "package_selection",
+        "type": "confirmation",
+        "required": true,
+        "dependencies": [
+          "package_choice"
+        ],
+        "validation": "explicit.customer.confirmation",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.package_confirmation",
+        "priority": 50
+      },
+      {
+        "requirementKey": "package_action_consent",
+        "goalKey": "anc.company_formation",
+        "stageKey": "package_selection",
+        "type": "consent",
+        "required": true,
+        "dependencies": [
+          "package_choice"
+        ],
+        "validation": "explicit.purpose_specific.opt_in",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.package_action_consent",
+        "priority": 50
+      },
+      {
+        "requirementKey": "document_processing_consent",
+        "goalKey": "anc.company_formation",
+        "stageKey": "document_upload",
+        "type": "consent",
+        "required": true,
+        "dependencies": [
+          "package_confirmation"
+        ],
+        "validation": "explicit.purpose_specific.opt_in",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.document_processing_consent",
+        "priority": 50
+      },
+      {
+        "requirementKey": "document_attachment_confirmation",
+        "goalKey": "anc.company_formation",
+        "stageKey": "document_upload",
+        "type": "confirmation",
+        "required": true,
+        "dependencies": [
+          "document_processing_consent"
+        ],
+        "validation": "explicit.customer.confirmation",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.document_attachment_confirmation",
+        "priority": 50
+      },
+      {
+        "requirementKey": "invoice_request_confirmation",
+        "goalKey": "anc.company_formation",
+        "stageKey": "payment_invoice",
+        "type": "confirmation",
+        "required": true,
+        "dependencies": [
+          "package_confirmation"
+        ],
+        "validation": "explicit.customer.confirmation",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.invoice_request_confirmation",
+        "priority": 50
+      },
+      {
+        "requirementKey": "invoice_data_consent",
+        "goalKey": "anc.company_formation",
+        "stageKey": "payment_invoice",
+        "type": "consent",
+        "required": true,
+        "dependencies": [
+          "invoice_request_confirmation"
+        ],
+        "validation": "explicit.purpose_specific.opt_in",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.invoice_data_consent",
+        "priority": 50
+      },
+      {
+        "requirementKey": "payment_authorization",
+        "goalKey": "anc.company_formation",
+        "stageKey": "payment_invoice",
+        "type": "consent",
+        "required": true,
+        "dependencies": [
+          "invoice_request_confirmation"
+        ],
+        "validation": "explicit.purpose_specific.opt_in",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.payment_authorization",
+        "priority": 50
+      },
+      {
+        "requirementKey": "payment_confirmation",
+        "goalKey": "anc.company_formation",
+        "stageKey": "payment_invoice",
+        "type": "confirmation",
+        "required": true,
+        "dependencies": [
+          "payment_authorization"
+        ],
+        "validation": "explicit.customer.confirmation",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.payment_confirmation",
+        "priority": 50
+      },
+      {
+        "requirementKey": "contract_review_confirmation",
+        "goalKey": "anc.company_formation",
+        "stageKey": "contract",
+        "type": "confirmation",
+        "required": true,
+        "dependencies": [
+          "payment_confirmation"
+        ],
+        "validation": "explicit.customer.confirmation",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.contract_review_confirmation",
+        "priority": 50
+      },
+      {
+        "requirementKey": "contract_signature_consent",
+        "goalKey": "anc.company_formation",
+        "stageKey": "contract",
+        "type": "consent",
+        "required": true,
+        "dependencies": [
+          "contract_review_confirmation"
+        ],
+        "validation": "explicit.purpose_specific.opt_in",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.contract_signature_consent",
+        "priority": 50
+      }
+    ],
+    "BusinessStages": [
+      {
+        "businessGoalKey": "anc.company_formation",
+        "stageKey": "lead_generation",
+        "stageOrder": 1,
+        "entryRequirements": [],
+        "completionEvidencePolicyKey": "lead.verified",
+        "active": true
+      },
+      {
+        "businessGoalKey": "anc.company_formation",
+        "stageKey": "lead_qualification",
+        "stageOrder": 2,
+        "entryRequirements": [
+          "business_activity",
+          "entity_type",
+          "visa_count",
+          "timeline"
+        ],
+        "completionEvidencePolicyKey": "qualification.node_verified",
+        "active": true
+      },
+      {
+        "businessGoalKey": "anc.company_formation",
+        "stageKey": "account_creation",
+        "stageOrder": 3,
+        "entryRequirements": [
+          "account_confirmation"
+        ],
+        "completionEvidencePolicyKey": "account.provider_verified",
+        "active": true
+      },
+      {
+        "businessGoalKey": "anc.company_formation",
+        "stageKey": "package_selection",
+        "stageOrder": 4,
+        "entryRequirements": [],
+        "completionEvidencePolicyKey": "quote.accepted",
+        "active": true
+      },
+      {
+        "businessGoalKey": "anc.company_formation",
+        "stageKey": "document_upload",
+        "stageOrder": 5,
+        "entryRequirements": [],
+        "completionEvidencePolicyKey": "document.sf02_verified",
+        "active": true
+      },
+      {
+        "businessGoalKey": "anc.company_formation",
+        "stageKey": "payment_invoice",
+        "stageOrder": 6,
+        "entryRequirements": [],
+        "completionEvidencePolicyKey": "invoice.payment_separate",
+        "active": true
+      },
+      {
+        "businessGoalKey": "anc.company_formation",
+        "stageKey": "contract",
+        "stageOrder": 7,
+        "entryRequirements": [],
+        "completionEvidencePolicyKey": "contract.verified",
+        "active": true
+      }
+    ],
+    "ToolBindings": [
+      {
+        "toolKey": "knowledge.search",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_generation",
+        "sideEffectClass": "read_only",
+        "argumentsSchemaRef": "tool.search-knowledge.v1",
+        "requiredKeys": [],
+        "consent": "none",
+        "confirmation": "none",
+        "registryKey": null,
+        "enabled": true
+      },
+      {
+        "toolKey": "journey.read_state",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_generation",
+        "sideEffectClass": "read_only",
+        "argumentsSchemaRef": "tool.journey-state.v1",
+        "requiredKeys": [],
+        "consent": "none",
+        "confirmation": "none",
+        "registryKey": null,
+        "enabled": true
+      },
+      {
+        "toolKey": "package.read_available",
+        "goalKey": "anc.company_formation",
+        "stageKey": "package_selection",
+        "sideEffectClass": "read_only",
+        "argumentsSchemaRef": "tool.package-lookup.v1",
+        "requiredKeys": [],
+        "consent": "none",
+        "confirmation": "none",
+        "registryKey": null,
+        "enabled": true
+      },
+      {
+        "toolKey": "document.read_requirements",
+        "goalKey": "anc.company_formation",
+        "stageKey": "document_upload",
+        "sideEffectClass": "read_only",
+        "argumentsSchemaRef": "tool.document-requirements.v1",
+        "requiredKeys": [],
+        "consent": "none",
+        "confirmation": "none",
+        "registryKey": null,
+        "enabled": true
+      },
+      {
+        "toolKey": "knowledge.search_qualification",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_qualification",
+        "sideEffectClass": "read_only",
+        "argumentsSchemaRef": "tool.search-knowledge.v1",
+        "requiredKeys": [],
+        "consent": "none",
+        "confirmation": "none",
+        "registryKey": null,
+        "enabled": true
+      },
+      {
+        "toolKey": "document.read_status",
+        "goalKey": "anc.company_formation",
+        "stageKey": "document_upload",
+        "sideEffectClass": "read_only",
+        "argumentsSchemaRef": "tool.document-status.v1",
+        "requiredKeys": [],
+        "consent": "none",
+        "confirmation": "none",
+        "registryKey": null,
+        "enabled": true
+      },
+      {
+        "toolKey": "invoice.read_status",
+        "goalKey": "anc.company_formation",
+        "stageKey": "payment_invoice",
+        "sideEffectClass": "read_only",
+        "argumentsSchemaRef": "tool.action-status.v1",
+        "requiredKeys": [],
+        "consent": "none",
+        "confirmation": "none",
+        "registryKey": null,
+        "enabled": true
+      },
+      {
+        "toolKey": "contract.read_status",
+        "goalKey": "anc.company_formation",
+        "stageKey": "contract",
+        "sideEffectClass": "read_only",
+        "argumentsSchemaRef": "tool.action-status.v1",
+        "requiredKeys": [],
+        "consent": "none",
+        "confirmation": "none",
+        "registryKey": null,
+        "enabled": true
+      },
+      {
+        "toolKey": "lead.create",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_generation",
+        "sideEffectClass": "proposal",
+        "argumentsSchemaRef": "tool.lead.create.v1",
+        "requiredKeys": [
+          "lead_contact_name",
+          "lead_contact_channel",
+          "lead_crm_consent",
+          "lead_action_confirmation"
+        ],
+        "consent": "purpose_specific",
+        "confirmation": "explicit_customer",
+        "registryKey": "crm.lead.create",
+        "enabled": false
+      },
+      {
+        "toolKey": "qualification.verify",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_qualification",
+        "sideEffectClass": "proposal",
+        "argumentsSchemaRef": "tool.qualification.verify.v1",
+        "requiredKeys": [
+          "business_activity",
+          "entity_type",
+          "visa_count",
+          "timeline",
+          "qualification_confirmation"
+        ],
+        "consent": "purpose_specific",
+        "confirmation": "explicit_customer",
+        "registryKey": "lead.qualification",
+        "enabled": false
+      },
+      {
+        "toolKey": "account.create",
+        "goalKey": "anc.company_formation",
+        "stageKey": "account_creation",
+        "sideEffectClass": "proposal",
+        "argumentsSchemaRef": "tool.account.create.v1",
+        "requiredKeys": [
+          "account_confirmation",
+          "account_crm_consent"
+        ],
+        "consent": "purpose_specific",
+        "confirmation": "explicit_customer",
+        "registryKey": "crm.account.create",
+        "enabled": false
+      },
+      {
+        "toolKey": "package.confirm",
+        "goalKey": "anc.company_formation",
+        "stageKey": "package_selection",
+        "sideEffectClass": "proposal",
+        "argumentsSchemaRef": "tool.package.confirm.v1",
+        "requiredKeys": [
+          "package_choice",
+          "package_confirmation",
+          "package_action_consent"
+        ],
+        "consent": "purpose_specific",
+        "confirmation": "explicit_customer",
+        "registryKey": "package.confirm",
+        "enabled": false
+      },
+      {
+        "toolKey": "document.sf02_upload",
+        "goalKey": "anc.company_formation",
+        "stageKey": "document_upload",
+        "sideEffectClass": "proposal",
+        "argumentsSchemaRef": "tool.document.sf02_upload.v1",
+        "requiredKeys": [
+          "document_processing_consent",
+          "document_attachment_confirmation"
+        ],
+        "consent": "purpose_specific",
+        "confirmation": "explicit_customer",
+        "registryKey": "document.sf02.upload",
+        "enabled": false
+      },
+      {
+        "toolKey": "invoice.issue",
+        "goalKey": "anc.company_formation",
+        "stageKey": "payment_invoice",
+        "sideEffectClass": "proposal",
+        "argumentsSchemaRef": "tool.invoice.issue.v1",
+        "requiredKeys": [
+          "invoice_request_confirmation",
+          "invoice_data_consent"
+        ],
+        "consent": "purpose_specific",
+        "confirmation": "explicit_customer",
+        "registryKey": "invoice.issue",
+        "enabled": false
+      },
+      {
+        "toolKey": "payment.authorize",
+        "goalKey": "anc.company_formation",
+        "stageKey": "payment_invoice",
+        "sideEffectClass": "proposal",
+        "argumentsSchemaRef": "tool.payment.authorize.v1",
+        "requiredKeys": [
+          "payment_authorization",
+          "payment_confirmation"
+        ],
+        "consent": "purpose_specific",
+        "confirmation": "explicit_customer",
+        "registryKey": "payment.authorize",
+        "enabled": false
+      },
+      {
+        "toolKey": "contract.send",
+        "goalKey": "anc.company_formation",
+        "stageKey": "contract",
+        "sideEffectClass": "proposal",
+        "argumentsSchemaRef": "tool.contract.send.v1",
+        "requiredKeys": [
+          "contract_review_confirmation",
+          "contract_signature_consent"
+        ],
+        "consent": "purpose_specific",
+        "confirmation": "explicit_customer",
+        "registryKey": "contract.send",
+        "enabled": false
+      },
+      {
+        "toolKey": "contract.sign",
+        "goalKey": "anc.company_formation",
+        "stageKey": "contract",
+        "sideEffectClass": "proposal",
+        "argumentsSchemaRef": "tool.contract.sign.v1",
+        "requiredKeys": [
+          "contract_review_confirmation",
+          "contract_signature_consent"
+        ],
+        "consent": "purpose_specific",
+        "confirmation": "explicit_customer",
+        "registryKey": "contract.sign",
+        "enabled": false
+      }
+    ],
+    "WorkflowBindings": [
+      {
+        "workflowKey": "crm.lead.create",
+        "registryKey": "crm.lead.create",
+        "providerType": "salesforce_sandbox",
+        "payloadSchemaRef": "payload.crm.lead.create.v1",
+        "callbackSchemaRef": "callback.crm.lead.create.v1",
+        "evidencePolicyKey": "lead.verified",
+        "enabled": false
+      },
+      {
+        "workflowKey": "lead.qualification",
+        "registryKey": "lead.qualification",
+        "providerType": "node",
+        "payloadSchemaRef": "payload.lead.qualification.v1",
+        "callbackSchemaRef": "callback.lead.qualification.v1",
+        "evidencePolicyKey": "qualification.node_verified",
+        "enabled": false
+      },
+      {
+        "workflowKey": "crm.account.create",
+        "registryKey": "crm.account.create",
+        "providerType": "salesforce_sandbox",
+        "payloadSchemaRef": "payload.crm.account.create.v1",
+        "callbackSchemaRef": "callback.crm.account.create.v1",
+        "evidencePolicyKey": "account.provider_verified",
+        "enabled": false
+      },
+      {
+        "workflowKey": "package.confirm",
+        "registryKey": "package.confirm",
+        "providerType": "node",
+        "payloadSchemaRef": "payload.package.confirm.v1",
+        "callbackSchemaRef": "callback.package.confirm.v1",
+        "evidencePolicyKey": "quote.accepted",
+        "enabled": false
+      },
+      {
+        "workflowKey": "document.sf02.upload",
+        "registryKey": "document.sf02.upload",
+        "providerType": "salesforce_sandbox",
+        "payloadSchemaRef": "payload.document.sf02.upload.v1",
+        "callbackSchemaRef": "callback.document.sf02.upload.v1",
+        "evidencePolicyKey": "document.sf02_verified",
+        "enabled": false
+      },
+      {
+        "workflowKey": "invoice.issue",
+        "registryKey": "invoice.issue",
+        "providerType": "finance_provider",
+        "payloadSchemaRef": "payload.invoice.issue.v1",
+        "callbackSchemaRef": "callback.invoice.issue.v1",
+        "evidencePolicyKey": "invoice.provider_verified",
+        "enabled": false
+      },
+      {
+        "workflowKey": "payment.authorize",
+        "registryKey": "payment.authorize",
+        "providerType": "payment_provider",
+        "payloadSchemaRef": "payload.payment.authorize.v1",
+        "callbackSchemaRef": "callback.payment.authorize.v1",
+        "evidencePolicyKey": "payment.provider_verified",
+        "enabled": false
+      },
+      {
+        "workflowKey": "contract.send",
+        "registryKey": "contract.send",
+        "providerType": "contract_provider",
+        "payloadSchemaRef": "payload.contract.send.v1",
+        "callbackSchemaRef": "callback.contract.send.v1",
+        "evidencePolicyKey": "contract.provider_verified",
+        "enabled": false
+      },
+      {
+        "workflowKey": "contract.sign",
+        "registryKey": "contract.sign",
+        "providerType": "contract_provider",
+        "payloadSchemaRef": "payload.contract.sign.v1",
+        "callbackSchemaRef": "callback.contract.sign.v1",
+        "evidencePolicyKey": "contract.verified",
+        "enabled": false
+      }
+    ],
+    "FollowUpPolicies": [
+      {
+        "policyKey": "followup.lead_generation",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_generation",
+        "requirementKey": "lead_contact_name",
+        "priority": 10,
+        "noQuestionReasons": [
+          "farewell",
+          "handoff",
+          "action_pending",
+          "customer_declined"
+        ]
+      },
+      {
+        "policyKey": "followup.lead_qualification",
+        "goalKey": "anc.company_formation",
+        "stageKey": "lead_qualification",
+        "requirementKey": "business_activity",
+        "priority": 20,
+        "noQuestionReasons": [
+          "farewell",
+          "handoff",
+          "action_pending",
+          "customer_declined"
+        ]
+      },
+      {
+        "policyKey": "followup.account_creation",
+        "goalKey": "anc.company_formation",
+        "stageKey": "account_creation",
+        "requirementKey": "account_confirmation",
+        "priority": 30,
+        "noQuestionReasons": [
+          "farewell",
+          "handoff",
+          "action_pending",
+          "customer_declined"
+        ]
+      },
+      {
+        "policyKey": "followup.package_selection",
+        "goalKey": "anc.company_formation",
+        "stageKey": "package_selection",
+        "requirementKey": "package_choice",
+        "priority": 40,
+        "noQuestionReasons": [
+          "farewell",
+          "handoff",
+          "action_pending",
+          "customer_declined"
+        ]
+      },
+      {
+        "policyKey": "followup.document_upload",
+        "goalKey": "anc.company_formation",
+        "stageKey": "document_upload",
+        "requirementKey": "document_processing_consent",
+        "priority": 50,
+        "noQuestionReasons": [
+          "farewell",
+          "handoff",
+          "action_pending",
+          "customer_declined"
+        ]
+      },
+      {
+        "policyKey": "followup.payment_invoice",
+        "goalKey": "anc.company_formation",
+        "stageKey": "payment_invoice",
+        "requirementKey": "invoice_request_confirmation",
+        "priority": 60,
+        "noQuestionReasons": [
+          "farewell",
+          "handoff",
+          "action_pending",
+          "customer_declined"
+        ]
+      },
+      {
+        "policyKey": "followup.contract",
+        "goalKey": "anc.company_formation",
+        "stageKey": "contract",
+        "requirementKey": "contract_review_confirmation",
+        "priority": 70,
+        "noQuestionReasons": [
+          "farewell",
+          "handoff",
+          "action_pending",
+          "customer_declined"
+        ]
+      }
+    ],
+    "KnowledgeTopics": [
+      {
+        "topicKey": "knowledge.company_setup",
+        "goalKey": "anc.company_formation",
+        "sourceScope": "tenant.approved_public",
+        "citationRequired": true,
+        "active": true
+      },
+      {
+        "topicKey": "knowledge.license_eligibility",
+        "goalKey": "anc.company_formation",
+        "sourceScope": "tenant.approved_public",
+        "citationRequired": true,
+        "active": true
+      },
+      {
+        "topicKey": "knowledge.package_pricing",
+        "goalKey": "anc.company_formation",
+        "sourceScope": "tenant.approved_public",
+        "citationRequired": true,
+        "active": true
+      },
+      {
+        "topicKey": "knowledge.document_requirements",
+        "goalKey": "anc.company_formation",
+        "sourceScope": "tenant.approved_public",
+        "citationRequired": true,
+        "active": true
+      },
+      {
+        "topicKey": "knowledge.timeline",
+        "goalKey": "anc.company_formation",
+        "sourceScope": "tenant.approved_public",
+        "citationRequired": true,
+        "active": true
+      },
+      {
+        "topicKey": "knowledge.visa_requirements",
+        "goalKey": "anc.company_formation",
+        "sourceScope": "tenant.approved_public",
+        "citationRequired": true,
+        "active": true
+      },
+      {
+        "topicKey": "knowledge.payment_policy",
+        "goalKey": "anc.company_formation",
+        "sourceScope": "tenant.approved_public",
+        "citationRequired": true,
+        "active": true
+      },
+      {
+        "topicKey": "knowledge.contract_terms",
+        "goalKey": "anc.company_formation",
+        "sourceScope": "tenant.approved_public",
+        "citationRequired": true,
+        "active": true
+      }
+    ],
+    "PersonaPolicies": [
+      {
+        "personaPolicyKey": "persona.ancfz.zara.en",
+        "personaVersionId": "published-zara-version",
+        "permittedLanguages": [
+          "en"
+        ],
+        "fallbackTemplateRef": "fallback.zara.v2",
+        "enabled": true
+      }
+    ],
+    "DocumentPolicies": [
+      {
+        "policyKey": "document.identity.review",
+        "goalKey": "anc.company_formation",
+        "stageKey": "document_upload",
+        "docType": "identity_document",
+        "required": true,
+        "mimeTypes": [
+          "application/pdf",
+          "image/jpeg",
+          "image/png"
+        ],
+        "reviewPolicy": "ocr.human_review",
+        "retentionClass": "tenant_policy",
+        "enabled": true
+      },
+      {
+        "policyKey": "document.shareholder.optional",
+        "goalKey": "anc.company_formation",
+        "stageKey": "document_upload",
+        "docType": "shareholder_document",
+        "required": false,
+        "mimeTypes": [
+          "application/pdf",
+          "image/jpeg",
+          "image/png"
+        ],
+        "reviewPolicy": "human_review",
+        "retentionClass": "tenant_policy",
+        "enabled": true
+      }
+    ]
+  }
+}

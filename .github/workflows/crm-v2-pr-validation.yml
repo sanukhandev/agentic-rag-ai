@@ -1,96 +1,83 @@
-name: CRM V2 PR Validation
-
+name: GPT-first unit-only validation
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/gpt-first-langgraph-unit-only, feat/v2-engine-hardening-integration]
     paths:
       - 'services/api/**'
-      - 'infra/n8n/workflows/**'
-      - 'tools/n8n/**'
+      - 'services/model-gateway/**'
       - 'tools/ingestion/**'
-      - 'infra/postgres/**'
-      - 'apps/web/**'
-      - 'apps/admin/**'
-      - 'package*.json'
+      - 'tools/intent-catalog/build-ancfz-seven-stage-v2.mjs'
+      - 'packages/**'
+      - 'apps/**'
+      - 'infra/n8n/workflows/**'
+      - 'scripts/check-v2-retirement-safety.mjs'
+      - 'scripts/check-v2-retirement-safety.test.mjs'
+      - 'docs/development/**'
+      - 'docs/engineering/**'
+      - 'AGENTS.md'
+      - 'docker-compose.yml'
+      - 'Dockerfile'
+      - 'infra/nginx/**'
+      - '.env.example'
+      - 'scripts/verify-compose.mjs'
+      - 'scripts/deploy-vm.sh'
       - '.github/workflows/crm-v2-pr-validation.yml'
   push:
-    branches: [feature/crm-omnichannel-conversation-v2, feat/rag-v2-reliability-conversation-intelligence]
-
+    branches: [feat/gpt-first-langgraph-unit-only]
 permissions:
   contents: read
-
 jobs:
-  validate:
+  unit-only:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    env:
-      DATABASE_URL: postgres://agentic:agentic_ci_only@127.0.0.1:5432/agentic_rag
-      REDIS_URL: redis://127.0.0.1:6379
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_DB: agentic_rag
-          POSTGRES_USER: agentic
-          POSTGRES_PASSWORD: agentic_ci_only
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U agentic -d agentic_rag"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=20
-      redis:
-        image: redis:7.4-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd="redis-cli ping"
-          --health-interval=5s
-          --health-timeout=3s
-          --health-retries=20
+    timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: pip
-          cache-dependency-path: tools/ingestion/requirements.txt
+          cache-dependency-path: services/model-gateway/requirements-dev.txt
       - name: Install dependencies
-        run: npm ci
-      - name: Build all packages
-        run: npm run build
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Lint
-        run: npm run lint
-      - name: Apply disposable integration migrations
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y postgresql-client
-          for migration in infra/postgres/*.sql; do
-            PGPASSWORD=agentic_ci_only psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
-          done
-      - name: Unit and integration tests
-        run: npm test
-      - name: Workflow JSON contract tests
-        run: node --test infra/n8n/workflows/crm-v2-workflows.test.mjs
-      - name: Verify compose and secrets
-        run: |
-          npm run verify:compose
-          npm run verify:secrets
-          npm run verify:secrets:test
-      - name: Install OCR libraries
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y tesseract-ocr
+          npm ci
+          python -m pip install -r services/model-gateway/requirements-dev.txt
           python -m pip install -r tools/ingestion/requirements.txt
-      - name: Python ingestion tests
-        run: python -m unittest discover -s tools/ingestion -p 'test_*.py'
+      - name: Validate single-file Docker Compose (static only)
+        run: npm run verify:compose
+      - name: Typecheck and lint
+        run: |
+          npm run typecheck
+          npm run lint
+      - name: Build
+        run: npm run build
+      - name: Node isolated unit tests
+        run: npm run test:unit
+      - name: Python isolated unit tests
+        run: PYTHONPATH=services/model-gateway python -m pytest -q services/model-gateway/tests
+      - name: ANCFZ n8n V2 workflow template contract tests
+        run: node --test infra/n8n/workflows/ancfz-v2-templates.test.mjs
+      - name: Python ingestion isolated unit tests
+        run: PYTHONPATH=tools/ingestion python -m unittest discover -s tools/ingestion -p 'test_*.py'
+      - name: Export and validate ANCFZ seven-stage workbook (offline)
+        run: |
+          node --import tsx/esm tools/intent-catalog/build-ancfz-seven-stage-v2.mjs
+          PYTHONPATH=tools/ingestion python -c "from pathlib import Path; from ingestion.catalog_v2 import parse_catalog_v2; from ingestion.worker import v2_catalog_result_payload; import json,sys; parsed = parse_catalog_v2(Path('artifacts/ancfz/ANCFZ_Seven_Stage_Intent_Catalog_V2_DRAFT.xlsx'), expected_tenant_scope='ancfz'); assert len(parsed['sheets']['BusinessStages']) == 7; json.dump(v2_catalog_result_payload(parsed), sys.stdout)" > "${RUNNER_TEMP}/ancfz-catalog-worker-result.json"
+          node --import tsx/esm -e "import { readFileSync } from 'node:fs'; import { intentCatalogResultSchema } from './services/api/src/http/schemas.ts'; import { validateCatalogV2 } from './services/api/src/catalog-v2.ts'; const body = intentCatalogResultSchema.parse(JSON.parse(readFileSync(process.env.RUNNER_TEMP + '/ancfz-catalog-worker-result.json', 'utf8'))); const result = validateCatalogV2(body.catalog); if (!result.ok) throw Error(result.errors.join('; ')); if (result.document.manifest.tenantScope !== 'ancfz') throw Error('tenant scope mismatch'); console.log('Python worker -> Node V2 catalog import contract: PASS');"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ancfz-seven-stage-intent-catalog-v2-draft
+          path: artifacts/ancfz/ANCFZ_Seven_Stage_Intent_Catalog_V2_DRAFT.xlsx
+          if-no-files-found: error
+          retention-days: 14
+      - name: Static V2 retirement safety and isolated tests
+        run: |
+          node scripts/check-v2-retirement-safety.mjs
+          node --test scripts/check-v2-retirement-safety.test.mjs
+          node scripts/check-v2-runtime-safety.mjs
+          node --test scripts/check-v2-runtime-safety.test.mjs
+      - name: Static secret scan
+        run: npm run verify:secrets
