@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, V2OtpChallengeService, validateV2AccountProviderResult, type V2OtpVerificationResult } from './v2-account-provider.js';
+import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, DurableV2OtpChallengeService, V2OtpChallengeService, validateV2AccountProviderResult, type V2OtpVerificationResult } from './v2-account-provider.js';
+import { MemoryStore } from './store-memory.js';
 import type { ActionRequest, CrmLead } from './types.js';
 
 
@@ -31,6 +32,14 @@ const originalLeadAction = (): ActionRequest => ({
 const verifiedOtp = (overrides: Partial<Extract<V2OtpVerificationResult, { status: 'verified' }>> = {}): Extract<V2OtpVerificationResult, { status: 'verified' }> => ({ status: 'verified', challengeId: randomUUID(), tenantId, sessionId, opportunityId, leadId, ...overrides });
 
 describe('v2 stage 3 account provider and OTP boundary', () => {
+  it('restores a durable OTP challenge after the service instance is recreated', async () => {
+    const store = new MemoryStore();
+    const first = new DurableV2OtpChallengeService(store, 'durable-test-secret');
+    const challenge = await first.issue({ tenantId, sessionId, opportunityId, leadId, code: '123456' });
+    const restarted = new DurableV2OtpChallengeService(store, 'durable-test-secret');
+    expect((await restarted.verify({ schemaVersion: 2, operation: 'otp.verify', tenantId, sessionId, opportunityId, leadId, challengeId: challenge.challengeId, code: '123456' })).status).toBe('verified');
+  });
+
   it('binds OTP to the tenant, session, opportunity and lead, expires, locks and is one-time', () => {
     const service = new V2OtpChallengeService('test-secret', 1_000, 2);
     const now = new Date('2026-10-30T10:00:00.000Z');

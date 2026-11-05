@@ -27,7 +27,7 @@
     "test:unit": "npm run test --workspaces --if-present"
   },
   "devDependencies": {
-    "@angular/compiler": "^21.2.25"
+    "@angular/compiler": "^21.2.26"
   },
   "engines": {
     "node": ">=22"

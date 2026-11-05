@@ -21,6 +21,8 @@ describe('V2 business outcome clauses and polarity', () => {
     expect(hasPositiveBusinessOutcomeClaim('Your application was accepted.')).toBe(true);
     expect(hasPositiveBusinessOutcomeClaim('The licence is activated.')).toBe(true);
     expect(hasPositiveBusinessOutcomeClaim('The contract has been executed.')).toBe(true);
+    expect(hasPositiveBusinessOutcomeClaim('Company registration and licence issuance can be completed in as little as 2 hours.')).toBe(false);
+    expect(hasPositiveBusinessOutcomeClaim('Your company registration has been completed.')).toBe(true);
   });
 });
 
@@ -80,5 +82,15 @@ describe('V2 per-source claim verification without a lexical overlap threshold',
       expect(result.supported, item.claim).toBe(false);
       expect(result.firstFailure?.reason, item.claim).toBe(item.reason);
     }
+  });
+
+  it('evaluates polarity against the relevant source clause, not the whole chunk', () => {
+    const result = evaluateV2ClaimProvenance(
+      'The invoice is pending.',
+      [source('The invoice is pending and the payment is not recorded.')],
+      () => false,
+      semanticSupported,
+    );
+    expect(result.supported).toBe(true);
   });
 });

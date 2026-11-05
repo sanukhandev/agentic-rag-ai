@@ -1,0 +1,519 @@
+{
+  "started_at": "2026-11-04T18:22:04.780907+00:00",
+  "tenant": "anc",
+  "scenarios_requested": 1,
+  "scenarios_executed": 1,
+  "customer_turns": 25,
+  "conversation_gate": "PASS",
+  "external_crm_invoice_document_signing": "NOT_VERIFIED_BY_THIS_HARNESS",
+  "runs": [
+    {
+      "session_id": "3a0aaab3-396c-4f23-8379-f6cac032c274",
+      "turns_sent": 25,
+      "all_http_answers": true,
+      "history_http_status": 200,
+      "durable_unique_user_messages": 25,
+      "history_has_25_turns": true,
+      "turn_checks": [
+        {
+          "turn": 1,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "I can help with company formation. Would you like to proceed with company formation?",
+          "answer_digest": "131a9a60e46e8552",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 2,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "Would you like to proceed with company formation, or only explore information?",
+          "answer_digest": "e2de7560c5453cda",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 3,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "Discover business setup packages at Ajman NuVentures Centre Free Zone, with flexible options designed to support your company setup journey.",
+          "answer_digest": "e749b31968658b64",
+          "grounded": true,
+          "citations": [
+            {
+              "sourceId": "14879b1c-d20f-45cc-9921-49e2773d00ea",
+              "versionId": "bf08803f-a2a0-4dc3-acb3-96156fdf9b9f",
+              "chunkId": "5a6bf5ab-12f9-441f-8fc8-c6fdbb047ae6",
+              "title": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx",
+              "locator": "5a6bf5ab-12f9-441f-8fc8-c6fdbb047ae6"
+            }
+          ],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 4,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process.",
+          "answer_digest": "325a73ca2e8afddc",
+          "grounded": true,
+          "citations": [
+            {
+              "sourceId": "9fb2ecaa-bd4c-4c06-9e7b-fc8046c83f29",
+              "versionId": "123a7fa3-d195-4fd7-96bf-e769113e9fa5",
+              "chunkId": "167b344c-50e0-4b6a-b8fc-11392232900b",
+              "title": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx",
+              "locator": "167b344c-50e0-4b6a-b8fc-11392232900b"
+            }
+          ],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 5,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "Approval is subject to the selected bank\u2019s eligibility criteria, documentation requirements, and compliance checks.",
+          "answer_digest": "898012fa272cb1d9",
+          "grounded": true,
+          "citations": [
+            {
+              "sourceId": "97d88d40-5a02-44bc-a117-37804d03e8c8",
+              "versionId": "ae97a56e-d6a2-4d2a-a1e6-098bf2bd0aa1",
+              "chunkId": "13bf25ef-764c-4b15-8965-82dad61be64d",
+              "title": "ANCFZ_Descriptive_RAG_FAQs.docx",
+              "locator": "13bf25ef-764c-4b15-8965-82dad61be64d"
+            }
+          ],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 6,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "I cannot verify that answer safely. I can continue with confirmed information.",
+          "answer_digest": "f5efd2f1ff09bf74",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 7,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "1 visa | 10,800 | 20,700 | 30,600 | 40,500 | 50,400",
+          "answer_digest": "722b366bb1b731c0",
+          "grounded": true,
+          "citations": [
+            {
+              "sourceId": "9fb2ecaa-bd4c-4c06-9e7b-fc8046c83f29",
+              "versionId": "123a7fa3-d195-4fd7-96bf-e769113e9fa5",
+              "chunkId": "3981784c-3d5a-4286-9ee7-039f1ae993c1",
+              "title": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx",
+              "locator": "3981784c-3d5a-4286-9ee7-039f1ae993c1"
+            }
+          ],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 8,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "Discover business setup packages at Ajman NuVentures Centre Free Zone, with flexible options designed to support your company setup journey.",
+          "answer_digest": "e749b31968658b64",
+          "grounded": true,
+          "citations": [
+            {
+              "sourceId": "14879b1c-d20f-45cc-9921-49e2773d00ea",
+              "versionId": "bf08803f-a2a0-4dc3-acb3-96156fdf9b9f",
+              "chunkId": "682565fb-f10a-4055-8468-7044683c0a8e",
+              "title": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx",
+              "locator": "682565fb-f10a-4055-8468-7044683c0a8e"
+            }
+          ],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 9,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "Thanks for sharing that. What detail would you like to add next?",
+          "answer_digest": "ac2052572b434e91",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 10,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "No opportunity is currently bound to the requested journey state.",
+          "answer_digest": "9d1e96e874c073df",
+          "grounded": true,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 11,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "Would you like to proceed with company formation, or only explore information?",
+          "answer_digest": "e2de7560c5453cda",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 12,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "The approved information is temporarily unavailable.",
+          "answer_digest": "f8dbd924ff433d0e",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 13,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "Would you like to proceed with company formation, or only explore information?",
+          "answer_digest": "e2de7560c5453cda",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 14,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "The approved information is temporarily unavailable.",
+          "answer_digest": "f8dbd924ff433d0e",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 15,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "Thanks for sharing that. What detail would you like to add next?",
+          "answer_digest": "ac2052572b434e91",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 16,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "Thanks for sharing that. What detail would you like to add next?",
+          "answer_digest": "ac2052572b434e91",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 17,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "Thanks for sharing that. What detail would you like to add next?",
+          "answer_digest": "ac2052572b434e91",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 18,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "I cannot verify that answer safely. I can continue with confirmed information.",
+          "answer_digest": "f5efd2f1ff09bf74",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 19,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "I cannot verify that answer safely. I can continue with confirmed information.",
+          "answer_digest": "f5efd2f1ff09bf74",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 20,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "The current conversation phase is DISCOVERY and the workflow status is none.",
+          "answer_digest": "df2c7ad8caf0b37d",
+          "grounded": true,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 21,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "Note: Additional documents may be required depending on the activity and shareholder type (individual or corporate).",
+          "answer_digest": "dac108320a9e047a",
+          "grounded": true,
+          "citations": [
+            {
+              "sourceId": "97d88d40-5a02-44bc-a117-37804d03e8c8",
+              "versionId": "ae97a56e-d6a2-4d2a-a1e6-098bf2bd0aa1",
+              "chunkId": "bf1449b5-6b1b-4a40-b0a9-4ed29b24229f",
+              "title": "ANCFZ_Descriptive_RAG_FAQs.docx",
+              "locator": "bf1449b5-6b1b-4a40-b0a9-4ed29b24229f"
+            }
+          ],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 22,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "For individuals, this includes relevant identity, nationality, address, birth and identification-document information.",
+          "answer_digest": "9d269c27c6272e65",
+          "grounded": true,
+          "citations": [
+            {
+              "sourceId": "1a567d4e-a3c3-4ca2-bded-086d5bce18ef",
+              "versionId": "013877fd-a578-45bc-a85f-3723bdc3760d",
+              "chunkId": "755b8635-4527-446e-984a-9a7daa856dfd",
+              "title": "ANCFZ_Descriptive_RAG_Rules_and_Regulations.docx",
+              "locator": "755b8635-4527-446e-984a-9a7daa856dfd"
+            }
+          ],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 23,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "I cannot verify that answer safely. I can continue with confirmed information.",
+          "answer_digest": "f5efd2f1ff09bf74",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 24,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order.",
+          "answer_digest": "9cfa8d13d747e6e3",
+          "grounded": true,
+          "citations": [
+            {
+              "sourceId": "97d88d40-5a02-44bc-a117-37804d03e8c8",
+              "versionId": "ae97a56e-d6a2-4d2a-a1e6-098bf2bd0aa1",
+              "chunkId": "22b773a6-71e6-4f29-a6f3-604d31390853",
+              "title": "ANCFZ_Descriptive_RAG_FAQs.docx",
+              "locator": "22b773a6-71e6-4f29-a6f3-604d31390853"
+            }
+          ],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 25,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "No server-authorized requirement is currently pending.",
+          "answer_digest": "1408adb990a2b03f",
+          "grounded": true,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        }
+      ]
+    }
+  ],
+  "objective_evaluation": {
+    "automated_objective_score": 0.7,
+    "automated_objective_checks_passed": 7,
+    "automated_objective_checks_total": 10,
+    "checks": [
+      {
+        "name": "transport_complete",
+        "passed": true,
+        "evidence": "25/25 turns have HTTP answers"
+      },
+      {
+        "name": "grounded_formation_answer",
+        "passed": true,
+        "evidence": "turn 3 grounded flag and citation"
+      },
+      {
+        "name": "formation_context_retained",
+        "passed": true,
+        "evidence": "formation context in setup/licensing/steps answers"
+      },
+      {
+        "name": "correction_retained",
+        "passed": false,
+        "evidence": "turn 20 acknowledges corrected timeline"
+      },
+      {
+        "name": "recap_retains_verified_facts",
+        "passed": false,
+        "evidence": "turn 23 recap contains customer facts"
+      },
+      {
+        "name": "no_unrequested_action",
+        "passed": true,
+        "evidence": "no action proposal in the information/consent-only harness"
+      },
+      {
+        "name": "no_internal_payload_leak",
+        "passed": true,
+        "evidence": "no tool names, trace fields or UUIDs in captured answers"
+      },
+      {
+        "name": "no_false_provider_completion",
+        "passed": true,
+        "evidence": "no unsupported provider-completion claim"
+      },
+      {
+        "name": "fallback_cascade_absent",
+        "passed": false,
+        "evidence": "at most one generic fallback across the run"
+      },
+      {
+        "name": "durable_history",
+        "passed": true,
+        "evidence": "public history reports 25 durable user messages"
+      }
+    ],
+    "human_persona_quality_review": "NOT_RUN",
+    "provider_completion": "NOT_VERIFIED_BY_THIS_HARNESS"
+  }
+}

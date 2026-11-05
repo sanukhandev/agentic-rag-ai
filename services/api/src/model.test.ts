@@ -36,6 +36,16 @@ describe('Azure Foundry model adapter', () => {
     await expect(model.draft({ maskedMessage: 'I want to start a fashion boutique', personaName: 'Sara', evidence: [{ citation: { sourceId: 'source', versionId: 'version', chunkId: 'chunk-1', title: 'FAQ', locator: 'section 1' }, content: 'Detailed retrieval-ready knowledge records\nWhat is ANCFZ?\nANCFZ supports company setup.' }] })).resolves.toEqual({ answer: naturalAbstention('en', 'I want to start a fashion boutique'), citationIds: [], proposedIntent: null });
   });
 
+  it('grounds relevant short structured lines from approved tabular evidence', async () => {
+    const draft = await new DeterministicGroundedModel().draft({
+      maskedMessage: 'What is the XLSX plan?', personaName: 'Sara',
+      evidence: [{ citation: { sourceId: 'source', versionId: 'version', chunkId: 'xlsx-chunk', title: 'Accepted XLSX', locator: 'section 1' }, content: 'Plan Price\nXLSX approved 30' }],
+      followUpContext: { leadCaptured: false, primaryIntentKey: null, responseMode: 'knowledge', capturedSlots: {} },
+    });
+    expect(draft.citationIds).toContain('xlsx-chunk');
+    expect(draft.answer).toContain('XLSX approved 30');
+  });
+
   it('detects and enforces configured language families', () => {
     expect(detectedLanguage('مرحبا')).toBe('ar');
     expect(isPermittedLanguage('مرحبا', ['en', 'ar-AE'])).toBe(true);

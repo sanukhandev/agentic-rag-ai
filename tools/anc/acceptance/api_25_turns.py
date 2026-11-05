@@ -5,7 +5,9 @@ Run against a sandbox instance configured with approved synthetic data.
 """
 from __future__ import annotations
 import argparse
+import hashlib
 import json
+import re
 import time
 import uuid
 from datetime import datetime, timezone
@@ -51,6 +53,12 @@ def call(url,method='GET',payload=None,headers=None,timeout=40):
   except json.JSONDecodeError:obj={'error':'non_json_response'}
   return ex.code,obj
 
+def redact_answer(value):
+ if not isinstance(value,str):return None
+ value=re.sub(r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}', '[EMAIL]', value)
+ value=re.sub(r'\+?\d[\d ()-]{7,}\d', '[PHONE]', value)
+ return value
+
 def run(base,tenant,origin,idx,timeout):
  common={'Origin':origin}
  status,opened=call(base+'/api/v1/chat/sessions','POST',{'tenantSlug':tenant},common,timeout)
@@ -60,7 +68,7 @@ def run(base,tenant,origin,idx,timeout):
   idemp=f'ancfz-demo-{idx}-{turn_no}-{uuid.uuid4().hex[:12]}'
   status,resp=call(base+'/api/v1/chat/messages','POST',{'sessionId':session,'clientMessageId':idemp,'message':message},common,timeout)
   answer=resp.get('answer')
-  report.append({'turn':turn_no,'status':status,'answer_present':isinstance(answer,str) and bool(answer.strip()),'error_code':resp.get('error',{}).get('code') if isinstance(resp.get('error'),dict) else None,'conversation_phase':resp.get('phase'),'catalog_requirement_key':resp.get('catalogRequirementKey')})
+  report.append({'turn':turn_no,'status':status,'answer_present':isinstance(answer,str) and bool(answer.strip()),'answer_redacted':redact_answer(answer),'answer_digest':hashlib.sha256(answer.encode()).hexdigest()[:16] if isinstance(answer,str) else None,'grounded':resp.get('grounded') is True,'citations':resp.get('citations') if isinstance(resp.get('citations'),list) else [],'action_proposal_present':isinstance(resp.get('actionProposal'),dict),'pending_intent_key':resp.get('pendingIntentKey'),'pending_requirement_key':resp.get('pendingRequirementKey'),'error_code':resp.get('error',{}).get('code') if isinstance(resp.get('error'),dict) else None,'conversation_phase':resp.get('phase'),'catalog_requirement_key':resp.get('catalogRequirementKey')})
   if status!=200 or not isinstance(answer,str) or not answer.strip():break
  # Historical query verifies durable customer turns; it does not verify provider completion.
  status,history=call(base+'/api/v1/chat/sessions/'+session+'?limit=200',headers=common,timeout=timeout)

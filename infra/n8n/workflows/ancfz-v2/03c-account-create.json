@@ -88,7 +88,7 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "https://configure-provider.invalid/ancfz-v2/account-create",
+        "url": "={{ $env.REMOTE_CRM_ACCOUNT_URL }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "oAuth2Api",
         "sendBody": true,
@@ -111,7 +111,7 @@
           ]
         }
       },
-      "notes": "PLACEHOLDER URL (.invalid) and no credential ID. Configure the approved provider endpoint and a managed n8n credential before any activation."
+      "notes": "Configure REMOTE_CRM_ACCOUNT_URL and a managed n8n credential before activation. The workflow remains inert until Node OTP and provider readback acceptance are verified."
     },
     {
       "id": "ancfzV2AccountCreateR1-readback",
@@ -124,7 +124,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "https://configure-provider.invalid/ancfz-v2/account-create/readback",
+        "url": "={{ $env.REMOTE_CRM_ACCOUNT_READ_URL.replace('{accountId}', encodeURIComponent($('Call Provider - Configure Credential').first().json['accountId'])) }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "oAuth2Api",
         "sendBody": false,
@@ -132,7 +132,7 @@
           "timeout": 30000
         }
       },
-      "notes": "PLACEHOLDER: Replace with an authorized provider GET/readback. Never infer completion from POST 2xx. Bind the original provider record ID; no broad search."
+      "notes": "Configure REMOTE_CRM_ACCOUNT_READ_URL as an {accountId} template. Never infer completion from POST 2xx. Bind the original provider record ID; no broad search."
     },
     {
       "id": "ancfzV2AccountCreateR1-verify",
@@ -145,17 +145,17 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "http://api:4000/api/v2/internal/provider-evidence/verify",
+        "url": "http://api:4000/api/v2/internal/provider-evidence/account",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({actionId:$('Require V2 Stage Authorization').first().json.actionId,tenantId:$('Require V2 Stage Authorization').first().json.tenantId,sessionId:$('Require V2 Stage Authorization').first().json.sessionId,opportunityId:$('Require V2 Stage Authorization').first().json.opportunityId,catalogVersionId:$('Require V2 Stage Authorization').first().json.catalogVersionId,idempotencyKey:$('Require V2 Stage Authorization').first().json.idempotencyKey,actionKey:$('Require V2 Stage Authorization').first().json.actionKey,actionRevision:$('Require V2 Stage Authorization').first().json.actionRevision,stageKey:\"account_creation\",workflowKey:\"crm.account.create\",providerRecordId:$('Call Provider - Configure Credential').first().json[\"accountId\"],providerReadback:$('Read Back Provider State').first().json,eventId:$('Require V2 Stage Authorization').first().json.eventId,correlationId:$('Require V2 Stage Authorization').first().json.correlationId,attempt:$('Require V2 Stage Authorization').first().json.attempt}) }}",
+        "jsonBody": "={{ JSON.stringify({actionId:$('Require V2 Stage Authorization').first().json.actionId,tenantId:$('Require V2 Stage Authorization').first().json.tenantId,sessionId:$('Require V2 Stage Authorization').first().json.sessionId,opportunityId:$('Require V2 Stage Authorization').first().json.opportunityId,catalogVersionId:$('Require V2 Stage Authorization').first().json.catalogVersionId,idempotencyKey:$('Require V2 Stage Authorization').first().json.idempotencyKey,actionKey:$('Require V2 Stage Authorization').first().json.actionKey,actionRevision:$('Require V2 Stage Authorization').first().json.actionRevision,stageKey:\"account_creation\",workflowKey:\"crm.account.create\",providerRecordId:$('Call Provider - Configure Credential').first().json[\"accountId\"],providerReadback:$('Read Back Provider State').first().json,otpChallengeId:$('Require V2 Stage Authorization').first().json.approvedPayload.otpChallengeId,otpCode:$('Require V2 Stage Authorization').first().json.approvedPayload.otpCode,explicitConfirmation:$('Require V2 Stage Authorization').first().json.approvedPayload.explicitConfirmation === true,eventId:$('Require V2 Stage Authorization').first().json.eventId,correlationId:$('Require V2 Stage Authorization').first().json.correlationId,attempt:$('Require V2 Stage Authorization').first().json.attempt}) }}",
         "options": {
           "timeout": 30000
         }
       },
-      "notes": "PLANNED TRUSTED NODE ENDPOINT; NOT IMPLEMENTED in current V2 API. This intentionally blocks all completion until a security-reviewed adapter performs provider readback, correlation and evidence checks. Assign internal Header Auth credential."
+      "notes": "Node now performs Account/Contact/Opportunity readback and OTP validation. Keep inactive until the approved provider contract, credential and end-to-end synthetic test are available; never log or send OTP values to GPT."
     },
     {
       "id": "ancfzV2AccountCreateR1-attest",
@@ -286,5 +286,5 @@
   },
   "pinData": {},
   "staticData": null,
-  "notes": "UNPUBLISHED / INERT TEMPLATE. Salesforce Lead-qualified Account/Contact/Opportunity creation. Node must verify all three linked provider records and original Lead. Node V2 claim/dispatch and trusted provider evidence endpoint are not wired. No credentials are included; never enable without Node gate, provider credentials, readback, callbacks and synthetic E2E tests."
+  "notes": "UNPUBLISHED / INERT TEMPLATE. Salesforce Lead-qualified Account/Contact/Opportunity creation. Node must verify all three linked provider records and original Lead. Node V2 claim/dispatch and provider-specific readback adapter are not wired. No credentials are included; never enable without Node gate, provider credentials, readback, callbacks and synthetic E2E tests."
 }

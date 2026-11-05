@@ -2,8 +2,8 @@ import type { Application, NextFunction, Request, RequestHandler, Response } fro
 import type { LifecycleStage, Session, Store } from '../types.js';
 import type { ActionGateway } from '../actions.js';
 import { parse, HttpError } from '../http/errors.js';
-import { lifecycleAccountProposalSchema, lifecycleContractSchema, lifecycleInvoiceSchema, lifecyclePackageProposalSchema, lifecycleQuoteSchema, lifecycleSelectionConfirmationSchema } from '../http/schemas.js';
-import { activeOpportunityId, confirmPackageSelection, createApprovedQuote, createContractDraft, createInvoiceDraft, listEligiblePackages, proposeAccountConversion, proposePackageSelection } from '../business-lifecycle.js';
+import { lifecycleAccountProposalSchema, lifecycleContractSchema, lifecycleInvoiceSchema, lifecyclePackageProposalSchema, lifecyclePaymentSchema, lifecycleQuoteSchema, lifecycleSelectionConfirmationSchema } from '../http/schemas.js';
+import { accountConversionBinding, activeOpportunityId, confirmPackageSelection, createApprovedQuote, createContractDraft, createInvoiceDraft, listEligiblePackages, proposeAccountConversion, proposePackageSelection, v2LifecycleActionBinding } from '../business-lifecycle.js';
 
 export interface LifecycleRouteDependencies {
   store: Store;
@@ -39,7 +39,9 @@ export const registerLifecycleRoutes = (app: Pick<Application, 'get' | 'post'>, 
       const input = parse(lifecycleAccountProposalSchema, req.body);
       const account = await proposeAccountConversion(dependencies.store, session, input.opportunityId, input.conversionRule);
       if (account.status === 'verified') { res.status(200).json({ account, verified: true }); return; }
-      const action = await dependencies.gateway.propose(session.tenantId, session.id, `crm-account:${account.id}`, { contactConsent: true, slotValues: { crmAccountId: account.id } }, { workflowKey: 'crm.account.convert', webhookPath: 'anc-account-conversion-wf-1', intentKey: 'account.registration', actionKey: 'account.registration', catalogVersionId: session.conversationState?.catalogVersionId ?? null, opportunityId: input.opportunityId });
+      const binding = await accountConversionBinding(dependencies.store, session, input.conversionRule);
+      if (!binding) throw new HttpError(409, 'ACCOUNT_CONVERSION_NOT_CONFIGURED', 'Account conversion is not enabled for this catalog and conversion rule.');
+      const action = await dependencies.gateway.propose(session.tenantId, session.id, `crm-account:${account.id}`, { contactConsent: true, slotValues: { crmAccountId: account.id } }, { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, intentKey: binding.intentKey, actionKey: binding.actionKey, catalogVersionId: binding.catalogVersionId, opportunityId: input.opportunityId });
       res.status(202).json({ account, verified: false, actionProposal: { id: action.id, state: action.state } });
     } catch (error) { next(error); }
   });
@@ -50,9 +52,29 @@ export const registerLifecycleRoutes = (app: Pick<Application, 'get' | 'post'>, 
     try {
       const session = await loadSession(req);
       const input = parse(lifecycleInvoiceSchema, req.body);
+      const binding = await v2LifecycleActionBinding(dependencies.store, session, 'invoice.issue', 'payment_invoice');
+      const invoiceDocument = await dependencies.store.getUserIntentDocument(session.tenantId, session.id);
+      if (invoiceDocument?.catalogSource === 'v2' && invoiceDocument.currentStageKey !== 'payment_invoice') throw new HttpError(409, 'V2_STAGE_MISMATCH', 'Invoice issuance is only available during the payment stage.');
+      if (session.conversationState?.catalogVersionId && await dependencies.store.getIntentCatalogV2Version(session.tenantId, session.conversationState.catalogVersionId) && !binding) throw new HttpError(409, 'INVOICE_NOT_CONFIGURED', 'Invoice issuance is not enabled for this pinned catalog.');
       const invoice = await createInvoiceDraft(dependencies.store, session, input.opportunityId, input.quoteId);
-      const action = await dependencies.gateway.propose(session.tenantId, session.id, `invoice:${invoice.id}`, { slotValues: { invoiceId: invoice.id } }, { workflowKey: 'finance.invoice.create', webhookPath: 'anc-invoice-generation-wf-1', intentKey: 'invoice.request', actionKey: 'invoice.request', catalogVersionId: session.conversationState?.catalogVersionId ?? null, opportunityId: input.opportunityId });
+      const action = binding
+        ? await dependencies.gateway.propose(session.tenantId, session.id, `invoice:${invoice.id}`, { contactConsent: true, interest: binding.intentKey, slotValues: { invoiceId: invoice.id, quoteId: input.quoteId } }, { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, intentKey: binding.intentKey, actionKey: binding.actionKey, catalogVersionId: binding.catalogVersionId, opportunityId: input.opportunityId })
+        : await dependencies.gateway.propose(session.tenantId, session.id, `invoice:${invoice.id}`, { slotValues: { invoiceId: invoice.id } }, { workflowKey: 'finance.invoice.create', webhookPath: 'anc-invoice-generation-wf-1', intentKey: 'invoice.request', actionKey: 'invoice.request', catalogVersionId: session.conversationState?.catalogVersionId ?? null, opportunityId: input.opportunityId });
       res.status(202).json({ invoice, verified: invoice.status === 'paid', actionProposal: { id: action.id, state: action.state } });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/chat/sessions/:id/payments', dependencies.chatApi, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const session = await loadSession(req);
+      const input = parse(lifecyclePaymentSchema, req.body);
+      const invoice = await dependencies.store.getInvoice(input.invoiceId, session.tenantId);
+      if (!invoice || invoice.opportunityId !== input.opportunityId || invoice.status !== 'pending' || !invoice.externalInvoiceId || !invoice.paymentUrl) throw new HttpError(409, 'INVOICE_NOT_READY', 'A verified invoice with a hosted payment link is required before payment.');
+      const binding = await v2LifecycleActionBinding(dependencies.store, session, 'payment.authorize', 'payment_invoice');
+      if (!binding) throw new HttpError(409, 'PAYMENT_NOT_CONFIGURED', 'Payment authorization is not enabled for this pinned catalog.');
+      const paymentDocument = await dependencies.store.getUserIntentDocument(session.tenantId, session.id);
+      if (paymentDocument?.catalogSource === 'v2' && paymentDocument.currentStageKey !== 'payment_invoice') throw new HttpError(409, 'V2_STAGE_MISMATCH', 'Payment authorization is only available during the payment stage.');
+      const action = await dependencies.gateway.propose(session.tenantId, session.id, `payment:${invoice.id}`, { contactConsent: true, interest: binding.intentKey, slotValues: { invoiceId: invoice.id, paymentConfirmation: 'true' } }, { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, intentKey: binding.intentKey, actionKey: binding.actionKey, catalogVersionId: binding.catalogVersionId, opportunityId: input.opportunityId });
+      res.status(202).json({ invoice, actionProposal: { id: action.id, state: action.state } });
     } catch (error) { next(error); }
   });
   app.get('/api/v1/chat/sessions/:id/invoices/:invoiceId', dependencies.chatApi, async (req: Request, res: Response, next: NextFunction) => {
@@ -62,8 +84,14 @@ export const registerLifecycleRoutes = (app: Pick<Application, 'get' | 'post'>, 
     try {
       const session = await loadSession(req);
       const input = parse(lifecycleContractSchema, req.body);
+      const binding = await v2LifecycleActionBinding(dependencies.store, session, 'contract.send', 'contract');
+      const contractDocument = await dependencies.store.getUserIntentDocument(session.tenantId, session.id);
+      if (contractDocument?.catalogSource === 'v2' && contractDocument.currentStageKey !== 'contract') throw new HttpError(409, 'V2_STAGE_MISMATCH', 'Contract signing is only available during the contract stage.');
+      if (session.conversationState?.catalogVersionId && await dependencies.store.getIntentCatalogV2Version(session.tenantId, session.conversationState.catalogVersionId) && !binding) throw new HttpError(409, 'CONTRACT_NOT_CONFIGURED', 'Contract signing is not enabled for this pinned catalog.');
       const contract = await createContractDraft(dependencies.store, session, input.opportunityId, input.packageSelectionId, input.invoiceId);
-      const action = await dependencies.gateway.propose(session.tenantId, session.id, `contract:${contract.id}`, { slotValues: { contractId: contract.id } }, { workflowKey: 'legal.contract.prepare', webhookPath: 'anc-contract-preparation-wf-1', intentKey: 'contract.preparation', actionKey: 'contract.preparation', catalogVersionId: session.conversationState?.catalogVersionId ?? null, opportunityId: input.opportunityId });
+      const action = binding
+        ? await dependencies.gateway.propose(session.tenantId, session.id, `contract:${contract.id}`, { contactConsent: true, interest: binding.intentKey, slotValues: { contractId: contract.id, packageSelectionId: input.packageSelectionId, invoiceId: input.invoiceId } }, { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, intentKey: binding.intentKey, actionKey: binding.actionKey, catalogVersionId: binding.catalogVersionId, opportunityId: input.opportunityId })
+        : await dependencies.gateway.propose(session.tenantId, session.id, `contract:${contract.id}`, { slotValues: { contractId: contract.id } }, { workflowKey: 'legal.contract.prepare', webhookPath: 'anc-contract-preparation-wf-1', intentKey: 'contract.preparation', actionKey: 'contract.preparation', catalogVersionId: session.conversationState?.catalogVersionId ?? null, opportunityId: input.opportunityId });
       res.status(202).json({ contract, verified: contract.status === 'signed', actionProposal: { id: action.id, state: action.state } });
     } catch (error) { next(error); }
   });

@@ -76,6 +76,7 @@ export const turnEnvelopeSchema = z.object({
     knowledgeTopics: z.array(z.object({ topicKey: boundedKey, goalKey: boundedKey.nullable(), citationRequired: z.boolean() }).strict()).max(500).default([]),
     requirementKeys: z.array(boundedKey).max(500),
     enabledReadToolKeys: z.array(boundedKey).max(32),
+    enabledActionToolKeys: z.array(boundedKey).max(32).default([]),
   }).strict().nullable().optional(),
   intentProjection,
   toolAllowlist: z.array(boundedKey).max(32),

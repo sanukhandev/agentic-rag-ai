@@ -1,4 +1,5 @@
 import { v2TrustedReadbackMatches, type V2TrustedProviderReadback } from './v2-provider-evidence.js';
+import { v2CatalogVersionRefSchema } from './v2-provider-correlation.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { PackageOffering, PackageSelection, Session } from './types.js';
@@ -14,7 +15,7 @@ export const v2QuoteProviderRequestSchema = z.object({
   tenantId: id,
   sessionId: id,
   opportunityId: id,
-  catalogVersionId: id,
+  catalogVersionId: v2CatalogVersionRefSchema,
   selectionId: id,
   packageOfferingId: id,
   packageKey: opaque,
@@ -36,7 +37,7 @@ export const v2QuoteProviderResultSchema = z.object({
   tenantId: id,
   sessionId: id,
   opportunityId: id,
-  catalogVersionId: id,
+  catalogVersionId: v2CatalogVersionRefSchema,
   selectionId: id,
   packageOfferingId: id,
   quoteId: id,

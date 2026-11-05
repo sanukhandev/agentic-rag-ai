@@ -88,7 +88,7 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "https://configure-provider.invalid/ancfz-v2/lead-create",
+        "url": "={{ $env.REMOTE_CRM_LEAD_URL }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "oAuth2Api",
         "sendBody": true,
@@ -111,7 +111,7 @@
           ]
         }
       },
-      "notes": "PLACEHOLDER URL (.invalid) and no credential ID. Configure the approved provider endpoint and a managed n8n credential before any activation."
+      "notes": "Configure the approved Salesforce sandbox endpoint in REMOTE_CRM_LEAD_URL and assign a managed n8n OAuth2 credential before activation."
     },
     {
       "id": "ancfzV2LeadCreateR1-readback",
@@ -124,15 +124,24 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "https://configure-provider.invalid/ancfz-v2/lead-create/readback",
+        "url": "={{ $env.REMOTE_CRM_LEAD_READ_URL.replace('{leadId}', encodeURIComponent($('Call Provider - Configure Credential').first().json['leadId'])) }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "oAuth2Api",
         "sendBody": false,
         "options": {
           "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Require V2 Stage Authorization').first().json.idempotencyKey }}"
+            }
+          ]
         }
       },
-      "notes": "PLACEHOLDER: Replace with an authorized provider GET/readback. Never infer completion from POST 2xx. Bind the original provider record ID; no broad search."
+      "notes": "Configure REMOTE_CRM_LEAD_READ_URL as a {leadId} template. Never infer completion from POST 2xx; Node independently verifies this readback before stage completion."
     },
     {
       "id": "ancfzV2LeadCreateR1-verify",
@@ -155,7 +164,7 @@
           "timeout": 30000
         }
       },
-      "notes": "PLANNED TRUSTED NODE ENDPOINT; NOT IMPLEMENTED in current V2 API. This intentionally blocks all completion until a security-reviewed adapter performs provider readback, correlation and evidence checks. Assign internal Header Auth credential."
+      "notes": "The Node endpoint validates correlation and evidence. Deterministic mock evidence can complete only in development; Salesforce evidence remains reconciliation_required until a configured Node provider adapter performs independent readback. Assign internal Header Auth credential."
     },
     {
       "id": "ancfzV2LeadCreateR1-attest",
@@ -286,5 +295,5 @@
   },
   "pinData": {},
   "staticData": null,
-  "notes": "UNPUBLISHED / INERT TEMPLATE. Salesforce Lead: deduplicate and read back Lead before any completion; notification is a distinct action. Node V2 claim/dispatch and trusted provider evidence endpoint are not wired. No credentials are included; never enable without Node gate, provider credentials, readback, callbacks and synthetic E2E tests."
+  "notes": "UNPUBLISHED / INERT TEMPLATE. Salesforce Lead: deduplicate and read back Lead before any completion; notification is a distinct action. Node V2 claim/dispatch and evidence endpoint are wired for validation, but the Salesforce provider adapter/readback is not configured. No credentials are included; never enable without Node gate, provider credentials, readback, callbacks and synthetic E2E tests."
 }

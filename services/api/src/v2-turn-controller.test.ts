@@ -36,9 +36,11 @@ import { randomUUID, createHash } from 'node:crypto';
 import { MemoryStore } from './store-memory.js';
 import { MemoryCache } from './cache.js';
 import { TokenVault } from './privacy.js';
-import { runGPTFirstChatTurn } from './v2-turn-controller.js';
+import { resolvePublicCitations, runGPTFirstChatTurn } from './v2-turn-controller.js';
 import { createV2ToolGateway, verifyV2Scope } from './v2-tool-gateway.js';
 import { DeterministicEmbeddingProvider } from './embedding.js';
+import { ActionGateway } from './actions.js';
+import { evaluatePersistedV2ActionConfirmation } from './v2-journey-bootstrap.js';
 
 const prepared = async () => {
   const store = new MemoryStore();
@@ -93,11 +95,24 @@ const prepared = async () => {
     cache: new MemoryCache(5), tokenVault: new TokenVault('unit-test-vault-key'),
     responseCacheTtlSeconds: 60,
     updateSession: async (candidate: typeof session) => store.updateSession(candidate),
+    actionGateway: new ActionGateway(store),
   };
   return { store, tenant, session, coordinator, input };
 };
 
 describe('GPT-first controller full-turn unit behavior', () => {
+  it('does not treat correlated read-only tool evidence as a PostgreSQL source id', async () => {
+    const getSource = vi.fn(async () => { throw new Error('synthetic tool source must not be queried'); });
+    const citations = await resolvePublicCitations(
+      { getSource } as never,
+      'tenant-id',
+      ['tool-package-evidence'],
+      [{ citationId: 'tool-package-evidence', sourceRef: 'tool-get_available_packages', sourceVersion: 'catalog-v1', text: 'The approved package is available.', approved: true, revoked: false }],
+    );
+    expect(citations).toEqual([]);
+    expect(getSource).not.toHaveBeenCalled();
+  });
+
   it('uses one model decision and saves the guarded reply, intent ledger, and no action', async () => {
     const { store, tenant, session, coordinator, input } = await prepared();
     const reply = await runGPTFirstChatTurn(input);
@@ -171,12 +186,13 @@ describe('GPT-first controller full-turn unit behavior', () => {
 import { readFileSync } from 'node:fs';
 import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2, type CatalogV2Document } from './catalog-v2.js';
 
-const publishPlannerFixture = async (store: MemoryStore, tenantId: string, tenantScope: string) => {
-  const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
+const publishPlannerFixture = async (store: MemoryStore, tenantId: string, tenantScope: string, fixture = 'ancfz-catalog-v2.json', configure?: (catalog: CatalogV2Document) => void) => {
+  const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/' + fixture, import.meta.url), 'utf8')));
   if (!parsed.ok || !parsed.document) throw new Error('UNIT_CATALOG_FIXTURE_INVALID');
   const catalogV2: CatalogV2Document = parsed.document;
   catalogV2.manifest.tenantScope = tenantScope;
   catalogV2.sheets.CatalogManifest[0]!.tenantScope = tenantScope;
+  configure?.(catalogV2);
   const version = await store.createIntentCatalogV2Version({
     tenantId, status: 'draft', sourceFileName: 'reviewed-v2.json',
     sourceHash: catalogV2Sha256(catalogV2), parserVersion: 'unit',
@@ -232,6 +248,14 @@ describe('V2 context-aware company formation confirmation (isolated unit)', () =
     },
   );
 
+  it('uses independently observed initiation evidence when the model turn category is navigation', async () => {
+    const ctx = await firstTurn('I am planning to start a technology consulting company in Ajman', {
+      ...modelProposal, turnCategory: 'conversation_navigation' as const,
+    });
+    expect(ctx.reply.answer).toContain('Would you like to proceed with company formation?');
+    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.goalConfirmation?.status).toBe('pending');
+  });
+
   it('does not prompt for goal confirmation during a formation information-only question', async () => {
     const ctx = await firstTurn('Tell me about company formation', {
       ...modelProposal, turnCategory: 'knowledge_advisory', nextMove: 'answer_knowledge',
@@ -270,6 +294,31 @@ describe('V2 context-aware company formation confirmation (isolated unit)', () =
     expect(ctx.reply.pendingPromptId).toBeNull();
     const audit = (await ctx.store.listAudit(ctx.tenant.id)).find(e => e.eventName === 'v2.catalog.planning_reviewed');
     expect(audit?.metadata).toMatchObject({ initiationSupported: false });
+  });
+
+  it('persists a valid candidate goal proposal when the final draft fails question validation', async () => {
+    const ctx = await prepared();
+    await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+    const message = 'I want to start company formation';
+    const current = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+    if (!current) throw new Error('UNIT_CUSTOMER_MESSAGE_MISSING');
+    await ctx.store.updateMessage({ ...current, maskedContent: message });
+    ctx.input.userMessage = { ...current, maskedContent: message };
+    ctx.input.maskedMessage = message;
+    ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
+    const candidate = { citationIds: [], answer: 'I can help with company formation.', nextQuestion: 'Would you like to proceed?', nextQuestionKey: null, planning: { ...modelProposal, proposedFacts: [] } };
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      candidateResponse: candidate,
+      response: { citationIds: [], answer: 'I could not verify that response just now.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'invalid_question', candidateGuardReason: 'invalid_question',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(ctx.input);
+    expect(reply.answer).toContain('Would you like to proceed with company formation?');
+    const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document).toMatchObject({ businessGoalKey: 'anc.company_formation', goalConfirmed: false });
+    expect(document?.goalConfirmation?.status).toBe('pending');
+    expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
   });
 
   it('cannot trigger from a fabricated model signal with no observed customer evidence', async () => {
@@ -404,7 +453,7 @@ describe('published Catalog V2 planning in the GPT-first controller', () => {
 });
 
 
-import { validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
+import { extractQuotedV2CustomerFacts, validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
 
 describe('quoted customer fact provenance (pure unit)', () => {
   it('accepts only facts supported by an exact customer quote', () => {
@@ -427,12 +476,17 @@ describe('quoted customer fact provenance (pure unit)', () => {
     ], 'I need not three visas; I run consulting, and LLC or FZE suits me, customer@example.com next week.', 'message-12345678', 4);
     expect(facts).toEqual({});
   });
+  it('extracts explicit non-sensitive visa and correction timeline values', () => {
+    const facts = extractQuotedV2CustomerFacts('I need one visa and two months, not next month.', 'message-12345678', 4);
+    expect(facts.visa_count?.maskedValue).toBe('1');
+    expect(facts.timeline?.maskedValue).toBe('two months');
+  });
 });
 
 
-const proposalTurn = async () => {
+const proposalTurn = async (fixture = 'ancfz-catalog-v2.json', configure?: (catalog: CatalogV2Document) => void) => {
   const ctx = await prepared();
-  await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+  await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug, fixture, configure);
   const message = 'I want to register a company for technology consulting';
   const user = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
   if (!user) throw new Error('UNIT_MESSAGE_MISSING');
@@ -531,6 +585,120 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect(reply.actionProposal).toBeNull();
   });
 
+  it('persists masked contact requirements and advances the V2 contact cursor', async () => {
+    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json');
+    await runGPTFirstChatTurn({
+      ...await followUpTurn(ctx, 'Yes, proceed.'),
+      coordinator: ctx.coordinator,
+    });
+    const confirmed = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    if (!confirmed) throw new Error('UNIT_INTENT_DOCUMENT_MISSING');
+    await ctx.store.updateUserIntentDocument({
+      document: { ...confirmed, pendingRequirementKey: 'lead_contact_name' },
+      expectedRevision: confirmed.revision,
+    });
+    const contactTurn = async (message: string, answer: string) => {
+      const next = await followUpTurn(ctx, message);
+      ctx.coordinator.run.mockImplementationOnce(async () => ({
+        modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+        response: { citationIds: [], answer, nextQuestion: null, nextQuestionKey: null },
+        guardReason: 'accepted',
+      }) as unknown as V2CoordinatorResult);
+      return runGPTFirstChatTurn(next);
+    };
+    await contactTurn('[NAME_1]', 'Thanks. What email address should I use?');
+    let document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document?.verifiedFacts.lead_contact_name).toMatchObject({ maskedValue: '[NAME_1]', source: 'visitor' });
+    expect(document?.pendingRequirementKey).toBe('lead_contact_channel');
+    expect((await ctx.store.getSession(ctx.session.id))?.conversationState?.slotValues.name).toBe('[NAME_1]');
+
+    await contactTurn('[EMAIL_1]', 'Thanks. Please explicitly consent to sharing your contact details.');
+    document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document?.verifiedFacts.lead_contact_channel).toMatchObject({ maskedValue: '[EMAIL_1]', source: 'visitor' });
+    expect(document?.pendingRequirementKey).toBe('lead_crm_consent');
+
+    await contactTurn('I explicitly consent to sharing my contact details for this enquiry.', 'Thanks.');
+    document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document?.verifiedFacts.lead_crm_consent).toMatchObject({ maskedValue: 'true', source: 'visitor' });
+    expect((await ctx.store.getSession(ctx.session.id))?.conversationState?.contactConsent).toBe('granted');
+    expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
+  });
+
+  it('creates a catalog-gated Lead proposal only after contact consent and an explicit submission request', async () => {
+    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json', catalog => {
+      catalog.sheets.ToolBindings.find(binding => binding.toolKey === 'lead.create')!.enabled = true;
+      catalog.sheets.WorkflowBindings.find(binding => binding.workflowKey === 'crm.lead.create')!.enabled = true;
+    });
+    await runGPTFirstChatTurn({ ...await followUpTurn(ctx, 'Yes, proceed.'), coordinator: ctx.coordinator });
+    const confirmed = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    if (!confirmed) throw new Error('UNIT_INTENT_DOCUMENT_MISSING');
+    await ctx.store.updateUserIntentDocument({
+      document: { ...confirmed, pendingRequirementKey: 'lead_contact_name' }, expectedRevision: confirmed.revision,
+    });
+    const turn = async (message: string, answer = 'Thanks.') => {
+      const next = await followUpTurn(ctx, message);
+      ctx.coordinator.run.mockImplementationOnce(async () => ({
+        modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+        response: { citationIds: [], answer, nextQuestion: null, nextQuestionKey: null }, guardReason: 'accepted',
+      }) as unknown as V2CoordinatorResult);
+      return runGPTFirstChatTurn(next);
+    };
+    await turn('[NAME_1]');
+    await turn('[EMAIL_1]');
+    await turn('I explicitly consent to sharing my contact details for this enquiry.');
+    const request = await followUpTurn(ctx, 'Please create my Lead');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'I can submit that.', nextQuestion: null, nextQuestionKey: null,
+        planning: { ...modelProposal, turnCategory: 'service_execution', nextMove: 'propose_action', proposedToolKey: 'lead.create', matchedSignalIds: ['signal.lead'], proposedFacts: [] } },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn({ ...request, coordinator: ctx.coordinator });
+    expect(reply.actionProposal).toMatchObject({ intent: 'crm.lead.create', consentRequired: false });
+    const actions = await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id);
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({ actionKey: 'lead.create', workflowKey: 'crm.lead.create', state: 'awaiting_confirmation' });
+    const persistedSession = await ctx.store.getSession(ctx.session.id);
+    if (!persistedSession || !actions[0]) throw new Error('UNIT_ACTION_STATE_MISSING');
+    await expect(evaluatePersistedV2ActionConfirmation(ctx.store, persistedSession, actions[0])).resolves.toMatchObject({ applies: true, accepted: true });
+    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.pendingRequirementKey).toBeNull();
+    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.verifiedFacts.lead_action_confirmation).toMatchObject({ maskedValue: 'true', source: 'visitor' });
+  });
+
+  it('keeps disabled Lead submission truthful and hides internal requirement keys', async () => {
+    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json');
+    await runGPTFirstChatTurn({ ...await followUpTurn(ctx, 'Yes, proceed.'), coordinator: ctx.coordinator });
+    const confirmed = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    if (!confirmed) throw new Error('UNIT_INTENT_DOCUMENT_MISSING');
+    const updated = await ctx.store.updateUserIntentDocument({
+      document: {
+        ...confirmed,
+        pendingRequirementKey: 'lead_action_confirmation',
+        verifiedFacts: {
+          ...confirmed.verifiedFacts,
+          lead_contact_name: { maskedValue: '[NAME_1]', source: 'visitor', messageSequence: 2, evidenceRefs: ['customer-message:test'], corrected: false },
+          lead_contact_channel: { maskedValue: '[EMAIL_1]', source: 'visitor', messageSequence: 2, evidenceRefs: ['customer-message:test'], corrected: false },
+          lead_crm_consent: { maskedValue: 'true', source: 'visitor', messageSequence: 2, evidenceRefs: ['customer-message:test'], corrected: false },
+        },
+      },
+      expectedRevision: confirmed.revision,
+    });
+    if (!updated) throw new Error('UNIT_INTENT_DOCUMENT_UPDATE_FAILED');
+    const current = await ctx.store.getSession(ctx.session.id);
+    if (!current) throw new Error('UNIT_SESSION_MISSING');
+    await ctx.store.updateSession({ ...current, conversationState: { ...current.conversationState!, contactConsent: 'granted', slotValues: { ...current.conversationState!.slotValues, name: '[NAME_1]', email: '[EMAIL_1]' } } });
+    const request = await followUpTurn(ctx, 'Please create my Lead');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'The server-authorized pending requirement is lead_action_confirmation.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn({ ...request, coordinator: ctx.coordinator });
+    expect(reply.answer).toContain('explicitly confirm');
+    expect(reply.answer).not.toContain('lead_action_confirmation');
+    expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
+  });
+
   it('does not commit a confirmed goal when the original customer reply was already answered', async () => {
     const ctx = await proposalTurn();
     const confirmation = await followUpTurn(ctx, 'Yes, proceed.');
@@ -558,6 +726,95 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     const valid = await followUpTurn(ctx, 'Yes, proceed.');
     await runGPTFirstChatTurn(valid);
     expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.goalConfirmed).toBe(true);
+  });
+
+  it('retains quoted requirement facts during an advisory interruption', async () => {
+    const ctx = await proposalTurn();
+    const interruption = await followUpTurn(ctx, 'I want to register a company and need one visa next month.');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'I have noted those preferences.', nextQuestion: null, nextQuestionKey: null,
+        planning: { ...modelProposal, turnCategory: 'qualification_requirement', nextMove: 'ask_more_help',
+          proposedFacts: [
+            { key: 'visa_count', maskedValue: '1', supportingQuote: 'one visa' },
+            { key: 'timeline', maskedValue: 'next month', supportingQuote: 'next month' },
+          ] } },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    await runGPTFirstChatTurn(interruption);
+    const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document?.goalConfirmation?.status).toBe('pending');
+    expect(document?.goalConfirmed).toBe(false);
+    expect(document?.verifiedFacts.visa_count?.maskedValue).toBe('1');
+    expect(document?.verifiedFacts.timeline?.maskedValue).toBe('next month');
+  });
+
+  it('keeps a quoted timeline acknowledgement when a grounded excerpt is semantically unrelated', async () => {
+    const ctx = await proposalTurn();
+    const interruption = await followUpTurn(ctx, 'I want to start next month.');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: ['approved-evidence-a'], answer: 'Discover business setup packages.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted_knowledge_excerpt',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(interruption);
+    expect(reply.answer).toContain('requested start timeline as next month');
+    expect(reply.answer).toContain('Would you like to proceed with company formation?');
+  });
+
+  it('keeps a pending-goal preference acknowledgement when a grounded excerpt is semantically unrelated', async () => {
+    const ctx = await proposalTurn();
+    const interruption = await followUpTurn(ctx, 'I prefer to speak with an adviser.');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: ['approved-evidence-a'], answer: 'No opportunity is currently bound to the requested journey state.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted_knowledge_excerpt',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(interruption);
+    expect(reply.answer).toContain('prefer to speak with an adviser');
+    expect(reply.answer).toContain('Would you like to proceed with company formation?');
+  });
+
+  it('answers pre-confirmation status questions with truthful local state', async () => {
+    const ctx = await proposalTurn();
+    const interruption = await followUpTurn(ctx, 'What is my current status without CRM?');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 1, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: ['approved-evidence-a'], answer: 'Company registration can be completed in two hours.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted_knowledge_excerpt',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(interruption);
+    expect(reply.answer).toContain('still exploratory');
+    expect(reply.answer).toContain('no Lead or CRM action has been submitted');
+    expect(reply.answer).not.toContain('registration can be completed');
+  });
+
+  it.each([
+    ['I prefer to speak to an advisor.', 'adviser'],
+    ['Please do not disclose any other customer information.', 'other customers'],
+    ['Please do not disclose any other [ID_2].', 'other customers'],
+    ['I consent to contact only for this company formation enquiry in this sandbox.', 'contact preference'],
+    ['My test email address is [EMAIL_1].', 'confirm company formation'],
+    ['My test phone number is [PHONE_1].', 'confirm company formation'],
+    ['My budget is not fixed yet.', 'budget is not fixed'],
+    ['Show only officially approved package information.', 'reliable package summary'],
+  ])('uses a truthful persona recovery for pending non-action turn: %s', async (message, expected) => {
+    const ctx = await proposalTurn();
+    const interruption = await followUpTurn(ctx, message);
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'I cannot verify that answer safely. I can continue with confirmed information.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: message.includes('package') ? 'policy_denied' : 'unsupported_claim',
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(interruption);
+    expect(reply.answer.toLocaleLowerCase('en-US')).toContain(expected);
+    expect(reply.answer).not.toContain('temporarily unavailable');
+    expect(reply.answer).not.toContain('cannot verify that answer safely');
+    if (message.includes('[EMAIL_1]') || message.includes('[PHONE_1]')) {
+      const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+      expect(document?.verifiedFacts.lead_contact_channel).toBeUndefined();
+      expect((await ctx.store.getSession(ctx.session.id))?.conversationState?.slotValues.email).toBeUndefined();
+    }
   });
 
   it('rejects stale session cursors and cross-tenant decisions', async () => {
@@ -607,7 +864,7 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect(document?.goalConfirmation).toBeNull();
   });
 
-  it('does not ask for company-formation confirmation on a knowledge-only turn', async () => {
+  it('does not let a model knowledge answer erase explicit formation initiation', async () => {
     const ctx = await prepared();
     await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
     const message = 'I want to register a company for technology consulting';
@@ -626,9 +883,10 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     }) as unknown as V2CoordinatorResult);
     const reply = await runGPTFirstChatTurn(ctx.input);
     const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
-    expect(reply.pendingPromptId).toBeNull();
+    expect(reply.answer).toContain('Would you like to proceed with company formation?');
+    expect(reply.pendingPromptId).not.toBeNull();
     expect(document?.goalConfirmed).toBe(false);
-    expect(document?.goalConfirmation).toBeNull();
+    expect(document?.goalConfirmation?.status).toBe('pending');
     expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
   });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { issueV2Scope, verifyV2Scope, V2_TOOL_NAMES } from './v2-tool-gateway.js';
 
 const secret = 'unit-scoped-tool-secret-0123456789';
@@ -33,6 +34,7 @@ import { randomUUID } from 'node:crypto';
 import { MemoryStore } from './store-memory.js';
 import { DeterministicEmbeddingProvider } from './embedding.js';
 import { createV2ToolGateway } from './v2-tool-gateway.js';
+import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './catalog-v2.js';
 
 const makeGateway = async () => {
   const store = new MemoryStore();
@@ -83,6 +85,41 @@ describe('V2 trusted tool execution (isolated unit)', () => {
         expect(output.sourceVersion).toContain(catalog.id);
       }
     }
+  });
+  it('reads V2 package offerings by canonical catalog reference', async () => {
+    const { store, tenant, persona, pinned, gateway } = await makeGateway();
+    const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
+    if (!parsed.ok || !parsed.document) throw new Error('UNIT_CATALOG_FIXTURE_INVALID');
+    parsed.document.manifest.tenantScope = tenant.slug;
+    parsed.document.sheets.CatalogManifest[0]!.tenantScope = tenant.slug;
+    const version = await store.createIntentCatalogV2Version({
+      tenantId: tenant.id, sourceFileName: 'catalog-v2.json', status: 'draft',
+      sourceHash: catalogV2Sha256(parsed.document), parserVersion: 'unit',
+      catalogVersionRef: catalogV2VersionRef(parsed.document), catalog: parsed.document,
+    });
+    await store.publishIntentCatalogV2Version(tenant.id, version.id);
+    await store.updateSession({ ...pinned, conversationState: { ...pinned.conversationState!, catalogVersionId: version.id } });
+    await store.createPackageOffering({
+      id: randomUUID(), tenantId: tenant.id, catalogVersionId: null, catalogVersionRef: version.catalogVersionRef,
+      packageKey: 'v2-sandbox-package', name: 'V2 sandbox package', eligibleEntityTypes: [], eligibleActivities: [],
+      includedVisaQuantity: 1, officeRequirement: null, inclusions: ['company registration'], priceMinor: 100,
+      currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [],
+      processingTime: 'development only', requiredDocuments: [], exclusions: [], availability: 'development_only',
+      approvalStatus: 'approved', sourceRefs: ['deterministic-mock-pricebook'], createdAt: new Date().toISOString(),
+    });
+    const scopeRef = issueV2Scope({
+      tenantId: tenant.id, sessionId: pinned.id, opportunityId: null, catalogVersionId: version.id,
+      personaVersionId: persona.id, stateRevision: (await store.getSession(pinned.id))?.stateVersion ?? 0,
+      toolAllowlist: [...V2_TOOL_NAMES],
+    }, secret);
+    const result = await gateway.execute({
+      schemaVersion: 2, toolCallId: randomUUID(), toolName: 'get_available_packages', arguments: {}, scopeRef,
+      expectedStateRevision: (await store.getSession(pinned.id))?.stateVersion ?? 0,
+      deadlineAt: new Date(Date.now() + 15_000).toISOString(),
+    });
+    expect(result.status).toBe('ok');
+    expect(result.sourceVersion).toBe(version.catalogVersionRef);
+    expect((result.result?.packages as Array<{ key: string }>).map((item) => item.key)).toEqual(['v2-sandbox-package']);
   });
   it('rechecks live session revision before returning cached tool results', async () => {
     const { store, pinned, gateway, request } = await makeGateway();
@@ -140,15 +177,12 @@ describe('V2 trusted tool execution (isolated unit)', () => {
 });
 
 
-import { readFileSync } from 'node:fs';
-import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2, type CatalogV2Document } from './catalog-v2.js';
-
 describe('V2 catalog publication exposed through trusted read tool', () => {
   it('returns the canonical published V2 version and active business goals', async () => {
     const { store, tenant, gateway, request } = await makeGateway();
     const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
     if (!parsed.ok || !parsed.document) throw new Error('UNIT_CATALOG_FIXTURE_INVALID');
-    const catalog: CatalogV2Document = parsed.document;
+    const catalog = parsed.document;
     catalog.manifest.tenantScope = tenant.slug;
     catalog.sheets.CatalogManifest[0]!.tenantScope = tenant.slug;
     const version = await store.createIntentCatalogV2Version({

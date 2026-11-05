@@ -264,7 +264,15 @@
         "language": "en",
         "weight": 80,
         "minWeight": 55,
-        "maxWeight": 100
+        "maxWeight": 100,
+        "aliases": [
+          "register my business",
+          "get a company license",
+          "get a trade license",
+          "open my company",
+          "start my business",
+          "establish a business"
+        ]
       },
       {
         "signalId": "signal.company.setup",
@@ -274,7 +282,20 @@
         "language": "en",
         "weight": 80,
         "minWeight": 55,
-        "maxWeight": 100
+        "maxWeight": 100,
+        "aliases": [
+          "start a company",
+          "start a business",
+          "start company formation",
+          "help me set up my company",
+          "set up my business",
+          "open a company",
+            "open a consultancy",
+            "establish a company",
+            "set up a business",
+            "planning to start a business",
+            "thinking of setting up a business"
+        ]
       },
       {
         "signalId": "signal.company.formation",
@@ -284,7 +305,15 @@
         "language": "en",
         "weight": 80,
         "minWeight": 55,
-        "maxWeight": 100
+        "maxWeight": 100,
+        "aliases": [
+          "company registration",
+          "company setup",
+          "incorporate a business",
+          "opening a business",
+          "company license",
+          "trade license"
+        ]
       },
       {
         "signalId": "signal.knowledge.option",

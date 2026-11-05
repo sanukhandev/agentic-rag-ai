@@ -647,6 +647,7 @@ export interface PackageOffering {
   id: string;
   tenantId: string;
   catalogVersionId: string | null;
+  catalogVersionRef?: string | null;
   packageKey: string;
   name: string;
   eligibleEntityTypes: string[];
@@ -799,6 +800,21 @@ export interface AuditEvent {
   createdAt: string;
 }
 
+export interface V2OtpChallengeRecord {
+  challengeId: string;
+  tenantId: string;
+  sessionId: string;
+  opportunityId: string;
+  leadId: string;
+  expiresAt: string;
+  attemptsRemaining: number;
+  deliveryStatus: 'accepted';
+  codeDigestHex: string;
+  used: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type IntentFactSource = 'visitor' | 'catalog' | 'node' | 'provider';
 
 export interface UserIntentFact {
@@ -908,6 +924,9 @@ export interface Store {
   createUser(input: { email: string; passwordHash: string; role: Role; tenantId: string | null }): Promise<User>;
   getUserByEmail(email: string): Promise<User | null>;
   getUser(id: string): Promise<User | null>;
+  createV2OtpChallenge(challenge: V2OtpChallengeRecord): Promise<V2OtpChallengeRecord>;
+  getV2OtpChallenge(tenantId: string, challengeId: string): Promise<V2OtpChallengeRecord | null>;
+  updateV2OtpChallenge(challenge: V2OtpChallengeRecord): Promise<V2OtpChallengeRecord>;
   updateUserRole(userId: string, tenantId: string, role: Exclude<Role, 'platform_admin' | 'tenant_admin'>): Promise<User | null>;
   createAuthSession(session: AuthSession): Promise<AuthSession>;
   getAuthSession(tokenHash: string): Promise<AuthSession | null>;
@@ -1015,7 +1034,7 @@ export interface Store {
   renewDocumentProcessingJob(id: string, tenantId: string, leaseMs: number): Promise<DocumentProcessingJob | null>;
   updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
   linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void>;
-  listPackageOfferings(tenantId: string, input?: { catalogVersionId?: string | null; activity?: string; entityType?: string }): Promise<PackageOffering[]>;
+  listPackageOfferings(tenantId: string, input?: { catalogVersionId?: string | null; catalogVersionRef?: string | null; activity?: string; entityType?: string }): Promise<PackageOffering[]>;
   getPackageOffering(id: string, tenantId: string): Promise<PackageOffering | null>;
   createPackageOffering(offering: PackageOffering): Promise<PackageOffering>;
   createPackageSelection(selection: PackageSelection): Promise<PackageSelection>;

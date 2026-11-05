@@ -2,6 +2,7 @@ import { createClient } from 'redis';
 import { randomUUID } from 'node:crypto';
 import type { ActionExecution, Store, OutboxEvent } from './types.js';
 import { eventFields, eventFromFields } from './events.js';
+import { resolveV2WorkflowRoute } from './v2-workflow-bridge.js';
 
 export interface StreamMessage {
   id: string;
@@ -188,9 +189,14 @@ export class N8nEventBridge {
     const action = await this.store.getAction(event.actionId);
     if (!action || action.tenantId !== event.tenantId || !['approved', 'processing'].includes(action.state)) return null;
     if (!action.catalogVersionId) return { workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? 'lead-capture' };
+    const v2Version = (await this.store.listIntentCatalogV2Versions(action.tenantId)).find(candidate => candidate.status === 'published' && candidate.catalogVersionRef === action.catalogVersionId);
+    const v2Route = v2Version ? resolveV2WorkflowRoute(v2Version, action.workflowKey) : null;
+    if (v2Version) return v2Route ? { workflowKey: v2Route.workflowKey, webhookPath: v2Route.webhookPath, n8nWorkflowId: v2Route.n8nWorkflowId, payloadContract: v2Route.payloadContract } : null;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(action.catalogVersionId)) return null;
     const version = await this.store.getIntentCatalogVersion(action.tenantId, action.catalogVersionId);
     const binding = version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === action.workflowKey && candidate.active);
-    return binding ? { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, n8nWorkflowId: binding.n8nWorkflowId, payloadContract: binding.payloadContract } : null;
+    if (binding) return { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, n8nWorkflowId: binding.n8nWorkflowId, payloadContract: binding.payloadContract };
+    return null;
   }
 
   private async documentRoute(event: OutboxEvent): Promise<{ workflowKey: string; webhookPath: string; n8nWorkflowId?: string; payloadContract?: string } | null> {

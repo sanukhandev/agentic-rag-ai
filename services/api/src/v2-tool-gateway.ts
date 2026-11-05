@@ -255,11 +255,11 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         const document = await store.getUserIntentDocument(scope.tenantId, scope.sessionId);
         const pending = document?.pendingRequirementKey ?? state?.pendingPrompt?.requirementKey ?? entry?.currentRequirementKey ?? null;
         return resultWithToolEvidence(request, { intentKey, requirement: pending ? { key: pending, type: 'pending', promptKey: null, documentType: null } : null }, request.toolName as V2ToolName, stateSourceVersion,
-          [pending ? `The server-authorized pending requirement is ${pending}.` : 'No server-authorized requirement is currently pending.']);
+          [pending ? 'A server-authorized requirement is currently pending.' : 'No server-authorized requirement is currently pending.']);
       }
       const requirement = catalogNextJourneyRequirement(legacyCatalog, intentKey, values, completed) ?? catalogNextFollowUpRequirement(legacyCatalog, intentKey, values, completed);
       return resultWithToolEvidence(request, { intentKey, requirement: requirement ? { key: requirement.requirementKey, type: requirement.requirementType, promptKey: requirement.promptKey, documentType: requirement.documentType ?? null } : null }, request.toolName as V2ToolName, stateSourceVersion, [
-        requirement ? `The next server-authorized requirement is ${requirement.requirementKey}.` : 'No server-authorized requirement is currently pending.',
+        requirement ? 'A server-authorized requirement is ready to collect.' : 'No server-authorized requirement is currently pending.',
       ]);
     }
     case 'search_knowledge': {
@@ -273,7 +273,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       const evidenceRefs = approved.map(item => item.citation.chunkId);
       const sourceVersions = [...new Set(approved.map((item) => item.citation.versionId))];
       // A mixed-version retrieval has per-citation provenance, not a single source version.
-      return result(request, 'ok', { grounded: approved.length > 0, evidence: approved.map(toV2KnowledgeEvidence) }, sourceVersions.length === 1 ? sourceVersions[0]! : null, evidenceRefs);
+      return result(request, 'ok', { grounded: approved.length > 0, evidence: approved.map(item => toV2KnowledgeEvidence(item, normalizedQuery)) }, sourceVersions.length === 1 ? sourceVersions[0]! : null, evidenceRefs);
     }
     case 'get_journey_state': {
       const lifecycle = entry?.lifecycle ?? null;
@@ -298,10 +298,10 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       if (v2Catalog) {
         const approvedGoalKeys = new Set(v2Catalog.catalog.sheets.BusinessGoals
           .filter(goal => goal.active).map(goal => goal.businessGoalKey));
-        const all = await store.listPackageOfferings(scope.tenantId, { catalogVersionId: v2Catalog.id });
+        const all = await store.listPackageOfferings(scope.tenantId, { catalogVersionRef: v2Catalog.catalogVersionRef });
         const now = Date.now();
         const approved = all.filter(offering => offering.tenantId === scope.tenantId
-          && offering.catalogVersionId === v2Catalog.id && offering.approvalStatus === 'approved'
+          && offering.catalogVersionRef === v2Catalog.catalogVersionRef && offering.approvalStatus === 'approved'
           && (!offering.pricingEffectiveFrom || Date.parse(offering.pricingEffectiveFrom) <= now)
           && (!offering.pricingEffectiveTo || Date.parse(offering.pricingEffectiveTo) > now));
         const selected = approved.slice(0, 20);

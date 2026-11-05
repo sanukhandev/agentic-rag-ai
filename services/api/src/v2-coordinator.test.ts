@@ -651,6 +651,44 @@ describe('V2ConversationCoordinator', () => {
     expect(output.claimProvenance[0]).toMatchObject({ citationIds: ['search-source'], sourceVersions: ['version-12345678'], sourceRefs: ['source-12345678'] });
   });
 
+  it('keeps prefetched evidence when a trusted tool returns a different text projection', async () => {
+    const prefetched = { citationId: 'search-source', text: 'The approved package costs 42 credits.', sourceVersion: 'version-12345678', approved: true, revoked: false, sourceRef: 'source-12345678' };
+    const output = await new V2ConversationCoordinator({
+      turn: async () => result(prefetched.text, {
+        response: { ...result(prefetched.text).response, citationIds: [prefetched.citationId] },
+        approvedEvidence: [{ ...prefetched, text: 'Package pricing is projected for this query.' }],
+        toolTrace: [{ toolCallId: 'call-12345678', toolName: 'search_knowledge', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: [prefetched.citationId] }],
+      }),
+    }).run({ envelope: envelope(), evidence: [prefetched], fallbackTemplates, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted');
+    expect(output.approvedEvidence).toEqual([prefetched]);
+  });
+
+  it('repairs a rejected answer from evidence returned by a successful search tool', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'How does the company formation process work?';
+    request.budgets = { ...request.budgets, maxModelRequests: 4, deadlineAt: new Date(Date.now() + 60_000).toISOString() };
+    const source = { citationId: 'tool-source-12345678', sourceRef: 'source-12345678', sourceVersion: 'version-12345678', text: 'Choose your business activity and submit the required documents.' };
+    const calls: TurnEnvelopeV2[] = [];
+    const agent = { turn: async (turn: TurnEnvelopeV2) => {
+      calls.push(turn);
+      if (calls.length === 1) return result('The setup costs AED 999.', {
+        response: { ...result('The setup costs AED 999.').response, citationIds: [source.citationId] },
+        approvedEvidence: [{ ...source, approved: true, revoked: false }],
+        toolTrace: [{ toolCallId: 'search-call-12345678', toolName: 'search_knowledge', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: [source.citationId] }],
+      });
+      expect(turn.toolAllowlist).toEqual([]);
+      expect(turn.approvedKnowledge).toEqual([source]);
+      return result(source.text, { response: { ...result(source.text).response, citationIds: [source.citationId] } });
+    } };
+    const output = await new V2ConversationCoordinator(agent).run({ envelope: request, fallbackTemplates, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted_knowledge_repair');
+    expect(output.response.answer).toBe(source.text);
+    expect(output.response.citationIds).toEqual([source.citationId]);
+    expect(output.knowledgeRepairStatus).toBe('accepted');
+    expect(calls).toHaveLength(2);
+  });
+
   it('accepts evidence correlated to a successful authoritative state tool trace', async () => {
     const coordinator = new V2ConversationCoordinator({
       turn: async () => result('The Account request is awaiting verified provider evidence.', {
@@ -677,6 +715,23 @@ describe('V2ConversationCoordinator', () => {
     const output = await coordinator.run({ envelope: request, questionPolicy: 'required' });
     expect(output.guardReason).toBe('accepted_model_dialogue');
     expect(output.response.answer).toBe(answer);
+  });
+
+  it('preserves a verified customer fact when the model cites an unavailable source', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'My business is technology consulting.';
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true,
+      currentStageKey: 'lead_generation', pendingRequirementKey: null,
+      confirmedCustomerFacts: { business_activity: 'technology consulting' } };
+    const candidate = result('I have noted that. What would you like to discuss next?', {
+      response: { ...result('I have noted that. What would you like to discuss next?').response, citationIds: ['missing-source-12345678'] },
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate })
+      .run({ envelope: request, fallbackTemplates, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('safe_no_evidence_dialogue');
+    expect(output.candidateGuardReason).toBe('invalid_citation');
+    expect(output.response.answer).toContain('technology consulting');
+    expect(output.response.answer).not.toContain('cannot verify');
   });
 
   it('accepts an exact, cited customer-stated fact only from Node verified context', async () => {
@@ -792,5 +847,41 @@ describe('V2ConversationCoordinator', () => {
     const output = await coordinator.run({ envelope: envelope(), fallbackTemplates, questionPolicy: 'optional' });
     expect(output.response.answer).toBe(fallbackTemplates.templates.invalid_model);
     expect(output.guardReason).toBe('invalid_citation');
+  });
+
+  it('returns one authorized source excerpt when paraphrase repair fails', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'Tell me about company formation';
+    request.approvedKnowledge = [{ citationId: 'formation-chunk-12345678', sourceRef: 'formation-source-12345678', sourceVersion: 'version-12345678', text: 'Company formation requires an application form and proof of residence.' }];
+    const output = await new V2ConversationCoordinator({ turn: async () => result('Formation is guaranteed in one day.', {
+      response: { ...result('Formation is guaranteed in one day.').response, citationIds: ['formation-chunk-12345678'] },
+    }) }).run({ envelope: request, evidence: [{ ...request.approvedKnowledge[0]!, approved: true, revoked: false }], fallbackTemplates, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toBe('Company formation requires an application form and proof of residence.');
+    expect(output.response.citationIds).toEqual(['formation-chunk-12345678']);
+  });
+
+  it('recovers a source-close process statement after a polarity rejection', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'Tell me about company formation';
+    const processText = 'Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order.';
+    request.approvedKnowledge = [{ citationId: 'process-chunk-12345678', sourceRef: 'formation-source-12345678', sourceVersion: 'version-12345678', text: processText }];
+    const output = await new V2ConversationCoordinator({ turn: async () => result('Company registration is complete.', {
+      response: { ...result('Company registration is complete.').response, citationIds: ['process-chunk-12345678'] },
+    }) }).run({ envelope: request, evidence: [{ ...request.approvedKnowledge[0]!, approved: true, revoked: false }], fallbackTemplates, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toBe(processText);
+  });
+
+  it('does not return a source question as the answer during excerpt recovery', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'Tell me about company formation';
+    request.approvedKnowledge = [{ citationId: 'formation-chunk-12345678', sourceRef: 'formation-source-12345678', sourceVersion: 'version-12345678', text: 'What documents are required for company registration? Company formation requires an application form and proof of residence.' }];
+    const output = await new V2ConversationCoordinator({ turn: async () => result('Formation is guaranteed in one day.', {
+      response: { ...result('Formation is guaranteed in one day.').response, citationIds: ['formation-chunk-12345678'] },
+    }) }).run({ envelope: request, evidence: [{ ...request.approvedKnowledge[0]!, approved: true, revoked: false }], fallbackTemplates, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toBe('Company formation requires an application form and proof of residence.');
+    expect(output.response.answer).not.toMatch(/\?$/u);
   });
 });

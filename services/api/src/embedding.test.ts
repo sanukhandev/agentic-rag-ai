@@ -34,6 +34,16 @@ describe('Azure embedding adapter', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     fetchMock.mockRestore();
   });
+
+  it('retries a transient provider failure before surfacing an embedding error', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 503, headers: { 'retry-after': '0' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), { status: 200 }));
+    const provider = new AzureEmbeddingProvider('https://foundry.example', 'embed-v1', 'server-key', '2026-01-01', 2);
+    await expect(provider.embed('transient failure')).resolves.toEqual([0.1, 0.2]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    fetchMock.mockRestore();
+  });
 });
 
 describe('deterministic embedding adapter', () => {

@@ -1,0 +1,112 @@
+{
+  "started_at": "2026-11-05T04:17:16.177399+00:00",
+  "tenant": "anc",
+  "scenarios_requested": 1,
+  "scenarios_executed": 1,
+  "customer_turns": 5,
+  "conversation_gate": "FAIL",
+  "external_crm_invoice_document_signing": "NOT_VERIFIED_BY_THIS_HARNESS",
+  "runs": [
+    {
+      "session_id": "5e960fac-914e-4465-9233-9fb57a1d199a",
+      "turns_sent": 5,
+      "all_http_answers": false,
+      "history_http_status": 200,
+      "durable_unique_user_messages": 5,
+      "history_has_25_turns": false,
+      "turn_checks": [
+        {
+          "turn": 1,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "I can help with company formation. Would you like to proceed with company formation?",
+          "answer_digest": "131a9a60e46e8552",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 2,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "Thanks, I\u2019ve updated your business activity as fashion boutique. Would you like to proceed with company formation?",
+          "answer_digest": "fee465ff48b231e8",
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 3,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "Discover business setup packages at Ajman NuVentures Centre Free Zone, with flexible options designed to support your company setup journey.",
+          "answer_digest": "e749b31968658b64",
+          "grounded": true,
+          "citations": [
+            {
+              "sourceId": "14879b1c-d20f-45cc-9921-49e2773d00ea",
+              "versionId": "bf08803f-a2a0-4dc3-acb3-96156fdf9b9f",
+              "chunkId": "5a6bf5ab-12f9-441f-8fc8-c6fdbb047ae6",
+              "title": "ANCFZ_Descriptive_RAG_Packages_and_Offers.docx",
+              "locator": "5a6bf5ab-12f9-441f-8fc8-c6fdbb047ae6"
+            }
+          ],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 4,
+          "status": 200,
+          "answer_present": true,
+          "answer_redacted": "From AED 4,888 per year The package covers the business license, listed registration documents and a bank letter to support the bank account opening process.",
+          "answer_digest": "325a73ca2e8afddc",
+          "grounded": true,
+          "citations": [
+            {
+              "sourceId": "9fb2ecaa-bd4c-4c06-9e7b-fc8046c83f29",
+              "versionId": "123a7fa3-d195-4fd7-96bf-e769113e9fa5",
+              "chunkId": "167b344c-50e0-4b6a-b8fc-11392232900b",
+              "title": "ANCFZ_Descriptive_RAG_License_Cost_2026.docx",
+              "locator": "167b344c-50e0-4b6a-b8fc-11392232900b"
+            }
+          ],
+          "action_proposal_present": false,
+          "pending_intent_key": "anc.company_formation",
+          "pending_requirement_key": null,
+          "error_code": null,
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        },
+        {
+          "turn": 5,
+          "status": 503,
+          "answer_present": false,
+          "answer_redacted": null,
+          "answer_digest": null,
+          "grounded": false,
+          "citations": [],
+          "action_proposal_present": false,
+          "pending_intent_key": null,
+          "pending_requirement_key": null,
+          "error_code": "V2_KNOWLEDGE_RETRIEVAL_UNAVAILABLE",
+          "conversation_phase": null,
+          "catalog_requirement_key": null
+        }
+      ]
+    }
+  ]
+}

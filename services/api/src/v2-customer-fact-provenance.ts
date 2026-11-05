@@ -10,6 +10,8 @@ const numberWords: Record<string, string> = {
   zero: '0', one: '1', two: '2', three: '3', four: '4',
   five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10',
 };
+const negatedBefore = (message: string, start: number): boolean =>
+  /\b(?:not|never|without|don't|do not)\s+(?:[\w-]+\s+){0,3}$/iu.test(message.slice(Math.max(0, start - 36), start));
 const validQuote = (fact: ProposedFact, customerMessage: string): boolean => {
   const quote = normalize(fact.supportingQuote);
   const value = normalize(fact.maskedValue);
@@ -59,4 +61,22 @@ export const validateQuotedV2CustomerFacts = (
     };
   }
   return facts;
+};
+
+/** Recover explicit, non-sensitive requirement values when the model omits a fact proposal. */
+export const extractQuotedV2CustomerFacts = (
+  customerMessage: string,
+  messageId: string,
+  messageSequence: number,
+): Record<string, UserIntentFact> => {
+  const proposals: ProposedFact[] = [];
+  const visa = customerMessage.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten|\d{1,2})\s+visas?\b/iu);
+  if (visa && !negatedBefore(customerMessage, visa.index ?? 0)) {
+    const word = visa[1]!.toLocaleLowerCase('en-US');
+    proposals.push({ key: 'visa_count', maskedValue: numberWords[word] ?? word, supportingQuote: visa[0] });
+  }
+  const timelinePattern = /\b(?:next|this|within)\s*[- ]\s*(?:month|months|week|weeks)\b|\b(?:one|two|three|four|five|six|seven|eight|nine|ten)\s+months?\b|\b(?:asap|immediately|urgent)\b/giu;
+  const timeline = [...customerMessage.matchAll(timelinePattern)].find(match => !negatedBefore(customerMessage, match.index ?? 0));
+  if (timeline) proposals.push({ key: 'timeline', maskedValue: timeline[0]!, supportingQuote: timeline[0]! });
+  return validateQuotedV2CustomerFacts(proposals, customerMessage, messageId, messageSequence);
 };

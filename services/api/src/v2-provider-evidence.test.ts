@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deriveV2ProviderEvidenceStatus, validateV2VerifiedProviderCompletion, v2StageCompletionEligible } from './v2-provider-evidence.js';
-import { validateV2ProviderCorrelation } from './v2-provider-correlation.js';
+import { validateV2ProviderCorrelation, v2CatalogVersionRefSchema } from './v2-provider-correlation.js';
 import type { ActionRequest } from './types.js';
 
 const action: ActionRequest = {
@@ -10,6 +10,10 @@ const action: ActionRequest = {
 const correlation = { tenantId: action.tenantId, idempotencyKey: action.idempotencyKey, sessionId: action.sessionId, opportunityId: action.opportunityId!, catalogVersionId: action.catalogVersionId!, actionKey: action.actionKey!, actionRevision: action.actionRevision! };
 
 describe('v2 provider evidence and callback correlation', () => {
+  it('accepts the canonical published Catalog V2 reference used by actions', () => {
+    expect(v2CatalogVersionRefSchema.parse('anc:r2:' + 'a'.repeat(64))).toBe('anc:r2:' + 'a'.repeat(64));
+  });
+
   it('requires every trusted identity component for v2 callbacks', () => {
     expect(validateV2ProviderCorrelation(action, correlation)).toBeNull();
     const reasons: Record<keyof typeof correlation, string> = { tenantId: 'tenant_mismatch', idempotencyKey: 'idempotency_mismatch', sessionId: 'session_mismatch', opportunityId: 'opportunity_mismatch', catalogVersionId: 'catalog_revision_mismatch', actionKey: 'action_identity_mismatch', actionRevision: 'action_revision_mismatch' };

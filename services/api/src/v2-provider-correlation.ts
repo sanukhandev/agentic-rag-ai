@@ -2,11 +2,12 @@ import { z } from 'zod';
 import type { ActionRequest } from './types.js';
 
 const actionKey = z.string().trim().regex(/^[a-z][a-z0-9._-]{1,79}$/u);
+export const v2CatalogVersionRefSchema = z.string().trim().min(8).max(240);
 export const v2ProviderCorrelationSchema = z.object({
   idempotencyKey: z.string().trim().min(1).max(200),
   sessionId: z.string().guid(),
   opportunityId: z.string().guid(),
-  catalogVersionId: z.string().trim().min(8).max(240),
+  catalogVersionId: v2CatalogVersionRefSchema,
   actionKey,
   actionRevision: z.number().int().positive(),
 }).strict();

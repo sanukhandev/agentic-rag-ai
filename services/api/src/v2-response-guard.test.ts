@@ -118,6 +118,14 @@ describe('guardV2Response', () => {
     expect(result.verdict.reasonCode).toBe('persona_mismatch');
   });
 
+  it('rejects internal requirement keys in customer-visible dialogue', () => {
+    const result = guardV2Response(response({
+      answer: 'The server-authorized pending requirement is lead_action_confirmation.',
+    }), context({ conversational: false }));
+    expect(result.verdict.reasonCode).toBe('metadata_leak');
+    expect(result.response.answer).not.toContain('lead_action_confirmation');
+  });
+
   it('blocks a repeated or irrelevant question', () => {
     const result = guardV2Response(response({ answer: 'What is your activity?', nextQuestion: 'What is your activity?', nextQuestionKey: 'other_requirement', reasonNoQuestion: null }), context({ pendingRequirementKey: 'business_activity', lastQuestionKey: 'other_requirement', questionPolicy: 'required' }));
     expect(result.verdict.reasonCode).toBe('invalid_question');
@@ -146,6 +154,25 @@ describe('guardV2Response', () => {
   it('allows a pending requirement only when the question is the approved next question', () => {
     const result = guardV2Response(response({ answer: 'I can help with that. What is your activity?', nextQuestion: 'What is your activity?', nextQuestionKey: 'business_activity', reasonNoQuestion: null }), context({ pendingRequirementKey: 'business_activity', questionPolicy: 'required' }));
     expect(result.verdict.accepted).toBe(true);
+  });
+
+  it('keeps a grounded answer when optional question metadata is malformed', () => {
+    const answer = 'The approved package costs AED 42. What would you like to review next?';
+    const result = guardV2Response(response({
+      answer,
+      citationIds: ['package-source-12345678'],
+      nextQuestion: 'What would you like to review next?',
+      nextQuestionKey: null,
+      reasonNoQuestion: null,
+    }), context({
+      questionPolicy: 'optional',
+      evidence: [{ citationId: 'package-source-12345678', text: 'The approved package costs AED 42.', sourceVersion: 'catalog-12345678', approved: true, revoked: false, sourceRef: 'source-12345678' }],
+    }));
+    expect(result.verdict.accepted).toBe(true);
+    expect(result.response.answer).toBe('The approved package costs AED 42.');
+    expect(result.response.nextQuestion).toBeNull();
+    expect(result.response.nextQuestionKey).toBeNull();
+    expect(result.feedback?.reasonCode).toBe('invalid_question');
   });
 
   it('delivers every approved outage fallback family through the same guard', () => {

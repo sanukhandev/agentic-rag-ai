@@ -35,6 +35,30 @@ describe('V2 knowledge preflight', () => {
     const result = toV2KnowledgeEvidence(original);
     expect(result).toEqual({citationId:'chunk-12345678',sourceRef:'source-12345678',sourceVersion:'version-12345678',text:original.content,approved:true,revoked:false});
   });
+  it('keeps the process clause and removes an incidental document caveat for a process question', () => {
+    const original = {
+      citation: {sourceId:'source-12345678',versionId:'version-12345678',chunkId:'chunk-12345678',title:'ANCFZ setup guide',locator:'section 1'},
+      content:'Company registration can be completed in as little as 2 hours, provided documents are in order. Note: Additional documents may be required depending on shareholder type.',
+    };
+    expect(toV2KnowledgeEvidence(original, 'Company formation: How does it work? process steps').text)
+      .toBe('Company registration can be completed in as little as 2 hours, provided documents are in order.');
+    expect(toV2KnowledgeEvidence({ ...original, content: '8. What documents are required for company registration?' }, 'Tell me about company formation').text)
+      .toBe('');
+  });
+  it('drops mixed chunks when every retained sentence is document-only', () => {
+    const evidence = toV2KnowledgeEvidence({
+      citation: { sourceId: 'source', versionId: 'version', chunkId: 'document-list', title: 'documents', locator: 'section 1' },
+      content: 'Proof of residence (e.g., utility bill or tenancy contract)\n\nApplication form and proposed company name(s)',
+    }, 'Tell me about company formation');
+    expect(evidence.text).toBe('');
+  });
+  it('drops incidental notes and capital requirements from a broad process question', () => {
+    const evidence = toV2KnowledgeEvidence({
+      citation: { sourceId: 'source', versionId: 'version', chunkId: 'mixed', title: 'faq', locator: 'section 1' },
+      content: 'ANCFZ has no minimum paid-up capital requirement for most business activities.\n\nCompany registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order.\n\nNote: Additional documents may be required depending on the activity and shareholder type.',
+    }, 'Tell me about company formation');
+    expect(evidence.text).toBe('Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order.');
+  });
   it('retrieves an approved public source and excludes revoked or cross-tenant material', async () => {
     const provider = new DeterministicEmbeddingProvider();
     const source: Source = {

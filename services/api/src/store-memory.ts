@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, FoundryConversationBinding, IngestionJob, IntentCatalogV2Version, IntentCatalogVersion, IntentTurnAssessment, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, UserIntentDocument, WorkflowActionClaim } from './types.js';
+import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, FoundryConversationBinding, IngestionJob, IntentCatalogV2Version, IntentCatalogVersion, IntentTurnAssessment, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, UserIntentDocument, V2OtpChallengeRecord, WorkflowActionClaim } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
 import { HttpError } from './http/errors.js';
 import { isWorkflowClaimableBinding } from './intent-catalog.js';
+import { resolveV2WorkflowRoute } from './v2-workflow-bridge.js';
 import { assertSafeIntentTurn, assertSafeUserIntentDocument } from './user-intent-document.js';
 
 const now = (): string => new Date().toISOString();
@@ -17,6 +18,7 @@ export class MemoryStore implements Store {
   private readonly users = new Map<string, User>();
   private readonly domains = new Map<string, TenantDomain>();
   private readonly authSessions = new Map<string, AuthSession>();
+  private readonly v2OtpChallenges = new Map<string, V2OtpChallengeRecord>();
   private readonly callbackNonces = new Map<string, string>();
   private readonly channelCredentials = new Map<string, ChannelCredential>();
   private readonly personas = new Map<string, Persona>();
@@ -102,6 +104,9 @@ export class MemoryStore implements Store {
 
   async getUserByEmail(email: string): Promise<User | null> { return [...this.users.values()].find((user) => user.email === email.toLowerCase()) ?? null; }
   async getUser(id: string): Promise<User | null> { return this.users.get(id) ?? null; }
+  async createV2OtpChallenge(challenge: V2OtpChallengeRecord): Promise<V2OtpChallengeRecord> { if (this.v2OtpChallenges.has(challenge.challengeId)) throw new HttpError(409, 'V2_OTP_CHALLENGE_EXISTS', 'The OTP challenge already exists.'); this.v2OtpChallenges.set(challenge.challengeId, structuredClone(challenge)); return structuredClone(challenge); }
+  async getV2OtpChallenge(tenantId: string, challengeId: string): Promise<V2OtpChallengeRecord | null> { const challenge = this.v2OtpChallenges.get(challengeId); return challenge?.tenantId === tenantId ? structuredClone(challenge) : null; }
+  async updateV2OtpChallenge(challenge: V2OtpChallengeRecord): Promise<V2OtpChallengeRecord> { const current = this.v2OtpChallenges.get(challenge.challengeId); if (!current || current.tenantId !== challenge.tenantId) throw new HttpError(404, 'V2_OTP_CHALLENGE_NOT_FOUND', 'The OTP challenge was not found.'); this.v2OtpChallenges.set(challenge.challengeId, structuredClone(challenge)); return structuredClone(challenge); }
   async createAuthSession(session: AuthSession): Promise<AuthSession> { this.authSessions.set(session.tokenHash, session); return session; }
   async getAuthSession(tokenHash: string): Promise<AuthSession | null> { return this.authSessions.get(tokenHash) ?? null; }
   async revokeAuthSession(tokenHash: string): Promise<void> { const session = this.authSessions.get(tokenHash); if (session) this.authSessions.set(tokenHash, { ...session, revokedAt: now() }); }
@@ -529,7 +534,10 @@ export class MemoryStore implements Store {
       if (!['approved', 'processing'].includes(action.state) || (input.workflowKey && action.workflowKey !== input.workflowKey)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the active workflow action.');
       const version = action.catalogVersionId ? this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId) : null;
       const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-      if (!binding?.active || !isWorkflowClaimableBinding(binding) || binding.n8nWorkflowId !== input.n8nWorkflowId) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the published workflow binding.');
+      const v2Version = action.catalogVersionId ? this.intentCatalogV2Versions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId) : null;
+      const v2Route = v2Version ? resolveV2WorkflowRoute(v2Version, action.workflowKey) : null;
+      const claimable = binding ? binding.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId : Boolean(v2Route?.n8nWorkflowId === input.n8nWorkflowId);
+      if (!claimable) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the published workflow binding.');
       const execution = [...this.actionExecutions.values()].find((item) => item.actionId === action.id && item.tenantId === action.tenantId && item.idempotencyKey === action.idempotencyKey);
       if (!execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.attempt || ['completed', 'failed', 'reconcile_required'].includes(execution.providerStatus)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the durable workflow execution.');
       if (execution.n8nExecutionRef) {
@@ -549,7 +557,10 @@ export class MemoryStore implements Store {
         if (!action.catalogVersionId || [...this.actionExecutions.values()].some((execution) => execution.actionId === action.id && execution.tenantId === action.tenantId)) return false;
         const version = this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId);
         const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId);
+        const v2Version = this.intentCatalogV2Versions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId);
+        const v2Route = v2Version ? resolveV2WorkflowRoute(v2Version, action.workflowKey) : null;
+        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId)
+          || Boolean(v2Route?.n8nWorkflowId === input.n8nWorkflowId);
       })
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
       .slice(0, input.limit);
@@ -581,7 +592,10 @@ export class MemoryStore implements Store {
         if (!action.catalogVersionId) return false;
         const version = this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId);
         const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === n8nWorkflowId);
+        const v2Version = this.intentCatalogV2Versions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId);
+        const v2Route = v2Version ? resolveV2WorkflowRoute(v2Version, action.workflowKey) : null;
+        return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === n8nWorkflowId)
+          || Boolean(v2Route?.n8nWorkflowId === n8nWorkflowId);
       })
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
     const claimed: ActionRequest[] = [];
@@ -689,8 +703,8 @@ export class MemoryStore implements Store {
   }
   async updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob> { this.documentJobs.set(job.id, job); return job; }
   async linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void> { for (const document of await this.listSupportingDocuments(tenantId, sessionId)) this.supportingDocuments.set(document.id, { ...document, leadId, updatedAt: now() }); }
-  async listPackageOfferings(tenantId: string, input: { catalogVersionId?: string | null; activity?: string; entityType?: string } = {}): Promise<PackageOffering[]> {
-    return [...this.packageOfferings.values()].filter((offering) => offering.tenantId === tenantId && offering.approvalStatus === 'approved' && (input.catalogVersionId === undefined || offering.catalogVersionId === input.catalogVersionId) && (!input.activity || offering.eligibleActivities.length === 0 || offering.eligibleActivities.some((value) => input.activity?.toLocaleLowerCase('en-US').includes(value.toLocaleLowerCase('en-US')))) && (!input.entityType || offering.eligibleEntityTypes.length === 0 || offering.eligibleEntityTypes.includes(input.entityType))).sort((left, right) => left.packageKey.localeCompare(right.packageKey));
+  async listPackageOfferings(tenantId: string, input: { catalogVersionId?: string | null; catalogVersionRef?: string | null; activity?: string; entityType?: string } = {}): Promise<PackageOffering[]> {
+    return [...this.packageOfferings.values()].filter((offering) => offering.tenantId === tenantId && offering.approvalStatus === 'approved' && (input.catalogVersionId === undefined && input.catalogVersionRef === undefined || input.catalogVersionId !== undefined && offering.catalogVersionId === input.catalogVersionId || input.catalogVersionRef !== undefined && offering.catalogVersionRef === input.catalogVersionRef) && (!input.activity || offering.eligibleActivities.length === 0 || offering.eligibleActivities.some((value) => input.activity?.toLocaleLowerCase('en-US').includes(value.toLocaleLowerCase('en-US')))) && (!input.entityType || offering.eligibleEntityTypes.length === 0 || offering.eligibleEntityTypes.includes(input.entityType))).sort((left, right) => left.packageKey.localeCompare(right.packageKey));
   }
   async createCrmLeadAssociation(association: CrmLeadAssociation): Promise<CrmLeadAssociation> {
     const existing = [...this.crmLeadAssociations.values()].find((candidate) => candidate.tenantId === association.tenantId && candidate.actionId === association.actionId);

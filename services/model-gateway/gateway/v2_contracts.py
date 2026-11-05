@@ -47,6 +47,7 @@ class CatalogV2Projection(StrictV2):
     knowledgeTopics: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
     requirementKeys: list[str] = Field(default_factory=list, max_length=500)
     enabledReadToolKeys: list[str] = Field(default_factory=list, max_length=32)
+    enabledActionToolKeys: list[str] = Field(default_factory=list, max_length=32)
 
 
 class ApprovedKnowledgeSnippetV2(StrictV2):

@@ -71,7 +71,7 @@ test('rejects direct Python database access', async () => fixture(async ({ root,
 
 test('protects the confirmed-goal migration added after the original baseline', async () => fixture(async ({ root }) => {
   const latest = BASELINE_MIGRATIONS.at(-1);
-  assert.equal(latest, 'infra/postgres/058-v2-action-catalog-identity.sql');
+  assert.equal(latest, 'infra/postgres/061-anc-natural-formation-aliases.sql');
   await rm(join(root, latest));
   assert.ok(has(await checkV2RetirementSafety(root), 'MIGRATION_MISSING'));
 }));
