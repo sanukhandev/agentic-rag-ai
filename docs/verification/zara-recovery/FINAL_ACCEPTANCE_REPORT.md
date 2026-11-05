@@ -89,3 +89,11 @@ The branch is not ready to merge until the unverified gates are executed or expl
 - Local restart-safety defect: **FIXED/VERIFIED** — store-backed OTP persistence, migration application, service recreation and PostgresStore read/update round-trip pass.
 - Full local verification: **PASS** — 61 API files / 517 tests, all workspace checks, builds, security checks, dependency audit, synthetic acceptance and 35 Python tests.
 - Acceptance remains **NOT_READY**. Live Salesforce OTP/provider readback, official pricing, live payment/signature providers, browser E2E and three independent human-scored Azure runs remain unverified.
+
+## 2026-11-05 contact-recovery and live objective rerun
+
+- Root cause fixed: masked email/phone submitted before explicit goal confirmation fell through to the generic unsupported-claim fallback. The new Node recovery is privacy-safe, preserves the pending goal prompt, and does not persist/use contact data before authorization.
+- Regression coverage: API suite **61 files / 519 tests PASS** after adding email/phone cases and asserting no contact-slot persistence.
+- Live Docker/Azure-backed public evidence: three fresh 25-turn sessions, each **25/25 HTTP**, **25 durable user messages**, and **1.00 (10/10)** automated objective score.
+- Formal human persona-quality review remains `NOT_RUN`; provider completion remains `NOT_VERIFIED_BY_THIS_HARNESS`.
+- Overall acceptance remains **NOT_READY** because Salesforce sandbox/readback, official pricing, browser E2E, full seven-stage provider journey and the human-scored Azure gate remain unverified or externally blocked.

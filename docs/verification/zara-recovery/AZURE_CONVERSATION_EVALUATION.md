@@ -49,3 +49,12 @@ The public harness now records redacted answer digests, grounded/citation flags,
 - Result: **PASS** for transport and persistence — 25/25 answers and 25 durable messages through public Nginx/API/model-gateway.
 - Automated objective score: **1.00 (10/10)**.
 - This remains objective evidence only; human persona-quality scoring and the three independent >=90% Azure quality gates remain `NOT_RUN`, and no provider completion is claimed.
+
+## Post-contact-recovery public Azure runs — 2026-11-05
+
+- The latest live defect was reproduced at turns 16–17 when masked email/phone arrived before explicit company-formation confirmation. The API returned the generic unsupported-claim fallback instead of a truthful privacy-safe confirmation prompt.
+- The recovery now acknowledges that contact details can be collected after goal confirmation, does not persist/use them before authorization, and preserves the pending goal decision.
+- `artifacts/ancfz/azure-eval-contact-fix-run-1-scored.json` — 25/25 HTTP answers, 25 durable user messages, automated objective score **1.00 (10/10)**.
+- `artifacts/ancfz/azure-eval-contact-fix-run-2-scored.json` — 25/25 HTTP answers, 25 durable user messages, automated objective score **1.00 (10/10)**.
+- `artifacts/ancfz/azure-eval-contact-fix-run-3-scored.json` — 25/25 HTTP answers, 25 durable user messages, automated objective score **1.00 (10/10)**.
+- All three runs report `human_persona_quality_review: NOT_RUN` and `provider_completion: NOT_VERIFIED_BY_THIS_HARNESS`. These are live Azure-backed transport/state/objective results, not the mandatory human-scored >=90% quality gate.

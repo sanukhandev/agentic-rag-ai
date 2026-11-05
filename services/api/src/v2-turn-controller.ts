@@ -477,6 +477,17 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   let effectiveAnswer = result.response.answer;
   let effectiveQuestion = result.response.nextQuestion;
   let overrideResponse = false;
+  // Contact details are not collected or used before the customer confirms the
+  // business goal, but they still deserve a truthful privacy-safe response.
+  const contactSubmittedBeforeGoalConfirmation = Object.keys(contactFromMessage).length > 0
+    && !contactActive && !goalConfirmed && Boolean(pendingDecision || selectedV2Goal);
+  if (contactSubmittedBeforeGoalConfirmation) {
+    const goalName = catalogV2?.sheets.BusinessGoals.find(goal =>
+      goal.businessGoalKey === (pendingDecision?.goalKey ?? selectedV2Goal))?.name ?? 'company formation';
+    effectiveAnswer = `I can collect contact details once you confirm ${goalName.toLowerCase()}. I have not used them for any action. Would you like to proceed with ${goalName.toLowerCase()}?`;
+    effectiveQuestion = `Would you like to proceed with ${goalName.toLowerCase()}?`;
+    overrideResponse = true;
+  }
   if (leadProviderUnavailable) {
     if (leadActionConfirmed) {
       effectiveAnswer = 'I have recorded your confirmation, but the Salesforce connection for this development tenant is not enabled. I have not submitted the Lead, and your information remains saved in this conversation.';

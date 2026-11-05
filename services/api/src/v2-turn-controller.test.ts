@@ -754,6 +754,8 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     ['Please do not disclose any other customer information.', 'other customers'],
     ['Please do not disclose any other [ID_2].', 'other customers'],
     ['I consent to contact only for this company formation enquiry in this sandbox.', 'contact preference'],
+    ['My test email address is [EMAIL_1].', 'confirm company formation'],
+    ['My test phone number is [PHONE_1].', 'confirm company formation'],
     ['My budget is not fixed yet.', 'budget is not fixed'],
     ['Show only officially approved package information.', 'reliable package summary'],
   ])('uses a truthful persona recovery for pending non-action turn: %s', async (message, expected) => {
@@ -768,6 +770,11 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect(reply.answer.toLocaleLowerCase('en-US')).toContain(expected);
     expect(reply.answer).not.toContain('temporarily unavailable');
     expect(reply.answer).not.toContain('cannot verify that answer safely');
+    if (message.includes('[EMAIL_1]') || message.includes('[PHONE_1]')) {
+      const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+      expect(document?.verifiedFacts.lead_contact_channel).toBeUndefined();
+      expect((await ctx.store.getSession(ctx.session.id))?.conversationState?.slotValues.email).toBeUndefined();
+    }
   });
 
   it('rejects stale session cursors and cross-tenant decisions', async () => {

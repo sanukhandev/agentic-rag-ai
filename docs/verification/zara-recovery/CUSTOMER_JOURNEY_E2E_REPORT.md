@@ -227,3 +227,10 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 - Result: **PASS locally** — a challenge issued by one service instance was verified by a recreated service instance using the same durable store; a real PostgresStore round-trip also passed after migration `064`.
 - Security evidence: only an HMAC digest is stored; challenge context is tenant/session/opportunity/Lead scoped, attempts are bounded, and successful verification marks the challenge used.
 - Evidence boundary: this proves local persistence and replay safety only. Salesforce OTP delivery, real Account/Contact/Opportunity creation and provider readback remain unverified.
+
+## Post-contact-recovery public Azure journey runs — 2026-11-05
+
+- The live masked-contact-before-confirmation defect is fixed and covered by a regression test.
+- Three fresh public Nginx/API/model-gateway runs completed 25/25 turns with 25 durable user messages each.
+- Objective score: **1.00 (10/10) in all three runs**. The email/phone turns now explain that collection waits for goal confirmation and do not persist contact slots before authorization.
+- These runs verify transport, state continuity and the objective harness only; they do not verify Salesforce, payment, contract, browser or human-scored Azure quality gates.

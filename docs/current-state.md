@@ -148,3 +148,10 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - The service-instance restart regression passes, the real PostgresStore persistence/update round-trip passes with synthetic data, and the rebuilt API remains healthy through Nginx.
 - Full local verification passes: workspace lint/typechecks, 61 API files / 517 tests, builds, security checks, dependency audit, synthetic tenant/source acceptance and 35 Python ingestion tests.
 - This removes the local restart-loss defect, but does not establish live Salesforce OTP delivery/verification or sandbox Account readback; overall status remains `NOT_READY`.
+
+## 2026-11-05 contact recovery checkpoint
+
+- Fixed the remaining live objective failure where masked email/phone submitted before explicit goal confirmation fell through to the generic unsupported-claim fallback.
+- Node now responds with privacy-safe confirmation guidance, keeps the pending goal decision, and does not persist/use contact slots until the goal and contact workflow are authorized.
+- API verification: **61 files / 519 tests PASS**; Docker API rebuild and health check PASS.
+- Three fresh public Azure-backed 25-turn runs each passed **25/25 HTTP**, **25 durable user messages**, and **10/10 objective checks**. Human persona scoring, Salesforce/provider readback and the full seven-stage journey remain unverified; overall status remains `NOT_READY`.
