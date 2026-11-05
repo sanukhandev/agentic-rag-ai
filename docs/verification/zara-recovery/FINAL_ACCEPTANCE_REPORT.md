@@ -141,3 +141,11 @@ The branch is not ready to merge until the unverified gates are executed or expl
 - Active `.env` inspection found only the Salesforce provider flag and Lead Apex REST URL. No Salesforce access token/OAuth secret, Account endpoint or SF-02 endpoint is present.
 - n8n SQLite contains zero credential records; all ANCFZ V2 workflows remain inactive. A credential-free `HEAD` probe to the configured sandbox endpoint returned HTTP 401 and sent no customer payload.
 - Result: **BLOCKED_EXTERNAL_DEPENDENCY**. Creating an n8n credential or claiming connection success is not possible without the approved sandbox secret material and provider contracts.
+
+## 2026-11-05 live Salesforce/n8n Lead checkpoint
+
+- The supplied Salesforce sandbox Connected App was used to create the encrypted project-scoped n8n credential `SalesForce ANC - CREDS`; the credential inventory now contains one `oAuth2Api` record and no plaintext credential file remains.
+- n8n OAuth smoke: **PASS** — the encrypted credential reached the Apex endpoint and received the expected method-contract response (`405`, allowed method `POST`), proving authentication from n8n.
+- Sandbox Lead create smoke: **PASS** — one synthetic Lead was created through n8n with the reference body contract. Salesforce returned a Lead identifier.
+- Independent provider readback: **PASS** — Salesforce REST API v68.0 returned the same Lead ID and matching submitted fields.
+- This is a direct sandbox integration checkpoint, not completion of the customer journey. The ANCFZ V2 catalog/workflow remains intentionally inactive; Node action claim/readback configuration, duplicate/replay handling, Lead update, Account/Contact/Opportunity, SF-02, payment, contract, browser E2E and human-scored Azure gates remain unverified.

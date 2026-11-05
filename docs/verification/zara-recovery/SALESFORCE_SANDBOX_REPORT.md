@@ -1,10 +1,12 @@
 # Salesforce Sandbox Report
 
-**Status:** BLOCKED_EXTERNAL_DEPENDENCY / NOT RUN
+**Status:** PARTIAL_LIVE_EVIDENCE / NOT_READY
+
+The initial credential-free audit below is historical. The latest checkpoint at the end of this report records a verified direct n8n Salesforce Lead create/readback; the full action-gated ANCFZ journey remains unverified.
 
 - API runtime provider configuration reports Salesforce as the configured remote CRM provider.
 - Local lead, qualification, summary and provider-evidence unit suites pass.
-- No synthetic Salesforce sandbox Lead was created or read back during this checkpoint.
+- No synthetic Salesforce sandbox Lead was created or read back during the initial credential-free checkpoint.
 - No provider completion is claimed.
 
 Additional live development checks (2026-11-04):
@@ -34,3 +36,12 @@ Required evidence to unblock the gate:
 - Only after those checks pass: a reviewed catalog revision enabling the bindings, without repinning existing sessions.
 
 The 2026-11-05 API/model/worker restart replay passed locally, but it does not satisfy any of the provider requirements above.
+
+## 2026-11-05 live n8n credential and Lead contract checkpoint
+
+- Created the project-scoped n8n credential `SalesForce ANC - CREDS` (`oAuth2Api`) using the supplied development Salesforce Connected App. The credential is encrypted in n8n and no secret was written to Git or the repository `.env`.
+- n8n credential smoke execution: **PASS**. The encrypted credential reached the Salesforce Apex endpoint; the endpoint returned HTTP 405 with `POST` as the allowed method rather than HTTP 401.
+- n8n Salesforce Lead smoke execution: **PASS**. A synthetic sandbox Lead was created through the n8n HTTP Request node using the approved body contract (`Name`, `Company`, `Phone`, `Email`, `Description`). Salesforce returned a provider Lead identifier.
+- Salesforce provider readback: **PASS** for this smoke record through standard Salesforce REST API v68.0. The returned ID and all reference fields matched the submitted body. This is direct sandbox evidence, not a mock.
+- The temporary smoke workflow, execution records and plaintext payload fixture were removed after verification.
+- This checkpoint does **not** activate the ANCFZ V2 workflow or catalog binding. The production path still lacks the configured Node `REMOTE_CRM_LEAD_READ_URL`, action-gated end-to-end dispatch, duplicate/replay proof and approved Account/SF-02 contracts.

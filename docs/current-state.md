@@ -191,6 +191,14 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Verification: **530 API tests PASS**, API typecheck/build PASS, and the new mismatch regression rejects an attachment linked to the wrong Account.
 - These checks are not wired as live completion paths yet: the Account route still requires a configured provider-specific adapter plus external OTP challenge/readback, and the document worker still executes only the deterministic SF-02 provider. Live Salesforce status remains `BLOCKED_EXTERNAL_DEPENDENCY`.
 
+## 2026-11-05 live Salesforce Lead smoke checkpoint
+
+- The supplied development Salesforce Connected App is now stored as the encrypted project-scoped n8n credential `SalesForce ANC - CREDS`; no plaintext secret was added to the repository.
+- n8n OAuth execution reached the Salesforce Apex endpoint and received the expected `405 Method Not Allowed` response to a read probe, proving the n8n credential is authenticated.
+- A one-time synthetic Lead POST through n8n using the reference `Name` / `Company` / `Phone` / `Email` / `Description` body returned a Salesforce Lead ID. Standard Salesforce REST API v68.0 readback returned the same ID and matching fields.
+- The temporary smoke workflow and payload were removed. The ANCFZ V2 workflows and catalog bindings remain inactive; the Node-authorized public journey still needs configured Lead readback, duplicate/replay coverage, Lead update, Account/Contact/Opportunity, SF-02 and later provider contracts before live activation.
+- This changes the Salesforce status from “no credential / no live Lead evidence” to **partial direct Lead integration evidence**, but overall acceptance remains `NOT_READY`.
+
 ## 2026-11-05 Salesforce Account adapter checkpoint
 
 - The V2 Account evidence route now accepts a configured Salesforce adapter. It independently verifies the Node OTP, Account/Contact/Opportunity relationship readback, lead association, idempotency correlation and provider evidence tier before persisting remote IDs and advancing the stage. Missing configuration or any mismatch still transitions the Account and action to `reconcile_required`.
