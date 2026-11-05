@@ -176,3 +176,11 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - A credential-free `HEAD` probe returned HTTP 401 without sending customer data. No Salesforce OAuth/access-token material is present in the API or n8n runtime, and the n8n SQLite inventory contains no credentials for the inactive ANCFZ workflows.
 - The V2 Node path now has a fail-closed Salesforce Lead readback adapter (`services/api/src/salesforce-sandbox-lead-provider.ts`) and the Lead template is endpoint-configurable, but the published Lead bindings remain disabled. The exact live blocker is authenticated provider access, a configured n8n managed credential/readback endpoint, and a reviewed sandbox run—not endpoint discovery.
 - Status remains `BLOCKED_EXTERNAL_DEPENDENCY`; no Lead creation or provider completion is claimed.
+
+## 2026-11-05 Salesforce readback adapter checkpoint
+
+- Added `SalesforceSandboxLeadProvider`, which requires an explicit bearer token and `{leadId}` readback URL, retries bounded transient readback failures, verifies the returned provider record and optional correlation fields, and returns only a trusted `provider_record_verified` attestation.
+- The V2 evidence route now uses that adapter for `salesforce_sandbox`; missing configuration, authentication failure, record mismatch or readback failure transitions the action to `reconcile_required` without claiming completion.
+- The inert ANCFZ Lead workflow now reads create/readback endpoints from `REMOTE_CRM_LEAD_URL` and `REMOTE_CRM_LEAD_READ_URL`; Docker Compose passes the readback configuration to API and n8n without embedding credentials.
+- Verification: **528 API tests PASS**, typecheck/lint/build PASS, `npm run verify:local` PASS, n8n template tests PASS, Docker rebuild and public health `200` PASS.
+- Live status remains `BLOCKED_EXTERNAL_DEPENDENCY`: no sandbox access token, n8n managed OAuth credential, readback URL, or live provider evidence is available; no Lead write is claimed.

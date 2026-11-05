@@ -113,6 +113,14 @@ The branch is not ready to merge until the unverified gates are executed or expl
 - Formal human persona-quality review remains `NOT_RUN`; provider completion remains `NOT_VERIFIED_BY_THIS_HARNESS`.
 - Overall acceptance remains **NOT_READY** because Salesforce sandbox/readback, official pricing, browser E2E, full seven-stage provider journey and the human-scored Azure gate remain unverified or externally blocked.
 
+## 2026-11-05 Salesforce readback adapter checkpoint
+
+- Added a fail-closed Node Salesforce readback adapter with bounded transient retries, bearer authentication, exact provider-record matching and optional action-correlation validation.
+- V2 Salesforce evidence now completes only after that adapter returns `provider_record_verified`; missing configuration or any readback failure moves the action to `reconcile_required`.
+- The Lead n8n template is now environment-configurable for create and `{leadId}` readback URLs while remaining inactive and credential-free by default.
+- Verification: **528 API tests PASS**, full local verification PASS, n8n template tests PASS, Docker rebuild/health PASS.
+- This closes the implementation gap in the Node readback boundary but does not satisfy live Salesforce acceptance. Sandbox credentials, n8n OAuth, live create/readback, duplicate handling, Lead update/readback, qualification and later provider stages remain unverified.
+
 ## 2026-11-05 restart/replay evidence
 
 - Restarted `api`, `model-gateway`, and `event-worker` during a fresh public synthetic session.
