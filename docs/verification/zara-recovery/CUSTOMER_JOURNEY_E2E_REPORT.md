@@ -241,3 +241,4 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 - `api`, `model-gateway`, and `event-worker` were restarted together.
 - Replaying the same `clientMessageId` returned the same assistant message ID and answer. PostgreSQL contained exactly one user message and one assistant message for that session.
 - Result: **PASS** for the tested restart/idempotency boundary. Redis/outbox replay and external provider completion remain unverified.
+- A raw HTTP history read for a fresh session returned HTTP 200 with the expected user and assistant rows; the earlier `INVALID_DATA` result was caused by the PowerShell request construction, not the customer history route.

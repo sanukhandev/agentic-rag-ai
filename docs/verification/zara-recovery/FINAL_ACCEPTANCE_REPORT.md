@@ -104,3 +104,4 @@ The branch is not ready to merge until the unverified gates are executed or expl
 - Replayed the exact same client message after restart; the API returned the identical assistant message ID and answer.
 - PostgreSQL retained one user message and one assistant response for that client message, with no duplicate turn.
 - This closes the tested service restart/idempotency boundary only; Redis/outbox replay and provider-side idempotency remain unverified.
+- A raw HTTP history read also returned 200 with the expected two messages; the earlier PowerShell `INVALID_DATA` was a test-command construction issue, not a route failure.
