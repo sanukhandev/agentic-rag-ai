@@ -184,3 +184,9 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - The inert ANCFZ Lead workflow now reads create/readback endpoints from `REMOTE_CRM_LEAD_URL` and `REMOTE_CRM_LEAD_READ_URL`; Docker Compose passes the readback configuration to API and n8n without embedding credentials.
 - Verification: **528 API tests PASS**, typecheck/lint/build PASS, `npm run verify:local` PASS, n8n template tests PASS, Docker rebuild and public health `200` PASS.
 - Live status remains `BLOCKED_EXTERNAL_DEPENDENCY`: no sandbox access token, n8n managed OAuth credential, readback URL, or live provider evidence is available; no Lead write is claimed.
+
+## 2026-11-05 Salesforce relationship readback checkpoint
+
+- Extended the fail-closed adapter with isolated Account relationship and SF-02 attachment readback checks. They require the provider record ID, tenant/session/idempotency correlation, and the expected Account/Contact/Opportunity plus Lead/Account attachment relationships before producing `provider_record_verified` evidence.
+- Verification: **530 API tests PASS**, API typecheck/build PASS, and the new mismatch regression rejects an attachment linked to the wrong Account.
+- These checks are not wired as live completion paths yet: the Account route still requires a configured provider-specific adapter plus external OTP challenge/readback, and the document worker still executes only the deterministic SF-02 provider. Live Salesforce status remains `BLOCKED_EXTERNAL_DEPENDENCY`.

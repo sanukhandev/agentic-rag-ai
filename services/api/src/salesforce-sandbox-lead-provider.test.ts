@@ -78,4 +78,29 @@ describe('Salesforce sandbox lead readback adapter', () => {
     await expect(provider.verify({ request: request(), providerRecordId: '00Q-test' })).resolves.toMatchObject({ recordRef: '00Q-test', evidenceTier: 'provider_record_verified' });
     expect(attempts).toBe(2);
   });
+
+  it('verifies the three Salesforce Account relationships before returning completion evidence', async () => {
+    const provider = new SalesforceSandboxLeadProvider({
+      accessToken: 'sandbox-token',
+      accountReadbackUrl: 'https://sandbox.example.test/accounts/{accountId}',
+      fetchImpl: async () => new Response(JSON.stringify({ accountId: '001-test', contactId: '003-test', opportunityId: '006-test' }), { status: 200 }),
+    });
+    const input = request();
+
+    await expect(provider.verifyAccount({ request: input, providerRecordId: '001-test' })).resolves.toMatchObject({
+      recordRef: '001-test', evidenceTier: 'provider_record_verified', remoteAccountId: '001-test', remoteContactId: '003-test', remoteOpportunityId: '006-test',
+    });
+  });
+
+  it('rejects Salesforce SF-02 readback when the attachment is not linked to the verified records', async () => {
+    const provider = new SalesforceSandboxLeadProvider({
+      accessToken: 'sandbox-token',
+      documentReadbackUrl: 'https://sandbox.example.test/attachments/{attachmentId}',
+      fetchImpl: async () => new Response(JSON.stringify({ attachmentId: '069-test', leadAttachmentId: '069-lead', accountAttachmentId: '069-other', remoteAccountId: '001-test', remoteContactId: '003-test', remoteOpportunityId: '006-test' }), { status: 200 }),
+    });
+    const input = request();
+
+    await expect(provider.verifyDocument({ request: input, providerRecordId: '069-test', expected: { leadAttachmentId: '069-lead', accountAttachmentId: '069-account', remoteAccountId: '001-test', remoteContactId: '003-test', remoteOpportunityId: '006-test' } }))
+      .rejects.toThrow('SALESFORCE_DOCUMENT_READBACK_MISMATCH');
+  });
 });
