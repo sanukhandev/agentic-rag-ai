@@ -128,3 +128,16 @@ The branch is not ready to merge until the unverified gates are executed or expl
 - PostgreSQL retained one user message and one assistant response for that client message, with no duplicate turn.
 - This closes the tested service restart/idempotency boundary only; Redis/outbox replay and provider-side idempotency remain unverified.
 - A raw HTTP history read also returned 200 with the expected two messages; the earlier PowerShell `INVALID_DATA` was a test-command construction issue, not a route failure.
+
+## 2026-11-05 Salesforce Account adapter checkpoint
+
+- Added the configured Salesforce Account evidence path. Node now verifies the local OTP, exact Account/Contact/Opportunity and Lead relationships, idempotency correlation and provider readback before persisting remote IDs or advancing `account_creation`.
+- Corrected the inactive Account n8n template to call `/api/v2/internal/provider-evidence/account` and use `REMOTE_CRM_ACCOUNT_URL` / `REMOTE_CRM_ACCOUNT_READ_URL` without committing credentials.
+- Verification: **62 API files / 531 tests PASS**, full `verify:local` PASS, typecheck/build PASS, n8n template tests PASS, Docker API/n8n rebuild PASS, and public health `200` after startup.
+- Acceptance remains **NOT_READY**: no live Salesforce token/managed credential/provider endpoint or sandbox evidence is available; SF-02, payment, contract, browser E2E and formal human Azure scoring remain unverified.
+
+## 2026-11-05 Salesforce credential inventory checkpoint
+
+- Active `.env` inspection found only the Salesforce provider flag and Lead Apex REST URL. No Salesforce access token/OAuth secret, Account endpoint or SF-02 endpoint is present.
+- n8n SQLite contains zero credential records; all ANCFZ V2 workflows remain inactive. A credential-free `HEAD` probe to the configured sandbox endpoint returned HTTP 401 and sent no customer payload.
+- Result: **BLOCKED_EXTERNAL_DEPENDENCY**. Creating an n8n credential or claiming connection success is not possible without the approved sandbox secret material and provider contracts.

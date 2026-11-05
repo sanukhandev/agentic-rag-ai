@@ -26,11 +26,15 @@ test('all ANCFZ V2 workflows are structurally connected and non-executable by de
    assert.equal(w.nodes[4].parameters.url,'={{ $env.REMOTE_CRM_LEAD_URL }}');
    assert.match(w.nodes[5].parameters.url,/\$env\.REMOTE_CRM_LEAD_READ_URL/);
    assert.match(w.nodes[5].parameters.url,/\{leadId\}/);
+  } else if (file === '03c-account-create.json') {
+   assert.equal(w.nodes[4].parameters.url,'={{ $env.REMOTE_CRM_ACCOUNT_URL }}');
+   assert.match(w.nodes[5].parameters.url,/\$env\.REMOTE_CRM_ACCOUNT_READ_URL/);
+   assert.match(w.nodes[5].parameters.url,/\{accountId\}/);
   } else {
    assert.equal(w.nodes[4].parameters.url.startsWith('https://configure-provider.invalid/'),true);
    assert.equal(w.nodes[5].parameters.url.startsWith('https://configure-provider.invalid/'),true);
   }
-  assert.equal(w.nodes[6].parameters.url,'http://api:4000/api/v2/internal/provider-evidence/verify');
+  assert.equal(w.nodes[6].parameters.url,file === '03c-account-create.json' ? 'http://api:4000/api/v2/internal/provider-evidence/account' : 'http://api:4000/api/v2/internal/provider-evidence/verify');
   assert.equal(w.nodes[2].parameters.url,'http://api:4000/api/v1/internal/workflow-events/claim');
   assert.match(w.nodes[2].parameters.jsonBody,/n8nWorkflowId:\s*\$workflow\.id/);
   assert.match(w.nodes[2].parameters.jsonBody,/limit:1/);

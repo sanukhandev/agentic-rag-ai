@@ -71,7 +71,7 @@ const catalog = (providerType: string): CatalogV2Document => {
   return document;
 };
 
-async function makeFixture(providerType: string, v2SalesforceLeadProvider?: { verify: (input: { request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string }; providerRecordId: string }) => Promise<{ tenantId: string; sessionId: string; opportunityId: string; providerType: string; idempotencyKey: string; recordRef: string; evidenceTier: 'provider_record_verified'; verificationStatus: 'verified' }> }) {
+async function makeFixture(providerType: string, v2SalesforceLeadProvider?: { verify: (input: { request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string }; providerRecordId: string }) => Promise<{ tenantId: string; sessionId: string; opportunityId: string; providerType: string; idempotencyKey: string; recordRef: string; evidenceTier: 'provider_record_verified'; verificationStatus: 'verified' }> }, v2SalesforceAccountProvider?: { verifyAccount: (input: { request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string; leadExternalId: string }; providerRecordId: string }) => Promise<{ tenantId: string; sessionId: string; opportunityId: string; providerType: string; idempotencyKey: string; recordRef: string; evidenceTier: 'provider_record_verified'; verificationStatus: 'verified'; remoteAccountId: string; remoteContactId: string; remoteOpportunityId: string; leadExternalId: string; deduplicated: boolean }> }) {
   const store = new MemoryStore();
   const tokenVault = new TokenVault('provider-evidence-route-test-secret');
   const otp = new V2OtpChallengeService('provider-evidence-route-otp-secret');
@@ -79,7 +79,7 @@ async function makeFixture(providerType: string, v2SalesforceLeadProvider?: { ve
   const documentProvider = new DeterministicV2DocumentProvider();
   const paymentProvider = new DeterministicV2PaymentProvider();
   const contractProvider = new DeterministicV2ContractProvider();
-  const runtime = createApp({ store, nodeEnv: 'test', tokenVault, n8nCallbackSecret: 'n'.repeat(64), ingestionWorkerSecret: 'i'.repeat(64), v2AccountOtp: otp, ...(v2SalesforceLeadProvider ? { v2SalesforceLeadProvider } : {}), v2AccountProvider: accountProvider, v2DocumentProvider: documentProvider, v2PaymentProvider: paymentProvider, v2ContractProvider: contractProvider });
+  const runtime = createApp({ store, nodeEnv: 'test', tokenVault, n8nCallbackSecret: 'n'.repeat(64), ingestionWorkerSecret: 'i'.repeat(64), v2AccountOtp: otp, ...(v2SalesforceLeadProvider ? { v2SalesforceLeadProvider } : {}), ...(v2SalesforceAccountProvider ? { v2SalesforceAccountProvider } : {}), v2AccountProvider: accountProvider, v2DocumentProvider: documentProvider, v2PaymentProvider: paymentProvider, v2ContractProvider: contractProvider });
   const tenant = await store.createTenant({ name: 'Provider Evidence', slug: `provider-evidence-${randomUUID()}` });
   const session = await store.createSession(tenant.id);
   const document = catalog(providerType);
@@ -322,5 +322,47 @@ describe('V2 provider evidence route', () => {
     expect(response.body).toMatchObject({ accepted: false, status: 'reconciliation_required' });
     expect((await test.store.getAction(action.id))?.state).toBe('reconcile_required');
     expect(await test.store.getCrmAccount(account.id, test.tenant.id)).toMatchObject({ status: 'reconcile_required', remoteAccountId: null });
+  });
+
+  it('completes a Salesforce Account only after OTP and injected relationship readback evidence', async () => {
+    const leadRecordId = '00Q-sandbox-account-lead';
+    const accountRecordId = '001-sandbox-verified';
+    const verifyLead = async ({ request: providerRequest, providerRecordId }: { request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string }; providerRecordId: string }) => ({
+      tenantId: providerRequest.tenantId, sessionId: providerRequest.sessionId, opportunityId: providerRequest.opportunityId,
+      providerType: 'salesforce_sandbox', idempotencyKey: providerRequest.idempotencyKey, recordRef: providerRecordId,
+      evidenceTier: 'provider_record_verified' as const, verificationStatus: 'verified' as const,
+    });
+    const verifyAccount = async ({ request: providerRequest, providerRecordId }: { request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string; leadExternalId: string }; providerRecordId: string }) => ({
+      tenantId: providerRequest.tenantId, sessionId: providerRequest.sessionId, opportunityId: providerRequest.opportunityId,
+      providerType: 'salesforce_sandbox', idempotencyKey: providerRequest.idempotencyKey, recordRef: providerRecordId,
+      evidenceTier: 'provider_record_verified' as const, verificationStatus: 'verified' as const,
+      remoteAccountId: providerRecordId, remoteContactId: '003-sandbox-contact', remoteOpportunityId: '006-sandbox-opportunity',
+      leadExternalId: providerRequest.leadExternalId, deduplicated: false,
+    });
+    const test = await makeFixture('salesforce_sandbox', { verify: verifyLead }, { verifyAccount });
+    const leadEvidence = await request(test.runtime.app).post('/api/v2/internal/provider-evidence/verify').set('x-agentic-internal-secret', 'n'.repeat(64)).send({ ...bodyFor(test), providerType: 'salesforce_sandbox', providerRecordId: leadRecordId });
+    expect(leadEvidence.status, JSON.stringify(leadEvidence.body)).toBe(200);
+    const lead = await test.store.getCrmLeadByActionId(test.action.id, test.tenant.id);
+    expect(lead).toBeTruthy();
+    await test.store.updateCrmLeadQualification(lead!.id, test.tenant.id, 'qualified', { source: 'synthetic-test' });
+    const account = await test.store.createCrmAccount({ id: randomUUID(), tenantId: test.tenant.id, opportunityId: test.action.opportunityId!, leadId: lead!.id, remoteAccountId: null, remoteContactId: null, remoteOpportunityId: null, status: 'pending', conversionRule: 'qualification_verified', verifiedAt: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    const accountAction = await test.store.createAction({ ...test.action, id: randomUUID(), workflowKey: 'crm.account.create', actionKey: 'account.create', idempotencyKey: 'v2-account-salesforce-verified', opaqueReference: 'v2-account-salesforce-verified-ref', state: 'processing', payload: { contactConsent: true, slotValues: { crmAccountId: account.id } }, result: null });
+    const sessionAfterLead = await test.store.getSession(test.session.id);
+    const intentKey = sessionAfterLead?.conversationState?.intentProgress?.activeIntentKey ?? 'anc.company_formation';
+    const entry = sessionAfterLead!.conversationState!.intentProgress!.entries[intentKey]!;
+    const advancedLifecycle = completeLifecycleStage(entry.lifecycle!, 'lead_qualification', { qualificationVerified: true });
+    const advancedEntry = { ...entry, lifecycle: advancedLifecycle, revision: entry.revision + 1 };
+    await test.store.updateSession({ ...sessionAfterLead!, conversationState: { ...sessionAfterLead!.conversationState!, intentProgress: { ...sessionAfterLead!.conversationState!.intentProgress!, entries: { ...sessionAfterLead!.conversationState!.intentProgress!.entries, [intentKey]: advancedEntry }, journeys: { ...sessionAfterLead!.conversationState!.intentProgress!.journeys, [entry.journeyId!]: advancedEntry } } } });
+    const currentDocument = await test.store.getUserIntentDocument(test.tenant.id, test.session.id);
+    await test.store.updateUserIntentDocument({ document: { ...currentDocument!, currentStageKey: 'account_creation', stageRevision: advancedLifecycle.stages.account_creation.revision, revision: currentDocument!.revision + 1, updatedAt: new Date().toISOString() }, expectedRevision: currentDocument!.revision });
+    const challenge = await test.otp.issue({ tenantId: test.tenant.id, sessionId: test.session.id, opportunityId: accountAction.opportunityId!, leadId: lead!.id, code: '123456' });
+    const eventId = randomUUID();
+    const correlationId = randomUUID();
+    await test.store.claimActionExecution({ id: randomUUID(), actionId: accountAction.id, tenantId: test.tenant.id, workflowKey: accountAction.workflowKey, catalogVersionId: accountAction.catalogVersionId ?? null, providerStatus: 'processing', n8nExecutionRef: 'n8n-salesforce-account-verified', eventId, correlationId, idempotencyKey: accountAction.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() + 60_000).toISOString(), outcome: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    const response = await request(test.runtime.app).post('/api/v2/internal/provider-evidence/account').set('x-agentic-internal-secret', 'n'.repeat(64)).send({ actionId: accountAction.id, tenantId: test.tenant.id, sessionId: test.session.id, opportunityId: accountAction.opportunityId, stageKey: 'account_creation', workflowKey: accountAction.workflowKey, providerType: 'salesforce_sandbox', providerRecordId: accountRecordId, eventId, correlationId, attempt: 1, idempotencyKey: accountAction.idempotencyKey, catalogVersionId: test.published.catalogVersionRef, actionKey: accountAction.actionKey, actionRevision: accountAction.actionRevision, otpChallengeId: challenge.challengeId, otpCode: '123456', explicitConfirmation: true });
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.body).toMatchObject({ accepted: true, evidenceTier: 'provider_record_verified', providerRecordRef: accountRecordId, account: { status: 'verified', remoteAccountId: accountRecordId, remoteContactId: '003-sandbox-contact', remoteOpportunityId: '006-sandbox-opportunity' } });
+    expect((await test.store.getAction(accountAction.id))?.state).toBe('completed');
+    expect((await test.store.getUserIntentDocument(test.tenant.id, test.session.id))?.currentStageKey).toBe('package_selection');
   });
 });

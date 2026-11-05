@@ -1,4 +1,5 @@
 import type { V2LeadProviderRequest } from './v2-lead-provider.js';
+import type { V2AccountProviderRequest } from './v2-account-provider.js';
 import type { V2TrustedProviderReadback } from './v2-provider-evidence.js';
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -13,6 +14,8 @@ export type SalesforceSandboxLeadProviderOptions = {
 };
 
 export type SalesforceSandboxLeadReadbackProvider = Pick<SalesforceSandboxLeadProvider, 'verify'>;
+export type SalesforceSandboxAccountReadbackProvider = Pick<SalesforceSandboxLeadProvider, 'verifyAccount'>;
+export type SalesforceSandboxDocumentReadbackProvider = Pick<SalesforceSandboxLeadProvider, 'verifyDocument'>;
 
 const TRANSIENT_STATUS = new Set([408, 409, 429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 4;
@@ -45,8 +48,8 @@ const stringField = (record: Record<string, unknown>, keys: string[]): string | 
 };
 
 type CorrelatedRequest = Pick<V2TrustedProviderReadback, 'tenantId' | 'sessionId' | 'opportunityId' | 'idempotencyKey'>;
-type SalesforceAccountReadback = V2TrustedProviderReadback & { remoteAccountId: string; remoteContactId: string; remoteOpportunityId: string };
-type SalesforceDocumentReadback = V2TrustedProviderReadback & { attachmentId: string; leadAttachmentId: string; accountAttachmentId: string; remoteAccountId: string; remoteContactId: string; remoteOpportunityId: string };
+export type SalesforceAccountReadback = V2TrustedProviderReadback & { remoteAccountId: string; remoteContactId: string; remoteOpportunityId: string; leadExternalId: string; deduplicated: boolean };
+export type SalesforceDocumentReadback = V2TrustedProviderReadback & { attachmentId: string; leadAttachmentId: string; accountAttachmentId: string; remoteAccountId: string; remoteContactId: string; remoteOpportunityId: string };
 
 export class SalesforceSandboxLeadProvider {
   private readonly accessToken: string;
@@ -112,14 +115,16 @@ export class SalesforceSandboxLeadProvider {
     return this.attestation(request, returnedRecordId);
   }
 
-  async verifyAccount(input: { request: CorrelatedRequest; providerRecordId: string }): Promise<SalesforceAccountReadback> {
+  async verifyAccount(input: { request: Pick<V2AccountProviderRequest, 'tenantId' | 'sessionId' | 'opportunityId' | 'idempotencyKey' | 'leadExternalId'>; providerRecordId: string }): Promise<SalesforceAccountReadback> {
     const record = await this.fetchRecord(this.accountReadbackUrl, input.providerRecordId, 'SALESFORCE_ACCOUNT_READBACK_NOT_CONFIGURED');
     const remoteAccountId = stringField(record, ['accountId', 'AccountId', 'id', 'Id']);
     const remoteContactId = stringField(record, ['contactId', 'ContactId']);
     const remoteOpportunityId = stringField(record, ['opportunityId', 'OpportunityId']);
-    if (remoteAccountId !== input.providerRecordId || !remoteContactId || !remoteOpportunityId) throw new Error('SALESFORCE_ACCOUNT_READBACK_MISMATCH');
+    const leadExternalId = stringField(record, ['leadExternalId', 'leadId', 'LeadId']);
+    const deduplicated = record.deduplicated;
+    if (remoteAccountId !== input.providerRecordId || !remoteContactId || !remoteOpportunityId || leadExternalId !== input.request.leadExternalId || typeof deduplicated !== 'boolean') throw new Error('SALESFORCE_ACCOUNT_READBACK_MISMATCH');
     this.assertCorrelation(record, input.request);
-    return { ...this.attestation(input.request, remoteAccountId), remoteAccountId, remoteContactId, remoteOpportunityId };
+    return { ...this.attestation(input.request, remoteAccountId), remoteAccountId, remoteContactId, remoteOpportunityId, leadExternalId, deduplicated };
   }
 
   async verifyDocument(input: { request: CorrelatedRequest; providerRecordId: string; expected: { leadAttachmentId: string; accountAttachmentId: string; remoteAccountId: string; remoteContactId: string; remoteOpportunityId: string } }): Promise<SalesforceDocumentReadback> {

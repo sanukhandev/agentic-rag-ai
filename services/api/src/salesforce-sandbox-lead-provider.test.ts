@@ -19,6 +19,14 @@ const request = () => ({
   notificationRequested: true as const,
 });
 
+const accountRequest = () => ({
+  tenantId: randomUUID(),
+  sessionId: randomUUID(),
+  opportunityId: randomUUID(),
+  idempotencyKey: 'account-idempotency-test',
+  leadExternalId: '00Q-lead-test',
+});
+
 describe('Salesforce sandbox lead readback adapter', () => {
   it('requires explicit readback configuration and never fabricates evidence', async () => {
     const provider = new SalesforceSandboxLeadProvider({ accessToken: '', readbackUrl: '' });
@@ -83,12 +91,12 @@ describe('Salesforce sandbox lead readback adapter', () => {
     const provider = new SalesforceSandboxLeadProvider({
       accessToken: 'sandbox-token',
       accountReadbackUrl: 'https://sandbox.example.test/accounts/{accountId}',
-      fetchImpl: async () => new Response(JSON.stringify({ accountId: '001-test', contactId: '003-test', opportunityId: '006-test' }), { status: 200 }),
+      fetchImpl: async () => new Response(JSON.stringify({ accountId: '001-test', contactId: '003-test', opportunityId: '006-test', leadExternalId: '00Q-lead-test', deduplicated: false }), { status: 200 }),
     });
-    const input = request();
+    const input = accountRequest();
 
     await expect(provider.verifyAccount({ request: input, providerRecordId: '001-test' })).resolves.toMatchObject({
-      recordRef: '001-test', evidenceTier: 'provider_record_verified', remoteAccountId: '001-test', remoteContactId: '003-test', remoteOpportunityId: '006-test',
+      recordRef: '001-test', evidenceTier: 'provider_record_verified', remoteAccountId: '001-test', remoteContactId: '003-test', remoteOpportunityId: '006-test', leadExternalId: '00Q-lead-test', deduplicated: false,
     });
   });
 

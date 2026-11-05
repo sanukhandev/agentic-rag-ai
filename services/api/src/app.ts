@@ -28,7 +28,7 @@ import { requiredDocumentSetComplete } from './document-stage-evidence.js';
 import { buildV2DocumentProviderRequest, DeterministicV2DocumentProvider, validateV2DocumentProviderResult } from './v2-document-provider.js';
 import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, DurableV2OtpChallengeService, V2OtpChallengeService, validateV2AccountProviderResult } from './v2-account-provider.js';
 import { buildV2LeadProviderRequest, DeterministicV2LeadProvider, validateV2LeadProviderResult } from './v2-lead-provider.js';
-import { SalesforceSandboxLeadProvider, type SalesforceSandboxLeadReadbackProvider } from './salesforce-sandbox-lead-provider.js';
+import { SalesforceSandboxLeadProvider, type SalesforceSandboxAccountReadbackProvider, type SalesforceSandboxLeadReadbackProvider } from './salesforce-sandbox-lead-provider.js';
 import { buildV2PaymentProviderRequest, DeterministicV2PaymentProvider, validateV2PaymentProviderResult } from './v2-payment-provider.js';
 import { buildV2ContractProviderRequest, DeterministicV2ContractProvider, validateV2ContractProviderResult } from './v2-contract-provider.js';
 import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
@@ -450,6 +450,7 @@ export interface AppDependencies {
   v2AccountOtp?: V2OtpChallengeService | DurableV2OtpChallengeService;
   v2AccountProvider?: DeterministicV2AccountProvider;
   v2SalesforceLeadProvider?: SalesforceSandboxLeadReadbackProvider;
+  v2SalesforceAccountProvider?: SalesforceSandboxAccountReadbackProvider;
   v2DocumentProvider?: DeterministicV2DocumentProvider;
   v2PaymentProvider?: DeterministicV2PaymentProvider;
   v2ContractProvider?: DeterministicV2ContractProvider;
@@ -520,6 +521,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     ?? (process.env.REMOTE_CRM_PROVIDER === 'salesforce' ? new SalesforceSandboxLeadProvider({
       ...(process.env.REMOTE_CRM_ACCESS_TOKEN ? { accessToken: process.env.REMOTE_CRM_ACCESS_TOKEN } : {}),
       ...(process.env.REMOTE_CRM_LEAD_READ_URL ? { readbackUrl: process.env.REMOTE_CRM_LEAD_READ_URL } : {}),
+    }) : null);
+  const salesforceAccountProvider = dependencies.v2SalesforceAccountProvider
+    ?? (process.env.REMOTE_CRM_PROVIDER === 'salesforce' ? new SalesforceSandboxLeadProvider({
+      ...(process.env.REMOTE_CRM_ACCESS_TOKEN ? { accessToken: process.env.REMOTE_CRM_ACCESS_TOKEN } : {}),
+      ...(process.env.REMOTE_CRM_ACCOUNT_READ_URL ? { accountReadbackUrl: process.env.REMOTE_CRM_ACCOUNT_READ_URL } : {}),
     }) : null);
   const mockPaymentProvider = dependencies.v2PaymentProvider ?? (process.env.REMOTE_PAYMENT_PROVIDER === 'deterministic_mock' ? new DeterministicV2PaymentProvider() : null);
   const mockContractProvider = dependencies.v2ContractProvider ?? (process.env.REMOTE_SIGNATURE_PROVIDER === 'deterministic_mock' ? new DeterministicV2ContractProvider() : null);
@@ -2827,7 +2833,59 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (action.state !== 'processing') throw new HttpError(409, 'V2_PROVIDER_ACTION_NOT_PROCESSING', 'Provider evidence can only finalize a claimed V2 action.');
       const providerType = workflowBinding.providerType;
       if (input.providerType && input.providerType !== providerType) throw new HttpError(409, 'V2_PROVIDER_TYPE_MISMATCH', 'Provider evidence type does not match the published workflow binding.');
-      if (providerType !== 'deterministic_mock' || !mockAccountProvider || nodeEnv === 'production') {
+      if (providerType !== 'deterministic_mock') {
+        if (providerType !== 'salesforce_sandbox' || !salesforceAccountProvider) {
+          await store.updateCrmAccount({ ...account, status: 'reconcile_required', updatedAt: new Date().toISOString() });
+          const reconciled = await transitionWorkflowAction(action, 'reconcile_required', undefined, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input);
+          res.status(409).json({ accepted: false, status: 'reconciliation_required', reason: 'account_provider_readback_requires_configured_node_adapter', action: reconciled });
+          return;
+        }
+        const otp = await v2AccountOtp.verify({ schemaVersion: 2, operation: 'otp.verify', tenantId: input.tenantId, sessionId: input.sessionId, opportunityId: input.opportunityId, leadId: lead.id, challengeId: input.otpChallengeId, code: input.otpCode });
+        if (otp.status !== 'verified') throw new HttpError(409, 'OTP_VERIFICATION_FAILED', 'The OTP is invalid, expired, already used or bound to a different request.');
+        const originalLeadAction = await store.getAction(lead.actionId);
+        if (!originalLeadAction) throw new HttpError(409, 'V2_ACCOUNT_ORIGINAL_LEAD_ACTION_UNVERIFIED', 'The verified Lead action cannot be found.');
+        const providerRequest = buildV2AccountProviderRequest({ action, lead, originalLeadAction, providerType: 'salesforce_sandbox', otp, explicitConfirmation: input.explicitConfirmation });
+        try {
+          const providerReadback = await salesforceAccountProvider.verifyAccount({ request: providerRequest, providerRecordId: input.providerRecordId });
+          const result = {
+            schemaVersion: providerRequest.schemaVersion,
+            operation: providerRequest.operation,
+            providerType: providerRequest.providerType,
+            tenantId: providerRequest.tenantId,
+            sessionId: providerRequest.sessionId,
+            opportunityId: providerRequest.opportunityId,
+            leadId: providerRequest.leadId,
+            actionId: providerRequest.actionId,
+            catalogVersionId: providerRequest.catalogVersionId,
+            actionKey: providerRequest.actionKey,
+            actionRevision: providerRequest.actionRevision,
+            idempotencyKey: providerRequest.idempotencyKey,
+            remoteAccountId: providerReadback.remoteAccountId,
+            remoteContactId: providerReadback.remoteContactId,
+            remoteOpportunityId: providerReadback.remoteOpportunityId,
+            leadExternalId: providerReadback.leadExternalId,
+            deduplicated: providerReadback.deduplicated,
+            evidenceTier: providerReadback.evidenceTier,
+          };
+          const validation = validateV2AccountProviderResult(providerRequest, result, providerReadback);
+          if (!validation.accepted) throw new HttpError(409, 'V2_PROVIDER_EVIDENCE_INVALID', `Salesforce Account provider evidence was rejected (${validation.reasons.join(',')}).`);
+          const verifiedAccount = await store.updateCrmAccount({ ...account, remoteAccountId: result.remoteAccountId, remoteContactId: result.remoteContactId, remoteOpportunityId: result.remoteOpportunityId, status: 'verified', verifiedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+          try {
+            const completed = await transitionWorkflowAction(action, 'completed', result.remoteAccountId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, true);
+            res.json({ accepted: true, status: validation.status, evidenceTier: validation.status, stageKey: input.stageKey, providerRecordRef: result.remoteAccountId, account: verifiedAccount, action: completed });
+          } catch (error) {
+            await store.updateCrmAccount({ ...verifiedAccount, status: 'reconcile_required', updatedAt: new Date().toISOString() });
+            throw error;
+          }
+        } catch (error) {
+          const reason = error instanceof HttpError ? error.code : error instanceof Error && /^SALESFORCE_[A-Z0-9_]+$/u.test(error.message) ? error.message : 'provider_readback_failed';
+          const reconciled = await transitionWorkflowAction(action, 'reconcile_required', undefined, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input);
+          await store.updateCrmAccount({ ...account, status: 'reconcile_required', updatedAt: new Date().toISOString() });
+          res.status(409).json({ accepted: false, status: 'reconciliation_required', reason, action: reconciled });
+        }
+        return;
+      }
+      if (!mockAccountProvider || nodeEnv === 'production') {
         await store.updateCrmAccount({ ...account, status: 'reconcile_required', updatedAt: new Date().toISOString() });
         const reconciled = await transitionWorkflowAction(action, 'reconcile_required', undefined, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input);
         res.status(409).json({ accepted: false, status: 'reconciliation_required', reason: 'account_provider_readback_requires_configured_node_adapter', action: reconciled });

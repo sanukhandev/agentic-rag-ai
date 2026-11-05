@@ -190,3 +190,15 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Extended the fail-closed adapter with isolated Account relationship and SF-02 attachment readback checks. They require the provider record ID, tenant/session/idempotency correlation, and the expected Account/Contact/Opportunity plus Lead/Account attachment relationships before producing `provider_record_verified` evidence.
 - Verification: **530 API tests PASS**, API typecheck/build PASS, and the new mismatch regression rejects an attachment linked to the wrong Account.
 - These checks are not wired as live completion paths yet: the Account route still requires a configured provider-specific adapter plus external OTP challenge/readback, and the document worker still executes only the deterministic SF-02 provider. Live Salesforce status remains `BLOCKED_EXTERNAL_DEPENDENCY`.
+
+## 2026-11-05 Salesforce Account adapter checkpoint
+
+- The V2 Account evidence route now accepts a configured Salesforce adapter. It independently verifies the Node OTP, Account/Contact/Opportunity relationship readback, lead association, idempotency correlation and provider evidence tier before persisting remote IDs and advancing the stage. Missing configuration or any mismatch still transitions the Account and action to `reconcile_required`.
+- The inactive Account n8n template now targets `/api/v2/internal/provider-evidence/account` and reads `REMOTE_CRM_ACCOUNT_URL` / `REMOTE_CRM_ACCOUNT_READ_URL`; no credentials are committed and the workflow remains disabled.
+- Verification: **531 API tests PASS**, API typecheck/build PASS, n8n template tests PASS, and `docker compose config --quiet` PASS. The live Account provider, external OTP delivery, SF-02, payment and contract providers remain unverified.
+
+## 2026-11-05 Salesforce credential inventory checkpoint
+
+- Rechecked the active `.env`: it contains the Salesforce provider flag and Lead Apex REST URL, but no access token, OAuth client/refresh secret, Account URL, or SF-02 URL. No credential values were exposed or written to Git.
+- The mounted n8n SQLite database contains **zero** `credentials_entity` rows and all 10 ANCFZ V2 workflows are inactive. A credential-free `HEAD` request to the configured sandbox Lead endpoint returned **HTTP 401**, without sending customer data.
+- A managed n8n Salesforce credential cannot be created or connection-tested until the approved sandbox credential material and the Account/SF-02 provider contracts are supplied. Live Salesforce acceptance remains `BLOCKED_EXTERNAL_DEPENDENCY`; no provider completion is claimed.
