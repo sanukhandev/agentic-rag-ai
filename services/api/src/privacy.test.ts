@@ -30,6 +30,7 @@ describe('privacy boundary', () => {
     expect(maskPii('I am Alice.').masked).toBe('[NAME_1].');
     expect(maskPii('My name is N8n Tester.').masked).toBe('[NAME_1].');
     expect(maskPii('My name is Alice smith.').masked).toBe('[NAME_1].');
+    expect(maskPii('My name for this synthetic test is Journey Acceptance.').masked).toBe('[NAME_1].');
     expect(maskPii('my name is alice smith.').masked).toBe('[NAME_1].');
     expect(maskPii('My name is Alice Smith Johnson.').masked).toBe('[NAME_1].');
     expect(maskPii('I am alice smith.').masked).toBe('[NAME_1].');

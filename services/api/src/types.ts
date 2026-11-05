@@ -371,6 +371,20 @@ export interface IntentCatalogVersion {
   publishedAt: string | null;
 }
 
+export interface IntentCatalogV2Version {
+  id: string;
+  tenantId: string;
+  version: number;
+  status: IntentCatalogStatus;
+  sourceFileName: string;
+  sourceHash: string;
+  parserVersion: string;
+  catalog: CatalogV2Document;
+  catalogVersionRef: string;
+  createdAt: string;
+  publishedAt: string | null;
+}
+
 export interface Tenant {
   id: string;
   name: string;
@@ -633,6 +647,7 @@ export interface PackageOffering {
   id: string;
   tenantId: string;
   catalogVersionId: string | null;
+  catalogVersionRef?: string | null;
   packageKey: string;
   name: string;
   eligibleEntityTypes: string[];
@@ -785,6 +800,104 @@ export interface AuditEvent {
   createdAt: string;
 }
 
+export interface V2OtpChallengeRecord {
+  challengeId: string;
+  tenantId: string;
+  sessionId: string;
+  opportunityId: string;
+  leadId: string;
+  expiresAt: string;
+  attemptsRemaining: number;
+  deliveryStatus: 'accepted';
+  codeDigestHex: string;
+  used: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type IntentFactSource = 'visitor' | 'catalog' | 'node' | 'provider';
+
+export interface UserIntentFact {
+  maskedValue: string;
+  source: IntentFactSource;
+  messageSequence: number;
+  evidenceRefs: string[];
+  corrected: boolean;
+}
+
+export interface ApprovedIntentResponse {
+  answer: string;
+  grounded: boolean;
+  citationRefs: string[];
+  pendingRequirementKey: string | null;
+}
+
+/** A scoped, durable goal question. Does not grant provider/action consent. */
+export interface GoalConfirmationRecord {
+  status: 'pending' | 'confirmed' | 'rejected' | 'corrected';
+  promptId: string;
+  proposalMessageId: string;
+  goalKey: string;
+  catalogVersionRef: string;
+  personaVersionId: string;
+  sessionRevision: number;
+  intentRevision: number;
+  issuedAt: string;
+  customerMessageId?: string;
+  customerClientMessageId?: string;
+  decidedAt?: string;
+  decisionSessionRevision?: number;
+  decisionIntentRevision?: number;
+}
+
+export interface UserIntentDocument {
+  id: string;
+  tenantId: string;
+  sessionId: string;
+  opportunityId: string | null;
+  catalogSource: 'legacy_v1' | 'v2';
+  catalogVersionRef: string;
+  personaVersionId: string | null;
+  businessGoalKey: string | null;
+  turnIntentKey: string | null;
+  currentStageKey: string | null;
+  stageRevision: number;
+  goalConfirmed: boolean;
+  goalConfirmation?: GoalConfirmationRecord | null;
+  verifiedFacts: Record<string, UserIntentFact>;
+  pendingRequirementKey: string | null;
+  lastQuestion: string | null;
+  approvedResponse: ApprovedIntentResponse | null;
+  toolRefs: string[];
+  sourceRefs: string[];
+  summary: string;
+  summaryRevision: number;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IntentTurnAssessment {
+  id: string;
+  documentId: string;
+  tenantId: string;
+  sessionId: string;
+  opportunityId: string | null;
+  turnSequence: number;
+  clientMessageId: string;
+  messageHash: string;
+  businessGoalKey: string | null;
+  turnIntentKey: string | null;
+  intentCategory: string | null;
+  verifiedFactPatch: Record<string, UserIntentFact>;
+  pendingRequirementKey: string | null;
+  lastQuestion: string | null;
+  approvedResponse: ApprovedIntentResponse | null;
+  toolRefs: string[];
+  sourceRefs: string[];
+  createdAt: string;
+}
+
 export interface TenantStats {
   sourceCounts: Record<SourceStatus, number>;
   ingestionJobs: Record<IngestionJobStatus, number>;
@@ -811,6 +924,9 @@ export interface Store {
   createUser(input: { email: string; passwordHash: string; role: Role; tenantId: string | null }): Promise<User>;
   getUserByEmail(email: string): Promise<User | null>;
   getUser(id: string): Promise<User | null>;
+  createV2OtpChallenge(challenge: V2OtpChallengeRecord): Promise<V2OtpChallengeRecord>;
+  getV2OtpChallenge(tenantId: string, challengeId: string): Promise<V2OtpChallengeRecord | null>;
+  updateV2OtpChallenge(challenge: V2OtpChallengeRecord): Promise<V2OtpChallengeRecord>;
   updateUserRole(userId: string, tenantId: string, role: Exclude<Role, 'platform_admin' | 'tenant_admin'>): Promise<User | null>;
   createAuthSession(session: AuthSession): Promise<AuthSession>;
   getAuthSession(tokenHash: string): Promise<AuthSession | null>;
@@ -828,6 +944,17 @@ export interface Store {
   getIntentCatalogVersion(tenantId: string, versionId: string): Promise<IntentCatalogVersion | null>;
   getPublishedIntentCatalog(tenantId: string): Promise<IntentCatalogVersion | null>;
   publishIntentCatalogVersion(tenantId: string, versionId: string): Promise<IntentCatalogVersion | null>;
+  createIntentCatalogV2Version(input: Omit<IntentCatalogV2Version, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<IntentCatalogV2Version>;
+  listIntentCatalogV2Versions(tenantId: string): Promise<IntentCatalogV2Version[]>;
+  getIntentCatalogV2Version(tenantId: string, versionId: string): Promise<IntentCatalogV2Version | null>;
+  publishIntentCatalogV2Version(tenantId: string, versionId: string): Promise<IntentCatalogV2Version | null>;
+  createUserIntentDocument(document: UserIntentDocument): Promise<UserIntentDocument>;
+  getUserIntentDocument(tenantId: string, sessionId: string): Promise<UserIntentDocument | null>;
+  updateUserIntentDocument(input: { document: UserIntentDocument; expectedRevision: number }): Promise<UserIntentDocument | null>;
+  appendIntentTurn(assessment: IntentTurnAssessment): Promise<IntentTurnAssessment>;
+  /** Commit a V2 turn across session, document, assessment and decision audit. */
+  commitV2IntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null; assistantMessage?: Message; customerMessage?: Message }): Promise<{ session: Session; document: UserIntentDocument }>;
+  listIntentTurns(tenantId: string, sessionId: string, limit?: number): Promise<IntentTurnAssessment[]>;
   createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion>;
   listPersonaVersions(tenantId: string): Promise<PersonaVersion[]>;
   getPersonaVersion(tenantId: string, versionId: string): Promise<PersonaVersion | null>;
@@ -907,7 +1034,7 @@ export interface Store {
   renewDocumentProcessingJob(id: string, tenantId: string, leaseMs: number): Promise<DocumentProcessingJob | null>;
   updateDocumentProcessingJob(job: DocumentProcessingJob): Promise<DocumentProcessingJob>;
   linkSessionDocuments(sessionId: string, tenantId: string, leadId: string): Promise<void>;
-  listPackageOfferings(tenantId: string, input?: { catalogVersionId?: string | null; activity?: string; entityType?: string }): Promise<PackageOffering[]>;
+  listPackageOfferings(tenantId: string, input?: { catalogVersionId?: string | null; catalogVersionRef?: string | null; activity?: string; entityType?: string }): Promise<PackageOffering[]>;
   getPackageOffering(id: string, tenantId: string): Promise<PackageOffering | null>;
   createPackageOffering(offering: PackageOffering): Promise<PackageOffering>;
   createPackageSelection(selection: PackageSelection): Promise<PackageSelection>;
@@ -951,3 +1078,4 @@ export interface Store {
   listAudit(tenantId: string): Promise<AuditEvent[]>;
   getTenantStats(tenantId: string): Promise<TenantStats>;
 }
+import type { CatalogV2Document } from './catalog-v2.js';

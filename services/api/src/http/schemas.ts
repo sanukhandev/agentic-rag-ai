@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { MAX_INGESTION_FILE_BYTES } from '../ingestion-staging.js';
 import { MAX_DOCUMENT_BYTES } from '../document-intake.js';
+import { v2ProviderCorrelationSchema } from '../v2-provider-correlation.js';
 
 export const DEFAULT_CONTEXT_WINDOW_MESSAGES = 10;
 const MAX_KNOWLEDGE_CONTENT_CHARS = 1_000_000;
@@ -40,6 +41,8 @@ export const uploadSchema = z.object({ title: z.string().trim().min(1).max(200),
 export const intentCatalogUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/i).refine((value) => value.toLowerCase().endsWith('.xlsx'), 'An .xlsx workbook is required.'), contentBase64: z.string().min(1).max(MAX_INGESTION_BASE64_CHARS) });
 export const intentCatalogEditSchema = z.object({ catalog: z.unknown() });
 export const intentCatalogResultSchema = z.object({ sourceHash: z.string().regex(/^[a-f0-9]{64}$/), parserVersion: z.string().trim().min(1).max(120), catalog: z.unknown() });
+export const intentCatalogV2Schema = z.object({ sourceFileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), sourceHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), catalog: z.unknown() }).strict();
+export const intentCatalogV2MigrationSchema = z.object({ sourceFileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/).optional(), catalog: z.unknown() }).strict();
 export const ingestionRequestSchema = sourceSchema.omit({ content: true });
 export const ingestionResultSchema = z.object({
   normalizedContent: z.string().min(1).refine((value) => Buffer.byteLength(value, 'utf8') <= MAX_INGESTION_RESULT_BYTES, 'Normalized ingestion output exceeds the configured byte budget; split the source into smaller files.'),
@@ -48,6 +51,26 @@ export const ingestionResultSchema = z.object({
   chunks: z.array(z.object({ ordinal: z.number().int().nonnegative(), locator: z.string().trim().min(1).max(200), content: z.string().trim().min(1).max(20_000), contentHash: z.string().regex(/^[a-f0-9]{64}$/) })).min(1).max(MAX_INGESTION_RESULT_CHUNKS),
   warnings: z.array(z.string().trim().min(1).max(500)).max(100).default([]),
 });
+// ZIP uploads are delivered as individually reviewable member sources.
+// This remains a worker-only endpoint: no archive entry is auto-published.
+export const ingestionArchiveResultSchema = z.object({
+  kind: z.literal('archive_members'),
+  parserVersion: z.string().trim().min(1).max(120),
+  members: z.array(z.object({
+    fileName: z.string().trim().min(1).max(200).refine(
+      value => !value.startsWith('/') && !value.includes('\\') && value.split('/').every(segment => Boolean(segment) && segment !== '.' && segment !== '..'),
+      'Archive member must have a safe relative path.',
+    ),
+    mimeType: z.enum(['text/plain', 'text/markdown', 'text/csv', 'application/json', 'application/x-ndjson', 'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']),
+    normalizedContent: ingestionResultSchema.shape.normalizedContent,
+    contentHash: ingestionResultSchema.shape.contentHash,
+    chunks: ingestionResultSchema.shape.chunks,
+  }).strict()).min(1).max(100),
+  warnings: ingestionResultSchema.shape.warnings,
+}).strict();
+
 export const ingestionFailureSchema = z.object({ errorCode: z.string().trim().regex(/^[A-Z0-9_]{1,80}$/).default('INGESTION_FAILED'), errorDetail: z.string().trim().min(1).max(2_000).optional() });
 export const ingestionRenewSchema = z.object({ jobId: z.string().guid(), leaseMs: z.number().int().min(60_000).max(900_000).default(120_000) });
 export const sessionSchema = z.object({ tenantId: z.string().guid().optional(), tenantSlug: z.string().regex(/^[a-z0-9-]+$/).optional() });
@@ -80,7 +103,7 @@ export const crmRemoteSchema = z.object({ tenantId: z.string().guid(), leadId: z
 export const crmRemotePayloadSchema = z.object({ tenantId: z.string().guid(), actionId: z.string().guid() });
 export const crmRemoteReconcileSchema = z.object({ tenantId: z.string().guid(), actionId: z.string().guid() });
 const workflowExecutionReference = z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u);
-export const workflowClaimSchema = z.object({ actionId: z.string().guid().optional(), tenantId: z.string().guid().optional(), workflowKey: z.string().trim().regex(/^[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)+$/i).optional(), n8nWorkflowId: z.string().trim().min(1).max(120), contract: z.string().trim().min(1).max(120).optional(), executionReference: workflowExecutionReference, eventId: z.string().guid().optional(), correlationId: z.string().guid().optional(), attempt: z.number().int().min(1).max(100_000).optional(), limit: z.number().int().min(1).max(50).default(10) }).superRefine((value, context) => {
+export const workflowClaimSchema = z.object({ actionId: z.string().guid().optional(), tenantId: z.string().guid().optional(), workflowKey: z.string().trim().regex(/^[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)+$/i).optional(), n8nWorkflowId: z.string().trim().min(1).max(120), contract: z.string().trim().min(1).max(120).optional(), executionReference: workflowExecutionReference, eventId: z.string().guid().optional(), correlationId: z.string().guid().optional(), attempt: z.number().int().min(1).max(100_000).optional(), limit: z.number().int().min(1).max(50).default(10), ...v2ProviderCorrelationSchema.shape }).superRefine((value, context) => {
   if (value.actionId && !value.tenantId) context.addIssue({ code: z.ZodIssueCode.custom, path: ['tenantId'], message: 'Webhook claims require the server-issued tenant id.' });
   if (value.actionId && !value.eventId) context.addIssue({ code: z.ZodIssueCode.custom, path: ['eventId'], message: 'Webhook claims require the server-issued event id.' });
   if (value.actionId && !value.correlationId) context.addIssue({ code: z.ZodIssueCode.custom, path: ['correlationId'], message: 'Webhook claims require the server-issued correlation id.' });
@@ -88,7 +111,7 @@ export const workflowClaimSchema = z.object({ actionId: z.string().guid().option
 });
 const opaqueReference = z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u).optional();
 const workflowCorrelationFields = { eventId: z.string().guid().optional(), correlationId: z.string().guid().optional(), attempt: z.number().int().min(1).max(100_000).optional() };
-export const workflowCompletionSchema = z.object({ actionId: z.string().guid(), tenantId: z.string().guid(), state: z.enum(['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review']), externalReference: opaqueReference, executionReference: opaqueReference, ...workflowCorrelationFields }).superRefine((value, context) => {
+export const workflowCompletionSchema = z.object({ actionId: z.string().guid(), tenantId: z.string().guid(), state: z.enum(['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review']), externalReference: opaqueReference, executionReference: opaqueReference, ...workflowCorrelationFields, ...v2ProviderCorrelationSchema.shape }).superRefine((value, context) => {
   if (value.state === 'completed' || value.state === 'failed') {
     if (!value.executionReference) context.addIssue({ code: z.ZodIssueCode.custom, path: ['executionReference'], message: 'Provider terminal transitions require an execution reference.' });
     if (!value.eventId) context.addIssue({ code: z.ZodIssueCode.custom, path: ['eventId'], message: 'Provider terminal transitions require an event id.' });
@@ -96,6 +119,29 @@ export const workflowCompletionSchema = z.object({ actionId: z.string().guid(), 
     if (value.attempt === undefined) context.addIssue({ code: z.ZodIssueCode.custom, path: ['attempt'], message: 'Provider terminal transitions require an attempt.' });
   }
 });
+export const v2ProviderEvidenceVerifySchema = z.object({
+  actionId: z.string().guid(),
+  tenantId: z.string().guid(),
+  stageKey: z.string().trim().regex(/^[a-z][a-z0-9._-]{1,79}$/u),
+  workflowKey: z.string().trim().regex(/^[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)+$/iu),
+  providerType: z.string().trim().regex(/^[a-z][a-z0-9._-]{1,79}$/iu).optional(),
+  providerRecordId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u),
+  providerReadback: z.record(z.string(), z.unknown()).optional().refine((value) => value === undefined || JSON.stringify(value).length <= 100_000, 'Provider readback exceeds the diagnostic budget.'),
+  eventId: z.string().guid(),
+  correlationId: z.string().guid(),
+  attempt: z.number().int().min(1).max(100_000),
+  ...v2ProviderCorrelationSchema.shape,
+}).strict();
+export const v2AccountOtpIssueSchema = z.object({
+  actionId: z.string().guid(), tenantId: z.string().guid(), sessionId: z.string().guid(), opportunityId: z.string().guid(), leadId: z.string().guid(),
+  code: z.string().regex(/^\d{4,8}$/u),
+}).strict();
+export const v2AccountProviderEvidenceSchema = v2ProviderEvidenceVerifySchema.extend({
+  otpChallengeId: z.string().guid(), otpCode: z.string().regex(/^\d{4,8}$/u), explicitConfirmation: z.literal(true),
+}).strict();
+export const v2InvoiceProviderEvidenceSchema = v2ProviderEvidenceVerifySchema.strict();
+export const v2PaymentProviderEvidenceSchema = v2ProviderEvidenceVerifySchema.extend({ settle: z.boolean().default(true), paymentConfirmation: z.literal(true) }).strict();
+export const v2ContractProviderEvidenceSchema = v2ProviderEvidenceVerifySchema.extend({ sign: z.boolean().default(true), customerApproval: z.literal(true), signatoryRef: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), signingExpiresAt: z.string().datetime({ offset: true }) }).strict();
 export const workflowTransitionSchema = z.object({ state: z.enum(['processing', 'completed', 'failed', 'reconcile_required', 'awaiting_customer', 'human_review']), externalReference: opaqueReference, executionReference: opaqueReference, ...workflowCorrelationFields });
 export const crmQualitySchema = z.object({ tenantId: z.string().guid(), score: z.number().int().min(0).max(100), qualityWorkflowKey: z.string().trim().min(1).max(80), catalogVersionId: z.string().guid(), intentKey: z.string().trim().min(1).max(80) });
 export const documentUploadSchema = z.object({ fileName: z.string().trim().min(1).max(240).regex(/^[^\\/]+$/), mimeType: z.string().trim().min(1).max(160), contentBase64: z.string().min(1).max(MAX_DOCUMENT_BASE64_CHARS), processingConsent: z.literal(true), primaryIntentKey: z.string().trim().min(1).max(80).optional(), requirementKey: z.string().trim().min(1).max(120).optional() });
@@ -107,6 +153,7 @@ export const lifecyclePackageProposalSchema = lifecycleOpportunitySchema.extend(
 export const lifecycleQuoteSchema = lifecyclePackageProposalSchema;
 export const lifecycleSelectionConfirmationSchema = z.object({ quoteId: z.string().guid() }).strict();
 export const lifecycleInvoiceSchema = z.object({ opportunityId: z.string().guid(), quoteId: z.string().guid() }).strict();
+export const lifecyclePaymentSchema = z.object({ opportunityId: z.string().guid(), invoiceId: z.string().guid(), paymentConfirmation: z.literal(true) }).strict();
 export const lifecycleContractSchema = z.object({ opportunityId: z.string().guid(), packageSelectionId: z.string().guid(), invoiceId: z.string().guid() }).strict();
 export const lifecycleAccountProposalSchema = lifecycleOpportunitySchema.extend({ conversionRule: z.enum(['qualification_verified', 'package_confirmed', 'invoice_paid', 'manual_approval']) }).strict();
 export const crmAccountRemoteSchema = z.object({ tenantId: z.string().guid(), actionId: z.string().guid(), remoteAccountId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteContactId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u), remoteOpportunityId: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u) }).strict();

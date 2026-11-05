@@ -7,6 +7,7 @@ import json
 import re
 import socket
 import tempfile
+import time
 import zipfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -18,7 +19,9 @@ MAX_CONTAINER_ENTRIES = 2_000
 MAX_CONTAINER_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 MAX_NORMALIZED_BYTES = 25 * 1024 * 1024
 MAX_RESULT_CHUNKS = 100_000
-PARSER_VERSION = "python-ingestion-0.4.0"
+PARSER_VERSION = "python-ingestion-0.5.0"
+MAX_ARCHIVE_INGESTIBLE_MEMBERS = 100
+MAX_ARCHIVE_RESULT_PAYLOAD_BYTES = 20 * 1024 * 1024
 ARCHIVE_SUPPORTED_SUFFIXES = {".txt", ".md", ".pdf", ".docx", ".xlsx", ".csv", ".json", ".jsonl"}
 
 
@@ -210,7 +213,7 @@ def _archive_member_label(name: str) -> str:
     return name.replace("\r", " ").replace("\n", " ")[:200]
 
 
-def _extract_archive(path: Path) -> tuple[list[tuple[str, str, str]], list[str]]:
+def _extract_archive(path: Path, member_delay_seconds: float = 0.0) -> tuple[list[tuple[str, str, str]], list[str]]:
     if not zipfile.is_zipfile(path):
         raise ValueError("File signature does not match ZIP archive.")
     with zipfile.ZipFile(path) as archive:
@@ -258,6 +261,10 @@ def _extract_archive(path: Path) -> tuple[list[tuple[str, str, str]], list[str]]
                     continue
                 if entry.flag_bits & 0x1 or entry.file_size > MAX_BYTES:
                     raise ValueError("ZIP archive contains an encrypted or oversized file.")
+                if extracted and member_delay_seconds > 0:
+                    # Bounded, sequential ingestion prevents a large ZIP from hammering
+                    # CPU/OCR and the downstream embedding provider at once.
+                    time.sleep(member_delay_seconds)
                 try:
                     with archive.open(entry) as source:
                         content = source.read(MAX_BYTES + 1)
@@ -302,6 +309,45 @@ def _ingest_archive(path: Path) -> IngestedSource:
         chunks=chunks,
         warnings=warnings,
     )
+
+
+
+def ingest_archive_members(path: Path, member_delay_seconds: float = 0.0) -> tuple[list[tuple[str, IngestedSource]], list[str]]:
+    """Safely unpack and parse supported ZIP members one at a time.
+
+    Every member becomes its own source with its own content hash and chunk locators.
+    No member is published directly; the API creates review-pending sources.
+    """
+    path = _safe_path(path)
+    if path.suffix.lower() != ".zip":
+        raise ValueError("Archive member ingestion requires a .zip file.")
+    if not 0 <= member_delay_seconds <= 10:
+        raise ValueError("ZIP member delay must be between zero and ten seconds.")
+    files, warnings = _extract_archive(path, member_delay_seconds)
+    if len(files) > MAX_ARCHIVE_INGESTIBLE_MEMBERS:
+        raise ValueError("ZIP archive contains too many ingestible files; split into smaller batches.")
+    members: list[tuple[str, IngestedSource]] = []
+    total_bytes = 0
+    total_chunks = 0
+    for name, mime_type, text in files:
+        parsed = ingest_text(name, text, mime_type)
+        label = _archive_member_label(sanitize(name))
+        chunks = [_chunk(chunk.content, chunk.ordinal, f"{label} · {chunk.locator}"[:200]) for chunk in parsed.chunks]
+        parsed = IngestedSource(
+            title=label,
+            mime_type=mime_type,
+            source_url=None,
+            normalized_content=parsed.normalized_content,
+            content_hash=parsed.content_hash,
+            parser_version=PARSER_VERSION,
+            chunks=chunks,
+        )
+        total_bytes += len(parsed.normalized_content.encode("utf-8"))
+        total_chunks += len(chunks)
+        if total_bytes > MAX_NORMALIZED_BYTES or total_chunks > MAX_RESULT_CHUNKS:
+            raise ValueError("ZIP archive exceeds normalized output budget; split into smaller batches.")
+        members.append((name, parsed))
+    return members, warnings[:100]
 
 
 def fetch_authorized_https(url: str, allowed_hosts: set[str]) -> tuple[str, str]:

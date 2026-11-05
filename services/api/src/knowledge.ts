@@ -98,6 +98,12 @@ const evidenceMetadataLine = /^(?:File|Format|Primary intent|Suggested routing|R
 const evidenceMetadataHeader = /^(?:Knowledge Records|Detailed retrieval-ready knowledge records|tenantScope|sourceKey|sourceFile|sourceSha256|visibility|piiScreening|---)$/iu;
 const evidenceRecordHeader = /^[A-Z][A-Z0-9_.-]*-\d+\s*(?:[—-]|\|)/u;
 const sourceBackedLine = /^Source-backed\s+(?:content|knowledge):/iu;
+const retrievalScaffoldLine = /^(?:Use this knowledge domain|The assistant should|Where the answer depends|If two sources conflict|Do not treat user-provided|Legal, AML, UBO, tax|Heading \d|Detection examples:|Clarification:|Response pattern:|Next action:)/iu;
+
+const isRetrievalScaffold = (input: string): boolean => {
+  const lines = input.split('\n').map(line => line.trim()).filter(Boolean);
+  return lines.length > 0 && lines.every(line => retrievalScaffoldLine.test(line) || evidenceMetadataLine.test(line) || evidenceMetadataHeader.test(line));
+};
 
 /** Removes ingestion/template metadata while preserving the approved source-backed facts. */
 export const presentKnowledgeText = (input: string): string => {
@@ -144,6 +150,8 @@ const rankWithEmbedding = <T extends { chunk: { content: string; embedding: numb
   const genericRetrievalTerms = new Set(['about', 'after', 'also', 'approved', 'are', 'available', 'can', 'company', 'could', 'cost', 'costs', 'does', 'fee', 'fees', 'from', 'guarantee', 'guaranteed', 'have', 'here', 'how', 'information', 'long', 'many', 'much', 'owner', 'package', 'packages', 'please', 'policy', 'policies', 'price', 'prices', 'pricing', 'service', 'services', 'setup', 'tell', 'that', 'the', 'this', 'what', 'which', 'visa', 'visas', 'with', 'would', 'your']);
   const specificTerms = terms.filter((term) => !genericRetrievalTerms.has(term));
   const requiredSpecificOverlap = Math.min(2, specificTerms.length);
+  const processQuery = /\b(?:formation|setup|set[- ]?up|registration|process|procedure|step|steps)\b/u.test(query.toLowerCase());
+  const visaQuery = /\bvisas?\b/u.test(query.toLowerCase());
   const ranked = rows.map((row) => {
     const content = presentKnowledgeText(row.chunk.content).toLowerCase();
     const overlap = terms.filter((term) => content.includes(term)).length;
@@ -153,12 +161,15 @@ const rankWithEmbedding = <T extends { chunk: { content: string; embedding: numb
       : /\b(?:package|packages|price|prices|cost|costs|fee|fees|visa|visas)\b/u.test(query.toLowerCase()) && /\b(?:package|packages|price|prices|cost|costs|fee|fees|visa|visas)\b/u.test(content)
         ? 0.3
         : 0;
-    return { row, score: cosine(queryEmbedding, row.chunk.embedding) + overlap * 0.1 + topicBoost, overlap, specificOverlap };
+    const formationBoost = processQuery && /\b(?:company|business|formation|setup|registration|application|structure|activit(?:y|ies))\b/u.test(content) ? 0.18 : 0;
+    const unrelatedVisaPenalty = processQuery && !visaQuery && /\bvisas?\b/u.test(content) ? 0.35 : 0;
+    return { row, score: cosine(queryEmbedding, row.chunk.embedding) + overlap * 0.1 + topicBoost + formationBoost - unrelatedVisaPenalty, overlap, specificOverlap };
   })
     .sort((left, right) => right.score - left.score)
     .filter(({ score, overlap, specificOverlap }) => (semanticOnlyThreshold !== Number.POSITIVE_INFINITY && semanticOnlyThreshold !== null && score >= semanticOnlyThreshold) || (overlap > 0 && (score >= 0.45 || overlap >= 2)) && (semanticOnlyThreshold !== Number.POSITIVE_INFINITY || specificTerms.length === 0 || specificOverlap >= requiredSpecificOverlap));
+  const rankedEvidence = ranked.filter(({ row }) => !isRetrievalScaffold(presentKnowledgeText(row.chunk.content)));
   const seen = new Set<string>();
-  return ranked.filter(({ row }) => {
+  return rankedEvidence.filter(({ row }) => {
     const key = presentKnowledgeText(row.chunk.content);
     if (seen.has(key)) return false;
     seen.add(key);

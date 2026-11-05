@@ -22,11 +22,29 @@ describe('knowledge pipeline primitives', () => {
     expect(rankChunks('What is the office location?', rows)).toHaveLength(0);
   });
 
+  it('does not return retrieval instructions as customer evidence', () => {
+    const source = { id: 'source', tenantId: 'tenant', versionId: 'version' };
+    const chunks = buildChunks(source, 'Use this knowledge domain when the customer asks about company formation.\n\nWhere the answer depends on company structure, collect the missing input.');
+    const rows = [{ source: { id: 'source', title: 'Rules' }, chunk: chunks[0]! }];
+    expect(rankChunks('Tell me about company formation', rows)).toHaveLength(0);
+  });
+
   it('keeps an exact text match when the provider vector is weak', () => {
     const source = { id: 'source', tenantId: 'tenant', versionId: 'version' };
     const chunks = buildChunks(source, 'Business setup packages include timeline guidance.');
     const rows = [{ source: { id: 'source', title: 'Catalog' }, chunk: { ...chunks[0]!, embedding: [0, 0, 0, 0, 0, 0, 0, 0] } }];
     expect(rankChunksWithVector('business setup timeline cost', rows, [0, 0, 0, 0, 0, 0, 0, 0])).toHaveLength(1);
+  });
+
+  it('prefers formation-process evidence over a visa excerpt when visas were not asked about', () => {
+    const source = { id: 'source', tenantId: 'tenant', versionId: 'version' };
+    const visa = buildChunks(source, 'The process includes visa issuance after company registration.')[0]!;
+    const process = buildChunks(source, 'Company formation registration and application steps are explained.')[0]!;
+    const rows = [
+      { source: { id: 'visa', title: 'Visa' }, chunk: { ...visa, embedding: [1, 0] } },
+      { source: { id: 'process', title: 'Process' }, chunk: { ...process, embedding: [1, 0] } },
+    ];
+    expect(rankChunksWithVector('How does company formation process work?', rows, [1, 0], 2)[0]?.source.title).toBe('Process');
   });
 
   it('admits a strong semantic match without lexical overlap when enabled', () => {

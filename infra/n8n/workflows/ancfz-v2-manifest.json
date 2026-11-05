@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "status": "inactive_templates",
+  "backendV2ClaimIntegrated": false,
+  "backendV2EvidenceEndpointImplemented": false,
+  "qualificationPolicy": "node_only",
+  "templates": [
+    {
+      "name": "Lead creation",
+      "file": "01-lead-create.json",
+      "stageKey": "lead_generation",
+      "workflowKey": "crm.lead.create",
+      "providerType": "salesforce",
+      "recordField": "leadId",
+      "requiresCredential": true,
+      "registeredInDraftCatalog": true
+    },
+    {
+      "name": "Send verification email",
+      "file": "03a-email-otp-send.json",
+      "stageKey": "account_creation",
+      "workflowKey": "account.email.verify.send",
+      "providerType": "email",
+      "recordField": "challengeId",
+      "requiresCredential": true,
+      "registeredInDraftCatalog": false
+    },
+    {
+      "name": "Check email verification",
+      "file": "03b-email-otp-check.json",
+      "stageKey": "account_creation",
+      "workflowKey": "account.email.verify.check",
+      "providerType": "email",
+      "recordField": "challengeId",
+      "requiresCredential": true,
+      "registeredInDraftCatalog": false
+    },
+    {
+      "name": "Account Contact Opportunity creation",
+      "file": "03c-account-create.json",
+      "stageKey": "account_creation",
+      "workflowKey": "crm.account.create",
+      "providerType": "salesforce",
+      "recordField": "accountId",
+      "requiresCredential": true,
+      "registeredInDraftCatalog": true
+    },
+    {
+      "name": "Package quote preparation",
+      "file": "04-package-quote.json",
+      "stageKey": "package_selection",
+      "workflowKey": "package.confirm",
+      "providerType": "quote",
+      "recordField": "quoteId",
+      "requiresCredential": true,
+      "registeredInDraftCatalog": true
+    },
+    {
+      "name": "SF-02 document attachment",
+      "file": "05-sf02-document.json",
+      "stageKey": "document_upload",
+      "workflowKey": "document.sf02.upload",
+      "providerType": "salesforce",
+      "recordField": "attachmentId",
+      "requiresCredential": true,
+      "registeredInDraftCatalog": true
+    },
+    {
+      "name": "Invoice generation",
+      "file": "06a-invoice-issue.json",
+      "stageKey": "payment_invoice",
+      "workflowKey": "invoice.issue",
+      "providerType": "invoice",
+      "recordField": "invoiceId",
+      "requiresCredential": true,
+      "registeredInDraftCatalog": true
+    },
+    {
+      "name": "Payment authorization and verification",
+      "file": "06b-payment-verify.json",
+      "stageKey": "payment_invoice",
+      "workflowKey": "payment.authorize",
+      "providerType": "payment",
+      "recordField": "paymentId",
+      "requiresCredential": true,
+      "registeredInDraftCatalog": true
+    },
+    {
+      "name": "Contract send for signature",
+      "file": "07a-contract-send.json",
+      "stageKey": "contract",
+      "workflowKey": "contract.send",
+      "providerType": "contract",
+      "recordField": "contractId",
+      "requiresCredential": true,
+      "registeredInDraftCatalog": true
+    },
+    {
+      "name": "Contract signature verification",
+      "file": "07b-contract-sign-check.json",
+      "stageKey": "contract",
+      "workflowKey": "contract.sign",
+      "providerType": "contract",
+      "recordField": "contractId",
+      "requiresCredential": true,
+      "registeredInDraftCatalog": true
+    },
+    {
+      "name": "Lead-created notification",
+      "file": "N1-notify-lead.json",
+      "stageKey": "lead_generation",
+      "workflowKey": "notify.lead.created",
+      "providerType": "email",
+      "recordField": "messageId",
+      "requiresCredential": true,
+      "registeredInDraftCatalog": false
+    },
+    {
+      "name": "Account-created notification",
+      "file": "N3-notify-account.json",
+      "stageKey": "account_creation",
+      "workflowKey": "notify.account.created",
+      "providerType": "email",
+      "recordField": "messageId",
+      "requiresCredential": true,
+      "registeredInDraftCatalog": false
+    }
+  ]
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import json
 import os
 import threading
 import time
@@ -11,7 +12,8 @@ from typing import Any
 import requests
 
 from .intent_catalog import parse_intent_catalog
-from .pipeline import MAX_BYTES, IngestedSource, ingest_file, ingest_url
+from .catalog_v2 import parse_catalog_v2
+from .pipeline import MAX_BYTES, MAX_ARCHIVE_RESULT_PAYLOAD_BYTES, IngestedSource, ingest_archive_members, ingest_file, ingest_url
 from .document_ocr import document_summary, extract_document_text
 from .staging import LocalStaging
 
@@ -60,6 +62,46 @@ def result_payload(source: IngestedSource) -> dict[str, Any]:
         "chunks": [{"ordinal": chunk.ordinal, "locator": chunk.locator, "content": chunk.content, "contentHash": chunk.content_hash} for chunk in source.chunks],
         "warnings": source.warnings,
     }
+
+
+
+def configured_zip_member_delay_seconds() -> float:
+    try:
+        value = float(os.environ.get("INGESTION_ZIP_MEMBER_DELAY_SECONDS", "1.0"))
+    except ValueError as error:
+        raise ValueError("INGESTION_ZIP_MEMBER_DELAY_SECONDS must be a number.") from error
+    if not 0 <= value <= 10:
+        raise ValueError("INGESTION_ZIP_MEMBER_DELAY_SECONDS must be between 0 and 10.")
+    return value
+
+
+def archive_result_payload(members: list[tuple[str, IngestedSource]], warnings: list[str]) -> dict[str, Any]:
+    payload = {
+        "kind": "archive_members",
+        "parserVersion": members[0][1].parser_version if members else "",
+        "members": [
+            {
+                "fileName": name,
+                "mimeType": source.mime_type,
+                "normalizedContent": source.normalized_content,
+                "contentHash": source.content_hash,
+                "chunks": [
+                    {"ordinal": chunk.ordinal, "locator": chunk.locator, "content": chunk.content, "contentHash": chunk.content_hash}
+                    for chunk in source.chunks
+                ],
+            }
+            for name, source in members
+        ],
+        "warnings": warnings[:100],
+    }
+    if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > MAX_ARCHIVE_RESULT_PAYLOAD_BYTES:
+        raise ValueError("ZIP result exceeds the safe upload budget; split into smaller batches.")
+    return payload
+
+
+def process_zip_archive(api_base: str, job_id: str, worker_secret: str, path: Path, session: requests.Session) -> dict[str, Any]:
+    members, warnings = ingest_archive_members(path, configured_zip_member_delay_seconds())
+    return submit_catalog_result(api_base, job_id, worker_secret, archive_result_payload(members, warnings), session)
 
 
 def claim_job(api_base: str, job_id: str, worker_secret: str, session: requests.Session | None = None) -> None:
@@ -127,6 +169,24 @@ def submit_result(api_base: str, job_id: str, worker_secret: str, source: Ingest
     if not isinstance(body, dict):
         raise ValueError("The ingestion API returned an invalid result.")
     return body
+
+
+def v2_catalog_result_payload(parsed: dict[str, Any]) -> dict[str, Any]:
+    """Wrap the strict V2 parser output in the Node ingestion endpoint contract.
+
+    Unlike the legacy V1 parser, the V2 parser returns schemaVersion, manifest
+    and sheets at the top level alongside its file provenance. The worker must
+    send an envelope with a required 'catalog' field; otherwise Node rejects it.
+    """
+    return {
+        "sourceHash": parsed["sourceHash"],
+        "parserVersion": parsed["parserVersion"],
+        "catalog": {
+            "schemaVersion": parsed["schemaVersion"],
+            "manifest": parsed["manifest"],
+            "sheets": parsed["sheets"],
+        },
+    }
 
 
 def submit_catalog_result(api_base: str, job_id: str, worker_secret: str, result: dict[str, Any], session: requests.Session | None = None) -> dict[str, Any]:
@@ -275,7 +335,10 @@ def process_job(
             staging = LocalStaging(staging_root) if staging_root else None
             staged = staging.stage(path) if staging else None
             try:
-                ingested = ingest_file(staged or path)
+                source_path = staged or path
+                if source_path.suffix.lower() == ".zip":
+                    return process_zip_archive(api_base, job_id, worker_secret, source_path, client)
+                ingested = ingest_file(source_path)
             finally:
                 if staging and staged:
                     staging.purge(staged)
@@ -287,7 +350,19 @@ def process_job(
             staged = staging.stage_bytes(Path(file_name).suffix, content)
             try:
                 if mime_type == "application/vnd.agentic.intent-catalog+excel":
-                    return submit_catalog_result(api_base, job_id, worker_secret, parse_intent_catalog(staged), client)
+                    from openpyxl import load_workbook
+                    workbook = load_workbook(staged, read_only=True, data_only=False, keep_links=False)
+                    try:
+                        is_v2 = "CatalogManifest" in workbook.sheetnames
+                    finally:
+                        workbook.close()
+                    if is_v2:
+                        parsed_catalog = v2_catalog_result_payload(parse_catalog_v2(staged))
+                    else:
+                        parsed_catalog = parse_intent_catalog(staged)
+                    return submit_catalog_result(api_base, job_id, worker_secret, parsed_catalog, client)
+                if mime_type == "application/zip":
+                    return process_zip_archive(api_base, job_id, worker_secret, staged, client)
                 ingested = ingest_file(staged)
             finally:
                 staging.purge(staged)
