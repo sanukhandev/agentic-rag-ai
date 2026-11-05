@@ -477,6 +477,30 @@ export class V2ConversationCoordinator {
         }
       }
     }
+    const packageToolEvidence = trustedEvidence.some(item => item.sourceRef === 'tool-get_available_packages');
+    if ((guarded.verdict.reasonCode === 'unsupported_claim' || guarded.verdict.reasonCode === 'policy_denied')
+      && packageToolEvidence && trustedEvidence.length > 0 && !eligibleForEntailment) {
+      const excerpt = sourceExcerptResponse(envelope, trustedEvidence);
+      if (excerpt) {
+        const excerptEvidence = excerpt.citationIds.map(citationId => trustedEvidence.find(item => item.citationId === citationId)).filter((item): item is V2ApprovedEvidence => Boolean(item));
+        const verifiedExcerpt = excerptEvidence.length > 0
+          ? guardV2Response(excerpt, { ...guardContext, evidence: excerptEvidence })
+          : guardV2Response(excerpt, guardContext);
+        if (verifiedExcerpt.verdict.accepted && verifiedExcerpt.response) return {
+          response: verifiedExcerpt.response, candidateResponse: agentResult.response,
+          repairApplied, draft: toDraft(verifiedExcerpt.response), toolTrace: agentResult.toolTrace,
+          approvedEvidence: guardContext.evidence ?? [], claimProvenance: verifiedExcerpt.claims,
+          modelRequestCount: agentResult.modelRequestCount + groundingReviewRequests,
+          toolCallCount: agentResult.toolCallCount, guardReason: 'accepted_knowledge_excerpt', candidateGuardReason,
+          questionFailureReason: guarded.questionFailureReason ?? null, knowledgeRepairStatus: 'not_eligible',
+          repairCitationCount: null, repairFailureReason: null, repairClaimFailureReason: null, repairFailedClauseOrdinal: null,
+          initialClaimFailureReason: guarded.firstFailure?.reason ?? null,
+          initialFailedClauseOrdinal: guarded.firstFailure?.clauseOrdinal ?? null,
+          groundingReviewStatus, groundingLexicalOverlapPercent: lexicalOverlap,
+          diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
+        };
+      }
+    }
     // A factual answer rejected for insufficient claim support can receive ONE
     // independent, read-only evidence repair. The failed draft is never returned.
     // All source identities must match the trusted Node prefetch (not untrusted
@@ -557,7 +581,6 @@ export class V2ConversationCoordinator {
         }
       }
     }
-    const packageToolEvidence = trustedEvidence.some(item => item.sourceRef === 'tool-get_available_packages');
     if (guarded.verdict.reasonCode === 'unsupported_claim'
       && (['single_source_support_not_established', 'claim_source_polarity_mismatch', 'unverified_provider_outcome'].includes(guarded.firstFailure?.reason ?? '')
         || packageToolEvidence && guarded.firstFailure?.reason === 'numeric_value_not_in_cited_source')
