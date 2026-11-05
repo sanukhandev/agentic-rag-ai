@@ -149,6 +149,12 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Full local verification passes: workspace lint/typechecks, 61 API files / 517 tests, builds, security checks, dependency audit, synthetic tenant/source acceptance and 35 Python ingestion tests.
 - This removes the local restart-loss defect, but does not establish live Salesforce OTP delivery/verification or sandbox Account readback; overall status remains `NOT_READY`.
 
+## 2026-11-05 service restart/replay checkpoint
+
+- Public synthetic session sent one message, then `api`, `model-gateway`, and `event-worker` were restarted together.
+- Replaying the same `clientMessageId` returned the identical assistant message ID and answer; PostgreSQL retained exactly one user row and one assistant row for the session.
+- This proves API/model/worker restart and message-idempotency continuity for the tested turn. Full Redis/outbox/provider replay remains unverified.
+
 ## 2026-11-05 contact recovery checkpoint
 
 - Fixed the remaining live objective failure where masked email/phone submitted before explicit goal confirmation fell through to the generic unsupported-claim fallback.

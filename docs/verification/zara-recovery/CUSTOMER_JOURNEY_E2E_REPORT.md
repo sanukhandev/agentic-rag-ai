@@ -234,3 +234,10 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 - Three fresh public Nginx/API/model-gateway runs completed 25/25 turns with 25 durable user messages each.
 - Objective score: **1.00 (10/10) in all three runs**. The email/phone turns now explain that collection waits for goal confirmation and do not persist contact slots before authorization.
 - These runs verify transport, state continuity and the objective harness only; they do not verify Salesforce, payment, contract, browser or human-scored Azure quality gates.
+
+## Service restart/replay checkpoint — 2026-11-05
+
+- A fresh public synthetic session was created and one message was processed.
+- `api`, `model-gateway`, and `event-worker` were restarted together.
+- Replaying the same `clientMessageId` returned the same assistant message ID and answer. PostgreSQL contained exactly one user message and one assistant message for that session.
+- Result: **PASS** for the tested restart/idempotency boundary. Redis/outbox replay and external provider completion remain unverified.

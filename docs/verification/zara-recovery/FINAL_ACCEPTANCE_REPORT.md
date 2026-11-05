@@ -97,3 +97,10 @@ The branch is not ready to merge until the unverified gates are executed or expl
 - Live Docker/Azure-backed public evidence: three fresh 25-turn sessions, each **25/25 HTTP**, **25 durable user messages**, and **1.00 (10/10)** automated objective score.
 - Formal human persona-quality review remains `NOT_RUN`; provider completion remains `NOT_VERIFIED_BY_THIS_HARNESS`.
 - Overall acceptance remains **NOT_READY** because Salesforce sandbox/readback, official pricing, browser E2E, full seven-stage provider journey and the human-scored Azure gate remain unverified or externally blocked.
+
+## 2026-11-05 restart/replay evidence
+
+- Restarted `api`, `model-gateway`, and `event-worker` during a fresh public synthetic session.
+- Replayed the exact same client message after restart; the API returned the identical assistant message ID and answer.
+- PostgreSQL retained one user message and one assistant response for that client message, with no duplicate turn.
+- This closes the tested service restart/idempotency boundary only; Redis/outbox replay and provider-side idempotency remain unverified.
