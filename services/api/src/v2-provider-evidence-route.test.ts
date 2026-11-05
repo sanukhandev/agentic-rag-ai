@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createApp } from './app.js';
 import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2, type CatalogV2Document } from './catalog-v2.js';
 import { newConversationState } from './conversation-state.js';
@@ -71,7 +71,7 @@ const catalog = (providerType: string): CatalogV2Document => {
   return document;
 };
 
-async function makeFixture(providerType: string) {
+async function makeFixture(providerType: string, v2SalesforceLeadProvider?: { verify: (input: { request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string }; providerRecordId: string }) => Promise<{ tenantId: string; sessionId: string; opportunityId: string; providerType: string; idempotencyKey: string; recordRef: string; evidenceTier: 'provider_record_verified'; verificationStatus: 'verified' }> }) {
   const store = new MemoryStore();
   const tokenVault = new TokenVault('provider-evidence-route-test-secret');
   const otp = new V2OtpChallengeService('provider-evidence-route-otp-secret');
@@ -79,7 +79,7 @@ async function makeFixture(providerType: string) {
   const documentProvider = new DeterministicV2DocumentProvider();
   const paymentProvider = new DeterministicV2PaymentProvider();
   const contractProvider = new DeterministicV2ContractProvider();
-  const runtime = createApp({ store, nodeEnv: 'test', tokenVault, n8nCallbackSecret: 'n'.repeat(64), ingestionWorkerSecret: 'i'.repeat(64), v2AccountOtp: otp, v2AccountProvider: accountProvider, v2DocumentProvider: documentProvider, v2PaymentProvider: paymentProvider, v2ContractProvider: contractProvider });
+  const runtime = createApp({ store, nodeEnv: 'test', tokenVault, n8nCallbackSecret: 'n'.repeat(64), ingestionWorkerSecret: 'i'.repeat(64), v2AccountOtp: otp, ...(v2SalesforceLeadProvider ? { v2SalesforceLeadProvider } : {}), v2AccountProvider: accountProvider, v2DocumentProvider: documentProvider, v2PaymentProvider: paymentProvider, v2ContractProvider: contractProvider });
   const tenant = await store.createTenant({ name: 'Provider Evidence', slug: `provider-evidence-${randomUUID()}` });
   const session = await store.createSession(tenant.id);
   const document = catalog(providerType);
@@ -134,6 +134,27 @@ describe('V2 provider evidence route', () => {
     expect(response.body).toMatchObject({ accepted: false, status: 'reconciliation_required' });
     expect((await test.store.getAction(test.action.id))?.state).toBe('reconcile_required');
     expect(await test.store.getCrmLeadByActionId(test.action.id, test.tenant.id)).toBeNull();
+  });
+
+  it('accepts Salesforce only after the injected Node adapter verifies the exact provider record', async () => {
+    const providerRecordId = '00Q-sandbox-verified';
+    const verify = vi.fn(async ({ request: providerRequest, providerRecordId: recordRef }: { request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string }; providerRecordId: string }) => ({
+      tenantId: providerRequest.tenantId,
+      sessionId: providerRequest.sessionId,
+      opportunityId: providerRequest.opportunityId,
+      providerType: 'salesforce_sandbox',
+      idempotencyKey: providerRequest.idempotencyKey,
+      recordRef,
+      evidenceTier: 'provider_record_verified' as const,
+      verificationStatus: 'verified' as const,
+    }));
+    const test = await makeFixture('salesforce_sandbox', { verify });
+    const response = await request(test.runtime.app).post('/api/v2/internal/provider-evidence/verify').set('x-agentic-internal-secret', 'n'.repeat(64)).send({ ...bodyFor(test), providerType: 'salesforce_sandbox', providerRecordId });
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.body).toMatchObject({ accepted: true, evidenceTier: 'provider_record_verified', providerRecordRef: providerRecordId });
+    expect(verify).toHaveBeenCalledOnce();
+    expect((await test.store.getAction(test.action.id))?.state).toBe('completed');
+    expect(await test.store.getCrmLeadByActionId(test.action.id, test.tenant.id)).toMatchObject({ leadId: providerRecordId, remoteCrm: 'salesforce_sandbox' });
   });
 
   it('does not let the legacy Account remote callback bypass V2 provider evidence', async () => {

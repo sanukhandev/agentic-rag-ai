@@ -67,7 +67,7 @@ The published ANCFZ bindings remain disabled and the Salesforce workflow remains
 
 - V2 provider contracts now accept the authoritative canonical Catalog V2 reference (`anc:r2:<hash>`) instead of incorrectly requiring a legacy UUID.
 - Added the authenticated `/api/v2/internal/provider-evidence/verify` boundary. It validates the pinned tenant/session/opportunity/catalog/action/execution tuple, creates the masked local Lead idempotently, and completes only a deterministic mock record whose expected external reference matches the action idempotency key.
-- Salesforce and other non-mock provider types are moved to `reconcile_required` until a configured Node provider adapter performs independent readback; no provider assertion is trusted as completion.
+- Salesforce and other non-mock provider types are moved to `reconcile_required` until the configured Node Salesforce readback adapter performs independent readback; no provider assertion is trusted as completion.
 
 ## V2 Account callback safety checkpoint — 2026-11-05
 

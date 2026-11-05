@@ -174,5 +174,5 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 
 - The development environment does configure `REMOTE_CRM_PROVIDER=salesforce` and a sandbox Lead endpoint.
 - A credential-free `HEAD` probe returned HTTP 401 without sending customer data. No Salesforce OAuth/access-token material is present in the API or n8n runtime, and the n8n SQLite inventory contains no credentials for the inactive ANCFZ workflows.
-- The V2 Node path still has no outbound Salesforce adapter/readback implementation, and the published Lead bindings remain disabled. The exact live blocker is therefore authenticated provider access plus a reviewed adapter/workflow contract—not endpoint discovery.
+- The V2 Node path now has a fail-closed Salesforce Lead readback adapter (`services/api/src/salesforce-sandbox-lead-provider.ts`) and the Lead template is endpoint-configurable, but the published Lead bindings remain disabled. The exact live blocker is authenticated provider access, a configured n8n managed credential/readback endpoint, and a reviewed sandbox run—not endpoint discovery.
 - Status remains `BLOCKED_EXTERNAL_DEPENDENCY`; no Lead creation or provider completion is claimed.

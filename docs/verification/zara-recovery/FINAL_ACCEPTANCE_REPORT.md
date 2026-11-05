@@ -35,7 +35,7 @@
 - Deterministic V2 Account provider path: PASS for development mock — OTP, qualified Lead, correlated Account action, opaque provider IDs, lifecycle advancement and replay were verified in the integration suite. Salesforce sandbox Account/Contact/Opportunity readback remains unverified and does not pass the live acceptance gate.
 - Public package/quote state boundary: PASS for development catalog data — proposal, deterministic quote and confirmation advanced the pinned journey to `document_upload`; official ANCFZ pricing/provider verification remains unverified.
 - Docker API restart/duplicate replay: PASS — the same client message ID returned the same assistant message before and after an API restart, with one durable user message and no provider side effect.
-- Live provider boundary check: BLOCKED_EXTERNAL_DEPENDENCY — `.env` selects Salesforce, but the published ANCFZ V2 `lead.create` and `crm.lead.create` bindings are disabled; the inactive n8n template has a placeholder provider URL/no credential, and the evidence endpoint deliberately reconciles until independent Salesforce readback is configured.
+- Live provider boundary check: BLOCKED_EXTERNAL_DEPENDENCY — `.env` selects Salesforce, but the published ANCFZ V2 `lead.create` and `crm.lead.create` bindings are disabled; the inactive n8n Lead template is now endpoint-configurable but has no managed credential/readback configuration, and the evidence endpoint reconciles until the Node adapter verifies an actual sandbox record.
 - Three fresh Azure-backed public persistence runs after the final evidence-merge fix: PASS — each completed 25/25 turns with 25 durable user messages. This proves transport/persistence only; the required >=90% conversation-quality score is still unverified because the harness has no frozen rubric scorer.
 - Opt-in local ANCFZ PDF and mock-payment simulators: PASS after supplying ignored development-only API keys; both containers remain running. This is local simulator health, not provider or payment completion.
 
@@ -65,7 +65,7 @@
 - Formal performance benchmark.
 - Full quote/package calculation and customer-facing quote revision journey.
 - Live Lead proposal/provider execution from the published ANCFZ catalog remains blocked because its Lead bindings are disabled and the n8n template has no configured Salesforce provider evidence path.
-- V2 Salesforce provider-evidence completion remains BLOCKED_EXTERNAL_DEPENDENCY until a configured Node provider adapter performs independent sandbox readback; the implemented endpoint deliberately fails closed.
+- V2 Salesforce provider-evidence completion remains BLOCKED_EXTERNAL_DEPENDENCY until the configured Node readback adapter performs independent sandbox readback; the implemented endpoint fails closed when configuration or evidence is missing.
 - ANCFZ official package/pricebook acceptance: BLOCKED_EXTERNAL_DEPENDENCY — two development-only sandbox offerings are available for deterministic local tests, but no official ANCFZ price source or live quote/provider integration is configured.
 - `npm audit --omit=dev --audit-level=high`: FAIL — one high `undici` advisory remains on the workspace OpenAI/Angular resolution path. `npm audit fix --dry-run` hits an Angular peer-resolution conflict; no security gate was weakened and no forced dependency upgrade was applied.
 - Browser host automation: BLOCKED_EXTERNAL_DEPENDENCY — no usable browser tab/host was available for the required customer UI run.

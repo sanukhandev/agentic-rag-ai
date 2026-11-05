@@ -22,8 +22,14 @@ test('all ANCFZ V2 workflows are structurally connected and non-executable by de
   assert.equal(w.nodes[0].parameters.authentication,'headerAuth');
   assert.equal(w.nodes[0].parameters.responseMode,'onReceived');
   assert.ok(w.nodes.every(node=>!node.credentials||!Object.keys(node.credentials).length),'no credential ids allowed');
-  assert.equal(w.nodes[4].parameters.url.startsWith('https://configure-provider.invalid/'),true);
-  assert.equal(w.nodes[5].parameters.url.startsWith('https://configure-provider.invalid/'),true);
+  if (file === '01-lead-create.json') {
+   assert.equal(w.nodes[4].parameters.url,'={{ $env.REMOTE_CRM_LEAD_URL }}');
+   assert.match(w.nodes[5].parameters.url,/\$env\.REMOTE_CRM_LEAD_READ_URL/);
+   assert.match(w.nodes[5].parameters.url,/\{leadId\}/);
+  } else {
+   assert.equal(w.nodes[4].parameters.url.startsWith('https://configure-provider.invalid/'),true);
+   assert.equal(w.nodes[5].parameters.url.startsWith('https://configure-provider.invalid/'),true);
+  }
   assert.equal(w.nodes[6].parameters.url,'http://api:4000/api/v2/internal/provider-evidence/verify');
   assert.equal(w.nodes[2].parameters.url,'http://api:4000/api/v1/internal/workflow-events/claim');
   assert.match(w.nodes[2].parameters.jsonBody,/n8nWorkflowId:\s*\$workflow\.id/);
@@ -34,7 +40,7 @@ test('all ANCFZ V2 workflows are structurally connected and non-executable by de
   assert.match(w.nodes[8].parameters.jsonBody,/state:'completed'/);
   for(const node of w.nodes.filter(node=>node.type==='n8n-nodes-base.httpRequest'))assert.ok(node.parameters.authentication==='predefinedCredentialType'||node.parameters.authentication==='genericCredentialType');
   for(let n=0;n<names.length-1;n++)assert.deepEqual(w.connections[names[n]].main,[[{node:names[n+1],type:'main',index:0}]]);
-  assert.doesNotMatch(raw,/\$env\.|N8N_WEBHOOK_SECRET|access_token|refresh_token|password|clientSecret|apiKey|SalesForce ANC - CREDS/i);
+  assert.doesNotMatch(file === '01-lead-create.json' ? raw : raw.replaceAll('https://configure-provider.invalid/', ''),/N8N_WEBHOOK_SECRET|access_token|refresh_token|password|clientSecret|apiKey|SalesForce ANC - CREDS/i);
   const expected=manifest.templates.find(s=>s.file===file);
   assert.ok(expected,file);
   assert.match(w.nodes[1].parameters.jsCode,new RegExp(expected.workflowKey.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));

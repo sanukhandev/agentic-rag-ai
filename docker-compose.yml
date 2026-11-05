@@ -63,6 +63,7 @@ services:
       N8N_WEBHOOK_SECRET: "${N8N_WEBHOOK_SECRET:?N8N_WEBHOOK_SECRET required}"
       REMOTE_CRM_PROVIDER: ${REMOTE_CRM_PROVIDER-}
       REMOTE_CRM_LEAD_URL: ${REMOTE_CRM_LEAD_URL-}
+      REMOTE_CRM_LEAD_READ_URL: ${REMOTE_CRM_LEAD_READ_URL-}
       REMOTE_CRM_LEAD_ID_PATTERN: ${REMOTE_CRM_LEAD_ID_PATTERN-}
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
@@ -163,6 +164,9 @@ services:
       ANCFZ_PDF_API_KEY: ${ANCFZ_PDF_API_KEY:-}
       MOCK_PAYMENT_INTERNAL_URL: http://mock-payments:8098
       MOCK_PAYMENT_API_KEY: ${MOCK_PAYMENT_API_KEY:-}
+      REMOTE_CRM_PROVIDER: ${REMOTE_CRM_PROVIDER:-}
+      REMOTE_CRM_LEAD_READ_URL: ${REMOTE_CRM_LEAD_READ_URL:-}
+      REMOTE_CRM_ACCESS_TOKEN: ${REMOTE_CRM_ACCESS_TOKEN:-}
     volumes:
       - ./data/ingestion-staging:/app/data/ingestion-staging:rw
       - ./data/supporting-documents:/app/data/supporting-documents:rw
