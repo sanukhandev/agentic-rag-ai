@@ -171,6 +171,18 @@ const mergeEvidence = (requestEvidence: V2ApprovedEvidence[], result: AgentTurnR
 };
 
 const sourceExcerptResponse = (envelope: TurnEnvelopeV2, evidence: V2ApprovedEvidence[]): PersonaComposedResponseV2 | null => {
+  const packageEvidence = evidence.filter(item => item.sourceRef === 'tool-get_available_packages');
+  if (packageEvidence.length > 0) {
+    return {
+      schemaVersion: 2, personaVersionId: envelope.personaVersionId,
+      language: envelope.persona.permittedLanguages[0] ?? 'en',
+      answer: packageEvidence.map(item => item.text.trim()).join('\n'),
+      citationIds: packageEvidence.map(item => item.citationId),
+      nextQuestion: null, nextQuestionKey: null,
+      reasonNoQuestion: 'package_options_verified',
+      decisionRef: `package-options-${envelope.requestId.slice(0, 60)}`,
+    };
+  }
   const queryText = [envelope.customerMessageMasked, ...envelope.latestTurns.filter(turn => turn.role === 'customer').map(turn => turn.content)].join(' ');
   const queryTerms = new Set((queryText.toLocaleLowerCase('en-US').match(/[a-z]{5,}/gu) ?? [])
     .filter(term => !new Set(['about', 'could', 'does', 'hello', 'how', 'please', 'tell', 'that', 'what', 'would']).has(term)));
@@ -545,14 +557,16 @@ export class V2ConversationCoordinator {
         }
       }
     }
+    const packageToolEvidence = trustedEvidence.some(item => item.sourceRef === 'tool-get_available_packages');
     if (guarded.verdict.reasonCode === 'unsupported_claim'
-      && ['single_source_support_not_established', 'claim_source_polarity_mismatch', 'unverified_provider_outcome'].includes(guarded.firstFailure?.reason ?? '')
+      && (['single_source_support_not_established', 'claim_source_polarity_mismatch', 'unverified_provider_outcome'].includes(guarded.firstFailure?.reason ?? '')
+        || packageToolEvidence && guarded.firstFailure?.reason === 'numeric_value_not_in_cited_source')
       && trustedEvidence.length > 0 && !eligibleForEntailment) {
       const excerpt = sourceExcerptResponse(envelope, trustedEvidence);
       if (excerpt) {
-        const excerptEvidence = trustedEvidence.find(item => item.citationId === excerpt.citationIds[0]);
-        const verifiedExcerpt = excerptEvidence
-          ? guardV2Response(excerpt, { ...guardContext, evidence: [excerptEvidence] })
+        const excerptEvidence = excerpt.citationIds.map(citationId => trustedEvidence.find(item => item.citationId === citationId)).filter((item): item is V2ApprovedEvidence => Boolean(item));
+        const verifiedExcerpt = excerptEvidence.length > 0
+          ? guardV2Response(excerpt, { ...guardContext, evidence: excerptEvidence })
           : guardV2Response(excerpt, guardContext);
         if (verifiedExcerpt.verdict.accepted && verifiedExcerpt.response) return {
           response: verifiedExcerpt.response, candidateResponse: agentResult.response,

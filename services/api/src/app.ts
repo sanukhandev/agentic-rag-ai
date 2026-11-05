@@ -196,11 +196,28 @@ const routeParam = (req: Request, name: string): string => {
   return value;
 };
 
+export const resolveTenantForPlatformAdmin = async (store: Pick<Store, 'getTenant' | 'getTenantBySlug'>, requested: string): Promise<string> => {
+  const tenant = z.string().uuid().safeParse(requested).success
+    ? await store.getTenant(requested)
+    : await store.getTenantBySlug(requested);
+  if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.');
+  return tenant.id;
+};
+
+export const crmLeadQualityRule = async (
+  store: Pick<Store, 'getIntentCatalogVersion'>,
+  lead: Pick<CrmLead, 'tenantId' | 'catalogVersionId' | 'intent'>
+): Promise<IntentCatalogQualityRule | undefined> => {
+  if (!lead.tenantId || !lead.catalogVersionId || !z.string().uuid().safeParse(lead.catalogVersionId).success) return undefined;
+  const version = await store.getIntentCatalogVersion(lead.tenantId, lead.catalogVersionId);
+  return version?.catalog.qualityRules?.find((rule) => rule.intentKey === lead.intent);
+};
+
 const tenantForRequest = async (store: Store, req: Request): Promise<string> => {
   const auth = getAuth(req);
   if (auth?.role === 'platform_admin') {
     const requested = req.header('x-tenant-id') || (typeof req.query.tenantId === 'string' ? req.query.tenantId : null);
-    if (requested) return requested;
+    if (requested) return resolveTenantForPlatformAdmin(store, requested);
     const firstTenant = (await store.listTenants())[0];
     if (firstTenant) return firstTenant.id;
   }
@@ -978,8 +995,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
 
   const crmLeadForAdmin = async (lead: CrmLead): Promise<CrmLead & { quality: ReturnType<typeof leadQuality>; documents: Array<SupportingDocument & { extractedText: string | null; summary: string | null }> }> => {
-    const version = lead.catalogVersionId ? await store.getIntentCatalogVersion(lead.tenantId, lead.catalogVersionId) : null;
-    const qualityRule = version?.catalog.qualityRules?.find((rule) => rule.intentKey === lead.intent);
+    const qualityRule = await crmLeadQualityRule(store, lead);
     const quality = catalogQuality(lead.score, qualityRule);
     const session = await store.getSession(lead.sessionId);
     const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id);

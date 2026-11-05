@@ -261,6 +261,26 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.citationIds).toEqual(['valid-public-12345678']);
   });
 
+  it('repairs a combined package list with every approved option from one package read', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'what packages are available';
+    const packageEvidence = [
+      { citationId: 'package-starter', text: 'The published approved package ANCFZ Starter has a listed price of AED 2,499.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-growth', text: 'The published approved package ANCFZ Growth has a listed price of AED 4,999.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-premium', text: 'The published approved package ANCFZ Premium has a listed price of AED 7,899.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+    ];
+    const candidate = result('The packages are AED 2,499.00, AED 4,999.00, and AED 7,899.00.', {
+      response: { ...result('').response, answer: 'The packages are AED 2,499.00, AED 4,999.00, and AED 7,899.00.', citationIds: packageEvidence.map((item) => item.citationId) },
+      approvedEvidence: packageEvidence,
+      toolTrace: [{ toolCallId: 'package-call-12345678', toolName: 'get_available_packages', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: packageEvidence.map((item) => item.citationId) }],
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toContain('ANCFZ Starter');
+    expect(output.response.answer).toContain('ANCFZ Growth');
+    expect(output.response.answer).toContain('ANCFZ Premium');
+  });
+
   it('keeps a pending requirement useful after a repeated knowledge interruption', async () => {
     const request = envelope();
     request.customerMessageMasked = 'Could you explain the formation process?';

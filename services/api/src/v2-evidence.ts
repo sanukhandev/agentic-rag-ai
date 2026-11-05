@@ -223,7 +223,11 @@ export const verifyV2ResponseEvidence = (input: unknown, evidence: V2ApprovedEvi
   const citedFacts = citationIds.map((id) => factById.get(id)).filter((item): item is V2VerifiedFact => Boolean(item));
   if (citedEvidence.some((item) => !item.approved || item.revoked || !item.sourceVersion.trim() || !item.text.trim())
     || citedFacts.some((item) => !item.verified || !item.sourceVersion.trim() || !item.text.trim())) return { verdict: verdict(false, 'invalid_citation', null), claims: [] };
-  if (hasConflictingEvidence(citedEvidence.map((item) => item.text))) return { verdict: verdict(false, 'policy_denied', null), claims: [] };
+  // One approved package-read result intentionally contains multiple options
+  // with different prices; those are alternatives, not contradictory sources.
+  const isSinglePackageRead = citedEvidence.length > 1
+    && citedEvidence.every((item) => item.sourceRef === 'tool-get_available_packages');
+  if (!isSinglePackageRead && hasConflictingEvidence(citedEvidence.map((item) => item.text))) return { verdict: verdict(false, 'policy_denied', null), claims: [] };
   const answerForEvidence = response.nextQuestion ? trailingQuestion(response.answer, response.nextQuestion) ?? response.answer : response.answer;
   if (citationIds.length === 0) {
     const grounded = options.allowApprovedFallback === true
