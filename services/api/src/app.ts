@@ -520,11 +520,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const salesforceLeadProvider = dependencies.v2SalesforceLeadProvider
     ?? (process.env.REMOTE_CRM_PROVIDER === 'salesforce' ? new SalesforceSandboxLeadProvider({
       ...(process.env.REMOTE_CRM_ACCESS_TOKEN ? { accessToken: process.env.REMOTE_CRM_ACCESS_TOKEN } : {}),
+      ...(process.env.REMOTE_CRM_TOKEN_URL ? { tokenUrl: process.env.REMOTE_CRM_TOKEN_URL } : {}),
+      ...(process.env.REMOTE_CRM_CLIENT_ID ? { clientId: process.env.REMOTE_CRM_CLIENT_ID } : {}),
+      ...(process.env.REMOTE_CRM_CLIENT_SECRET ? { clientSecret: process.env.REMOTE_CRM_CLIENT_SECRET } : {}),
       ...(process.env.REMOTE_CRM_LEAD_READ_URL ? { readbackUrl: process.env.REMOTE_CRM_LEAD_READ_URL } : {}),
     }) : null);
   const salesforceAccountProvider = dependencies.v2SalesforceAccountProvider
     ?? (process.env.REMOTE_CRM_PROVIDER === 'salesforce' ? new SalesforceSandboxLeadProvider({
       ...(process.env.REMOTE_CRM_ACCESS_TOKEN ? { accessToken: process.env.REMOTE_CRM_ACCESS_TOKEN } : {}),
+      ...(process.env.REMOTE_CRM_TOKEN_URL ? { tokenUrl: process.env.REMOTE_CRM_TOKEN_URL } : {}),
+      ...(process.env.REMOTE_CRM_CLIENT_ID ? { clientId: process.env.REMOTE_CRM_CLIENT_ID } : {}),
+      ...(process.env.REMOTE_CRM_CLIENT_SECRET ? { clientSecret: process.env.REMOTE_CRM_CLIENT_SECRET } : {}),
       ...(process.env.REMOTE_CRM_ACCOUNT_READ_URL ? { accountReadbackUrl: process.env.REMOTE_CRM_ACCOUNT_READ_URL } : {}),
     }) : null);
   const mockPaymentProvider = dependencies.v2PaymentProvider ?? (process.env.REMOTE_PAYMENT_PROVIDER === 'deterministic_mock' ? new DeterministicV2PaymentProvider() : null);

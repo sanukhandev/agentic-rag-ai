@@ -149,3 +149,10 @@ The branch is not ready to merge until the unverified gates are executed or expl
 - Sandbox Lead create smoke: **PASS** — one synthetic Lead was created through n8n with the reference body contract. Salesforce returned a Lead identifier.
 - Independent provider readback: **PASS** — Salesforce REST API v68.0 returned the same Lead ID and matching submitted fields.
 - This is a direct sandbox integration checkpoint, not completion of the customer journey. The ANCFZ V2 catalog/workflow remains intentionally inactive; Node action claim/readback configuration, duplicate/replay handling, Lead update, Account/Contact/Opportunity, SF-02, payment, contract, browser E2E and human-scored Azure gates remain unverified.
+
+## 2026-11-05 Node OAuth/readback checkpoint
+
+- `SalesforceSandboxLeadProvider` now retrieves and caches a sandbox bearer token from the configured client-credentials endpoint, with bounded transient retries and fail-closed auth errors.
+- The rebuilt API independently read back the n8n-created Lead and returned `provider_record_verified` for its exact provider ID.
+- Verification: API **62 files / 532 tests PASS**, full `npm run verify:local` PASS, Docker API health PASS, and real Node-to-Salesforce readback PASS.
+- Acceptance remains **NOT_READY**: the ANCFZ V2 catalog/workflow is inactive, Node action-gated create/dedupe/update is not yet exercised against Salesforce, and Account/Contact/Opportunity, SF-02, payment, contract, browser and formal Azure quality gates remain incomplete.

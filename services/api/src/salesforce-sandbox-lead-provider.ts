@@ -6,6 +6,9 @@ type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 export type SalesforceSandboxLeadProviderOptions = {
   accessToken?: string;
+  tokenUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
   readbackUrl?: string;
   accountReadbackUrl?: string;
   documentReadbackUrl?: string;
@@ -53,6 +56,12 @@ export type SalesforceDocumentReadback = V2TrustedProviderReadback & { attachmen
 
 export class SalesforceSandboxLeadProvider {
   private readonly accessToken: string;
+  private readonly tokenUrl: string;
+  private readonly clientId: string;
+  private readonly clientSecret: string;
+  private cachedAccessToken = '';
+  private tokenExpiresAt = 0;
+  private tokenPromise: Promise<string> | null = null;
   private readonly readbackUrl: string;
   private readonly accountReadbackUrl: string;
   private readonly documentReadbackUrl: string;
@@ -61,6 +70,9 @@ export class SalesforceSandboxLeadProvider {
 
   constructor(options: SalesforceSandboxLeadProviderOptions) {
     this.accessToken = options.accessToken?.trim() ?? '';
+    this.tokenUrl = options.tokenUrl?.trim() ?? '';
+    this.clientId = options.clientId?.trim() ?? '';
+    this.clientSecret = options.clientSecret?.trim() ?? '';
     this.readbackUrl = options.readbackUrl?.trim() ?? '';
     this.accountReadbackUrl = options.accountReadbackUrl?.trim() ?? '';
     this.documentReadbackUrl = options.documentReadbackUrl?.trim() ?? '';
@@ -68,16 +80,56 @@ export class SalesforceSandboxLeadProvider {
     this.timeoutMs = options.timeoutMs ?? 30_000;
   }
 
+  private async requestAccessToken(): Promise<string> {
+    let response: Response | null = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+      try {
+        response = await this.fetchImpl(this.tokenUrl, {
+          method: 'POST',
+          headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ grant_type: 'client_credentials', client_id: this.clientId, client_secret: this.clientSecret }).toString(),
+          signal: AbortSignal.timeout(this.timeoutMs),
+        });
+      } catch {
+        if (attempt === MAX_ATTEMPTS) throw new Error('SALESFORCE_READBACK_UNAVAILABLE');
+        await wait(Math.min(MAX_RETRY_DELAY_MS, 100 * (2 ** (attempt - 1))));
+        continue;
+      }
+      if (!TRANSIENT_STATUS.has(response.status) || attempt === MAX_ATTEMPTS) break;
+      await wait(retryDelayMs(response, attempt));
+    }
+    if (!response) throw new Error('SALESFORCE_READBACK_UNAVAILABLE');
+    if (response.status === 401 || response.status === 403) throw new Error('SALESFORCE_READBACK_AUTH_FAILED');
+    if (!response.ok) throw new Error('SALESFORCE_READBACK_UNAVAILABLE');
+    const body = await response.json().catch(() => null) as unknown;
+    const record = objectRecord(body);
+    const accessToken = stringField(record ?? {}, ['access_token']);
+    if (!accessToken) throw new Error('SALESFORCE_READBACK_AUTH_FAILED');
+    const expiresIn = record?.expires_in;
+    this.cachedAccessToken = accessToken;
+    this.tokenExpiresAt = Date.now() + (typeof expiresIn === 'number' && Number.isFinite(expiresIn) ? Math.max(1, expiresIn - 60) * 1_000 : 300_000);
+    return accessToken;
+  }
+
+  private async getAccessToken(): Promise<string> {
+    if (this.accessToken) return this.accessToken;
+    if (!this.tokenUrl || !this.clientId || !this.clientSecret) throw new Error('SALESFORCE_READBACK_NOT_CONFIGURED');
+    if (this.cachedAccessToken && Date.now() < this.tokenExpiresAt) return this.cachedAccessToken;
+    if (!this.tokenPromise) this.tokenPromise = this.requestAccessToken().finally(() => { this.tokenPromise = null; });
+    return this.tokenPromise;
+  }
+
   private async fetchRecord(readbackUrl: string, providerRecordId: string, missingCode: string): Promise<Record<string, unknown>> {
-    if (!this.accessToken || !readbackUrl || !readbackUrl.includes('{')) throw new Error(missingCode);
+    if ((!this.accessToken && (!this.tokenUrl || !this.clientId || !this.clientSecret)) || !readbackUrl || !readbackUrl.includes('{')) throw new Error(missingCode);
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u.test(providerRecordId)) throw new Error('SALESFORCE_READBACK_RECORD_INVALID');
     const url = readbackUrl.replaceAll('{leadId}', encodeURIComponent(providerRecordId)).replaceAll('{accountId}', encodeURIComponent(providerRecordId)).replaceAll('{attachmentId}', encodeURIComponent(providerRecordId));
+    const accessToken = await this.getAccessToken();
     let response: Response | null = null;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
       try {
         response = await this.fetchImpl(url, {
           method: 'GET',
-          headers: { accept: 'application/json', authorization: `Bearer ${this.accessToken}` },
+          headers: { accept: 'application/json', authorization: `Bearer ${accessToken}` },
           signal: AbortSignal.timeout(this.timeoutMs),
         });
       } catch {

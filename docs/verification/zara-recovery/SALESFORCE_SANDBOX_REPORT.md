@@ -45,3 +45,11 @@ The 2026-11-05 API/model/worker restart replay passed locally, but it does not s
 - Salesforce provider readback: **PASS** for this smoke record through standard Salesforce REST API v68.0. The returned ID and all reference fields matched the submitted body. This is direct sandbox evidence, not a mock.
 - The temporary smoke workflow, execution records and plaintext payload fixture were removed after verification.
 - This checkpoint does **not** activate the ANCFZ V2 workflow or catalog binding. The production path still lacks the configured Node `REMOTE_CRM_LEAD_READ_URL`, action-gated end-to-end dispatch, duplicate/replay proof and approved Account/SF-02 contracts.
+
+## 2026-11-05 Node OAuth/readback verification
+
+- Added a fail-closed Salesforce client-credentials path to `SalesforceSandboxLeadProvider`, with bounded token retries, expiry-aware caching and no secret logging.
+- Configured the local development API with the sandbox token URL, Connected App values and standard REST Lead readback template. These values remain local-only.
+- The rebuilt API container independently obtained the token and verified the previously created Lead as `provider_record_verified`.
+- Verification: **62 API files / 532 tests PASS**, `npm run verify:local` PASS, Docker API health PASS, and real Node-to-Salesforce readback PASS.
+- The live ANCFZ V2 binding remains disabled. Lead create/dedupe/update through Node action authorization, Account/Contact/Opportunity and SF-02 remain unverified.

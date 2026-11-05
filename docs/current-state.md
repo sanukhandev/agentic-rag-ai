@@ -210,3 +210,11 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Rechecked the active `.env`: it contains the Salesforce provider flag and Lead Apex REST URL, but no access token, OAuth client/refresh secret, Account URL, or SF-02 URL. No credential values were exposed or written to Git.
 - The mounted n8n SQLite database contains **zero** `credentials_entity` rows and all 10 ANCFZ V2 workflows are inactive. A credential-free `HEAD` request to the configured sandbox Lead endpoint returned **HTTP 401**, without sending customer data.
 - A managed n8n Salesforce credential cannot be created or connection-tested until the approved sandbox credential material and the Account/SF-02 provider contracts are supplied. Live Salesforce acceptance remains `BLOCKED_EXTERNAL_DEPENDENCY`; no provider completion is claimed.
+
+## 2026-11-05 Node Salesforce OAuth/readback checkpoint
+
+- `SalesforceSandboxLeadProvider` now supports bounded client-credentials token retrieval and short-lived in-process token caching, while preserving the static bearer-token path.
+- Local `.env` supplies the development-only Salesforce token URL/client credentials and standard REST Lead readback template; real values are not present in `.env.example`, Git, logs or reports.
+- The rebuilt API container independently obtained a token and returned `provider_record_verified` for the sandbox Lead created through n8n.
+- Verification: API **62 files / 532 tests PASS**, full `npm run verify:local` PASS, Docker API health PASS, and real Node-to-Salesforce readback PASS.
+- This proves the Lead readback adapter can authenticate and verify a real sandbox record. It does not activate the ANCFZ V2 binding or prove the full action-gated create/dedupe/update journey.

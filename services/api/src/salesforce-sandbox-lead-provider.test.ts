@@ -60,6 +60,30 @@ describe('Salesforce sandbox lead readback adapter', () => {
     expect(calls).toEqual([{ url: 'https://sandbox.example.test/leads/00Q-test', authorization: 'Bearer sandbox-token' }]);
   });
 
+  it('obtains and caches a sandbox bearer token with client credentials before readback', async () => {
+    const calls: Array<{ url: string; method: string; authorization: string | undefined; body: string | undefined }> = [];
+    const provider = new SalesforceSandboxLeadProvider({
+      tokenUrl: 'https://sandbox.example.test/oauth/token',
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      readbackUrl: 'https://sandbox.example.test/leads/{leadId}',
+      fetchImpl: async (input, init) => {
+        const headers = new Headers(init?.headers);
+        calls.push({ url: String(input), method: init?.method ?? 'GET', authorization: headers.get('authorization') ?? undefined, body: typeof init?.body === 'string' ? init.body : undefined });
+        if (String(input).endsWith('/oauth/token')) return new Response(JSON.stringify({ access_token: 'oauth-token', expires_in: 3600 }), { status: 200, headers: { 'content-type': 'application/json' } });
+        return new Response(JSON.stringify({ leadId: '00Q-test' }), { status: 200, headers: { 'content-type': 'application/json' } });
+      },
+    });
+
+    await expect(provider.verify({ request: request(), providerRecordId: '00Q-test' })).resolves.toMatchObject({ recordRef: '00Q-test', evidenceTier: 'provider_record_verified' });
+    await expect(provider.verify({ request: request(), providerRecordId: '00Q-test' })).resolves.toMatchObject({ recordRef: '00Q-test', evidenceTier: 'provider_record_verified' });
+    expect(calls).toEqual([
+      { url: 'https://sandbox.example.test/oauth/token', method: 'POST', authorization: undefined, body: 'grant_type=client_credentials&client_id=client-id&client_secret=client-secret' },
+      { url: 'https://sandbox.example.test/leads/00Q-test', method: 'GET', authorization: 'Bearer oauth-token', body: undefined },
+      { url: 'https://sandbox.example.test/leads/00Q-test', method: 'GET', authorization: 'Bearer oauth-token', body: undefined },
+    ]);
+  });
+
   it('rejects a readback for a different provider record or action', async () => {
     const provider = new SalesforceSandboxLeadProvider({
       accessToken: 'sandbox-token',
