@@ -169,3 +169,10 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Azure embedding retries now cover bounded transient 408/409/429/5xx responses and transient fetch failures.
 - Verification: API 61 files / 523 tests PASS; typecheck, lint, build and Docker API rebuild/health PASS; three post-retry public Azure-backed 25-turn runs PASS with 25/25 answers, 25 durable messages and 10/10 deterministic objective checks each.
 - Two pre-retry captures are retained as failed evidence for `V2_KNOWLEDGE_RETRIEVAL_UNAVAILABLE`; formal human Azure scoring, Salesforce/provider readback, browser E2E, official pricing and complete seven-stage completion remain unverified. Overall status: `NOT_READY`.
+
+## 2026-11-05 Salesforce endpoint audit
+
+- The development environment does configure `REMOTE_CRM_PROVIDER=salesforce` and a sandbox Lead endpoint.
+- A credential-free `HEAD` probe returned HTTP 401 without sending customer data. No Salesforce OAuth/access-token material is present in the API or n8n runtime, and the n8n SQLite inventory contains no credentials for the inactive ANCFZ workflows.
+- The V2 Node path still has no outbound Salesforce adapter/readback implementation, and the published Lead bindings remain disabled. The exact live blocker is therefore authenticated provider access plus a reviewed adapter/workflow contract—not endpoint discovery.
+- Status remains `BLOCKED_EXTERNAL_DEPENDENCY`; no Lead creation or provider completion is claimed.

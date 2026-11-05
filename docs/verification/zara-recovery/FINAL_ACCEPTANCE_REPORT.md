@@ -48,6 +48,12 @@
 - Earlier same-image retrieval failures remain recorded as failed evidence; they stopped at turns 8 and 5 with `V2_KNOWLEDGE_RETRIEVAL_UNAVAILABLE` before the retry correction.
 - Acceptance remains **NOT_READY**: human Azure quality scoring, Salesforce sandbox/readback, official pricing, browser E2E, live payment/signature providers and complete seven-stage provider completion are not verified.
 
+## 2026-11-05 Salesforce endpoint audit
+
+- A development sandbox Lead URL is configured and reachable, but a credential-free `HEAD` probe returned HTTP 401; no customer payload was sent.
+- The API and n8n runtime expose no Salesforce OAuth/access-token credential, the ANCFZ n8n SQLite inventory has no provider credential, and all ANCFZ workflows remain inactive.
+- The exact blocker is authenticated sandbox access plus a configured, reviewed Salesforce adapter/readback contract. No Lead write or provider completion is claimed.
+
 ## Unverified or blocked
 
 - Full seven-stage customer journey.

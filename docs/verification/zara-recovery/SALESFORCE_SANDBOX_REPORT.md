@@ -21,7 +21,7 @@ Resume procedure: provide verified development Salesforce sandbox credentials an
 
 The live gate is blocked by a chain of missing runtime dependencies, not by a failed Salesforce response:
 
-1. The local environment selects `REMOTE_CRM_PROVIDER=salesforce`, but exposes no configured Salesforce instance URL, OAuth client/token material, or provider permission set to the API runtime.
+1. The local environment selects `REMOTE_CRM_PROVIDER=salesforce` and provides a development `REMOTE_CRM_LEAD_URL`, but exposes no Salesforce OAuth/access-token material or provider permission set to the API runtime. A credential-free `HEAD` probe to the configured endpoint returned HTTP 401; no customer payload was sent.
 2. The Node implementation contains the typed `salesforce_sandbox` result validator and fail-closed evidence routes, but no outbound Salesforce REST/Composite adapter that can search, create, update, and read back a Lead.
 3. The published ANCFZ catalog keeps `lead.create` and `crm.lead.create` disabled, so Node correctly refuses to dispatch the Lead action.
 4. The repository n8n workflow is inactive, uses `https://configure-provider.invalid/...`, and has no Salesforce credential. Enabling the catalog binding now would create an unauthorized/unverifiable side-effect path.
