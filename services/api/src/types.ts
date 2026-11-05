@@ -800,6 +800,21 @@ export interface AuditEvent {
   createdAt: string;
 }
 
+export interface V2OtpChallengeRecord {
+  challengeId: string;
+  tenantId: string;
+  sessionId: string;
+  opportunityId: string;
+  leadId: string;
+  expiresAt: string;
+  attemptsRemaining: number;
+  deliveryStatus: 'accepted';
+  codeDigestHex: string;
+  used: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type IntentFactSource = 'visitor' | 'catalog' | 'node' | 'provider';
 
 export interface UserIntentFact {
@@ -909,6 +924,9 @@ export interface Store {
   createUser(input: { email: string; passwordHash: string; role: Role; tenantId: string | null }): Promise<User>;
   getUserByEmail(email: string): Promise<User | null>;
   getUser(id: string): Promise<User | null>;
+  createV2OtpChallenge(challenge: V2OtpChallengeRecord): Promise<V2OtpChallengeRecord>;
+  getV2OtpChallenge(tenantId: string, challengeId: string): Promise<V2OtpChallengeRecord | null>;
+  updateV2OtpChallenge(challenge: V2OtpChallengeRecord): Promise<V2OtpChallengeRecord>;
   updateUserRole(userId: string, tenantId: string, role: Exclude<Role, 'platform_admin' | 'tenant_admin'>): Promise<User | null>;
   createAuthSession(session: AuthSession): Promise<AuthSession>;
   getAuthSession(tokenHash: string): Promise<AuthSession | null>;

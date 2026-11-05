@@ -141,3 +141,10 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Added correlated internal provider-evidence routes for deterministic invoice issuance, payment settlement and contract signing. Invoice issuance remains within `payment_invoice`; only trusted payment completion advances the journey to `contract`.
 - The focused document → invoice → payment → contract regression passes with deterministic development providers; API typecheck and the full 61-file / 516-test suite pass.
 - This is **DEVELOPMENT MOCK ONLY**. Live Salesforce Lead/Account/SF-02, payment settlement, signature provider readback, browser E2E and formal Azure quality remain unverified; overall status remains `NOT_READY`.
+
+## 2026-11-05 durable Account OTP checkpoint
+
+- Added additive migration `infra/postgres/064-v2-otp-challenges.sql` and store-backed OTP challenge persistence for both MemoryStore and PostgresStore.
+- The service-instance restart regression passes, the real PostgresStore persistence/update round-trip passes with synthetic data, and the rebuilt API remains healthy through Nginx.
+- Full local verification passes: workspace lint/typechecks, 61 API files / 517 tests, builds, security checks, dependency audit, synthetic tenant/source acceptance and 35 Python ingestion tests.
+- This removes the local restart-loss defect, but does not establish live Salesforce OTP delivery/verification or sandbox Account readback; overall status remains `NOT_READY`.

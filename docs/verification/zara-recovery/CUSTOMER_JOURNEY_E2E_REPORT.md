@@ -221,3 +221,9 @@ This is a partial journey gate, not full completion. A later checkpoint added tw
 - Result: **PASS** — invoice remains pending at `payment_invoice`; verified mock payment changes the invoice to `paid` and advances the pinned User Intent Document to `contract`; verified mock signature changes the contract to `signed` and completes the final lifecycle stage.
 - API focused route suite: **6/6 tests PASS**; API full suite: **61 files / 516 tests PASS**; API typecheck PASS; `npm run verify:local` PASS.
 - Evidence boundary: **DEVELOPMENT MOCK ONLY**. No live payment processor, signature provider, Salesforce readback, browser customer journey or formal Azure quality result is claimed.
+
+## Durable Account OTP state — 2026-11-05
+
+- Result: **PASS locally** — a challenge issued by one service instance was verified by a recreated service instance using the same durable store; a real PostgresStore round-trip also passed after migration `064`.
+- Security evidence: only an HMAC digest is stored; challenge context is tenant/session/opportunity/Lead scoped, attempts are bounded, and successful verification marks the challenge used.
+- Evidence boundary: this proves local persistence and replay safety only. Salesforce OTP delivery, real Account/Contact/Opportunity creation and provider readback remain unverified.

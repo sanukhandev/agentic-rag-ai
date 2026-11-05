@@ -2,7 +2,7 @@ import { v2TrustedReadbackMatches, type V2TrustedProviderReadback } from './v2-p
 import { v2CatalogVersionRefSchema } from './v2-provider-correlation.js';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
-import type { ActionRequest, CrmLead } from './types.js';
+import type { ActionRequest, CrmLead, Store, V2OtpChallengeRecord } from './types.js';
 
 const id = z.string().uuid();
 const opaque = z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/u);
@@ -139,6 +139,49 @@ export class V2OtpChallengeService {
   private publicChallenge(challenge: ChallengeRecord): V2OtpChallenge {
     return { challengeId: challenge.challengeId, tenantId: challenge.tenantId, sessionId: challenge.sessionId, opportunityId: challenge.opportunityId, leadId: challenge.leadId, expiresAt: challenge.expiresAt, attemptsRemaining: challenge.attemptsRemaining, deliveryStatus: challenge.deliveryStatus };
   }
+}
+
+export class DurableV2OtpChallengeService {
+  public constructor(private readonly store: Pick<Store, 'createV2OtpChallenge' | 'getV2OtpChallenge' | 'updateV2OtpChallenge'>, private readonly secret: string, private readonly ttlMs = 5 * 60_000, private readonly maxAttempts = 5) {
+    if (!secret) throw new Error('V2_OTP_SECRET_REQUIRED');
+    if (!Number.isInteger(ttlMs) || ttlMs <= 0 || !Number.isInteger(maxAttempts) || maxAttempts <= 0) throw new Error('V2_OTP_POLICY_INVALID');
+  }
+
+  public async issue(input: { tenantId: string; sessionId: string; opportunityId: string; leadId: string; code: string; now?: Date }): Promise<V2OtpChallenge> {
+    const parsed = v2OtpVerificationSchema.shape.code.parse(input.code);
+    const now = input.now ?? new Date();
+    const challengeId = randomUUID();
+    const challenge: V2OtpChallengeRecord = {
+      challengeId, tenantId: input.tenantId, sessionId: input.sessionId, opportunityId: input.opportunityId, leadId: input.leadId,
+      expiresAt: new Date(now.getTime() + this.ttlMs).toISOString(), attemptsRemaining: this.maxAttempts,
+      deliveryStatus: 'accepted', codeDigestHex: digestCode(this.secret, challengeId, parsed).toString('hex'), used: false,
+      createdAt: now.toISOString(), updatedAt: now.toISOString(),
+    };
+    await this.store.createV2OtpChallenge(challenge);
+    return this.publicChallenge(challenge);
+  }
+
+  public async verify(input: V2OtpVerification, now = new Date()): Promise<V2OtpVerificationResult> {
+    const request = v2OtpVerificationSchema.parse(input);
+    const stored = await this.store.getV2OtpChallenge(request.tenantId, request.challengeId);
+    if (!stored) return { status: 'context_mismatch', challengeId: request.challengeId, attemptsRemaining: 0 };
+    const sameContext = stored.sessionId === request.sessionId && stored.opportunityId === request.opportunityId && stored.leadId === request.leadId;
+    if (!sameContext) return { status: 'context_mismatch', challengeId: stored.challengeId, attemptsRemaining: stored.attemptsRemaining };
+    if (stored.used) return { status: 'already_used', challengeId: stored.challengeId, attemptsRemaining: stored.attemptsRemaining };
+    if (Date.parse(stored.expiresAt) <= now.getTime()) return { status: 'expired', challengeId: stored.challengeId, attemptsRemaining: stored.attemptsRemaining };
+    if (stored.attemptsRemaining <= 0) return { status: 'locked', challengeId: stored.challengeId, attemptsRemaining: 0 };
+    const candidate = digestCode(this.secret, stored.challengeId, request.code);
+    const expected = Buffer.from(stored.codeDigestHex, 'hex');
+    if (candidate.length !== expected.length || !timingSafeEqual(candidate, expected)) {
+      const attemptsRemaining = stored.attemptsRemaining - 1;
+      await this.store.updateV2OtpChallenge({ ...stored, attemptsRemaining, updatedAt: now.toISOString() });
+      return { status: attemptsRemaining === 0 ? 'locked' : 'invalid', challengeId: stored.challengeId, attemptsRemaining };
+    }
+    await this.store.updateV2OtpChallenge({ ...stored, used: true, updatedAt: now.toISOString() });
+    return { status: 'verified', challengeId: stored.challengeId, tenantId: stored.tenantId, sessionId: stored.sessionId, opportunityId: stored.opportunityId, leadId: stored.leadId };
+  }
+
+  private publicChallenge(challenge: V2OtpChallengeRecord): V2OtpChallenge { return { challengeId: challenge.challengeId, tenantId: challenge.tenantId, sessionId: challenge.sessionId, opportunityId: challenge.opportunityId, leadId: challenge.leadId, expiresAt: challenge.expiresAt, attemptsRemaining: challenge.attemptsRemaining, deliveryStatus: challenge.deliveryStatus }; }
 }
 
 export const buildV2AccountProviderRequest = (input: {

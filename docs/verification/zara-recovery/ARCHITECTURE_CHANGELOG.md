@@ -145,3 +145,9 @@ The provider configuration remains unavailable, so no Salesforce completion is c
 - Added protected, correlated provider-evidence routes for invoice issuance, payment settlement and contract signing. Provider type, tenant/session/opportunity/catalog/action identity, execution correlation and stage are checked before any local state update.
 - Deterministic development providers update invoice/contract records only after scoped mock readback validation. Non-deterministic/unconfigured providers move to reconciliation and never claim completion.
 - Invoice issuance does not advance the lifecycle; verified payment advances `payment_invoice` to `contract`, and verified signing completes the final stage.
+
+## 2026-11-05 — durable Account OTP state
+
+- Added additive PostgreSQL migration `064-v2-otp-challenges.sql` with tenant/session scope, expiry, attempt count, one-time-use state and HMAC digest storage; plaintext OTP values are never persisted.
+- The default application path now uses the store-backed OTP service. The existing in-memory service remains available for isolated unit tests and explicit dependency injection.
+- Verified service recreation, PostgresStore read/update across separate instances, migration application and full local verification. Live Salesforce OTP delivery and provider verification remain external gates.

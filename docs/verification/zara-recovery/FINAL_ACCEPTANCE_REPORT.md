@@ -83,3 +83,9 @@ The branch is not ready to merge until the unverified gates are executed or expl
 - Deterministic development payment/contract path: **PASS** — invoice issuance, payment settlement and contract signing now use pinned V2 catalog bindings, provider correlation and scoped mock readback; invoice issuance does not prematurely advance the lifecycle.
 - Verification: focused provider route regression **6/6 PASS**; API **61 files / 516 tests PASS**; API typecheck PASS; repository `verify:local` PASS.
 - Acceptance remains **NOT_READY**. Live Salesforce Lead/Account/SF-02, official ANCFZ pricebook, payment/signature provider readback, browser E2E and three independent human-scored Azure runs remain unverified or externally blocked.
+
+## 2026-11-05 durable OTP checkpoint
+
+- Local restart-safety defect: **FIXED/VERIFIED** — store-backed OTP persistence, migration application, service recreation and PostgresStore read/update round-trip pass.
+- Full local verification: **PASS** — 61 API files / 517 tests, all workspace checks, builds, security checks, dependency audit, synthetic acceptance and 35 Python tests.
+- Acceptance remains **NOT_READY**. Live Salesforce OTP/provider readback, official pricing, live payment/signature providers, browser E2E and three independent human-scored Azure runs remain unverified.

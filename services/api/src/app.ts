@@ -26,7 +26,7 @@ import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } fro
 import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
 import { requiredDocumentSetComplete } from './document-stage-evidence.js';
 import { buildV2DocumentProviderRequest, DeterministicV2DocumentProvider, validateV2DocumentProviderResult } from './v2-document-provider.js';
-import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, V2OtpChallengeService, validateV2AccountProviderResult } from './v2-account-provider.js';
+import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, DurableV2OtpChallengeService, V2OtpChallengeService, validateV2AccountProviderResult } from './v2-account-provider.js';
 import { buildV2LeadProviderRequest, DeterministicV2LeadProvider, validateV2LeadProviderResult } from './v2-lead-provider.js';
 import { buildV2PaymentProviderRequest, DeterministicV2PaymentProvider, validateV2PaymentProviderResult } from './v2-payment-provider.js';
 import { buildV2ContractProviderRequest, DeterministicV2ContractProvider, validateV2ContractProviderResult } from './v2-contract-provider.js';
@@ -446,7 +446,7 @@ export interface AppDependencies {
   catalogQueryNormalizationEnabled?: boolean;
   sessionAccessTokenRequired?: boolean;
   v2Coordinator?: V2ConversationCoordinator;
-  v2AccountOtp?: V2OtpChallengeService;
+  v2AccountOtp?: V2OtpChallengeService | DurableV2OtpChallengeService;
   v2AccountProvider?: DeterministicV2AccountProvider;
   v2DocumentProvider?: DeterministicV2DocumentProvider;
   v2PaymentProvider?: DeterministicV2PaymentProvider;
@@ -512,7 +512,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const ingestionStaging = new IngestionStaging(dependencies.ingestionStagingRoot ?? process.env.INGESTION_STAGING_ROOT ?? join(process.cwd(), 'data', 'ingestion-staging'));
   const documentStorage = new PrivateDocumentStorage(dependencies.documentStorageRoot ?? process.env.SUPPORTING_DOCUMENT_ROOT ?? join(process.cwd(), 'data', 'supporting-documents'));
   const mockDocumentProvider = dependencies.v2DocumentProvider ?? (process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2DocumentProvider() : null);
-  const v2AccountOtp = dependencies.v2AccountOtp ?? new V2OtpChallengeService(process.env.V2_OTP_SECRET ?? 'local-development-v2-otp-secret');
+  const v2AccountOtp = dependencies.v2AccountOtp ?? new DurableV2OtpChallengeService(store, process.env.V2_OTP_SECRET ?? 'local-development-v2-otp-secret');
   const mockAccountProvider = dependencies.v2AccountProvider ?? (process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2AccountProvider() : null);
   const mockPaymentProvider = dependencies.v2PaymentProvider ?? (process.env.REMOTE_PAYMENT_PROVIDER === 'deterministic_mock' ? new DeterministicV2PaymentProvider() : null);
   const mockContractProvider = dependencies.v2ContractProvider ?? (process.env.REMOTE_SIGNATURE_PROVIDER === 'deterministic_mock' ? new DeterministicV2ContractProvider() : null);
@@ -2748,7 +2748,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         || workflowBinding.providerType !== 'deterministic_mock' || nodeEnv === 'production') {
         throw new HttpError(409, 'ACCOUNT_OTP_NOT_ELIGIBLE', 'The Account OTP challenge is not eligible for this verified development action.');
       }
-      const challenge = v2AccountOtp.issue({ tenantId: input.tenantId, sessionId: input.sessionId, opportunityId: input.opportunityId, leadId: input.leadId, code: input.code });
+      const challenge = await v2AccountOtp.issue({ tenantId: input.tenantId, sessionId: input.sessionId, opportunityId: input.opportunityId, leadId: input.leadId, code: input.code });
       await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'account.otp_challenge_issued', metadata: { actionId: action.id, opportunityId: input.opportunityId, challengeId: challenge.challengeId, providerType: workflowBinding.providerType }, createdAt: new Date().toISOString() });
       res.json({ challenge: { ...challenge, code: undefined }, providerType: workflowBinding.providerType });
     } catch (error) { next(error); }
@@ -2792,7 +2792,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         res.status(409).json({ accepted: false, status: 'reconciliation_required', reason: 'account_provider_readback_requires_configured_node_adapter', action: reconciled });
         return;
       }
-      const otp = v2AccountOtp.verify({ schemaVersion: 2, operation: 'otp.verify', tenantId: input.tenantId, sessionId: input.sessionId, opportunityId: input.opportunityId, leadId: lead.id, challengeId: input.otpChallengeId, code: input.otpCode });
+      const otp = await v2AccountOtp.verify({ schemaVersion: 2, operation: 'otp.verify', tenantId: input.tenantId, sessionId: input.sessionId, opportunityId: input.opportunityId, leadId: lead.id, challengeId: input.otpChallengeId, code: input.otpCode });
       if (otp.status !== 'verified') throw new HttpError(409, 'OTP_VERIFICATION_FAILED', 'The OTP is invalid, expired, already used or bound to a different request.');
       const originalLeadAction = await store.getAction(lead.actionId);
       if (!originalLeadAction) throw new HttpError(409, 'V2_ACCOUNT_ORIGINAL_LEAD_ACTION_UNVERIFIED', 'The verified Lead action cannot be found.');

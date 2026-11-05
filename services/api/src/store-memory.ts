@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, FoundryConversationBinding, IngestionJob, IntentCatalogV2Version, IntentCatalogVersion, IntentTurnAssessment, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, UserIntentDocument, WorkflowActionClaim } from './types.js';
+import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, FoundryConversationBinding, IngestionJob, IntentCatalogV2Version, IntentCatalogVersion, IntentTurnAssessment, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, UserIntentDocument, V2OtpChallengeRecord, WorkflowActionClaim } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
@@ -18,6 +18,7 @@ export class MemoryStore implements Store {
   private readonly users = new Map<string, User>();
   private readonly domains = new Map<string, TenantDomain>();
   private readonly authSessions = new Map<string, AuthSession>();
+  private readonly v2OtpChallenges = new Map<string, V2OtpChallengeRecord>();
   private readonly callbackNonces = new Map<string, string>();
   private readonly channelCredentials = new Map<string, ChannelCredential>();
   private readonly personas = new Map<string, Persona>();
@@ -103,6 +104,9 @@ export class MemoryStore implements Store {
 
   async getUserByEmail(email: string): Promise<User | null> { return [...this.users.values()].find((user) => user.email === email.toLowerCase()) ?? null; }
   async getUser(id: string): Promise<User | null> { return this.users.get(id) ?? null; }
+  async createV2OtpChallenge(challenge: V2OtpChallengeRecord): Promise<V2OtpChallengeRecord> { if (this.v2OtpChallenges.has(challenge.challengeId)) throw new HttpError(409, 'V2_OTP_CHALLENGE_EXISTS', 'The OTP challenge already exists.'); this.v2OtpChallenges.set(challenge.challengeId, structuredClone(challenge)); return structuredClone(challenge); }
+  async getV2OtpChallenge(tenantId: string, challengeId: string): Promise<V2OtpChallengeRecord | null> { const challenge = this.v2OtpChallenges.get(challengeId); return challenge?.tenantId === tenantId ? structuredClone(challenge) : null; }
+  async updateV2OtpChallenge(challenge: V2OtpChallengeRecord): Promise<V2OtpChallengeRecord> { const current = this.v2OtpChallenges.get(challenge.challengeId); if (!current || current.tenantId !== challenge.tenantId) throw new HttpError(404, 'V2_OTP_CHALLENGE_NOT_FOUND', 'The OTP challenge was not found.'); this.v2OtpChallenges.set(challenge.challengeId, structuredClone(challenge)); return structuredClone(challenge); }
   async createAuthSession(session: AuthSession): Promise<AuthSession> { this.authSessions.set(session.tokenHash, session); return session; }
   async getAuthSession(tokenHash: string): Promise<AuthSession | null> { return this.authSessions.get(tokenHash) ?? null; }
   async revokeAuthSession(tokenHash: string): Promise<void> { const session = this.authSessions.get(tokenHash); if (session) this.authSessions.set(tokenHash, { ...session, revokedAt: now() }); }
