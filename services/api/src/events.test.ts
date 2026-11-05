@@ -23,6 +23,10 @@ describe('durable event contracts', () => {
     expect(() => createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: randomUUID(), aggregateId: randomUUID(), payloadRef: 'opaque', idempotencyKey: 'unsafe', payload: { email: 'person@example.com' } })).toThrow('routing references only');
   });
 
+  it('accepts a versioned catalog reference as routing metadata', () => {
+    expect(() => createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: randomUUID(), aggregateId: randomUUID(), payloadRef: 'opaque', idempotencyKey: 'catalog-ref', payload: { catalogVersionId: 'anc:r5:dd211ab2ceb8033b242bbf3308afd306c98085495e1ce416416b90ccd0158214' } })).not.toThrow();
+  });
+
   it('persists approval and document events in the memory outbox', async () => {
     const store = new MemoryStore();
     const tenant = await store.createTenant({ name: 'Events', slug: `events-${Date.now()}` });

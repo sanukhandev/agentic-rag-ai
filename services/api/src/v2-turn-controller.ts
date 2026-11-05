@@ -58,7 +58,7 @@ export interface GPTFirstTurnInput {
   requestId: string;
   responseCacheTtlSeconds: number;
   coordinator: Pick<V2ConversationCoordinator, 'run'>;
-  actionGateway?: Pick<ActionGateway, 'propose'>;
+  actionGateway?: Pick<ActionGateway, 'propose' | 'confirm'>;
   scopeSecret: string;
   updateSession: (session: Session) => Promise<Session>;
 }
@@ -116,10 +116,12 @@ const contactRequirementKey = (catalog: NonNullable<ReturnType<typeof validatePu
   catalog.sheets.RequirementPolicies.find(requirement => requirement.goalKey === goalKey && requirement.requirementKey.endsWith(suffix))?.requirementKey ?? null;
 
 const explicitContactConsent = (message: string): 'granted' | 'denied' | null => {
-  if (/^(?:no|n|nope|nah|no thanks|do not|don't|not now|not interested|decline|cancel|stop|i do not consent|i don't consent|i refuse)[.!\s]*$/iu.test(message.trim())) return 'denied';
+  if (/^(?:no|n|nope|nah|no thanks|do not|don't|not now|not interested|decline|cancel|stop|i do not consent|i don't consent|i refuse)[.!\s]*$/iu.test(message.trim())
+    || /\b(?:do not|don't|refuse|no)\b[\s\S]{0,40}\b(?:consent|permission|authorize|contact|share|use)\b/iu.test(message)) return 'denied';
   return /^(?:yes|y|yeah|yep|sure|ok|okay|absolutely|confirmed|confirm|i confirm|of course|sounds good|please do|go ahead|you may contact me)[.!\s]*$/iu.test(message.trim())
     || /\bi\s+(?:(?:do|explicitly)\s+)?consent\b/iu.test(message)
-    || /\bi\s+(?:agree|authorize)\b/iu.test(message) ? 'granted' : null;
+    || /\bi\s+(?:agree|authorize|give|grant)\b[\s\S]{0,80}\b(?:consent|permission|contact|share|use|details)\b/iu.test(message)
+    || /\byou\s+have\s+my\s+permission\b/iu.test(message) ? 'granted' : null;
 };
 
 const explicitLeadSubmissionRequest = (message: string): boolean =>
@@ -421,30 +423,37 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         : contactConsent !== 'granted' ? resolvedConsentRequirementKey
           : actionConfirmationRequirementKey
     : null;
-  const proposedActionToolKey = validPlan && planningDecision?.proposal?.nextMove === 'propose_action'
-    ? planningDecision.proposedToolKey : null;
+  // An explicit, already-authorized Lead request is an independent customer
+  // intent. Do not lose it because the model's prose or optional plan failed
+  // response validation.
+  const explicitLeadRequest = explicitLeadSubmissionRequest(maskedMessage);
+  const proposedActionToolKey = explicitLeadRequest
+    ? 'lead.create'
+    : validPlan && planningDecision?.proposal?.nextMove === 'propose_action'
+      ? planningDecision.proposedToolKey : null;
   const proposedActionBinding = proposedActionToolKey && catalogV2
     ? catalogV2.sheets.ToolBindings.find(binding => binding.toolKey === proposedActionToolKey) ?? null : null;
   const actionProposalRequested = Boolean(input.actionGateway && catalogV2 && v2Version && selectedV2Goal
     && proposedActionToolKey && proposedActionBinding
     && proposedActionBinding.sideEffectClass !== 'read_only'
     && contactConsent === 'granted'
-    && explicitLeadSubmissionRequest(maskedMessage));
+    && (explicitLeadRequest || (validPlan && planningDecision?.proposal?.nextMove === 'propose_action')));
   const actionPurposeConsentScope = actionProposalRequested && proposedActionToolKey && catalogV2
     ? v2ActionConsentScope({ catalogVersionId: v2Version?.catalogVersionRef ?? catalog.id }, proposedActionToolKey) : originalState.consentVersion;
   const effectivePendingRequirement = catalogV2 ? authorizedPendingRequirement({
     catalogSource: 'v2', goalConfirmed: Boolean(intentDocument?.goalConfirmed),
     businessGoalKey: intentDocument?.businessGoalKey ?? null,
     currentStageKey: intentDocument?.currentStageKey ?? null,
-    selectedRequirementKey: actionProposalRequested ? null : contactRequirementAfterDecision ?? selectedRequirement,
+    selectedRequirementKey: actionProposalRequested ? actionConfirmationRequirementKey : contactRequirementAfterDecision ?? selectedRequirement,
     priorRequirementKey: actionProposalRequested ? null : priorPendingRequirement,
     goalDecision: decision,
   }) : nextPendingPrompt?.requirementKey ?? selectedRequirement ?? pendingRequirement;
   const leadCreateBinding = catalogV2?.sheets.ToolBindings.find(binding => binding.toolKey === 'lead.create') ?? null;
-  const leadActionRequested = explicitLeadSubmissionRequest(maskedMessage);
+  const leadActionRequested = explicitLeadRequest;
   const leadActionConfirmed = explicitLeadActionConfirmation(maskedMessage);
   const leadActionPending = Boolean(contactActive && contactConsent === 'granted'
-    && actionConfirmationRequirementKey && effectivePendingRequirement === actionConfirmationRequirementKey);
+    && actionConfirmationRequirementKey
+    && (effectivePendingRequirement === actionConfirmationRequirementKey || explicitLeadRequest));
   const leadProviderUnavailable = leadActionPending && (leadActionRequested || leadActionConfirmed)
     && leadCreateBinding?.enabled !== true;
   const state = { ...originalState, catalogVersionId: catalog.id,
@@ -632,7 +641,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
     } } : {}),
   } : {};
-  const actionConfirmationFactPatch = actionProposalRequested && actionConfirmationRequirementKey ? {
+  const actionConfirmationFactPatch = (actionProposalRequested || leadActionConfirmed) && actionConfirmationRequirementKey ? {
     [actionConfirmationRequirementKey]: {
       maskedValue: 'true', source: 'visitor' as const, messageSequence: state.messageSequence,
       evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
@@ -642,9 +651,9 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const effectiveCitationIds = overrideResponse ? [] : result.response.citationIds;
   const citations = overrideResponse ? [] : modelCitations;
   const grounded = effectiveCitationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence');
-  const answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
+  let answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
   assertKnownTokens(session, answerMasked, input.tokenVault);
-  const approvedResponse = { answer: answerMasked, grounded, citationRefs: effectiveCitationIds,
+  let approvedResponse = { answer: answerMasked, grounded, citationRefs: effectiveCitationIds,
     pendingRequirementKey: effectivePendingRequirement };
   const verifiedFactPatch: Record<string, UserIntentFact> = Object.fromEntries(
     Object.entries(incomingFacts).filter(([key, value]) =>
@@ -688,6 +697,12 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     const contactEntry = bootstrap.state.intentProgress?.entries[nextDoc.businessGoalKey];
     if (contactEntry) contactEntry.slotValues = { ...(contactEntry.slotValues ?? {}), ...contactSlots, ...(contactDecision ? { contact_consent: contactDecision === 'granted' ? 'true' : 'false' } : {}) };
   }
+  let confirmedAction: Awaited<ReturnType<ActionGateway['confirm']>> | null = null;
+  if (leadActionConfirmed && input.actionGateway && nextDoc.opportunityId) {
+    const pendingAction = (await store.listActionsBySession(session.id, tenant.id))
+      .find(action => action.opportunityId === nextDoc.opportunityId && action.actionKey === 'lead.create' && action.state === 'awaiting_confirmation');
+    if (pendingAction) confirmedAction = await input.actionGateway.confirm(pendingAction.id, tenant.id, undefined, { deferPersistence: true });
+  }
   let actionDecision: Awaited<ReturnType<typeof proposeV2CatalogAction>> | null = null;
   if (actionProposalRequested && input.actionGateway && proposedActionToolKey && proposedActionBinding && v2Version && nextDoc.opportunityId && nextDoc.businessGoalKey) {
     const priorActions = await store.listActionsBySession(session.id, tenant.id);
@@ -717,6 +732,18 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         },
       }, catalogV2!, context, { gateway: input.actionGateway, store });
     }
+  }
+  if (leadActionConfirmed) {
+    effectiveAnswer = confirmedAction
+      ? 'Thanks — I’ve confirmed the Lead submission and sent it for processing. I’ll report the result after Salesforce is independently verified.'
+      : 'I couldn’t find a pending Lead submission to confirm. I have not submitted anything.';
+    effectiveQuestion = null;
+    overrideResponse = true;
+    answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
+    assertKnownTokens(session, answerMasked, input.tokenVault);
+    approvedResponse = { answer: answerMasked, grounded: false, citationRefs: [], pendingRequirementKey: effectivePendingRequirement };
+    nextDoc.approvedResponse = approvedResponse;
+    nextDoc.lastQuestion = effectiveQuestion;
   }
   assertSafeUserIntentDocument(nextDoc);
   const assessment = { id: randomUUID(), documentId: nextDoc.id, tenantId: tenant.id, sessionId: session.id,
@@ -758,7 +785,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     try {
       const committed = await store.commitV2IntentTurn({ session, document: nextDoc,
         expectedDocumentRevision: intentDocument?.revision ?? null, assessment, audit: decisionAudit,
-        assistantMessage, customerMessage: answeredCustomerMessage });
+        assistantMessage, customerMessage: answeredCustomerMessage,
+        ...(confirmedAction?.state === 'approved' ? { actionApproval: confirmedAction } : {}) });
       session.stateVersion = committed.session.stateVersion ?? sessionRevision + 1;
     } catch (error) {
       // A proposal is not dispatchable until this V2 turn commits. If the

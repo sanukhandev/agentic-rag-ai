@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import re
 from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -17,6 +19,14 @@ from .agent import BoundedConversationAgent, FunctionCall, diagnostic_candidate
 from .reliability import BudgetExceeded, TurnBudget
 from .persona_composer import validate_composed_response
 from .v2_contracts import AgentTurnResultV2, ApprovedEvidenceV2, ToolResultV2, ToolTraceV2, TurnEnvelopeV2
+
+logger = logging.getLogger(__name__)
+
+
+def _safe_error_message(error: Exception) -> str:
+    message = re.sub(r"[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}", "[REDACTED_EMAIL]", str(error))
+    message = re.sub(r"(?i)(api[_ -]?key|token|secret|password)\\s*[:=]\\s*[^,\\s}\\\"]+", r"\\1=[REDACTED]", message)
+    return message[:300]
 
 
 class GraphTurnState(TypedDict, total=False):
@@ -150,6 +160,10 @@ class LangGraphConversationAgent(BoundedConversationAgent):
             result = final.get("result")
             if isinstance(result, AgentTurnResultV2):
                 return result
-        except Exception:
-            pass
+        except Exception as error:
+            logger.error(
+                "langgraph.turn_failed type=%s message=%s",
+                type(error).__name__,
+                _safe_error_message(error),
+            )
         return self._result(state, self._fallback(envelope, "graph_unavailable"))

@@ -617,7 +617,7 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect(document?.verifiedFacts.lead_contact_channel).toMatchObject({ maskedValue: '[EMAIL_1]', source: 'visitor' });
     expect(document?.pendingRequirementKey).toBe('lead_crm_consent');
 
-    await contactTurn('I explicitly consent to sharing my contact details for this enquiry.', 'Thanks.');
+    await contactTurn('Yes, you have my permission to use my contact details for this enquiry.', 'Thanks.');
     document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
     expect(document?.verifiedFacts.lead_crm_consent).toMatchObject({ maskedValue: 'true', source: 'visitor' });
     expect((await ctx.store.getSession(ctx.session.id))?.conversationState?.contactConsent).toBe('granted');
@@ -649,9 +649,8 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     const request = await followUpTurn(ctx, 'Please create my Lead');
     ctx.coordinator.run.mockImplementationOnce(async () => ({
       modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
-      response: { citationIds: [], answer: 'I can submit that.', nextQuestion: null, nextQuestionKey: null,
-        planning: { ...modelProposal, turnCategory: 'service_execution', nextMove: 'propose_action', proposedToolKey: 'lead.create', matchedSignalIds: ['signal.lead'], proposedFacts: [] } },
-      guardReason: 'accepted',
+      response: { citationIds: [], answer: 'I cannot verify that answer safely.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'invalid_question',
     }) as unknown as V2CoordinatorResult);
     const reply = await runGPTFirstChatTurn({ ...request, coordinator: ctx.coordinator });
     expect(reply.actionProposal).toMatchObject({ intent: 'crm.lead.create', consentRequired: false });
@@ -661,8 +660,17 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     const persistedSession = await ctx.store.getSession(ctx.session.id);
     if (!persistedSession || !actions[0]) throw new Error('UNIT_ACTION_STATE_MISSING');
     await expect(evaluatePersistedV2ActionConfirmation(ctx.store, persistedSession, actions[0])).resolves.toMatchObject({ applies: true, accepted: true });
-    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.pendingRequirementKey).toBeNull();
+    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.pendingRequirementKey).toBe('lead_action_confirmation');
     expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.verifiedFacts.lead_action_confirmation).toMatchObject({ maskedValue: 'true', source: 'visitor' });
+    const confirmation = await followUpTurn(ctx, 'I confirm the authorized submission.');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'Confirmed.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    const confirmationReply = await runGPTFirstChatTurn({ ...confirmation, coordinator: ctx.coordinator });
+    expect(confirmationReply.answer).toContain('confirmed the Lead submission');
+    expect((await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id))[0]).toMatchObject({ state: 'approved' });
   });
 
   it('keeps disabled Lead submission truthful and hides internal requirement keys', async () => {

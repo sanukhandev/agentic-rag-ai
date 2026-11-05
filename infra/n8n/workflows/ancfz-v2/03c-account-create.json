@@ -93,7 +93,7 @@
         "nodeCredentialType": "oAuth2Api",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({actionReference:$('Require V2 Stage Authorization').first().json.actionId,tenantReference:$('Require V2 Stage Authorization').first().json.tenantId,idempotencyKey:$('Require V2 Stage Authorization').first().json.idempotencyKey,...Object.fromEntries([\"verifiedLeadRef\",\"qualificationEvidenceRef\",\"accountName\",\"verifiedEmailRef\",\"consentReceiptRef\"].filter(k=>Object.prototype.hasOwnProperty.call($('Require V2 Stage Authorization').first().json.approvedPayload,k)).map(k=>[k,$('Require V2 Stage Authorization').first().json.approvedPayload[k]]))}) }}",
+        "jsonBody": "={{ (() => { const source=$('Require V2 Stage Authorization').first().json; const p=source.providerPayload||{}; const name=String(p.name||'ANCFZ Customer').trim(); const leadId=String(p.leadExternalId||'').trim(); const opportunityName='ANCFZ '+name+' '+source.actionId.slice(0,8); return JSON.stringify({allOrNone:true,compositeRequest:[{method:'POST',url:'/services/data/v68.0/sobjects/Account',referenceId:'account',body:{Name:opportunityName,Description:'Agentic account for Lead '+leadId+' Action '+source.actionId}},{method:'POST',url:'/services/data/v68.0/sobjects/Contact',referenceId:'contact',body:{LastName:name,Email:String(p.email||''),AccountId:'@{account.id}'}},{method:'POST',url:'/services/data/v68.0/sobjects/Opportunity',referenceId:'opportunity',body:{Name:opportunityName+' Opportunity',StageName:'Prospecting',CloseDate:'2026-12-31',AccountId:'@{account.id}',Description:'Agentic opportunity for Lead '+leadId+' Action '+source.actionId}}]}); })() }}",
         "options": {
           "timeout": 30000
         },
@@ -111,28 +111,21 @@
           ]
         }
       },
-      "notes": "Configure REMOTE_CRM_ACCOUNT_URL and a managed n8n credential before activation. The workflow remains inert until Node OTP and provider readback acceptance are verified."
+      "notes": "Uses the configured Salesforce OAuth2 credential and Composite API to create linked Account, Contact and Opportunity records. Node independently reads back all three records before accepting completion."
     },
     {
       "id": "ancfzV2AccountCreateR1-readback",
       "name": "Read Back Provider State",
-      "type": "n8n-nodes-base.httpRequest",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 4.2,
       "position": [
         1300,
         200
       ],
       "parameters": {
-        "method": "GET",
-        "url": "={{ $env.REMOTE_CRM_ACCOUNT_READ_URL.replace('{accountId}', encodeURIComponent($('Call Provider - Configure Credential').first().json['accountId'])) }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "oAuth2Api",
-        "sendBody": false,
-        "options": {
-          "timeout": 30000
-        }
+        "jsCode": "const body=$('Call Provider - Configure Credential').first().json; const rows=body.compositeResponse; if(!Array.isArray(rows)||rows.length!==3) throw new Error('Salesforce Composite API did not return the Account, Contact and Opportunity results.'); const refs=new Map(rows.map(row=>[row.referenceId,row])); const ids=['account','contact','opportunity'].map(ref=>{const row=refs.get(ref); if(!row||row.httpStatusCode<200||row.httpStatusCode>=300||typeof row.body?.id!=='string') throw new Error('Salesforce Composite API relationship creation failed.'); return row.body.id;}); return [{json:{accountId:ids.join(':'),remoteAccountId:ids[0],remoteContactId:ids[1],remoteOpportunityId:ids[2]}}];"
       },
-      "notes": "Configure REMOTE_CRM_ACCOUNT_READ_URL as an {accountId} template. Never infer completion from POST 2xx. Bind the original provider record ID; no broad search."
+      "notes": "This packages the three provider IDs into an opaque correlation reference. Node performs the authoritative Salesforce GET readback for each exact ID; no broad search is used."
     },
     {
       "id": "ancfzV2AccountCreateR1-verify",

@@ -953,7 +953,7 @@ export interface Store {
   updateUserIntentDocument(input: { document: UserIntentDocument; expectedRevision: number }): Promise<UserIntentDocument | null>;
   appendIntentTurn(assessment: IntentTurnAssessment): Promise<IntentTurnAssessment>;
   /** Commit a V2 turn across session, document, assessment and decision audit. */
-  commitV2IntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null; assistantMessage?: Message; customerMessage?: Message }): Promise<{ session: Session; document: UserIntentDocument }>;
+  commitV2IntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null; assistantMessage?: Message; customerMessage?: Message; actionApproval?: ActionRequest }): Promise<{ session: Session; document: UserIntentDocument }>;
   listIntentTurns(tenantId: string, sessionId: string, limit?: number): Promise<IntentTurnAssessment[]>;
   createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion>;
   listPersonaVersions(tenantId: string): Promise<PersonaVersion[]>;

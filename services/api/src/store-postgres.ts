@@ -98,7 +98,7 @@ export class PostgresStore implements Store {
       AND goal_confirmed IS NOT DISTINCT FROM $12
       AND business_goal_key IS NOT DISTINCT FROM $8)) RETURNING *`, [document.id, document.tenantId, document.sessionId, document.opportunityId, document.catalogSource, document.catalogVersionRef, document.personaVersionId, document.businessGoalKey, document.turnIntentKey, document.currentStageKey, document.stageRevision, document.goalConfirmed, JSON.stringify(document.verifiedFacts), document.pendingRequirementKey, document.lastQuestion, JSON.stringify(document.approvedResponse), JSON.stringify(document.toolRefs), JSON.stringify(document.sourceRefs), document.summary, document.summaryRevision, document.updatedAt, input.expectedRevision, JSON.stringify(document.goalConfirmation ?? null)]); return result.rows[0] ? this.intentDocument(result.rows[0]) : null; }
   async appendIntentTurn(assessment: IntentTurnAssessment, client?: PoolClient): Promise<IntentTurnAssessment> { assertSafeIntentTurn(assessment); const owner = await (client ?? this.pool).query<{ opportunity_id: string | null }>('SELECT opportunity_id FROM user_intent_documents WHERE id=$1 AND tenant_id=$2 AND session_id=$3', [assessment.documentId, assessment.tenantId, assessment.sessionId]); if (owner.rowCount !== 1) throw new HttpError(404, 'INTENT_DOCUMENT_NOT_FOUND', 'User intent document not found.'); if (owner.rows[0]!.opportunity_id !== assessment.opportunityId) throw new HttpError(409, 'INTENT_TURN_SCOPE_CONFLICT', 'The intent turn opportunity does not match the document scope.'); const existing = await (client ?? this.pool).query<IntentTurnAssessmentRow>('SELECT * FROM intent_turn_assessments WHERE tenant_id=$1 AND session_id=$2 AND client_message_id=$3', [assessment.tenantId, assessment.sessionId, assessment.clientMessageId]); if (existing.rows[0]) { if (existing.rows[0].message_hash !== assessment.messageHash) throw new HttpError(409, 'INTENT_TURN_REUSED', 'The client message id is already bound to different content.'); return this.intentTurn(existing.rows[0]); } const result = await (client ?? this.pool).query<IntentTurnAssessmentRow>('INSERT INTO intent_turn_assessments (id,document_id,tenant_id,session_id,opportunity_id,turn_sequence,client_message_id,message_hash,business_goal_key,turn_intent_key,intent_category,verified_fact_patch,pending_requirement_key,last_question,approved_response,tool_refs,source_refs,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14,$15::jsonb,$16::jsonb,$17::jsonb,$18) ON CONFLICT (session_id,client_message_id) DO NOTHING RETURNING *', [assessment.id, assessment.documentId, assessment.tenantId, assessment.sessionId, assessment.opportunityId, assessment.turnSequence, assessment.clientMessageId, assessment.messageHash, assessment.businessGoalKey, assessment.turnIntentKey, assessment.intentCategory, JSON.stringify(assessment.verifiedFactPatch), assessment.pendingRequirementKey, assessment.lastQuestion, JSON.stringify(assessment.approvedResponse), JSON.stringify(assessment.toolRefs), JSON.stringify(assessment.sourceRefs), assessment.createdAt]); if (result.rows[0]) return this.intentTurn(result.rows[0]); const retried = await (client ?? this.pool).query<IntentTurnAssessmentRow>('SELECT * FROM intent_turn_assessments WHERE tenant_id=$1 AND session_id=$2 AND client_message_id=$3', [assessment.tenantId, assessment.sessionId, assessment.clientMessageId]); if (!retried.rows[0] || retried.rows[0].message_hash !== assessment.messageHash) throw new HttpError(409, 'INTENT_TURN_CONFLICT', 'The intent turn could not be appended without a conflict.'); return this.intentTurn(retried.rows[0]); }
-  async commitV2IntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null; assistantMessage?: Message; customerMessage?: Message }): Promise<{ session: Session; document: UserIntentDocument }> {
+  async commitV2IntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null; assistantMessage?: Message; customerMessage?: Message; actionApproval?: ActionRequest }): Promise<{ session: Session; document: UserIntentDocument }> {
     assertSafeUserIntentDocument(input.document);
     assertSafeIntentTurn(input.assessment);
     const { session, document, assessment } = input;
@@ -129,6 +129,19 @@ export class PostgresStore implements Store {
         [document.tenantId, document.catalogVersionRef],
       );
       if (publication.rowCount !== 1) throw new HttpError(409, 'V2_CATALOG_PIN_STALE', 'V2 publication changed.');
+      if (input.actionApproval) {
+        const approval = input.actionApproval;
+        if (approval.tenantId !== document.tenantId || approval.sessionId !== session.id || approval.state !== 'approved') throw new HttpError(403, 'ACTION_APPROVAL_SCOPE_DENIED', 'The action approval scope does not match the V2 turn.');
+        const current = await client.query<ActionRow>('SELECT * FROM action_requests WHERE id=$1 AND tenant_id=$2 FOR UPDATE', [approval.id, approval.tenantId]);
+        if (!current.rows[0]) throw new HttpError(404, 'ACTION_NOT_FOUND', 'Action not found.');
+        if (!['approved', 'processing', 'completed'].includes(current.rows[0].state)) {
+          if (!['awaiting_confirmation', 'unknown'].includes(current.rows[0].state)) throw new HttpError(409, 'ACTION_NOT_CONFIRMABLE', 'Action is no longer confirmable.');
+          const updated = await client.query<ActionRow>('UPDATE action_requests SET state=$1,result=$2,payload=$3 WHERE id=$4 AND tenant_id=$5 RETURNING *', ['approved', null, JSON.stringify(approval.payload), approval.id, approval.tenantId]);
+          const event = createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: approval.tenantId, sessionId: approval.sessionId, actionId: approval.id, aggregateId: approval.id, workflowKey: approval.workflowKey, payloadRef: approval.opaqueReference, idempotencyKey: approval.idempotencyKey, payload: { actionId: approval.id, sessionId: approval.sessionId, workflowKey: approval.workflowKey, webhookPath: approval.webhookPath ?? null, catalogVersionId: approval.catalogVersionId ?? null, opportunityId: approval.opportunityId ?? null, actionKey: approval.actionKey ?? null, actionRevision: approval.actionRevision ?? 1 } });
+          await this.insertOutbox(client, event);
+          if (updated.rowCount !== 1) throw new HttpError(409, 'ACTION_CONFIRMATION_CONFLICT', 'Action confirmation changed concurrently.');
+        }
+      }
       const savedSession = await this.updateSessionOnClient(client, session);
       const savedDocument = input.expectedDocumentRevision === null
         ? await this.createUserIntentDocument(document, client)
@@ -442,8 +455,8 @@ export class PostgresStore implements Store {
         if (!binding.rows[0] && row.catalog_v2_version_ref) {
           binding = await client.query<{ workflow_key: string }>(`SELECT workflow.item->>'workflowKey' AS workflow_key
             FROM intent_catalog_v2_versions AS catalog
-            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(catalog.catalog_json->'WorkflowBindings', '[]'::jsonb)) AS workflow(item)
-            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(catalog.catalog_json->'ToolBindings', '[]'::jsonb)) AS tool(item)
+            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(catalog.catalog_json->'sheets'->'WorkflowBindings', '[]'::jsonb)) AS workflow(item)
+            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(catalog.catalog_json->'sheets'->'ToolBindings', '[]'::jsonb)) AS tool(item)
             WHERE catalog.tenant_id=$1 AND catalog.catalog_version_ref=$2 AND catalog.status='published'
               AND workflow.item->>'workflowKey'=$3
               AND workflow.item->>'n8nWorkflowId'=$4

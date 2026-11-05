@@ -124,6 +124,26 @@ describe('Salesforce sandbox lead readback adapter', () => {
     });
   });
 
+  it('verifies standard Salesforce Account, Contact and Opportunity readbacks from one opaque relationship reference', async () => {
+    const provider = new SalesforceSandboxLeadProvider({
+      accessToken: 'sandbox-token',
+      accountReadbackUrl: 'https://sandbox.example.test/services/data/v68.0/sobjects/Account/{accountId}',
+      contactReadbackUrl: 'https://sandbox.example.test/services/data/v68.0/sobjects/Contact/{contactId}',
+      opportunityReadbackUrl: 'https://sandbox.example.test/services/data/v68.0/sobjects/Opportunity/{opportunityId}',
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.includes('/Account/')) return new Response(JSON.stringify({ Id: '001-test', Description: 'Agentic account for Lead 00Q-lead-test' }), { status: 200 });
+        if (url.includes('/Contact/')) return new Response(JSON.stringify({ Id: '003-test', AccountId: '001-test' }), { status: 200 });
+        return new Response(JSON.stringify({ Id: '006-test', AccountId: '001-test' }), { status: 200 });
+      },
+    });
+    const input = accountRequest();
+
+    await expect(provider.verifyAccount({ request: input, providerRecordId: '001-test:003-test:006-test' })).resolves.toMatchObject({
+      recordRef: '001-test', remoteAccountId: '001-test', remoteContactId: '003-test', remoteOpportunityId: '006-test', leadExternalId: '00Q-lead-test', deduplicated: false,
+    });
+  });
+
   it('rejects Salesforce SF-02 readback when the attachment is not linked to the verified records', async () => {
     const provider = new SalesforceSandboxLeadProvider({
       accessToken: 'sandbox-token',
@@ -134,5 +154,49 @@ describe('Salesforce sandbox lead readback adapter', () => {
 
     await expect(provider.verifyDocument({ request: input, providerRecordId: '069-test', expected: { leadAttachmentId: '069-lead', accountAttachmentId: '069-account', remoteAccountId: '001-test', remoteContactId: '003-test', remoteOpportunityId: '006-test' } }))
       .rejects.toThrow('SALESFORCE_DOCUMENT_READBACK_MISMATCH');
+  });
+
+  it('updates a Lead description and verifies the Salesforce readback', async () => {
+    const calls: Array<{ method: string; url: string; body?: string }> = [];
+    const provider = new SalesforceSandboxLeadProvider({
+      accessToken: 'sandbox-token',
+      readbackUrl: 'https://sandbox.example.test/services/data/v68.0/sobjects/Lead/{leadId}',
+      fetchImpl: async (input, init) => {
+        calls.push({ method: init?.method ?? 'GET', url: String(input), ...(typeof init?.body === 'string' ? { body: init.body } : {}) });
+        if (init?.method === 'PATCH') return new Response(null, { status: 204 });
+        return new Response(JSON.stringify({ Id: '00Q-test', Description: 'OCR summary from the synthetic document.' }), { status: 200, headers: { 'content-type': 'application/json' } });
+      },
+    });
+
+    await expect(provider.updateLeadDescription({ providerRecordId: '00Q-test', description: 'OCR summary from the synthetic document.' })).resolves.toEqual({
+      recordRef: '00Q-test', description: 'OCR summary from the synthetic document.',
+    });
+    expect(calls).toEqual([
+      { method: 'PATCH', url: 'https://sandbox.example.test/services/data/v68.0/sobjects/Lead/00Q-test', body: '{"Description":"OCR summary from the synthetic document."}' },
+      { method: 'GET', url: 'https://sandbox.example.test/services/data/v68.0/sobjects/Lead/00Q-test' },
+    ]);
+  });
+
+  it('creates a Lead attachment and verifies its parent readback', async () => {
+    const calls: Array<{ method: string; url: string; body?: string }> = [];
+    const provider = new SalesforceSandboxLeadProvider({
+      accessToken: 'sandbox-token',
+      readbackUrl: 'https://sandbox.example.test/services/data/v68.0/sobjects/Lead/{leadId}',
+      attachmentUrl: 'https://sandbox.example.test/services/data/v68.0/sobjects/Attachment',
+      attachmentReadbackUrl: 'https://sandbox.example.test/services/data/v68.0/sobjects/Attachment/{attachmentId}',
+      fetchImpl: async (input, init) => {
+        calls.push({ method: init?.method ?? 'GET', url: String(input), ...(typeof init?.body === 'string' ? { body: init.body } : {}) });
+        if (init?.method === 'POST') return new Response(JSON.stringify({ id: '00P-test' }), { status: 201, headers: { 'content-type': 'application/json' } });
+        return new Response(JSON.stringify({ Id: '00P-test', ParentId: '00Q-test', Name: 'synthetic.pdf', BodyLength: 4 }), { status: 200, headers: { 'content-type': 'application/json' } });
+      },
+    });
+
+    await expect(provider.createLeadAttachment({ providerRecordId: '00Q-test', fileName: 'synthetic.pdf', contentBase64: 'UERG' })).resolves.toEqual({
+      attachmentRef: '00P-test', parentRef: '00Q-test', fileName: 'synthetic.pdf', sizeBytes: 3,
+    });
+    expect(calls).toEqual([
+      { method: 'POST', url: 'https://sandbox.example.test/services/data/v68.0/sobjects/Attachment', body: '{"ParentId":"00Q-test","Name":"synthetic.pdf","Body":"UERG"}' },
+      { method: 'GET', url: 'https://sandbox.example.test/services/data/v68.0/sobjects/Attachment/00P-test' },
+    ]);
   });
 });
