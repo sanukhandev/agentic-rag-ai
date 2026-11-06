@@ -83,7 +83,7 @@ export const normalizeConversationQuery = (text: string): string => text
   .slice(0, 4_000);
 
 const offerReplyText = (text: string): string => normalizeConversationQuery(text).toLocaleLowerCase('en-US');
-const offerAffirmation = /^(?:yes|yeah|yep|sure|okay|ok|please do|go ahead|tell me more|please explain|that would help|i(?:'d| would) like that)(?:[\s,.]*(?:please|sure|yes|go ahead))*[.!]*$/iu;
+const offerAffirmation = /^(?:(?:yes|yeah|yep)(?:[\s,.]*(?:please|sure|yes|go ahead|explain|do))*|sure|okay|ok|please do|go ahead|tell me more|please explain|that would help|i(?:'d| would) like that)[.!]*$/iu;
 const offerRejection = /^(?:no|nope|not now|later|not yet|maybe later|decline|reject|stop|nothing else|i(?:'m| am) done)[.!]*$/iu;
 const offerReplyQuestion = /(?:[?؟]$|^(?:what|how|where|which|why|when|who|can|could|would|is|are|does|should|will)\b|^do\s+(?:you|we|they|i)\b)/iu;
 const offerReplyMinimumConfidence = 0.75;

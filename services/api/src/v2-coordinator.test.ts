@@ -294,6 +294,57 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.answer).toContain('ANCFZ Premium');
     expect(output.response.nextQuestion).toBe('Which package would you like to explore first?');
     expect(output.response.nextQuestionKey).toBe('conversation_focus');
+    expect(output.draft.followUpOptions).toEqual([
+      { key: 'package_starter', label: 'ANCFZ Starter', retrievalHints: ['starter'] },
+      { key: 'package_growth', label: 'ANCFZ Growth', retrievalHints: ['growth'] },
+      { key: 'package_premium', label: 'ANCFZ Premium', retrievalHints: ['premium'] },
+    ]);
+  });
+
+  it('selects a typo-tolerant package excerpt and tracks its explanation follow-up', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'tell me about the groth package';
+    request.latestTurns = [{ role: 'customer', content: 'what packages do you offer?' }];
+    const packageEvidence = [
+      { citationId: 'package-starter', text: 'The published approved package ANCFZ Starter has a listed price of AED 2,499.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-growth', text: 'The published approved package ANCFZ Growth includes three visas and a shared office, with a listed price of AED 4,999.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-premium', text: 'The published approved package ANCFZ Premium has a listed price of AED 7,899.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+    ];
+    const candidate = result('The Growth package includes a private office and unlimited visas.', {
+      response: { ...result('').response, answer: 'The Growth package includes a private office and unlimited visas.', citationIds: ['package-growth'] },
+      approvedEvidence: packageEvidence,
+      toolTrace: [{ toolCallId: 'package-call-12345678', toolName: 'get_available_packages', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: packageEvidence.map((item) => item.citationId) }],
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toContain('ANCFZ Growth');
+    expect(output.response.answer).toContain('three visas');
+    expect(output.response.answer).not.toContain('ANCFZ Starter');
+    expect(output.response.nextQuestion).toBe('Would you like me to explain this package in more detail?');
+    expect(output.draft.followUpOptions).toEqual([
+      { key: 'explain_more', label: 'explain this package in more detail', retrievalHints: [] },
+    ]);
+  });
+
+  it('continues an accepted explanation without repeating the same fallback question', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'yes please explain';
+    const delivered = 'The published approved package ANCFZ Growth includes three visas and a shared office, with a listed price of AED 4,999.00.';
+    request.latestTurns = [
+      { role: 'customer', content: 'tell me about the groth package' },
+      { role: 'assistant', content: `Of course. ${delivered} Would you like me to explain this package in more detail?` },
+    ];
+    const evidence = [{ citationId: 'package-growth', text: delivered, sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false }];
+    const candidate = result('The Growth package includes a private office and unlimited visas.', {
+      response: { ...result('').response, answer: 'The Growth package includes a private office and unlimited visas.', citationIds: ['package-growth'] },
+      approvedEvidence: evidence,
+      toolTrace: [{ toolCallId: 'package-call-12345678', toolName: 'get_available_packages', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: ['package-growth'] }],
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toBe(`Of course. ${delivered}`);
+    expect(output.response.nextQuestion).toBeNull();
+    expect(output.draft.followUpOptions).toBeUndefined();
   });
 
   it('humanizes a generic source recovery while preserving the selected evidence', async () => {
@@ -313,6 +364,9 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.citationIds).toEqual(['process-source']);
     expect(output.response.nextQuestion).toBe('Would you like me to explain how this applies to your setup?');
     expect(output.response.nextQuestionKey).toBe('conversation_focus');
+    expect(output.draft.followUpOptions).toEqual([
+      { key: 'explain_more', label: 'explain this in more detail', retrievalHints: [] },
+    ]);
   });
 
   it('keeps a pending requirement useful after a repeated knowledge interruption', async () => {

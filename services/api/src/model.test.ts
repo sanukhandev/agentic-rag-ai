@@ -18,6 +18,7 @@ describe('Azure Foundry model adapter', () => {
   it('resolves short replies only against the active offer', async () => {
     const offer = { offerKey: 'offer-1', intentKey: 'company.setup', sourceMessageId: null, sourceQuery: 'setup procedure', options: [{ key: 'steps', label: 'the setup steps', retrievalHints: ['application procedure'] }], issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString() };
     expect(classifyOfferReplyDeterministically('yes please', offer)).toMatchObject({ action: 'accept', optionKey: 'steps' });
+    expect(classifyOfferReplyDeterministically('yes please explain', { ...offer, options: [{ key: 'explain_more', label: 'explain this in more detail', retrievalHints: [] }] })).toMatchObject({ action: 'accept', optionKey: 'explain_more' });
     expect(classifyOfferReplyDeterministically('please explain', { ...offer, options: [...offer.options, { key: 'documents', label: 'the required documents', retrievalHints: ['document requirements'] }] })).toMatchObject({ action: 'clarify' });
     expect(classifyOfferReplyDeterministically('the documents', { ...offer, options: [...offer.options, { key: 'documents', label: 'the required documents', retrievalHints: ['document requirements'] }] })).toMatchObject({ action: 'select_option', optionKey: 'documents' });
     expect(classifyOfferReplyDeterministically("I don't want the setup steps", offer)).toMatchObject({ action: 'clarify' });

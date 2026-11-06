@@ -10,7 +10,7 @@ import { proposeV2CatalogAction, v2ActionConsentScope } from './v2-action-gate.j
 import { extractQuotedV2CustomerFacts, validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
 import { contextForConfirmedV2Action, initializeConfirmedV2Journey } from './v2-journey-bootstrap.js';
 import type { ActionGateway } from './actions.js';
-import { extractLeadData } from './model.js';
+import { classifyOfferReplyDeterministically, extractLeadData } from './model.js';
 import { HttpError } from './http/errors.js';
 import { contextualizeV2KnowledgeQuery, isV2FactualKnowledgeQuestion, prefetchV2ApprovedKnowledge } from './v2-knowledge-preflight.js';
 import { KnowledgeRetrievalError } from './knowledge.js';
@@ -21,7 +21,7 @@ import { assertSafeUserIntentDocument, assertSafeIntentTurn } from './user-inten
 import { type V2ConversationCoordinator, type V2CoordinatorRequest, type V2CoordinatorResult } from './v2-coordinator.js';
 import type { V2ApprovedEvidence, V2VerifiedFact } from './v2-evidence.js';
 import type { V2ApprovedFallbackTemplateSet } from './v2-fallbacks.js';
-import type { Citation, GoalConfirmationRecord, Message, PersonaVersion, Session, Store, Tenant, UserIntentDocument, UserIntentFact } from './types.js';
+import type { Citation, FollowUpOfferOption, GoalConfirmationRecord, Message, PendingFollowUpOffer, PersonaVersion, Session, Store, Tenant, UserIntentDocument, UserIntentFact } from './types.js';
 
 /** A single guarded model turn. Never invokes the legacy planner or creates an action. */
 export const executeV2Turn = async (
@@ -146,6 +146,14 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     throw new HttpError(409, 'V2_TURN_REPLAY', 'This customer message has already been assessed.');
   }
   const originalState = session.conversationState ?? newConversationState();
+  const activeFollowUpOffer: PendingFollowUpOffer | null = originalState.pendingFollowUpOffer
+    && Date.parse(originalState.pendingFollowUpOffer.expiresAt) > Date.now()
+    && (!originalState.pendingFollowUpOffer.intentKey || !originalState.selectedIntentKey || originalState.pendingFollowUpOffer.intentKey === originalState.selectedIntentKey)
+    ? originalState.pendingFollowUpOffer : null;
+  const offerReply = activeFollowUpOffer ? classifyOfferReplyDeterministically(maskedMessage, activeFollowUpOffer) : null;
+  const acceptedOfferOption: FollowUpOfferOption | null = activeFollowUpOffer
+    && (offerReply?.action === 'accept' || offerReply?.action === 'select_option') && offerReply.optionKey
+    ? activeFollowUpOffer.options.find(option => option.key === offerReply.optionKey) ?? null : null;
   // Canonical GPT-first selection: V2 first for new sessions, then V1 rollback.
   // Existing sessions remain pinned to their exact catalog publication.
   const publishedV2 = (await store.listIntentCatalogV2Versions(tenant.id))
@@ -256,8 +264,10 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       goal.active && goal.businessGoalKey === intentDocument.businessGoalKey)?.name ?? null
     : priorMessages.some(message => message.role === 'user' && /\b(?:company|business|formation|incorporat\w*|register\w*|setup)\b/iu.test(message.maskedContent))
       ? 'Company formation' : null;
-  const contextualizedQuery = contextualizeV2KnowledgeQuery(maskedMessage, contextualTopic);
-  const preflightQuery = contextualizedQuery === maskedMessage ? contextualizedQuery : `${contextualizedQuery} process steps`;
+  const contextualizedQuery = acceptedOfferOption && activeFollowUpOffer
+    ? `${activeFollowUpOffer.sourceQuery}\n${acceptedOfferOption.label}`
+    : contextualizeV2KnowledgeQuery(maskedMessage, contextualTopic);
+  const preflightQuery = acceptedOfferOption ? contextualizedQuery : contextualizedQuery === maskedMessage ? contextualizedQuery : `${contextualizedQuery} process steps`;
   let approvedKnowledge: V2ApprovedEvidence[] = [];
   if (input.embedding) {
     try {
@@ -745,6 +755,10 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     nextDoc.approvedResponse = approvedResponse;
     nextDoc.lastQuestion = effectiveQuestion;
   }
+  const followUpOptions = !overrideResponse ? result.draft?.followUpOptions ?? [] : [];
+  state.pendingFollowUpOffer = followUpOptions.length > 0 && effectiveQuestion
+    ? { offerKey: randomUUID(), intentKey: state.selectedIntentKey, sourceMessageId: responseId, sourceQuery: contextualizedQuery, options: followUpOptions, issuedAt: at, expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() }
+    : acceptedOfferOption || offerReply?.action === 'reject' || offerReply?.action === 'new_request' ? null : activeFollowUpOffer;
   assertSafeUserIntentDocument(nextDoc);
   const assessment = { id: randomUUID(), documentId: nextDoc.id, tenantId: tenant.id, sessionId: session.id,
     opportunityId: nextDoc.opportunityId, turnSequence: state.messageSequence, clientMessageId: input.clientMessageId,

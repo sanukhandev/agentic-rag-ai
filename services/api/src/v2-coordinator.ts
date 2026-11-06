@@ -6,6 +6,7 @@ import { addVerifiedFactCitations, buildV2GroundingReviewClaims, v2MeanLexicalOv
 import { proofsFromV2GroundingReview, type V2GroundingVerifier } from './v2-grounding-verifier.js';
 import type { V2ApprovedFallbackTemplateSet, V2FallbackFamily } from './v2-fallbacks.js';
 import { hasPositiveBusinessOutcomeClaim, type V2ClaimProvenance } from './v2-claim-provenance.js';
+import type { FollowUpOfferOption } from './types.js';
 
 export interface V2ConversationAgent {
   turn(envelope: TurnEnvelopeV2): Promise<unknown>;
@@ -74,7 +75,10 @@ export interface V2CoordinatorResult {
 }
 
 const fallbackFamilyFor = (reason: string): V2FallbackFamily => reason === 'stale_state' ? 'reconciliation' : reason === 'invalid_citation' || reason === 'unsupported_claim' || reason === 'metadata_leak' || reason === 'persona_mismatch' ? 'invalid_model' : 'tool_unavailable';
-const toDraft = (response: PersonaComposedResponseV2): ModelDraft => ({ answer: response.answer, citationIds: response.citationIds, proposedIntent: null });
+const toDraft = (response: PersonaComposedResponseV2, followUpOptions: FollowUpOfferOption[] = []): ModelDraft => ({
+  answer: response.answer, citationIds: response.citationIds, proposedIntent: null,
+  ...(followUpOptions.length > 0 ? { followUpOptions } : {}),
+});
 const stagePlaceholderContext = /\b(?:currently\s+at|at\s+the|about\s+the|in\s+the)\s+\[ID_\d+\](?:\s+stage)?/iu;
 const stageLabel = (stageKey: string | null): string | null => {
   if (!stageKey) return null;
@@ -170,36 +174,101 @@ const mergeEvidence = (requestEvidence: V2ApprovedEvidence[], result: AgentTurnR
   return [...merged.values()];
 };
 
-const sourceExcerptResponse = (envelope: TurnEnvelopeV2, evidence: V2ApprovedEvidence[]): PersonaComposedResponseV2 | null => {
+interface SourceExcerptRecovery {
+  response: PersonaComposedResponseV2;
+  followUpOptions: FollowUpOfferOption[];
+}
+
+const levenshteinDistance = (left: string, right: string): number => {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= right.length; column += 1) {
+      current[column] = Math.min(
+        (current[column - 1] ?? Number.POSITIVE_INFINITY) + 1,
+        (previous[column] ?? Number.POSITIVE_INFINITY) + 1,
+        (previous[column - 1] ?? Number.POSITIVE_INFINITY) + (left[row - 1] === right[column - 1] ? 0 : 1),
+      );
+    }
+    for (let column = 0; column <= right.length; column += 1) previous[column] = current[column] ?? Number.POSITIVE_INFINITY;
+  }
+  return previous[right.length] ?? Number.POSITIVE_INFINITY;
+};
+
+const packageNameFromEvidence = (text: string): string | null => text.match(/\bapproved package\s+(.+?)\s+(?:has|is|includes?)\b/iu)?.[1]?.trim() ?? null;
+const packageTokenMatches = (queryToken: string, nameToken: string): boolean => queryToken === nameToken
+  || queryToken.length >= 4 && nameToken.length >= 4 && levenshteinDistance(queryToken, nameToken) <= (Math.max(queryToken.length, nameToken.length) >= 7 ? 2 : 1);
+
+const sourceExcerptResponse = (envelope: TurnEnvelopeV2, evidence: V2ApprovedEvidence[]): SourceExcerptRecovery | null => {
+  const queryText = [envelope.customerMessageMasked, ...envelope.latestTurns.filter(turn => turn.role === 'customer').map(turn => turn.content)].join(' ');
+  const lastCustomerTurn = [...envelope.latestTurns].reverse().find(turn => turn.role === 'customer')?.content ?? '';
+  const acknowledgement = /^(?:yes|yeah|yep|sure|okay|ok|please do|go ahead|tell me more|please explain)\b/iu.test(envelope.customerMessageMasked.trim());
+  const packageQuestion = /\b(?:package|packages|option|options|price|pricing|cost|costs|fee|fees|visa|visas)\b/iu.test(envelope.customerMessageMasked)
+    || acknowledgement && /\b(?:package|packages|option|options|price|pricing|cost|costs|fee|fees|visa|visas)\b/iu.test(lastCustomerTurn);
+  const genericPackageTerms = new Set(['ancfz', 'about', 'available', 'could', 'does', 'hello', 'how', 'offer', 'offers', 'package', 'packages', 'please', 'price', 'pricing', 'cost', 'costs', 'fee', 'fees', 'tell', 'that', 'what', 'which', 'would', 'visa', 'visas']);
+  const queryTerms = new Set((queryText.toLocaleLowerCase('en-US').match(/[a-z]{4,}/gu) ?? []).filter(term => !genericPackageTerms.has(term)));
   const packageEvidence = evidence.filter(item => item.sourceRef === 'tool-get_available_packages');
-  if (packageEvidence.length > 0) {
-    const nextQuestion = 'Which package would you like to explore first?';
+  const packageMatches = packageEvidence.map(item => {
+    const packageName = packageNameFromEvidence(item.text);
+    const nameTerms = packageName?.toLocaleLowerCase('en-US').match(/[a-z]{4,}/gu) ?? [];
+    const score = [...queryTerms].filter(queryTerm => nameTerms.some(nameTerm => packageTokenMatches(queryTerm, nameTerm))).length;
+    return { item, packageName, score };
+  }).sort((left, right) => right.score - left.score);
+  const selectedPackage = packageMatches[0]?.score ? packageMatches[0] : null;
+  if (packageQuestion && packageEvidence.length > 0) {
+    const selectedEvidence = selectedPackage ? [selectedPackage.item] : packageEvidence;
+    const packageSpecific = Boolean(selectedPackage && selectedEvidence.length === 1);
+    const alreadyDelivered = packageSpecific && envelope.latestTurns.some(turn => turn.role === 'assistant' && turn.content.includes(selectedEvidence[0]!.text));
+    const continueWithoutRepeat = packageSpecific && alreadyDelivered && acknowledgement;
+    const nextQuestion = packageSpecific && !continueWithoutRepeat ? 'Would you like me to explain this package in more detail?' : packageSpecific ? null : 'Which package would you like to explore first?';
+    const followUpOptions: FollowUpOfferOption[] = packageSpecific && !continueWithoutRepeat
+      ? [{ key: 'explain_more', label: 'explain this package in more detail', retrievalHints: [] }]
+      : !packageSpecific ? selectedEvidence.map(item => packageNameFromEvidence(item.text)).filter((name): name is string => Boolean(name)).map(name => {
+        const packageKey = (name.split(/\s+/u).at(-1) ?? name).replace(/[^a-z0-9]+/giu, '_').replace(/^_|_$/gu, '').toLocaleLowerCase('en-US');
+        return {
+        key: `package_${packageKey}`,
+        label: name,
+        retrievalHints: [packageKey],
+      };
+      }) : [];
+    const answer = continueWithoutRepeat
+      ? `Of course. ${selectedEvidence[0]!.text.trim()}`
+      : packageSpecific
+        ? `Of course. ${selectedEvidence.map(item => item.text.trim()).join(' ')} ${nextQuestion}`
+        : `Of course. Here are the package options.\n${selectedEvidence.map(item => item.text.trim()).join('\n')}\n\n${nextQuestion}`;
     return {
+      response: {
       schemaVersion: 2, personaVersionId: envelope.personaVersionId,
       language: envelope.persona.permittedLanguages[0] ?? 'en',
-      answer: `Of course. Here are the package options.\n${packageEvidence.map(item => item.text.trim()).join('\n')}\n\n${nextQuestion}`,
-      citationIds: packageEvidence.map(item => item.citationId),
-      nextQuestion, nextQuestionKey: 'conversation_focus',
-      reasonNoQuestion: null,
+      answer,
+      citationIds: selectedEvidence.map(item => item.citationId),
+      nextQuestion, nextQuestionKey: nextQuestion ? 'conversation_focus' : null,
+      reasonNoQuestion: nextQuestion ? null : 'knowledge_continuation',
       decisionRef: `package-options-${envelope.requestId.slice(0, 60)}`,
+      }, followUpOptions,
     };
   }
-  const queryText = [envelope.customerMessageMasked, ...envelope.latestTurns.filter(turn => turn.role === 'customer').map(turn => turn.content)].join(' ');
-  const queryTerms = new Set((queryText.toLocaleLowerCase('en-US').match(/[a-z]{5,}/gu) ?? [])
+  const knowledgeQueryTerms = new Set((queryText.toLocaleLowerCase('en-US').match(/[a-z]{5,}/gu) ?? [])
     .filter(term => !new Set(['about', 'could', 'does', 'hello', 'how', 'please', 'tell', 'that', 'what', 'would']).has(term)));
   const candidates = evidence.flatMap(item => {
     const sentences = item.text.split(/(?<=[.!?])\s+|\n+/u).map(value => value.trim()).filter(value => value.length >= 24 && value.length <= 500 && /[.!]$/u.test(value) && !value.endsWith('?') && !hasPositiveBusinessOutcomeClaim(value));
-    return sentences.map(sentence => ({ item, sentence, score: [...queryTerms].filter(term => sentence.toLocaleLowerCase('en-US').includes(term)).length }));
+    return sentences.map(sentence => ({ item, sentence, score: [...knowledgeQueryTerms].filter(term => sentence.toLocaleLowerCase('en-US').includes(term)).length }));
   }).sort((left, right) => right.score - left.score);
   const selected = candidates.find(candidate => candidate.score > 0) ?? candidates[0];
   if (selected) {
-    const nextQuestion = 'Would you like me to explain how this applies to your setup?';
-    return {
-    schemaVersion: 2, personaVersionId: envelope.personaVersionId,
-    language: envelope.persona.permittedLanguages[0] ?? 'en', answer: `Of course. ${selected.sentence} ${nextQuestion}`,
-    citationIds: [selected.item.citationId], nextQuestion, nextQuestionKey: 'conversation_focus',
-    reasonNoQuestion: null, decisionRef: `evidence-excerpt-${envelope.requestId.slice(0, 48)}`,
-    planning: null,
+    const acknowledgement = /^(?:yes|yeah|yep|sure|okay|ok|please do|go ahead|tell me more|please explain)\b/iu.test(envelope.customerMessageMasked.trim());
+    const alreadyDelivered = envelope.latestTurns.some(turn => turn.role === 'assistant' && turn.content.includes(selected.sentence));
+    const nextQuestion = alreadyDelivered && acknowledgement ? null : 'Would you like me to explain how this applies to your setup?';
+    const answer = alreadyDelivered && acknowledgement
+      ? `Of course. ${selected.sentence}`
+      : `Of course. ${selected.sentence} ${nextQuestion}`;
+    return { response: {
+      schemaVersion: 2, personaVersionId: envelope.personaVersionId,
+      language: envelope.persona.permittedLanguages[0] ?? 'en', answer,
+      citationIds: [selected.item.citationId], nextQuestion, nextQuestionKey: nextQuestion ? 'conversation_focus' : null,
+      reasonNoQuestion: nextQuestion ? null : 'knowledge_continuation', decisionRef: `evidence-excerpt-${envelope.requestId.slice(0, 48)}`,
+      planning: null,
+    }, followUpOptions: nextQuestion ? [{ key: 'explain_more', label: 'explain this in more detail', retrievalHints: [] }] : [],
     };
   }
   return null;
@@ -494,13 +563,13 @@ export class V2ConversationCoordinator {
       && packageToolEvidence && trustedEvidence.length > 0 && !eligibleForEntailment) {
       const excerpt = sourceExcerptResponse(envelope, trustedEvidence);
       if (excerpt) {
-        const excerptEvidence = excerpt.citationIds.map(citationId => trustedEvidence.find(item => item.citationId === citationId)).filter((item): item is V2ApprovedEvidence => Boolean(item));
+        const excerptEvidence = excerpt.response.citationIds.map(citationId => trustedEvidence.find(item => item.citationId === citationId)).filter((item): item is V2ApprovedEvidence => Boolean(item));
         const verifiedExcerpt = excerptEvidence.length > 0
-          ? guardV2Response(excerpt, { ...guardContext, evidence: excerptEvidence })
-          : guardV2Response(excerpt, guardContext);
+          ? guardV2Response(excerpt.response, { ...guardContext, evidence: excerptEvidence })
+          : guardV2Response(excerpt.response, guardContext);
         if (verifiedExcerpt.verdict.accepted && verifiedExcerpt.response) return {
           response: verifiedExcerpt.response, candidateResponse: agentResult.response,
-          repairApplied, draft: toDraft(verifiedExcerpt.response), toolTrace: agentResult.toolTrace,
+          repairApplied, draft: toDraft(verifiedExcerpt.response, excerpt.followUpOptions), toolTrace: agentResult.toolTrace,
           approvedEvidence: guardContext.evidence ?? [], claimProvenance: verifiedExcerpt.claims,
           modelRequestCount: agentResult.modelRequestCount + groundingReviewRequests,
           toolCallCount: agentResult.toolCallCount, guardReason: 'accepted_knowledge_excerpt', candidateGuardReason,
@@ -599,13 +668,13 @@ export class V2ConversationCoordinator {
       && trustedEvidence.length > 0 && !eligibleForEntailment) {
       const excerpt = sourceExcerptResponse(envelope, trustedEvidence);
       if (excerpt) {
-        const excerptEvidence = excerpt.citationIds.map(citationId => trustedEvidence.find(item => item.citationId === citationId)).filter((item): item is V2ApprovedEvidence => Boolean(item));
+        const excerptEvidence = excerpt.response.citationIds.map(citationId => trustedEvidence.find(item => item.citationId === citationId)).filter((item): item is V2ApprovedEvidence => Boolean(item));
         const verifiedExcerpt = excerptEvidence.length > 0
-          ? guardV2Response(excerpt, { ...guardContext, evidence: excerptEvidence })
-          : guardV2Response(excerpt, guardContext);
+          ? guardV2Response(excerpt.response, { ...guardContext, evidence: excerptEvidence })
+          : guardV2Response(excerpt.response, guardContext);
         if (verifiedExcerpt.verdict.accepted && verifiedExcerpt.response) return {
           response: verifiedExcerpt.response, candidateResponse: agentResult.response,
-          repairApplied, draft: toDraft(verifiedExcerpt.response), toolTrace: agentResult.toolTrace,
+          repairApplied, draft: toDraft(verifiedExcerpt.response, excerpt.followUpOptions), toolTrace: agentResult.toolTrace,
           approvedEvidence: guardContext.evidence ?? [], claimProvenance: verifiedExcerpt.claims,
           modelRequestCount: agentResult.modelRequestCount + repairModelRequests + groundingReviewRequests,
           toolCallCount: agentResult.toolCallCount, guardReason: 'accepted_knowledge_excerpt', candidateGuardReason,

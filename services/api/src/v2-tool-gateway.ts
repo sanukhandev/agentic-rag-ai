@@ -321,7 +321,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
             availableGoals: [...approvedGoalKeys].slice(0, 20) },
           request.toolName as V2ToolName, sourceVersion,
           selected.length > 0 ? selected.map(offering =>
-            `The published approved package ${bounded(offering.name, 160)} has availability ${offering.availability}${offering.priceMinor !== null && offering.currency
+            `The published approved package ${bounded(offering.name, 160)} includes ${offering.includedVisaQuantity} visa${offering.includedVisaQuantity === 1 ? '' : 's'}${offering.officeRequirement ? ` and requires ${bounded(offering.officeRequirement, 120)}` : ''}${offering.inclusions.length > 0 ? `, including ${offering.inclusions.slice(0, 6).map(value => bounded(value, 180)).join(', ')}` : ''}; it has availability ${offering.availability}${offering.priceMinor !== null && offering.currency
               ? ` and a listed price of ${offering.currency} ${(offering.priceMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}.`)
             : ['No approved package offerings are published under this pinned Catalog V2 version.']);
       }
@@ -331,7 +331,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       const selected = offerings.slice(0, 20);
       const packages = selected.map((offering) => ({ key: offering.packageKey, name: bounded(offering.name, 160), visas: offering.includedVisaQuantity, officeRequirement: offering.officeRequirement, inclusions: offering.inclusions.slice(0, 12).map(value => bounded(value, 240)), availability: offering.availability, priceMinor: offering.priceMinor, currency: offering.currency, sourceRefs: offering.sourceRefs.slice(0, 12) }));
       return resultWithToolEvidence(request, { packages, truncated: offerings.length > selected.length }, request.toolName as V2ToolName, sourceVersion, selected.length > 0
-        ? selected.map((offering) => `The approved package ${bounded(offering.name, 160)} is listed with availability ${offering.availability}${offering.priceMinor !== null && offering.currency ? ` and a verified price of ${offering.currency} ${(offering.priceMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}.` : '.'}`)
+        ? selected.map((offering) => `The approved package ${bounded(offering.name, 160)} includes ${offering.includedVisaQuantity} visa${offering.includedVisaQuantity === 1 ? '' : 's'}${offering.officeRequirement ? ` and requires ${bounded(offering.officeRequirement, 120)}` : ''}${offering.inclusions.length > 0 ? `, including ${offering.inclusions.slice(0, 6).map(value => bounded(value, 180)).join(', ')}` : ''}; it has availability ${offering.availability}${offering.priceMinor !== null && offering.currency ? ` and a verified price of ${offering.currency} ${(offering.priceMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}.` : '.'}`)
         : ['No approved package is currently available for this setup.']);
     }
     case 'get_document_requirements': {

@@ -124,6 +124,23 @@ describe('GPT-first controller full-turn unit behavior', () => {
     expect(await store.listIntentTurns(tenant.id, session.id)).toHaveLength(1);
     expect(await store.listActionsBySession(session.id, tenant.id)).toHaveLength(0);
   });
+
+  it('persists a guarded conversational follow-up offer for the next turn', async () => {
+    const { store, tenant, session, coordinator, input } = await prepared();
+    coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'Of course. Here are the details. Would you like me to explain this in more detail?', nextQuestion: 'Would you like me to explain this in more detail?', nextQuestionKey: 'conversation_focus' },
+      draft: { answer: 'Of course. Here are the details. Would you like me to explain this in more detail?', citationIds: [], proposedIntent: null, followUpOptions: [{ key: 'explain_more', label: 'explain this in more detail', retrievalHints: [] }] },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    await runGPTFirstChatTurn(input);
+    const persisted = await store.getSession(session.id);
+    expect(persisted?.conversationState?.pendingFollowUpOffer).toMatchObject({
+      options: [{ key: 'explain_more', label: 'explain this in more detail', retrievalHints: [] }],
+    });
+    expect(persisted?.conversationState?.pendingFollowUpOffer?.sourceQuery).toBe('Hello');
+    expect(await store.listMessages(session.id, tenant.id)).toHaveLength(2);
+  });
   it('records why a model response was replaced without auditing draft or source text', async () => {
     const { store, tenant, session, coordinator, input } = await prepared();
     coordinator.run.mockImplementationOnce(async () => ({
