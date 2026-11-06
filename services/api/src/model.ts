@@ -241,7 +241,7 @@ export class DeterministicGroundedModel implements ChatModel {
         ? `What ${input.followUpContext.nextSlotLabel.toLocaleLowerCase('en-US').replace(/^what\s+/u, '')} would you like to use for this setup?`
         : known.business_activity ? 'Would you like me to compare the approved package options for this setup?' : 'What business activity would you like to register?';
       const evidenceAnswer = packageAnswer ? '' : selected.map((item) => item.sentence).join(' ');
-      if (packageAnswer || pricingAnswer || timelineAnswer || selected.length > 0) return { answer: `Here’s what I can confirm from the approved information: ${[packageAnswer, pricingAnswer, timelineAnswer, evidenceAnswer].filter(Boolean).join(' ')} ${nextQuestion}`, citationIds: packageAnswer ? [] : selected.map((item) => item.chunkId), proposedIntent: null };
+      if (packageAnswer || pricingAnswer || timelineAnswer || selected.length > 0) return { answer: `Of course. ${[packageAnswer, pricingAnswer, timelineAnswer, evidenceAnswer].filter(Boolean).join(' ')} ${nextQuestion}`, citationIds: packageAnswer ? [] : selected.map((item) => item.chunkId), proposedIntent: null };
     }
     const wantsLead = /\b(contact|call|email|interested|demo|quote)\b/i.test(input.maskedMessage);
     return { answer: naturalAbstention(detectedLanguage(input.maskedMessage), input.maskedMessage, input.followUpContext), citationIds: [], proposedIntent: wantsLead ? 'lead.capture' : null };

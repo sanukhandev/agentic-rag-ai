@@ -149,7 +149,7 @@ describe('v2 claim provenance and evidence verification', () => {
   it('accepts TTS framing before a cited answer and final question', () => {
     const question = 'Which package would you like to explore first?';
     const value = {
-      ...response(`I can help you compare the package options. Here’s what is currently published. The approved package costs 42 credits. ${question}`),
+      ...response(`Of course. Here are the package options. The approved package costs 42 credits. ${question}`),
       nextQuestion: question,
       nextQuestionKey: 'conversation_focus',
       reasonNoQuestion: null,

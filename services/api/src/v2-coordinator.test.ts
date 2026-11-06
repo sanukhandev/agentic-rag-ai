@@ -48,6 +48,17 @@ describe('V2ConversationCoordinator', () => {
     expect(output.claimProvenance).toEqual([]);
   });
 
+  it('greets a visitor who addresses Zara and introduces themselves', async () => {
+    const request = envelope();
+    request.persona.assistantName = 'Zara';
+    request.customerMessageMasked = 'hello zara i m meow ching';
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result("Hello! I'm Zara, your highly experienced company registration advisor. How can I help?" ) });
+    const output = await coordinator.run({ envelope: request, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('safe_no_evidence_dialogue');
+    expect(output.response.answer).toBe("Hello! I'm Zara. How can I help you today?");
+    expect(output.response.nextQuestion).toBe('How can I help you today?');
+  });
+
   it('retains the model greeting when an optional first-contact question is correctly keyed', async () => {
     const request = envelope();
     request.persona.assistantName = 'Zara';
@@ -276,7 +287,8 @@ describe('V2ConversationCoordinator', () => {
     });
     const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
     expect(output.guardReason).toBe('accepted_knowledge_excerpt');
-    expect(output.response.answer).toMatch(/^I can help you compare the verified package options\. Here’s what is currently published\./u);
+    expect(output.response.answer).toMatch(/^Of course\. Here are the package options\./u);
+    expect(output.response.answer).not.toContain('approved information');
     expect(output.response.answer).toContain('ANCFZ Starter');
     expect(output.response.answer).toContain('ANCFZ Growth');
     expect(output.response.answer).toContain('ANCFZ Premium');
@@ -295,7 +307,8 @@ describe('V2ConversationCoordinator', () => {
     });
     const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional' });
     expect(output.guardReason).toBe('accepted_knowledge_excerpt');
-    expect(output.response.answer).toContain('Here’s what I can verify from the approved information.');
+    expect(output.response.answer).toContain('Of course. The application process starts with choosing a business activity.');
+    expect(output.response.answer).not.toContain('approved information');
     expect(output.response.answer).toContain(evidence[0]!.text);
     expect(output.response.citationIds).toEqual(['process-source']);
     expect(output.response.nextQuestion).toBe('Would you like me to explain how this applies to your setup?');
@@ -898,7 +911,7 @@ describe('V2ConversationCoordinator', () => {
       response: { ...result('Formation is guaranteed in one day.').response, citationIds: ['formation-chunk-12345678'] },
     }) }).run({ envelope: request, evidence: [{ ...request.approvedKnowledge[0]!, approved: true, revoked: false }], fallbackTemplates, questionPolicy: 'optional' });
     expect(output.guardReason).toBe('accepted_knowledge_excerpt');
-    expect(output.response.answer).toContain('Here’s what I can verify from the approved information. Company formation requires an application form and proof of residence.');
+    expect(output.response.answer).toContain('Of course. Company formation requires an application form and proof of residence.');
     expect(output.response.citationIds).toEqual(['formation-chunk-12345678']);
     expect(output.response.nextQuestion).toBe('Would you like me to explain how this applies to your setup?');
   });
@@ -912,7 +925,7 @@ describe('V2ConversationCoordinator', () => {
       response: { ...result('Company registration is complete.').response, citationIds: ['process-chunk-12345678'] },
     }) }).run({ envelope: request, evidence: [{ ...request.approvedKnowledge[0]!, approved: true, revoked: false }], fallbackTemplates, questionPolicy: 'optional' });
     expect(output.guardReason).toBe('accepted_knowledge_excerpt');
-    expect(output.response.answer).toContain(`Here’s what I can verify from the approved information. ${processText}`);
+    expect(output.response.answer).toContain(`Of course. ${processText}`);
   });
 
   it('does not return a source question as the answer during excerpt recovery', async () => {

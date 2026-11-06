@@ -224,7 +224,8 @@ describe('Azure Foundry model adapter', () => {
     expect(draft.answer).toContain('Sandbox Growth');
     expect(draft.answer).toContain('AED 2,500.00');
     expect(draft.answer).not.toContain('AED 4,888');
-    expect(draft.answer).toMatch(/^Here’s what I can confirm from the approved information: /u);
+    expect(draft.answer).toMatch(/^Of course\. /u);
+    expect(draft.answer).not.toContain('approved information');
     expect(draft.answer).toContain('?');
   });
 });

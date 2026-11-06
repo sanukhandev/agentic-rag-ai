@@ -226,3 +226,9 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - No package workflow, CRM, document, quote, payment, contract, database schema, credential, or persona identity behavior changed.
 - Verification: API **62 files / 545 tests PASS**, API typecheck PASS, API build PASS, changed-file ESLint PASS, and model-gateway **39 tests PASS** with `PYTHONPATH=services/model-gateway`.
 - Repo-wide API lint remains **BLOCKED_BY_BASELINE** by four pre-existing `@typescript-eslint/no-explicit-any` errors in `services/api/src/runtime-security.test.ts`; none are in the changed files. Full seven-stage journey, live provider completion, and human TTS listening quality remain unverified.
+
+## 2026-11-06 Zara response regression fix
+
+- Removed the technical source-verification wording from deterministic customer replies. Source recovery now uses natural employee-style phrasing such as `Of course.` while retaining the exact approved evidence and guard validation.
+- First-contact fallback now recognizes a customer addressing the configured assistant and introducing themselves, such as `hello Zara, I’m Meow Ching`, and returns the pinned persona greeting instead of the generic work-through response.
+- Regression coverage: API **62 files / 546 tests PASS**, typecheck PASS, and changed-file ESLint PASS. The Docker images still need rebuilding after this correction before the running UI reflects it.

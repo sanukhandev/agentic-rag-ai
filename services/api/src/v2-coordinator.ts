@@ -177,7 +177,7 @@ const sourceExcerptResponse = (envelope: TurnEnvelopeV2, evidence: V2ApprovedEvi
     return {
       schemaVersion: 2, personaVersionId: envelope.personaVersionId,
       language: envelope.persona.permittedLanguages[0] ?? 'en',
-      answer: `I can help you compare the verified package options. Here’s what is currently published.\n${packageEvidence.map(item => item.text.trim()).join('\n')}\n\n${nextQuestion}`,
+      answer: `Of course. Here are the package options.\n${packageEvidence.map(item => item.text.trim()).join('\n')}\n\n${nextQuestion}`,
       citationIds: packageEvidence.map(item => item.citationId),
       nextQuestion, nextQuestionKey: 'conversation_focus',
       reasonNoQuestion: null,
@@ -196,7 +196,7 @@ const sourceExcerptResponse = (envelope: TurnEnvelopeV2, evidence: V2ApprovedEvi
     const nextQuestion = 'Would you like me to explain how this applies to your setup?';
     return {
     schemaVersion: 2, personaVersionId: envelope.personaVersionId,
-    language: envelope.persona.permittedLanguages[0] ?? 'en', answer: `Here’s what I can verify from the approved information. ${selected.sentence} ${nextQuestion}`,
+    language: envelope.persona.permittedLanguages[0] ?? 'en', answer: `Of course. ${selected.sentence} ${nextQuestion}`,
     citationIds: [selected.item.citationId], nextQuestion, nextQuestionKey: 'conversation_focus',
     reasonNoQuestion: null, decisionRef: `evidence-excerpt-${envelope.requestId.slice(0, 48)}`,
     planning: null,
@@ -222,8 +222,16 @@ const safeFirstContactGreeting = (envelope: TurnEnvelopeV2): PersonaComposedResp
   const utterance = envelope.customerMessageMasked.normalize('NFKC').toLocaleLowerCase('en-US')
     .replace(/[!.,?]/gu, ' ').replace(/\s+/gu, ' ').trim();
   const normalizedName = name.toLocaleLowerCase('en-US').replace(/\s+/gu, ' ').trim();
-  const greeting = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening']
-    .some(value => utterance === value || (normalizedName && utterance === value + ' ' + normalizedName));
+  const selfIntroduction = /^(?:i(?:['’]?m|\s+am|\s+m)|my\s+name\s+is)\s+.{1,80}$/iu;
+  const greeting = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening'].some(value => {
+    if (utterance === value) return true;
+    if (!utterance.startsWith(`${value} `)) return false;
+    const remainder = utterance.slice(value.length).trim();
+    const withoutAssistantName = normalizedName && remainder.startsWith(`${normalizedName} `)
+      ? remainder.slice(normalizedName.length).trim()
+      : normalizedName && remainder === normalizedName ? '' : remainder;
+    return withoutAssistantName === '' || selfIntroduction.test(withoutAssistantName);
+  });
   if (!greeting) return null;
   const safeName = /^[\p{L}\p{N}][\p{L}\p{N} .’'-]{0,59}$/u.test(name) ? name : null;
   const question = 'How can I help you today?';
