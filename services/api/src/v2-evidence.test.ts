@@ -146,6 +146,17 @@ describe('v2 claim provenance and evidence verification', () => {
     expect(verifyV2ResponseEvidence(response('Let’s explore that together. The package costs AED 900.', []), [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(false);
   });
 
+  it('accepts TTS framing before a cited answer and final question', () => {
+    const question = 'Which package would you like to explore first?';
+    const value = {
+      ...response(`I can help you compare the package options. Here’s what is currently published. The approved package costs 42 credits. ${question}`),
+      nextQuestion: question,
+      nextQuestionKey: 'conversation_focus',
+      reasonNoQuestion: null,
+    };
+    expect(verifyV2ResponseEvidence(value, approved).verdict.accepted).toBe(true);
+  });
+
   it('does not combine a price citation with unrelated visa eligibility', () => {
     const item: V2ApprovedEvidence = { citationId: 'price-source', text: 'The package costs 42 credits.', sourceVersion: 'price-v1', approved: true, revoked: false };
     expect(verifyV2ResponseEvidence(response('The package costs 42 credits and includes three visas.', ['price-source']), [item]).verdict.reasonCode).toBe('unsupported_claim');

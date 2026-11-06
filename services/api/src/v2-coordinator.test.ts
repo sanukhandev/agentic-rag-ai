@@ -276,9 +276,30 @@ describe('V2ConversationCoordinator', () => {
     });
     const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
     expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toMatch(/^I can help you compare the verified package options\. Here’s what is currently published\./u);
     expect(output.response.answer).toContain('ANCFZ Starter');
     expect(output.response.answer).toContain('ANCFZ Growth');
     expect(output.response.answer).toContain('ANCFZ Premium');
+    expect(output.response.nextQuestion).toBe('Which package would you like to explore first?');
+    expect(output.response.nextQuestionKey).toBe('conversation_focus');
+  });
+
+  it('humanizes a generic source recovery while preserving the selected evidence', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'what is the application process';
+    const evidence = [{ citationId: 'process-source', text: 'The application process starts with choosing a business activity.', sourceVersion: 'catalog-version', sourceRef: 'knowledge-search', approved: true, revoked: false }];
+    const candidate = result('The application is guaranteed to finish tomorrow.', {
+      response: { ...result('').response, answer: 'The application is guaranteed to finish tomorrow.', citationIds: ['process-source'] },
+      approvedEvidence: evidence,
+      toolTrace: [{ toolCallId: 'knowledge-call-12345678', toolName: 'search_knowledge', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: ['process-source'] }],
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toContain('Here’s what I can verify from the approved information.');
+    expect(output.response.answer).toContain(evidence[0]!.text);
+    expect(output.response.citationIds).toEqual(['process-source']);
+    expect(output.response.nextQuestion).toBe('Would you like me to explain how this applies to your setup?');
+    expect(output.response.nextQuestionKey).toBe('conversation_focus');
   });
 
   it('keeps a pending requirement useful after a repeated knowledge interruption', async () => {
@@ -877,8 +898,9 @@ describe('V2ConversationCoordinator', () => {
       response: { ...result('Formation is guaranteed in one day.').response, citationIds: ['formation-chunk-12345678'] },
     }) }).run({ envelope: request, evidence: [{ ...request.approvedKnowledge[0]!, approved: true, revoked: false }], fallbackTemplates, questionPolicy: 'optional' });
     expect(output.guardReason).toBe('accepted_knowledge_excerpt');
-    expect(output.response.answer).toBe('Company formation requires an application form and proof of residence.');
+    expect(output.response.answer).toContain('Here’s what I can verify from the approved information. Company formation requires an application form and proof of residence.');
     expect(output.response.citationIds).toEqual(['formation-chunk-12345678']);
+    expect(output.response.nextQuestion).toBe('Would you like me to explain how this applies to your setup?');
   });
 
   it('recovers a source-close process statement after a polarity rejection', async () => {
@@ -890,7 +912,7 @@ describe('V2ConversationCoordinator', () => {
       response: { ...result('Company registration is complete.').response, citationIds: ['process-chunk-12345678'] },
     }) }).run({ envelope: request, evidence: [{ ...request.approvedKnowledge[0]!, approved: true, revoked: false }], fallbackTemplates, questionPolicy: 'optional' });
     expect(output.guardReason).toBe('accepted_knowledge_excerpt');
-    expect(output.response.answer).toBe(processText);
+    expect(output.response.answer).toContain(`Here’s what I can verify from the approved information. ${processText}`);
   });
 
   it('does not return a source question as the answer during excerpt recovery', async () => {
@@ -901,7 +923,7 @@ describe('V2ConversationCoordinator', () => {
       response: { ...result('Formation is guaranteed in one day.').response, citationIds: ['formation-chunk-12345678'] },
     }) }).run({ envelope: request, evidence: [{ ...request.approvedKnowledge[0]!, approved: true, revoked: false }], fallbackTemplates, questionPolicy: 'optional' });
     expect(output.guardReason).toBe('accepted_knowledge_excerpt');
-    expect(output.response.answer).toBe('Company formation requires an application form and proof of residence.');
-    expect(output.response.answer).not.toMatch(/\?$/u);
+    expect(output.response.answer).toContain('Company formation requires an application form and proof of residence.');
+    expect(output.response.answer).not.toContain('What documents are required for company registration?');
   });
 });

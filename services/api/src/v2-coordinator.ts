@@ -173,13 +173,14 @@ const mergeEvidence = (requestEvidence: V2ApprovedEvidence[], result: AgentTurnR
 const sourceExcerptResponse = (envelope: TurnEnvelopeV2, evidence: V2ApprovedEvidence[]): PersonaComposedResponseV2 | null => {
   const packageEvidence = evidence.filter(item => item.sourceRef === 'tool-get_available_packages');
   if (packageEvidence.length > 0) {
+    const nextQuestion = 'Which package would you like to explore first?';
     return {
       schemaVersion: 2, personaVersionId: envelope.personaVersionId,
       language: envelope.persona.permittedLanguages[0] ?? 'en',
-      answer: packageEvidence.map(item => item.text.trim()).join('\n'),
+      answer: `I can help you compare the verified package options. Here’s what is currently published.\n${packageEvidence.map(item => item.text.trim()).join('\n')}\n\n${nextQuestion}`,
       citationIds: packageEvidence.map(item => item.citationId),
-      nextQuestion: null, nextQuestionKey: null,
-      reasonNoQuestion: 'package_options_verified',
+      nextQuestion, nextQuestionKey: 'conversation_focus',
+      reasonNoQuestion: null,
       decisionRef: `package-options-${envelope.requestId.slice(0, 60)}`,
     };
   }
@@ -191,13 +192,16 @@ const sourceExcerptResponse = (envelope: TurnEnvelopeV2, evidence: V2ApprovedEvi
     return sentences.map(sentence => ({ item, sentence, score: [...queryTerms].filter(term => sentence.toLocaleLowerCase('en-US').includes(term)).length }));
   }).sort((left, right) => right.score - left.score);
   const selected = candidates.find(candidate => candidate.score > 0) ?? candidates[0];
-  if (selected) return {
+  if (selected) {
+    const nextQuestion = 'Would you like me to explain how this applies to your setup?';
+    return {
     schemaVersion: 2, personaVersionId: envelope.personaVersionId,
-    language: envelope.persona.permittedLanguages[0] ?? 'en', answer: selected.sentence,
-    citationIds: [selected.item.citationId], nextQuestion: null, nextQuestionKey: null,
-    reasonNoQuestion: 'knowledge_answer', decisionRef: `evidence-excerpt-${envelope.requestId.slice(0, 48)}`,
+    language: envelope.persona.permittedLanguages[0] ?? 'en', answer: `Here’s what I can verify from the approved information. ${selected.sentence} ${nextQuestion}`,
+    citationIds: [selected.item.citationId], nextQuestion, nextQuestionKey: 'conversation_focus',
+    reasonNoQuestion: null, decisionRef: `evidence-excerpt-${envelope.requestId.slice(0, 48)}`,
     planning: null,
-  };
+    };
+  }
   return null;
 };
 

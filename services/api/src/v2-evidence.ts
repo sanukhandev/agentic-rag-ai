@@ -92,6 +92,9 @@ const safePersonaIntroduction = (segment: string, assistantName: string | undefi
 const nonFactualPreface = (input: string): boolean => {
   const value = input.trim().replace(/[.!]\s*$/u, '').trim().replace(/\s+/gu, ' ');
   if (!value || value.length > 190) return false;
+  if (/^i can help you compare the (?:verified )?package options$/iu.test(value)
+    || /^here(?:'|’)s what is currently published$/iu.test(value)
+    || /^here(?:'|’)s what i can verify from the approved information$/iu.test(value)) return true;
   if (/^(?:hi|hello|hey)[,!]?\s+i can help(?: you)?(?: with that| with your (?:request|company formation))?$/iu.test(value)) return true;
   // Speech acts are not knowledge claims. Accept varied natural phrasings,
   // but only in these narrowly bounded conversational forms.
