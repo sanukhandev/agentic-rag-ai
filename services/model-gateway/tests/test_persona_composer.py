@@ -44,6 +44,15 @@ def test_composer_distinguishes_information_questions_from_authorized_goals():
     assert "An established topic alone" in instructions
 
 
+def test_composer_guides_spoken_explanatory_responses():
+    instructions = composer_instructions(envelope())
+    assert "easy to hear in TTS" in instructions
+    assert "short, natural sentences with one idea at a time" in instructions
+    assert "briefly acknowledge the customer's context when useful" in instructions
+    assert "explain the verified answer in plain language before asking one purposeful follow-up" in instructions
+    assert "Ask at most one question and place it at the end of answer" in instructions
+
+
 def test_composer_allows_goal_free_navigation_without_starting_a_journey():
     instructions = composer_instructions(envelope())
     assert "primaryGoalKey null" in instructions
