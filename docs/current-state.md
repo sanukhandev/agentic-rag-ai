@@ -218,3 +218,11 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - The rebuilt API container independently obtained a token and returned `provider_record_verified` for the sandbox Lead created through n8n.
 - Verification: API **62 files / 532 tests PASS**, full `npm run verify:local` PASS, Docker API health PASS, and real Node-to-Salesforce readback PASS.
 - This proves the Lead readback adapter can authenticate and verify a real sandbox record. It does not activate the ANCFZ V2 binding or prove the full action-gated create/dedupe/update journey.
+
+## 2026-11-06 human-centered TTS response checkpoint
+
+- Updated `services/model-gateway/gateway/persona_composer.py` to instruct normal tenant-persona replies to use short spoken-language sentences, brief context acknowledgement, a plain-language explanation, and at most one final follow-up question.
+- Updated `services/api/src/v2-coordinator.ts`, `services/api/src/v2-evidence.ts`, and `services/api/src/model.ts` so deterministic and source-recovery replies use tenant-neutral explanatory framing, preserve approved evidence verbatim and retain synchronized question metadata. Package recovery now asks which package the customer wants to explore; generic evidence recovery asks whether the customer wants the information applied to their setup.
+- No package workflow, CRM, document, quote, payment, contract, database schema, credential, or persona identity behavior changed.
+- Verification: API **62 files / 545 tests PASS**, API typecheck PASS, API build PASS, changed-file ESLint PASS, and model-gateway **39 tests PASS** with `PYTHONPATH=services/model-gateway`.
+- Repo-wide API lint remains **BLOCKED_BY_BASELINE** by four pre-existing `@typescript-eslint/no-explicit-any` errors in `services/api/src/runtime-security.test.ts`; none are in the changed files. Full seven-stage journey, live provider completion, and human TTS listening quality remain unverified.
