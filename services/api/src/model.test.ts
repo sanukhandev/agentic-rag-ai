@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addressesKnowledgeQuestion, classifyOfferReply, classifyOfferReplyDeterministically, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isControlledKnowledgeAbstention, isGuidedResponse, isGreeting, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, preservesNormalizationFacts, validateCitations } from './model.js';
+import { addressesKnowledgeQuestion, classifyOfferReply, classifyOfferReplyDeterministically, conversationalIntent, conversationalReply, detectedLanguage, DeterministicGroundedModel, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isControlledKnowledgeAbstention, isGuidedResponse, isGreeting, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, naturalAbstention, needsConversationContext, normalizeConversationQuery, normalizePendingLeadName, openingGreeting, preservesNormalizationFacts, validateCitations } from './model.js';
 
 describe('Azure Foundry model adapter', () => {
   it('uses the complete configured greeting', () => {
@@ -13,6 +13,11 @@ describe('Azure Foundry model adapter', () => {
   });
   it('normalizes generic formatting without tenant-specific vocabulary', () => {
     expect(normalizeConversationQuery('  I need 10k  seats\u200b for two users  ')).toBe('I need 10 thousand seats for 2 users');
+  });
+
+  it('normalizes natural name introductions for the active name slot', () => {
+    expect(normalizePendingLeadName('I m Rakshitha chandran')).toBe('Rakshitha chandran');
+    expect(normalizePendingLeadName('My name is Rakshitha chandran')).toBe('Rakshitha chandran');
   });
 
   it('resolves short replies only against the active offer', async () => {
@@ -30,6 +35,11 @@ describe('Azure Foundry model adapter', () => {
     await expect(classifyOfferReply({ draft: async () => ({ answer: '', citationIds: [], proposedIntent: null }), classifyOfferReply: async () => ({ action: 'select_option', optionKey: 'unknown', confidence: 1 }) }, { maskedMessage: 'maybe', offer })).resolves.toMatchObject({ action: 'clarify', optionKey: null });
     await expect(classifyOfferReply({ draft: async () => ({ answer: '', citationIds: [], proposedIntent: null }), classifyOfferReply: async () => ({ action: 'accept', optionKey: 'steps', confidence: 0.2 }) }, { maskedMessage: 'maybe', offer })).resolves.toMatchObject({ action: 'unknown', optionKey: null });
     await expect(classifyOfferReply({ draft: async () => ({ answer: '', citationIds: [], proposedIntent: null }), classifyOfferReply: async () => ({ action: 'accept', optionKey: 'steps', confidence: 1 }) }, { maskedMessage: 'yes', offer, activeIntentKey: 'different.intent' })).resolves.toMatchObject({ action: 'new_request', optionKey: null });
+  });
+
+  it('selects a typo-tolerant package option from a package question', () => {
+    const offer = { offerKey: 'packages-1', intentKey: null, sourceMessageId: null, sourceQuery: 'what packages do you offer', options: [{ key: 'package_growth', label: 'ANCFZ Growth', retrievalHints: ['growth'] }], issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString() };
+    expect(classifyOfferReplyDeterministically('tell me about the groth package', offer)).toMatchObject({ action: 'select_option', optionKey: 'package_growth' });
   });
 
   it('does not echo raw evidence when the external generation model is unavailable', async () => {

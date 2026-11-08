@@ -2,6 +2,8 @@
 
 **Current baseline:** `main` after merged PRs #79 and #78 (2026-10-30), containing the initial Python GPT gateway/Node adapter and retired Foundry-agent runtime files. This is **not** a tested seven-stage runtime; the original lead-first `app.ts` still controls the chat. This document records source inspection and target gaps, not live acceptance.
 
+**2026-11-06 local V2 checkpoint:** non-status document requests in an unconfirmed ANCFZ conversation now open the guarded company-formation handoff instead of exposing document policy prematurely. The reply asks for explicit goal confirmation, then starts Lead contact collection; package and quote operations remain behind the existing CRM/account and provider-evidence gates. Local replay and API tests passed; external CRM completion remains unverified.
+
 ## Recovery checkpoint — 2026-11-04
 
 On `fix/zara-conversation-engine-end-to-end-recovery`, the V2 public path now independently validates optional questions, claims and candidate intent plans; accepts trusted evidence from correlated read tools; evaluates mixed-polarity source clauses; preserves the V2 prompt cursor across public turns; recognizes reviewed natural formation aliases; accepts natural scoped confirmation phrasing; preserves verified business and masked contact facts through invalid non-knowledge citations; advances catalog contact requirements through consent; routes an explicit, purpose-consented Lead request through the existing Node action gate to an awaiting-confirmation proposal when the published binding is enabled; resolves canonical V2 outbox actions through catalog-declared n8n identity and durable claim correlation; contextualizes knowledge follow-ups; keeps synthetic tool provenance out of PostgreSQL source UUID lookups; preserves relevant short structured ingestion lines for deterministic grounded fallback; and stores package offerings against either legacy UUID or canonical V2 catalog identity without repinning. Focused/full local tests, local ingestion and tenant acceptance, public confirmation/fact/contact smoke, a rebuilt Docker API, and a 25-turn public persistence harness pass. The seven-stage journey, Salesforce sandbox, package/quotation data, browser E2E and three-run Azure acceptance remain unverified; this checkpoint does not replace the migration gaps below.
@@ -231,4 +233,48 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 
 - Removed the technical source-verification wording from deterministic customer replies. Source recovery now uses natural employee-style phrasing such as `Of course.` while retaining the exact approved evidence and guard validation.
 - First-contact fallback now recognizes a customer addressing the configured assistant and introducing themselves, such as `hello Zara, I’m Meow Ching`, and returns the pinned persona greeting instead of the generic work-through response.
-- Regression coverage: API **62 files / 546 tests PASS**, typecheck PASS, and changed-file ESLint PASS. The Docker images still need rebuilding after this correction before the running UI reflects it.
+- Regression coverage: API **62 files / 546 tests PASS**, typecheck PASS, and changed-file ESLint PASS. The follow-up Docker rebuild is recorded below.
+
+## 2026-11-06 confirmation and package recovery checkpoint
+
+- Scoped formation confirmation now accepts the observed `ys` and `yes, let us get started with company formation` replies without consuming the pending goal prompt incorrectly.
+- Package questions now prefetch the pinned, approved, effective V2 package evidence before model composition, so package options remain available even when the model skips the optional package tool or its prose repair is rejected.
+- Verification: API **62 files / 560 tests PASS**, API typecheck/build PASS, changed-file ESLint PASS, Docker `api` and `web` rebuild PASS, and `/api/v1/health/ready` returned `ready` with PostgreSQL and Redis available.
+- The reported session still has action `916e1d64-430f-43e1-be05-7f66e1c25b35` in `reconcile_required` and no `crm_leads` row because n8n returns `POST ancfz/v2/lead-create` as an unknown webhook. The inactive ANCFZ workflow must be reviewed/configured before the Admin CRM row can be created; no Lead is claimed.
+
+## 2026-11-06 Lead button confirmation checkpoint
+
+- V2 now creates the existing server-backed `awaiting_confirmation` Lead action when contact consent is complete and returns the existing confirmation-card payload. A subsequent knowledge or package turn reuses the pending action and does not create duplicates.
+- No new endpoint, UI component, direct CRM write, or n8n activation was added. The existing confirmation endpoint remains the authorization path; explicit typed confirmation remains only as a compatibility fallback.
+- Verification: API **62 files / 561 tests PASS**, API typecheck/build PASS, changed-file ESLint PASS, Docker `api` and `web` rebuild PASS, and `/api/v1/health/ready` returned `ready` with PostgreSQL and Redis available.
+- The configured n8n webhook `ancfz/v2/lead-create` remains unregistered, so a clicked button may still transition to `reconcile_required` until the reviewed workflow is configured. No Admin CRM Lead is claimed from this change.
+
+## 2026-11-06 Lead → package → development quote checkpoint
+
+- Published ANCFZ Catalog V2 revision 6 (`anc:r6:f6975dba48310da07648cb16e57c8a6b2e77d135c6e7199e1a46212f20fbeea6`) enables the approved `package.confirm` binding and keeps the three synthetic package offerings pinned to that revision.
+- After a verified CRM Lead and granted contact consent, the chat now renders approved package cards. Selecting a card creates an idempotent package selection and dispatches the reviewed `ancfzV2PackageQuoteR1` n8n workflow.
+- The development-only quote boundary rechecks tenant/session/action/Lead/package scope, renders a MOCK PDF through the private ANCFZ PDF service, hashes the downloaded bytes, stores the PDF privately, and exposes it only through the authenticated chat-session download route. This is not official ANCFZ pricing or provider completion.
+- Local n8n was backed up at `data/n8n/database.sqlite.before-package-cleanup-20261106` and reduced to the existing Lead template plus the active package quote/PDF workflow. Unused inactive ANCFZ stage/notification workflows were removed from the local registry; source templates remain in Git.
+- Verification: full workspace tests **PASS** (admin 71, web 15, API 564, chat-utils 6, contracts 6), typecheck **PASS**, ANCFZ n8n template tests **PASS**, PDF renderer tests **PASS**, Docker builds for API/web/PDF **PASS**, API readiness **200**, PDF render/download integrity **PASS**, and the n8n package webhook returned **200** and started an execution.
+- Remaining limits: the Lead workflow remains inactive/configuration-dependent, quote generation is local development-only, and the full Salesforce Lead-to-Admin journey plus browser TTS quality are not re-accepted by this checkpoint.
+
+## 2026-11-06 package selection gate correction
+
+- Package questions still show the approved catalog options, but the response now marks them read-only until both contact consent and a verified remote CRM Lead exist. The assistant wording no longer asks the customer to choose a quote package before that gate.
+- After verification, the existing package buttons become actionable; the API-side `LEAD_NOT_VERIFIED` guard remains in place for direct or stale requests.
+- Verification: API **564 tests PASS**, API/web typechecks PASS, API/web Docker rebuild PASS, and API readiness returned `ready`.
+
+## 2026-11-08 quote workflow gate and synthetic API verification
+
+- The pinned V2 legacy `POST /api/v1/chat/sessions/:id/packages/quotes` route now fails closed with `QUOTE_WORKFLOW_REQUIRED` unless it is only re-reading a quote already attached to a confirmed package selection. Sessions without a V2 catalog pin retain the legacy compatibility behavior.
+- Added a synthetic API exercise covering approved package action → internal development quote executor → verified PDF bytes → authorized download, plus replay after completion. The quote was marked `mock`/development-only; no provider-backed quote or official ANCFZ pricing was claimed.
+- Verification: API **62 files / 566 tests PASS**, API typecheck/build PASS, changed-file ESLint PASS, and the synthetic quote API test PASS.
+- Docker Compose rebuild/start completed for the local stack; API readiness returned HTTP 200 with PostgreSQL and Redis available. No external provider or production credential was used.
+
+## 2026-11-08 live API conversation review
+
+- `scripts/live-quote-conversation.mjs` exercised a synthetic customer conversation through the live API, including greetings, setup clarification, company-formation confirmation, contact collection, explicit V2 consent postback, Lead confirmation, reconciliation follow-up, package lookup, and both supplied document upload attempts.
+- The customer-visible flow remained coherent and the Lead confirmation was correctly proposed. The action ended at `reconcile_required` because the published `crm.lead.create` binding uses `salesforce_sandbox` and the local API has no configured Salesforce provider adapter for this execution. The API returned the persona-safe follow-up: `I’ll keep the conversation open while this is reviewed. What would you like to go over next?`
+- The supplied Emirates ID and passport images were sent only to the local API harness; both uploads were rejected before storage with `DOCUMENT_REQUIREMENT_NOT_ACTIVE` because document intake is disabled for the pinned catalog. Raw image bytes and PII are not present in the export.
+- Live API result: **quote not generated/downloadable** because verified Lead completion is the prerequisite gate. The separate synthetic API integration test still proves the local development quote executor and authorized PDF download path (mock-only, not provider-backed pricing).
+- Redacted human-review export: `docs/verification/quote-conversation-review-2026-11-08.json`.

@@ -5,6 +5,7 @@ const root = new URL('./ancfz-v2/', import.meta.url);
 const manifest = JSON.parse(await readFile(new URL('./ancfz-v2-manifest.json', import.meta.url),'utf8'));
 const names=['Receive Node Dispatch','Validate Dispatch Envelope','Claim Authorized Action','Require V2 Stage Authorization','Call Provider - Configure Credential','Read Back Provider State','Ask Node to Verify Provider Evidence','Require Trusted Node Attestation','Complete Correlated Action'];
 const leadNames=['Receive Node Dispatch','Validate Dispatch Envelope','Claim Authorized Action','Require V2 Stage Authorization','Call Provider - Configure Credential','Read Back Provider State','Build Provider Evidence Payload','Ask Node to Verify Provider Evidence','Require Trusted Node Attestation','Complete Correlated Action'];
+const localQuoteNames=['Receive Node Dispatch','Validate Internal Dispatch','Create Quote and Verify PDF'];
 test('all ANCFZ V2 workflows are structurally connected and non-executable by default',async()=>{
  const files=(await readdir(root)).filter(name=>name.endsWith('.json')).sort();
  assert.equal(files.length,12);
@@ -15,7 +16,7 @@ test('all ANCFZ V2 workflows are structurally connected and non-executable by de
   assert.equal(w.active,false,file);
   assert.equal(w.settings.saveDataSuccessExecution,'none');
   assert.equal(w.settings.saveDataErrorExecution,'none');
-  const expectedNames=file === '01-lead-create.json' ? leadNames : names;
+  const expectedNames=file === '01-lead-create.json' ? leadNames : file === '04-package-quote.json' ? localQuoteNames : names;
   assert.equal(w.nodes.length,expectedNames.length,file);
   assert.deepEqual(w.nodes.map(node=>node.name),expectedNames,file);
   assert.ok(!ids.has(w.id),'duplicate workflow id');ids.add(w.id);
@@ -24,7 +25,12 @@ test('all ANCFZ V2 workflows are structurally connected and non-executable by de
   assert.equal(w.nodes[0].parameters.authentication,'headerAuth');
   assert.equal(w.nodes[0].parameters.responseMode,'onReceived');
   assert.ok(w.nodes.every(node=>!node.credentials||!Object.keys(node.credentials).length),'no credential ids allowed');
-  if (file === '01-lead-create.json') {
+  if (file === '04-package-quote.json') {
+   assert.equal(w.nodes[2].parameters.url,'http://api:4000/api/v1/internal/ancfz/quote-actions/execute');
+   assert.match(w.nodes[1].parameters.jsCode,/package\.confirm/);
+   assert.match(w.nodes[1].parameters.jsCode,/ancfz-local-quote-pdf-v1/);
+   assert.match(w.nodes[2].parameters.jsonBody,/actionId/);
+  } else if (file === '01-lead-create.json') {
    assert.equal(w.nodes[4].parameters.url,'={{ $env.REMOTE_CRM_LEAD_URL }}');
    assert.match(w.nodes[1].parameters.jsCode,/opportunityId/);
    assert.match(w.nodes[1].parameters.jsCode,/catalogVersionId/);
@@ -52,6 +58,11 @@ test('all ANCFZ V2 workflows are structurally connected and non-executable by de
   } else {
    assert.equal(w.nodes[4].parameters.url.startsWith('https://configure-provider.invalid/'),true);
    assert.equal(w.nodes[5].parameters.url.startsWith('https://configure-provider.invalid/'),true);
+  }
+  if (file === '04-package-quote.json') {
+   assert.equal(w.nodes[0].parameters.authentication,'headerAuth');
+   assert.equal(w.nodes[2].parameters.authentication,'genericCredentialType');
+   continue;
   }
   const evidenceIndex=file === '01-lead-create.json' ? 7 : 6;
   assert.equal(w.nodes[evidenceIndex].parameters.url,file === '03c-account-create.json' ? 'http://api:4000/api/v2/internal/provider-evidence/account' : 'http://api:4000/api/v2/internal/provider-evidence/verify');

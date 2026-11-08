@@ -1,0 +1,213 @@
+{
+  "generatedAt": "2026-11-08T18:41:05.477Z",
+  "environment": {
+    "baseUrl": "http://127.0.0.1",
+    "tenantSlug": "anc",
+    "syntheticDataOnly": true,
+    "rawDocumentsPersistedInReport": false
+  },
+  "session": {
+    "sessionIdDigest": "a3844b8e48a4",
+    "tenantIdDigest": "d4880ce54720",
+    "turns": [
+      {
+        "turn": 1,
+        "user": "Hello! I am exploring options for setting up a new company in the UAE.",
+        "assistant": {
+          "status": 200,
+          "answer": "Of course. Here are the package options.\nThe published approved package ANCFZ Growth (sample) includes 2 visas.\nIt requires shared.\nIt includes company registration, two included visas.\nIt has availability development_only.\nIts listed price is AED 4,999.00.\nThe published approved package ANCFZ Premium (sample) includes 3 visas.\nIt requires shared.\nIt includes company registration, three included visas, establishment card.\nIt has availability development_only.\nIts listed price is AED 7,899.00.\nThe published approved package ANCFZ Starter (sample) includes 1 visa.\nIt requires shared.\nIt includes company registration, one included visa.\nIt has availability development_only.\nIts listed price is AED 2,499.00.\n\nWhich package would you like to explore first? You can compare these options now; I’ll enable quote preparation once your enquiry is registered and the CRM Lead is verified.",
+          "grounded": true,
+          "pendingIntentKey": null,
+          "pendingRequirementKey": null,
+          "actionProposal": null,
+          "error": null
+        }
+      },
+      {
+        "turn": 2,
+        "user": "I am considering a technology consulting company. Could you clarify the setup steps, expected timeline, and whether a shared office can work?",
+        "assistant": {
+          "status": 200,
+          "answer": "Of course. ANCFZ offers flexi-desk, shared office, and private office options. Would you like me to explain how this applies to your setup?",
+          "grounded": true,
+          "pendingIntentKey": null,
+          "pendingRequirementKey": null,
+          "actionProposal": null,
+          "error": null
+        }
+      },
+      {
+        "turn": 3,
+        "user": "What documents would you need from me?",
+        "assistant": {
+          "status": 200,
+          "answer": "I can help with company formation. Before we collect documents, I’ll register your enquiry, gather the necessary details, then show you the approved package options and prepare the quote. Would you like to proceed with company formation?",
+          "grounded": false,
+          "pendingIntentKey": "anc.company_formation",
+          "pendingRequirementKey": null,
+          "actionProposal": null,
+          "error": null
+        }
+      },
+      {
+        "turn": 4,
+        "user": "Yes, I want to proceed with creating the new company.",
+        "assistant": {
+          "status": 200,
+          "answer": "Understood. We’ll focus on company formation. I’ll first register your enquiry, then guide you through the approved packages and quote. What full name should I use for the Lead?",
+          "grounded": false,
+          "pendingIntentKey": "anc.company_formation",
+          "pendingRequirementKey": "lead_contact_name",
+          "actionProposal": null,
+          "error": null
+        }
+      },
+      {
+        "turn": 5,
+        "user": "My name is Synthetic Review Customer.",
+        "assistant": {
+          "status": 200,
+          "answer": "Thanks, I’ve noted the name for this enquiry. What email address or phone number should I use?",
+          "grounded": false,
+          "pendingIntentKey": "anc.company_formation",
+          "pendingRequirementKey": "lead_contact_channel",
+          "actionProposal": null,
+          "error": null
+        }
+      },
+      {
+        "turn": 6,
+        "user": "My email is [EMAIL] and my phone is [PHONE].",
+        "assistant": {
+          "status": 200,
+          "answer": "Thanks, I’ve noted the contact details. Do I have your permission to use them for this company-formation enquiry?",
+          "grounded": false,
+          "pendingIntentKey": "anc.company_formation",
+          "pendingRequirementKey": "lead_crm_consent",
+          "actionProposal": null,
+          "error": null
+        }
+      },
+      {
+        "turn": 7,
+        "user": "Yes",
+        "assistant": {
+          "status": 200,
+          "answer": "I cannot verify that answer safely. I can continue with confirmed information.",
+          "grounded": false,
+          "pendingIntentKey": "anc.company_formation",
+          "pendingRequirementKey": "lead_crm_consent",
+          "actionProposal": null,
+          "error": null
+        }
+      },
+      {
+        "turn": 8,
+        "user": "I consent to the use of my contact details to register this request.",
+        "assistant": {
+          "status": 200,
+          "answer": "Thanks, I’ve recorded your contact consent. When you are ready, please explicitly confirm that you want me to submit the Lead.",
+          "grounded": false,
+          "pendingIntentKey": "anc.company_formation",
+          "pendingRequirementKey": "lead_action_confirmation",
+          "actionProposal": {
+            "idDigest": "cfb0b01b6338",
+            "intent": "crm.lead.create",
+            "consentRequired": false
+          },
+          "error": null
+        }
+      }
+    ]
+  },
+  "consent": {
+    "attempted": true,
+    "status": 200,
+    "accepted": true,
+    "error": null
+  },
+  "lead": {
+    "actionIdDigest": "cfb0b01b6338",
+    "intentKey": "anc.company_formation",
+    "actionKey": "lead.create",
+    "catalogVersionIdDigest": "1a70e8f24eef",
+    "state": "reconcile_required",
+    "attempts": 2,
+    "reconciliationFollowUp": {
+      "status": 200,
+      "answer": "I’ll keep the conversation open while this is reviewed. What would you like to go over next?",
+      "error": null
+    }
+  },
+  "packageCatalog": {
+    "status": 200,
+    "count": 3,
+    "selectedPackage": {
+      "packageKey": "anc-r5-sample-growth-r6",
+      "name": "ANCFZ Growth (sample)",
+      "requiredDocuments": [
+        "synthetic_passport",
+        "synthetic_business_profile"
+      ]
+    }
+  },
+  "packageSelection": {
+    "status": 409,
+    "packageKey": "anc-r5-sample-growth-r6",
+    "packageOfferingIdDigest": "01d45b761f64",
+    "selectionIdDigest": null,
+    "error": {
+      "code": "LEAD_NOT_VERIFIED",
+      "message": "The CRM Lead must be created and verified before package selection."
+    }
+  },
+  "quote": {
+    "actionIdDigest": null,
+    "state": null,
+    "execution": null,
+    "download": null
+  },
+  "documents": {
+    "configStatus": 200,
+    "config": {
+      "enabled": false,
+      "allowedMimeTypes": [
+        "application/pdf",
+        "image/jpeg",
+        "image/png"
+      ]
+    },
+    "uploads": [
+      {
+        "fileName": "Emirates_ID_Card_For_UAE_Citizens_(New).png",
+        "mimeType": "image/png",
+        "status": 409,
+        "accepted": false,
+        "documentIdDigest": null,
+        "jobIdDigest": null,
+        "error": {
+          "code": "DOCUMENT_REQUIREMENT_NOT_ACTIVE",
+          "message": "The requested document requirement is not active for this conversation."
+        }
+      },
+      {
+        "fileName": "Passport-Front-Page.jpg",
+        "mimeType": "image/jpeg",
+        "status": 409,
+        "accepted": false,
+        "documentIdDigest": null,
+        "jobIdDigest": null,
+        "error": {
+          "code": "DOCUMENT_REQUIREMENT_NOT_ACTIVE",
+          "message": "The requested document requirement is not active for this conversation."
+        }
+      }
+    ]
+  },
+  "outcome": {
+    "quoteGenerated": false,
+    "quoteDownloadable": false,
+    "leadActionCompleted": false,
+    "providerGate": "salesforce_sandbox_adapter_unavailable"
+  }
+}

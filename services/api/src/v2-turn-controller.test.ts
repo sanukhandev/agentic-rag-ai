@@ -36,7 +36,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { MemoryStore } from './store-memory.js';
 import { MemoryCache } from './cache.js';
 import { TokenVault } from './privacy.js';
-import { resolvePublicCitations, runGPTFirstChatTurn } from './v2-turn-controller.js';
+import { isCommercialDocumentRequest, isV2PackageQuestion, resolvePublicCitations, runGPTFirstChatTurn } from './v2-turn-controller.js';
 import { createV2ToolGateway, verifyV2Scope } from './v2-tool-gateway.js';
 import { DeterministicEmbeddingProvider } from './embedding.js';
 import { ActionGateway } from './actions.js';
@@ -101,6 +101,41 @@ const prepared = async () => {
 };
 
 describe('GPT-first controller full-turn unit behavior', () => {
+  it('recognizes a document request as a commercial handoff only when it is not a status question', () => {
+    expect(isCommercialDocumentRequest('okay what all documents you need')).toBe(true);
+    expect(isCommercialDocumentRequest('what is the document status')).toBe(false);
+  });
+
+  it('recognizes package questions before model composition', () => {
+    expect(isV2PackageQuestion('what all packages are there?')).toBe(true);
+    expect(isV2PackageQuestion('what documents do you need?')).toBe(false);
+  });
+
+  it('returns selectable approved package options for a package question', async () => {
+    const ctx = await prepared();
+    const version = await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+    await ctx.store.createPackageOffering({
+      id: randomUUID(), tenantId: ctx.tenant.id, catalogVersionId: null, catalogVersionRef: version.catalogVersionRef,
+      packageKey: 'growth', name: 'Growth package', eligibleEntityTypes: [], eligibleActivities: [],
+      includedVisaQuantity: 2, officeRequirement: 'shared', inclusions: ['company registration'], priceMinor: 499900,
+      currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [],
+      processingTime: 'development only', requiredDocuments: [], exclusions: [], availability: 'development_only',
+      approvalStatus: 'approved', sourceRefs: ['unit'], createdAt: new Date().toISOString(),
+    });
+    const user = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+    if (!user) throw new Error('UNIT_MESSAGE_MISSING');
+    const message = 'What packages do you offer?';
+    await ctx.store.updateMessage({ ...user, maskedContent: message });
+    ctx.input.userMessage = { ...user, maskedContent: message };
+    ctx.input.maskedMessage = message;
+    ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
+    const reply = await runGPTFirstChatTurn(ctx.input);
+    expect(reply.packageOptions).toEqual([expect.objectContaining({ packageKey: 'growth', name: 'Growth package', priceMinor: 499900 })]);
+    expect(reply.packageSelectionReady).toBe(false);
+    expect(reply.answer).not.toMatch(/choose the package .*quote for/iu);
+    expect(reply.actionProposal).toBeNull();
+  });
+
   it('does not treat correlated read-only tool evidence as a PostgreSQL source id', async () => {
     const getSource = vi.fn(async () => { throw new Error('synthetic tool source must not be queried'); });
     const citations = await resolvePublicCitations(
@@ -521,7 +556,7 @@ const proposalTurn = async (fixture = 'ancfz-catalog-v2.json', configure?: (cata
   return { ...ctx, response };
 };
 
-const followUpTurn = async (ctx: Awaited<ReturnType<typeof proposalTurn>>, message: string) => {
+const followUpTurn = async (ctx: Awaited<ReturnType<typeof proposalTurn>>, message: string, options: { postbackValue?: string } = {}) => {
   const session = await ctx.store.getSession(ctx.session.id);
   if (!session) throw new Error('UNIT_SESSION_MISSING');
   const clientMessageId = randomUUID();
@@ -532,7 +567,7 @@ const followUpTurn = async (ctx: Awaited<ReturnType<typeof proposalTurn>>, messa
   });
   return { ...ctx.input, session, userMessage, clientMessageId, maskedMessage: message,
     messageHash: createHash('sha256').update(message).digest('hex'),
-    requestId: randomUUID() };
+    requestId: randomUUID(), postbackValue: options.postbackValue ?? null };
 };
 
 describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
@@ -629,12 +664,23 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect(document?.pendingRequirementKey).toBe('lead_contact_channel');
     expect((await ctx.store.getSession(ctx.session.id))?.conversationState?.slotValues.name).toBe('[NAME_1]');
 
-    await contactTurn('[EMAIL_1]', 'Thanks. Please explicitly consent to sharing your contact details.');
+    const contactPrompt = await contactTurn('[EMAIL_1]', 'Thanks. Please explicitly consent to sharing your contact details.');
     document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
     expect(document?.verifiedFacts.lead_contact_channel).toMatchObject({ maskedValue: '[EMAIL_1]', source: 'visitor' });
     expect(document?.pendingRequirementKey).toBe('lead_crm_consent');
+    expect(contactPrompt.consentProposal).toMatchObject({ intent: 'contact.consent', consentRequired: true });
 
     await contactTurn('Yes, you have my permission to use my contact details for this enquiry.', 'Thanks.');
+    document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document?.verifiedFacts.lead_crm_consent).toBeUndefined();
+    expect((await ctx.store.getSession(ctx.session.id))?.conversationState?.contactConsent).not.toBe('granted');
+    const consentButton = await followUpTurn(ctx, 'Consent to use my contact details', { postbackValue: 'v2:contact-consent:grant' });
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'Thanks. Your consent is recorded.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    await runGPTFirstChatTurn(consentButton);
     document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
     expect(document?.verifiedFacts.lead_crm_consent).toMatchObject({ maskedValue: 'true', source: 'visitor' });
     expect((await ctx.store.getSession(ctx.session.id))?.conversationState?.contactConsent).toBe('granted');
@@ -652,8 +698,8 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     await ctx.store.updateUserIntentDocument({
       document: { ...confirmed, pendingRequirementKey: 'lead_contact_name' }, expectedRevision: confirmed.revision,
     });
-    const turn = async (message: string, answer = 'Thanks.') => {
-      const next = await followUpTurn(ctx, message);
+    const turn = async (message: string, answer = 'Thanks.', options: { postbackValue?: string } = {}) => {
+      const next = await followUpTurn(ctx, message, options);
       ctx.coordinator.run.mockImplementationOnce(async () => ({
         modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
         response: { citationIds: [], answer, nextQuestion: null, nextQuestionKey: null }, guardReason: 'accepted',
@@ -662,16 +708,9 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     };
     await turn('[NAME_1]');
     await turn('[EMAIL_1]');
-    await turn('I explicitly consent to sharing my contact details for this enquiry.');
-    const request = await followUpTurn(ctx, 'Please create my Lead');
-    ctx.coordinator.run.mockImplementationOnce(async () => ({
-      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
-      response: { citationIds: [], answer: 'I cannot verify that answer safely.', nextQuestion: null, nextQuestionKey: null },
-      guardReason: 'invalid_question',
-    }) as unknown as V2CoordinatorResult);
-    const reply = await runGPTFirstChatTurn({ ...request, coordinator: ctx.coordinator });
-    expect(reply.actionProposal).toMatchObject({ intent: 'crm.lead.create', consentRequired: false });
-    const actions = await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id);
+    const consentReply = await turn('Consent to use my contact details', 'Thanks.', { postbackValue: 'v2:contact-consent:grant' });
+    expect(consentReply.actionProposal).toMatchObject({ intent: 'crm.lead.create', consentRequired: false });
+    let actions = await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id);
     expect(actions).toHaveLength(1);
     expect(actions[0]).toMatchObject({ actionKey: 'lead.create', workflowKey: 'crm.lead.create', state: 'awaiting_confirmation' });
     const persistedSession = await ctx.store.getSession(ctx.session.id);
@@ -679,6 +718,26 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     await expect(evaluatePersistedV2ActionConfirmation(ctx.store, persistedSession, actions[0])).resolves.toMatchObject({ applies: true, accepted: true });
     expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.pendingRequirementKey).toBe('lead_action_confirmation');
     expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.verifiedFacts.lead_action_confirmation).toMatchObject({ maskedValue: 'true', source: 'visitor' });
+    await ctx.store.updateAction({ ...actions[0], state: 'reconcile_required', result: { externalReference: 'n8n-404' } });
+    const unrelatedTurn = await followUpTurn(ctx, 'Can you explain the available packages?');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'Here are the approved options.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    const unrelatedReply = await runGPTFirstChatTurn({ ...unrelatedTurn, coordinator: ctx.coordinator });
+    expect(unrelatedReply.actionProposal).toBeNull();
+    expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toHaveLength(1);
+    await ctx.store.updateAction({ ...actions[0], state: 'awaiting_confirmation', result: null });
+    const packageQuestion = await followUpTurn(ctx, 'Can you tell me about the available packages?');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'Here are the approved options.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    await runGPTFirstChatTurn({ ...packageQuestion, coordinator: ctx.coordinator });
+    actions = await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id);
+    expect(actions).toHaveLength(1);
     const confirmation = await followUpTurn(ctx, 'I confirm the authorized submission.');
     ctx.coordinator.run.mockImplementationOnce(async () => ({
       modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],

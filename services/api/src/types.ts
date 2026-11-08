@@ -778,7 +778,7 @@ export interface ActionRequest {
   opaqueReference: string;
   payload: ActionPayload;
   createdAt: string;
-  result: { externalReference: string } | null;
+  result: { externalReference: string; artifactId?: string; artifactSha256?: string; artifactFileName?: string; artifactMimeType?: string } | null;
 }
 
 export type LegacyActionAssignment =

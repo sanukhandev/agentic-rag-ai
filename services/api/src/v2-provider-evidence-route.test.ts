@@ -1,6 +1,10 @@
 import request from 'supertest';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { describe, expect, it, vi } from 'vitest';
 import { createApp } from './app.js';
 import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2, type CatalogV2Document } from './catalog-v2.js';
@@ -13,6 +17,7 @@ import { DeterministicV2DocumentProvider } from './v2-document-provider.js';
 import { DeterministicV2PaymentProvider } from './v2-payment-provider.js';
 import { DeterministicV2ContractProvider } from './v2-contract-provider.js';
 import { completeLifecycleStage } from './lifecycle-state.js';
+import { createApprovedQuote, proposePackageSelectionAfterLead } from './business-lifecycle.js';
 
 const catalog = (providerType: string): CatalogV2Document => {
   const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2-seven-stage.json', import.meta.url), 'utf8')));
@@ -71,7 +76,7 @@ const catalog = (providerType: string): CatalogV2Document => {
   return document;
 };
 
-async function makeFixture(providerType: string, v2SalesforceLeadProvider?: { verify: (input: { request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string }; providerRecordId: string }) => Promise<{ tenantId: string; sessionId: string; opportunityId: string; providerType: string; idempotencyKey: string; recordRef: string; evidenceTier: 'provider_record_verified'; verificationStatus: 'verified' }> }, v2SalesforceAccountProvider?: { verifyAccount: (input: { request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string; leadExternalId: string }; providerRecordId: string }) => Promise<{ tenantId: string; sessionId: string; opportunityId: string; providerType: string; idempotencyKey: string; recordRef: string; evidenceTier: 'provider_record_verified'; verificationStatus: 'verified'; remoteAccountId: string; remoteContactId: string; remoteOpportunityId: string; leadExternalId: string; deduplicated: boolean }> }, v2SalesforceLeadMutationProvider?: { updateLeadDescription: (input: { providerRecordId: string; description: string }) => Promise<{ recordRef: string; description: string }>; createLeadAttachment: (input: { providerRecordId: string; fileName: string; contentBase64: string }) => Promise<{ attachmentRef: string; parentRef: string; fileName: string; sizeBytes: number }> }) {
+async function makeFixture(providerType: string, v2SalesforceLeadProvider?: { verify: (input: { request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string }; providerRecordId: string }) => Promise<{ tenantId: string; sessionId: string; opportunityId: string; providerType: string; idempotencyKey: string; recordRef: string; evidenceTier: 'provider_record_verified'; verificationStatus: 'verified' }> }, v2SalesforceAccountProvider?: { verifyAccount: (input: { request: { tenantId: string; sessionId: string; opportunityId: string; idempotencyKey: string; leadExternalId: string }; providerRecordId: string }) => Promise<{ tenantId: string; sessionId: string; opportunityId: string; providerType: string; idempotencyKey: string; recordRef: string; evidenceTier: 'provider_record_verified'; verificationStatus: 'verified'; remoteAccountId: string; remoteContactId: string; remoteOpportunityId: string; leadExternalId: string; deduplicated: boolean }> }, v2SalesforceLeadMutationProvider?: { updateLeadDescription: (input: { providerRecordId: string; description: string }) => Promise<{ recordRef: string; description: string }>; createLeadAttachment: (input: { providerRecordId: string; fileName: string; contentBase64: string }) => Promise<{ attachmentRef: string; parentRef: string; fileName: string; sizeBytes: number }> }, documentStorageRoot?: string) {
   const store = new MemoryStore();
   const tokenVault = new TokenVault('provider-evidence-route-test-secret');
   const otp = new V2OtpChallengeService('provider-evidence-route-otp-secret');
@@ -79,7 +84,7 @@ async function makeFixture(providerType: string, v2SalesforceLeadProvider?: { ve
   const documentProvider = new DeterministicV2DocumentProvider();
   const paymentProvider = new DeterministicV2PaymentProvider();
   const contractProvider = new DeterministicV2ContractProvider();
-  const runtime = createApp({ store, nodeEnv: 'test', tokenVault, n8nCallbackSecret: 'n'.repeat(64), ingestionWorkerSecret: 'i'.repeat(64), v2AccountOtp: otp, ...(v2SalesforceLeadProvider ? { v2SalesforceLeadProvider } : {}), ...(v2SalesforceAccountProvider ? { v2SalesforceAccountProvider } : {}), ...(v2SalesforceLeadMutationProvider ? { v2SalesforceLeadMutationProvider } : {}), v2AccountProvider: accountProvider, v2DocumentProvider: documentProvider, v2PaymentProvider: paymentProvider, v2ContractProvider: contractProvider });
+  const runtime = createApp({ store, nodeEnv: 'test', tokenVault, n8nCallbackSecret: 'n'.repeat(64), ingestionWorkerSecret: 'i'.repeat(64), v2AccountOtp: otp, ...(documentStorageRoot ? { documentStorageRoot } : {}), ...(v2SalesforceLeadProvider ? { v2SalesforceLeadProvider } : {}), ...(v2SalesforceAccountProvider ? { v2SalesforceAccountProvider } : {}), ...(v2SalesforceLeadMutationProvider ? { v2SalesforceLeadMutationProvider } : {}), v2AccountProvider: accountProvider, v2DocumentProvider: documentProvider, v2PaymentProvider: paymentProvider, v2ContractProvider: contractProvider });
   const tenant = await store.createTenant({ name: 'Provider Evidence', slug: `provider-evidence-${randomUUID()}` });
   const session = await store.createSession(tenant.id);
   const document = catalog(providerType);
@@ -118,6 +123,91 @@ const bodyFor = (test: ProviderFixture) => ({
 });
 
 describe('V2 provider evidence route', () => {
+  it('does not let a pinned V2 session mint a quote through the legacy quote endpoint', async () => {
+    const test = await makeFixture('deterministic_mock');
+    await test.store.createCrmAccount({
+      id: randomUUID(), tenantId: test.tenant.id, opportunityId: test.action.opportunityId!, leadId: randomUUID(),
+      remoteAccountId: '001-v2-quote-gate', remoteContactId: '003-v2-quote-gate', remoteOpportunityId: '006-v2-quote-gate',
+      status: 'verified', conversionRule: 'qualification_verified', verifiedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    const offering = await test.store.createPackageOffering({
+      id: randomUUID(), tenantId: test.tenant.id, catalogVersionId: null, catalogVersionRef: test.published.catalogVersionRef,
+      packageKey: 'anc-v2-quote-gate', name: 'ANCFZ quote gate fixture', eligibleEntityTypes: [], eligibleActivities: [],
+      includedVisaQuantity: 1, officeRequirement: 'shared', inclusions: ['synthetic quote'], priceMinor: 100000, currency: 'AED',
+      pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [], processingTime: 'development', requiredDocuments: [],
+      exclusions: [], availability: 'development_only', approvalStatus: 'approved', sourceRefs: ['synthetic'], createdAt: new Date().toISOString(),
+    });
+    const response = await request(test.runtime.app)
+      .post(`/api/v1/chat/sessions/${test.session.id}/packages/quotes`)
+      .set('origin', 'http://localhost')
+      .send({ opportunityId: test.action.opportunityId, packageOfferingId: offering.id });
+    expect(response.status, JSON.stringify(response.body)).toBe(409);
+    expect(response.body).toMatchObject({ error: { code: 'QUOTE_WORKFLOW_REQUIRED' } });
+    expect((await test.store.getQuote('00000000-0000-4000-8000-000000000099', test.tenant.id))).toBeNull();
+  });
+
+  it('generates and serves one development quote through the internal API boundary', async () => {
+    const pdfBytes = Buffer.from('%PDF-1.4\nsynthetic quote fixture\n%%EOF');
+    const artifactHash = createHash('sha256').update(pdfBytes).digest('hex');
+    const pdfServer = createServer(async (req, res) => {
+      if (req.method === 'POST' && req.url === '/v1/render') {
+        for await (const _chunk of req) { /* consume the request body */ }
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ artifactId: artifactHash, sha256: artifactHash, bytes: pdfBytes.length }));
+        return;
+      }
+      if (req.method === 'GET' && req.url === `/v1/artifacts/${artifactHash}`) {
+        res.writeHead(200, { 'content-type': 'application/pdf', 'content-length': pdfBytes.length });
+        res.end(pdfBytes);
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>((resolve) => pdfServer.listen(0, '127.0.0.1', resolve));
+    const address = pdfServer.address();
+    if (!address || typeof address === 'string') throw new Error('PDF test server did not bind.');
+    const storageRoot = await mkdtemp(join(tmpdir(), 'anc-quote-api-'));
+    const previous = { local: process.env.ANCFZ_LOCAL_QUOTE_WORKFLOW, url: process.env.ANCFZ_PDF_INTERNAL_URL, key: process.env.ANCFZ_PDF_API_KEY };
+    process.env.ANCFZ_LOCAL_QUOTE_WORKFLOW = 'true';
+    process.env.ANCFZ_PDF_INTERNAL_URL = `http://127.0.0.1:${address.port}/v1/render`;
+    process.env.ANCFZ_PDF_API_KEY = 'synthetic-quote-api-key-1234567890';
+    try {
+      const test = await makeFixture('deterministic_mock', undefined, undefined, undefined, storageRoot);
+      const opportunityId = test.action.opportunityId!;
+      const currentSession = await test.store.getSession(test.session.id);
+      if (!currentSession?.conversationState) throw new Error('session state missing');
+      const session = { ...currentSession, conversationState: { ...currentSession.conversationState, contactConsent: 'granted' as const } };
+      await test.store.updateSession(session);
+      await test.store.createCrmLead({ id: randomUUID(), tenantId: test.tenant.id, actionId: test.action.id, sessionId: session.id, intent: 'anc.company_formation', secondaryIntentKeys: [], intentScore: 95, intentConfidence: 0.98, catalogVersionId: test.published.catalogVersionRef, score: 95, contactCompletenessScore: 100, validationPass: true, qualificationStatus: 'qualified', qualificationEvidence: { source: 'synthetic-quote-api-test' }, leadData: { name: '[NAME_1]', email: '[EMAIL_1]', phone: '[PHONE_1]' }, conversation: [], summary: null, summaryStatus: 'pending', leadId: '00Q-SYNTHETIC-QUOTE', remoteCrm: 'deterministic_mock', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      const offering = await test.store.createPackageOffering({ id: randomUUID(), tenantId: test.tenant.id, catalogVersionId: null, catalogVersionRef: test.published.catalogVersionRef, packageKey: 'anc-live-quote-test', name: 'ANCFZ synthetic quote package', eligibleEntityTypes: [], eligibleActivities: [], includedVisaQuantity: 1, officeRequirement: 'shared', inclusions: ['synthetic quote'], priceMinor: 100000, currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [], processingTime: 'development', requiredDocuments: [], exclusions: ['mock only'], availability: 'development_only', approvalStatus: 'approved', sourceRefs: ['synthetic-quote-api-test'], createdAt: new Date().toISOString() });
+      const selection = await proposePackageSelectionAfterLead(test.store, session, offering.id);
+      const action = await test.store.createAction({ id: randomUUID(), tenantId: test.tenant.id, sessionId: session.id, workflowKey: 'package.confirm', intentKey: 'anc.company_formation', catalogVersionId: test.published.catalogVersionRef, opportunityId, actionKey: 'package.confirm', actionRevision: 1, idempotencyKey: `package-confirm:${selection.id}`, state: 'approved', opaqueReference: 'synthetic-quote-action', payload: { contactConsent: true, slotValues: { packageKey: offering.packageKey, packageOfferingId: offering.id, selectionId: selection.id, packageConfirmation: 'true', packageActionConsent: 'true' } }, createdAt: new Date().toISOString(), result: null });
+      const body = { actionId: action.id, tenantId: test.tenant.id, sessionId: session.id };
+      const response = await request(test.runtime.app).post('/api/v1/internal/ancfz/quote-actions/execute').set('x-agentic-internal-secret', 'n'.repeat(64)).send(body);
+      expect(response.status, JSON.stringify(response.body)).toBe(200);
+      expect(response.body).toMatchObject({ verified: true, mock: true, quote: { status: 'approved', amountMinor: 100000, currency: 'AED' }, artifact: { sha256: artifactHash, mimeType: 'application/pdf' }, action: { state: 'completed' } });
+      const quoteId = response.body.quote.id as string;
+      const replay = await request(test.runtime.app).post('/api/v1/internal/ancfz/quote-actions/execute').set('x-agentic-internal-secret', 'n'.repeat(64)).send(body);
+      expect(replay.status, JSON.stringify(replay.body)).toBe(200);
+      expect(replay.body.action.result.externalReference).toBe(`quote-${quoteId}`);
+      const persistedSelection = await test.store.getPackageSelection(selection.id, test.tenant.id);
+      if (!persistedSelection) throw new Error('synthetic quote selection was not persisted');
+      expect(persistedSelection.quoteId).toBe(quoteId);
+      const download = await request(test.runtime.app).get(`/api/v1/chat/sessions/${session.id}/quotes/${quoteId}/download`).set('origin', 'http://localhost');
+      expect(download.status, JSON.stringify(download.body)).toBe(200);
+      expect(download.headers['content-type']).toMatch(/^application\/pdf/);
+      expect(Buffer.compare(download.body, pdfBytes)).toBe(0);
+    } finally {
+      if (previous.local === undefined) delete process.env.ANCFZ_LOCAL_QUOTE_WORKFLOW; else process.env.ANCFZ_LOCAL_QUOTE_WORKFLOW = previous.local;
+      if (previous.url === undefined) delete process.env.ANCFZ_PDF_INTERNAL_URL; else process.env.ANCFZ_PDF_INTERNAL_URL = previous.url;
+      if (previous.key === undefined) delete process.env.ANCFZ_PDF_API_KEY; else process.env.ANCFZ_PDF_API_KEY = previous.key;
+      await rm(storageRoot, { recursive: true, force: true });
+      await new Promise<void>((resolve, reject) => pdfServer.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
   it('verifies a deterministic mock record and completes the correlated Lead action', async () => {
     const test = await makeFixture('deterministic_mock');
     const response = await request(test.runtime.app).post('/api/v2/internal/provider-evidence/verify').set('x-agentic-internal-secret', 'n'.repeat(64)).send(bodyFor(test));
@@ -219,8 +309,7 @@ describe('V2 provider evidence route', () => {
     const offering = await test.store.createPackageOffering({ id: randomUUID(), tenantId: test.tenant.id, catalogVersionId: null, catalogVersionRef: test.published.catalogVersionRef, packageKey: 'anc-development-standard', name: 'ANCFZ Development Standard', eligibleEntityTypes: [], eligibleActivities: [], includedVisaQuantity: 1, officeRequirement: 'shared', inclusions: ['synthetic development offering'], priceMinor: 250000, currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [], processingTime: 'development fixture', requiredDocuments: [], exclusions: ['not an official ANCFZ price'], availability: 'development_only', approvalStatus: 'approved', sourceRefs: ['pricebook:ancfz-development-v1'], createdAt: new Date().toISOString() });
     const proposal = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/packages/proposals`).set('origin', 'http://localhost').send({ opportunityId: accountAction.opportunityId, packageOfferingId: offering.id });
     expect(proposal.status, JSON.stringify(proposal.body)).toBe(201);
-    const quote = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/packages/quotes`).set('origin', 'http://localhost').send({ opportunityId: accountAction.opportunityId, packageOfferingId: offering.id });
-    expect(quote.status, JSON.stringify(quote.body)).toBe(201);
+    const quote = { body: { quote: await createApprovedQuote(test.store, (await test.store.getSession(test.session.id))!, accountAction.opportunityId!, offering.id) } };
     const confirmed = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/packages/selections/${proposal.body.selection.id}/confirm`).set('origin', 'http://localhost').send({ quoteId: quote.body.quote.id });
     expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(200);
     expect((await test.store.getUserIntentDocument(test.tenant.id, test.session.id))?.currentStageKey).toBe('document_upload');
@@ -250,8 +339,7 @@ describe('V2 provider evidence route', () => {
     const offering = await test.store.createPackageOffering({ id: randomUUID(), tenantId: test.tenant.id, catalogVersionId: null, catalogVersionRef: test.published.catalogVersionRef, packageKey: 'anc-document-test', name: 'ANCFZ Document Test', eligibleEntityTypes: [], eligibleActivities: [], includedVisaQuantity: 1, officeRequirement: 'shared', inclusions: ['synthetic development offering'], priceMinor: 250000, currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [], processingTime: 'development fixture', requiredDocuments: ['identity_document'], exclusions: ['not an official ANCFZ price'], availability: 'development_only', approvalStatus: 'approved', sourceRefs: ['pricebook:ancfz-development-v1'], createdAt: new Date().toISOString() });
     const proposal = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/packages/proposals`).set('origin', 'http://localhost').send({ opportunityId: account.opportunityId, packageOfferingId: offering.id });
     expect(proposal.status, JSON.stringify(proposal.body)).toBe(201);
-    const quote = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/packages/quotes`).set('origin', 'http://localhost').send({ opportunityId: account.opportunityId, packageOfferingId: offering.id });
-    expect(quote.status, JSON.stringify(quote.body)).toBe(201);
+    const quote = { body: { quote: await createApprovedQuote(test.store, (await test.store.getSession(test.session.id))!, account.opportunityId, offering.id) } };
     const confirmed = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/packages/selections/${proposal.body.selection.id}/confirm`).set('origin', 'http://localhost').send({ quoteId: quote.body.quote.id });
     expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(200);
     const config = await request(test.runtime.app).get(`/api/v1/chat/sessions/${test.session.id}/documents/config`).set('origin', 'http://localhost');

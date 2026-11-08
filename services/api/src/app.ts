@@ -8,7 +8,7 @@ import { cacheKey, createCache, Singleflight, type CacheStore } from './cache.js
 import { channelAuthMiddleware, ChannelSecretVault, getChannel, type StaticChannelAuth } from './channel-auth.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, KnowledgeRetrievalError, retrieveApprovedKnowledge } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
-import { addressesKnowledgeQuestion, classifyOfferReply, conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isControlledKnowledgeAbstention, isGuidedResponse, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
+import { addressesKnowledgeQuestion, classifyOfferReply, conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isControlledKnowledgeAbstention, isGuidedResponse, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, normalizePendingLeadName, openingGreeting, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, sanitizeSensitiveText, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogIntentLabel, catalogNextFollowUpRequirement, catalogRequirementLabel, catalogSlotLabel, catalogSlotQuestion, isCrmWriteBinding, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
 import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './catalog-v2.js';
@@ -89,6 +89,7 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 import { registerLifecycleRoutes } from './routes/lifecycle.js';
+import { createDevelopmentQuoteAfterLead } from './business-lifecycle.js';
 import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './v2-tool-gateway.js';
 import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
 import { executeV2Turn, runGPTFirstChatTurn } from './v2-turn-controller.js';
@@ -327,8 +328,9 @@ const pendingCatalogSlotValue = (validationRule: string, rawInput: string, maske
   if (tokenKind) {
     const existing = maskedInput.match(new RegExp(`\\[${tokenKind}_\\d+\\]`, 'u'))?.[0];
     if (existing) return existing;
-    if (tokenKind !== 'NAME' || !/^\p{L}+(?:[ '\u2019-]\p{L}+){0,3}$/u.test(rawInput.trim())) return null;
-    return maskPiiForSession(session, `My name is ${rawInput.trim()}`, tokenVault).match(/\[NAME_\d+\]/u)?.[0] ?? null;
+    const name = tokenKind === 'NAME' ? normalizePendingLeadName(rawInput) : '';
+    if (tokenKind !== 'NAME' || !/^\p{L}+(?:[ '\u2019-]\p{L}+){0,3}$/u.test(name)) return null;
+    return maskPiiForSession(session, `My name is ${name}`, tokenVault).match(/\[NAME_\d+\]/u)?.[0] ?? null;
   }
   if (validationRule === 'boolean:explicit_opt_in') {
     if (/^(?:no|n|nope|nah|no thanks|do not|don't|not now|not interested|decline|cancel|stop|i do not consent|i don't consent|i refuse)[.!\s]*$/iu.test(rawInput.trim())) return 'false';
@@ -538,6 +540,29 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const ingestionWorkerSecret = dependencies.ingestionWorkerSecret ?? process.env.INGESTION_WORKER_SECRET ?? '';
   const ingestionStaging = new IngestionStaging(dependencies.ingestionStagingRoot ?? process.env.INGESTION_STAGING_ROOT ?? join(process.cwd(), 'data', 'ingestion-staging'));
   const documentStorage = new PrivateDocumentStorage(dependencies.documentStorageRoot ?? process.env.SUPPORTING_DOCUMENT_ROOT ?? join(process.cwd(), 'data', 'supporting-documents'));
+  const localQuoteWorkflowEnabled = nodeEnv !== 'production' && process.env.ANCFZ_LOCAL_QUOTE_WORKFLOW === 'true';
+  // shortcut: local development uses Node as the verified quote/PDF boundary; upgrade when an approved quote provider and stage readback are wired.
+  const renderDevelopmentQuotePdf = async (quote: Awaited<ReturnType<typeof createDevelopmentQuoteAfterLead>>, packageName: string): Promise<{ artifactId: string; sha256: string; fileName: string; mimeType: 'application/pdf'; storageKey: string }> => {
+    const renderUrl = process.env.ANCFZ_PDF_INTERNAL_URL ?? '';
+    const apiKey = process.env.ANCFZ_PDF_API_KEY ?? '';
+    if (!renderUrl || !apiKey) throw new HttpError(503, 'QUOTE_PDF_UNAVAILABLE', 'The development PDF service is not configured.');
+    const amount = (quote.amountMinor / 100).toFixed(2);
+    const payload = { mode: 'MOCK', document_type: 'quote', reference: quote.id, issue_date: quote.createdAt.slice(0, 10), due_date: quote.validUntil.slice(0, 10), currency: quote.currency, customer_label: 'ANCFZ customer', seller_label: 'ANCFZ development workspace', tax_amount: '0.00', grand_total: amount, items: [{ description: packageName, quantity: '1', unit_price: amount }] };
+    const rendered = await fetch(renderUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15_000) });
+    if (!rendered.ok) throw new HttpError(502, 'QUOTE_PDF_RENDER_FAILED', 'The development quote PDF could not be rendered.');
+    const metadata = await rendered.json() as { artifactId?: unknown; sha256?: unknown; bytes?: unknown };
+    if (typeof metadata.artifactId !== 'string' || !/^[a-f0-9]{64}$/u.test(metadata.artifactId) || typeof metadata.sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(metadata.sha256)) throw new HttpError(502, 'QUOTE_PDF_METADATA_INVALID', 'The development PDF service returned invalid artifact metadata.');
+    const artifactUrl = renderUrl.replace(/\/v1\/render$/u, `/v1/artifacts/${metadata.artifactId}`);
+    const artifactResponse = await fetch(artifactUrl, { headers: { authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(15_000) });
+    if (!artifactResponse.ok) throw new HttpError(502, 'QUOTE_PDF_ARTIFACT_UNAVAILABLE', 'The rendered quote PDF could not be retrieved.');
+    const bytes = Buffer.from(await artifactResponse.arrayBuffer());
+    if (bytes.length !== Number(metadata.bytes) || documentSha256(bytes) !== metadata.sha256) throw new HttpError(502, 'QUOTE_PDF_INTEGRITY_FAILED', 'The rendered quote PDF failed integrity verification.');
+    const storageKey = documentStorage.key(quote.tenantId, quote.id, 'application/pdf');
+    const existing = await documentStorage.read(storageKey);
+    if (existing) { if (documentSha256(existing) !== metadata.sha256) throw new HttpError(409, 'QUOTE_PDF_CONFLICT', 'A different quote PDF already exists for this quote.'); }
+    else await documentStorage.write(storageKey, bytes);
+    return { artifactId: metadata.artifactId, sha256: metadata.sha256, fileName: `ancfz-development-quote-${quote.id}.pdf`, mimeType: 'application/pdf', storageKey };
+  };
   const mockDocumentProvider = dependencies.v2DocumentProvider ?? (process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2DocumentProvider() : null);
   const v2AccountOtp = dependencies.v2AccountOtp ?? new DurableV2OtpChallengeService(store, process.env.V2_OTP_SECRET ?? 'local-development-v2-otp-secret');
   const mockAccountProvider = dependencies.v2AccountProvider ?? (process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2AccountProvider() : null);
@@ -1751,7 +1776,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     let pendingMessage: Message | null = null;
     try {
       const input = parse(messageSchema, req.body);
-      const inputText = (input.type === 'postback' ? input.postbackValue ?? input.message : input.message) ?? '';
+      // The visible postback label is the conversation text; the opaque value
+      // is only an authorization signal consumed by the owning flow.
+      const inputText = (input.type === 'postback' ? input.message || input.postbackValue : input.message) ?? '';
       const channel = getChannel(req);
       const session = await store.getSession(input.sessionId);
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
@@ -1804,6 +1831,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           store, embedding, cache, tokenVault, session, tenant, userMessage, coordinator: v2Coordinator,
           actionGateway: gateway,
           clientMessageId: input.clientMessageId, messageHash, maskedMessage: masked.masked,
+          postbackValue: input.type === 'postback' ? input.postbackValue ?? null : null,
           requestId: (req as AuthedRequest).requestId ?? randomUUID(),
           responseCacheTtlSeconds: chatResponseCacheTtlSeconds,
           scopeSecret: process.env.MODEL_GATEWAY_SERVICE_KEY ?? '',
@@ -3129,6 +3157,30 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.json({ action: updated });
     } catch (error) { next(error); }
   });
+  app.post('/api/v1/internal/ancfz/quote-actions/execute', n8nInternalApi, async (req, res, next) => {
+    try {
+      if (!localQuoteWorkflowEnabled) throw new HttpError(503, 'LOCAL_QUOTE_WORKFLOW_DISABLED', 'The development quote workflow is not enabled.');
+      const input = parse(z.object({ actionId: z.string().guid(), tenantId: z.string().guid(), sessionId: z.string().guid() }).strict(), req.body);
+      const action = await store.getAction(input.actionId);
+      const session = await store.getSession(input.sessionId);
+      if (!action || !session || action.tenantId !== input.tenantId || action.sessionId !== input.sessionId || action.workflowKey !== 'package.confirm' || action.actionKey !== 'package.confirm' || !['approved', 'processing', 'completed'].includes(action.state) || action.payload.contactConsent !== true) throw new HttpError(403, 'QUOTE_ACTION_FORBIDDEN', 'The quote action does not match an approved session package selection.');
+      const selectionId = action.payload.slotValues?.selectionId;
+      const packageOfferingId = action.payload.slotValues?.packageOfferingId;
+      if (typeof selectionId !== 'string' || !/^[0-9a-f-]{36}$/iu.test(selectionId) || typeof packageOfferingId !== 'string' || !/^[0-9a-f-]{36}$/iu.test(packageOfferingId)) throw new HttpError(409, 'QUOTE_ACTION_PAYLOAD_INVALID', 'The approved package selection is incomplete.');
+      if (action.state === 'completed' && action.result) { res.json({ verified: true, action }); return; }
+      const processing = action.state === 'approved' ? await store.updateAction({ ...action, state: 'processing', result: null }) : action;
+      const selection = await store.getPackageSelection(selectionId, input.tenantId);
+      const offering = await store.getPackageOffering(packageOfferingId, input.tenantId);
+      if (!selection || !offering || selection.sessionId !== session.id || selection.opportunityId !== action.opportunityId || selection.packageOfferingId !== offering.id || offering.approvalStatus !== 'approved') throw new HttpError(403, 'QUOTE_SELECTION_SCOPE_DENIED', 'The package selection is not valid for this action.');
+      const quote = selection.quoteId ? await store.getQuote(selection.quoteId, input.tenantId) : await createDevelopmentQuoteAfterLead(store, session, offering.id);
+      if (!quote) throw new HttpError(409, 'QUOTE_NOT_FOUND', 'The approved quote could not be loaded.');
+      if (selection.status !== 'confirmed') await store.confirmPackageSelection(selection.id, input.tenantId, quote.id);
+      const artifact = await renderDevelopmentQuotePdf(quote, offering.name);
+      const completed = await store.updateAction({ ...processing, state: 'completed', result: { externalReference: `quote-${quote.id}`, artifactId: artifact.artifactId, artifactSha256: artifact.sha256, artifactFileName: artifact.fileName, artifactMimeType: artifact.mimeType } });
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'ancfz.development_quote.completed', metadata: { actionId: action.id, quoteId: quote.id, artifactId: artifact.artifactId, artifactSha256: artifact.sha256 }, createdAt: new Date().toISOString() });
+      res.json({ verified: true, mock: true, quote, artifact: { artifactId: artifact.artifactId, sha256: artifact.sha256, fileName: artifact.fileName, mimeType: artifact.mimeType }, action: completed });
+    } catch (error) { next(error); }
+  });
   app.post('/api/v1/admin/workflow-runs/:id/transition', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
     try {
       const tenantId = await tenantForRequest(store, req);
@@ -3510,6 +3562,22 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
       await authorizeChatSession(req, session);
       res.json({ items: (await store.listSupportingDocuments(session.tenantId, session.id)).map(publicDocument) });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v1/chat/sessions/:id/quotes/:quoteId/download', chatApi, async (req, res, next) => {
+    try {
+      const session = await store.getSession(routeParam(req, 'id'));
+      if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      await authorizeChatSession(req, session);
+      const quote = await store.getQuote(routeParam(req, 'quoteId'), session.tenantId);
+      const document = await store.getUserIntentDocument(session.tenantId, session.id);
+      if (!quote || !document || quote.opportunityId !== document.opportunityId || quote.status !== 'approved') throw new HttpError(404, 'QUOTE_NOT_FOUND', 'Quote not found.');
+      const content = await documentStorage.read(documentStorage.key(session.tenantId, quote.id, 'application/pdf'));
+      if (!content) throw new HttpError(404, 'QUOTE_PDF_NOT_FOUND', 'The quote PDF is not ready yet.');
+      res.setHeader('content-type', 'application/pdf');
+      res.setHeader('content-disposition', `attachment; filename="ancfz-development-quote-${quote.id}.pdf"`);
+      res.setHeader('cache-control', 'private, no-store');
+      res.send(content);
     } catch (error) { next(error); }
   });
   app.get('/api/v1/admin/crm/documents/:id/download', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {

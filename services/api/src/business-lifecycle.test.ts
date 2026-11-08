@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { createApprovedQuote, createContractDraft, createInvoiceDraft, confirmPackageSelection, listEligiblePackages, proposeAccountConversion, proposePackageSelection } from './business-lifecycle.js';
+import { createApprovedQuote, createContractDraft, createDevelopmentQuoteAfterLead, createInvoiceDraft, confirmPackageSelection, listEligiblePackages, proposeAccountConversion, proposePackageSelection, proposePackageSelectionAfterLead } from './business-lifecycle.js';
 import type { CatalogV2Document } from './catalog-v2.js';
 import { newConversationState, newIntentProgress } from './conversation-state.js';
 import { MemoryStore } from './store-memory.js';
@@ -23,6 +23,22 @@ describe('verified business lifecycle gates', () => {
     const quote = await createApprovedQuote(store, session, opportunityId, offering.id);
     expect(selection.packageOfferingId).toBe(offering.id);
     expect(quote).toMatchObject({ packageOfferingId: offering.id, amountMinor: 250000, currency: 'AED', sourceRefs: ['sandbox-pricebook-v1'] });
+  });
+
+  it('allows the local Lead-to-quote slice only after a verified CRM Lead and consent', async () => {
+    const store = new MemoryStore();
+    const tenant = await store.createTenant({ name: 'ANCFZ', slug: 'anc-lead-quote' });
+    const catalogVersionRef = 'anc:r2:' + 'c'.repeat(64);
+    const catalog = await store.createIntentCatalogV2Version({ tenantId: tenant.id, status: 'published', sourceFileName: 'v2-test.json', sourceHash: 'v2-test', parserVersion: 'test', catalog: v2Catalog, catalogVersionRef });
+    const opportunityId = '00000000-0000-4000-8000-000000000041';
+    const session = await store.createSession(tenant.id);
+    session.conversationState = { ...newConversationState(), catalogVersionId: catalog.id, selectedIntentKey: 'anc.company_formation', contactConsent: 'granted', intentProgress: { ...newIntentProgress(), activeIntentKey: 'anc.company_formation', entries: { 'anc.company_formation': { intentKey: 'anc.company_formation', journeyId: opportunityId, status: 'active', completedRequirementKeys: [], currentRequirementKey: null, slotValues: {}, slotProvenance: {}, revision: 1 } } } };
+    const offering = await store.createPackageOffering({ id: '00000000-0000-4000-8000-000000000042', tenantId: tenant.id, catalogVersionId: null, catalogVersionRef, packageKey: 'lead-quote-package', name: 'Lead Quote Package', eligibleEntityTypes: [], eligibleActivities: [], includedVisaQuantity: 1, officeRequirement: 'shared', inclusions: ['registration'], priceMinor: 100000, currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [], processingTime: 'development', requiredDocuments: [], exclusions: [], availability: 'development_only', approvalStatus: 'approved', sourceRefs: ['sandbox-pricebook-v1'], createdAt: new Date().toISOString() });
+    await store.createCrmLead({ id: '00000000-0000-4000-8000-000000000043', tenantId: tenant.id, actionId: '00000000-0000-4000-8000-000000000044', sessionId: session.id, intent: 'anc.company_formation', secondaryIntentKeys: [], intentScore: 90, intentConfidence: 0.9, catalogVersionId: catalog.id, score: 90, contactCompletenessScore: 100, validationPass: true, qualificationStatus: 'qualified', qualificationEvidence: { source: 'test' }, leadData: { name: '[NAME_1]', email: '[EMAIL_1]', phone: '[PHONE_1]' }, conversation: [], summary: null, summaryStatus: 'pending', leadId: '00Q-LEAD-QUOTE', remoteCrm: 'salesforce-sandbox', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    const selection = await proposePackageSelectionAfterLead(store, session, offering.id);
+    const quote = await createDevelopmentQuoteAfterLead(store, session, offering.id);
+    expect(selection.packageOfferingId).toBe(offering.id);
+    expect(quote).toMatchObject({ opportunityId, packageOfferingId: offering.id, amountMinor: 100000, sourceRefs: ['sandbox-pricebook-v1', 'development-mock-quote'] });
   });
 
   it('does not create an invoice or contract before package confirmation and verified payment', async () => {

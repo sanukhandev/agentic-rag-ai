@@ -79,6 +79,8 @@ export const resolveActiveDocumentRequirement = (requirements: readonly ChatDocu
 export type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string; citations: ChatCitation[]; conversational?: boolean; pendingIntentKey?: string | null; pendingRequirementKey?: string | null };
 export type ChatActionState = 'awaiting_confirmation' | 'approved' | 'processing' | 'completed' | 'failed' | 'reconcile_required' | 'awaiting_customer' | 'human_review' | 'unknown';
 export type ChatActionProposal = { id: string; intent: string; confirmation: string; consentRequired?: boolean; expiresAt?: string };
+export type ChatPackageOption = { packageKey: string; name: string; includedVisaQuantity: number; officeRequirement: string | null; inclusions: string[]; availability: string; priceMinor: number | null; currency: string | null; processingTime: string | null };
+export type ChatQuoteAttachment = { quoteId: string; fileName: string; mimeType: 'application/pdf' };
 export type ChatReply = {
   answer: string;
   grounded: boolean;
@@ -86,6 +88,9 @@ export type ChatReply = {
   citations: ChatCitation[];
   pendingIntentKey?: string | null;
   pendingRequirementKey?: string | null;
+  consentProposal?: ChatActionProposal | null;
+  packageOptions?: ChatPackageOption[] | null;
+  packageSelectionReady?: boolean;
   actionProposal?: ChatActionProposal | null;
   actionState?: ChatActionState;
   copied?: boolean;
@@ -102,6 +107,12 @@ export interface DisplayMessage {
   citations: ChatCitation[];
   pendingIntentKey?: string | null;
   pendingRequirementKey?: string | null;
+  consentProposal?: ChatActionProposal | null;
+  consentState?: 'awaiting_confirmation' | 'approved';
+  packageOptions?: ChatPackageOption[] | null;
+  packageSelectionReady?: boolean;
+  packageState?: 'selecting' | 'selected';
+  quoteAttachment?: ChatQuoteAttachment;
   actionProposal?: ChatActionProposal | null;
   actionState?: ChatActionState;
   createdAt: string;

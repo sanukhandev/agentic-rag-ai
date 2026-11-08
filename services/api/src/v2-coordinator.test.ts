@@ -301,6 +301,21 @@ describe('V2ConversationCoordinator', () => {
     ]);
   });
 
+  it('normalizes sample package labels for durable selection offers', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'what packages are available';
+    const packageEvidence = [
+      { citationId: 'package-growth', text: 'The published approved package ANCFZ Growth (sample) includes 2 visas.\nIt requires shared.\nIt includes company registration and two included visas.\nIt has availability development_only.\nIts listed price is AED 4,999.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+    ];
+    const candidate = result('The Growth package is available.', {
+      response: { ...result('').response, answer: 'The Growth package is available.', citationIds: ['package-growth'] },
+      approvedEvidence: packageEvidence,
+      toolTrace: [{ toolCallId: 'package-call-12345678', toolName: 'get_available_packages', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: ['package-growth'] }],
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
+    expect(output.draft.followUpOptions).toEqual([{ key: 'package_growth', label: 'ANCFZ Growth', retrievalHints: ['growth'] }]);
+  });
+
   it('selects a typo-tolerant package excerpt and tracks its explanation follow-up', async () => {
     const request = envelope();
     request.customerMessageMasked = 'tell me about the groth package';
@@ -322,7 +337,7 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.answer).not.toContain('ANCFZ Starter');
     expect(output.response.nextQuestion).toBe('Would you like me to explain this package in more detail?');
     expect(output.draft.followUpOptions).toEqual([
-      { key: 'explain_more', label: 'explain this package in more detail', retrievalHints: [] },
+      { key: 'explain_more', label: 'explain this package in more detail', retrievalHints: ['growth'] },
     ]);
   });
 

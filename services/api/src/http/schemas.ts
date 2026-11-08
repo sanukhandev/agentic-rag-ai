@@ -79,6 +79,7 @@ export const messageSchema = z.object({ sessionId: z.string().guid(), type: z.en
   if (value.type !== 'postback' && !value.message) context.addIssue({ code: z.ZodIssueCode.custom, path: ['message'], message: 'A message is required.' });
 });
 export const confirmSchema = z.object({ sessionId: z.string().guid(), confirmed: z.literal(true) });
+export const lifecyclePackageSelectionSchema = z.object({ packageKey: z.string().trim().regex(/^[a-z][a-z0-9._-]{1,79}$/u) }).strict();
 export const retentionSchema = z.object({ before: z.string().datetime() });
 export const historyQuerySchema = z.object({ limit: z.coerce.number().int().min(1).max(200).default(100) });
 const leadTokenSchema = z.string().regex(/^\[(?:NAME|EMAIL|PHONE)_\d+\]$/);

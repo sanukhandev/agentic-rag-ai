@@ -34,7 +34,9 @@ CMD ["node", "services/api/dist/index.js"]
 
 FROM node-source AS web-build
 ARG NEXT_PUBLIC_API_URL=/
+ARG AZURE_OPENAI_DEPLOYMENT=Azure GPT-4.1-mini
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build --workspace packages/chat-utils
 RUN npm run build --workspace apps/web

@@ -169,6 +169,7 @@ services:
       V2_GROUNDING_TIMEOUT_MS: ${V2_GROUNDING_TIMEOUT_MS:-10000}
       ANCFZ_PDF_INTERNAL_URL: http://ancfz-pdf:8097/v1/render
       ANCFZ_PDF_API_KEY: ${ANCFZ_PDF_API_KEY:-}
+      ANCFZ_LOCAL_QUOTE_WORKFLOW: ${ANCFZ_LOCAL_QUOTE_WORKFLOW:-true}
       MOCK_PAYMENT_INTERNAL_URL: http://mock-payments:8098
       MOCK_PAYMENT_API_KEY: ${MOCK_PAYMENT_API_KEY:-}
       REMOTE_CRM_PROVIDER: ${REMOTE_CRM_PROVIDER:-}
@@ -235,6 +236,7 @@ services:
       target: web-runtime
       args:
         NEXT_PUBLIC_API_URL: /
+        AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-Azure GPT-4.1-mini}
     container_name: agentic-web
     restart: unless-stopped
     depends_on:

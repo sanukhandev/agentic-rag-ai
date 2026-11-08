@@ -222,12 +222,15 @@ const sourceExcerptResponse = (envelope: TurnEnvelopeV2, evidence: V2ApprovedEvi
     const continueWithoutRepeat = packageSpecific && alreadyDelivered && acknowledgement;
     const nextQuestion = packageSpecific && !continueWithoutRepeat ? 'Would you like me to explain this package in more detail?' : packageSpecific ? null : 'Which package would you like to explore first?';
     const followUpOptions: FollowUpOfferOption[] = packageSpecific && !continueWithoutRepeat
-      ? [{ key: 'explain_more', label: 'explain this package in more detail', retrievalHints: [] }]
+      ? [{ key: 'explain_more', label: 'explain this package in more detail', retrievalHints: [
+        (selectedPackage?.packageName?.replace(/\s*\(sample\)\s*$/iu, '').split(/\s+/u).at(-1) ?? '').replace(/[^a-z0-9]+/giu, '_').replace(/^_|_$/gu, '').toLocaleLowerCase('en-US'),
+      ].filter(Boolean) }]
       : !packageSpecific ? selectedEvidence.map(item => packageNameFromEvidence(item.text)).filter((name): name is string => Boolean(name)).map(name => {
-        const packageKey = (name.split(/\s+/u).at(-1) ?? name).replace(/[^a-z0-9]+/giu, '_').replace(/^_|_$/gu, '').toLocaleLowerCase('en-US');
+        const displayName = name.replace(/\s*\(sample\)\s*$/iu, '').trim();
+        const packageKey = (displayName.split(/\s+/u).at(-1) ?? displayName).replace(/[^a-z0-9]+/giu, '_').replace(/^_|_$/gu, '').toLocaleLowerCase('en-US');
         return {
         key: `package_${packageKey}`,
-        label: name,
+        label: displayName,
         retrievalHints: [packageKey],
       };
       }) : [];

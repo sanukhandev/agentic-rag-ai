@@ -31,6 +31,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200,{'artifactId':artifact_id,'sha256':output['sha256'],'bytes':output['bytes'],'documentType':output['document_type'],'mock':True,'privatelyStored':True})
         except (ValueError,TypeError,KeyError,json.JSONDecodeError):return self.reply(422,{'error':'INVALID_RENDER_INPUT'})
         except Exception:return self.reply(500,{'error':'RENDER_FAILED'})
+    def do_GET(self):
+        if not re.fullmatch(r'/v1/artifacts/[0-9a-f]{64}', self.path):return self.reply(404,{'error':'NOT_FOUND'})
+        if not KEY or not hmac.compare_digest(self.headers.get('Authorization',''), 'Bearer '+KEY):return self.reply(401,{'error':'UNAUTHORIZED'})
+        artifact_id=self.path.rsplit('/',1)[-1]
+        try:content=(DEST/(artifact_id+'.pdf')).read_bytes()
+        except FileNotFoundError:return self.reply(404,{'error':'ARTIFACT_NOT_FOUND'})
+        self.send_response(200);self.send_header('Content-Type','application/pdf');self.send_header('Content-Length',str(len(content)));self.send_header('Cache-Control','no-store');self.end_headers();self.wfile.write(content)
     def log_message(self,format,*args):pass
 
 if __name__=='__main__':

@@ -2,8 +2,8 @@ import type { Application, NextFunction, Request, RequestHandler, Response } fro
 import type { LifecycleStage, Session, Store } from '../types.js';
 import type { ActionGateway } from '../actions.js';
 import { parse, HttpError } from '../http/errors.js';
-import { lifecycleAccountProposalSchema, lifecycleContractSchema, lifecycleInvoiceSchema, lifecyclePackageProposalSchema, lifecyclePaymentSchema, lifecycleQuoteSchema, lifecycleSelectionConfirmationSchema } from '../http/schemas.js';
-import { accountConversionBinding, activeOpportunityId, confirmPackageSelection, createApprovedQuote, createContractDraft, createInvoiceDraft, listEligiblePackages, proposeAccountConversion, proposePackageSelection, v2LifecycleActionBinding } from '../business-lifecycle.js';
+import { lifecycleAccountProposalSchema, lifecycleContractSchema, lifecycleInvoiceSchema, lifecyclePackageProposalSchema, lifecyclePackageSelectionSchema, lifecyclePaymentSchema, lifecycleQuoteSchema, lifecycleSelectionConfirmationSchema } from '../http/schemas.js';
+import { accountConversionBinding, activeOpportunityId, confirmPackageSelection, createApprovedQuote, createContractDraft, createInvoiceDraft, listEligiblePackages, proposeAccountConversion, proposePackageSelection, proposePackageSelectionAfterLead, v2LifecycleActionBinding } from '../business-lifecycle.js';
 
 export interface LifecycleRouteDependencies {
   store: Store;
@@ -27,8 +27,44 @@ export const registerLifecycleRoutes = (app: Pick<Application, 'get' | 'post'>, 
   app.post('/api/v1/chat/sessions/:id/packages/proposals', dependencies.chatApi, async (req: Request, res: Response, next: NextFunction) => {
     try { const session = await loadSession(req); const input = parse(lifecyclePackageProposalSchema, req.body); const selection = await proposePackageSelection(dependencies.store, session, input.opportunityId, input.packageOfferingId); res.status(201).json({ selection }); } catch (error) { next(error); }
   });
+  app.post('/api/v1/chat/sessions/:id/packages/select', dependencies.chatApi, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const session = await loadSession(req);
+      const input = parse(lifecyclePackageSelectionSchema, req.body);
+      const offering = (await listEligiblePackages(dependencies.store, session)).find((candidate) => candidate.packageKey === input.packageKey);
+      if (!offering) throw new HttpError(409, 'PACKAGE_NOT_ELIGIBLE', 'That package is not available in the approved catalog for this conversation.');
+      const selection = await proposePackageSelectionAfterLead(dependencies.store, session, offering.id);
+      const binding = await v2LifecycleActionBinding(dependencies.store, session, 'package.confirm', 'package_selection');
+      if (!binding) throw new HttpError(409, 'PACKAGE_WORKFLOW_NOT_CONFIGURED', 'The approved package quote workflow is not enabled for this tenant.');
+      const action = await dependencies.gateway.propose(session.tenantId, session.id, `package-confirm:${selection.id}`, {
+        contactConsent: true,
+        interest: binding.intentKey,
+        slotValues: { packageKey: offering.packageKey, packageOfferingId: offering.id, selectionId: selection.id, packageConfirmation: 'true', packageActionConsent: 'true' },
+      }, { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, intentKey: binding.intentKey, catalogVersionId: binding.catalogVersionId, opportunityId: selection.opportunityId, actionKey: binding.actionKey, actionRevision: 1 });
+      const approved = action.state === 'awaiting_confirmation' ? await dependencies.gateway.confirm(action.id, session.tenantId, session) : action;
+      res.status(202).json({ selection, package: offering, action: approved });
+    } catch (error) { next(error); }
+  });
   app.post('/api/v1/chat/sessions/:id/packages/quotes', dependencies.chatApi, async (req: Request, res: Response, next: NextFunction) => {
-    try { const session = await loadSession(req); const input = parse(lifecycleQuoteSchema, req.body); const quote = await createApprovedQuote(dependencies.store, session, input.opportunityId, input.packageOfferingId); res.status(201).json({ quote }); } catch (error) { next(error); }
+    try {
+      const session = await loadSession(req);
+      const input = parse(lifecycleQuoteSchema, req.body);
+      const pinnedV2 = session.conversationState?.catalogVersionId
+        ? await dependencies.store.getIntentCatalogV2Version(session.tenantId, session.conversationState.catalogVersionId)
+        : null;
+      if (pinnedV2) {
+        const offering = (await listEligiblePackages(dependencies.store, session)).find((candidate) => candidate.id === input.packageOfferingId);
+        if (!offering) throw new HttpError(409, 'PACKAGE_NOT_ELIGIBLE', 'That package is not available in the approved catalog for this conversation.');
+        const selection = (await dependencies.store.listPackageSelections(session.tenantId, input.opportunityId)).find((candidate) => candidate.packageOfferingId === offering.id && candidate.status === 'confirmed' && candidate.quoteId);
+        if (!selection?.quoteId) throw new HttpError(409, 'QUOTE_WORKFLOW_REQUIRED', 'A V2 quote is created only by the confirmed package workflow.');
+        const quote = await dependencies.store.getQuote(selection.quoteId, session.tenantId);
+        if (!quote || quote.opportunityId !== input.opportunityId || quote.packageOfferingId !== offering.id || quote.status !== 'approved' || Date.parse(quote.validUntil) <= Date.now()) throw new HttpError(409, 'QUOTE_NOT_VALID', 'The approved quote is missing, expired or does not match this package selection.');
+        res.status(200).json({ quote });
+        return;
+      }
+      const quote = await createApprovedQuote(dependencies.store, session, input.opportunityId, input.packageOfferingId);
+      res.status(201).json({ quote });
+    } catch (error) { next(error); }
   });
   app.post('/api/v1/chat/sessions/:id/packages/selections/:selectionId/confirm', dependencies.chatApi, async (req: Request, res: Response, next: NextFunction) => {
     try { const session = await loadSession(req); const input = parse(lifecycleSelectionConfirmationSchema, req.body); const selection = await confirmPackageSelection(dependencies.store, session, dependencies.routeParam(req, 'selectionId'), input.quoteId); await dependencies.advanceLifecycleStage(session, 'package_selection', { selectionId: selection.id, quoteId: input.quoteId, packageConfirmed: true }); res.json({ selection }); } catch (error) { next(error); }
