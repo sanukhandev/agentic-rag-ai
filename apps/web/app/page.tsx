@@ -5,6 +5,7 @@ import {
   formatNaturalAbstention,
   formatAgentGreeting,
   actionOutcomeText,
+  formatSessionIdForDisplay,
   isChatActionState,
   isTerminalChatActionState,
   isValidTenantSlug,
@@ -58,6 +59,7 @@ export default function Home() {
   const [error, setError] = useState('');
   const [config, setConfig] = useState<Config | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [sessionCopied, setSessionCopied] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [voiceSpeaking, setVoiceSpeaking] = useState(false);
   const [voiceModeActive, setVoiceModeActive] = useState(false);
@@ -182,6 +184,7 @@ export default function Home() {
       setPendingRequirementKey(null);
       setMessages([]);
       setDocuments([]);
+      setSessionCopied(false);
       return;
     }
 
@@ -199,6 +202,7 @@ export default function Home() {
       setPendingRequirementKey(null);
       setMessages([]);
       setDocuments([]);
+      setSessionCopied(false);
       return;
     }
 
@@ -207,6 +211,7 @@ export default function Home() {
         if (!response.ok) throw new Error('Saved session is unavailable.');
         const body = (await response.json()) as { messages: ChatHistoryMessage[] };
         setSessionId(savedSession);
+        setSessionCopied(false);
         const pendingMessage = [...body.messages].reverse().find((message) => message.role === 'assistant' && message.pendingRequirementKey);
         setPendingIntentKey(pendingMessage?.pendingIntentKey ?? null);
         setPendingRequirementKey(pendingMessage?.pendingRequirementKey ?? null);
@@ -231,6 +236,7 @@ export default function Home() {
         setPendingRequirementKey(null);
         setMessages([]);
         setDocuments([]);
+        setSessionCopied(false);
       });
   }, [tenantSlug]);
 
@@ -710,6 +716,7 @@ export default function Home() {
   const reset = () => {
     window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
     setSessionId(null);
+    setSessionCopied(false);
     setPendingIntentKey(null);
     setPendingRequirementKey(null);
     setMessages([]);
@@ -725,6 +732,17 @@ export default function Home() {
       void navigator.clipboard.writeText(text);
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
+    }
+  };
+
+  const copySessionId = async () => {
+    if (!sessionId || typeof navigator === 'undefined' || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      setSessionCopied(true);
+      window.setTimeout(() => setSessionCopied(false), 2000);
+    } catch {
+      // Do not claim success when the browser rejects clipboard access.
     }
   };
 
@@ -796,6 +814,23 @@ export default function Home() {
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                 <span>Active Model: {activeModel}</span>
               </div>
+
+              {process.env.NODE_ENV !== 'production' && (
+                <div className="flex max-w-[190px] items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] text-amber-900 font-mono" title={sessionId ?? 'No active session'}>
+                  <span className="shrink-0 font-semibold">Session ID</span>
+                  <span className="min-w-0 truncate" aria-live="polite">{formatSessionIdForDisplay(sessionId)}</span>
+                  <button
+                    type="button"
+                    onClick={() => void copySessionId()}
+                    disabled={!sessionId}
+                    aria-label={sessionId ? `Copy session ID ${sessionId}` : 'Copy session ID (no active session)'}
+                    title={sessionId ? 'Copy session ID' : 'No active session to copy'}
+                    className="shrink-0 rounded p-0.5 text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {sessionCopied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              )}
 
               {/* Reset Session CTA */}
               <button
