@@ -70,6 +70,11 @@ export const formatAgentGreeting = (greeting: string | undefined, fallback: stri
   return normalized || fallback;
 };
 
+export const formatSessionIdForDisplay = (sessionId: string | null): string => {
+  if (!sessionId) return 'Not started';
+  return sessionId.length > 18 ? `${sessionId.slice(0, 8)}…${sessionId.slice(-6)}` : sessionId;
+};
+
 export type ChatDocumentRequirement = { intentKey: string; requirementKey: string; documentType: string; allowedDocumentTypes: string[] };
 export const resolveActiveDocumentRequirement = (requirements: readonly ChatDocumentRequirement[], intentKey: string | null, requirementKey: string | null): ChatDocumentRequirement | null => {
   if (!intentKey || !requirementKey) return null;
