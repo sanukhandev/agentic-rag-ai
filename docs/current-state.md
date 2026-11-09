@@ -302,3 +302,9 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - The existing local n8n Salesforce credential and sandbox wiring were not rotated: the previous synthetic Docker run already proved create, readback, Node evidence verification, and correlated completion. Credential replacement would be unnecessary risk unless a fresh readiness or sandbox run fails.
 - Added `npm run activate:n8n:dev`, an explicit local-only allowlisted publisher for the Lead, development quote, and OCR workflows. It must be followed by readiness verification; no production activation or credential creation is implied.
 - Added the correlated Lead failure callback and Node endpoint. Local n8n runtime was backed up and synced to the reviewed failure-routing revision while preserving the existing Salesforce OAuth and internal-header bindings; provider/readback/evidence failures now have a durable bounded failure/reconciliation path instead of relying only on a 202 response or an unretained execution.
+
+## 2026-11-09 Salesforce Lead workflow acceptance rerun
+
+- Fresh local Docker restart, explicit dev activation, readiness verification, mock webhook probe, and the complete synthetic conversation passed. The existing n8n Salesforce credential created and read back a sandbox Lead; the action reached `completed` with `provider_record_verified` evidence.
+- The development quote was verified and downloaded as a PDF (HTTP 200). Both supplied synthetic document images were accepted, OCR processing completed, and Salesforce attachment readback audit events were recorded for both files.
+- Redacted evidence: [`salesforce-lead-workflow-acceptance-2026-11-09.json`](verification/salesforce-lead-workflow-acceptance-2026-11-09.json). No credential values, document bytes, or customer PII are included. Quote evidence remains mock/development-only.

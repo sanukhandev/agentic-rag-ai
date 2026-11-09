@@ -1,0 +1,27 @@
+{
+  "generatedAt": "2026-11-09T06:59:00Z",
+  "scope": "local Docker / synthetic customer / Salesforce sandbox",
+  "readiness": {
+    "workflowId": "ancfzV2LeadCreateR1",
+    "webhookPath": "ancfz/v2/lead-create",
+    "payloadContract": "ancfz-v2-stage-action-v1",
+    "active": true,
+    "credentialBinding": "SalesForce ANC - CREDS",
+    "credentialValuesIncluded": false
+  },
+  "mockWebhook": "docs/verification/salesforce-lead-webhook-mock-2026-11-09.json",
+  "liveConversation": {
+    "leadAction": { "state": "completed", "provider": "salesforce_sandbox", "remoteIdSynthetic": true },
+    "quote": { "state": "approved", "verified": true, "mock": true, "downloadStatus": 200, "downloadBytes": 2522, "artifactSha256": "c65f2d881f4f2d678e23480e4129999bb4fcf52cf603ad661b438f95722e9b63" },
+    "documents": [
+      { "fileName": "Emirates_ID_Card_For_UAE_Citizens_(New).png", "uploadStatus": 202, "processingStatus": "completed", "attachmentReadbackVerified": true },
+      { "fileName": "Passport-Front-Page.jpg", "uploadStatus": 202, "processingStatus": "completed", "attachmentReadbackVerified": true }
+    ],
+    "providerEvidence": "provider_record_verified",
+    "customerDataIncluded": false
+  },
+  "limits": [
+    "Quote is a local development/mock PDF, not official ANCFZ pricing.",
+    "Salesforce evidence is sandbox evidence only; no production promotion or credential rotation was performed."
+  ]
+}

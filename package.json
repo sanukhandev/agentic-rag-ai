@@ -11,6 +11,7 @@
     "verify:compose": "node scripts/verify-compose.mjs",
     "verify:n8n:salesforce": "node scripts/verify-n8n-salesforce-lead-runtime.mjs",
     "activate:n8n:dev": "node scripts/activate-ancfz-n8n-dev.mjs --confirm-dev",
+    "test:salesforce:webhook:mock": "node scripts/test-salesforce-lead-webhook.mjs",
     "verify:secrets": "node scripts/verify-secrets.mjs",
     "verify:secrets:test": "node --test scripts/verify-secrets.test.mjs",
     "verify:local": "node scripts/verify-local.mjs",
