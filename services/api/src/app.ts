@@ -589,6 +589,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       ...(process.env.REMOTE_CRM_CONTACT_READ_URL ? { contactReadbackUrl: process.env.REMOTE_CRM_CONTACT_READ_URL } : {}),
       ...(process.env.REMOTE_CRM_OPPORTUNITY_READ_URL ? { opportunityReadbackUrl: process.env.REMOTE_CRM_OPPORTUNITY_READ_URL } : {}),
     }) : null);
+  const salesforceLeadProviderReady = salesforceLeadProvider instanceof SalesforceSandboxLeadProvider
+    ? salesforceLeadProvider.isLeadReadbackConfigured() && process.env.V2_LEAD_WORKFLOW_READY === 'true'
+      : Boolean(salesforceLeadProvider);
   const mockPaymentProvider = dependencies.v2PaymentProvider ?? (process.env.REMOTE_PAYMENT_PROVIDER === 'deterministic_mock' ? new DeterministicV2PaymentProvider() : null);
   const mockContractProvider = dependencies.v2ContractProvider ?? (process.env.REMOTE_SIGNATURE_PROVIDER === 'deterministic_mock' ? new DeterministicV2ContractProvider() : null);
   if (nodeEnv === 'production' && !dependencies.v2AccountOtp && !process.env.V2_OTP_SECRET) throw new Error('V2_OTP_SECRET is required in production.');
@@ -1035,8 +1038,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const v2Version = (await store.listIntentCatalogV2Versions(tenantId)).find((candidate) => candidate.status === 'published');
     if (v2Version) {
       const policies = v2Version.catalog.sheets.DocumentPolicies;
-      const binding = v2Version.catalog.sheets.WorkflowBindings.find((candidate) => candidate.registryKey === 'document.sf02.upload' && candidate.enabled);
-      const enabledTools = new Set(v2Version.catalog.sheets.ToolBindings.filter((candidate) => candidate.toolKey === 'document.sf02_upload' && candidate.enabled).map((candidate) => candidate.goalKey));
+      const binding = v2Version.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === 'anc.document.ocr.extract' && candidate.enabled);
+      const enabledTools = new Set(v2Version.catalog.sheets.ToolBindings.filter((candidate) => ['document.ocr.extract', 'document.sf02_upload'].includes(candidate.toolKey) && candidate.enabled).map((candidate) => candidate.goalKey));
       const allowedMimeTypes = [...new Set(policies.flatMap((policy) => policy.mimeTypes))];
       const requirements = policies.filter((policy) => policy.required && policy.enabled && enabledTools.has(policy.goalKey)).map((policy) => ({ intentKey: policy.goalKey, requirementKey: policy.policyKey, documentType: policy.docType, allowedDocumentTypes: [policy.docType] }));
       return { enabled: Boolean(binding && enabledTools.size), requireUploadConsent: true, maxFileBytes: MAX_DOCUMENT_BYTES, maxFilesPerRequest: 1, maxPdfPages: 20, allowedMimeTypes, policies: policies.filter((policy) => policy.enabled && enabledTools.has(policy.goalKey)).map((policy) => ({ intentKey: policy.goalKey, requestMode: 'explicit_upload' as const, allowedDocumentTypes: [policy.docType], consentRequired: true })), requirements, workflowKey: binding?.workflowKey ?? null, binding: binding ? { webhookPath: binding.webhookPath ?? '', payloadContract: binding.payloadContract ?? null } : null };
@@ -1830,6 +1833,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const response = await runGPTFirstChatTurn({
           store, embedding, cache, tokenVault, session, tenant, userMessage, coordinator: v2Coordinator,
           actionGateway: gateway,
+          leadProviderReady: salesforceLeadProviderReady,
           clientMessageId: input.clientMessageId, messageHash, maskedMessage: masked.masked,
           postbackValue: input.type === 'postback' ? input.postbackValue ?? null : null,
           requestId: (req as AuthedRequest).requestId ?? randomUUID(),
@@ -3474,16 +3478,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : await store.getPublishedIntentCatalog(session.tenantId);
       if (conversationState.catalogVersionId && !version && !v2Version) throw new HttpError(409, 'CATALOG_VERSION_UNAVAILABLE', 'This conversation uses an unavailable catalog version. Please start a new request.');
       const v2PolicyRow = v2Version?.catalog.sheets.DocumentPolicies.find((item) => item.goalKey === requestedIntentKey);
+      const v2ProcessingBinding = v2Version?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === 'anc.document.ocr.extract' && candidate.enabled);
       const settings = v2Version
-        ? { enabled: true, requireUploadConsent: true, maxFileBytes: MAX_DOCUMENT_BYTES, allowedMimeTypes: v2PolicyRow?.mimeTypes ?? DEFAULT_DOCUMENT_MIME_TYPES, workflowKey: 'document.sf02.upload' }
+        ? { enabled: Boolean(v2ProcessingBinding), requireUploadConsent: true, maxFileBytes: MAX_DOCUMENT_BYTES, allowedMimeTypes: v2PolicyRow?.mimeTypes ?? DEFAULT_DOCUMENT_MIME_TYPES, workflowKey: v2ProcessingBinding?.workflowKey ?? null }
         : version?.catalog.documentSettings;
       const binding = v2Version
-        ? v2Version.catalog.sheets.WorkflowBindings.find((candidate) => candidate.registryKey === 'document.sf02.upload' && candidate.enabled)
+        ? v2ProcessingBinding
         : settings ? version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === settings.workflowKey && candidate.active) : undefined;
       const policy = v2Version
         ? (() => {
           const candidate = v2PolicyRow;
-          const tool = v2Version.catalog.sheets.ToolBindings.find((item) => item.toolKey === 'document.sf02_upload' && item.goalKey === requestedIntentKey);
+          const tool = v2Version.catalog.sheets.ToolBindings.find((item) => ['document.ocr.extract', 'document.sf02_upload'].includes(item.toolKey) && item.goalKey === requestedIntentKey && item.enabled);
           return candidate && tool ? { enabled: candidate.enabled && tool.enabled, allowUserInitiated: true, consentRequired: tool.consent === 'purpose_specific', storeExtractedText: false, allowedDocumentTypes: [candidate.docType] } : undefined;
         })()
         : version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === requestedIntentKey) ?? version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === 'anc.document.supporting_upload');

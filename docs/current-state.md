@@ -278,3 +278,19 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - The supplied Emirates ID and passport images were sent only to the local API harness; both uploads were rejected before storage with `DOCUMENT_REQUIREMENT_NOT_ACTIVE` because document intake is disabled for the pinned catalog. Raw image bytes and PII are not present in the export.
 - Live API result: **quote not generated/downloadable** because verified Lead completion is the prerequisite gate. The separate synthetic API integration test still proves the local development quote executor and authorized PDF download path (mock-only, not provider-backed pricing).
 - Redacted human-review export: `docs/verification/quote-conversation-review-2026-11-08.json`.
+
+## 2026-11-08 Salesforce readiness gate correction
+
+- Root cause confirmed: Salesforce readback configuration is present in the local API environment, but the registered ANCFZ V2 Lead workflow `ancfzV2LeadCreateR1` is inactive in n8n. The live `POST /webhook/ancfz/v2/lead-create` therefore returns 404 and cannot be treated as a usable Lead path.
+- Added a Node-owned `leadProviderReady` gate. The API now requires both configured Salesforce Lead readback credentials and `V2_LEAD_WORKFLOW_READY=true` before it can create or advertise a Lead action. The deployment default is `false`; this does not expose provider secrets to Python or the customer.
+- When the gate is false, consent is recorded but no Lead action or confirmation card is created. Provider evidence validation remains the authoritative completion path once the reviewed n8n workflow, credentials and callback are enabled.
+- Verification: focused API tests **62 files / 567 tests PASS**, API typecheck/build and changed-file ESLint PASS, Docker API/event services rebuilt, API readiness returned HTTP 200, and the live conversation export recorded `providerGate: v2_lead_workflow_not_ready`, no Lead action, and no quote generation/download.
+- The separate synthetic development quote executor remains verified through the existing mock PDF integration test; this live Salesforce run correctly stops before package selection because the Lead prerequisite is not verified.
+
+## 2026-11-08 local Salesforce sandbox acceptance rerun
+
+- Local n8n was configured with the existing Salesforce OAuth2 credential and internal Node header credential, the credential-bound `ancfzV2LeadCreateR1` workflow was published/activated, and the local API gate was enabled with `V2_LEAD_WORKFLOW_READY=true`. The repository template remains inactive by default.
+- The real synthetic Docker conversation completed the Salesforce-backed Lead action with state `completed`; the redacted export records nine polling attempts and no reconciliation follow-up. No production tenant or real customer data was used.
+- Package selection returned HTTP 202. The development quote executor returned HTTP 200 with `verified: true`, `mock: true`; the authenticated PDF download returned HTTP 200, 2,522 bytes, and SHA-256 `c9c11baffdbdd3e22ed1977eabf6c50b4746d9fc85f0bf62c42ffaea1047530c`, matching the stored artifact.
+- Redacted human-review export: `docs/verification/quote-conversation-review-2026-11-08.json`. Downloaded development artifact: `artifacts/ancfz-sandbox-2026-11-08/ancfz-development-quote-live-review.pdf`.
+- The Emirates ID and passport uploads were attempted after the quote but remain blocked with `DOCUMENT_REQUIREMENT_NOT_ACTIVE`; the pinned catalog has document intake disabled. The quote is development/mock evidence, not official ANCFZ pricing or Salesforce quote completion.

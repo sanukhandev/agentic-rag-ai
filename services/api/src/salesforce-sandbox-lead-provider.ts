@@ -99,6 +99,11 @@ export class SalesforceSandboxLeadProvider {
     this.timeoutMs = options.timeoutMs ?? 30_000;
   }
 
+  isLeadReadbackConfigured(): boolean {
+    return Boolean(this.readbackUrl.includes('{leadId}')
+      && (this.accessToken || (this.tokenUrl && this.clientId && this.clientSecret)));
+  }
+
   private async requestAccessToken(): Promise<string> {
     let response: Response | null = null;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {

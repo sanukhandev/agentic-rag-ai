@@ -50,6 +50,30 @@ const catalog = (providerType: string): CatalogV2Document => {
   documentWorkflow.n8nWorkflowId = 'ancfzV2DocumentUploadR1';
   documentWorkflow.webhookPath = 'ancfz/v2/document-upload';
   documentWorkflow.payloadContract = 'ancfz-v2-document-upload-v1';
+  document.sheets.ToolBindings.push({
+    toolKey: 'document.ocr.extract',
+    goalKey: 'anc.company_formation',
+    stageKey: 'document_upload',
+    sideEffectClass: 'proposal',
+    argumentsSchemaRef: 'tool.document.ocr.extract.v1',
+    requiredKeys: ['document_processing_consent', 'document_attachment_confirmation'],
+    consent: 'purpose_specific',
+    confirmation: 'explicit_customer',
+    registryKey: 'anc.document.ocr.extract',
+    enabled: true,
+  });
+  document.sheets.WorkflowBindings.push({
+    workflowKey: 'anc.document.ocr.extract',
+    registryKey: 'anc.document.ocr.extract',
+    providerType: 'node',
+    payloadSchemaRef: 'payload.anc.document.ocr.v1',
+    callbackSchemaRef: 'callback.anc.document.ocr.v1',
+    evidencePolicyKey: 'document.ocr.queued',
+    n8nWorkflowId: 'DOC01DocumentProcessing',
+    webhookPath: 'anc-test-document-ocr-wf-1',
+    payloadContract: 'anc-document-ocr-v1',
+    enabled: true,
+  });
   const invoiceTool = document.sheets.ToolBindings.find((candidate) => candidate.toolKey === 'invoice.issue');
   const invoiceWorkflow = document.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === 'invoice.issue');
   if (!invoiceTool || !invoiceWorkflow) throw new Error('invoice binding missing');
@@ -344,7 +368,7 @@ describe('V2 provider evidence route', () => {
     expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(200);
     const config = await request(test.runtime.app).get(`/api/v1/chat/sessions/${test.session.id}/documents/config`).set('origin', 'http://localhost');
     expect(config.status, JSON.stringify(config.body)).toBe(200);
-    expect(config.body).toMatchObject({ enabled: true, workflowKey: 'document.sf02.upload', requirements: expect.arrayContaining([expect.objectContaining({ documentType: 'identity_document' })]) });
+    expect(config.body).toMatchObject({ enabled: true, workflowKey: 'anc.document.ocr.extract', requirements: expect.arrayContaining([expect.objectContaining({ documentType: 'identity_document' })]) });
     const pdf = Buffer.from('%PDF-1.4\nsynthetic identity fixture\n%%EOF').toString('base64');
     const upload = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/documents`).set('origin', 'http://localhost').send({ fileName: 'identity.pdf', mimeType: 'application/pdf', contentBase64: pdf, processingConsent: true, primaryIntentKey: 'anc.company_formation' });
     expect(upload.status, JSON.stringify(upload.body)).toBe(202);

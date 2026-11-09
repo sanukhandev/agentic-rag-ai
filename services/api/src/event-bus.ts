@@ -209,7 +209,13 @@ export class N8nEventBridge {
 
   private async documentRoute(event: OutboxEvent): Promise<{ workflowKey: string; webhookPath: string; n8nWorkflowId?: string; payloadContract?: string } | null> {
     const job = await this.store.getDocumentProcessingJob(event.payloadRef, event.tenantId);
-    if (!job || job.tenantId !== event.tenantId || job.status !== 'queued') return null;
+    if (!job || job.tenantId !== event.tenantId || !['queued', 'processing'].includes(job.status)) return null;
+    const document = await this.store.getSupportingDocument(job.documentId, event.tenantId);
+    const v2Version = document?.catalogVersionId
+      ? (await this.store.listIntentCatalogV2Versions(event.tenantId)).find((candidate) => candidate.status === 'published' && candidate.catalogVersionRef === document.catalogVersionId)
+      : null;
+    const v2Binding = v2Version?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === job.workflowKey && candidate.enabled);
+    if (v2Binding?.webhookPath) return { workflowKey: v2Binding.workflowKey, webhookPath: v2Binding.webhookPath, ...(v2Binding.n8nWorkflowId ? { n8nWorkflowId: v2Binding.n8nWorkflowId } : {}), ...(v2Binding.payloadContract ? { payloadContract: v2Binding.payloadContract } : {}) };
     const version = await this.store.getPublishedIntentCatalog(job.tenantId);
     const binding = version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === job.workflowKey && candidate.active);
     return binding ? { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, n8nWorkflowId: binding.n8nWorkflowId, payloadContract: binding.payloadContract } : null;

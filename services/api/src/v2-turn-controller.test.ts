@@ -96,6 +96,7 @@ const prepared = async () => {
     responseCacheTtlSeconds: 60,
     updateSession: async (candidate: typeof session) => store.updateSession(candidate),
     actionGateway: new ActionGateway(store),
+    leadProviderReady: true,
   };
   return { store, tenant, session, coordinator, input };
 };
@@ -780,6 +781,34 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     const reply = await runGPTFirstChatTurn({ ...request, coordinator: ctx.coordinator });
     expect(reply.answer).toContain('explicitly confirm');
     expect(reply.answer).not.toContain('lead_action_confirmation');
+    expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
+  });
+
+  it('does not propose a Lead action when the Salesforce adapter is not ready', async () => {
+    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json', catalog => {
+      catalog.sheets.ToolBindings.find(binding => binding.toolKey === 'lead.create')!.enabled = true;
+      catalog.sheets.WorkflowBindings.find(binding => binding.workflowKey === 'crm.lead.create')!.enabled = true;
+    });
+    ctx.input.leadProviderReady = false;
+    await runGPTFirstChatTurn({ ...await followUpTurn(ctx, 'Yes, proceed.'), coordinator: ctx.coordinator });
+    const confirmed = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    if (!confirmed) throw new Error('UNIT_INTENT_DOCUMENT_MISSING');
+    await ctx.store.updateUserIntentDocument({
+      document: { ...confirmed, pendingRequirementKey: 'lead_contact_name' }, expectedRevision: confirmed.revision,
+    });
+    const turn = async (message: string, options: { postbackValue?: string } = {}) => {
+      const next = await followUpTurn(ctx, message, options);
+      ctx.coordinator.run.mockImplementationOnce(async () => ({
+        modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+        response: { citationIds: [], answer: 'Thanks.', nextQuestion: null, nextQuestionKey: null }, guardReason: 'accepted',
+      }) as unknown as V2CoordinatorResult);
+      return runGPTFirstChatTurn(next);
+    };
+    await turn('[NAME_1]');
+    await turn('[EMAIL_1]');
+    const consentReply = await turn('Consent to use my contact details', { postbackValue: 'v2:contact-consent:grant' });
+    expect(consentReply.actionProposal).toBeNull();
+    expect(consentReply.answer).toContain('Salesforce');
     expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
   });
 

@@ -7,12 +7,16 @@ const baseUrl = process.env.API_BASE_URL ?? 'http://127.0.0.1';
 const origin = process.env.API_ORIGIN ?? 'http://localhost:3000';
 const tenantSlug = process.env.TENANT_SLUG ?? 'anc';
 const internalSecret = process.env.N8N_WEBHOOK_SECRET ?? '';
+const leadWorkflowReady = process.env.V2_LEAD_WORKFLOW_READY === 'true';
 const reviewPath = resolve('docs/verification/quote-conversation-review-2026-11-08.json');
 const artifactDir = resolve('artifacts/ancfz-sandbox-2026-11-08');
 const documents = [
   { path: 'C:/Users/SanuKarimullaKhan/Downloads/Emirates_ID_Card_For_UAE_Citizens_(New).png', mimeType: 'image/png' },
   { path: 'C:/Users/SanuKarimullaKhan/Downloads/Passport-Front-Page.jpg', mimeType: 'image/jpeg' },
 ];
+const syntheticRunId = Date.now().toString().slice(-8);
+const syntheticEmail = `synthetic.review.${syntheticRunId}@example.test`;
+const syntheticPhone = `+97150${syntheticRunId}`;
 
 const digest = (value) => createHash('sha256').update(String(value)).digest('hex').slice(0, 12);
 const redact = (value) => String(value)
@@ -112,7 +116,7 @@ const turns = [
   'What documents would you need from me?',
   'Yes, I want to proceed with creating the new company.',
   'My name is Synthetic Review Customer.',
-  'My email is synthetic.review@example.test and my phone is +971500000000.',
+  `My email is ${syntheticEmail} and my phone is ${syntheticPhone}.`,
   'Yes',
 ];
 
@@ -143,6 +147,7 @@ if (actionId) {
 }
 
 const leadAction = actionId ? await pollAction(session, actionId) : null;
+const leadCompleted = leadAction?.action?.state === 'completed' && typeof leadAction.action.result?.externalReference === 'string';
 let reconciliationFollowUp = null;
 if (leadAction?.action?.state === 'reconcile_required' && actionId) {
   const response = await request(`/api/v1/chat/actions/${actionId}/follow-up?sessionId=${encodeURIComponent(session.sessionId)}`, { method: 'POST', headers: chatHeaders(session.sessionToken), body: '{}' });
@@ -155,7 +160,7 @@ let packageSelection = null;
 let quoteAction = null;
 let quoteExecution = null;
 let quoteDownload = null;
-if (selectedPackage && packagesResponse.status === 200) {
+if (leadCompleted && selectedPackage && packagesResponse.status === 200) {
   const response = await request(`/api/v1/chat/sessions/${session.sessionId}/packages/select`, {
     method: 'POST',
     headers: chatHeaders(session.sessionToken),
@@ -200,12 +205,19 @@ if (selectedPackage && packagesResponse.status === 200) {
 
 const documentConfig = await request(`/api/v1/chat/sessions/${session.sessionId}/documents/config`, { headers: chatHeaders(session.sessionToken) });
 const documentUploads = [];
-if (intentKey) {
-  const requirements = selectedPackage?.requiredDocuments ?? [];
+if (leadCompleted && packageSelection?.status >= 200 && packageSelection?.status < 300 && quoteExecution?.verified && documentConfig.body?.enabled === true && intentKey) {
+  const packageRequirements = selectedPackage?.requiredDocuments ?? [];
+  const activeRequirements = Array.isArray(documentConfig.body?.requirements) ? documentConfig.body.requirements : [];
   for (let index = 0; index < documents.length; index += 1) {
-    const requirementKey = requirements[index] ?? requirements[0] ?? 'identity_document';
+    const requiredType = packageRequirements[index] ?? packageRequirements[0] ?? null;
+    const requirement = activeRequirements.find((candidate) => candidate.intentKey === intentKey && (!requiredType || candidate.documentType === requiredType || candidate.allowedDocumentTypes?.includes(requiredType)))
+      ?? activeRequirements.find((candidate) => candidate.intentKey === intentKey);
+    if (!requirement) {
+      documentUploads.push({ fileName: basename(documents[index].path), status: null, accepted: false, error: { code: 'DOCUMENT_REQUIREMENT_NOT_CONFIGURED', message: 'No active catalog document requirement matches the confirmed package.' } });
+      continue;
+    }
     try {
-      documentUploads.push(await uploadDocument(session, intentKey, requirementKey, documents[index]));
+      documentUploads.push(await uploadDocument(session, intentKey, requirement.requirementKey, documents[index]));
     } catch (error) {
       documentUploads.push({ fileName: basename(documents[index].path), status: null, accepted: false, error: { code: 'UPLOAD_HARNESS_ERROR', message: redact(error instanceof Error ? error.message : String(error)) } });
     }
@@ -214,15 +226,15 @@ if (intentKey) {
 
 const report = {
   generatedAt: new Date().toISOString(),
-  environment: { baseUrl, tenantSlug, syntheticDataOnly: true, rawDocumentsPersistedInReport: false },
+  environment: { baseUrl, tenantSlug, syntheticDataOnly: true, rawDocumentsPersistedInReport: false, leadWorkflowReady },
   session: sessionReview,
   consent,
   lead: { actionIdDigest: actionId ? digest(actionId) : null, intentKey: leadAction?.action?.intentKey ?? intentKey ?? null, actionKey: leadAction?.action?.actionKey ?? null, catalogVersionIdDigest: leadAction?.action?.catalogVersionId ? digest(leadAction.action.catalogVersionId) : null, state: leadAction?.action?.state ?? null, attempts: leadAction?.attempts ?? null, reconciliationFollowUp },
   packageCatalog: { status: packagesResponse.status, count: packages.length, selectedPackage: selectedPackage ? { packageKey: selectedPackage.packageKey, name: redact(selectedPackage.name), priceAed: selectedPackage.priceAed, requiredDocuments: selectedPackage.requiredDocuments } : null },
   packageSelection,
   quote: { actionIdDigest: quoteAction?.id ? digest(quoteAction.id) : null, state: quoteAction?.state ?? null, execution: quoteExecution, download: quoteDownload },
-  documents: { configStatus: documentConfig.status, config: documentConfig.body?.enabled === undefined ? null : { enabled: documentConfig.body.enabled, allowedMimeTypes: documentConfig.body.allowedMimeTypes ?? [] }, uploads: documentUploads },
-  outcome: { quoteGenerated: Boolean(quoteExecution?.verified && quoteDownload?.status === 200), quoteDownloadable: Boolean(quoteDownload?.status === 200), leadActionCompleted: leadAction?.action?.state === 'completed', providerGate: leadAction?.action?.state === 'reconcile_required' ? 'salesforce_sandbox_adapter_unavailable' : null },
+  documents: { configStatus: documentConfig.status, config: documentConfig.body?.enabled === undefined ? null : { enabled: documentConfig.body.enabled, workflowKey: documentConfig.body.workflowKey ?? null, allowedMimeTypes: documentConfig.body.allowedMimeTypes ?? [], requirements: (documentConfig.body.requirements ?? []).map((requirement) => ({ intentKey: requirement.intentKey, requirementKey: requirement.requirementKey, documentType: requirement.documentType })) }, uploads: documentUploads },
+  outcome: { quoteGenerated: Boolean(quoteExecution?.verified && quoteDownload?.status === 200), quoteDownloadable: Boolean(quoteDownload?.status === 200), leadActionCompleted: leadAction?.action?.state === 'completed', providerGate: !leadWorkflowReady ? 'v2_lead_workflow_not_ready' : leadAction?.action?.state === 'reconcile_required' ? 'salesforce_or_n8n_reconciliation_required' : null },
 };
 await writeFile(reviewPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
 console.log(JSON.stringify({ reviewPath, outcome: report.outcome, leadState: report.lead.state, quoteState: report.quote.state, quoteExecution: report.quote.execution, documentUploads: report.documents.uploads }, null, 2));

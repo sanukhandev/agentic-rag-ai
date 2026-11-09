@@ -1,13 +1,14 @@
 {
-  "generatedAt": "2026-11-08T18:41:05.477Z",
+  "generatedAt": "2026-11-09T06:07:14.755Z",
   "environment": {
     "baseUrl": "http://127.0.0.1",
     "tenantSlug": "anc",
     "syntheticDataOnly": true,
-    "rawDocumentsPersistedInReport": false
+    "rawDocumentsPersistedInReport": false,
+    "leadWorkflowReady": true
   },
   "session": {
-    "sessionIdDigest": "a3844b8e48a4",
+    "sessionIdDigest": "34686fb89caa",
     "tenantIdDigest": "d4880ce54720",
     "turns": [
       {
@@ -111,7 +112,7 @@
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": "lead_action_confirmation",
           "actionProposal": {
-            "idDigest": "cfb0b01b6338",
+            "idDigest": "af0afc13a2c3",
             "intent": "crm.lead.create",
             "consentRequired": false
           },
@@ -127,87 +128,98 @@
     "error": null
   },
   "lead": {
-    "actionIdDigest": "cfb0b01b6338",
+    "actionIdDigest": "af0afc13a2c3",
     "intentKey": "anc.company_formation",
     "actionKey": "lead.create",
-    "catalogVersionIdDigest": "1a70e8f24eef",
-    "state": "reconcile_required",
-    "attempts": 2,
-    "reconciliationFollowUp": {
-      "status": 200,
-      "answer": "I’ll keep the conversation open while this is reviewed. What would you like to go over next?",
-      "error": null
-    }
+    "catalogVersionIdDigest": "c72cbbd08ca2",
+    "state": "completed",
+    "attempts": 8,
+    "reconciliationFollowUp": null
   },
   "packageCatalog": {
     "status": 200,
     "count": 3,
     "selectedPackage": {
-      "packageKey": "anc-r5-sample-growth-r6",
+      "packageKey": "anc-r5-sample-growth-r6-r7-r8-r9-r10",
       "name": "ANCFZ Growth (sample)",
       "requiredDocuments": [
-        "synthetic_passport",
-        "synthetic_business_profile"
+        "identity_document"
       ]
     }
   },
   "packageSelection": {
-    "status": 409,
-    "packageKey": "anc-r5-sample-growth-r6",
-    "packageOfferingIdDigest": "01d45b761f64",
-    "selectionIdDigest": null,
-    "error": {
-      "code": "LEAD_NOT_VERIFIED",
-      "message": "The CRM Lead must be created and verified before package selection."
-    }
+    "status": 202,
+    "packageKey": "anc-r5-sample-growth-r6-r7-r8-r9-r10",
+    "packageOfferingIdDigest": "4c075441593c",
+    "selectionIdDigest": "26d5eff8cee6",
+    "error": null
   },
   "quote": {
-    "actionIdDigest": null,
-    "state": null,
-    "execution": null,
-    "download": null
+    "actionIdDigest": "b3c4aec4a824",
+    "state": "approved",
+    "execution": {
+      "status": 200,
+      "verified": true,
+      "mock": true,
+      "quoteIdDigest": "b09c8557d18e",
+      "totalAed": null,
+      "artifact": {
+        "fileName": "ancfz-development-quote-0b02aa0b-4139-40e5-82bb-18c25602ac49.pdf",
+        "mimeType": "application/pdf",
+        "sha256": "bd9a6af85e6280dc08c6fbf217e86d70bb3ac02b855c03ec26d613ee8a25feeb"
+      },
+      "error": null
+    },
+    "download": {
+      "status": 200,
+      "path": "artifacts/ancfz-sandbox-2026-11-08/ancfz-development-quote-live-review.pdf",
+      "bytes": 2518,
+      "sha256": "bd9a6af85e6280dc08c6fbf217e86d70bb3ac02b855c03ec26d613ee8a25feeb"
+    }
   },
   "documents": {
     "configStatus": 200,
     "config": {
-      "enabled": false,
+      "enabled": true,
+      "workflowKey": "anc.document.ocr.extract",
       "allowedMimeTypes": [
         "application/pdf",
         "image/jpeg",
         "image/png"
+      ],
+      "requirements": [
+        {
+          "intentKey": "anc.company_formation",
+          "requirementKey": "document.identity.review",
+          "documentType": "identity_document"
+        }
       ]
     },
     "uploads": [
       {
         "fileName": "Emirates_ID_Card_For_UAE_Citizens_(New).png",
         "mimeType": "image/png",
-        "status": 409,
-        "accepted": false,
-        "documentIdDigest": null,
-        "jobIdDigest": null,
-        "error": {
-          "code": "DOCUMENT_REQUIREMENT_NOT_ACTIVE",
-          "message": "The requested document requirement is not active for this conversation."
-        }
+        "status": 202,
+        "accepted": true,
+        "documentIdDigest": "de4f7c5eab52",
+        "jobIdDigest": "2e32ad2748e5",
+        "error": null
       },
       {
         "fileName": "Passport-Front-Page.jpg",
         "mimeType": "image/jpeg",
-        "status": 409,
-        "accepted": false,
-        "documentIdDigest": null,
-        "jobIdDigest": null,
-        "error": {
-          "code": "DOCUMENT_REQUIREMENT_NOT_ACTIVE",
-          "message": "The requested document requirement is not active for this conversation."
-        }
+        "status": 202,
+        "accepted": true,
+        "documentIdDigest": "137e2862eff2",
+        "jobIdDigest": "ed9e9b312226",
+        "error": null
       }
     ]
   },
   "outcome": {
-    "quoteGenerated": false,
-    "quoteDownloadable": false,
-    "leadActionCompleted": false,
-    "providerGate": "salesforce_sandbox_adapter_unavailable"
+    "quoteGenerated": true,
+    "quoteDownloadable": true,
+    "leadActionCompleted": true,
+    "providerGate": null
   }
 }

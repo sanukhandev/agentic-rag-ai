@@ -60,6 +60,7 @@ export interface GPTFirstTurnInput {
   responseCacheTtlSeconds: number;
   coordinator: Pick<V2ConversationCoordinator, 'run'>;
   actionGateway?: Pick<ActionGateway, 'propose' | 'confirm'>;
+  leadProviderReady?: boolean;
   scopeSecret: string;
   updateSession: (session: Session) => Promise<Session>;
 }
@@ -484,10 +485,17 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       ? planningDecision.proposedToolKey : null;
   const proposedActionBinding = proposedActionToolKey && catalogV2
     ? catalogV2.sheets.ToolBindings.find(binding => binding.toolKey === proposedActionToolKey) ?? null : null;
+  const leadCreateBinding = catalogV2?.sheets.ToolBindings.find(binding => binding.toolKey === 'lead.create') ?? null;
+  const leadActionRequested = explicitLeadRequest;
+  const leadActionConfirmed = explicitLeadActionConfirmation(maskedMessage);
+  const leadProviderUnavailable = leadCreateBinding?.enabled === true
+    && input.leadProviderReady === false
+    && (leadActionRequested || leadActionConfirmed || leadProposalAfterConsent);
   const actionProposalRequested = Boolean(input.actionGateway && catalogV2 && v2Version && selectedV2Goal
     && proposedActionToolKey && proposedActionBinding
     && proposedActionBinding.sideEffectClass !== 'read_only'
     && contactConsent === 'granted'
+    && !leadProviderUnavailable
     && (explicitLeadRequest || leadProposalAfterConsent || (validPlan && planningDecision?.proposal?.nextMove === 'propose_action')));
   const actionPurposeConsentScope = actionProposalRequested && proposedActionToolKey && catalogV2
     ? v2ActionConsentScope({ catalogVersionId: v2Version?.catalogVersionRef ?? catalog.id }, proposedActionToolKey) : originalState.consentVersion;
@@ -499,14 +507,11 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     priorRequirementKey: actionProposalRequested ? null : priorPendingRequirement,
     goalDecision: decision,
   }) : nextPendingPrompt?.requirementKey ?? selectedRequirement ?? pendingRequirement;
-  const leadCreateBinding = catalogV2?.sheets.ToolBindings.find(binding => binding.toolKey === 'lead.create') ?? null;
-  const leadActionRequested = explicitLeadRequest;
-  const leadActionConfirmed = explicitLeadActionConfirmation(maskedMessage);
   const leadActionPending = Boolean(contactActive && contactConsent === 'granted'
     && actionConfirmationRequirementKey
     && (effectivePendingRequirement === actionConfirmationRequirementKey || explicitLeadRequest));
-  const leadProviderUnavailable = leadActionPending && (leadActionRequested || leadActionConfirmed)
-    && leadCreateBinding?.enabled !== true;
+  const leadSubmissionUnavailable = leadProviderUnavailable
+    || (leadActionPending && (leadActionRequested || leadActionConfirmed) && leadCreateBinding?.enabled !== true);
   const state = { ...originalState, catalogVersionId: catalog.id,
     slotValues: contactActive ? { ...originalState.slotValues, ...contactSlots, ...(contactDecision ? { contact_consent: contactDecision === 'granted' ? 'true' : 'false' } : {}) } : originalState.slotValues,
     contactConsent,
@@ -548,9 +553,12 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     effectiveQuestion = `Would you like to proceed with ${goalName.toLowerCase()}?`;
     overrideResponse = true;
   }
-  if (leadProviderUnavailable) {
-    if (leadActionConfirmed) {
-      effectiveAnswer = 'I have recorded your confirmation, but the Salesforce connection for this development tenant is not enabled. I have not submitted the Lead, and your information remains saved in this conversation.';
+  if (leadSubmissionUnavailable) {
+    if (leadProviderUnavailable && (leadActionConfirmed || leadActionRequested)) {
+      effectiveAnswer = 'The Salesforce connection for this development tenant is not ready. I have not submitted the Lead, and your information remains saved in this conversation.';
+      effectiveQuestion = null;
+    } else if (leadProviderUnavailable) {
+      effectiveAnswer = 'I’ve recorded your contact consent, but Salesforce Lead submission is not ready for this development tenant. I have not created or submitted a Lead.';
       effectiveQuestion = null;
     } else {
       effectiveAnswer = 'I have your contact consent. Before I submit the Lead, please explicitly confirm that you want me to submit it.';
@@ -611,7 +619,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     effectiveQuestion = 'Would you like to proceed with company formation?';
     overrideResponse = true;
   }
-  if (contactActive && !pendingDecision && (Object.keys(contactFromMessage).length > 0 || contactDecision)) {
+  if (contactActive && !pendingDecision && !leadSubmissionUnavailable && (Object.keys(contactFromMessage).length > 0 || contactDecision)) {
     if (!contactValues.name) {
       effectiveAnswer = 'I’m ready to record this enquiry. What name should I use?';
       effectiveQuestion = 'What name should I use?';
@@ -757,7 +765,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     if (contactEntry) contactEntry.slotValues = { ...(contactEntry.slotValues ?? {}), ...contactSlots, ...(contactDecision ? { contact_consent: contactDecision === 'granted' ? 'true' : 'false' } : {}) };
   }
   let confirmedAction: Awaited<ReturnType<ActionGateway['confirm']>> | null = null;
-  if (leadActionConfirmed && input.actionGateway && nextDoc.opportunityId) {
+  if (leadActionConfirmed && !leadSubmissionUnavailable && input.actionGateway && nextDoc.opportunityId) {
     const pendingAction = (await store.listActionsBySession(session.id, tenant.id))
       .find(action => action.opportunityId === nextDoc.opportunityId && action.actionKey === 'lead.create' && action.state === 'awaiting_confirmation');
     if (pendingAction) confirmedAction = await input.actionGateway.confirm(pendingAction.id, tenant.id, undefined, { deferPersistence: true });
@@ -791,7 +799,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       }, catalogV2!, context, { gateway: input.actionGateway, store });
     }
   }
-  if (leadActionConfirmed) {
+  if (leadActionConfirmed && !leadSubmissionUnavailable) {
     effectiveAnswer = confirmedAction
       ? 'Thanks — I’ve confirmed the Lead submission and sent it for processing. I’ll report the result after Salesforce is independently verified.'
       : 'I couldn’t find a pending Lead submission to confirm. I have not submitted anything.';

@@ -31,6 +31,7 @@ describe('Salesforce sandbox lead readback adapter', () => {
   it('requires explicit readback configuration and never fabricates evidence', async () => {
     const provider = new SalesforceSandboxLeadProvider({ accessToken: '', readbackUrl: '' });
 
+    expect(provider.isLeadReadbackConfigured()).toBe(false);
     await expect(provider.verify({ request: request(), providerRecordId: '00Q-test' }))
       .rejects.toThrow('SALESFORCE_READBACK_NOT_CONFIGURED');
   });
@@ -45,6 +46,7 @@ describe('Salesforce sandbox lead readback adapter', () => {
         return new Response(JSON.stringify({ leadId: '00Q-test', idempotencyKey: 'lead-idempotency-test' }), { status: 200, headers: { 'content-type': 'application/json' } });
       },
     });
+    expect(provider.isLeadReadbackConfigured()).toBe(true);
     const input = request();
 
     await expect(provider.verify({ request: input, providerRecordId: '00Q-test' })).resolves.toEqual({
