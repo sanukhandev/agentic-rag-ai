@@ -3633,7 +3633,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!lead) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
       const session = await store.getSession(lead.sessionId);
       if (!session || session.tenantId !== tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Lead session not found.');
-      const baseSummary = lead.summary ?? [`Intent: ${lead.intent}`, `Score: ${lead.score}`, `Validation: ${lead.validationPass ? 'passed' : 'failed'}`, `Engagement: ${lead.conversation.length} conversation turns`].join('\n');
+      // Rebuild from current masked state so legacy OCR summaries cannot reintroduce stale privacy tokens.
+      const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id);
+      const baseSummary = composeDocumentSummary(lead, documents);
       if (!summaryModel?.summarize) throw new HttpError(503, 'CRM_SUMMARY_AI_UNAVAILABLE', 'The AI summary could not be generated. Please try again.');
       let candidate: string;
       try {

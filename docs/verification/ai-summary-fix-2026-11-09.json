@@ -8,11 +8,12 @@
   "changes": [
     "Persist OCR-created session token maps before document completion and external sync.",
     "Use metadata-only document summaries for CRM/Salesforce descriptions.",
+    "Rebuild Admin AI summary input from current masked conversation and document metadata so legacy OCR summaries cannot reintroduce stale tokens.",
     "Add authenticated bounded Python /internal/v1/model/summarize contract and Node adapter.",
     "Return typed summary errors instead of generic INTERNAL_ERROR."
   ],
   "verification": {
-    "nodeTests": "PASS: admin 71, web 15, api 574, chat-utils 6, contracts 6",
+    "nodeTests": "PASS: admin 71, web 15, api 575, chat-utils 6, contracts 6",
     "pythonTests": "PASS: 42",
     "typecheck": "PASS",
     "lint": "PASS",

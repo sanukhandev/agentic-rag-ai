@@ -95,4 +95,21 @@ describe('CRM AI summary route', () => {
     expect(response.body.error.code).toBe('CRM_SUMMARY_AI_UNAVAILABLE');
     expect(response.body.error.requestId).toEqual(expect.any(String));
   });
+
+  it('rebuilds legacy OCR-backed summaries from safe current state', async () => {
+    const test = await fixture({ summarize: async ({ maskedSummary }) => maskedSummary });
+    const document = { ...documentFor(test.tenant.id, test.session.id, test.lead.id), status: 'completed' as const, summary: 'Legacy OCR [ID_1] [PHONE_2]' };
+    const job = jobFor(test.tenant.id, document.id);
+    await test.store.createSupportingDocumentWithJob(document, job);
+    await test.store.updateCrmLeadSummary(test.lead.id, test.tenant.id, 'Legacy OCR [ID_1] [PHONE_2]', 'completed');
+
+    const response = await request(test.runtime.app)
+      .post(`/api/v1/admin/crm/leads/${test.lead.id}/summarize`)
+      .set('Authorization', `Bearer ${test.authToken}`)
+      .send({});
+
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.body.lead.summary).toContain('document type: identity_document');
+    expect(response.body.lead.summary).not.toContain('[PHONE_2]');
+  });
 });
