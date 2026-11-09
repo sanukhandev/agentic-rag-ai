@@ -1,20 +1,17 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startMockSalesforceProvider } from './mock-salesforce-webhook.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const env = Object.fromEntries(readFileSync(resolve(root, '.env'), 'utf8').split(/\r?\n/).flatMap((line) => {
-  const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  return match ? [[match[1], match[2].replace(/^['"]|['"]$/g, '')]] : [];
-}));
-const webhook = `${env.N8N_WEBHOOK_URL || 'http://localhost/n8n/'}webhook/ancfz/v2/lead-create`;
 const body = { workflowKey: 'wrong.workflow', contract: 'wrong-contract' };
 const provider = await startMockSalesforceProvider();
 try {
-  const unauthenticated = await fetch(webhook, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  const authenticated = await fetch(webhook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-agentic-internal-secret': env.N8N_WEBHOOK_SECRET }, body: JSON.stringify(body) });
+  const probe = "const url='http://n8n:5678/webhook/ancfz/v2/lead-create'; const body=JSON.stringify({workflowKey:'wrong.workflow',contract:'wrong-contract'}); Promise.all([fetch(url,{method:'POST',headers:{'content-type':'application/json'},body}),fetch(url,{method:'POST',headers:{'content-type':'application/json','x-agentic-internal-secret':process.env.N8N_WEBHOOK_SECRET},body})]).then(async rs=>console.log(JSON.stringify(await Promise.all(rs.map(async r=>({status:r.status,body:await r.text()})))))).catch(e=>{console.error(e.message);process.exitCode=1})";
+  const probeResult = spawnSync(process.platform === 'win32' ? 'docker.exe' : 'docker', ['exec', 'agentic-event-worker', 'node', '-e', probe], { encoding: 'utf8' });
+  if (probeResult.status !== 0) throw new Error('Mock webhook container probe failed.');
+  const [unauthenticated, authenticated] = JSON.parse(probeResult.stdout.trim());
   const db = resolve(root, 'data/n8n/database.sqlite');
   const latest = spawnSync(process.platform === 'win32' ? 'sqlite3.exe' : 'sqlite3', [db, "select status from execution_entity where workflowId='ancfzV2LeadCreateR1' order by startedAt desc limit 1;"], { encoding: 'utf8' }).stdout.trim();
   const report = {
