@@ -43,4 +43,17 @@ describe('PythonChatModelAdapter', () => {
     const adapter = new PythonChatModelAdapter('http://model-gateway:8088', 'key');
     await expect(adapter.draft({ maskedMessage: 'hi', evidence: [], personaName: 'Advisor' })).rejects.toThrow('MODEL_INVALID_RESPONSE');
   });
+  it('sends bounded CRM summary context to the private summary operation', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ summary: 'Intent: anc.company_formation\nRequirements: Software consulting' }) }));
+    vi.stubGlobal('fetch', fetchMock);
+    const adapter = new PythonChatModelAdapter('http://model-gateway:8088', 'test-service-key');
+    await expect(adapter.summarize({
+      maskedSummary: 'Intent: anc.company_formation',
+      conversation: [{ role: 'user', content: 'I want a company.' }],
+      intent: 'anc.company_formation', secondaryIntentKeys: [], score: 90, validationPass: true,
+    })).resolves.toContain('Software consulting');
+    const [url, options] = fetchMock.mock.calls[0] as never as [string, RequestInit];
+    expect(url).toBe('http://model-gateway:8088/internal/v1/model/summarize');
+    expect(options.headers).toMatchObject({ 'x-internal-service-key': 'test-service-key' });
+  });
 });

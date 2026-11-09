@@ -1,5 +1,9 @@
 # Intent-catalog tool bindings → authorized n8n execution
 
+For local Compose only, publish the reviewed ANCFZ runtime revisions explicitly with `npm run activate:n8n:dev`, then run `npm run verify:n8n:salesforce`. The command is allowlisted to the Lead, development quote, and document OCR workflow IDs and refuses `NODE_ENV=production`; it does not create or rotate credentials. Repository JSON remains inactive by default.
+
+The Lead template retains error execution data and routes provider, readback, Node-evidence, attestation, and completion failures through `Report Correlated Failure`. That callback sends only the server-issued correlation tuple and a bounded reason code to Node; it never forwards raw provider error payloads.
+
 **Status: TARGET integration upgrade.** Existing repository has `ActionRequest`, PostgreSQL outbox, Redis Streams and n8n bridge; keep them. GPT is the **conversation planner** that selects the customer's Business Goal and proposes relevant catalog tools only when needed. A **Lead capture action is not the primary intent**. Python/LLM may propose a catalog tool, but can never call n8n directly.
 
 ## Conversation Engine v2 action boundary

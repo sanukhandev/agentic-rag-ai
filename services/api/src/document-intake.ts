@@ -32,6 +32,38 @@ export const hasSupportingDocumentSignature = (mimeType: string, content: Buffer
   return false;
 };
 
+const safeDocumentType = (value: string | null | undefined): string => value && /^[a-z0-9_.-]{1,80}$/iu.test(value) ? value : 'document';
+
+export const composeDocumentMetadata = (document: Pick<SupportingDocument, 'expectedDocumentType' | 'status'>): string =>
+  `document type: ${safeDocumentType(document.expectedDocumentType)}; status: ${document.status}; OCR processing: completed`;
+
+const genericRequirement = /^(?:good\s+(?:morning|afternoon|evening)|hi|hello|hey|thanks?|thank\s+you|okay|ok|yes|no|sure)[.!\s,;:-]*$/iu;
+
+export const normalizeCrmRequirement = (value: string): string | null => {
+  let normalized = sanitizeSensitiveText(value.replace(/\[(?:NAME|EMAIL|PHONE|ID)_\d+\]/gu, '[visitor detail]'))
+    .replace(/^(?:good\s+(?:morning|afternoon|evening)|hi|hello|hey)(?:\s+there)?[.!\s,;:-]*/iu, '')
+    .replace(/^(?:please|kindly)\s+/iu, '')
+    .replace(/\s+/gu, ' ')
+    .replace(/^[,;:\-\s]+|[,;:\-\s]+$/gu, '')
+    .replace(/[.!?]+$/u, '')
+    .trim();
+  if (!normalized || genericRequirement.test(normalized) || normalized.length < 8) return null;
+  normalized = `${normalized[0]?.toLocaleUpperCase('en-US') ?? ''}${normalized.slice(1)}`;
+  return `${normalized}.`;
+};
+
+export const composeAdminDocumentDetails = (
+  documents: SupportingDocument[],
+  rehydrate: (value: string) => string,
+): string => {
+  const details = documents
+    .filter((document) => document.status === 'completed' && document.summary)
+    .slice(-5)
+    .map((document) => `${composeDocumentMetadata(document)}; OCR details: ${rehydrate(document.summary!).replace(/\s+/gu, ' ').trim().slice(0, 4_000)}`)
+    .filter((value) => !value.endsWith('OCR details:'));
+  return details.length ? `Supporting Documents:\n${details.join('\n')}`.slice(0, 20_000) : '';
+};
+
 export const documentSha256 = (content: Buffer): string => createHash('sha256').update(content).digest('hex');
 
 export class PrivateDocumentStorage {
@@ -68,11 +100,12 @@ export class PrivateDocumentStorage {
 export const composeDocumentSummary = (lead: CrmLead, documents: SupportingDocument[]): string => {
   const conversation = lead.conversation
     .filter((message: LeadConversationMessage) => message.role === 'user')
-    .map((message) => sanitizeSensitiveText(message.content.replace(/\[(?:NAME|EMAIL|PHONE)_\d+\]/gu, '[visitor detail]').trim()))
+    .map((message) => normalizeCrmRequirement(message.content))
     .filter(Boolean)
-    .slice(-12);
+    .filter((value, index, values) => values.findIndex((candidate) => candidate?.toLocaleLowerCase('en-US') === value?.toLocaleLowerCase('en-US')) === index)
+    .slice(-12) as string[];
   const excerpts = documents.filter((document) => document.status === 'completed' && document.summary)
-    .map((document) => `${document.fileName}: ${sanitizeSensitiveText(document.summary!)}`)
+    .map((document) => composeDocumentMetadata(document))
     .slice(-5);
   const parts = [`Intent: ${lead.intent}`, conversation.length ? `Visitor requirements: ${conversation.join(' | ')}` : '', excerpts.length ? `Supporting documents: ${excerpts.join(' | ')}` : ''].filter(Boolean);
   return parts.join('\n').slice(0, 20_000);

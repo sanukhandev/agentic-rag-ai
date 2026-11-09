@@ -44,3 +44,23 @@ class NormalizeRequest(Strict):
 
 class NormalizeResult(Strict):
     normalizedQuery: str = Field(max_length=4000)
+
+
+class CrmSummaryConversationTurn(Strict):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=2000)
+
+
+class CrmSummaryRequest(Strict):
+    requestId: str = Field(min_length=1, max_length=128)
+    maskedSummary: str = Field(min_length=1, max_length=20000)
+    conversation: list[CrmSummaryConversationTurn] = Field(default_factory=list, max_length=24)
+    intent: str = Field(min_length=1, max_length=180)
+    secondaryIntentKeys: list[str] = Field(default_factory=list, max_length=8)
+    score: float = Field(ge=0, le=100)
+    validationPass: bool
+    deadlineAt: str | None = Field(default=None, max_length=80)
+
+
+class CrmSummaryResult(Strict):
+    summary: str = Field(min_length=1, max_length=20000)

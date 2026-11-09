@@ -6,12 +6,13 @@ import { retrieveApprovedKnowledge } from './knowledge.js';
 import { toV2KnowledgeEvidence } from './v2-knowledge-preflight.js';
 import { normalizeConversationQuery } from './model.js';
 import type { EmbeddingProvider } from './embedding.js';
-import type { IntentCatalogVersion, IntentCatalogV2Version, Session, Store } from './types.js';
+import type { IntentCatalogVersion, IntentCatalogV2Version, PackageOffering, Session, Store } from './types.js';
 import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 import { isV2ReadToolEnabled } from './v2-tool-policy.js';
 import { toolRequestSchema, type ToolRequestV2, type ToolResultV2 } from './python-model/v2-contracts.js';
 import { HttpError } from './http/errors.js';
 import { deriveV2ProviderEvidenceStatus, v2StageCompletionEligible } from './v2-provider-evidence.js';
+import type { V2ApprovedEvidence } from './v2-evidence.js';
 
 export const V2_TOOL_NAMES = [
   'get_conversation_context',
@@ -79,6 +80,39 @@ const scopePart = (value: string): string => Buffer.from(value, 'utf8').toString
 const unscopePart = (value: string): string => Buffer.from(value, 'base64url').toString('utf8');
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex');
 const bounded = (value: string, max: number): string => value.slice(0, max);
+export const packageEvidenceText = (offering: Pick<PackageOffering, 'name' | 'includedVisaQuantity' | 'officeRequirement' | 'inclusions' | 'availability' | 'priceMinor' | 'currency'>, prefix: string, priceLabel: string): string => [
+  `${prefix} ${bounded(offering.name, 160)} includes ${offering.includedVisaQuantity} visa${offering.includedVisaQuantity === 1 ? '' : 's'}.`,
+  ...(offering.officeRequirement ? [`It requires ${bounded(offering.officeRequirement, 120)}.`] : []),
+  ...(offering.inclusions.length > 0 ? [`It includes ${offering.inclusions.slice(0, 6).map(value => bounded(value, 180)).join(', ')}.`] : []),
+  `It has availability ${offering.availability}.`,
+  ...(offering.priceMinor !== null && offering.currency ? [`Its ${priceLabel} price is ${offering.currency} ${(offering.priceMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}.`] : []),
+].join('\n');
+
+const listApprovedPackageOfferings = async (store: Pick<Store, 'listPackageOfferings'>, tenantId: string, catalogVersionRef: string): Promise<PackageOffering[]> => {
+  const offerings = await store.listPackageOfferings(tenantId, { catalogVersionRef });
+  const now = Date.now();
+  return offerings
+    .filter(offering => offering.tenantId === tenantId && offering.catalogVersionRef === catalogVersionRef && offering.approvalStatus === 'approved'
+      && (!offering.pricingEffectiveFrom || Date.parse(offering.pricingEffectiveFrom) <= now)
+      && (!offering.pricingEffectiveTo || Date.parse(offering.pricingEffectiveTo) > now))
+    .slice(0, 20);
+};
+
+export type V2PackageOption = Pick<PackageOffering, 'packageKey' | 'name' | 'includedVisaQuantity' | 'officeRequirement' | 'inclusions' | 'availability' | 'priceMinor' | 'currency' | 'processingTime'>;
+
+export const listApprovedV2PackageOptions = async (store: Pick<Store, 'listPackageOfferings'>, tenantId: string, catalogVersionRef: string): Promise<V2PackageOption[]> =>
+  (await listApprovedPackageOfferings(store, tenantId, catalogVersionRef)).map(({ packageKey, name, includedVisaQuantity, officeRequirement, inclusions, availability, priceMinor, currency, processingTime }) => ({
+    packageKey, name, includedVisaQuantity, officeRequirement, inclusions: inclusions.slice(0, 6), availability, priceMinor, currency, processingTime,
+  }));
+
+export const listApprovedV2PackageEvidence = async (store: Pick<Store, 'listPackageOfferings'>, tenantId: string, catalogVersionRef: string): Promise<V2ApprovedEvidence[]> => {
+  const offerings = await listApprovedPackageOfferings(store, tenantId, catalogVersionRef);
+  return offerings
+    .map(offering => {
+      const text = packageEvidenceText(offering, 'The published approved package', 'listed');
+      return { citationId: `tool-${digest(`${catalogVersionRef}:${offering.id}:${text}`).slice(0, 32)}`, sourceVersion: catalogVersionRef, sourceRef: 'tool-get_available_packages', text, approved: true, revoked: false };
+    });
+};
 
 export const issueV2Scope = (input: V2ToolScopeInput, secret: string, now = Date.now()): string => {
   if (!secret || secret.length < 16) throw new Error('V2_TOOL_SCOPE_SECRET_REQUIRED');
@@ -320,9 +354,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
             packages, truncated: approved.length > selected.length,
             availableGoals: [...approvedGoalKeys].slice(0, 20) },
           request.toolName as V2ToolName, sourceVersion,
-          selected.length > 0 ? selected.map(offering =>
-            `The published approved package ${bounded(offering.name, 160)} has availability ${offering.availability}${offering.priceMinor !== null && offering.currency
-              ? ` and a listed price of ${offering.currency} ${(offering.priceMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}.`)
+          selected.length > 0 ? selected.map(offering => packageEvidenceText(offering, 'The published approved package', 'listed'))
             : ['No approved package offerings are published under this pinned Catalog V2 version.']);
       }
       if (!legacyCatalog) return sanitizedToolError(request, 'temporarily_unavailable', 'PACKAGE_CATALOG_UNAVAILABLE', scope.stateRevision);
@@ -331,7 +363,7 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       const selected = offerings.slice(0, 20);
       const packages = selected.map((offering) => ({ key: offering.packageKey, name: bounded(offering.name, 160), visas: offering.includedVisaQuantity, officeRequirement: offering.officeRequirement, inclusions: offering.inclusions.slice(0, 12).map(value => bounded(value, 240)), availability: offering.availability, priceMinor: offering.priceMinor, currency: offering.currency, sourceRefs: offering.sourceRefs.slice(0, 12) }));
       return resultWithToolEvidence(request, { packages, truncated: offerings.length > selected.length }, request.toolName as V2ToolName, sourceVersion, selected.length > 0
-        ? selected.map((offering) => `The approved package ${bounded(offering.name, 160)} is listed with availability ${offering.availability}${offering.priceMinor !== null && offering.currency ? ` and a verified price of ${offering.currency} ${(offering.priceMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}.` : '.'}`)
+        ? selected.map((offering) => packageEvidenceText(offering, 'The approved package', 'verified'))
         : ['No approved package is currently available for this setup.']);
     }
     case 'get_document_requirements': {

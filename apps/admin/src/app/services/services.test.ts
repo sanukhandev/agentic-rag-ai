@@ -22,7 +22,7 @@ try {
   // Already initialized
 }
 import { HttpClient } from '@angular/common/http';
-import { Subject, of } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { ToastService } from './toast.service';
 import { UiNavigationService, isNavSection } from './ui-navigation.service';
 import { canAccessAdminSection } from './admin-navigation';
@@ -35,6 +35,7 @@ import { Tenant, Source, NavSection, IngestionJob, Persona } from '../types/admi
 import { isTrustedApiRequest } from './auth.interceptor';
 import { CATALOG_MIME_TYPE, IntentCatalogService } from './intent-catalog.service';
 import { AuthService } from './auth.service';
+import { CrmService } from './crm.service';
 import { PersonaService } from './persona.service';
 import { API_BASE_URL } from './tokens';
 import { AiStudioComponent } from '../components/ai-studio/ai-studio.component';
@@ -166,6 +167,46 @@ describe('SOLID Services and Architecture Contracts', () => {
     expect(catalogLoadScope('auth-token', true, null)).toBeNull();
     expect(catalogLoadScope('auth-token', true, 'tenant-2')).toBe('tenant:tenant-2');
     expect(catalogLoadScope('', false, 'tenant-1')).toBeNull();
+  });
+
+  it('keeps loaded CRM leads visible when a background refresh fails', () => {
+    const lead = {
+      id: 'crm-1',
+      intent: 'anc.company_formation',
+      score: 90,
+      quality: 'hot' as const,
+      validationPass: true,
+      leadData: { name: 'Test Lead' },
+      conversation: [],
+      summary: null,
+      summaryStatus: 'pending' as const,
+      leadId: '00Q-test',
+      remoteCrm: 'salesforce_sandbox',
+      createdAt: '2026-11-05T09:00:00.000Z',
+      updatedAt: '2026-11-05T09:00:00.000Z'
+    };
+    const httpMock = {
+      get: vi.fn()
+        .mockReturnValueOnce(of({ items: [lead] }))
+        .mockReturnValueOnce(throwError(() => new Error('temporary API failure')))
+    };
+    const injector = Injector.create({
+      providers: [
+        { provide: API_BASE_URL, useValue: 'http://127.0.0.1:4000' },
+        { provide: HttpClient, useValue: httpMock },
+        ToastService,
+        AuthService,
+        CrmService
+      ]
+    });
+    const auth = injector.get(AuthService);
+    (auth as any)._token.set('valid-test-token');
+    const crm = injector.get(CrmService);
+
+    crm.loadLeads();
+    crm.loadLeads(true);
+
+    expect(crm.leads()).toEqual([lead]);
   });
 
   it('keeps catalog uploads visible until ingestion completes', () => {

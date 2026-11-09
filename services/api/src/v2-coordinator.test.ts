@@ -48,6 +48,17 @@ describe('V2ConversationCoordinator', () => {
     expect(output.claimProvenance).toEqual([]);
   });
 
+  it('greets a visitor who addresses Zara and introduces themselves', async () => {
+    const request = envelope();
+    request.persona.assistantName = 'Zara';
+    request.customerMessageMasked = 'hello zara i m meow ching';
+    const coordinator = new V2ConversationCoordinator({ turn: async () => result("Hello! I'm Zara, your highly experienced company registration advisor. How can I help?" ) });
+    const output = await coordinator.run({ envelope: request, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('safe_no_evidence_dialogue');
+    expect(output.response.answer).toBe("Hello! I'm Zara. How can I help you today?");
+    expect(output.response.nextQuestion).toBe('How can I help you today?');
+  });
+
   it('retains the model greeting when an optional first-contact question is correctly keyed', async () => {
     const request = envelope();
     request.persona.assistantName = 'Zara';
@@ -259,6 +270,118 @@ describe('V2ConversationCoordinator', () => {
     expect(output.guardReason).toBe('accepted');
     expect(output.response.answer).toBe(answer);
     expect(output.response.citationIds).toEqual(['valid-public-12345678']);
+  });
+
+  it('repairs a combined package list with every approved option from one package read', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'what packages are available';
+    const packageEvidence = [
+      { citationId: 'package-starter', text: 'The published approved package ANCFZ Starter has a listed price of AED 2,499.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-growth', text: 'The published approved package ANCFZ Growth has a listed price of AED 4,999.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-premium', text: 'The published approved package ANCFZ Premium has a listed price of AED 7,899.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+    ];
+    const candidate = result('The packages are AED 2,499.00, AED 4,999.00, and AED 7,899.00.', {
+      response: { ...result('').response, answer: 'The packages are AED 2,499.00, AED 4,999.00, and AED 7,899.00.', citationIds: packageEvidence.map((item) => item.citationId) },
+      approvedEvidence: packageEvidence,
+      toolTrace: [{ toolCallId: 'package-call-12345678', toolName: 'get_available_packages', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: packageEvidence.map((item) => item.citationId) }],
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toMatch(/^Of course\. Here are the package options\./u);
+    expect(output.response.answer).not.toContain('approved information');
+    expect(output.response.answer).toContain('ANCFZ Starter');
+    expect(output.response.answer).toContain('ANCFZ Growth');
+    expect(output.response.answer).toContain('ANCFZ Premium');
+    expect(output.response.nextQuestion).toBe('Which package would you like to explore first?');
+    expect(output.response.nextQuestionKey).toBe('conversation_focus');
+    expect(output.draft.followUpOptions).toEqual([
+      { key: 'package_starter', label: 'ANCFZ Starter', retrievalHints: ['starter'] },
+      { key: 'package_growth', label: 'ANCFZ Growth', retrievalHints: ['growth'] },
+      { key: 'package_premium', label: 'ANCFZ Premium', retrievalHints: ['premium'] },
+    ]);
+  });
+
+  it('normalizes sample package labels for durable selection offers', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'what packages are available';
+    const packageEvidence = [
+      { citationId: 'package-growth', text: 'The published approved package ANCFZ Growth (sample) includes 2 visas.\nIt requires shared.\nIt includes company registration and two included visas.\nIt has availability development_only.\nIts listed price is AED 4,999.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+    ];
+    const candidate = result('The Growth package is available.', {
+      response: { ...result('').response, answer: 'The Growth package is available.', citationIds: ['package-growth'] },
+      approvedEvidence: packageEvidence,
+      toolTrace: [{ toolCallId: 'package-call-12345678', toolName: 'get_available_packages', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: ['package-growth'] }],
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
+    expect(output.draft.followUpOptions).toEqual([{ key: 'package_growth', label: 'ANCFZ Growth', retrievalHints: ['growth'] }]);
+  });
+
+  it('selects a typo-tolerant package excerpt and tracks its explanation follow-up', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'tell me about the groth package';
+    request.latestTurns = [{ role: 'customer', content: 'what packages do you offer?' }];
+    const packageEvidence = [
+      { citationId: 'package-starter', text: 'The published approved package ANCFZ Starter has a listed price of AED 2,499.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-growth', text: 'The published approved package ANCFZ Growth includes three visas and a shared office, with a listed price of AED 4,999.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-premium', text: 'The published approved package ANCFZ Premium has a listed price of AED 7,899.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+    ];
+    const candidate = result('The Growth package includes a private office and unlimited visas.', {
+      response: { ...result('').response, answer: 'The Growth package includes a private office and unlimited visas.', citationIds: ['package-growth'] },
+      approvedEvidence: packageEvidence,
+      toolTrace: [{ toolCallId: 'package-call-12345678', toolName: 'get_available_packages', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: packageEvidence.map((item) => item.citationId) }],
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toContain('ANCFZ Growth');
+    expect(output.response.answer).toContain('three visas');
+    expect(output.response.answer).not.toContain('ANCFZ Starter');
+    expect(output.response.nextQuestion).toBe('Would you like me to explain this package in more detail?');
+    expect(output.draft.followUpOptions).toEqual([
+      { key: 'explain_more', label: 'explain this package in more detail', retrievalHints: ['growth'] },
+    ]);
+  });
+
+  it('continues an accepted explanation without repeating the same fallback question', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'yes please explain';
+    const delivered = 'The published approved package ANCFZ Growth includes three visas and a shared office, with a listed price of AED 4,999.00.';
+    request.latestTurns = [
+      { role: 'customer', content: 'tell me about the groth package' },
+      { role: 'assistant', content: `Of course. ${delivered} Would you like me to explain this package in more detail?` },
+    ];
+    const evidence = [{ citationId: 'package-growth', text: delivered, sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false }];
+    const candidate = result('The Growth package includes a private office and unlimited visas.', {
+      response: { ...result('').response, answer: 'The Growth package includes a private office and unlimited visas.', citationIds: ['package-growth'] },
+      approvedEvidence: evidence,
+      toolTrace: [{ toolCallId: 'package-call-12345678', toolName: 'get_available_packages', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: ['package-growth'] }],
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toBe(`Of course. ${delivered}`);
+    expect(output.response.nextQuestion).toBeNull();
+    expect(output.draft.followUpOptions).toBeUndefined();
+  });
+
+  it('humanizes a generic source recovery while preserving the selected evidence', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'what is the application process';
+    const evidence = [{ citationId: 'process-source', text: 'The application process starts with choosing a business activity.', sourceVersion: 'catalog-version', sourceRef: 'knowledge-search', approved: true, revoked: false }];
+    const candidate = result('The application is guaranteed to finish tomorrow.', {
+      response: { ...result('').response, answer: 'The application is guaranteed to finish tomorrow.', citationIds: ['process-source'] },
+      approvedEvidence: evidence,
+      toolTrace: [{ toolCallId: 'knowledge-call-12345678', toolName: 'search_knowledge', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: ['process-source'] }],
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional' });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toContain('Of course. The application process starts with choosing a business activity.');
+    expect(output.response.answer).not.toContain('approved information');
+    expect(output.response.answer).toContain(evidence[0]!.text);
+    expect(output.response.citationIds).toEqual(['process-source']);
+    expect(output.response.nextQuestion).toBe('Would you like me to explain how this applies to your setup?');
+    expect(output.response.nextQuestionKey).toBe('conversation_focus');
+    expect(output.draft.followUpOptions).toEqual([
+      { key: 'explain_more', label: 'explain this in more detail', retrievalHints: [] },
+    ]);
   });
 
   it('keeps a pending requirement useful after a repeated knowledge interruption', async () => {
@@ -857,8 +980,9 @@ describe('V2ConversationCoordinator', () => {
       response: { ...result('Formation is guaranteed in one day.').response, citationIds: ['formation-chunk-12345678'] },
     }) }).run({ envelope: request, evidence: [{ ...request.approvedKnowledge[0]!, approved: true, revoked: false }], fallbackTemplates, questionPolicy: 'optional' });
     expect(output.guardReason).toBe('accepted_knowledge_excerpt');
-    expect(output.response.answer).toBe('Company formation requires an application form and proof of residence.');
+    expect(output.response.answer).toContain('Of course. Company formation requires an application form and proof of residence.');
     expect(output.response.citationIds).toEqual(['formation-chunk-12345678']);
+    expect(output.response.nextQuestion).toBe('Would you like me to explain how this applies to your setup?');
   });
 
   it('recovers a source-close process statement after a polarity rejection', async () => {
@@ -870,7 +994,7 @@ describe('V2ConversationCoordinator', () => {
       response: { ...result('Company registration is complete.').response, citationIds: ['process-chunk-12345678'] },
     }) }).run({ envelope: request, evidence: [{ ...request.approvedKnowledge[0]!, approved: true, revoked: false }], fallbackTemplates, questionPolicy: 'optional' });
     expect(output.guardReason).toBe('accepted_knowledge_excerpt');
-    expect(output.response.answer).toBe(processText);
+    expect(output.response.answer).toContain(`Of course. ${processText}`);
   });
 
   it('does not return a source question as the answer during excerpt recovery', async () => {
@@ -881,7 +1005,7 @@ describe('V2ConversationCoordinator', () => {
       response: { ...result('Formation is guaranteed in one day.').response, citationIds: ['formation-chunk-12345678'] },
     }) }).run({ envelope: request, evidence: [{ ...request.approvedKnowledge[0]!, approved: true, revoked: false }], fallbackTemplates, questionPolicy: 'optional' });
     expect(output.guardReason).toBe('accepted_knowledge_excerpt');
-    expect(output.response.answer).toBe('Company formation requires an application form and proof of residence.');
-    expect(output.response.answer).not.toMatch(/\?$/u);
+    expect(output.response.answer).toContain('Company formation requires an application form and proof of residence.');
+    expect(output.response.answer).not.toContain('What documents are required for company registration?');
   });
 });

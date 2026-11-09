@@ -8,8 +8,8 @@ import { cacheKey, createCache, Singleflight, type CacheStore } from './cache.js
 import { channelAuthMiddleware, ChannelSecretVault, getChannel, type StaticChannelAuth } from './channel-auth.js';
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, KnowledgeRetrievalError, retrieveApprovedKnowledge } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
-import { addressesKnowledgeQuestion, classifyOfferReply, conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isControlledKnowledgeAbstention, isGuidedResponse, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, openingGreeting, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
-import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, sanitizeSensitiveText, TokenVault } from './privacy.js';
+import { addressesKnowledgeQuestion, classifyOfferReply, conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isControlledKnowledgeAbstention, isGuidedResponse, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, normalizePendingLeadName, openingGreeting, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
+import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, redactUnknownTokens, sanitizeKnowledgeText, sanitizeSensitiveText, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogIntentLabel, catalogNextFollowUpRequirement, catalogRequirementLabel, catalogSlotLabel, catalogSlotQuestion, isCrmWriteBinding, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
 import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './catalog-v2.js';
 import { auditLegacyCatalogVersion, createLegacyCatalogV2Candidate } from './catalog-v2-migration.js';
@@ -23,19 +23,19 @@ import { composeConversationSummary, consentVersionForState, mergeConcurrentConv
 import { createOutboxEvent } from './events.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
-import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
+import { composeAdminDocumentDetails, composeDocumentMetadata, composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
 import { requiredDocumentSetComplete } from './document-stage-evidence.js';
 import { buildV2DocumentProviderRequest, DeterministicV2DocumentProvider, validateV2DocumentProviderResult } from './v2-document-provider.js';
 import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, DurableV2OtpChallengeService, V2OtpChallengeService, validateV2AccountProviderResult } from './v2-account-provider.js';
 import { buildV2LeadProviderRequest, DeterministicV2LeadProvider, validateV2LeadProviderResult } from './v2-lead-provider.js';
-import { SalesforceSandboxLeadProvider, type SalesforceSandboxAccountReadbackProvider, type SalesforceSandboxLeadReadbackProvider } from './salesforce-sandbox-lead-provider.js';
+import { SalesforceSandboxLeadProvider, type SalesforceSandboxAccountReadbackProvider, type SalesforceSandboxLeadMutationProvider, type SalesforceSandboxLeadReadbackProvider } from './salesforce-sandbox-lead-provider.js';
 import { buildV2PaymentProviderRequest, DeterministicV2PaymentProvider, validateV2PaymentProviderResult } from './v2-payment-provider.js';
 import { buildV2ContractProviderRequest, DeterministicV2ContractProvider, validateV2ContractProviderResult } from './v2-contract-provider.js';
 import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
 import { validateV2ProviderCorrelation, v2ProviderCorrelationSchema, v2CallbackCorrelationSchema, type V2ProviderCorrelation } from './v2-provider-correlation.js';
-import type { ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, FollowUpOfferOption, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, LifecycleStage, Message, PendingFollowUpOffer, Session, SourceStatus, Store, SupportingDocument } from './types.js';
+import type { ActionExecution, ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, FollowUpOfferOption, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, LifecycleStage, Message, PendingFollowUpOffer, Session, SourceStatus, Store, SupportingDocument } from './types.js';
 import { HttpError, parse } from './http/errors.js';
 import {
   DEFAULT_CONTEXT_WINDOW_MESSAGES,
@@ -76,6 +76,7 @@ import {
   uploadSchema,
   workflowClaimSchema,
   workflowCompletionSchema,
+  workflowFailureSchema,
   v2ProviderEvidenceVerifySchema,
   v2AccountOtpIssueSchema,
   v2AccountProviderEvidenceSchema,
@@ -89,6 +90,7 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 import { registerLifecycleRoutes } from './routes/lifecycle.js';
+import { createDevelopmentQuoteAfterLead } from './business-lifecycle.js';
 import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './v2-tool-gateway.js';
 import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
 import { executeV2Turn, runGPTFirstChatTurn } from './v2-turn-controller.js';
@@ -196,11 +198,28 @@ const routeParam = (req: Request, name: string): string => {
   return value;
 };
 
+export const resolveTenantForPlatformAdmin = async (store: Pick<Store, 'getTenant' | 'getTenantBySlug'>, requested: string): Promise<string> => {
+  const tenant = z.string().uuid().safeParse(requested).success
+    ? await store.getTenant(requested)
+    : await store.getTenantBySlug(requested);
+  if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.');
+  return tenant.id;
+};
+
+export const crmLeadQualityRule = async (
+  store: Pick<Store, 'getIntentCatalogVersion'>,
+  lead: Pick<CrmLead, 'tenantId' | 'catalogVersionId' | 'intent'>
+): Promise<IntentCatalogQualityRule | undefined> => {
+  if (!lead.tenantId || !lead.catalogVersionId || !z.string().uuid().safeParse(lead.catalogVersionId).success) return undefined;
+  const version = await store.getIntentCatalogVersion(lead.tenantId, lead.catalogVersionId);
+  return version?.catalog.qualityRules?.find((rule) => rule.intentKey === lead.intent);
+};
+
 const tenantForRequest = async (store: Store, req: Request): Promise<string> => {
   const auth = getAuth(req);
   if (auth?.role === 'platform_admin') {
     const requested = req.header('x-tenant-id') || (typeof req.query.tenantId === 'string' ? req.query.tenantId : null);
-    if (requested) return requested;
+    if (requested) return resolveTenantForPlatformAdmin(store, requested);
     const firstTenant = (await store.listTenants())[0];
     if (firstTenant) return firstTenant.id;
   }
@@ -257,10 +276,17 @@ const ensureV2LocalLead = async (input: {
   const { store, action, session, tokenVault, vaultSecret } = input;
   const existing = await store.getCrmLeadByActionId(action.id, action.tenantId);
   if (existing) return existing;
+  const slotValues = action.payload.slotValues ?? {};
+  const contactChannel = slotValues.lead_contact_channel;
+  const contactName = slotValues.lead_contact_name;
+  const conversation = (await store.listMessages(action.sessionId, action.tenantId)).map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt }));
+  const extractedContact = extractLeadData(conversation.filter((message) => message.role === 'user').map((message) => message.content).join(' '));
+  const contactEmail = action.payload.email ?? (/^\[EMAIL_\d+\]$/u.test(contactChannel ?? '') ? contactChannel : extractedContact.email);
+  const contactPhone = action.payload.phone ?? (/^\[PHONE_\d+\]$/u.test(contactChannel ?? '') ? contactChannel : extractedContact.phone);
   const leadData: LeadData = {
-    ...(action.payload.name ? { name: action.payload.name } : {}),
-    ...(action.payload.email ? { email: action.payload.email } : {}),
-    ...(action.payload.phone ? { phone: action.payload.phone } : {}),
+    ...(action.payload.name ?? contactName ? { name: action.payload.name ?? contactName } : {}),
+    ...(contactEmail ? { email: contactEmail } : {}),
+    ...(contactPhone ? { phone: contactPhone } : {}),
     ...(action.payload.interest ? { interest: action.payload.interest } : {}),
     ...(action.payload.slotValues ? { slotValues: action.payload.slotValues } : {}),
   };
@@ -272,7 +298,6 @@ const ensureV2LocalLead = async (input: {
   const validName = Boolean(name && isValidLeadName(name));
   const validEmail = Boolean(email && isValidLeadEmail(email));
   const validPhone = Boolean(phone && isValidLeadPhone(phone));
-  const conversation = (await store.listMessages(action.sessionId, action.tenantId)).map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt }));
   const conversationText = conversation.filter((message) => message.role === 'user').map((message) => message.content).join(' ');
   const score = scoreCrmLead({
     commercialIntent: true,
@@ -304,8 +329,9 @@ const pendingCatalogSlotValue = (validationRule: string, rawInput: string, maske
   if (tokenKind) {
     const existing = maskedInput.match(new RegExp(`\\[${tokenKind}_\\d+\\]`, 'u'))?.[0];
     if (existing) return existing;
-    if (tokenKind !== 'NAME' || !/^\p{L}+(?:[ '\u2019-]\p{L}+){0,3}$/u.test(rawInput.trim())) return null;
-    return maskPiiForSession(session, `My name is ${rawInput.trim()}`, tokenVault).match(/\[NAME_\d+\]/u)?.[0] ?? null;
+    const name = tokenKind === 'NAME' ? normalizePendingLeadName(rawInput) : '';
+    if (tokenKind !== 'NAME' || !/^\p{L}+(?:[ '\u2019-]\p{L}+){0,3}$/u.test(name)) return null;
+    return maskPiiForSession(session, `My name is ${name}`, tokenVault).match(/\[NAME_\d+\]/u)?.[0] ?? null;
   }
   if (validationRule === 'boolean:explicit_opt_in') {
     if (/^(?:no|n|nope|nah|no thanks|do not|don't|not now|not interested|decline|cancel|stop|i do not consent|i don't consent|i refuse)[.!\s]*$/iu.test(rawInput.trim())) return 'false';
@@ -422,6 +448,7 @@ const offerHintIsGrounded = (evidence: ModelEvidence[], hint: string): boolean =
 export interface AppDependencies {
   store?: Store;
   model?: ChatModel;
+  summaryModel?: Pick<ChatModel, 'summarize'>;
   workflow?: WorkflowAdapter;
   jwtSecret?: string;
   channelCredentialKey?: string;
@@ -450,6 +477,7 @@ export interface AppDependencies {
   v2AccountOtp?: V2OtpChallengeService | DurableV2OtpChallengeService;
   v2AccountProvider?: DeterministicV2AccountProvider;
   v2SalesforceLeadProvider?: SalesforceSandboxLeadReadbackProvider;
+  v2SalesforceLeadMutationProvider?: SalesforceSandboxLeadMutationProvider;
   v2SalesforceAccountProvider?: SalesforceSandboxAccountReadbackProvider;
   v2DocumentProvider?: DeterministicV2DocumentProvider;
   v2PaymentProvider?: DeterministicV2PaymentProvider;
@@ -490,6 +518,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     await store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName, metadata: { keyDigest: contentHash(key).slice(0, 12) }, createdAt: new Date().toISOString() });
   };
   const model: ChatModel = dependencies.model ?? new DeterministicGroundedModel();
+  const summaryModel = dependencies.summaryModel ?? (model.summarize ? model : undefined);
   const v2Coordinator = dependencies.v2Coordinator;
   const workflow = dependencies.workflow;
   const nodeEnv = dependencies.nodeEnv ?? process.env.NODE_ENV ?? 'development';
@@ -514,6 +543,29 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const ingestionWorkerSecret = dependencies.ingestionWorkerSecret ?? process.env.INGESTION_WORKER_SECRET ?? '';
   const ingestionStaging = new IngestionStaging(dependencies.ingestionStagingRoot ?? process.env.INGESTION_STAGING_ROOT ?? join(process.cwd(), 'data', 'ingestion-staging'));
   const documentStorage = new PrivateDocumentStorage(dependencies.documentStorageRoot ?? process.env.SUPPORTING_DOCUMENT_ROOT ?? join(process.cwd(), 'data', 'supporting-documents'));
+  const localQuoteWorkflowEnabled = nodeEnv !== 'production' && process.env.ANCFZ_LOCAL_QUOTE_WORKFLOW === 'true';
+  // shortcut: local development uses Node as the verified quote/PDF boundary; upgrade when an approved quote provider and stage readback are wired.
+  const renderDevelopmentQuotePdf = async (quote: Awaited<ReturnType<typeof createDevelopmentQuoteAfterLead>>, packageName: string): Promise<{ artifactId: string; sha256: string; fileName: string; mimeType: 'application/pdf'; storageKey: string }> => {
+    const renderUrl = process.env.ANCFZ_PDF_INTERNAL_URL ?? '';
+    const apiKey = process.env.ANCFZ_PDF_API_KEY ?? '';
+    if (!renderUrl || !apiKey) throw new HttpError(503, 'QUOTE_PDF_UNAVAILABLE', 'The development PDF service is not configured.');
+    const amount = (quote.amountMinor / 100).toFixed(2);
+    const payload = { mode: 'MOCK', document_type: 'quote', reference: quote.id, issue_date: quote.createdAt.slice(0, 10), due_date: quote.validUntil.slice(0, 10), currency: quote.currency, customer_label: 'ANCFZ customer', seller_label: 'ANCFZ development workspace', tax_amount: '0.00', grand_total: amount, items: [{ description: packageName, quantity: '1', unit_price: amount }] };
+    const rendered = await fetch(renderUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15_000) });
+    if (!rendered.ok) throw new HttpError(502, 'QUOTE_PDF_RENDER_FAILED', 'The development quote PDF could not be rendered.');
+    const metadata = await rendered.json() as { artifactId?: unknown; sha256?: unknown; bytes?: unknown };
+    if (typeof metadata.artifactId !== 'string' || !/^[a-f0-9]{64}$/u.test(metadata.artifactId) || typeof metadata.sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(metadata.sha256)) throw new HttpError(502, 'QUOTE_PDF_METADATA_INVALID', 'The development PDF service returned invalid artifact metadata.');
+    const artifactUrl = renderUrl.replace(/\/v1\/render$/u, `/v1/artifacts/${metadata.artifactId}`);
+    const artifactResponse = await fetch(artifactUrl, { headers: { authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(15_000) });
+    if (!artifactResponse.ok) throw new HttpError(502, 'QUOTE_PDF_ARTIFACT_UNAVAILABLE', 'The rendered quote PDF could not be retrieved.');
+    const bytes = Buffer.from(await artifactResponse.arrayBuffer());
+    if (bytes.length !== Number(metadata.bytes) || documentSha256(bytes) !== metadata.sha256) throw new HttpError(502, 'QUOTE_PDF_INTEGRITY_FAILED', 'The rendered quote PDF failed integrity verification.');
+    const storageKey = documentStorage.key(quote.tenantId, quote.id, 'application/pdf');
+    const existing = await documentStorage.read(storageKey);
+    if (existing) { if (documentSha256(existing) !== metadata.sha256) throw new HttpError(409, 'QUOTE_PDF_CONFLICT', 'A different quote PDF already exists for this quote.'); }
+    else await documentStorage.write(storageKey, bytes);
+    return { artifactId: metadata.artifactId, sha256: metadata.sha256, fileName: `ancfz-development-quote-${quote.id}.pdf`, mimeType: 'application/pdf', storageKey };
+  };
   const mockDocumentProvider = dependencies.v2DocumentProvider ?? (process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2DocumentProvider() : null);
   const v2AccountOtp = dependencies.v2AccountOtp ?? new DurableV2OtpChallengeService(store, process.env.V2_OTP_SECRET ?? 'local-development-v2-otp-secret');
   const mockAccountProvider = dependencies.v2AccountProvider ?? (process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2AccountProvider() : null);
@@ -524,7 +576,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       ...(process.env.REMOTE_CRM_CLIENT_ID ? { clientId: process.env.REMOTE_CRM_CLIENT_ID } : {}),
       ...(process.env.REMOTE_CRM_CLIENT_SECRET ? { clientSecret: process.env.REMOTE_CRM_CLIENT_SECRET } : {}),
       ...(process.env.REMOTE_CRM_LEAD_READ_URL ? { readbackUrl: process.env.REMOTE_CRM_LEAD_READ_URL } : {}),
+      ...(process.env.REMOTE_CRM_LEAD_UPDATE_URL ? { leadUpdateUrl: process.env.REMOTE_CRM_LEAD_UPDATE_URL } : {}),
+      ...(process.env.REMOTE_CRM_ATTACHMENT_URL ? { attachmentUrl: process.env.REMOTE_CRM_ATTACHMENT_URL } : {}),
+      ...(process.env.REMOTE_CRM_ATTACHMENT_READ_URL ? { attachmentReadbackUrl: process.env.REMOTE_CRM_ATTACHMENT_READ_URL } : {}),
     }) : null);
+  const salesforceLeadMutationProvider: SalesforceSandboxLeadMutationProvider | null = dependencies.v2SalesforceLeadMutationProvider
+    ?? (salesforceLeadProvider instanceof SalesforceSandboxLeadProvider ? salesforceLeadProvider : null);
   const salesforceAccountProvider = dependencies.v2SalesforceAccountProvider
     ?? (process.env.REMOTE_CRM_PROVIDER === 'salesforce' ? new SalesforceSandboxLeadProvider({
       ...(process.env.REMOTE_CRM_ACCESS_TOKEN ? { accessToken: process.env.REMOTE_CRM_ACCESS_TOKEN } : {}),
@@ -532,7 +589,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       ...(process.env.REMOTE_CRM_CLIENT_ID ? { clientId: process.env.REMOTE_CRM_CLIENT_ID } : {}),
       ...(process.env.REMOTE_CRM_CLIENT_SECRET ? { clientSecret: process.env.REMOTE_CRM_CLIENT_SECRET } : {}),
       ...(process.env.REMOTE_CRM_ACCOUNT_READ_URL ? { accountReadbackUrl: process.env.REMOTE_CRM_ACCOUNT_READ_URL } : {}),
+      ...(process.env.REMOTE_CRM_CONTACT_READ_URL ? { contactReadbackUrl: process.env.REMOTE_CRM_CONTACT_READ_URL } : {}),
+      ...(process.env.REMOTE_CRM_OPPORTUNITY_READ_URL ? { opportunityReadbackUrl: process.env.REMOTE_CRM_OPPORTUNITY_READ_URL } : {}),
     }) : null);
+  const salesforceLeadProviderReady = salesforceLeadProvider instanceof SalesforceSandboxLeadProvider
+    ? salesforceLeadProvider.isLeadReadbackConfigured() && process.env.V2_LEAD_WORKFLOW_READY === 'true'
+      : Boolean(salesforceLeadProvider);
   const mockPaymentProvider = dependencies.v2PaymentProvider ?? (process.env.REMOTE_PAYMENT_PROVIDER === 'deterministic_mock' ? new DeterministicV2PaymentProvider() : null);
   const mockContractProvider = dependencies.v2ContractProvider ?? (process.env.REMOTE_SIGNATURE_PROVIDER === 'deterministic_mock' ? new DeterministicV2ContractProvider() : null);
   if (nodeEnv === 'production' && !dependencies.v2AccountOtp && !process.env.V2_OTP_SECRET) throw new Error('V2_OTP_SECRET is required in production.');
@@ -615,6 +677,33 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       return validation.accepted;
     } catch (error) {
       await store.addAudit({ id: randomUUID(), tenantId: document.tenantId, actorId: null, eventName: 'document.sf02_attachment_rejected', metadata: { documentId: document.id, sessionId: document.sessionId, opportunityId: document.opportunityId, leadId: document.leadId, idempotencyKey, attachmentStatus: 'reconciliation_required', reason: error instanceof Error ? error.message.slice(0, 120) : 'provider_validation_failed' }, createdAt: new Date().toISOString() });
+      return false;
+    }
+  };
+  const syncSalesforceLeadDocument = async (session: Session, document: SupportingDocument, summary: string): Promise<boolean> => {
+    if (!salesforceLeadMutationProvider || !document.leadId || !summary.trim()) return false;
+    const verifiedAudit = (await store.listAudit(document.tenantId)).find((event) => event.eventName === 'document.salesforce_lead_sync_verified'
+      && event.metadata.documentId === document.id && event.metadata.leadId === document.leadId);
+    if (verifiedAudit) return true;
+    const lead = await store.getCrmLead(document.leadId, document.tenantId);
+    const content = await documentStorage.read(document.storageKey);
+    if (!lead?.leadId || lead.remoteCrm !== 'salesforce_sandbox' || !content) return false;
+    const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm');
+    const documentSummary = rehydrate(summary).trim();
+    const description = [lead.summary ? rehydrate(lead.summary) : '', `Supporting document: ${documentSummary}`]
+      .filter(Boolean).join('\n').slice(0, 32_000);
+    try {
+      const attachmentAudit = (await store.listAudit(document.tenantId)).find((event) => event.eventName === 'document.salesforce_lead_attachment_verified'
+        && event.metadata.documentId === document.id && event.metadata.leadId === document.leadId && typeof event.metadata.attachmentId === 'string');
+      const attachment = attachmentAudit
+        ? { attachmentRef: String(attachmentAudit.metadata.attachmentId), parentRef: lead.leadId, fileName: document.fileName, sizeBytes: content.length }
+        : await salesforceLeadMutationProvider.createLeadAttachment({ providerRecordId: lead.leadId, fileName: document.fileName, contentBase64: content.toString('base64') });
+      if (!attachmentAudit) await store.addAudit({ id: randomUUID(), tenantId: document.tenantId, actorId: null, eventName: 'document.salesforce_lead_attachment_verified', metadata: { documentId: document.id, leadId: document.leadId, attachmentId: attachment.attachmentRef, attachmentStatus: 'verified' }, createdAt: new Date().toISOString() });
+      const updated = await salesforceLeadMutationProvider.updateLeadDescription({ providerRecordId: lead.leadId, description });
+      await store.addAudit({ id: randomUUID(), tenantId: document.tenantId, actorId: null, eventName: 'document.salesforce_lead_sync_verified', metadata: { documentId: document.id, leadId: document.leadId, attachmentId: attachment.attachmentRef, descriptionRecordRef: updated.recordRef, attachmentStatus: 'verified' }, createdAt: new Date().toISOString() });
+      return true;
+    } catch (error) {
+      await store.addAudit({ id: randomUUID(), tenantId: document.tenantId, actorId: null, eventName: 'document.salesforce_lead_sync_failed', metadata: { documentId: document.id, leadId: document.leadId, reason: error instanceof Error ? error.message.slice(0, 120) : 'provider_sync_failed' }, createdAt: new Date().toISOString() });
       return false;
     }
   };
@@ -725,7 +814,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const reason = validateV2ProviderCorrelation(action, parsed.data);
     if (reason) throw new HttpError(409, 'V2_PROVIDER_CORRELATION_MISMATCH', `The v2 provider callback correlation is invalid (${reason}).`);
   };
-  const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null, executionReference?: string, eventId?: string, correlationId?: string, attempt?: number, providerCorrelation?: V2ProviderCorrelation, trustedProviderEvidence = false): Promise<ActionRequest> => {
+  const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null, executionReference?: string, eventId?: string, correlationId?: string, attempt?: number, providerCorrelation?: V2ProviderCorrelation, trustedProviderEvidence = false, outcome?: ActionExecution['outcome']): Promise<ActionRequest> => {
     const resolvingReconciliation = action.state === 'reconcile_required' && status === 'completed';
     const providerTerminal = actorId === null && ['completed', 'failed'].includes(status);
     if (providerCorrelation || providerTerminal) await assertV2ProviderCorrelation(action, providerCorrelation);
@@ -749,7 +838,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         'The provider callback cannot finalize a V2 action without a trusted provider-record verification.');
     }
     if (providerTerminal) {
-      const committed = await store.transitionActionWithExecution({ actionId: action.id, tenantId: action.tenantId, fromState: action.state, toState: status, result: externalReference ? { externalReference } : action.result, providerStatus: status, n8nExecutionRef: executionReference!, eventId: eventId!, correlationId: correlationId!, expectedAttempt: attempt!, resolveReconciliation: resolvesReconciliation, outcome: externalReference ? { externalReference } : null });
+      const committed = await store.transitionActionWithExecution({ actionId: action.id, tenantId: action.tenantId, fromState: action.state, toState: status, result: externalReference ? { externalReference } : action.result, providerStatus: status, n8nExecutionRef: executionReference!, eventId: eventId!, correlationId: correlationId!, expectedAttempt: attempt!, resolveReconciliation: resolvesReconciliation, outcome: outcome ?? (externalReference ? { externalReference } : null) });
       if (!committed) throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action and execution changed before this transition was committed.');
       await syncWorkflowState(committed.action, status, trustedProviderEvidence);
       await store.addAudit({ id: randomUUID(), tenantId: committed.action.tenantId, actorId, eventName: `workflow.transition.${action.state}.${status}`, metadata: { actionId: committed.action.id, fromState: action.state, toState: status }, createdAt: new Date().toISOString() });
@@ -757,7 +846,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       return committed.action;
     }
     const executionContext = { ...(eventId ? { eventId } : {}), ...(correlationId ? { correlationId } : {}), ...(attempt !== undefined ? { expectedAttempt: attempt } : {}) };
-    if (action.state === status) { await syncWorkflowState(action, status, trustedProviderEvidence); await store.updateActionExecution({ actionId: action.id, tenantId: action.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: externalReference ? { externalReference } : null, resolveReconciliation: resolvesReconciliation, ...executionContext }); return action; }
+    if (action.state === status) { await syncWorkflowState(action, status, trustedProviderEvidence); await store.updateActionExecution({ actionId: action.id, tenantId: action.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: outcome ?? (externalReference ? { externalReference } : null), resolveReconciliation: resolvesReconciliation, ...executionContext }); return action; }
     const updated = await store.transitionAction(action.id, action.tenantId, action.state, status, externalReference ? { externalReference } : action.result);
     if (!updated) {
       const current = await store.getAction(action.id);
@@ -765,7 +854,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action changed before this transition was committed.');
     }
     await syncWorkflowState(updated, status, trustedProviderEvidence);
-    await store.updateActionExecution({ actionId: updated.id, tenantId: updated.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: externalReference ? { externalReference } : null, resolveReconciliation: resolvesReconciliation, ...executionContext });
+    await store.updateActionExecution({ actionId: updated.id, tenantId: updated.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: outcome ?? (externalReference ? { externalReference } : null), resolveReconciliation: resolvesReconciliation, ...executionContext });
     await store.addAudit({ id: randomUUID(), tenantId: updated.tenantId, actorId, eventName: `workflow.transition.${action.state}.${status}`, metadata: { actionId: updated.id, fromState: action.state, toState: status }, createdAt: new Date().toISOString() });
     await invalidateTenantCache(updated.tenantId);
     return updated;
@@ -937,15 +1026,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
 
   const crmLeadForAdmin = async (lead: CrmLead): Promise<CrmLead & { quality: ReturnType<typeof leadQuality>; documents: Array<SupportingDocument & { extractedText: string | null; summary: string | null }> }> => {
-    const version = lead.catalogVersionId ? await store.getIntentCatalogVersion(lead.tenantId, lead.catalogVersionId) : null;
-    const qualityRule = version?.catalog.qualityRules?.find((rule) => rule.intentKey === lead.intent);
+    const qualityRule = await crmLeadQualityRule(store, lead);
     const quality = catalogQuality(lead.score, qualityRule);
     const session = await store.getSession(lead.sessionId);
     const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id);
     if (!session) return { ...lead, quality, documents };
-    const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm');
+    const rehydrate = (value: string): string => rehydrateForSession(session, redactUnknownTokens(session, value, tokenVault), tokenVault, 'admin_crm');
     const summary = lead.summary ? (() => { try { return formatCrmSummarySpec(lead.summary); } catch { return lead.summary; } })() : null;
-    return { ...lead, quality, leadData: { ...(lead.leadData.name ? { name: rehydrate(lead.leadData.name) } : {}), ...(lead.leadData.email ? { email: rehydrate(lead.leadData.email) } : {}), ...(lead.leadData.phone ? { phone: rehydrate(lead.leadData.phone) } : {}), ...(lead.leadData.interest ? { interest: lead.leadData.interest } : {}), ...(lead.leadData.slotValues ? { slotValues: Object.fromEntries(Object.entries(lead.leadData.slotValues).map(([key, value]) => [key, rehydrate(value)])) } : {}) }, conversation: lead.conversation.map((message) => ({ ...message, content: rehydrate(message.content) })), summary: summary ? rehydrate(summary) : null, documents: documents.map((document) => ({ ...document, extractedText: document.extractedText ? rehydrate(document.extractedText) : null, summary: document.summary ? rehydrate(document.summary) : null })) };
+    const adminDocumentDetails = composeAdminDocumentDetails(documents, (value) => redactUnknownTokens(session, value, tokenVault));
+    const adminSummary = [summary, adminDocumentDetails].filter(Boolean).join('\n');
+    return { ...lead, quality, leadData: { ...(lead.leadData.name ? { name: rehydrate(lead.leadData.name) } : {}), ...(lead.leadData.email ? { email: rehydrate(lead.leadData.email) } : {}), ...(lead.leadData.phone ? { phone: rehydrate(lead.leadData.phone) } : {}), ...(lead.leadData.interest ? { interest: lead.leadData.interest } : {}), ...(lead.leadData.slotValues ? { slotValues: Object.fromEntries(Object.entries(lead.leadData.slotValues).map(([key, value]) => [key, rehydrate(value)])) } : {}) }, conversation: lead.conversation.map((message) => ({ ...message, content: rehydrate(message.content) })), summary: adminSummary ? rehydrate(formatCrmSummarySpec(adminSummary)) : null, documents: documents.map((document) => ({ ...document, extractedText: document.extractedText ? rehydrate(document.extractedText) : null, summary: document.summary ? rehydrate(document.summary) : null })) };
   };
 
   const publicDocument = (document: SupportingDocument) => ({ id: document.id, sessionId: document.sessionId, leadId: document.leadId, requirementKey: document.requirementKey ?? null, expectedDocumentType: document.expectedDocumentType ?? null, fileName: document.fileName, mimeType: document.mimeType, sizeBytes: document.sizeBytes, status: document.status, summary: null, errorCode: document.errorCode, createdAt: document.createdAt, updatedAt: document.updatedAt });
@@ -953,8 +1043,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const v2Version = (await store.listIntentCatalogV2Versions(tenantId)).find((candidate) => candidate.status === 'published');
     if (v2Version) {
       const policies = v2Version.catalog.sheets.DocumentPolicies;
-      const binding = v2Version.catalog.sheets.WorkflowBindings.find((candidate) => candidate.registryKey === 'document.sf02.upload' && candidate.enabled);
-      const enabledTools = new Set(v2Version.catalog.sheets.ToolBindings.filter((candidate) => candidate.toolKey === 'document.sf02_upload' && candidate.enabled).map((candidate) => candidate.goalKey));
+      const binding = v2Version.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === 'anc.document.ocr.extract' && candidate.enabled);
+      const enabledTools = new Set(v2Version.catalog.sheets.ToolBindings.filter((candidate) => ['document.ocr.extract', 'document.sf02_upload'].includes(candidate.toolKey) && candidate.enabled).map((candidate) => candidate.goalKey));
       const allowedMimeTypes = [...new Set(policies.flatMap((policy) => policy.mimeTypes))];
       const requirements = policies.filter((policy) => policy.required && policy.enabled && enabledTools.has(policy.goalKey)).map((policy) => ({ intentKey: policy.goalKey, requirementKey: policy.policyKey, documentType: policy.docType, allowedDocumentTypes: [policy.docType] }));
       return { enabled: Boolean(binding && enabledTools.size), requireUploadConsent: true, maxFileBytes: MAX_DOCUMENT_BYTES, maxFilesPerRequest: 1, maxPdfPages: 20, allowedMimeTypes, policies: policies.filter((policy) => policy.enabled && enabledTools.has(policy.goalKey)).map((policy) => ({ intentKey: policy.goalKey, requestMode: 'explicit_upload' as const, allowedDocumentTypes: [policy.docType], consentRequired: true })), requirements, workflowKey: binding?.workflowKey ?? null, binding: binding ? { webhookPath: binding.webhookPath ?? '', payloadContract: binding.payloadContract ?? null } : null };
@@ -1026,7 +1116,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     tenantTelemetry,
     cachePing: () => cache.ping(),
     invalidateTenantCache,
-    modelConfigured: Boolean(dependencies.model),
+    modelConfigured: Boolean(dependencies.model || dependencies.summaryModel),
     embeddingConfigured: Boolean(dependencies.embedding),
   });
   registerLifecycleRoutes(app, { store, gateway, chatApi, routeParam, authorizeSession: authorizeChatSession, advanceLifecycleStage });
@@ -1609,11 +1699,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'Document not found.');
       const session = await store.getSession(document.sessionId);
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Document session not found.');
+      const tokenCountBeforeMasking = session.tokenMap.size;
       const extractedText = document.storeExtractedText && input.extractedText ? maskPiiForSession(session, input.extractedText, tokenVault) : null;
       const summary = input.summary ? maskPiiForSession(session, input.summary, tokenVault) : null;
+      if (session.tokenMap.size > tokenCountBeforeMasking) await updateSessionSafely(session, false, 'workflow');
       const completedDocument = await store.updateSupportingDocument({ ...document, status: 'completed', extractedText, summary, errorCode: null, updatedAt: new Date().toISOString() });
+      let salesforceLeadSyncVerified = false;
       const completedJob = await store.updateDocumentProcessingJob({ ...job, status: 'completed', leaseExpiresAt: null, executionReference: input.executionReference ?? job.executionReference, updatedAt: new Date().toISOString() });
       if (document.leadId) { const lead = await store.getCrmLead(document.leadId, input.tenantId); if (lead) { const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id); const composed = [lead.summary, composeDocumentSummary(lead, documents)].filter(Boolean).join('\n').slice(0, 20_000); await store.updateCrmLeadSummary(lead.id, lead.tenantId, composed, 'completed'); } }
+      if (summary) salesforceLeadSyncVerified = await syncSalesforceLeadDocument(session, completedDocument, composeDocumentMetadata(completedDocument));
       await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'document.completed', metadata: { documentId: document.id, jobId: job.id, status: 'completed' }, createdAt: new Date().toISOString() });
       if (document.opportunityId && document.intentKey) {
         // Completing one OCR job does not prove every required document is present.
@@ -1648,7 +1742,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           }
         }
       }
-      res.json({ document: publicDocument(completedDocument), job: completedJob });
+      res.json({ document: publicDocument(completedDocument), job: completedJob, salesforceLeadSyncVerified });
     } catch (error) { next(error); }
   });
   app.post('/api/v1/internal/document-jobs/:id/failure', workerApi, async (req, res, next) => {
@@ -1692,7 +1786,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     let pendingMessage: Message | null = null;
     try {
       const input = parse(messageSchema, req.body);
-      const inputText = (input.type === 'postback' ? input.postbackValue ?? input.message : input.message) ?? '';
+      // The visible postback label is the conversation text; the opaque value
+      // is only an authorization signal consumed by the owning flow.
+      const inputText = (input.type === 'postback' ? input.message || input.postbackValue : input.message) ?? '';
       const channel = getChannel(req);
       const session = await store.getSession(input.sessionId);
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
@@ -1744,7 +1840,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         const response = await runGPTFirstChatTurn({
           store, embedding, cache, tokenVault, session, tenant, userMessage, coordinator: v2Coordinator,
           actionGateway: gateway,
+          leadProviderReady: salesforceLeadProviderReady,
           clientMessageId: input.clientMessageId, messageHash, maskedMessage: masked.masked,
+          postbackValue: input.type === 'postback' ? input.postbackValue ?? null : null,
           requestId: (req as AuthedRequest).requestId ?? randomUUID(),
           responseCacheTtlSeconds: chatResponseCacheTtlSeconds,
           scopeSecret: process.env.MODEL_GATEWAY_SERVICE_KEY ?? '',
@@ -2693,7 +2791,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
             continue;
           }
           const conversation = (await store.listMessages(action.sessionId, action.tenantId)).map((message) => ({ role: message.role, content: message.maskedContent, createdAt: message.createdAt }));
-          items.push({ actionId: action.id, tenantId: action.tenantId, sessionId: action.sessionId, opportunityId: action.opportunityId, workflowKey: workflow.registryKey, contract: input.contract ?? workflow.payloadContract, stageKey: document.currentStageKey, catalogVersionId: v2Version.catalogVersionRef, idempotencyKey: action.idempotencyKey, actionKey: action.actionKey, actionRevision: action.actionRevision, approvedPayload: action.payload.slotValues ?? {}, providerEnabled: true, v2Authorized: authorization.accepted, purposeConsentVerified: true, actionConfirmationVerified: true, eventId: execution.eventId ?? null, correlationId: execution.correlationId ?? null, attempt: execution.attempt, executionReference: execution.n8nExecutionRef ?? input.executionReference, conversation, catalog: v2Version.catalog });
+          const lead = await ensureV2LocalLead({ store, action, session: session!, tokenVault, vaultSecret });
+          const rehydrateLeadValue = (value: string): string => rehydrateForSession(session!, value, tokenVault, 'admin_crm');
+          const providerPayload = { name: rehydrateLeadValue(lead.leadData.name!), company: 'Individual', email: rehydrateLeadValue(lead.leadData.email!), phone: rehydrateLeadValue(lead.leadData.phone!), description: rehydrateLeadValue(lead.summary ?? `Intent: ${lead.intent}`), leadExternalId: lead.leadId, actionId: action.id };
+          items.push({ actionId: action.id, tenantId: action.tenantId, sessionId: action.sessionId, opportunityId: action.opportunityId, workflowKey: workflow.registryKey, contract: input.contract ?? workflow.payloadContract, stageKey: document.currentStageKey, catalogVersionId: v2Version.catalogVersionRef, idempotencyKey: action.idempotencyKey, actionKey: action.actionKey, actionRevision: action.actionRevision, approvedPayload: action.payload.slotValues ?? {}, providerPayload, providerEnabled: true, v2Authorized: authorization.accepted, purposeConsentVerified: true, actionConfirmationVerified: true, eventId: execution.eventId ?? null, correlationId: execution.correlationId ?? null, attempt: execution.attempt, executionReference: execution.n8nExecutionRef ?? input.executionReference, conversation, catalog: v2Version.catalog });
           continue;
         }
         const version = action.catalogVersionId ? await store.getIntentCatalogVersion(action.tenantId, action.catalogVersionId) : null;
@@ -2760,7 +2861,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           if (!validation.accepted) throw new HttpError(409, 'V2_PROVIDER_EVIDENCE_INVALID', `Salesforce provider evidence was rejected (${validation.reasons.join(',')}).`);
           await store.updateCrmLeadRemote({ id: leadRequest.id, tenantId: action.tenantId, leadId: readback.recordRef, remoteCrm: 'salesforce_sandbox' });
           const completed = await transitionWorkflowAction(action, 'completed', readback.recordRef, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, true);
-          res.json({ accepted: true, status: validation.status, evidenceTier: validation.status, stageKey: input.stageKey, providerRecordRef: readback.recordRef, action: completed });
+          res.json({ accepted: true, status: validation.status, evidenceTier: validation.status, stageKey: input.stageKey, providerRecordRef: readback.recordRef,
+            actionId: input.actionId, tenantId: input.tenantId, sessionId: input.sessionId, opportunityId: input.opportunityId,
+            catalogVersionId: input.catalogVersionId, idempotencyKey: input.idempotencyKey, actionKey: input.actionKey,
+            actionRevision: input.actionRevision, eventId: input.eventId, correlationId: input.correlationId, attempt: input.attempt, action: completed });
         } catch (error) {
           const reason = error instanceof HttpError ? error.code : error instanceof Error && /^SALESFORCE_[A-Z0-9_]+$/u.test(error.message) ? error.message : 'provider_readback_failed';
           const reconciled = await transitionWorkflowAction(action, 'reconcile_required', undefined, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input);
@@ -2778,7 +2882,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!validation.accepted) throw new HttpError(409, 'V2_PROVIDER_EVIDENCE_INVALID', `Deterministic provider evidence was rejected (${validation.reasons.join(',')}).`);
       await store.updateCrmLeadRemote({ id: lead.id, tenantId: action.tenantId, leadId: input.providerRecordId, remoteCrm: 'deterministic_mock' });
       const completed = await transitionWorkflowAction(action, 'completed', input.providerRecordId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, true);
-      res.json({ accepted: true, status: validation.status, evidenceTier: validation.status, stageKey: input.stageKey, providerRecordRef: input.providerRecordId, action: completed });
+      res.json({ accepted: true, status: validation.status, evidenceTier: validation.status, stageKey: input.stageKey, providerRecordRef: input.providerRecordId,
+        actionId: input.actionId, tenantId: input.tenantId, sessionId: input.sessionId, opportunityId: input.opportunityId,
+        catalogVersionId: input.catalogVersionId, idempotencyKey: input.idempotencyKey, actionKey: input.actionKey,
+        actionRevision: input.actionRevision, eventId: input.eventId, correlationId: input.correlationId, attempt: input.attempt, action: completed });
     } catch (error) { next(error); }
   });
   app.post('/api/v2/internal/account-otp/issue', n8nInternalApi, async (req, res, next) => {
@@ -3059,6 +3166,39 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(403, 'WORKFLOW_FORBIDDEN', 'Workflow completion does not match the authorized action.');
       const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt, input);
       res.json({ action: updated });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/workflow-events/fail', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(workflowFailureSchema, req.body);
+      const action = await store.getAction(input.actionId);
+      if (!action || action.tenantId !== input.tenantId) throw new HttpError(403, 'WORKFLOW_FORBIDDEN', 'Workflow failure does not match the authorized action.');
+      const updated = await transitionWorkflowAction(action, input.state, undefined, null, input.executionReference, input.eventId, input.correlationId, input.attempt, input, false, { reasonCode: input.reasonCode, eventId: input.eventId, correlationId: input.correlationId, attempt: input.attempt });
+      res.json({ action: updated, failure: { state: input.state, reasonCode: input.reasonCode, eventId: input.eventId, correlationId: input.correlationId, attempt: input.attempt } });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/ancfz/quote-actions/execute', n8nInternalApi, async (req, res, next) => {
+    try {
+      if (!localQuoteWorkflowEnabled) throw new HttpError(503, 'LOCAL_QUOTE_WORKFLOW_DISABLED', 'The development quote workflow is not enabled.');
+      const input = parse(z.object({ actionId: z.string().guid(), tenantId: z.string().guid(), sessionId: z.string().guid() }).strict(), req.body);
+      const action = await store.getAction(input.actionId);
+      const session = await store.getSession(input.sessionId);
+      if (!action || !session || action.tenantId !== input.tenantId || action.sessionId !== input.sessionId || action.workflowKey !== 'package.confirm' || action.actionKey !== 'package.confirm' || !['approved', 'processing', 'completed'].includes(action.state) || action.payload.contactConsent !== true) throw new HttpError(403, 'QUOTE_ACTION_FORBIDDEN', 'The quote action does not match an approved session package selection.');
+      const selectionId = action.payload.slotValues?.selectionId;
+      const packageOfferingId = action.payload.slotValues?.packageOfferingId;
+      if (typeof selectionId !== 'string' || !/^[0-9a-f-]{36}$/iu.test(selectionId) || typeof packageOfferingId !== 'string' || !/^[0-9a-f-]{36}$/iu.test(packageOfferingId)) throw new HttpError(409, 'QUOTE_ACTION_PAYLOAD_INVALID', 'The approved package selection is incomplete.');
+      if (action.state === 'completed' && action.result) { res.json({ verified: true, action }); return; }
+      const processing = action.state === 'approved' ? await store.updateAction({ ...action, state: 'processing', result: null }) : action;
+      const selection = await store.getPackageSelection(selectionId, input.tenantId);
+      const offering = await store.getPackageOffering(packageOfferingId, input.tenantId);
+      if (!selection || !offering || selection.sessionId !== session.id || selection.opportunityId !== action.opportunityId || selection.packageOfferingId !== offering.id || offering.approvalStatus !== 'approved') throw new HttpError(403, 'QUOTE_SELECTION_SCOPE_DENIED', 'The package selection is not valid for this action.');
+      const quote = selection.quoteId ? await store.getQuote(selection.quoteId, input.tenantId) : await createDevelopmentQuoteAfterLead(store, session, offering.id);
+      if (!quote) throw new HttpError(409, 'QUOTE_NOT_FOUND', 'The approved quote could not be loaded.');
+      if (selection.status !== 'confirmed') await store.confirmPackageSelection(selection.id, input.tenantId, quote.id);
+      const artifact = await renderDevelopmentQuotePdf(quote, offering.name);
+      const completed = await store.updateAction({ ...processing, state: 'completed', result: { externalReference: `quote-${quote.id}`, artifactId: artifact.artifactId, artifactSha256: artifact.sha256, artifactFileName: artifact.fileName, artifactMimeType: artifact.mimeType } });
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'ancfz.development_quote.completed', metadata: { actionId: action.id, quoteId: quote.id, artifactId: artifact.artifactId, artifactSha256: artifact.sha256 }, createdAt: new Date().toISOString() });
+      res.json({ verified: true, mock: true, quote, artifact: { artifactId: artifact.artifactId, sha256: artifact.sha256, fileName: artifact.fileName, mimeType: artifact.mimeType }, action: completed });
     } catch (error) { next(error); }
   });
   app.post('/api/v1/admin/workflow-runs/:id/transition', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
@@ -3354,16 +3494,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : await store.getPublishedIntentCatalog(session.tenantId);
       if (conversationState.catalogVersionId && !version && !v2Version) throw new HttpError(409, 'CATALOG_VERSION_UNAVAILABLE', 'This conversation uses an unavailable catalog version. Please start a new request.');
       const v2PolicyRow = v2Version?.catalog.sheets.DocumentPolicies.find((item) => item.goalKey === requestedIntentKey);
+      const v2ProcessingBinding = v2Version?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === 'anc.document.ocr.extract' && candidate.enabled);
       const settings = v2Version
-        ? { enabled: true, requireUploadConsent: true, maxFileBytes: MAX_DOCUMENT_BYTES, allowedMimeTypes: v2PolicyRow?.mimeTypes ?? DEFAULT_DOCUMENT_MIME_TYPES, workflowKey: 'document.sf02.upload' }
+        ? { enabled: Boolean(v2ProcessingBinding), requireUploadConsent: true, maxFileBytes: MAX_DOCUMENT_BYTES, allowedMimeTypes: v2PolicyRow?.mimeTypes ?? DEFAULT_DOCUMENT_MIME_TYPES, workflowKey: v2ProcessingBinding?.workflowKey ?? null }
         : version?.catalog.documentSettings;
       const binding = v2Version
-        ? v2Version.catalog.sheets.WorkflowBindings.find((candidate) => candidate.registryKey === 'document.sf02.upload' && candidate.enabled)
+        ? v2ProcessingBinding
         : settings ? version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === settings.workflowKey && candidate.active) : undefined;
       const policy = v2Version
         ? (() => {
           const candidate = v2PolicyRow;
-          const tool = v2Version.catalog.sheets.ToolBindings.find((item) => item.toolKey === 'document.sf02_upload' && item.goalKey === requestedIntentKey);
+          const tool = v2Version.catalog.sheets.ToolBindings.find((item) => ['document.ocr.extract', 'document.sf02_upload'].includes(item.toolKey) && item.goalKey === requestedIntentKey && item.enabled);
           return candidate && tool ? { enabled: candidate.enabled && tool.enabled, allowUserInitiated: true, consentRequired: tool.consent === 'purpose_specific', storeExtractedText: false, allowedDocumentTypes: [candidate.docType] } : undefined;
         })()
         : version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === requestedIntentKey) ?? version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === 'anc.document.supporting_upload');
@@ -3444,6 +3585,22 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.json({ items: (await store.listSupportingDocuments(session.tenantId, session.id)).map(publicDocument) });
     } catch (error) { next(error); }
   });
+  app.get('/api/v1/chat/sessions/:id/quotes/:quoteId/download', chatApi, async (req, res, next) => {
+    try {
+      const session = await store.getSession(routeParam(req, 'id'));
+      if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      await authorizeChatSession(req, session);
+      const quote = await store.getQuote(routeParam(req, 'quoteId'), session.tenantId);
+      const document = await store.getUserIntentDocument(session.tenantId, session.id);
+      if (!quote || !document || quote.opportunityId !== document.opportunityId || quote.status !== 'approved') throw new HttpError(404, 'QUOTE_NOT_FOUND', 'Quote not found.');
+      const content = await documentStorage.read(documentStorage.key(session.tenantId, quote.id, 'application/pdf'));
+      if (!content) throw new HttpError(404, 'QUOTE_PDF_NOT_FOUND', 'The quote PDF is not ready yet.');
+      res.setHeader('content-type', 'application/pdf');
+      res.setHeader('content-disposition', `attachment; filename="ancfz-development-quote-${quote.id}.pdf"`);
+      res.setHeader('cache-control', 'private, no-store');
+      res.send(content);
+    } catch (error) { next(error); }
+  });
   app.get('/api/v1/admin/crm/documents/:id/download', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => {
     try {
       const tenantId = await tenantForRequest(store, req);
@@ -3478,22 +3635,29 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!lead) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
       const session = await store.getSession(lead.sessionId);
       if (!session || session.tenantId !== tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Lead session not found.');
-      const baseSummary = lead.summary ?? [`Intent: ${lead.intent}`, `Score: ${lead.score}`, `Validation: ${lead.validationPass ? 'passed' : 'failed'}`, `Engagement: ${lead.conversation.length} conversation turns`].join('\n');
-      let candidate = baseSummary;
-      if (model.summarize) {
-        try {
-          candidate = await model.summarize({ maskedSummary: baseSummary, conversation: lead.conversation.map(({ role, content }) => ({ role, content })), intent: lead.intent, secondaryIntentKeys: lead.secondaryIntentKeys ?? [], score: lead.score, validationPass: lead.validationPass });
-          assertKnownTokens(session, candidate, tokenVault);
-        } catch {
-          throw new HttpError(503, 'CRM_SUMMARY_AI_UNAVAILABLE', 'The AI summary could not be generated. Please try again.');
-        }
+      // Rebuild from current masked state so legacy OCR summaries cannot reintroduce stale privacy tokens.
+      const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id);
+      const baseSummary = composeDocumentSummary(lead, documents);
+      if (!summaryModel?.summarize) throw new HttpError(503, 'CRM_SUMMARY_AI_UNAVAILABLE', 'The AI summary could not be generated. Please try again.');
+      let candidate: string;
+      try {
+        candidate = await summaryModel.summarize({ maskedSummary: baseSummary, conversation: lead.conversation.map(({ role, content }) => ({ role, content })), intent: lead.intent, secondaryIntentKeys: lead.secondaryIntentKeys ?? [], score: lead.score, validationPass: lead.validationPass });
+        assertKnownTokens(session, candidate, tokenVault);
+      } catch {
+        throw new HttpError(503, 'CRM_SUMMARY_AI_UNAVAILABLE', 'The AI summary could not be generated. Please try again.');
       }
-      const formatted = formatCrmSummarySpec(candidate);
-      assertKnownTokens(session, formatted, tokenVault);
+      let formatted: string;
+      try {
+        formatted = formatCrmSummarySpec(candidate);
+        assertKnownTokens(session, formatted, tokenVault);
+      } catch (error) {
+        if (error instanceof CrmSummaryValidationError) throw error;
+        throw new HttpError(422, 'CRM_SUMMARY_PRIVACY_INVALID', 'The AI summary contained unsafe private data.');
+      }
       const updated = await store.updateCrmLeadSummary(lead.id, tenantId, formatted, 'completed');
       if (!updated) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
-      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'crm.lead.summary_formatted', metadata: { leadId: lead.id, aiGenerated: Boolean(model.summarize) }, createdAt: new Date().toISOString() });
-      res.json({ lead: await crmLeadForAdmin(updated), aiGenerated: Boolean(model.summarize) });
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'crm.lead.summary_formatted', metadata: { leadId: lead.id, aiGenerated: true }, createdAt: new Date().toISOString() });
+      res.json({ lead: await crmLeadForAdmin(updated), aiGenerated: true });
     } catch (error) { next(error); }
   });
   app.get('/api/v1/admin/crm/leads', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); res.json({ items: await Promise.all((await store.listCrmLeads(tenantId)).map(crmLeadForAdmin)) }); } catch (error) { next(error); } });

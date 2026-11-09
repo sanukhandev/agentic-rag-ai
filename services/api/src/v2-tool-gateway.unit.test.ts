@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { issueV2Scope, verifyV2Scope, V2_TOOL_NAMES } from './v2-tool-gateway.js';
+import { issueV2Scope, listApprovedV2PackageEvidence, listApprovedV2PackageOptions, verifyV2Scope, V2_TOOL_NAMES } from './v2-tool-gateway.js';
 
 const secret = 'unit-scoped-tool-secret-0123456789';
 const now = Date.UTC(2026, 10, 2, 12);
@@ -67,6 +67,65 @@ const makeGateway = async () => {
 };
 
 describe('V2 trusted tool execution (isolated unit)', () => {
+  it('builds bounded approved package evidence for deterministic package answers', async () => {
+    const { store, tenant, catalog } = await makeGateway();
+    await store.createPackageOffering({
+      id: randomUUID(), tenantId: tenant.id, catalogVersionId: null, catalogVersionRef: 'catalog-v2-ref',
+      packageKey: 'approved-package', name: 'Approved package', eligibleEntityTypes: [], eligibleActivities: [],
+      includedVisaQuantity: 1, officeRequirement: null, inclusions: ['company registration'], priceMinor: 100,
+      currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [],
+      processingTime: 'development only', requiredDocuments: [], exclusions: [], availability: 'development_only',
+      approvalStatus: 'approved', sourceRefs: ['deterministic-mock-pricebook'], createdAt: new Date().toISOString(),
+    });
+    await store.createPackageOffering({
+      id: randomUUID(), tenantId: tenant.id, catalogVersionId: null, catalogVersionRef: 'catalog-v2-ref',
+      packageKey: 'unapproved-package', name: 'Unapproved package', eligibleEntityTypes: [], eligibleActivities: [],
+      includedVisaQuantity: 1, officeRequirement: null, inclusions: [], priceMinor: 200,
+      currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [],
+      processingTime: 'development only', requiredDocuments: [], exclusions: [], availability: 'development_only',
+      approvalStatus: 'unavailable', sourceRefs: [], createdAt: new Date().toISOString(),
+    });
+    const evidence = await listApprovedV2PackageEvidence(store, tenant.id, 'catalog-v2-ref');
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({ sourceVersion: 'catalog-v2-ref', sourceRef: 'tool-get_available_packages', approved: true, revoked: false });
+    expect(evidence[0]?.text).toContain('Approved package');
+    expect(evidence[0]?.text).toContain('AED 1.00');
+    expect(catalog.id).toBeTruthy();
+  });
+
+  it('returns safe selectable package options from the pinned approved catalog', async () => {
+    const { store, tenant } = await makeGateway();
+    await store.createPackageOffering({
+      id: randomUUID(), tenantId: tenant.id, catalogVersionId: null, catalogVersionRef: 'catalog-v2-ref',
+      packageKey: 'growth', name: 'Growth package', eligibleEntityTypes: [], eligibleActivities: [],
+      includedVisaQuantity: 2, officeRequirement: 'shared', inclusions: ['company registration', 'two included visas'], priceMinor: 499900,
+      currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [],
+      processingTime: 'development only', requiredDocuments: [], exclusions: [], availability: 'development_only',
+      approvalStatus: 'approved', sourceRefs: ['deterministic-mock-pricebook'], createdAt: new Date().toISOString(),
+    });
+    await store.createPackageOffering({
+      id: randomUUID(), tenantId: tenant.id, catalogVersionId: null, catalogVersionRef: 'catalog-v2-ref',
+      packageKey: 'expired', name: 'Expired package', eligibleEntityTypes: [], eligibleActivities: [],
+      includedVisaQuantity: 1, officeRequirement: null, inclusions: [], priceMinor: 1,
+      currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: new Date(now - 1).toISOString(), additionalFees: [],
+      processingTime: 'development only', requiredDocuments: [], exclusions: [], availability: 'development_only',
+      approvalStatus: 'approved', sourceRefs: [], createdAt: new Date().toISOString(),
+    });
+    await store.createPackageOffering({
+      id: randomUUID(), tenantId: tenant.id, catalogVersionId: null, catalogVersionRef: 'catalog-v2-ref',
+      packageKey: 'unapproved', name: 'Unapproved package', eligibleEntityTypes: [], eligibleActivities: [],
+      includedVisaQuantity: 1, officeRequirement: null, inclusions: [], priceMinor: 2,
+      currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [],
+      processingTime: 'development only', requiredDocuments: [], exclusions: [], availability: 'development_only',
+      approvalStatus: 'unavailable', sourceRefs: [], createdAt: new Date().toISOString(),
+    });
+    expect(await listApprovedV2PackageOptions(store, tenant.id, 'catalog-v2-ref')).toEqual([{
+      packageKey: 'growth', name: 'Growth package', includedVisaQuantity: 2, officeRequirement: 'shared',
+      inclusions: ['company registration', 'two included visas'], availability: 'development_only',
+      priceMinor: 499900, currency: 'AED', processingTime: 'development only',
+    }]);
+  });
+
   it('returns correlated, bounded responses for all nine approved read tools', async () => {
     const { gateway, request, catalog } = await makeGateway();
     for (const name of V2_TOOL_NAMES) {
@@ -120,6 +179,9 @@ describe('V2 trusted tool execution (isolated unit)', () => {
     expect(result.status).toBe('ok');
     expect(result.sourceVersion).toBe(version.catalogVersionRef);
     expect((result.result?.packages as Array<{ key: string }>).map((item) => item.key)).toEqual(['v2-sandbox-package']);
+    expect((result.result?.evidence as Array<{ text: string }>).map((item) => item.text)).toEqual([
+      'The published approved package V2 sandbox package includes 1 visa.\nIt includes company registration.\nIt has availability development_only.\nIts listed price is AED 1.00.',
+    ]);
   });
   it('rechecks live session revision before returning cached tool results', async () => {
     const { store, pinned, gateway, request } = await makeGateway();

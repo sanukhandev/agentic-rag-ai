@@ -83,15 +83,40 @@ export const normalizeConversationQuery = (text: string): string => text
   .slice(0, 4_000);
 
 const offerReplyText = (text: string): string => normalizeConversationQuery(text).toLocaleLowerCase('en-US');
-const offerAffirmation = /^(?:yes|yeah|yep|sure|okay|ok|please do|go ahead|tell me more|please explain|that would help|i(?:'d| would) like that)(?:[\s,.]*(?:please|sure|yes|go ahead))*[.!]*$/iu;
+const offerAffirmation = /^(?:(?:yes|yeah|yep)(?:[\s,.]*(?:please|sure|yes|go ahead|explain|do))*|sure|okay|ok|please do|go ahead|tell me more|please explain|that would help|i(?:'d| would) like that)[.!]*$/iu;
 const offerRejection = /^(?:no|nope|not now|later|not yet|maybe later|decline|reject|stop|nothing else|i(?:'m| am) done)[.!]*$/iu;
 const offerReplyQuestion = /(?:[?؟]$|^(?:what|how|where|which|why|when|who|can|could|would|is|are|does|should|will)\b|^do\s+(?:you|we|they|i)\b)/iu;
 const offerReplyMinimumConfidence = 0.75;
+const offerLevenshteinDistance = (left: string, right: string): number => {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= right.length; column += 1) {
+      current[column] = Math.min(
+        (current[column - 1] ?? Number.POSITIVE_INFINITY) + 1,
+        (previous[column] ?? Number.POSITIVE_INFINITY) + 1,
+        (previous[column - 1] ?? Number.POSITIVE_INFINITY) + (left[row - 1] === right[column - 1] ? 0 : 1),
+      );
+    }
+    for (let column = 0; column <= right.length; column += 1) previous[column] = current[column] ?? Number.POSITIVE_INFINITY;
+  }
+  return previous[right.length] ?? Number.POSITIVE_INFINITY;
+};
 
 /** Resolves only against the currently persisted offer; it never chooses a business intent. */
 export const classifyOfferReplyDeterministically = (maskedMessage: string, offer: PendingFollowUpOffer): ModelOfferReply => {
   const message = offerReplyText(maskedMessage);
   if (offerRejection.test(message)) return { action: 'reject', confidence: 1 };
+  const packageMatches = offer.options.filter((option) => option.key.startsWith('package_')
+    && [option.label, ...option.retrievalHints].some((candidate) => {
+      const candidateTokens = offerReplyText(candidate).match(/[a-z]{4,}/gu) ?? [];
+      const messageTokens = message.match(/[a-z]{4,}/gu) ?? [];
+      return candidateTokens.some((candidateToken) => messageTokens.some((messageToken) => messageToken === candidateToken
+        || offerLevenshteinDistance(messageToken, candidateToken) <= (Math.max(messageToken.length, candidateToken.length) >= 7 ? 2 : 1)));
+    }));
+  if (packageMatches.length === 1 && /\b(?:package|packages|option|options)\b/iu.test(message)) {
+    return { action: 'select_option', optionKey: packageMatches[0]?.key ?? null, confidence: 1 };
+  }
   if (!offerAffirmation.test(message) && offerReplyQuestion.test(message)) return { action: 'new_request', confidence: 1 };
   const matches = offer.options.filter((option) => [option.key, option.label, ...option.retrievalHints]
     .map(offerReplyText)
@@ -183,6 +208,9 @@ export const extractLeadData = (text: string): LeadData => {
   if (phone) data.phone = phone;
   return data;
 };
+export const normalizePendingLeadName = (text: string): string => text.trim()
+  .replace(/^(?:my\s+name\s+is|i\s+am|i['’]?m|i\s+m)\s+/iu, '')
+  .replace(/[.!?]+$/u, '').trim();
 export const mergeLeadData = (...values: LeadData[]): LeadData => {
   const merged: LeadData = {};
   for (const value of values) {
@@ -241,7 +269,7 @@ export class DeterministicGroundedModel implements ChatModel {
         ? `What ${input.followUpContext.nextSlotLabel.toLocaleLowerCase('en-US').replace(/^what\s+/u, '')} would you like to use for this setup?`
         : known.business_activity ? 'Would you like me to compare the approved package options for this setup?' : 'What business activity would you like to register?';
       const evidenceAnswer = packageAnswer ? '' : selected.map((item) => item.sentence).join(' ');
-      if (packageAnswer || pricingAnswer || timelineAnswer || selected.length > 0) return { answer: `${[packageAnswer, pricingAnswer, timelineAnswer, evidenceAnswer].filter(Boolean).join(' ')} ${nextQuestion}`, citationIds: packageAnswer ? [] : selected.map((item) => item.chunkId), proposedIntent: null };
+      if (packageAnswer || pricingAnswer || timelineAnswer || selected.length > 0) return { answer: `Of course. ${[packageAnswer, pricingAnswer, timelineAnswer, evidenceAnswer].filter(Boolean).join(' ')} ${nextQuestion}`, citationIds: packageAnswer ? [] : selected.map((item) => item.chunkId), proposedIntent: null };
     }
     const wantsLead = /\b(contact|call|email|interested|demo|quote)\b/i.test(input.maskedMessage);
     return { answer: naturalAbstention(detectedLanguage(input.maskedMessage), input.maskedMessage, input.followUpContext), citationIds: [], proposedIntent: wantsLead ? 'lead.capture' : null };

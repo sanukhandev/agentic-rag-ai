@@ -5,7 +5,7 @@
   "settings": {
     "executionOrder": "v1",
     "saveDataSuccessExecution": "none",
-    "saveDataErrorExecution": "none"
+    "saveDataErrorExecution": "all"
   },
   "nodes": [
     {
@@ -38,7 +38,7 @@
         200
       ],
       "parameters": {
-        "jsCode": "const input = $json.body ?? $json;\nconst uuid = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(v);\nif (input.workflowKey !== \"crm.lead.create\" || input.contract !== \"ancfz-v2-stage-action-v1\") throw new Error('Unsupported workflow contract.');\nfor (const k of ['actionId','tenantId','sessionId','eventId','correlationId']) if (!uuid(input[k])) throw new Error('Missing server-issued '+k);\nif (!Number.isInteger(input.attempt) || input.attempt < 1) throw new Error('Missing attempt.');\nreturn [{json: {actionId:input.actionId,tenantId:input.tenantId,sessionId:input.sessionId,eventId:input.eventId,correlationId:input.correlationId,attempt:input.attempt,workflowKey:input.workflowKey,contract:input.contract}}];"
+        "jsCode": "const input = $json.body ?? $json;\nconst uuid = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(v);\nif (input.workflowKey !== \"crm.lead.create\" || input.contract !== \"ancfz-v2-stage-action-v1\") throw new Error('Unsupported workflow contract.');\nfor (const k of ['actionId','tenantId','sessionId','eventId','correlationId','opportunityId']) if (!uuid(input[k])) throw new Error('Missing server-issued '+k);\nfor (const k of ['catalogVersionId','idempotencyKey']) if (typeof input[k] !== 'string' || !input[k].trim()) throw new Error('Missing action correlation '+k);\nif (input.actionKey !== \"lead.create\") throw new Error('Unexpected action key.');\nif (!Number.isInteger(input.actionRevision) || input.actionRevision < 1) throw new Error('Missing action revision.');\nif (!Number.isInteger(input.attempt) || input.attempt < 1) throw new Error('Missing attempt.');\nreturn [{json: {actionId:input.actionId,tenantId:input.tenantId,sessionId:input.sessionId,opportunityId:input.opportunityId,catalogVersionId:input.catalogVersionId,idempotencyKey:input.idempotencyKey,actionKey:input.actionKey,actionRevision:input.actionRevision,eventId:input.eventId,correlationId:input.correlationId,attempt:input.attempt,workflowKey:input.workflowKey,contract:input.contract}}];"
       }
     },
     {
@@ -46,6 +46,7 @@
       "name": "Claim Authorized Action",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [
         520,
         200
@@ -69,12 +70,13 @@
       "name": "Require V2 Stage Authorization",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
+      "onError": "continueErrorOutput",
       "position": [
         780,
         200
       ],
       "parameters": {
-        "jsCode": "const rows = $json.items;\nif (!Array.isArray(rows) || rows.length !== 1) throw new Error('Expected one authorized Node action; no bulk execution.');\nconst action = rows[0];\nconst env = $('Validate Dispatch Envelope').first().json;\nif (action.workflowKey !== \"crm.lead.create\" || action.stageKey !== \"lead_generation\" || action.contract !== env.contract) throw new Error('Stage/action contract mismatch.');\nfor (const k of ['actionId','tenantId','sessionId','eventId','correlationId']) if (action[k] !== env[k]) throw new Error('Claim correlation mismatch: '+k);\nif (action.attempt !== env.attempt || !Number.isInteger(action.actionRevision) || action.actionRevision < 1) throw new Error('Stale action revision or attempt.');\nfor (const k of ['opportunityId','catalogVersionId','idempotencyKey','actionKey','approvedPayload']) if (!action[k]) throw new Error('Missing approved Node field: '+k);\nif (action.actionKey !== \"crm.lead.create\") throw new Error('Action identity mismatch.');\nif (action.providerEnabled !== true || action.v2Authorized !== true || action.purposeConsentVerified !== true || action.actionConfirmationVerified !== true) throw new Error('Node did not explicitly authorize this V2 side effect.');\nif (typeof action.approvedPayload !== 'object' || Array.isArray(action.approvedPayload)) throw new Error('Approved payload missing.');\nreturn [{json:action}];"
+        "jsCode": "const rows = $json.items;\nif (!Array.isArray(rows) || rows.length !== 1) throw new Error('Expected one authorized Node action; no bulk execution.');\nconst action = rows[0];\nconst env = $('Validate Dispatch Envelope').first().json;\nif (action.workflowKey !== \"crm.lead.create\" || action.actionKey !== \"lead.create\" || action.stageKey !== \"lead_generation\" || action.contract !== env.contract) throw new Error('Stage/action contract mismatch.');\nfor (const k of ['actionId','tenantId','sessionId','eventId','correlationId']) if (action[k] !== env[k]) throw new Error('Claim correlation mismatch: '+k);\nif (action.attempt !== env.attempt || !Number.isInteger(action.actionRevision) || action.actionRevision < 1) throw new Error('Stale action revision or attempt.');\nfor (const k of ['opportunityId','catalogVersionId','idempotencyKey','actionKey','approvedPayload']) if (!action[k]) throw new Error('Missing approved Node field: '+k);\nif (action.actionKey !== \"lead.create\") throw new Error('Action identity mismatch.');\nif (action.providerEnabled !== true || action.v2Authorized !== true || action.purposeConsentVerified !== true || action.actionConfirmationVerified !== true) throw new Error('Node did not explicitly authorize this V2 side effect.');\nif (typeof action.approvedPayload !== 'object' || Array.isArray(action.approvedPayload)) throw new Error('Approved payload missing.');\nreturn [{json:action}];"
       }
     },
     {
@@ -82,6 +84,7 @@
       "name": "Call Provider - Configure Credential",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [
         1040,
         200
@@ -93,23 +96,11 @@
         "nodeCredentialType": "oAuth2Api",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({actionReference:$('Require V2 Stage Authorization').first().json.actionId,tenantReference:$('Require V2 Stage Authorization').first().json.tenantId,idempotencyKey:$('Require V2 Stage Authorization').first().json.idempotencyKey,...Object.fromEntries([\"name\",\"email\",\"phone\",\"company\",\"businessActivity\",\"consentReceiptRef\"].filter(k=>Object.prototype.hasOwnProperty.call($('Require V2 Stage Authorization').first().json.approvedPayload,k)).map(k=>[k,$('Require V2 Stage Authorization').first().json.approvedPayload[k]]))}) }}",
+        "jsonBody": "={{ JSON.stringify({Name:$('Require V2 Stage Authorization').first().json.providerPayload.name,Company:$('Require V2 Stage Authorization').first().json.providerPayload.company,Phone:$('Require V2 Stage Authorization').first().json.providerPayload.phone,Email:$('Require V2 Stage Authorization').first().json.providerPayload.email,Description:$('Require V2 Stage Authorization').first().json.providerPayload.description}) }}",
         "options": {
           "timeout": 30000
         },
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Idempotency-Key",
-              "value": "={{ $('Require V2 Stage Authorization').first().json.idempotencyKey }}"
-            },
-            {
-              "name": "X-Action-Reference",
-              "value": "={{ $('Require V2 Stage Authorization').first().json.actionId }}"
-            }
-          ]
-        }
+        "sendHeaders": false
       },
       "notes": "Configure the approved Salesforce sandbox endpoint in REMOTE_CRM_LEAD_URL and assign a managed n8n OAuth2 credential before activation."
     },
@@ -118,6 +109,7 @@
       "name": "Read Back Provider State",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [
         1300,
         200
@@ -131,23 +123,31 @@
         "options": {
           "timeout": 30000
         },
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Idempotency-Key",
-              "value": "={{ $('Require V2 Stage Authorization').first().json.idempotencyKey }}"
-            }
-          ]
-        }
+        "sendHeaders": false
       },
       "notes": "Configure REMOTE_CRM_LEAD_READ_URL as a {leadId} template. Never infer completion from POST 2xx; Node independently verifies this readback before stage completion."
+    },
+    {
+      "id": "ancfzV2LeadCreateR1-evidence-payload",
+      "name": "Build Provider Evidence Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "onError": "continueErrorOutput",
+      "position": [
+        1570,
+        420
+      ],
+      "parameters": {
+        "jsCode": "const action = $('Require V2 Stage Authorization').first().json;\nconst provider = $('Call Provider - Configure Credential').first().json;\nconst readback = $json;\nfor (const key of ['actionId','tenantId','sessionId','opportunityId','catalogVersionId','idempotencyKey','actionKey','actionRevision','eventId','correlationId','attempt']) if (action[key] === undefined || action[key] === null) throw new Error('Missing trusted action correlation: '+key);\nif (typeof provider.leadId !== 'string' || provider.leadId.length === 0) throw new Error('Provider did not return a Lead identifier.');\nreturn [{json:{actionId:action.actionId,tenantId:action.tenantId,sessionId:action.sessionId,opportunityId:action.opportunityId,catalogVersionId:action.catalogVersionId,idempotencyKey:action.idempotencyKey,actionKey:action.actionKey,actionRevision:action.actionRevision,stageKey:'lead_generation',workflowKey:'crm.lead.create',providerRecordId:provider.leadId,providerReadback:readback,eventId:action.eventId,correlationId:action.correlationId,attempt:action.attempt}}];"
+      },
+      "notes": "Materialize trusted action correlation and provider readback before the Node evidence callback; an HTTP response does not retain upstream fields."
     },
     {
       "id": "ancfzV2LeadCreateR1-verify",
       "name": "Ask Node to Verify Provider Evidence",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [
         1570,
         200
@@ -159,7 +159,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({actionId:$('Require V2 Stage Authorization').first().json.actionId,tenantId:$('Require V2 Stage Authorization').first().json.tenantId,sessionId:$('Require V2 Stage Authorization').first().json.sessionId,opportunityId:$('Require V2 Stage Authorization').first().json.opportunityId,catalogVersionId:$('Require V2 Stage Authorization').first().json.catalogVersionId,idempotencyKey:$('Require V2 Stage Authorization').first().json.idempotencyKey,actionKey:$('Require V2 Stage Authorization').first().json.actionKey,actionRevision:$('Require V2 Stage Authorization').first().json.actionRevision,stageKey:\"lead_generation\",workflowKey:\"crm.lead.create\",providerRecordId:$('Call Provider - Configure Credential').first().json[\"leadId\"],providerReadback:$('Read Back Provider State').first().json,eventId:$('Require V2 Stage Authorization').first().json.eventId,correlationId:$('Require V2 Stage Authorization').first().json.correlationId,attempt:$('Require V2 Stage Authorization').first().json.attempt}) }}",
+        "jsonBody": "={{ JSON.stringify({actionId:$('Build Provider Evidence Payload').first().json.actionId,tenantId:$('Build Provider Evidence Payload').first().json.tenantId,sessionId:$('Build Provider Evidence Payload').first().json.sessionId,opportunityId:$('Build Provider Evidence Payload').first().json.opportunityId,catalogVersionId:$('Build Provider Evidence Payload').first().json.catalogVersionId,idempotencyKey:$('Build Provider Evidence Payload').first().json.idempotencyKey,actionKey:$('Build Provider Evidence Payload').first().json.actionKey,actionRevision:$('Build Provider Evidence Payload').first().json.actionRevision,stageKey:'lead_generation',workflowKey:'crm.lead.create',providerRecordId:$('Build Provider Evidence Payload').first().json.providerRecordId,providerReadback:$('Build Provider Evidence Payload').first().json.providerReadback,eventId:$('Build Provider Evidence Payload').first().json.eventId,correlationId:$('Build Provider Evidence Payload').first().json.correlationId,attempt:$('Build Provider Evidence Payload').first().json.attempt}) }}",
         "options": {
           "timeout": 30000
         }
@@ -171,6 +171,7 @@
       "name": "Require Trusted Node Attestation",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
+      "onError": "continueErrorOutput",
       "position": [
         1840,
         200
@@ -184,6 +185,7 @@
       "name": "Complete Correlated Action",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [
         2110,
         200
@@ -201,97 +203,42 @@
         }
       },
       "notes": "Credential deliberately not assigned; configure via the n8n Credentials UI, never in this repository."
+    },
+    {
+      "id": "ancfzV2LeadCreateR1-failure",
+      "name": "Report Correlated Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2380,
+        440
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/fail",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify((() => { const source = $('Validate Dispatch Envelope').first().json; const name = $prevNode?.name ?? ''; const reasonCode = name.includes('Read Back') ? 'salesforce_readback_failed' : name.includes('Call Provider') ? 'salesforce_create_failed' : name.includes('Verify') || name.includes('Attestation') ? 'provider_evidence_rejected' : 'node_completion_failed'; return { actionId: source.actionId, tenantId: source.tenantId, sessionId: source.sessionId, opportunityId: source.opportunityId, catalogVersionId: source.catalogVersionId, idempotencyKey: source.idempotencyKey, actionKey: source.actionKey, actionRevision: source.actionRevision, executionReference: $execution.id, eventId: source.eventId, correlationId: source.correlationId, attempt: source.attempt, state: 'reconcile_required', reasonCode }; })()) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "notes": "Reports only bounded reason codes and server-issued correlation; never forwards provider error payloads or customer data."
     }
   ],
   "connections": {
-    "Receive Node Dispatch": {
-      "main": [
-        [
-          {
-            "node": "Validate Dispatch Envelope",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Validate Dispatch Envelope": {
-      "main": [
-        [
-          {
-            "node": "Claim Authorized Action",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Claim Authorized Action": {
-      "main": [
-        [
-          {
-            "node": "Require V2 Stage Authorization",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Require V2 Stage Authorization": {
-      "main": [
-        [
-          {
-            "node": "Call Provider - Configure Credential",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Call Provider - Configure Credential": {
-      "main": [
-        [
-          {
-            "node": "Read Back Provider State",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Read Back Provider State": {
-      "main": [
-        [
-          {
-            "node": "Ask Node to Verify Provider Evidence",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Ask Node to Verify Provider Evidence": {
-      "main": [
-        [
-          {
-            "node": "Require Trusted Node Attestation",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Require Trusted Node Attestation": {
-      "main": [
-        [
-          {
-            "node": "Complete Correlated Action",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
+    "Receive Node Dispatch": { "main": [[{ "node": "Validate Dispatch Envelope", "type": "main", "index": 0 }]] },
+    "Validate Dispatch Envelope": { "main": [[{ "node": "Claim Authorized Action", "type": "main", "index": 0 }]] },
+    "Claim Authorized Action": { "main": [[{ "node": "Require V2 Stage Authorization", "type": "main", "index": 0 }], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] },
+    "Require V2 Stage Authorization": { "main": [[{ "node": "Call Provider - Configure Credential", "type": "main", "index": 0 }], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] },
+    "Call Provider - Configure Credential": { "main": [[{ "node": "Read Back Provider State", "type": "main", "index": 0 }], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] },
+    "Read Back Provider State": { "main": [[{ "node": "Build Provider Evidence Payload", "type": "main", "index": 0 }], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] },
+    "Build Provider Evidence Payload": { "main": [[{ "node": "Ask Node to Verify Provider Evidence", "type": "main", "index": 0 }], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] },
+    "Ask Node to Verify Provider Evidence": { "main": [[{ "node": "Require Trusted Node Attestation", "type": "main", "index": 0 }], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] },
+    "Require Trusted Node Attestation": { "main": [[{ "node": "Complete Correlated Action", "type": "main", "index": 0 }], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] },
+    "Complete Correlated Action": { "main": [[], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] }
   },
   "pinData": {},
   "staticData": null,

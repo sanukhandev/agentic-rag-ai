@@ -199,13 +199,14 @@ export class MemoryStore implements Store {
     this.intentTurns.set(stored.id, stored);
     return structuredClone(stored);
   }
-  async commitV2IntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null; assistantMessage?: Message; customerMessage?: Message }): Promise<{ session: Session; document: UserIntentDocument }> {
+  async commitV2IntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null; assistantMessage?: Message; customerMessage?: Message; actionApproval?: ActionRequest }): Promise<{ session: Session; document: UserIntentDocument }> {
     const { session, document, assessment } = input;
     assertSafeUserIntentDocument(document);
     assertSafeIntentTurn(assessment);
     const previousSession = this.sessions.get(session.id);
     const key = intentDocumentKey(document.tenantId, session.id);
     const previousDocument = this.intentDocuments.get(key);
+    const currentAction = input.actionApproval ? this.actions.get(input.actionApproval.id) : null;
     const published = (this.intentCatalogV2Versions.get(document.tenantId) ?? []).find(v => v.status === 'published');
     if (!previousSession || previousSession.tenantId !== document.tenantId
       || previousSession.stateVersion !== session.stateVersion || session.tenantId !== document.tenantId
@@ -218,6 +219,9 @@ export class MemoryStore implements Store {
           || !document.goalConfirmed || document.businessGoalKey !== previousDocument.businessGoalKey))
       || (input.expectedDocumentRevision === null ? Boolean(previousDocument)
         : !previousDocument || previousDocument.id !== document.id || previousDocument.revision !== input.expectedDocumentRevision)
+      || (input.actionApproval !== undefined && (!currentAction || currentAction.tenantId !== document.tenantId
+        || currentAction.sessionId !== session.id || input.actionApproval.state !== 'approved'
+        || !['awaiting_confirmation', 'unknown', 'approved', 'processing', 'completed'].includes(currentAction.state)))
       || [...this.intentTurns.values()].some(turn => (turn.sessionId === session.id && turn.clientMessageId === assessment.clientMessageId)
         || (turn.documentId === document.id && turn.turnSequence === assessment.turnSequence))) {
       throw new HttpError(409, 'V2_INTENT_ATOMIC_CONFLICT', 'The confirmation state changed or a message was replayed.');
@@ -250,6 +254,12 @@ export class MemoryStore implements Store {
       this.messages.set(input.customerMessage.id, structuredClone(input.customerMessage));
     }
     if (input.audit) this.audits.push(structuredClone(input.audit));
+    if (input.actionApproval && currentAction && ['awaiting_confirmation', 'unknown'].includes(currentAction.state)) {
+      this.actions.set(input.actionApproval.id, structuredClone(input.actionApproval));
+      if (isUuid(input.actionApproval.tenantId) && isUuid(input.actionApproval.sessionId) && isUuid(input.actionApproval.id)) {
+        await this.enqueueOutboxEvent(createOutboxEvent({ eventId: randomUUID(), eventType: 'intent.action.requested.v1', tenantId: input.actionApproval.tenantId, sessionId: input.actionApproval.sessionId, actionId: input.actionApproval.id, aggregateId: input.actionApproval.id, workflowKey: input.actionApproval.workflowKey, payloadRef: input.actionApproval.opaqueReference, idempotencyKey: input.actionApproval.idempotencyKey, payload: { actionId: input.actionApproval.id, sessionId: input.actionApproval.sessionId, workflowKey: input.actionApproval.workflowKey, webhookPath: input.actionApproval.webhookPath ?? null, catalogVersionId: input.actionApproval.catalogVersionId ?? null, opportunityId: input.actionApproval.opportunityId ?? null, actionKey: input.actionApproval.actionKey ?? null, actionRevision: input.actionApproval.actionRevision ?? 1 } }));
+      }
+    }
     return { session: structuredClone(savedSession), document: structuredClone(savedDocument) };
   }
 

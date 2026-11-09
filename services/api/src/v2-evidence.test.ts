@@ -25,6 +25,18 @@ describe('V2 strict source-bound claims', () => {
     const valid = verifyV2ResponseEvidence(response('Package Alpha costs 40 AED.'), cited);
     expect(valid.verdict.reasonCode).toBe('accepted');
   });
+  it('accepts distinct package options with different prices from one approved package read', () => {
+    const packages: V2ApprovedEvidence[] = [
+      { citationId: 'package-starter', text: 'The published approved package ANCFZ Starter has a listed price of AED 2,499.00.', sourceVersion: 'anc:r5', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-growth', text: 'The published approved package ANCFZ Growth has a listed price of AED 4,999.00.', sourceVersion: 'anc:r5', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-premium', text: 'The published approved package ANCFZ Premium has a listed price of AED 7,899.00.', sourceVersion: 'anc:r5', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+    ];
+    const valid = verifyV2ResponseEvidence(response(
+      'The published approved package ANCFZ Starter has a listed price of AED 2,499.00. The published approved package ANCFZ Growth has a listed price of AED 4,999.00. The published approved package ANCFZ Premium has a listed price of AED 7,899.00.',
+      packages.map((item) => item.citationId),
+    ), packages);
+    expect(valid.verdict.reasonCode).toBe('accepted');
+  });
   it('does not treat a generic company approval policy as provider proof of the customer\'s approval', () => {
     const policy: V2ApprovedEvidence[] = [{
       citationId: 'source-a', text: 'A company is approved following a complete application.',
@@ -132,6 +144,17 @@ describe('v2 claim provenance and evidence verification', () => {
       expect(verifyV2ResponseEvidence(response(answer, []), [], [], { allowNonFactualDialogue: true }).verdict.accepted, answer).toBe(true);
     }
     expect(verifyV2ResponseEvidence(response('Let’s explore that together. The package costs AED 900.', []), [], [], { allowNonFactualDialogue: true }).verdict.accepted).toBe(false);
+  });
+
+  it('accepts TTS framing before a cited answer and final question', () => {
+    const question = 'Which package would you like to explore first?';
+    const value = {
+      ...response(`Of course. Here are the package options. The approved package costs 42 credits. ${question}`),
+      nextQuestion: question,
+      nextQuestionKey: 'conversation_focus',
+      reasonNoQuestion: null,
+    };
+    expect(verifyV2ResponseEvidence(value, approved).verdict.accepted).toBe(true);
   });
 
   it('does not combine a price citation with unrelated visa eligibility', () => {

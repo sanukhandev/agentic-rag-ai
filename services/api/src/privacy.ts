@@ -129,6 +129,9 @@ export const assertKnownTokens = (session: Session, text: string, vault: TokenVa
   for (const placeholder of placeholders) if (!vault.has(session, placeholder)) throw new Error('Model returned an unknown privacy token.');
 };
 
+export const redactUnknownTokens = (session: Session, text: string, vault: TokenVault = defaultVault): string =>
+  text.replace(/\[(?:EMAIL|PHONE|NAME|ID)_\d+\]/g, (placeholder) => vault.has(session, placeholder) ? placeholder : '[REDACTED]');
+
 export const saveTokens = (session: Session, values: MaskResult['tokens'], vault: TokenVault = defaultVault): void => vault.save(session, values);
 
 export const maskPiiForSession = (session: Session, input: string, vault: TokenVault = defaultVault): string => {

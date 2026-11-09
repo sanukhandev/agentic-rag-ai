@@ -127,10 +127,18 @@ export class N8nEventBridge {
       }
       throw new PermanentEventDispatchError(`No authorized route exists for event type ${event.eventType}.`);
     }
-    const body = JSON.stringify({ ...event.payload, eventId: event.eventId, eventType: event.eventType, tenantId: event.tenantId, sessionId: event.sessionId, actionId: event.actionId, aggregateId: event.aggregateId, payloadRef: event.payloadRef, webhookPath: route.webhookPath, workflowKey: route.workflowKey, n8nWorkflowId: route.n8nWorkflowId ?? null, contract: route.payloadContract ?? (event.eventType === 'document.extraction.requested.v1' ? 'anc-document-ocr-v1' : 'crm-lead-capture-v1'), correlationId: event.correlationId, attempt });
+    const actionForDispatch = event.actionId ? await this.store.getAction(event.actionId) : null;
+    const correlationPayload = actionForDispatch && actionForDispatch.tenantId === event.tenantId ? {
+      idempotencyKey: actionForDispatch.idempotencyKey,
+      opportunityId: actionForDispatch.opportunityId,
+      catalogVersionId: actionForDispatch.catalogVersionId,
+      actionKey: actionForDispatch.actionKey,
+      actionRevision: actionForDispatch.actionRevision,
+    } : {};
+    const body = JSON.stringify({ ...event.payload, ...correlationPayload, eventId: event.eventId, eventType: event.eventType, tenantId: event.tenantId, sessionId: event.sessionId, actionId: event.actionId, aggregateId: event.aggregateId, payloadRef: event.payloadRef, webhookPath: route.webhookPath, workflowKey: route.workflowKey, n8nWorkflowId: route.n8nWorkflowId ?? null, contract: route.payloadContract ?? (event.eventType === 'document.extraction.requested.v1' ? 'anc-document-ocr-v1' : 'crm-lead-capture-v1'), correlationId: event.correlationId, attempt });
     try {
       if (event.actionId) {
-        const action = await this.store.getAction(event.actionId);
+        const action = actionForDispatch ?? await this.store.getAction(event.actionId);
         if (action && action.tenantId === event.tenantId) {
           let claim: { execution: ActionExecution; claimed: boolean };
           try {
@@ -201,7 +209,13 @@ export class N8nEventBridge {
 
   private async documentRoute(event: OutboxEvent): Promise<{ workflowKey: string; webhookPath: string; n8nWorkflowId?: string; payloadContract?: string } | null> {
     const job = await this.store.getDocumentProcessingJob(event.payloadRef, event.tenantId);
-    if (!job || job.tenantId !== event.tenantId || job.status !== 'queued') return null;
+    if (!job || job.tenantId !== event.tenantId || !['queued', 'processing'].includes(job.status)) return null;
+    const document = await this.store.getSupportingDocument(job.documentId, event.tenantId);
+    const v2Version = document?.catalogVersionId
+      ? (await this.store.listIntentCatalogV2Versions(event.tenantId)).find((candidate) => candidate.status === 'published' && candidate.catalogVersionRef === document.catalogVersionId)
+      : null;
+    const v2Binding = v2Version?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === job.workflowKey && candidate.enabled);
+    if (v2Binding?.webhookPath) return { workflowKey: v2Binding.workflowKey, webhookPath: v2Binding.webhookPath, ...(v2Binding.n8nWorkflowId ? { n8nWorkflowId: v2Binding.n8nWorkflowId } : {}), ...(v2Binding.payloadContract ? { payloadContract: v2Binding.payloadContract } : {}) };
     const version = await this.store.getPublishedIntentCatalog(job.tenantId);
     const binding = version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === job.workflowKey && candidate.active);
     return binding ? { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, n8nWorkflowId: binding.n8nWorkflowId, payloadContract: binding.payloadContract } : null;

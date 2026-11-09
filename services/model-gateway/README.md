@@ -1,8 +1,10 @@
 # Python conversation-planner gateway — initial implementation
 
 Private FastAPI model gateway for the **planned** Node → Python → GPT architecture.
-Currently implements authenticated `plan` and `normalize` with typed Pydantic
-contracts, structured JSON output, evidence-ID allowlist and Azure model retry budget.
+Currently implements authenticated `plan`, `normalize`, and bounded CRM `summarize`
+operations with typed Pydantic contracts, structured JSON output, evidence-ID allowlist
+and Azure model retry budget. The summary operation accepts masked CRM context only;
+it is not a document OCR endpoint.
 The Node API remains responsible for tenant/session/intent/catalog scope, allowed tool
 execution, verified RAG citations, consent and async n8n events.
 

@@ -10,13 +10,19 @@ export type SalesforceSandboxLeadProviderOptions = {
   clientId?: string;
   clientSecret?: string;
   readbackUrl?: string;
+  leadUpdateUrl?: string;
+  attachmentUrl?: string;
+  attachmentReadbackUrl?: string;
   accountReadbackUrl?: string;
+  contactReadbackUrl?: string;
+  opportunityReadbackUrl?: string;
   documentReadbackUrl?: string;
   fetchImpl?: FetchLike;
   timeoutMs?: number;
 };
 
 export type SalesforceSandboxLeadReadbackProvider = Pick<SalesforceSandboxLeadProvider, 'verify'>;
+export type SalesforceSandboxLeadMutationProvider = Pick<SalesforceSandboxLeadProvider, 'updateLeadDescription' | 'createLeadAttachment'>;
 export type SalesforceSandboxAccountReadbackProvider = Pick<SalesforceSandboxLeadProvider, 'verifyAccount'>;
 export type SalesforceSandboxDocumentReadbackProvider = Pick<SalesforceSandboxLeadProvider, 'verifyDocument'>;
 
@@ -50,6 +56,9 @@ const stringField = (record: Record<string, unknown>, keys: string[]): string | 
   return null;
 };
 
+const collectionUrlFromLeadReadback = (readbackUrl: string): string => readbackUrl.replace(/\/Lead\/\{leadId\}$/u, '/Attachment');
+const attachmentReadbackUrlFromCollection = (attachmentUrl: string): string => attachmentUrl.endsWith('/Attachment') ? `${attachmentUrl}/{attachmentId}` : '';
+
 type CorrelatedRequest = Pick<V2TrustedProviderReadback, 'tenantId' | 'sessionId' | 'opportunityId' | 'idempotencyKey'>;
 export type SalesforceAccountReadback = V2TrustedProviderReadback & { remoteAccountId: string; remoteContactId: string; remoteOpportunityId: string; leadExternalId: string; deduplicated: boolean };
 export type SalesforceDocumentReadback = V2TrustedProviderReadback & { attachmentId: string; leadAttachmentId: string; accountAttachmentId: string; remoteAccountId: string; remoteContactId: string; remoteOpportunityId: string };
@@ -63,7 +72,12 @@ export class SalesforceSandboxLeadProvider {
   private tokenExpiresAt = 0;
   private tokenPromise: Promise<string> | null = null;
   private readonly readbackUrl: string;
+  private readonly leadUpdateUrl: string;
+  private readonly attachmentUrl: string;
+  private readonly attachmentReadbackUrl: string;
   private readonly accountReadbackUrl: string;
+  private readonly contactReadbackUrl: string;
+  private readonly opportunityReadbackUrl: string;
   private readonly documentReadbackUrl: string;
   private readonly fetchImpl: FetchLike;
   private readonly timeoutMs: number;
@@ -74,10 +88,20 @@ export class SalesforceSandboxLeadProvider {
     this.clientId = options.clientId?.trim() ?? '';
     this.clientSecret = options.clientSecret?.trim() ?? '';
     this.readbackUrl = options.readbackUrl?.trim() ?? '';
+    this.leadUpdateUrl = options.leadUpdateUrl?.trim() || this.readbackUrl;
+    this.attachmentUrl = options.attachmentUrl?.trim() || collectionUrlFromLeadReadback(this.readbackUrl);
+    this.attachmentReadbackUrl = options.attachmentReadbackUrl?.trim() || attachmentReadbackUrlFromCollection(this.attachmentUrl);
     this.accountReadbackUrl = options.accountReadbackUrl?.trim() ?? '';
+    this.contactReadbackUrl = options.contactReadbackUrl?.trim() ?? '';
+    this.opportunityReadbackUrl = options.opportunityReadbackUrl?.trim() ?? '';
     this.documentReadbackUrl = options.documentReadbackUrl?.trim() ?? '';
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = options.timeoutMs ?? 30_000;
+  }
+
+  isLeadReadbackConfigured(): boolean {
+    return Boolean(this.readbackUrl.includes('{leadId}')
+      && (this.accessToken || (this.tokenUrl && this.clientId && this.clientSecret)));
   }
 
   private async requestAccessToken(): Promise<string> {
@@ -122,7 +146,7 @@ export class SalesforceSandboxLeadProvider {
   private async fetchRecord(readbackUrl: string, providerRecordId: string, missingCode: string): Promise<Record<string, unknown>> {
     if ((!this.accessToken && (!this.tokenUrl || !this.clientId || !this.clientSecret)) || !readbackUrl || !readbackUrl.includes('{')) throw new Error(missingCode);
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u.test(providerRecordId)) throw new Error('SALESFORCE_READBACK_RECORD_INVALID');
-    const url = readbackUrl.replaceAll('{leadId}', encodeURIComponent(providerRecordId)).replaceAll('{accountId}', encodeURIComponent(providerRecordId)).replaceAll('{attachmentId}', encodeURIComponent(providerRecordId));
+    const url = readbackUrl.replaceAll('{leadId}', encodeURIComponent(providerRecordId)).replaceAll('{accountId}', encodeURIComponent(providerRecordId)).replaceAll('{contactId}', encodeURIComponent(providerRecordId)).replaceAll('{opportunityId}', encodeURIComponent(providerRecordId)).replaceAll('{attachmentId}', encodeURIComponent(providerRecordId));
     const accessToken = await this.getAccessToken();
     let response: Response | null = null;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
@@ -167,7 +191,99 @@ export class SalesforceSandboxLeadProvider {
     return this.attestation(request, returnedRecordId);
   }
 
+  async updateLeadDescription(input: { providerRecordId: string; description: string }): Promise<{ recordRef: string; description: string }> {
+    if (!this.leadUpdateUrl || !this.leadUpdateUrl.includes('{leadId}')) throw new Error('SALESFORCE_LEAD_UPDATE_NOT_CONFIGURED');
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u.test(input.providerRecordId)) throw new Error('SALESFORCE_READBACK_RECORD_INVALID');
+    if (!input.description.trim() || input.description.length > 32_000) throw new Error('SALESFORCE_LEAD_DESCRIPTION_INVALID');
+    const url = this.leadUpdateUrl.replaceAll('{leadId}', encodeURIComponent(input.providerRecordId));
+    const accessToken = await this.getAccessToken();
+    let response: Response | null = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+      try {
+        response = await this.fetchImpl(url, {
+          method: 'PATCH',
+          headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ Description: input.description }),
+          signal: AbortSignal.timeout(this.timeoutMs),
+        });
+      } catch {
+        if (attempt === MAX_ATTEMPTS) throw new Error('SALESFORCE_LEAD_UPDATE_UNAVAILABLE');
+        await wait(Math.min(MAX_RETRY_DELAY_MS, 100 * (2 ** (attempt - 1))));
+        continue;
+      }
+      if (!TRANSIENT_STATUS.has(response.status) || attempt === MAX_ATTEMPTS) break;
+      await wait(retryDelayMs(response, attempt));
+    }
+    if (!response) throw new Error('SALESFORCE_LEAD_UPDATE_UNAVAILABLE');
+    if (response.status === 401 || response.status === 403) throw new Error('SALESFORCE_LEAD_UPDATE_AUTH_FAILED');
+    if (!response.ok) throw new Error('SALESFORCE_LEAD_UPDATE_FAILED');
+    const record = await this.fetchRecord(this.readbackUrl, input.providerRecordId, 'SALESFORCE_READBACK_NOT_CONFIGURED');
+    const returnedRecordId = stringField(record, ['leadId', 'LeadId', 'id', 'Id']);
+    const description = stringField(record, ['description', 'Description']);
+    if (returnedRecordId !== input.providerRecordId || description !== input.description) throw new Error('SALESFORCE_LEAD_UPDATE_READBACK_MISMATCH');
+    return { recordRef: returnedRecordId, description };
+  }
+
+  async createLeadAttachment(input: { providerRecordId: string; fileName: string; contentBase64: string }): Promise<{ attachmentRef: string; parentRef: string; fileName: string; sizeBytes: number }> {
+    if (!this.attachmentUrl || !this.attachmentReadbackUrl) throw new Error('SALESFORCE_ATTACHMENT_NOT_CONFIGURED');
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u.test(input.providerRecordId)) throw new Error('SALESFORCE_READBACK_RECORD_INVALID');
+    if (!/^[^\\/\r\n]{1,240}$/u.test(input.fileName) || !/^[A-Za-z0-9+/]*={0,2}$/u.test(input.contentBase64) || input.contentBase64.length % 4 !== 0) throw new Error('SALESFORCE_ATTACHMENT_INPUT_INVALID');
+    const content = Buffer.from(input.contentBase64, 'base64');
+    if (content.length === 0) throw new Error('SALESFORCE_ATTACHMENT_INPUT_INVALID');
+    const accessToken = await this.getAccessToken();
+    let response: Response | null = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+      try {
+        response = await this.fetchImpl(this.attachmentUrl, {
+          method: 'POST',
+          headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ ParentId: input.providerRecordId, Name: input.fileName, Body: input.contentBase64 }),
+          signal: AbortSignal.timeout(this.timeoutMs),
+        });
+      } catch {
+        if (attempt === MAX_ATTEMPTS) throw new Error('SALESFORCE_ATTACHMENT_UNAVAILABLE');
+        await wait(Math.min(MAX_RETRY_DELAY_MS, 100 * (2 ** (attempt - 1))));
+        continue;
+      }
+      if (!TRANSIENT_STATUS.has(response.status) || attempt === MAX_ATTEMPTS) break;
+      await wait(retryDelayMs(response, attempt));
+    }
+    if (!response) throw new Error('SALESFORCE_ATTACHMENT_UNAVAILABLE');
+    if (response.status === 401 || response.status === 403) throw new Error('SALESFORCE_ATTACHMENT_AUTH_FAILED');
+    if (!response.ok) throw new Error('SALESFORCE_ATTACHMENT_FAILED');
+    const created = objectRecord(await response.json().catch(() => null));
+    const attachmentRef = stringField(created ?? {}, ['attachmentId', 'AttachmentId', 'id', 'Id']);
+    if (!attachmentRef) throw new Error('SALESFORCE_ATTACHMENT_CREATE_INVALID');
+    const readback = await this.fetchRecord(this.attachmentReadbackUrl, attachmentRef, 'SALESFORCE_ATTACHMENT_READBACK_NOT_CONFIGURED');
+    const returnedRef = stringField(readback, ['attachmentId', 'AttachmentId', 'id', 'Id']);
+    const parentRef = stringField(readback, ['parentId', 'ParentId']);
+    const returnedName = stringField(readback, ['name', 'Name']);
+    if (returnedRef !== attachmentRef || parentRef !== input.providerRecordId || returnedName !== input.fileName) throw new Error('SALESFORCE_ATTACHMENT_READBACK_MISMATCH');
+    return { attachmentRef, parentRef, fileName: returnedName, sizeBytes: content.length };
+  }
+
   async verifyAccount(input: { request: Pick<V2AccountProviderRequest, 'tenantId' | 'sessionId' | 'opportunityId' | 'idempotencyKey' | 'leadExternalId'>; providerRecordId: string }): Promise<SalesforceAccountReadback> {
+    const relationshipIds = input.providerRecordId.split(':');
+    if (relationshipIds.length === 3 && this.contactReadbackUrl && this.opportunityReadbackUrl) {
+      const remoteAccountId = relationshipIds[0];
+      const remoteContactId = relationshipIds[1];
+      const remoteOpportunityId = relationshipIds[2];
+      if (!remoteAccountId || !remoteContactId || !remoteOpportunityId || ![remoteAccountId, remoteContactId, remoteOpportunityId].every((value) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/u.test(value))) throw new Error('SALESFORCE_ACCOUNT_READBACK_RECORD_INVALID');
+      const [accountRecord, contactRecord, opportunityRecord] = await Promise.all([
+        this.fetchRecord(this.accountReadbackUrl, remoteAccountId, 'SALESFORCE_ACCOUNT_READBACK_NOT_CONFIGURED'),
+        this.fetchRecord(this.contactReadbackUrl, remoteContactId, 'SALESFORCE_CONTACT_READBACK_NOT_CONFIGURED'),
+        this.fetchRecord(this.opportunityReadbackUrl, remoteOpportunityId, 'SALESFORCE_OPPORTUNITY_READBACK_NOT_CONFIGURED'),
+      ]);
+      const accountId = stringField(accountRecord, ['accountId', 'AccountId', 'id', 'Id']);
+      const contactId = stringField(contactRecord, ['contactId', 'ContactId', 'id', 'Id']);
+      const opportunityId = stringField(opportunityRecord, ['opportunityId', 'OpportunityId', 'id', 'Id']);
+      const accountDescription = stringField(accountRecord, ['description', 'Description']) ?? '';
+      const contactAccountId = stringField(contactRecord, ['accountId', 'AccountId']);
+      const opportunityAccountId = stringField(opportunityRecord, ['accountId', 'AccountId']);
+      if (accountId !== remoteAccountId || contactId !== remoteContactId || opportunityId !== remoteOpportunityId
+        || contactAccountId !== remoteAccountId || opportunityAccountId !== remoteAccountId || !accountDescription.includes(input.request.leadExternalId)) throw new Error('SALESFORCE_ACCOUNT_READBACK_MISMATCH');
+      return { ...this.attestation(input.request, remoteAccountId), remoteAccountId, remoteContactId, remoteOpportunityId, leadExternalId: input.request.leadExternalId, deduplicated: false };
+    }
     const record = await this.fetchRecord(this.accountReadbackUrl, input.providerRecordId, 'SALESFORCE_ACCOUNT_READBACK_NOT_CONFIGURED');
     const remoteAccountId = stringField(record, ['accountId', 'AccountId', 'id', 'Id']);
     const remoteContactId = stringField(record, ['contactId', 'ContactId']);

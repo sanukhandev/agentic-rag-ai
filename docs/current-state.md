@@ -2,6 +2,8 @@
 
 **Current baseline:** `main` after merged PRs #79 and #78 (2026-10-30), containing the initial Python GPT gateway/Node adapter and retired Foundry-agent runtime files. This is **not** a tested seven-stage runtime; the original lead-first `app.ts` still controls the chat. This document records source inspection and target gaps, not live acceptance.
 
+**2026-11-06 local V2 checkpoint:** non-status document requests in an unconfirmed ANCFZ conversation now open the guarded company-formation handoff instead of exposing document policy prematurely. The reply asks for explicit goal confirmation, then starts Lead contact collection; package and quote operations remain behind the existing CRM/account and provider-evidence gates. Local replay and API tests passed; external CRM completion remains unverified.
+
 ## Recovery checkpoint — 2026-11-04
 
 On `fix/zara-conversation-engine-end-to-end-recovery`, the V2 public path now independently validates optional questions, claims and candidate intent plans; accepts trusted evidence from correlated read tools; evaluates mixed-polarity source clauses; preserves the V2 prompt cursor across public turns; recognizes reviewed natural formation aliases; accepts natural scoped confirmation phrasing; preserves verified business and masked contact facts through invalid non-knowledge citations; advances catalog contact requirements through consent; routes an explicit, purpose-consented Lead request through the existing Node action gate to an awaiting-confirmation proposal when the published binding is enabled; resolves canonical V2 outbox actions through catalog-declared n8n identity and durable claim correlation; contextualizes knowledge follow-ups; keeps synthetic tool provenance out of PostgreSQL source UUID lookups; preserves relevant short structured ingestion lines for deterministic grounded fallback; and stores package offerings against either legacy UUID or canonical V2 catalog identity without repinning. Focused/full local tests, local ingestion and tenant acceptance, public confirmation/fact/contact smoke, a rebuilt Docker API, and a 25-turn public persistence harness pass. The seven-stage journey, Salesforce sandbox, package/quotation data, browser E2E and three-run Azure acceptance remain unverified; this checkpoint does not replace the migration gaps below.
@@ -218,3 +220,100 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - The rebuilt API container independently obtained a token and returned `provider_record_verified` for the sandbox Lead created through n8n.
 - Verification: API **62 files / 532 tests PASS**, full `npm run verify:local` PASS, Docker API health PASS, and real Node-to-Salesforce readback PASS.
 - This proves the Lead readback adapter can authenticate and verify a real sandbox record. It does not activate the ANCFZ V2 binding or prove the full action-gated create/dedupe/update journey.
+
+## 2026-11-06 human-centered TTS response checkpoint
+
+- Updated `services/model-gateway/gateway/persona_composer.py` to instruct normal tenant-persona replies to use short spoken-language sentences, brief context acknowledgement, a plain-language explanation, and at most one final follow-up question.
+- Updated `services/api/src/v2-coordinator.ts`, `services/api/src/v2-evidence.ts`, and `services/api/src/model.ts` so deterministic and source-recovery replies use tenant-neutral explanatory framing, preserve approved evidence verbatim and retain synchronized question metadata. Package recovery now asks which package the customer wants to explore; generic evidence recovery asks whether the customer wants the information applied to their setup.
+- No package workflow, CRM, document, quote, payment, contract, database schema, credential, or persona identity behavior changed.
+- Verification: API **62 files / 545 tests PASS**, API typecheck PASS, API build PASS, changed-file ESLint PASS, and model-gateway **39 tests PASS** with `PYTHONPATH=services/model-gateway`.
+- Repo-wide API lint remains **BLOCKED_BY_BASELINE** by four pre-existing `@typescript-eslint/no-explicit-any` errors in `services/api/src/runtime-security.test.ts`; none are in the changed files. Full seven-stage journey, live provider completion, and human TTS listening quality remain unverified.
+
+## 2026-11-06 Zara response regression fix
+
+- Removed the technical source-verification wording from deterministic customer replies. Source recovery now uses natural employee-style phrasing such as `Of course.` while retaining the exact approved evidence and guard validation.
+- First-contact fallback now recognizes a customer addressing the configured assistant and introducing themselves, such as `hello Zara, I’m Meow Ching`, and returns the pinned persona greeting instead of the generic work-through response.
+- Regression coverage: API **62 files / 546 tests PASS**, typecheck PASS, and changed-file ESLint PASS. The follow-up Docker rebuild is recorded below.
+
+## 2026-11-06 confirmation and package recovery checkpoint
+
+- Scoped formation confirmation now accepts the observed `ys` and `yes, let us get started with company formation` replies without consuming the pending goal prompt incorrectly.
+- Package questions now prefetch the pinned, approved, effective V2 package evidence before model composition, so package options remain available even when the model skips the optional package tool or its prose repair is rejected.
+- Verification: API **62 files / 560 tests PASS**, API typecheck/build PASS, changed-file ESLint PASS, Docker `api` and `web` rebuild PASS, and `/api/v1/health/ready` returned `ready` with PostgreSQL and Redis available.
+- The reported session still has action `916e1d64-430f-43e1-be05-7f66e1c25b35` in `reconcile_required` and no `crm_leads` row because n8n returns `POST ancfz/v2/lead-create` as an unknown webhook. The inactive ANCFZ workflow must be reviewed/configured before the Admin CRM row can be created; no Lead is claimed.
+
+## 2026-11-06 Lead button confirmation checkpoint
+
+- V2 now creates the existing server-backed `awaiting_confirmation` Lead action when contact consent is complete and returns the existing confirmation-card payload. A subsequent knowledge or package turn reuses the pending action and does not create duplicates.
+- No new endpoint, UI component, direct CRM write, or n8n activation was added. The existing confirmation endpoint remains the authorization path; explicit typed confirmation remains only as a compatibility fallback.
+- Verification: API **62 files / 561 tests PASS**, API typecheck/build PASS, changed-file ESLint PASS, Docker `api` and `web` rebuild PASS, and `/api/v1/health/ready` returned `ready` with PostgreSQL and Redis available.
+- The configured n8n webhook `ancfz/v2/lead-create` remains unregistered, so a clicked button may still transition to `reconcile_required` until the reviewed workflow is configured. No Admin CRM Lead is claimed from this change.
+
+## 2026-11-06 Lead → package → development quote checkpoint
+
+- Published ANCFZ Catalog V2 revision 6 (`anc:r6:f6975dba48310da07648cb16e57c8a6b2e77d135c6e7199e1a46212f20fbeea6`) enables the approved `package.confirm` binding and keeps the three synthetic package offerings pinned to that revision.
+- After a verified CRM Lead and granted contact consent, the chat now renders approved package cards. Selecting a card creates an idempotent package selection and dispatches the reviewed `ancfzV2PackageQuoteR1` n8n workflow.
+- The development-only quote boundary rechecks tenant/session/action/Lead/package scope, renders a MOCK PDF through the private ANCFZ PDF service, hashes the downloaded bytes, stores the PDF privately, and exposes it only through the authenticated chat-session download route. This is not official ANCFZ pricing or provider completion.
+- Local n8n was backed up at `data/n8n/database.sqlite.before-package-cleanup-20261106` and reduced to the existing Lead template plus the active package quote/PDF workflow. Unused inactive ANCFZ stage/notification workflows were removed from the local registry; source templates remain in Git.
+- Verification: full workspace tests **PASS** (admin 71, web 15, API 564, chat-utils 6, contracts 6), typecheck **PASS**, ANCFZ n8n template tests **PASS**, PDF renderer tests **PASS**, Docker builds for API/web/PDF **PASS**, API readiness **200**, PDF render/download integrity **PASS**, and the n8n package webhook returned **200** and started an execution.
+- Remaining limits: the Lead workflow remains inactive/configuration-dependent, quote generation is local development-only, and the full Salesforce Lead-to-Admin journey plus browser TTS quality are not re-accepted by this checkpoint.
+
+## 2026-11-06 package selection gate correction
+
+- Package questions still show the approved catalog options, but the response now marks them read-only until both contact consent and a verified remote CRM Lead exist. The assistant wording no longer asks the customer to choose a quote package before that gate.
+- After verification, the existing package buttons become actionable; the API-side `LEAD_NOT_VERIFIED` guard remains in place for direct or stale requests.
+- Verification: API **564 tests PASS**, API/web typechecks PASS, API/web Docker rebuild PASS, and API readiness returned `ready`.
+
+## 2026-11-08 quote workflow gate and synthetic API verification
+
+- The pinned V2 legacy `POST /api/v1/chat/sessions/:id/packages/quotes` route now fails closed with `QUOTE_WORKFLOW_REQUIRED` unless it is only re-reading a quote already attached to a confirmed package selection. Sessions without a V2 catalog pin retain the legacy compatibility behavior.
+- Added a synthetic API exercise covering approved package action → internal development quote executor → verified PDF bytes → authorized download, plus replay after completion. The quote was marked `mock`/development-only; no provider-backed quote or official ANCFZ pricing was claimed.
+- Verification: API **62 files / 566 tests PASS**, API typecheck/build PASS, changed-file ESLint PASS, and the synthetic quote API test PASS.
+- Docker Compose rebuild/start completed for the local stack; API readiness returned HTTP 200 with PostgreSQL and Redis available. No external provider or production credential was used.
+
+## 2026-11-08 live API conversation review
+
+- `scripts/live-quote-conversation.mjs` exercised a synthetic customer conversation through the live API, including greetings, setup clarification, company-formation confirmation, contact collection, explicit V2 consent postback, Lead confirmation, reconciliation follow-up, package lookup, and both supplied document upload attempts.
+- The customer-visible flow remained coherent and the Lead confirmation was correctly proposed. The action ended at `reconcile_required` because the published `crm.lead.create` binding uses `salesforce_sandbox` and the local API has no configured Salesforce provider adapter for this execution. The API returned the persona-safe follow-up: `I’ll keep the conversation open while this is reviewed. What would you like to go over next?`
+- The supplied Emirates ID and passport images were sent only to the local API harness; both uploads were rejected before storage with `DOCUMENT_REQUIREMENT_NOT_ACTIVE` because document intake is disabled for the pinned catalog. Raw image bytes and PII are not present in the export.
+- Live API result: **quote not generated/downloadable** because verified Lead completion is the prerequisite gate. The separate synthetic API integration test still proves the local development quote executor and authorized PDF download path (mock-only, not provider-backed pricing).
+- Redacted human-review export: `docs/verification/quote-conversation-review-2026-11-08.json`.
+
+## 2026-11-08 Salesforce readiness gate correction
+
+- Root cause confirmed: Salesforce readback configuration is present in the local API environment, but the registered ANCFZ V2 Lead workflow `ancfzV2LeadCreateR1` is inactive in n8n. The live `POST /webhook/ancfz/v2/lead-create` therefore returns 404 and cannot be treated as a usable Lead path.
+- Added a Node-owned `leadProviderReady` gate. The API now requires both configured Salesforce Lead readback credentials and `V2_LEAD_WORKFLOW_READY=true` before it can create or advertise a Lead action. The deployment default is `false`; this does not expose provider secrets to Python or the customer.
+- When the gate is false, consent is recorded but no Lead action or confirmation card is created. Provider evidence validation remains the authoritative completion path once the reviewed n8n workflow, credentials and callback are enabled.
+- Verification: focused API tests **62 files / 567 tests PASS**, API typecheck/build and changed-file ESLint PASS, Docker API/event services rebuilt, API readiness returned HTTP 200, and the live conversation export recorded `providerGate: v2_lead_workflow_not_ready`, no Lead action, and no quote generation/download.
+- The separate synthetic development quote executor remains verified through the existing mock PDF integration test; this live Salesforce run correctly stops before package selection because the Lead prerequisite is not verified.
+
+## 2026-11-08 local Salesforce sandbox acceptance rerun
+
+- Local n8n was configured with the existing Salesforce OAuth2 credential and internal Node header credential, the credential-bound `ancfzV2LeadCreateR1` workflow was published/activated, and the local API gate was enabled with `V2_LEAD_WORKFLOW_READY=true`. The repository template remains inactive by default.
+- The real synthetic Docker conversation completed the Salesforce-backed Lead action with state `completed`; the redacted export records nine polling attempts and no reconciliation follow-up. No production tenant or real customer data was used.
+- Package selection returned HTTP 202. The development quote executor returned HTTP 200 with `verified: true`, `mock: true`; the authenticated PDF download returned HTTP 200, 2,522 bytes, and SHA-256 `c9c11baffdbdd3e22ed1977eabf6c50b4746d9fc85f0bf62c42ffaea1047530c`, matching the stored artifact.
+- Redacted human-review export: `docs/verification/quote-conversation-review-2026-11-08.json`. Downloaded development artifact: `artifacts/ancfz-sandbox-2026-11-08/ancfz-development-quote-live-review.pdf`.
+- The Emirates ID and passport uploads were attempted after the quote but remain blocked with `DOCUMENT_REQUIREMENT_NOT_ACTIVE`; the pinned catalog has document intake disabled. The quote is development/mock evidence, not official ANCFZ pricing or Salesforce quote completion.
+
+## 2026-11-09 Salesforce runtime readiness hardening
+
+- Added a secret-safe n8n readiness verifier for the exact Lead workflow ID, webhook path, payload contract, active state, and required create/readback/OAuth/internal-secret presence flags. It reports readiness codes without printing endpoint values, credential IDs, tokens, or customer payloads.
+- Docker Compose keeps the Salesforce Lead gate disabled by default; local activation remains an explicit dev-only operation. Internal event-worker traffic uses `http://n8n:5678`; `/n8n/` is the public proxy path.
+- The existing local n8n Salesforce credential and sandbox wiring were not rotated: the previous synthetic Docker run already proved create, readback, Node evidence verification, and correlated completion. Credential replacement would be unnecessary risk unless a fresh readiness or sandbox run fails.
+- Added `npm run activate:n8n:dev`, an explicit local-only allowlisted publisher for the Lead, development quote, and OCR workflows. It must be followed by readiness verification; no production activation or credential creation is implied.
+- Added the correlated Lead failure callback and Node endpoint. The repository template and API path are covered by tests, while local n8n was restored to the previously verified published database after a direct SQLite revision sync did not preserve n8n's publication metadata. The restore keeps the working Salesforce OAuth/internal-header runtime intact; a safe n8n-native import/publish is still required before treating the new callback as deployed runtime behavior.
+
+## 2026-11-09 Salesforce Lead workflow acceptance rerun
+
+- Fresh local Docker restart, explicit dev activation, readiness verification, mock webhook probe, and the complete synthetic conversation passed. The existing n8n Salesforce credential created and read back a sandbox Lead; the action reached `completed` with `provider_record_verified` evidence.
+- The development quote was verified and downloaded as a PDF (HTTP 200). Both supplied synthetic document images were accepted, OCR processing completed, and Salesforce attachment readback audit events were recorded for both files.
+- Redacted evidence: [`salesforce-lead-workflow-acceptance-2026-11-09.json`](verification/salesforce-lead-workflow-acceptance-2026-11-09.json). No credential values, document bytes, or customer PII are included. Quote evidence remains mock/development-only.
+
+## 2026-11-09 CRM AI summary fix
+
+- OCR callback handling now persists newly-created session privacy tokens before the document summary is composed or synchronized. CRM and Salesforce document summaries contain document type/status metadata only; identity-document OCR text and filenames are not sent in summary text.
+- Admin CRM summarization now has an explicit private Python model-gateway dependency at `/internal/v1/model/summarize`, authenticated with the existing service key and bounded to masked CRM context. V2 customer conversation planning remains unchanged and does not share this route as a fallback.
+- Admin summarization rebuilds its model input from the current masked conversation and metadata-only supporting-document state instead of trusting legacy persisted OCR summaries, allowing historical leads with stale token placeholders to be summarized safely.
+- Missing model configuration, model failures, unknown privacy tokens, and unsafe model output now return typed summary errors instead of an unhandled `INTERNAL_ERROR`.
+- Follow-up hardening keeps OCR exports out of the model, persisted CRM summary, and Salesforce payloads while appending completed-document OCR details only to the authenticated Admin CRM response and document panel. User requirements are normalized into concise, deduplicated statements, greetings and acknowledgements are omitted, and unknown legacy privacy placeholders are shown as `[REDACTED]` at the Admin boundary.
+- Verification: workspace tests PASS (admin 71, web 15, API 579, chat-utils 6, contracts 6), Python model-gateway tests **42 PASS**, typecheck/lint/build **PASS**, Docker API/model-gateway rebuild and readiness **PASS**, Docker model-gateway probe **HTTP 200** with masked-placeholder preservation, and focused legacy/OCR CRM summary API tests **PASS**. A live Admin HTTP call against the pre-existing Docker database was not run because its local admin credentials were unavailable; no database reset or auth bypass was used.

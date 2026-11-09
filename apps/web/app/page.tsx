@@ -16,6 +16,7 @@ import {
   type ChatCitation,
   type ChatDocumentRequirement,
   type ChatHistoryMessage,
+  type ChatQuoteAttachment,
   type ChatReply,
   type DisplayMessage,
   type VoiceState
@@ -44,6 +45,7 @@ type ChatDocument = { id: string; fileName: string; mimeType: string; sizeBytes:
 
 const configuredApi = process.env.NEXT_PUBLIC_API_URL?.trim();
 const api = configuredApi && configuredApi !== '/' ? configuredApi.replace(/\/$/u, '') : '';
+const activeModel = process.env.NEXT_PUBLIC_ACTIVE_MODEL?.trim() || 'Azure GPT-4.1-mini';
 
 export default function Home() {
   const [tenantSlug, setTenantSlug] = useState('');
@@ -447,9 +449,9 @@ export default function Home() {
     window.speechSynthesis.speak(utterance);
   };
 
-  const send = async (voiceText?: string) => {
+  const send = async (voiceText?: string, postbackValue?: string) => {
     const isFromVoice = Boolean(voiceText || voiceModeActiveRef.current);
-    const trimmed = (voiceText ?? message).trim();
+    const trimmed = (voiceText ?? (postbackValue ? 'I consent to use my contact details for this enquiry.' : message)).trim();
     if (!trimmed || busy) return;
     if (!isValidTenantSlug(tenantSlug) || !config) {
       setError('Open a tenant-specific chat URL after an organization is created.');
@@ -496,7 +498,7 @@ export default function Home() {
       const response = await fetch(`${api}/api/v1/chat/messages`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId: activeSession, message: trimmed, clientMessageId })
+        body: JSON.stringify({ sessionId: activeSession, type: postbackValue ? 'postback' : 'text', message: trimmed, ...(postbackValue ? { postbackValue } : {}), clientMessageId })
       });
       const body = (await response.json()) as ChatReply & { error?: { message?: string }; messageId?: string; requestId?: string };
       if (!response.ok) throw new Error(body.error?.message ?? 'The assistant could not respond.');
@@ -511,6 +513,9 @@ export default function Home() {
         grounded: body.grounded,
         conversational: body.conversational,
         citations: body.citations || [],
+        consentProposal: body.consentProposal,
+        packageOptions: body.packageOptions,
+        packageSelectionReady: body.packageSelectionReady,
         pendingIntentKey: body.pendingIntentKey ?? null,
         pendingRequirementKey: body.pendingRequirementKey ?? null,
         actionProposal: body.actionProposal,
@@ -533,6 +538,67 @@ export default function Home() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const appendQuoteAttachment = (proposalId: string, attachment: ChatQuoteAttachment) => {
+    setMessages((prev) => prev.some((item) => item.id === `quote-attachment-${proposalId}`) ? prev : [...prev, {
+      id: `quote-attachment-${proposalId}`, role: 'assistant',
+      content: 'Your development quote is ready. You can download the PDF here.', grounded: false, conversational: true,
+      citations: [], quoteAttachment: attachment, createdAt: new Date().toISOString()
+    }]);
+  };
+
+  const acceptContactConsent = (proposalId: string) => {
+    setMessages((prev) => prev.map((item) => item.consentProposal?.id === proposalId ? { ...item, consentState: 'approved' } : item));
+    void send(undefined, 'v2:contact-consent:grant');
+  };
+
+  const trackAction = async (proposalId: string, activeSessionId: string) => {
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const response = await fetch(`${api}/api/v1/chat/actions/${proposalId}?sessionId=${encodeURIComponent(activeSessionId)}`);
+      if (!response.ok) continue;
+      const body = (await response.json()) as { action?: { state?: unknown; result?: { externalReference?: string; artifactFileName?: string; artifactMimeType?: string } } };
+      const state = body.action?.state;
+      if (!isChatActionState(state)) continue;
+      setMessages((prev) => prev.map((item) => item.actionProposal?.id !== proposalId ? item : { ...item, actionState: state, actionProposal: isTerminalChatActionState(state) ? null : item.actionProposal }));
+      if (isTerminalChatActionState(state)) {
+        const externalReference = body.action?.result?.externalReference ?? '';
+        if (state === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: body.action?.result?.artifactFileName ?? 'ancfz-development-quote.pdf', mimeType: 'application/pdf' });
+        if (state === 'reconcile_required') await appendActionFollowUp(activeSessionId, proposalId);
+        else appendActionOutcome(proposalId, state);
+        return;
+      }
+    }
+  };
+
+  const selectPackage = async (messageId: string, packageKey: string) => {
+    if (!sessionId || busy) return;
+    setBusy(true); setError('');
+    setMessages((prev) => prev.map((item) => item.id !== messageId ? item : { ...item, packageState: 'selected' as const }));
+    try {
+      const response = await fetch(`${api}/api/v1/chat/sessions/${sessionId}/packages/select`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ packageKey })
+      });
+      const body = (await response.json()) as { action?: { id?: string; state?: unknown }; error?: { message?: string } };
+      if (!response.ok) throw new Error(body.error?.message ?? 'That package could not be selected.');
+      const action = body.action;
+      if (!action || typeof action.id !== 'string' || !isChatActionState(action.state)) throw new Error('The package workflow returned an invalid status.');
+      const actionId = action.id;
+      const actionState = action.state;
+      setMessages((prev) => [...prev, {
+        id: `package-${Date.now()}`, role: 'assistant',
+        content: 'Thanks — I’ve recorded that package choice and started preparing your development quote. I’ll share the PDF here as soon as it is ready.',
+        grounded: false, conversational: true, citations: [],
+        actionProposal: { id: actionId, intent: 'package.confirm', confirmation: 'Your development quote is being prepared.', consentRequired: false },
+        actionState, createdAt: new Date().toISOString()
+      }]);
+      if (actionState === 'completed') appendActionOutcome(actionId, 'completed');
+      else void trackAction(actionId, sessionId);
+    } catch (cause) {
+      setMessages((prev) => prev.map((item) => item.id !== messageId ? item : { ...item, packageState: undefined }));
+      setError(cause instanceof Error ? cause.message : 'That package could not be selected.');
+    } finally { setBusy(false); }
   };
 
   const uploadDocument = async () => {
@@ -587,7 +653,7 @@ export default function Home() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ sessionId: activeSessionId, confirmed: true })
       });
-      const body = (await response.json()) as { action?: { state?: unknown }; error?: { message?: string } };
+      const body = (await response.json()) as { action?: { state?: unknown; result?: { externalReference?: string; artifactFileName?: string } }; error?: { message?: string } };
       if (!response.ok) {
         setError(body.error?.message ?? 'The request could not be confirmed.');
         return;
@@ -610,6 +676,8 @@ export default function Home() {
       );
       if (state === 'approved' || state === 'processing') appendActionOutcome(proposalId, state);
       if (isTerminalChatActionState(state)) {
+        const externalReference = body.action?.result?.externalReference ?? '';
+        if (state === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: body.action?.result?.artifactFileName ?? 'ancfz-development-quote.pdf', mimeType: 'application/pdf' });
         if (state === 'reconcile_required') await appendActionFollowUp(activeSessionId, proposalId);
         else appendActionOutcome(proposalId, state);
         return;
@@ -618,7 +686,7 @@ export default function Home() {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         const statusResponse = await fetch(`${api}/api/v1/chat/actions/${proposalId}?sessionId=${encodeURIComponent(activeSessionId)}`);
         if (!statusResponse.ok) continue;
-        const statusBody = (await statusResponse.json()) as { action?: { state?: unknown } };
+        const statusBody = (await statusResponse.json()) as { action?: { state?: unknown; result?: { externalReference?: string; artifactFileName?: string } } };
         const nextState = statusBody.action?.state;
         if (!isChatActionState(nextState)) continue;
         setMessages((prev) => prev.map((m) => m.actionProposal?.id !== proposalId ? m : {
@@ -627,6 +695,8 @@ export default function Home() {
           actionProposal: isTerminalChatActionState(nextState) ? null : m.actionProposal
         }));
         if (isTerminalChatActionState(nextState)) {
+          const externalReference = statusBody.action?.result?.externalReference ?? '';
+          if (nextState === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: statusBody.action?.result?.artifactFileName ?? 'ancfz-development-quote.pdf', mimeType: 'application/pdf' });
           if (nextState === 'reconcile_required') await appendActionFollowUp(activeSessionId, proposalId);
           else appendActionOutcome(proposalId, nextState);
           return;
@@ -724,7 +794,7 @@ export default function Home() {
             <div className="flex items-center gap-3">
               <div className="hidden sm:flex items-center gap-2 rounded-full border border-neutral-200/80 bg-neutral-50 px-3 py-1 text-xs text-neutral-600 font-mono">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>Active Model: Azure GPT-4.1-mini</span>
+                <span>Active Model: {activeModel}</span>
               </div>
 
               {/* Reset Session CTA */}
@@ -957,6 +1027,55 @@ export default function Home() {
                           )}
 
                           {/* Action Proposal Card */}
+                          {msg.packageOptions && msg.packageOptions.length > 0 && (
+                            <div className="mt-3 rounded-xl border border-neutral-200 bg-white p-3.5 space-y-3 shadow-subtle" aria-label="Available packages">
+                              <div className="text-xs font-semibold text-neutral-900">{msg.packageSelectionReady === false ? 'These are the available packages. I’ll enable quote preparation once your enquiry is registered and the CRM Lead is verified.' : 'Choose the package you would like me to prepare a quote for.'}</div>
+                              <div className="grid gap-2">
+                                {msg.packageOptions.map((option) => msg.packageSelectionReady === false ? (
+                                  <div key={option.packageKey} className="rounded-lg border border-neutral-200 bg-neutral-50/60 p-3 text-left">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-sm font-semibold text-neutral-900">{option.name}</span>
+                                      <span className="text-sm font-semibold text-neutral-900">{option.priceMinor !== null && option.currency ? `${option.currency} ${(option.priceMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : 'Price to be confirmed'}</span>
+                                    </div>
+                                    <div className="mt-1 text-xs text-neutral-600">{option.includedVisaQuantity} visa{option.includedVisaQuantity === 1 ? '' : 's'}{option.officeRequirement ? ` · ${option.officeRequirement} office` : ''}</div>
+                                    {option.inclusions.length > 0 && <div className="mt-1 text-xs text-neutral-500">{option.inclusions.join(' · ')}</div>}
+                                  </div>
+                                ) : (
+                                  <button
+                                    key={option.packageKey}
+                                    type="button"
+                                    onClick={() => void selectPackage(msg.id, option.packageKey)}
+                                    disabled={busy || msg.packageState === 'selected'}
+                                    className="rounded-lg border border-neutral-200 p-3 text-left hover:border-neutral-900 hover:bg-neutral-50 transition-colors disabled:opacity-60"
+                                  >
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-sm font-semibold text-neutral-900">{option.name}</span>
+                                      <span className="text-sm font-semibold text-neutral-900">{option.priceMinor !== null && option.currency ? `${option.currency} ${(option.priceMinor / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : 'Price to be confirmed'}</span>
+                                    </div>
+                                    <div className="mt-1 text-xs text-neutral-600">{option.includedVisaQuantity} visa{option.includedVisaQuantity === 1 ? '' : 's'}{option.officeRequirement ? ` · ${option.officeRequirement} office` : ''}</div>
+                                    {option.inclusions.length > 0 && <div className="mt-1 text-xs text-neutral-500">{option.inclusions.join(' · ')}</div>}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Action Proposal Card */}
+                          {msg.consentProposal && (
+                            <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3.5 space-y-2 shadow-subtle">
+                              <div className="text-xs font-semibold text-neutral-900">{msg.consentProposal.confirmation}</div>
+                              <button
+                                type="button"
+                                onClick={() => acceptContactConsent(msg.consentProposal!.id)}
+                                disabled={busy || msg.consentState === 'approved'}
+                                className="rounded-lg bg-neutral-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 transition-all button-press disabled:opacity-60"
+                              >
+                                {msg.consentState === 'approved' ? 'Consent recorded' : 'Consent & Continue'}
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Action Proposal Card */}
                           {msg.actionProposal && (
                             <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3.5 space-y-2 shadow-subtle">
                               <div className="text-xs font-semibold text-neutral-900">
@@ -978,6 +1097,17 @@ export default function Home() {
                                 )}
                               </div>
                             </div>
+                          )}
+
+                          {msg.quoteAttachment && sessionId && (
+                            <a
+                              href={`${api}/api/v1/chat/sessions/${sessionId}/quotes/${msg.quoteAttachment.quoteId}/download`}
+                              download={msg.quoteAttachment.fileName}
+                              className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-xs font-semibold text-emerald-900 hover:bg-emerald-100 transition-colors"
+                            >
+                              <span aria-hidden="true">↓</span>
+                              Download {msg.quoteAttachment.fileName}
+                            </a>
                           )}
 
                           {/* Utilities: Copy & Feedback */}
@@ -1284,7 +1414,7 @@ export default function Home() {
 
           <div className="flex items-center gap-6 text-[11px] text-neutral-400 font-mono">
             <span>PostgreSQL pgvector</span>
-            <span>Azure AI Foundry GPT-4.1-mini</span>
+            <span>{activeModel}</span>
             <span>n8n Verified Actions</span>
             <span>Zero PII Cloud Transfer</span>
           </div>

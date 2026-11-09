@@ -123,8 +123,17 @@ import { classifyScopedGoalDecision } from './conversation-state.js';
 describe('scoped Business Goal reply classifier', () => {
   it.each([
     ['Yes, proceed.', 'confirmed'],
+    ['Yes, I want to proceed.', 'confirmed'],
+    ['Yes, I would like to proceed.', 'confirmed'],
+    ['Yes, I confirm company formation as my goal and want to proceed.', 'confirmed'],
     ["Yes, let's proceed.", 'confirmed'],
     ['Yes, let us proceed.', 'confirmed'],
+    ["Yes, let's start.", 'confirmed'],
+    ['Yes, let us start.', 'confirmed'],
+    ['Yes, let us get started with company formation.', 'confirmed'],
+    ['ys', 'confirmed'],
+    ['I want to start a company.', 'confirmed'],
+    ['Proceed with company formation.', 'confirmed'],
     ['No, I only need information.', 'rejected'],
     ['Actually, I want to explore another service.', 'corrected'],
     ['What are the fees?', 'interruption'],

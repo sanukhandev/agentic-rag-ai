@@ -93,11 +93,39 @@ export const createApprovedQuote = async (store: Store, session: Session, opport
   return store.createQuote({ id: randomUUID(), tenantId: session.tenantId, opportunityId, packageOfferingId, amountMinor: offering.priceMinor, currency: offering.currency, validUntil: new Date(nowMs + 7 * 24 * 60 * 60 * 1_000).toISOString(), status: 'approved', sourceRefs: offering.sourceRefs, createdAt: now() });
 };
 
+/** Development-only quote creation after the verified CRM Lead gate. */
+export const createDevelopmentQuoteAfterLead = async (store: Store, session: Session, packageOfferingId: string): Promise<Quote> => {
+  const opportunityId = activeOpportunityId(session);
+  if (!opportunityId) throw new HttpError(409, 'OPPORTUNITY_NOT_ACTIVE', 'This chat has no active company-formation opportunity.');
+  const lead = await store.getCrmLeadBySessionId(session.id, session.tenantId);
+  if (!lead?.leadId || !lead.remoteCrm) throw new HttpError(409, 'LEAD_NOT_VERIFIED', 'The CRM Lead must be created and verified before quote generation.');
+  if (session.conversationState?.contactConsent !== 'granted') throw new HttpError(409, 'LEAD_CONSENT_REQUIRED', 'Contact consent is required before quote generation.');
+  const offering = await requireApprovedPackage(store, session, packageOfferingId);
+  if (offering.priceMinor === null || !offering.currency) throw new HttpError(409, 'AUTHORITATIVE_PRICE_UNAVAILABLE', 'An approved price is not available for that package yet.');
+  const nowMs = Date.now();
+  if (offering.pricingEffectiveFrom && Date.parse(offering.pricingEffectiveFrom) > nowMs) throw new HttpError(409, 'PRICE_NOT_ACTIVE', 'The package price is not effective yet.');
+  if (offering.pricingEffectiveTo && Date.parse(offering.pricingEffectiveTo) <= nowMs) throw new HttpError(409, 'PRICE_EXPIRED', 'The package price has expired.');
+  return store.createQuote({ id: randomUUID(), tenantId: session.tenantId, opportunityId, packageOfferingId: offering.id, amountMinor: offering.priceMinor, currency: offering.currency, validUntil: new Date(nowMs + 7 * 24 * 60 * 60 * 1_000).toISOString(), status: 'approved', sourceRefs: [...offering.sourceRefs, 'development-mock-quote'], createdAt: now() });
+};
+
 export const proposePackageSelection = async (store: Store, session: Session, opportunityId: string, packageOfferingId: string): Promise<PackageSelection> => {
   requireOpportunity(session, opportunityId);
   await requireVerifiedAccount(store, session, opportunityId);
   await requireApprovedPackage(store, session, packageOfferingId);
   return store.createPackageSelection({ id: randomUUID(), tenantId: session.tenantId, sessionId: session.id, opportunityId, packageOfferingId, quoteId: null, status: 'proposed', confirmedAt: null, createdAt: now(), updatedAt: now() });
+};
+
+/** Development-only package path for the requested Lead → quote slice. */
+export const proposePackageSelectionAfterLead = async (store: Store, session: Session, packageOfferingId: string): Promise<PackageSelection> => {
+  const opportunityId = activeOpportunityId(session);
+  if (!opportunityId) throw new HttpError(409, 'OPPORTUNITY_NOT_ACTIVE', 'This chat has no active company-formation opportunity.');
+  const lead = await store.getCrmLeadBySessionId(session.id, session.tenantId);
+  if (!lead?.leadId || !lead.remoteCrm) throw new HttpError(409, 'LEAD_NOT_VERIFIED', 'The CRM Lead must be created and verified before package selection.');
+  if (session.conversationState?.contactConsent !== 'granted') throw new HttpError(409, 'LEAD_CONSENT_REQUIRED', 'Contact consent is required before package selection.');
+  const offering = await requireApprovedPackage(store, session, packageOfferingId);
+  const existing = (await store.listPackageSelections(session.tenantId, opportunityId)).find((selection) => selection.packageOfferingId === offering.id && selection.status !== 'rejected');
+  if (existing) return existing;
+  return store.createPackageSelection({ id: randomUUID(), tenantId: session.tenantId, sessionId: session.id, opportunityId, packageOfferingId: offering.id, quoteId: null, status: 'proposed', confirmedAt: null, createdAt: now(), updatedAt: now() });
 };
 
 export const confirmPackageSelection = async (store: Store, session: Session, selectionId: string, quoteId: string): Promise<PackageSelection> => {

@@ -128,6 +128,13 @@ class MockResponsesClient:
             except json.JSONDecodeError:
                 payload = {}
             return SimpleNamespace(output=[], output_text=json.dumps({"normalizedQuery": str(payload.get("message", ""))[:4000]}))
+        if format_name == "crm_summary":
+            raw = kwargs.get("input")
+            try:
+                payload = json.loads(raw) if isinstance(raw, str) else {}
+            except json.JSONDecodeError:
+                payload = {}
+            return SimpleNamespace(output=[], output_text=json.dumps({"summary": str(payload.get("maskedSummary", "Intent: unknown"))[:20000]}))
         payload = _payload(kwargs.get("input"))
         message = str(payload.get("customerMessage", "")).strip()
         persona = payload.get("persona") if isinstance(payload.get("persona"), dict) else {}

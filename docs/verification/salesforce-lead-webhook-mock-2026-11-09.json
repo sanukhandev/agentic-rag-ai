@@ -1,0 +1,27 @@
+{
+  "generatedAt": "2026-11-09T07:15:44.861Z",
+  "workflowId": "ancfzV2LeadCreateR1",
+  "webhookPath": "ancfz/v2/lead-create",
+  "cases": {
+    "missingAuth": {
+      "status": 403,
+      "rejected": true
+    },
+    "invalidContract": {
+      "status": 200,
+      "n8nExecutionStatus": "error",
+      "providerCalls": 0,
+      "rejectedBeforeProvider": true
+    }
+  },
+  "mockProvider": {
+    "createCalls": 0,
+    "readbackCalls": 0,
+    "contacted": false
+  },
+  "redaction": {
+    "secretsIncluded": false,
+    "customerPayloadIncluded": false,
+    "rawProviderErrorIncluded": false
+  }
+}

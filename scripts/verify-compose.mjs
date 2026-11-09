@@ -32,7 +32,8 @@ if (services.api.environment.CHAT_MODEL_PROVIDER !== 'python-gpt'
   || services.api.environment.CONVERSATION_ENGINE_V2_ENABLED !== 'true'
   || services.api.environment.PYTHON_MODEL_URL !== 'http://model-gateway:8088') throw new Error('GPT-first API wiring invalid.');
 if (services['model-gateway'].environment.NODE_TOOL_GATEWAY_URL !== 'http://api:4000') throw new Error('Trusted Node tool gateway missing.');
-if (services.n8n.environment.N8N_PATH !== '/n8n/' || services['event-worker'].environment.N8N_INTERNAL_URL !== 'http://n8n:5678/n8n') throw new Error('n8n proxy path mismatch.');
+if (services.n8n.environment.N8N_PATH !== '/n8n/' || services['event-worker'].environment.N8N_INTERNAL_URL !== 'http://n8n:5678') throw new Error('n8n proxy path mismatch.');
+if (services.api.environment.V2_LEAD_WORKFLOW_READY !== 'false' && services.api.environment.V2_LEAD_WORKFLOW_READY !== '') throw new Error('Compose must not enable the Salesforce Lead workflow by default.');
 if (services.web.build.args.NEXT_PUBLIC_API_URL !== '/' || services.admin.build.args.ADMIN_BASE_HREF !== '/admin/') throw new Error('Proxy UI path mismatch.');
 for (const name of ['ancfz-pdf','mock-payments']) if (!services[name]?.profiles?.includes('ancfz')) throw new Error('Mock provider must be opt-in: '+name);
 console.log('Single-file Nginx port-80 Compose verified; private services and volumes preserved.');

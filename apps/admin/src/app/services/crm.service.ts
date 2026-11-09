@@ -4,12 +4,15 @@ import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
 import { CrmLead } from '../types/admin.types';
 import { API_BASE_URL } from './tokens';
 import { AuthService } from './auth.service';
+import { ToastService } from './toast.service';
+import { apiErrorMessage } from './api-error';
 
 @Injectable({ providedIn: 'root' })
 export class CrmService {
   private readonly http = inject(HttpClient);
   private readonly apiBase = inject(API_BASE_URL);
   private readonly auth = inject(AuthService);
+  private readonly toast = inject(ToastService);
 
   // Angular Signals (Primary reactive state)
   private readonly _leads = signal<CrmLead[]>([]);
@@ -32,7 +35,10 @@ export class CrmService {
       this.isLoadingSubject.next(true);
     }
     this.http.get<{ items: CrmLead[] }>(`${this.apiBase}/api/v1/admin/crm/leads`).pipe(
-      catchError(() => of({ items: [] })),
+      catchError((error) => {
+        if (!silent) this.toast.show('error', 'Leads unavailable', apiErrorMessage(error, 'Could not load CRM leads.'));
+        return of({ items: this._leads() });
+      }),
     ).subscribe((response) => {
       const items = response.items ?? [];
       this._leads.set(items);
