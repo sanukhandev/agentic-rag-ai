@@ -4,7 +4,7 @@ import { classifyScopedGoalDecision, newConversationState, prompt } from './conv
 import { scoreCatalogV2CompetingGoals, validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 import { resolveV2IntentEvidence } from './v2-intent-evidence.js';
 import { authorizedPendingRequirement } from './v2-conversation-decision.js';
-import { authorizedV2ReadTools } from './v2-tool-policy.js';
+import { authorizedV2ReadToolsForTurn } from './v2-tool-policy.js';
 import { validateV2PlanningProposal } from './v2-planning.js';
 import { proposeV2CatalogAction, v2ActionConsentScope } from './v2-action-gate.js';
 import { extractQuotedV2CustomerFacts, validateQuotedV2CustomerFacts } from './v2-customer-fact-provenance.js';
@@ -129,7 +129,9 @@ const explicitLeadActionConfirmation = (message: string): boolean =>
   /\b(?:confirm|confirmed|authorize|authorized|approve|approved)\b[\s\S]{0,80}\b(?:lead|submission|submit)\b/iu.test(message)
   || /\bconfirm\s+the\s+authorized\s+submission\b/iu.test(message);
 
-export const isV2PackageQuestion = (message: string): boolean => /\b(?:package|packages|option|options|price|pricing|cost|costs|fee|fees|visa|visas)\b/iu.test(message);
+export const isV2PackageQuestion = (message: string): boolean =>
+  /\b(?:package|packages|price|prices|pricing|cost|costs|fee|fees)\b/iu.test(message)
+  || /\b(?:package|plan|tier)\s+(?:option|options|choice|choices)\b/iu.test(message);
 
 /** Called after HTTP authentication and durable message-idempotency checks. */
 export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
@@ -207,7 +209,6 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const catalogV2 = validatedV2?.catalog ?? null;
   const commercialDocumentRequest = Boolean(catalogV2 && !crmLead && !intentDocument?.goalConfirmed
     && isCommercialDocumentRequest(maskedMessage));
-  const authorizedReadTools = catalogV2 ? authorizedV2ReadTools(catalogV2, V2_TOOL_NAMES) : [...V2_TOOL_NAMES];
   const enabledActionToolKeys = catalogV2
     ? catalogV2.sheets.ToolBindings.filter(tool => tool.enabled && tool.sideEffectClass !== 'read_only')
       .map(tool => tool.toolKey).slice(0, 32)
@@ -270,6 +271,10 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     ? `${activeFollowUpOffer.sourceQuery}\n${acceptedOfferOption.label}\n${acceptedOfferOption.retrievalHints.join(' ')}`
     : contextualizeV2KnowledgeQuery(maskedMessage, contextualTopic);
   const preflightQuery = acceptedOfferOption ? contextualizedQuery : contextualizedQuery === maskedMessage ? contextualizedQuery : `${contextualizedQuery} process steps`;
+  const statusOrRecapTurn = /\b(?:status|recap|summary|summarize|what did i tell you|without assuming)\b/iu.test(maskedMessage);
+  const authorizedReadTools = catalogV2
+    ? authorizedV2ReadToolsForTurn(catalogV2, V2_TOOL_NAMES, isV2PackageQuestion(maskedMessage), isV2FactualKnowledgeQuestion(contextualizedQuery) || !statusOrRecapTurn)
+    : [...V2_TOOL_NAMES];
   let approvedKnowledge: V2ApprovedEvidence[] = [];
   let packageOptions: V2PackageOption[] | null = null;
   if (acceptedOfferOption?.key === 'explain_more' && acceptedOfferOption.retrievalHints[0]) {
@@ -712,12 +717,6 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const citations = overrideResponse ? [] : modelCitations;
   const grounded = effectiveCitationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence');
   const packageSelectionReady = Boolean(crmLead?.leadId && crmLead.remoteCrm && contactConsent === 'granted');
-  if (!packageSelectionReady && packageOptions?.length) {
-    const gatedPackagePrompt = 'You can compare these options now; I’ll enable quote preparation once your enquiry is registered and the CRM Lead is verified.';
-    effectiveAnswer = /choose the package .*quote for\??/iu.test(effectiveAnswer)
-      ? effectiveAnswer.replace(/choose the package .*quote for\??/iu, gatedPackagePrompt)
-      : /which package .*quote/iu.test(effectiveAnswer) ? effectiveAnswer.replace(/which package .*quote[^.?]*[.?]?/iu, gatedPackagePrompt) : `${effectiveAnswer} ${gatedPackagePrompt}`;
-  }
   let answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
   assertKnownTokens(session, answerMasked, input.tokenVault);
   let approvedResponse = { answer: answerMasked, grounded, citationRefs: effectiveCitationIds,

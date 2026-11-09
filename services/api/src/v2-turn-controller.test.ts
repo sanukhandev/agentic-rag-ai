@@ -109,6 +109,9 @@ describe('GPT-first controller full-turn unit behavior', () => {
 
   it('recognizes package questions before model composition', () => {
     expect(isV2PackageQuestion('what all packages are there?')).toBe(true);
+    expect(isV2PackageQuestion('what visa package options are available?')).toBe(true);
+    expect(isV2PackageQuestion('how many visas will I need?')).toBe(false);
+    expect(isV2PackageQuestion('what are the visa requirements?')).toBe(false);
     expect(isV2PackageQuestion('what documents do you need?')).toBe(false);
   });
 
@@ -134,6 +137,7 @@ describe('GPT-first controller full-turn unit behavior', () => {
     expect(reply.packageOptions).toEqual([expect.objectContaining({ packageKey: 'growth', name: 'Growth package', priceMinor: 499900 })]);
     expect(reply.packageSelectionReady).toBe(false);
     expect(reply.answer).not.toMatch(/choose the package .*quote for/iu);
+    expect(reply.answer).not.toContain('enable quote preparation');
     expect(reply.actionProposal).toBeNull();
   });
 

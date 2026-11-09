@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { CatalogV2Document } from './catalog-v2.js';
-import { authorizedV2ReadTools, isV2ReadToolEnabled } from './v2-tool-policy.js';
+import { authorizedV2ReadTools, authorizedV2ReadToolsForTurn, isV2ReadToolEnabled } from './v2-tool-policy.js';
 import { V2_TOOL_NAMES } from './v2-tool-gateway.js';
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url),'utf8')) as CatalogV2Document;
 describe('published catalog controls V2 domain reads', () => {
@@ -27,5 +27,11 @@ describe('published catalog controls V2 domain reads', () => {
     expect(isV2ReadToolEnabled(catalog, 'get_available_packages')).toBe(false);
     catalog.sheets.BusinessGoals[0]!.active = false;
     expect(isV2ReadToolEnabled(catalog, 'search_knowledge')).toBe(false);
+  });
+  it('does not expose package lookup for a non-package turn', () => {
+    expect(authorizedV2ReadToolsForTurn(fixture, V2_TOOL_NAMES, false)).not.toContain('get_available_packages');
+    expect(authorizedV2ReadToolsForTurn(fixture, V2_TOOL_NAMES, true)).toContain('get_available_packages');
+    expect(authorizedV2ReadToolsForTurn(fixture, V2_TOOL_NAMES, false, false)).not.toContain('search_knowledge');
+    expect(authorizedV2ReadToolsForTurn(fixture, V2_TOOL_NAMES, false, true)).toContain('search_knowledge');
   });
 });

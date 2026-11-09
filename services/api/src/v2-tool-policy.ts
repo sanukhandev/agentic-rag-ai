@@ -26,3 +26,13 @@ export const isV2ReadToolEnabled = (catalog: CatalogV2Document, toolName: V2Tool
  * may be signed into a model/tool scope. No tenant-authored arbitrary tool. */
 export const authorizedV2ReadTools = (catalog: CatalogV2Document, implementedTools: readonly V2ToolName[]): V2ToolName[] =>
   implementedTools.filter(name => isV2ReadToolEnabled(catalog, name));
+
+/** Limit high-specificity domain reads to turns that actually request them. */
+export const authorizedV2ReadToolsForTurn = (
+  catalog: CatalogV2Document,
+  implementedTools: readonly V2ToolName[],
+  packageIntent: boolean,
+  knowledgeIntent = true,
+): V2ToolName[] => authorizedV2ReadTools(catalog, implementedTools)
+  .filter(name => packageIntent || name !== 'get_available_packages')
+  .filter(name => knowledgeIntent || name !== 'search_knowledge');
