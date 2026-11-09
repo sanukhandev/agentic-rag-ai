@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { activateDevWorkflows } from './activate-ancfz-n8n-dev.mjs';
+import { activateDevWorkflows, publishCommand } from './activate-ancfz-n8n-dev.mjs';
 
 test('publishes only the reviewed local ANCFZ workflow allowlist', async () => {
   const calls = [];
@@ -14,4 +14,8 @@ test('publishes only the reviewed local ANCFZ workflow allowlist', async () => {
 
 test('rejects any workflow outside the local allowlist before publishing', async () => {
   await assert.rejects(() => activateDevWorkflows({ executor: async () => {}, workflowIds: ['ancfzV2LeadCreateR1', 'unrelated'] }), /N8N_DEV_ACTIVATION_WORKFLOW_NOT_ALLOWED/);
+});
+
+test('publishes through the configured n8n user, never a root home', () => {
+  assert.deepEqual(publishCommand('ancfzV2LeadCreateR1'), ['exec', 'n8n', 'n8n', 'publish:workflow', '--id=ancfzV2LeadCreateR1']);
 });

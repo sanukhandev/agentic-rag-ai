@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-09T07:05:00Z",
+  "generatedAt": "2026-11-09T07:18:00Z",
   "scope": "local Docker / synthetic customer / Salesforce sandbox",
   "readiness": {
     "workflowId": "ancfzV2LeadCreateR1",
@@ -12,7 +12,7 @@
   "mockWebhook": "docs/verification/salesforce-lead-webhook-mock-2026-11-09.json",
   "liveConversation": {
     "leadAction": { "state": "completed", "provider": "salesforce_sandbox", "remoteIdSynthetic": true },
-    "quote": { "state": "approved", "verified": true, "mock": true, "downloadStatus": 200, "downloadBytes": 2521, "artifactSha256": "9bd6a1d9a054d50a5e13ba021ae3ffd6c697cbd28af42b918976f48069d3be78" },
+    "quote": { "state": "approved", "verified": true, "mock": true, "downloadStatus": 200, "downloadBytes": 2521, "artifactSha256": "33d4a9b184abbb7cfe244e49a2f259322951eb162c3ce0ff7556ba499817be6b" },
     "documents": [
       { "fileName": "Emirates_ID_Card_For_UAE_Citizens_(New).png", "uploadStatus": 202, "processingStatus": "completed", "attachmentReadbackVerified": true },
       { "fileName": "Passport-Front-Page.jpg", "uploadStatus": 202, "processingStatus": "completed", "attachmentReadbackVerified": true }

@@ -1,6 +1,16 @@
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 
+export async function waitForTerminalStatus(readStatus, { delayMs = 250, maxAttempts = 20 } = {}) {
+  let status = '';
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    status = await readStatus();
+    if (['error', 'success', 'crashed', 'canceled'].includes(status)) return status;
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  return status;
+}
+
 export function startMockSalesforceProvider() {
   const records = new Map();
   const counts = { create: 0, readback: 0 };

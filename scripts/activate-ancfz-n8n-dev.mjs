@@ -14,9 +14,13 @@ export async function activateDevWorkflows({ executor, workflowIds = ALLOWED_WOR
   return { activated: [...workflowIds] };
 }
 
+export function publishCommand(id) {
+  return ['exec', 'n8n', 'n8n', 'publish:workflow', `--id=${id}`];
+}
+
 function publish(id) {
   const docker = process.platform === 'win32' ? 'docker.exe' : 'docker';
-  const result = spawnSync(docker, ['exec', '-u', 'root', 'n8n', 'n8n', 'publish:workflow', `--id=${id}`], { encoding: 'utf8' });
+  const result = spawnSync(docker, publishCommand(id), { encoding: 'utf8' });
   if (result.status !== 0) throw new Error(`N8N_DEV_ACTIVATION_FAILED: ${id}`);
 }
 

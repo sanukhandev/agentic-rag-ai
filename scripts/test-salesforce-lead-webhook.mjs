@@ -2,7 +2,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startMockSalesforceProvider } from './mock-salesforce-webhook.mjs';
+import { startMockSalesforceProvider, waitForTerminalStatus } from './mock-salesforce-webhook.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const body = { workflowKey: 'wrong.workflow', contract: 'wrong-contract' };
@@ -13,7 +13,7 @@ try {
   if (probeResult.status !== 0) throw new Error('Mock webhook container probe failed.');
   const [unauthenticated, authenticated] = JSON.parse(probeResult.stdout.trim());
   const db = resolve(root, 'data/n8n/database.sqlite');
-  const latest = spawnSync(process.platform === 'win32' ? 'sqlite3.exe' : 'sqlite3', [db, "select status from execution_entity where workflowId='ancfzV2LeadCreateR1' order by startedAt desc limit 1;"], { encoding: 'utf8' }).stdout.trim();
+  const latest = await waitForTerminalStatus(async () => spawnSync(process.platform === 'win32' ? 'sqlite3.exe' : 'sqlite3', [db, "select status from execution_entity where workflowId='ancfzV2LeadCreateR1' order by startedAt desc limit 1;"], { encoding: 'utf8' }).stdout.trim());
   const report = {
     generatedAt: new Date().toISOString(),
     workflowId: 'ancfzV2LeadCreateR1',

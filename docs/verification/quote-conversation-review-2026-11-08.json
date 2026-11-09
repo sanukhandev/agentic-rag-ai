@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-09T07:06:13.857Z",
+  "generatedAt": "2026-11-09T07:16:56.601Z",
   "environment": {
     "baseUrl": "http://127.0.0.1",
     "tenantSlug": "anc",
@@ -8,7 +8,7 @@
     "leadWorkflowReady": true
   },
   "session": {
-    "sessionIdDigest": "7600d907ae3b",
+    "sessionIdDigest": "7658d0374945",
     "tenantIdDigest": "d4880ce54720",
     "turns": [
       {
@@ -112,7 +112,7 @@
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": "lead_action_confirmation",
           "actionProposal": {
-            "idDigest": "797496fc6ed1",
+            "idDigest": "6f21e75aabf5",
             "intent": "crm.lead.create",
             "consentRequired": false
           },
@@ -128,12 +128,12 @@
     "error": null
   },
   "lead": {
-    "actionIdDigest": "797496fc6ed1",
+    "actionIdDigest": "6f21e75aabf5",
     "intentKey": "anc.company_formation",
     "actionKey": "lead.create",
     "catalogVersionIdDigest": "c72cbbd08ca2",
     "state": "completed",
-    "attempts": 8,
+    "attempts": 6,
     "reconciliationFollowUp": null
   },
   "packageCatalog": {
@@ -151,22 +151,22 @@
     "status": 202,
     "packageKey": "anc-r5-sample-growth-r6-r7-r8-r9-r10",
     "packageOfferingIdDigest": "4c075441593c",
-    "selectionIdDigest": "20129d66d8a7",
+    "selectionIdDigest": "6321f18931b5",
     "error": null
   },
   "quote": {
-    "actionIdDigest": "d3f2b45b7eec",
+    "actionIdDigest": "88f978088982",
     "state": "approved",
     "execution": {
       "status": 200,
       "verified": true,
       "mock": true,
-      "quoteIdDigest": "91e87f74feb9",
+      "quoteIdDigest": "ec39978180a7",
       "totalAed": null,
       "artifact": {
-        "fileName": "ancfz-development-quote-646dfc32-c8aa-4951-a3e3-def1c3640de7.pdf",
+        "fileName": "ancfz-development-quote-2d7776c3-bec6-42c2-b313-1e3c143618e1.pdf",
         "mimeType": "application/pdf",
-        "sha256": "9bd6a1d9a054d50a5e13ba021ae3ffd6c697cbd28af42b918976f48069d3be78"
+        "sha256": "33d4a9b184abbb7cfe244e49a2f259322951eb162c3ce0ff7556ba499817be6b"
       },
       "error": null
     },
@@ -174,7 +174,7 @@
       "status": 200,
       "path": "artifacts/ancfz-sandbox-2026-11-08/ancfz-development-quote-live-review.pdf",
       "bytes": 2521,
-      "sha256": "9bd6a1d9a054d50a5e13ba021ae3ffd6c697cbd28af42b918976f48069d3be78"
+      "sha256": "33d4a9b184abbb7cfe244e49a2f259322951eb162c3ce0ff7556ba499817be6b"
     }
   },
   "documents": {
@@ -201,8 +201,8 @@
         "mimeType": "image/png",
         "status": 202,
         "accepted": true,
-        "documentIdDigest": "3f1e14060ee4",
-        "jobIdDigest": "b85385aa73e3",
+        "documentIdDigest": "8b584d4579c9",
+        "jobIdDigest": "311474d186b8",
         "error": null
       },
       {
@@ -210,8 +210,8 @@
         "mimeType": "image/jpeg",
         "status": 202,
         "accepted": true,
-        "documentIdDigest": "16d93a2811f7",
-        "jobIdDigest": "93b680c3a3c9",
+        "documentIdDigest": "0df76f8c03e7",
+        "jobIdDigest": "38fc0c3d54f4",
         "error": null
       }
     ]

@@ -9,6 +9,8 @@ test('routes lead workflow failures to a bounded correlated Node callback', asyn
   assert.match(failure?.parameters?.url ?? '', /workflow-events\/fail$/);
   assert.match(failure?.parameters?.jsonBody ?? '', /reasonCode/);
   assert.doesNotMatch(failure?.parameters?.jsonBody ?? '', /error|body|response/iu);
+  const body = failure?.parameters?.jsonBody ?? '';
+  assert.ok(body.indexOf("name.includes('Read Back')") < body.indexOf("name.includes('Call Provider')"));
   for (const name of sideEffects) {
     const node = workflow.nodes.find((candidate) => candidate.name === name);
     assert.equal(node?.onError, 'continueErrorOutput', name);

@@ -301,7 +301,7 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Docker Compose keeps the Salesforce Lead gate disabled by default; local activation remains an explicit dev-only operation. Internal event-worker traffic uses `http://n8n:5678`; `/n8n/` is the public proxy path.
 - The existing local n8n Salesforce credential and sandbox wiring were not rotated: the previous synthetic Docker run already proved create, readback, Node evidence verification, and correlated completion. Credential replacement would be unnecessary risk unless a fresh readiness or sandbox run fails.
 - Added `npm run activate:n8n:dev`, an explicit local-only allowlisted publisher for the Lead, development quote, and OCR workflows. It must be followed by readiness verification; no production activation or credential creation is implied.
-- Added the correlated Lead failure callback and Node endpoint. Local n8n runtime was backed up and synced to the reviewed failure-routing revision while preserving the existing Salesforce OAuth and internal-header bindings; provider/readback/evidence failures now have a durable bounded failure/reconciliation path instead of relying only on a 202 response or an unretained execution.
+- Added the correlated Lead failure callback and Node endpoint. The repository template and API path are covered by tests, while local n8n was restored to the previously verified published database after a direct SQLite revision sync did not preserve n8n's publication metadata. The restore keeps the working Salesforce OAuth/internal-header runtime intact; a safe n8n-native import/publish is still required before treating the new callback as deployed runtime behavior.
 
 ## 2026-11-09 Salesforce Lead workflow acceptance rerun
 
