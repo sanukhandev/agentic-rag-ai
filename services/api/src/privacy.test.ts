@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, saveTokens, TokenVault } from './privacy.js';
+import { assertKnownTokens, maskPii, maskPiiForSession, redactUnknownTokens, rehydrateForSession, saveTokens, TokenVault } from './privacy.js';
 
 describe('privacy boundary', () => {
   it('masks email and phone values before an external boundary and rehydrates only in the same session', () => {
@@ -46,6 +46,17 @@ describe('privacy boundary', () => {
     expect(output).toBe('Please contact [EMAIL_2].');
     expect(rehydrateForSession(session, input.masked, vault)).toContain('alice@example.com');
     expect(rehydrateForSession(session, output, vault)).toContain('bob@example.com');
+  });
+
+  it('redacts stale privacy placeholders without hiding known Admin values', () => {
+    const session = { id: 'session-redaction', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
+    const vault = new TokenVault('redaction-vault-secret-2026');
+    const known = maskPii('My name is Alice Karim.');
+    saveTokens(session, known.tokens, vault);
+    const safe = redactUnknownTokens(session, `${known.masked} [PHONE_99]`, vault);
+    expect(rehydrateForSession(session, safe, vault, 'admin_crm')).toContain('Alice Karim');
+    expect(safe).toContain('[REDACTED]');
+    expect(safe).not.toContain('[PHONE_99]');
   });
 
   it('keeps assistant persona names separate from a later visitor name', () => {

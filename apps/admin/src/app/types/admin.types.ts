@@ -171,6 +171,8 @@ export interface CrmLead {
 
 export interface SupportingDocument {
   id: string;
+  requirementKey?: string | null;
+  expectedDocumentType?: string | null;
   fileName: string;
   mimeType: string;
   sizeBytes: number;

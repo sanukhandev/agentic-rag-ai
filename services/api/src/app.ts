@@ -9,7 +9,7 @@ import { channelAuthMiddleware, ChannelSecretVault, getChannel, type StaticChann
 import { buildChunksWithEmbeddings, buildIngestionChunksWithEmbeddings, hasConflictingEvidence, KnowledgeRetrievalError, retrieveApprovedKnowledge } from './knowledge.js';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding.js';
 import { addressesKnowledgeQuestion, classifyOfferReply, conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isControlledKnowledgeAbstention, isGuidedResponse, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, normalizePendingLeadName, openingGreeting, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
-import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, sanitizeKnowledgeText, sanitizeSensitiveText, TokenVault } from './privacy.js';
+import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, redactUnknownTokens, sanitizeKnowledgeText, sanitizeSensitiveText, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogIntentLabel, catalogNextFollowUpRequirement, catalogRequirementLabel, catalogSlotLabel, catalogSlotQuestion, isCrmWriteBinding, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
 import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './catalog-v2.js';
 import { auditLegacyCatalogVersion, createLegacyCatalogV2Candidate } from './catalog-v2-migration.js';
@@ -23,7 +23,7 @@ import { composeConversationSummary, consentVersionForState, mergeConcurrentConv
 import { createOutboxEvent } from './events.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
-import { composeDocumentMetadata, composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
+import { composeAdminDocumentDetails, composeDocumentMetadata, composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
 import { requiredDocumentSetComplete } from './document-stage-evidence.js';
 import { buildV2DocumentProviderRequest, DeterministicV2DocumentProvider, validateV2DocumentProviderResult } from './v2-document-provider.js';
 import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, DurableV2OtpChallengeService, V2OtpChallengeService, validateV2AccountProviderResult } from './v2-account-provider.js';
@@ -1031,9 +1031,11 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const session = await store.getSession(lead.sessionId);
     const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id);
     if (!session) return { ...lead, quality, documents };
-    const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm');
+    const rehydrate = (value: string): string => rehydrateForSession(session, redactUnknownTokens(session, value, tokenVault), tokenVault, 'admin_crm');
     const summary = lead.summary ? (() => { try { return formatCrmSummarySpec(lead.summary); } catch { return lead.summary; } })() : null;
-    return { ...lead, quality, leadData: { ...(lead.leadData.name ? { name: rehydrate(lead.leadData.name) } : {}), ...(lead.leadData.email ? { email: rehydrate(lead.leadData.email) } : {}), ...(lead.leadData.phone ? { phone: rehydrate(lead.leadData.phone) } : {}), ...(lead.leadData.interest ? { interest: lead.leadData.interest } : {}), ...(lead.leadData.slotValues ? { slotValues: Object.fromEntries(Object.entries(lead.leadData.slotValues).map(([key, value]) => [key, rehydrate(value)])) } : {}) }, conversation: lead.conversation.map((message) => ({ ...message, content: rehydrate(message.content) })), summary: summary ? rehydrate(summary) : null, documents: documents.map((document) => ({ ...document, extractedText: document.extractedText ? rehydrate(document.extractedText) : null, summary: document.summary ? rehydrate(document.summary) : null })) };
+    const adminDocumentDetails = composeAdminDocumentDetails(documents, (value) => redactUnknownTokens(session, value, tokenVault));
+    const adminSummary = [summary, adminDocumentDetails].filter(Boolean).join('\n');
+    return { ...lead, quality, leadData: { ...(lead.leadData.name ? { name: rehydrate(lead.leadData.name) } : {}), ...(lead.leadData.email ? { email: rehydrate(lead.leadData.email) } : {}), ...(lead.leadData.phone ? { phone: rehydrate(lead.leadData.phone) } : {}), ...(lead.leadData.interest ? { interest: lead.leadData.interest } : {}), ...(lead.leadData.slotValues ? { slotValues: Object.fromEntries(Object.entries(lead.leadData.slotValues).map(([key, value]) => [key, rehydrate(value)])) } : {}) }, conversation: lead.conversation.map((message) => ({ ...message, content: rehydrate(message.content) })), summary: adminSummary ? rehydrate(formatCrmSummarySpec(adminSummary)) : null, documents: documents.map((document) => ({ ...document, extractedText: document.extractedText ? rehydrate(document.extractedText) : null, summary: document.summary ? rehydrate(document.summary) : null })) };
   };
 
   const publicDocument = (document: SupportingDocument) => ({ id: document.id, sessionId: document.sessionId, leadId: document.leadId, requirementKey: document.requirementKey ?? null, expectedDocumentType: document.expectedDocumentType ?? null, fileName: document.fileName, mimeType: document.mimeType, sizeBytes: document.sizeBytes, status: document.status, summary: null, errorCode: document.errorCode, createdAt: document.createdAt, updatedAt: document.updatedAt });

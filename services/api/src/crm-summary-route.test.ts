@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
 import { AuthService } from './auth.js';
-import { type ChatModel } from './model.js';
+import { type ChatModel, type CrmSummaryInput } from './model.js';
 import { MemoryStore } from './store-memory.js';
 import { TokenVault } from './privacy.js';
 import type { CrmLead, DocumentProcessingJob, SupportingDocument } from './types.js';
@@ -80,7 +80,8 @@ describe('CRM AI summary route', () => {
 
     expect(summary.status, JSON.stringify(summary.body)).toBe(200);
     expect(summary.body).toMatchObject({ aiGenerated: true });
-    expect(summary.body.lead.summary).not.toContain('SECRET-OCR-NAME');
+    expect(summary.body.lead.summary).toContain('SECRET-OCR-NAME');
+    expect(summary.body.lead.summary).toContain('+971501111111');
   });
 
   it('maps an unsafe persisted summary to a typed error instead of a generic 500', async () => {
@@ -111,5 +112,30 @@ describe('CRM AI summary route', () => {
     expect(response.status, JSON.stringify(response.body)).toBe(200);
     expect(response.body.lead.summary).toContain('document type: identity_document');
     expect(response.body.lead.summary).not.toContain('[PHONE_2]');
+  });
+
+  it('keeps OCR details out of the model while adding a clean Admin summary section', async () => {
+    let modelInput: CrmSummaryInput | null = null;
+    const test = await fixture({ summarize: async (input) => { modelInput = input; return input.maskedSummary; } });
+    const document = { ...documentFor(test.tenant.id, test.session.id, test.lead.id), status: 'completed' as const, summary: 'Full name: [NAME_1] | Document number: [ID_1] | Legacy field: [PHONE_99]' };
+    const job = jobFor(test.tenant.id, document.id);
+    await test.store.createSupportingDocumentWithJob(document, job);
+
+    const response = await request(test.runtime.app)
+      .post(`/api/v1/admin/crm/leads/${test.lead.id}/summarize`)
+      .set('Authorization', `Bearer ${test.authToken}`)
+      .send({});
+
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(modelInput).not.toBeNull();
+    const capturedModelInput = modelInput as unknown as CrmSummaryInput;
+    expect(capturedModelInput.maskedSummary).not.toContain('Full name:');
+    expect(response.body.lead.summary).toContain('Supporting Documents');
+    expect(response.body.lead.summary).toContain('Full name: Synthetic Customer');
+    expect(response.body.lead.summary).toContain('[REDACTED]');
+    expect(response.body.lead.summary).not.toContain('[PHONE_99]');
+    const persisted = await test.store.getCrmLead(test.lead.id, test.tenant.id);
+    expect(persisted?.summary).not.toContain('Full name:');
+    expect(persisted?.summary).not.toContain('Legacy field:');
   });
 });

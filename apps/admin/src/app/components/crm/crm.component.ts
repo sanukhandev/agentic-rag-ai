@@ -283,16 +283,23 @@ import { PaginationComponent } from '../shared/pagination.component';
                     </button>
                   </div>
                 </div>
-                <pre *ngIf="lead.summary; else summaryPending" class="whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-3 font-mono text-[11px] leading-relaxed text-neutral-700">{{ lead.summary }}</pre>
+                <div *ngIf="lead.summary; else summaryPending" class="whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-3 text-[11px] leading-relaxed text-neutral-700">{{ lead.summary }}</div>
                 <ng-template #summaryPending>
                   <p class="text-xs sm:text-[13px] leading-relaxed text-neutral-500">{{ lead.summaryStatus === 'failed' ? 'Summary processing failed; retry the workflow.' : 'Summary is being prepared by the backend...' }}</p>
                 </ng-template>
                 <div *ngIf="lead.documents?.length" class="mt-4 border-t border-neutral-200/60 pt-3">
                   <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">Supporting documents</span>
-                  <div *ngFor="let document of lead.documents" class="mt-2 flex items-center justify-between gap-2 rounded-lg bg-white p-2 text-xs">
+                  <div *ngFor="let document of lead.documents" class="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white p-2 text-xs">
                     <span class="min-w-0 truncate" [title]="document.fileName">{{ document.fileName }}</span>
                     <span class="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase">{{ documentStatusLabel(document.status) }}</span>
                     <button type="button" (click)="downloadDocument(document.id, document.fileName)" class="shrink-0 text-[10px] font-semibold text-neutral-700 hover:text-neutral-950">Download</button>
+                    <div *ngIf="document.status === 'completed' && document.summary" class="basis-full rounded-md border border-neutral-100 bg-neutral-50 p-2 text-[11px] leading-relaxed text-neutral-600">
+                      <span class="font-semibold uppercase tracking-wider text-neutral-500">OCR details</span>
+                      <p class="mt-1 whitespace-pre-wrap">{{ document.summary }}</p>
+                    </div>
+                    <p *ngIf="document.status !== 'completed'" class="basis-full text-[11px] text-neutral-500">
+                      {{ document.status === 'failed' ? 'OCR processing failed; review the document workflow.' : 'OCR details are not available until processing completes.' }}
+                    </p>
                   </div>
                 </div>
               </div>
