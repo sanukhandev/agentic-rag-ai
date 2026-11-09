@@ -294,3 +294,9 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Package selection returned HTTP 202. The development quote executor returned HTTP 200 with `verified: true`, `mock: true`; the authenticated PDF download returned HTTP 200, 2,522 bytes, and SHA-256 `c9c11baffdbdd3e22ed1977eabf6c50b4746d9fc85f0bf62c42ffaea1047530c`, matching the stored artifact.
 - Redacted human-review export: `docs/verification/quote-conversation-review-2026-11-08.json`. Downloaded development artifact: `artifacts/ancfz-sandbox-2026-11-08/ancfz-development-quote-live-review.pdf`.
 - The Emirates ID and passport uploads were attempted after the quote but remain blocked with `DOCUMENT_REQUIREMENT_NOT_ACTIVE`; the pinned catalog has document intake disabled. The quote is development/mock evidence, not official ANCFZ pricing or Salesforce quote completion.
+
+## 2026-11-09 Salesforce runtime readiness hardening
+
+- Added a secret-safe n8n readiness verifier for the exact Lead workflow ID, webhook path, payload contract, active state, and required create/readback/OAuth/internal-secret presence flags. It reports readiness codes without printing endpoint values, credential IDs, tokens, or customer payloads.
+- Docker Compose keeps the Salesforce Lead gate disabled by default; local activation remains an explicit dev-only operation. Internal event-worker traffic uses `http://n8n:5678`; `/n8n/` is the public proxy path.
+- The existing local n8n Salesforce credential and sandbox wiring were not rotated: the previous synthetic Docker run already proved create, readback, Node evidence verification, and correlated completion. Credential replacement would be unnecessary risk unless a fresh readiness or sandbox run fails.
