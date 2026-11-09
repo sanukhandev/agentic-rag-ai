@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contextualizeV2KnowledgeQuery, isV2FactualKnowledgeQuestion, prefetchV2ApprovedKnowledge, toV2KnowledgeEvidence } from './v2-knowledge-preflight.js';
+import { contextualizeV2KnowledgeQuery, isV2FactualKnowledgeQuestion, prefetchV2ApprovedKnowledge, resolveV2KnowledgeTopic, toV2KnowledgeEvidence } from './v2-knowledge-preflight.js';
 import { DeterministicEmbeddingProvider } from './embedding.js';
 import { buildChunksWithEmbeddings } from './knowledge.js';
 import type { Source, Store } from './types.js';
@@ -11,6 +11,12 @@ describe('V2 knowledge preflight', () => {
     expect(isV2FactualKnowledgeQuestion('How much does an Ajman free zone licence cost?')).toBe(true);
     expect(isV2FactualKnowledgeQuestion('Hello')).toBe(false);
     expect(isV2FactualKnowledgeQuestion('Yes, I confirm the goal')).toBe(false);
+  });
+  it('derives a bounded knowledge topic without treating it as the final intent', () => {
+    expect(resolveV2KnowledgeTopic('I want to understand the licensing process.')).toBe('licensing_process');
+    expect(resolveV2KnowledgeTopic('What are the eligibility requirements?')).toBe('eligibility');
+    expect(resolveV2KnowledgeTopic('How many visas will I need?')).toBe('visa');
+    expect(resolveV2KnowledgeTopic('What are the company setup options?')).toBe('setup_options');
   });
   it('contextualizes anaphoric knowledge follow-ups without treating consent as retrieval', () => {
     expect(contextualizeV2KnowledgeQuery('How does it work?', 'Company formation'))
@@ -58,6 +64,27 @@ describe('V2 knowledge preflight', () => {
       content: 'ANCFZ has no minimum paid-up capital requirement for most business activities.\n\nCompany registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order.\n\nNote: Additional documents may be required depending on the activity and shareholder type.',
     }, 'Tell me about company formation');
     expect(evidence.text).toBe('Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order.');
+  });
+  it('keeps evidence aligned to the requested topic instead of accepting an approved but unrelated chunk', () => {
+    const licensing = toV2KnowledgeEvidence({
+      citation: { sourceId: 'source', versionId: 'version', chunkId: 'licensing', title: 'license cost', locator: 'section 1' },
+      content: 'The package costs AED 4,888 per year and includes a business licence. The licensing application and registration process starts by selecting an approved activity and submitting the application.',
+    }, 'I want to understand the licensing process.');
+    expect(licensing.text).toContain('licensing application');
+    expect(licensing.text).not.toContain('AED 4,888');
+    expect(licensing.text).not.toContain('The package covers');
+
+    const unrelated = toV2KnowledgeEvidence({
+      citation: { sourceId: 'source', versionId: 'version', chunkId: 'unrelated', title: 'bank FAQ', locator: 'section 1' },
+      content: 'Approval is subject to the selected bank’s eligibility criteria, documentation requirements, and compliance checks.',
+    }, 'I want to understand the licensing process.');
+    expect(unrelated.text).toBe('');
+
+    const attestation = toV2KnowledgeEvidence({
+      citation: { sourceId: 'source', versionId: 'version', chunkId: 'attestation', title: 'types of companies', locator: 'section 1' },
+      content: 'Foreign company documents must be attested by the Foreign Office and UAE Embassy in the country of issue.',
+    }, 'What are the company setup options from your approved documents?');
+    expect(attestation.text).toBe('');
   });
   it('retrieves an approved public source and excludes revoked or cross-tenant material', async () => {
     const provider = new DeterministicEmbeddingProvider();

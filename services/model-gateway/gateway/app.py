@@ -22,7 +22,8 @@ from .reliability import BudgetExceeded, CircuitBreaker, RateLimitExceeded, Slid
 from .v2_contracts import AgentTurnResultV2, TurnEnvelopeV2
 
 app = FastAPI(title="Private Conversation Model Gateway", docs_url=None, redoc_url=None, openapi_url=None)
-_limit = asyncio.Semaphore(max(1, min(4, int(os.getenv("MODEL_MAX_CONCURRENCY", "2")))))
+_max_concurrency = max(1, min(4, int(os.getenv("MODEL_MAX_CONCURRENCY", "2"))))
+_limit = asyncio.Semaphore(_max_concurrency)
 _pacing_lock = asyncio.Lock()
 _next_call_at = 0.0
 _client: Any | None = None
@@ -117,6 +118,25 @@ def _client_get() -> Any:
                               max_retries=3)
     return _client
 
+
+def model_readiness() -> dict[str, Any]:
+    mode = os.getenv("MODEL_MODE", "azure").lower()
+    endpoint = os.getenv("AZURE_OPENAI_BASE_URL", "").rstrip("/")
+    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
+    endpoint_valid = endpoint.startswith("https://") and endpoint.endswith("/openai/v1")
+    configured = mode == "mock" or bool(os.getenv("AZURE_OPENAI_API_KEY")) and bool(deployment) and endpoint_valid
+    return {
+        "status": "configured" if configured else "not_configured",
+        "mode": mode,
+        "provider": "mock" if mode == "mock" else "azure_openai",
+        "deployment": deployment or None,
+        "endpointPathValid": endpoint_valid if mode != "mock" else None,
+        "retryPolicy": {"initialAttempt": 1, "maxRetries": 3},
+        "turnTimeoutSeconds": float(os.getenv("MODEL_TURN_TIMEOUT_SECONDS", "90")),
+        "maxConcurrency": _max_concurrency,
+        "circuitState": "open" if _circuit.opened_until > time.monotonic() else "closed",
+    }
+
 def langgraph_conversation_enabled() -> bool:
     return os.getenv("LANGGRAPH_CONVERSATION_ENABLED", "true").lower() == "true"
 
@@ -184,7 +204,7 @@ async def live() -> dict:
 async def ready(x_internal_service_key: str | None = Header(default=None)) -> dict:
     await _auth(x_internal_service_key)
     _client_get()
-    return {"status": "configured"}
+    return model_readiness()
 
 
 # Separate, bounded entailment judgment. Approved source content is untrusted data:
