@@ -32,6 +32,11 @@ export const hasSupportingDocumentSignature = (mimeType: string, content: Buffer
   return false;
 };
 
+const safeDocumentType = (value: string | null | undefined): string => value && /^[a-z0-9_.-]{1,80}$/iu.test(value) ? value : 'document';
+
+export const composeDocumentMetadata = (document: Pick<SupportingDocument, 'expectedDocumentType' | 'status'>): string =>
+  `document type: ${safeDocumentType(document.expectedDocumentType)}; status: ${document.status}; OCR processing: completed`;
+
 export const documentSha256 = (content: Buffer): string => createHash('sha256').update(content).digest('hex');
 
 export class PrivateDocumentStorage {
@@ -72,7 +77,7 @@ export const composeDocumentSummary = (lead: CrmLead, documents: SupportingDocum
     .filter(Boolean)
     .slice(-12);
   const excerpts = documents.filter((document) => document.status === 'completed' && document.summary)
-    .map((document) => `${document.fileName}: ${sanitizeSensitiveText(document.summary!)}`)
+    .map((document) => composeDocumentMetadata(document))
     .slice(-5);
   const parts = [`Intent: ${lead.intent}`, conversation.length ? `Visitor requirements: ${conversation.join(' | ')}` : '', excerpts.length ? `Supporting documents: ${excerpts.join(' | ')}` : ''].filter(Boolean);
   return parts.join('\n').slice(0, 20_000);

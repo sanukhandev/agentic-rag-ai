@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-09T07:16:56.601Z",
+  "generatedAt": "2026-11-09T07:22:01.539Z",
   "environment": {
     "baseUrl": "http://127.0.0.1",
     "tenantSlug": "anc",
@@ -8,7 +8,7 @@
     "leadWorkflowReady": true
   },
   "session": {
-    "sessionIdDigest": "7658d0374945",
+    "sessionIdDigest": "002c8e684286",
     "tenantIdDigest": "d4880ce54720",
     "turns": [
       {
@@ -94,7 +94,7 @@
         "user": "Yes",
         "assistant": {
           "status": 200,
-          "answer": "I cannot verify that answer safely. I can continue with confirmed information.",
+          "answer": "I can help you work through that. Could you tell me more about that requirement?",
           "grounded": false,
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": "lead_crm_consent",
@@ -112,7 +112,7 @@
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": "lead_action_confirmation",
           "actionProposal": {
-            "idDigest": "6f21e75aabf5",
+            "idDigest": "91e26c50dca5",
             "intent": "crm.lead.create",
             "consentRequired": false
           },
@@ -128,12 +128,12 @@
     "error": null
   },
   "lead": {
-    "actionIdDigest": "6f21e75aabf5",
+    "actionIdDigest": "91e26c50dca5",
     "intentKey": "anc.company_formation",
     "actionKey": "lead.create",
     "catalogVersionIdDigest": "c72cbbd08ca2",
     "state": "completed",
-    "attempts": 6,
+    "attempts": 5,
     "reconciliationFollowUp": null
   },
   "packageCatalog": {
@@ -151,22 +151,22 @@
     "status": 202,
     "packageKey": "anc-r5-sample-growth-r6-r7-r8-r9-r10",
     "packageOfferingIdDigest": "4c075441593c",
-    "selectionIdDigest": "6321f18931b5",
+    "selectionIdDigest": "aee96e38754a",
     "error": null
   },
   "quote": {
-    "actionIdDigest": "88f978088982",
+    "actionIdDigest": "a78b6742f0f9",
     "state": "approved",
     "execution": {
       "status": 200,
       "verified": true,
       "mock": true,
-      "quoteIdDigest": "ec39978180a7",
+      "quoteIdDigest": "fbe3e9d841b3",
       "totalAed": null,
       "artifact": {
-        "fileName": "ancfz-development-quote-2d7776c3-bec6-42c2-b313-1e3c143618e1.pdf",
+        "fileName": "ancfz-development-quote-abf808cc-3493-43fc-be3a-d44da65b2686.pdf",
         "mimeType": "application/pdf",
-        "sha256": "33d4a9b184abbb7cfe244e49a2f259322951eb162c3ce0ff7556ba499817be6b"
+        "sha256": "a73d938a977f1b489d574a08b4669aa1a0d583b23b79f0678df0a94b241b1157"
       },
       "error": null
     },
@@ -174,7 +174,7 @@
       "status": 200,
       "path": "artifacts/ancfz-sandbox-2026-11-08/ancfz-development-quote-live-review.pdf",
       "bytes": 2521,
-      "sha256": "33d4a9b184abbb7cfe244e49a2f259322951eb162c3ce0ff7556ba499817be6b"
+      "sha256": "a73d938a977f1b489d574a08b4669aa1a0d583b23b79f0678df0a94b241b1157"
     }
   },
   "documents": {
@@ -201,8 +201,8 @@
         "mimeType": "image/png",
         "status": 202,
         "accepted": true,
-        "documentIdDigest": "8b584d4579c9",
-        "jobIdDigest": "311474d186b8",
+        "documentIdDigest": "d032e428a7af",
+        "jobIdDigest": "af5f31270156",
         "error": null
       },
       {
@@ -210,8 +210,8 @@
         "mimeType": "image/jpeg",
         "status": 202,
         "accepted": true,
-        "documentIdDigest": "0df76f8c03e7",
-        "jobIdDigest": "38fc0c3d54f4",
+        "documentIdDigest": "8ef9ade6f094",
+        "jobIdDigest": "e40984183bda",
         "error": null
       }
     ]

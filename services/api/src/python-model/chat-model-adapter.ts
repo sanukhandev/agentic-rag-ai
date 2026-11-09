@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ChatModel, ModelDraft, ModelEvidence, QueryNormalizationInput } from '../model.js';
+import type { ChatModel, CrmSummaryInput, ModelDraft, ModelEvidence, QueryNormalizationInput } from '../model.js';
 import type { CatalogV2Document } from '../catalog-v2.js';
 import { validateV2PlanningProposal, type V2PlanningContext, type V2PlanningDecision } from '../v2-planning.js';
 
@@ -142,6 +142,20 @@ export class PythonChatModelAdapter implements ChatModel {
     });
     return typeof result.normalizedQuery === 'string' ? bounded(result.normalizedQuery, 4_000) : null;
   }
+
+  async summarize(input: CrmSummaryInput): Promise<string> {
+    const result = await this.request<{ summary?: unknown }>('/internal/v1/model/summarize', {
+      requestId: randomUUID(),
+      maskedSummary: bounded(input.maskedSummary, 20_000),
+      conversation: input.conversation.slice(-24).map(({ role, content }) => ({ role, content: bounded(content, 2_000) })),
+      intent: bounded(input.intent, 180),
+      secondaryIntentKeys: input.secondaryIntentKeys.slice(0, 8),
+      score: input.score,
+      validationPass: input.validationPass,
+    });
+    if (typeof result.summary !== 'string' || !result.summary.trim()) throw new Error('MODEL_INVALID_RESPONSE');
+    return bounded(result.summary.trim(), 20_000);
+  }
 }
 
 export const pythonChatModelFromEnv = (env: NodeJS.ProcessEnv = process.env): PythonChatModelAdapter | undefined => {
@@ -150,5 +164,12 @@ export const pythonChatModelFromEnv = (env: NodeJS.ProcessEnv = process.env): Py
   const baseUrl = env.PYTHON_MODEL_URL;
   const key = env.MODEL_GATEWAY_SERVICE_KEY;
   if (!baseUrl || !key) throw new Error('python-gpt requires PYTHON_MODEL_URL and MODEL_GATEWAY_SERVICE_KEY.');
+  return new PythonChatModelAdapter(baseUrl, key, Number(env.PYTHON_MODEL_TIMEOUT_MS ?? 90_000));
+};
+
+export const pythonSummaryModelFromEnv = (env: NodeJS.ProcessEnv = process.env): Pick<ChatModel, 'summarize'> | undefined => {
+  const baseUrl = env.PYTHON_MODEL_URL;
+  const key = env.MODEL_GATEWAY_SERVICE_KEY;
+  if (!baseUrl || !key) return undefined;
   return new PythonChatModelAdapter(baseUrl, key, Number(env.PYTHON_MODEL_TIMEOUT_MS ?? 90_000));
 };

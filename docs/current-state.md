@@ -308,3 +308,10 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Fresh local Docker restart, explicit dev activation, readiness verification, mock webhook probe, and the complete synthetic conversation passed. The existing n8n Salesforce credential created and read back a sandbox Lead; the action reached `completed` with `provider_record_verified` evidence.
 - The development quote was verified and downloaded as a PDF (HTTP 200). Both supplied synthetic document images were accepted, OCR processing completed, and Salesforce attachment readback audit events were recorded for both files.
 - Redacted evidence: [`salesforce-lead-workflow-acceptance-2026-11-09.json`](verification/salesforce-lead-workflow-acceptance-2026-11-09.json). No credential values, document bytes, or customer PII are included. Quote evidence remains mock/development-only.
+
+## 2026-11-09 CRM AI summary fix
+
+- OCR callback handling now persists newly-created session privacy tokens before the document summary is composed or synchronized. CRM and Salesforce document summaries contain document type/status metadata only; identity-document OCR text and filenames are not sent in summary text.
+- Admin CRM summarization now has an explicit private Python model-gateway dependency at `/internal/v1/model/summarize`, authenticated with the existing service key and bounded to masked CRM context. V2 customer conversation planning remains unchanged and does not share this route as a fallback.
+- Missing model configuration, model failures, unknown privacy tokens, and unsafe model output now return typed summary errors instead of an unhandled `INTERNAL_ERROR`.
+- Verification: workspace tests PASS (admin 71, web 15, API 574, chat-utils 6, contracts 6), Python model-gateway tests **42 PASS**, typecheck/lint/build **PASS**, Docker model-gateway probe **HTTP 200** with masked-placeholder preservation, and focused OCR/CRM summary API tests **PASS**. A live Admin HTTP call against the pre-existing Docker database was not run because its local admin credentials were unavailable; no database reset or auth bypass was used.

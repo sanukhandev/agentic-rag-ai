@@ -23,7 +23,7 @@ import { composeConversationSummary, consentVersionForState, mergeConcurrentConv
 import { createOutboxEvent } from './events.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
-import { composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
+import { composeDocumentMetadata, composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
 import { requiredDocumentSetComplete } from './document-stage-evidence.js';
 import { buildV2DocumentProviderRequest, DeterministicV2DocumentProvider, validateV2DocumentProviderResult } from './v2-document-provider.js';
 import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, DurableV2OtpChallengeService, V2OtpChallengeService, validateV2AccountProviderResult } from './v2-account-provider.js';
@@ -448,6 +448,7 @@ const offerHintIsGrounded = (evidence: ModelEvidence[], hint: string): boolean =
 export interface AppDependencies {
   store?: Store;
   model?: ChatModel;
+  summaryModel?: Pick<ChatModel, 'summarize'>;
   workflow?: WorkflowAdapter;
   jwtSecret?: string;
   channelCredentialKey?: string;
@@ -517,6 +518,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     await store.addAudit({ id: randomUUID(), tenantId, actorId: null, eventName, metadata: { keyDigest: contentHash(key).slice(0, 12) }, createdAt: new Date().toISOString() });
   };
   const model: ChatModel = dependencies.model ?? new DeterministicGroundedModel();
+  const summaryModel = dependencies.summaryModel ?? (model.summarize ? model : undefined);
   const v2Coordinator = dependencies.v2Coordinator;
   const workflow = dependencies.workflow;
   const nodeEnv = dependencies.nodeEnv ?? process.env.NODE_ENV ?? 'development';
@@ -688,7 +690,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (!lead?.leadId || lead.remoteCrm !== 'salesforce_sandbox' || !content) return false;
     const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm');
     const documentSummary = rehydrate(summary).trim();
-    const description = [lead.summary ? rehydrate(lead.summary) : '', `Supporting document: ${document.fileName}`, `OCR summary: ${documentSummary}`]
+    const description = [lead.summary ? rehydrate(lead.summary) : '', `Supporting document: ${documentSummary}`]
       .filter(Boolean).join('\n').slice(0, 32_000);
     try {
       const attachmentAudit = (await store.listAudit(document.tenantId)).find((event) => event.eventName === 'document.salesforce_lead_attachment_verified'
@@ -1112,7 +1114,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     tenantTelemetry,
     cachePing: () => cache.ping(),
     invalidateTenantCache,
-    modelConfigured: Boolean(dependencies.model),
+    modelConfigured: Boolean(dependencies.model || dependencies.summaryModel),
     embeddingConfigured: Boolean(dependencies.embedding),
   });
   registerLifecycleRoutes(app, { store, gateway, chatApi, routeParam, authorizeSession: authorizeChatSession, advanceLifecycleStage });
@@ -1695,13 +1697,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!document) throw new HttpError(404, 'DOCUMENT_NOT_FOUND', 'Document not found.');
       const session = await store.getSession(document.sessionId);
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Document session not found.');
+      const tokenCountBeforeMasking = session.tokenMap.size;
       const extractedText = document.storeExtractedText && input.extractedText ? maskPiiForSession(session, input.extractedText, tokenVault) : null;
       const summary = input.summary ? maskPiiForSession(session, input.summary, tokenVault) : null;
+      if (session.tokenMap.size > tokenCountBeforeMasking) await updateSessionSafely(session, false, 'workflow');
       const completedDocument = await store.updateSupportingDocument({ ...document, status: 'completed', extractedText, summary, errorCode: null, updatedAt: new Date().toISOString() });
       let salesforceLeadSyncVerified = false;
       const completedJob = await store.updateDocumentProcessingJob({ ...job, status: 'completed', leaseExpiresAt: null, executionReference: input.executionReference ?? job.executionReference, updatedAt: new Date().toISOString() });
       if (document.leadId) { const lead = await store.getCrmLead(document.leadId, input.tenantId); if (lead) { const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id); const composed = [lead.summary, composeDocumentSummary(lead, documents)].filter(Boolean).join('\n').slice(0, 20_000); await store.updateCrmLeadSummary(lead.id, lead.tenantId, composed, 'completed'); } }
-      if (summary) salesforceLeadSyncVerified = await syncSalesforceLeadDocument(session, completedDocument, summary);
+      if (summary) salesforceLeadSyncVerified = await syncSalesforceLeadDocument(session, completedDocument, composeDocumentMetadata(completedDocument));
       await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'document.completed', metadata: { documentId: document.id, jobId: job.id, status: 'completed' }, createdAt: new Date().toISOString() });
       if (document.opportunityId && document.intentKey) {
         // Completing one OCR job does not prove every required document is present.
@@ -3630,21 +3634,26 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const session = await store.getSession(lead.sessionId);
       if (!session || session.tenantId !== tenantId) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Lead session not found.');
       const baseSummary = lead.summary ?? [`Intent: ${lead.intent}`, `Score: ${lead.score}`, `Validation: ${lead.validationPass ? 'passed' : 'failed'}`, `Engagement: ${lead.conversation.length} conversation turns`].join('\n');
-      let candidate = baseSummary;
-      if (model.summarize) {
-        try {
-          candidate = await model.summarize({ maskedSummary: baseSummary, conversation: lead.conversation.map(({ role, content }) => ({ role, content })), intent: lead.intent, secondaryIntentKeys: lead.secondaryIntentKeys ?? [], score: lead.score, validationPass: lead.validationPass });
-          assertKnownTokens(session, candidate, tokenVault);
-        } catch {
-          throw new HttpError(503, 'CRM_SUMMARY_AI_UNAVAILABLE', 'The AI summary could not be generated. Please try again.');
-        }
+      if (!summaryModel?.summarize) throw new HttpError(503, 'CRM_SUMMARY_AI_UNAVAILABLE', 'The AI summary could not be generated. Please try again.');
+      let candidate: string;
+      try {
+        candidate = await summaryModel.summarize({ maskedSummary: baseSummary, conversation: lead.conversation.map(({ role, content }) => ({ role, content })), intent: lead.intent, secondaryIntentKeys: lead.secondaryIntentKeys ?? [], score: lead.score, validationPass: lead.validationPass });
+        assertKnownTokens(session, candidate, tokenVault);
+      } catch {
+        throw new HttpError(503, 'CRM_SUMMARY_AI_UNAVAILABLE', 'The AI summary could not be generated. Please try again.');
       }
-      const formatted = formatCrmSummarySpec(candidate);
-      assertKnownTokens(session, formatted, tokenVault);
+      let formatted: string;
+      try {
+        formatted = formatCrmSummarySpec(candidate);
+        assertKnownTokens(session, formatted, tokenVault);
+      } catch (error) {
+        if (error instanceof CrmSummaryValidationError) throw error;
+        throw new HttpError(422, 'CRM_SUMMARY_PRIVACY_INVALID', 'The AI summary contained unsafe private data.');
+      }
       const updated = await store.updateCrmLeadSummary(lead.id, tenantId, formatted, 'completed');
       if (!updated) throw new HttpError(404, 'LEAD_NOT_FOUND', 'CRM lead not found.');
-      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'crm.lead.summary_formatted', metadata: { leadId: lead.id, aiGenerated: Boolean(model.summarize) }, createdAt: new Date().toISOString() });
-      res.json({ lead: await crmLeadForAdmin(updated), aiGenerated: Boolean(model.summarize) });
+      await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'crm.lead.summary_formatted', metadata: { leadId: lead.id, aiGenerated: true }, createdAt: new Date().toISOString() });
+      res.json({ lead: await crmLeadForAdmin(updated), aiGenerated: true });
     } catch (error) { next(error); }
   });
   app.get('/api/v1/admin/crm/leads', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); res.json({ items: await Promise.all((await store.listCrmLeads(tenantId)).map(crmLeadForAdmin)) }); } catch (error) { next(error); } });

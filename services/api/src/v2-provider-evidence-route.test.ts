@@ -382,7 +382,9 @@ describe('V2 provider evidence route', () => {
     expect(result.body.document).toMatchObject({ status: 'completed', id: upload.body.document.id });
     expect(result.body.salesforceLeadSyncVerified).toBe(true);
     expect(mutation.createLeadAttachment).toHaveBeenCalledWith(expect.objectContaining({ providerRecordId: '00Q-sandbox-document', fileName: 'identity.pdf' }));
-    expect(mutation.updateLeadDescription).toHaveBeenCalledWith(expect.objectContaining({ providerRecordId: '00Q-sandbox-document', description: expect.stringContaining('synthetic identity reviewed') }));
+    expect(mutation.updateLeadDescription).toHaveBeenCalledWith(expect.objectContaining({ providerRecordId: '00Q-sandbox-document', description: expect.stringContaining('document type: identity_document; status: completed') }));
+    expect(mutation.updateLeadDescription).not.toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining('synthetic identity reviewed') }));
+    expect(mutation.updateLeadDescription).not.toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining('identity.pdf') }));
     expect((await test.store.listAudit(test.tenant.id)).some((event) => event.eventName === 'document.sf02_attachment_verified' && event.metadata.documentId === upload.body.document.id)).toBe(true);
     expect((await test.store.getUserIntentDocument(test.tenant.id, test.session.id))?.currentStageKey).toBe('payment_invoice');
     const invoiceResponse = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/invoices`).set('origin', 'http://localhost').send({ opportunityId: account.opportunityId, quoteId: quote.body.quote.id });
