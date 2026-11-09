@@ -35,7 +35,7 @@ import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLea
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
 import { validateV2ProviderCorrelation, v2ProviderCorrelationSchema, v2CallbackCorrelationSchema, type V2ProviderCorrelation } from './v2-provider-correlation.js';
-import type { ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, FollowUpOfferOption, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, LifecycleStage, Message, PendingFollowUpOffer, Session, SourceStatus, Store, SupportingDocument } from './types.js';
+import type { ActionExecution, ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, FollowUpOfferOption, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, LifecycleStage, Message, PendingFollowUpOffer, Session, SourceStatus, Store, SupportingDocument } from './types.js';
 import { HttpError, parse } from './http/errors.js';
 import {
   DEFAULT_CONTEXT_WINDOW_MESSAGES,
@@ -76,6 +76,7 @@ import {
   uploadSchema,
   workflowClaimSchema,
   workflowCompletionSchema,
+  workflowFailureSchema,
   v2ProviderEvidenceVerifySchema,
   v2AccountOtpIssueSchema,
   v2AccountProviderEvidenceSchema,
@@ -811,7 +812,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const reason = validateV2ProviderCorrelation(action, parsed.data);
     if (reason) throw new HttpError(409, 'V2_PROVIDER_CORRELATION_MISMATCH', `The v2 provider callback correlation is invalid (${reason}).`);
   };
-  const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null, executionReference?: string, eventId?: string, correlationId?: string, attempt?: number, providerCorrelation?: V2ProviderCorrelation, trustedProviderEvidence = false): Promise<ActionRequest> => {
+  const transitionWorkflowAction = async (action: ActionRequest, status: ActionState, externalReference: string | undefined, actorId: string | null, executionReference?: string, eventId?: string, correlationId?: string, attempt?: number, providerCorrelation?: V2ProviderCorrelation, trustedProviderEvidence = false, outcome?: ActionExecution['outcome']): Promise<ActionRequest> => {
     const resolvingReconciliation = action.state === 'reconcile_required' && status === 'completed';
     const providerTerminal = actorId === null && ['completed', 'failed'].includes(status);
     if (providerCorrelation || providerTerminal) await assertV2ProviderCorrelation(action, providerCorrelation);
@@ -835,7 +836,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         'The provider callback cannot finalize a V2 action without a trusted provider-record verification.');
     }
     if (providerTerminal) {
-      const committed = await store.transitionActionWithExecution({ actionId: action.id, tenantId: action.tenantId, fromState: action.state, toState: status, result: externalReference ? { externalReference } : action.result, providerStatus: status, n8nExecutionRef: executionReference!, eventId: eventId!, correlationId: correlationId!, expectedAttempt: attempt!, resolveReconciliation: resolvesReconciliation, outcome: externalReference ? { externalReference } : null });
+      const committed = await store.transitionActionWithExecution({ actionId: action.id, tenantId: action.tenantId, fromState: action.state, toState: status, result: externalReference ? { externalReference } : action.result, providerStatus: status, n8nExecutionRef: executionReference!, eventId: eventId!, correlationId: correlationId!, expectedAttempt: attempt!, resolveReconciliation: resolvesReconciliation, outcome: outcome ?? (externalReference ? { externalReference } : null) });
       if (!committed) throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action and execution changed before this transition was committed.');
       await syncWorkflowState(committed.action, status, trustedProviderEvidence);
       await store.addAudit({ id: randomUUID(), tenantId: committed.action.tenantId, actorId, eventName: `workflow.transition.${action.state}.${status}`, metadata: { actionId: committed.action.id, fromState: action.state, toState: status }, createdAt: new Date().toISOString() });
@@ -843,7 +844,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       return committed.action;
     }
     const executionContext = { ...(eventId ? { eventId } : {}), ...(correlationId ? { correlationId } : {}), ...(attempt !== undefined ? { expectedAttempt: attempt } : {}) };
-    if (action.state === status) { await syncWorkflowState(action, status, trustedProviderEvidence); await store.updateActionExecution({ actionId: action.id, tenantId: action.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: externalReference ? { externalReference } : null, resolveReconciliation: resolvesReconciliation, ...executionContext }); return action; }
+    if (action.state === status) { await syncWorkflowState(action, status, trustedProviderEvidence); await store.updateActionExecution({ actionId: action.id, tenantId: action.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: outcome ?? (externalReference ? { externalReference } : null), resolveReconciliation: resolvesReconciliation, ...executionContext }); return action; }
     const updated = await store.transitionAction(action.id, action.tenantId, action.state, status, externalReference ? { externalReference } : action.result);
     if (!updated) {
       const current = await store.getAction(action.id);
@@ -851,7 +852,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       throw new HttpError(409, 'WORKFLOW_TRANSITION_CONFLICT', 'The workflow action changed before this transition was committed.');
     }
     await syncWorkflowState(updated, status, trustedProviderEvidence);
-    await store.updateActionExecution({ actionId: updated.id, tenantId: updated.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: externalReference ? { externalReference } : null, resolveReconciliation: resolvesReconciliation, ...executionContext });
+    await store.updateActionExecution({ actionId: updated.id, tenantId: updated.tenantId, providerStatus: status, n8nExecutionRef: executionReference ?? null, outcome: outcome ?? (externalReference ? { externalReference } : null), resolveReconciliation: resolvesReconciliation, ...executionContext });
     await store.addAudit({ id: randomUUID(), tenantId: updated.tenantId, actorId, eventName: `workflow.transition.${action.state}.${status}`, metadata: { actionId: updated.id, fromState: action.state, toState: status }, createdAt: new Date().toISOString() });
     await invalidateTenantCache(updated.tenantId);
     return updated;
@@ -3159,6 +3160,15 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!action || action.tenantId !== input.tenantId) throw new HttpError(403, 'WORKFLOW_FORBIDDEN', 'Workflow completion does not match the authorized action.');
       const updated = await transitionWorkflowAction(action, input.state, input.externalReference, null, input.executionReference, input.eventId, input.correlationId, input.attempt, input);
       res.json({ action: updated });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/internal/workflow-events/fail', n8nInternalApi, async (req, res, next) => {
+    try {
+      const input = parse(workflowFailureSchema, req.body);
+      const action = await store.getAction(input.actionId);
+      if (!action || action.tenantId !== input.tenantId) throw new HttpError(403, 'WORKFLOW_FORBIDDEN', 'Workflow failure does not match the authorized action.');
+      const updated = await transitionWorkflowAction(action, input.state, undefined, null, input.executionReference, input.eventId, input.correlationId, input.attempt, input, false, { reasonCode: input.reasonCode, eventId: input.eventId, correlationId: input.correlationId, attempt: input.attempt });
+      res.json({ action: updated, failure: { state: input.state, reasonCode: input.reasonCode, eventId: input.eventId, correlationId: input.correlationId, attempt: input.attempt } });
     } catch (error) { next(error); }
   });
   app.post('/api/v1/internal/ancfz/quote-actions/execute', n8nInternalApi, async (req, res, next) => {

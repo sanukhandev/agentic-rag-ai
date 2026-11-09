@@ -120,6 +120,15 @@ export const workflowCompletionSchema = z.object({ actionId: z.string().guid(), 
     if (value.attempt === undefined) context.addIssue({ code: z.ZodIssueCode.custom, path: ['attempt'], message: 'Provider terminal transitions require an attempt.' });
   }
 });
+export const workflowFailureSchema = z.object({
+  actionId: z.string().guid(), tenantId: z.string().guid(), sessionId: z.string().guid(), opportunityId: z.string().guid(),
+  catalogVersionId: z.string().trim().min(8).max(240), idempotencyKey: z.string().trim().min(1).max(200),
+  actionKey: z.string().trim().regex(/^[a-z][a-z0-9._-]{1,79}$/u), actionRevision: z.number().int().positive(),
+  executionReference: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u),
+  eventId: z.string().guid(), correlationId: z.string().guid(), attempt: z.number().int().min(1).max(100_000),
+  state: z.enum(['failed', 'reconcile_required']),
+  reasonCode: z.enum(['dispatch_failed', 'authorization_failed', 'salesforce_create_failed', 'salesforce_readback_failed', 'provider_evidence_rejected', 'node_completion_failed', 'workflow_timeout']),
+}).strict();
 export const v2ProviderEvidenceVerifySchema = z.object({
   actionId: z.string().guid(),
   tenantId: z.string().guid(),

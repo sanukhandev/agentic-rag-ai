@@ -4,7 +4,7 @@ import { readFile, readdir } from 'node:fs/promises';
 const root = new URL('./ancfz-v2/', import.meta.url);
 const manifest = JSON.parse(await readFile(new URL('./ancfz-v2-manifest.json', import.meta.url),'utf8'));
 const names=['Receive Node Dispatch','Validate Dispatch Envelope','Claim Authorized Action','Require V2 Stage Authorization','Call Provider - Configure Credential','Read Back Provider State','Ask Node to Verify Provider Evidence','Require Trusted Node Attestation','Complete Correlated Action'];
-const leadNames=['Receive Node Dispatch','Validate Dispatch Envelope','Claim Authorized Action','Require V2 Stage Authorization','Call Provider - Configure Credential','Read Back Provider State','Build Provider Evidence Payload','Ask Node to Verify Provider Evidence','Require Trusted Node Attestation','Complete Correlated Action'];
+const leadNames=['Receive Node Dispatch','Validate Dispatch Envelope','Claim Authorized Action','Require V2 Stage Authorization','Call Provider - Configure Credential','Read Back Provider State','Build Provider Evidence Payload','Ask Node to Verify Provider Evidence','Require Trusted Node Attestation','Complete Correlated Action','Report Correlated Failure'];
 const localQuoteNames=['Receive Node Dispatch','Validate Internal Dispatch','Create Quote and Verify PDF'];
 test('all ANCFZ V2 workflows are structurally connected and non-executable by default',async()=>{
  const files=(await readdir(root)).filter(name=>name.endsWith('.json')).sort();
@@ -15,7 +15,7 @@ test('all ANCFZ V2 workflows are structurally connected and non-executable by de
   const raw=await readFile(new URL(file,root),'utf8'),w=JSON.parse(raw);
   assert.equal(w.active,false,file);
   assert.equal(w.settings.saveDataSuccessExecution,'none');
-  assert.equal(w.settings.saveDataErrorExecution,'none');
+  assert.equal(w.settings.saveDataErrorExecution,file === '01-lead-create.json' ? 'all' : 'none');
   const expectedNames=file === '01-lead-create.json' ? leadNames : file === '04-package-quote.json' ? localQuoteNames : names;
   assert.equal(w.nodes.length,expectedNames.length,file);
   assert.deepEqual(w.nodes.map(node=>node.name),expectedNames,file);
@@ -76,7 +76,11 @@ test('all ANCFZ V2 workflows are structurally connected and non-executable by de
   assert.match(w.nodes[attestationIndex].parameters.jsCode,/result\.evidenceTier !== 'provider_record_verified'/);
   assert.match(w.nodes[completionIndex].parameters.jsonBody,/state:'completed'/);
   for(const node of w.nodes.filter(node=>node.type==='n8n-nodes-base.httpRequest'))assert.ok(node.parameters.authentication==='predefinedCredentialType'||node.parameters.authentication==='genericCredentialType');
-  for(let n=0;n<expectedNames.length-1;n++)assert.deepEqual(w.connections[expectedNames[n]].main,[[{node:expectedNames[n+1],type:'main',index:0}]]);
+  for(let n=0;n<expectedNames.length-1;n++){
+   if(file === '01-lead-create.json' && n === 9) assert.deepEqual(w.connections[expectedNames[n]].main[0],[]);
+   else assert.deepEqual(w.connections[expectedNames[n]].main[0],[{node:expectedNames[n+1],type:'main',index:0}]);
+   if(file === '01-lead-create.json' && n >= 2) assert.equal(w.connections[expectedNames[n]].main[1][0].node,'Report Correlated Failure');
+  }
   assert.doesNotMatch(file === '01-lead-create.json' ? raw : raw.replaceAll('https://configure-provider.invalid/', ''),/N8N_WEBHOOK_SECRET|access_token|refresh_token|password|clientSecret|apiKey|SalesForce ANC - CREDS/i);
   const expected=manifest.templates.find(s=>s.file===file);
   assert.ok(expected,file);

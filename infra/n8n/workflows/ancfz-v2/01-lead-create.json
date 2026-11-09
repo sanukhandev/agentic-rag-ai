@@ -5,7 +5,7 @@
   "settings": {
     "executionOrder": "v1",
     "saveDataSuccessExecution": "none",
-    "saveDataErrorExecution": "none"
+    "saveDataErrorExecution": "all"
   },
   "nodes": [
     {
@@ -46,6 +46,7 @@
       "name": "Claim Authorized Action",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [
         520,
         200
@@ -69,6 +70,7 @@
       "name": "Require V2 Stage Authorization",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
+      "onError": "continueErrorOutput",
       "position": [
         780,
         200
@@ -82,6 +84,7 @@
       "name": "Call Provider - Configure Credential",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [
         1040,
         200
@@ -106,6 +109,7 @@
       "name": "Read Back Provider State",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [
         1300,
         200
@@ -128,6 +132,7 @@
       "name": "Build Provider Evidence Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
+      "onError": "continueErrorOutput",
       "position": [
         1570,
         420
@@ -142,6 +147,7 @@
       "name": "Ask Node to Verify Provider Evidence",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [
         1570,
         200
@@ -165,6 +171,7 @@
       "name": "Require Trusted Node Attestation",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
+      "onError": "continueErrorOutput",
       "position": [
         1840,
         200
@@ -178,6 +185,7 @@
       "name": "Complete Correlated Action",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueErrorOutput",
       "position": [
         2110,
         200
@@ -195,108 +203,42 @@
         }
       },
       "notes": "Credential deliberately not assigned; configure via the n8n Credentials UI, never in this repository."
+    },
+    {
+      "id": "ancfzV2LeadCreateR1-failure",
+      "name": "Report Correlated Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2380,
+        440
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:4000/api/v1/internal/workflow-events/fail",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify((() => { const source = $('Validate Dispatch Envelope').first().json; const name = $prevNode?.name ?? ''; const reasonCode = name.includes('Provider') ? 'salesforce_create_failed' : name.includes('Read Back') ? 'salesforce_readback_failed' : name.includes('Verify') || name.includes('Attestation') ? 'provider_evidence_rejected' : 'node_completion_failed'; return { actionId: source.actionId, tenantId: source.tenantId, sessionId: source.sessionId, opportunityId: source.opportunityId, catalogVersionId: source.catalogVersionId, idempotencyKey: source.idempotencyKey, actionKey: source.actionKey, actionRevision: source.actionRevision, executionReference: $execution.id, eventId: source.eventId, correlationId: source.correlationId, attempt: source.attempt, state: 'reconcile_required', reasonCode }; })()) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "notes": "Reports only bounded reason codes and server-issued correlation; never forwards provider error payloads or customer data."
     }
   ],
   "connections": {
-    "Receive Node Dispatch": {
-      "main": [
-        [
-          {
-            "node": "Validate Dispatch Envelope",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Validate Dispatch Envelope": {
-      "main": [
-        [
-          {
-            "node": "Claim Authorized Action",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Claim Authorized Action": {
-      "main": [
-        [
-          {
-            "node": "Require V2 Stage Authorization",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Require V2 Stage Authorization": {
-      "main": [
-        [
-          {
-            "node": "Call Provider - Configure Credential",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Call Provider - Configure Credential": {
-      "main": [
-        [
-          {
-            "node": "Read Back Provider State",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Read Back Provider State": {
-      "main": [
-        [
-          {
-            "node": "Build Provider Evidence Payload",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Build Provider Evidence Payload": {
-      "main": [
-        [
-          {
-            "node": "Ask Node to Verify Provider Evidence",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Ask Node to Verify Provider Evidence": {
-      "main": [
-        [
-          {
-            "node": "Require Trusted Node Attestation",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Require Trusted Node Attestation": {
-      "main": [
-        [
-          {
-            "node": "Complete Correlated Action",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
+    "Receive Node Dispatch": { "main": [[{ "node": "Validate Dispatch Envelope", "type": "main", "index": 0 }]] },
+    "Validate Dispatch Envelope": { "main": [[{ "node": "Claim Authorized Action", "type": "main", "index": 0 }]] },
+    "Claim Authorized Action": { "main": [[{ "node": "Require V2 Stage Authorization", "type": "main", "index": 0 }], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] },
+    "Require V2 Stage Authorization": { "main": [[{ "node": "Call Provider - Configure Credential", "type": "main", "index": 0 }], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] },
+    "Call Provider - Configure Credential": { "main": [[{ "node": "Read Back Provider State", "type": "main", "index": 0 }], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] },
+    "Read Back Provider State": { "main": [[{ "node": "Build Provider Evidence Payload", "type": "main", "index": 0 }], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] },
+    "Build Provider Evidence Payload": { "main": [[{ "node": "Ask Node to Verify Provider Evidence", "type": "main", "index": 0 }], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] },
+    "Ask Node to Verify Provider Evidence": { "main": [[{ "node": "Require Trusted Node Attestation", "type": "main", "index": 0 }], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] },
+    "Require Trusted Node Attestation": { "main": [[{ "node": "Complete Correlated Action", "type": "main", "index": 0 }], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] },
+    "Complete Correlated Action": { "main": [[], [{ "node": "Report Correlated Failure", "type": "main", "index": 0 }]] }
   },
   "pinData": {},
   "staticData": null,

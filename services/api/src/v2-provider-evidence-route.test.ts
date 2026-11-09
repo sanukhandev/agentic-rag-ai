@@ -485,4 +485,41 @@ describe('V2 provider evidence route', () => {
     expect((await test.store.getAction(accountAction.id))?.state).toBe('completed');
     expect((await test.store.getUserIntentDocument(test.tenant.id, test.session.id))?.currentStageKey).toBe('package_selection');
   });
+
+  it('records a correlated n8n failure without provider evidence or completion', async () => {
+    const test = await makeFixture('salesforce_sandbox');
+    const failure = {
+      actionId: test.action.id, tenantId: test.tenant.id, sessionId: test.session.id,
+      opportunityId: test.action.opportunityId, catalogVersionId: test.published.catalogVersionRef,
+      idempotencyKey: test.action.idempotencyKey, actionKey: test.action.actionKey,
+      actionRevision: test.action.actionRevision, eventId: test.eventId, correlationId: test.correlationId,
+      attempt: 1, executionReference: 'n8n-provider-evidence-test', state: 'reconcile_required', reasonCode: 'salesforce_create_failed',
+    };
+    const response = await request(test.runtime.app).post('/api/v1/internal/workflow-events/fail')
+      .set('x-agentic-internal-secret', 'n'.repeat(64)).send(failure);
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.body.action).toMatchObject({ id: test.action.id, state: 'reconcile_required' });
+    expect((await test.store.getActionExecution(test.action.id, test.tenant.id))?.outcome).toMatchObject({ reasonCode: 'salesforce_create_failed' });
+    const replay = await request(test.runtime.app).post('/api/v1/internal/workflow-events/fail')
+      .set('x-agentic-internal-secret', 'n'.repeat(64)).send(failure);
+    expect(replay.status, JSON.stringify(replay.body)).toBe(200);
+  });
+
+  it('rejects stale and cross-tenant n8n failure callbacks', async () => {
+    const test = await makeFixture('salesforce_sandbox');
+    const base = {
+      actionId: test.action.id, tenantId: test.tenant.id, sessionId: test.session.id,
+      opportunityId: test.action.opportunityId, catalogVersionId: test.published.catalogVersionRef,
+      idempotencyKey: test.action.idempotencyKey, actionKey: test.action.actionKey,
+      actionRevision: test.action.actionRevision, eventId: test.eventId, correlationId: test.correlationId,
+      executionReference: 'n8n-provider-evidence-test', state: 'failed', reasonCode: 'salesforce_readback_failed',
+    };
+    const stale = await request(test.runtime.app).post('/api/v1/internal/workflow-events/fail')
+      .set('x-agentic-internal-secret', 'n'.repeat(64)).send({ ...base, attempt: 2 });
+    expect(stale.status).toBe(409);
+    const tenantMismatch = await request(test.runtime.app).post('/api/v1/internal/workflow-events/fail')
+      .set('x-agentic-internal-secret', 'n'.repeat(64)).send({ ...base, tenantId: randomUUID(), attempt: 1 });
+    expect(tenantMismatch.status).toBe(403);
+    expect((await test.store.getAction(test.action.id))?.state).toBe('processing');
+  });
 });
