@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-10T11:55:09.854Z",
+  "generatedAt": "2026-11-10T12:36:08.870Z",
   "environment": {
     "baseUrl": "http://127.0.0.1",
     "tenantSlug": "anc",
@@ -8,7 +8,7 @@
     "leadWorkflowReady": true
   },
   "session": {
-    "sessionIdDigest": "de2e20ba027e",
+    "sessionIdDigest": "0475672c131b",
     "tenantIdDigest": "d4880ce54720",
     "turns": [
       {
@@ -16,8 +16,9 @@
         "user": "Hello! I am exploring options for setting up a new company in the UAE.",
         "assistant": {
           "status": 200,
-          "answer": "I couldn’t find approved company-formation process guidance to verify the steps. Once the official setup guide is published in the knowledge base, I can explain the process without guessing.",
+          "answer": "Hello! I can help you explore Start a Company. What would you like to understand first?",
           "grounded": false,
+          "citationCount": 0,
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": null,
           "actionProposal": null,
@@ -31,6 +32,7 @@
           "status": 200,
           "answer": "Of course. Company registration and licence issuance can be completed in as little as 2 hours, provided all required documents are in order. Would you like me to explain how this applies to your setup?",
           "grounded": true,
+          "citationCount": 1,
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": null,
           "actionProposal": null,
@@ -42,8 +44,9 @@
         "user": "What documents would you need from me?",
         "assistant": {
           "status": 200,
-          "answer": "I can help with start a company. Before we collect documents, I’ll register your enquiry, gather the necessary details, then show you the approved package options and prepare the quote. Would you like to proceed with start a company?",
+          "answer": "For Start a Company, the current journey includes a required identity document step. I can collect it after you confirm the enquiry. Would you like to proceed with start a company?",
           "grounded": false,
+          "citationCount": 0,
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": null,
           "actionProposal": null,
@@ -55,8 +58,9 @@
         "user": "Yes, I want to proceed with creating the new company.",
         "assistant": {
           "status": 200,
-          "answer": "Understood. We’ll focus on start a company. I’ll first register your enquiry, then guide you through the approved packages and quote. What full name should I use for the Lead?",
+          "answer": "Understood. We’ll focus on Start a Company. I’ll first register your enquiry, then guide you through the approved packages and quote. What full name should I use for the Lead?",
           "grounded": false,
+          "citationCount": 0,
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": "lead_contact_name",
           "actionProposal": null,
@@ -70,6 +74,7 @@
           "status": 200,
           "answer": "Thanks, I’ve noted the name for this enquiry. What email address or phone number should I use?",
           "grounded": false,
+          "citationCount": 0,
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": "lead_contact_channel",
           "actionProposal": null,
@@ -83,6 +88,7 @@
           "status": 200,
           "answer": "Thanks, I’ve noted the contact details. Do I have your permission to use them for this company-formation enquiry?",
           "grounded": false,
+          "citationCount": 0,
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": "lead_crm_consent",
           "actionProposal": null,
@@ -94,25 +100,13 @@
         "user": "Yes",
         "assistant": {
           "status": 200,
-          "answer": "I cannot verify that answer safely. I can continue with confirmed information.",
-          "grounded": false,
-          "pendingIntentKey": "anc.company_formation",
-          "pendingRequirementKey": "lead_crm_consent",
-          "actionProposal": null,
-          "error": null
-        }
-      },
-      {
-        "turn": 8,
-        "user": "I consent to the use of my contact details to register this request.",
-        "assistant": {
-          "status": 200,
           "answer": "Thanks, I’ve recorded your contact consent. When you are ready, please explicitly confirm that you want me to submit the Lead.",
           "grounded": false,
+          "citationCount": 0,
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": "lead_action_confirmation",
           "actionProposal": {
-            "idDigest": "d39016264538",
+            "idDigest": "8cd33f755a4b",
             "intent": "crm.lead.create",
             "consentRequired": false
           },
@@ -120,12 +114,13 @@
         }
       },
       {
-        "turn": 9,
+        "turn": 8,
         "user": "Thanks. What do I need to provide next?",
         "assistant": {
           "status": 200,
-          "answer": "I cannot verify that answer safely. I can continue with confirmed information.",
+          "answer": "To continue your company-formation enquiry, please provide your identity document. You can upload it here when you’re ready.",
           "grounded": false,
+          "citationCount": 0,
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": "document.identity.review",
           "actionProposal": null,
@@ -141,12 +136,12 @@
     "error": null
   },
   "lead": {
-    "actionIdDigest": "d39016264538",
+    "actionIdDigest": "8cd33f755a4b",
     "intentKey": "anc.company_formation",
     "actionKey": "lead.create",
     "catalogVersionIdDigest": "eadcae1bd983",
     "state": "completed",
-    "attempts": 7,
+    "attempts": 6,
     "reconciliationFollowUp": null
   },
   "packageCatalog": {
@@ -164,23 +159,25 @@
     "status": 202,
     "packageKey": "anc-r5-sample-growth-r6-r7-r8-r9-r10",
     "packageOfferingIdDigest": "4c075441593c",
-    "selectionIdDigest": "def8a7012787",
+    "selectionIdDigest": "d482ca558e35",
     "error": null
   },
   "quote": {
-    "actionIdDigest": "80bf67d12c99",
+    "actionIdDigest": "fb637a52ee5c",
     "state": "approved",
     "execution": {
       "status": 200,
       "verified": true,
       "mock": true,
       "n8nDispatched": true,
-      "quoteIdDigest": "42175f6de434",
-      "totalAed": null,
+      "quoteIdDigest": "ddb7cca04372",
+      "amountMinor": 499900,
+      "currency": "AED",
+      "totalAed": 4999,
       "artifact": {
-        "fileName": "quote-30795ce5-d8f9-428b-be7b-009451474a01.pdf",
+        "fileName": "quote-b54d23a2-2273-4890-8032-46e708fdff94.pdf",
         "mimeType": "application/pdf",
-        "sha256": "4a0422b41c3dd3b0a5c8585542db23876192be5e8cb1b82512371b1798b3f937"
+        "sha256": "95c5c5a61de9a603661bbdfeae03a9d13c2179f7a3505d97810575443524c723"
       },
       "error": null
     },
@@ -188,12 +185,13 @@
       "status": 200,
       "path": "artifacts/quote-sandbox-2026-11-10/quote-live-review.pdf",
       "bytes": 2614,
-      "sha256": "4a0422b41c3dd3b0a5c8585542db23876192be5e8cb1b82512371b1798b3f937"
+      "sha256": "95c5c5a61de9a603661bbdfeae03a9d13c2179f7a3505d97810575443524c723"
     },
     "nextDocumentTurn": {
       "status": 200,
-      "answer": "I cannot verify that answer safely. I can continue with confirmed information.",
+      "answer": "To continue your company-formation enquiry, please provide your identity document. You can upload it here when you’re ready.",
       "grounded": false,
+      "citationCount": 0,
       "pendingIntentKey": "anc.company_formation",
       "pendingRequirementKey": "document.identity.review",
       "actionProposal": null,
@@ -224,13 +222,17 @@
         "mimeType": "image/png",
         "status": 202,
         "accepted": true,
-        "documentIdDigest": "bcea8bda7609",
-        "jobIdDigest": "7796531706d1",
+        "documentIdDigest": "60b6f4095761",
+        "jobIdDigest": "89cafc804ea1",
         "error": null
       }
     ]
   },
   "outcome": {
+    "conversationAccepted": true,
+    "repeatedAssistantResponses": 0,
+    "fallbackResponses": 0,
+    "documentAnswerPresent": true,
     "quoteGenerated": true,
     "quoteDownloadable": true,
     "documentPromptExposed": true,

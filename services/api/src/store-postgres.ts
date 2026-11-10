@@ -283,7 +283,7 @@ export class PostgresStore implements Store {
     if (!existing.rows[0]) throw new Error('Message insert was not committed and no existing message was found.');
     return this.message(existing.rows[0]);
   }
-  async updateMessage(message: Message): Promise<Message> { await this.pool.query('UPDATE chat_messages SET response=$1 WHERE id=$2 AND tenant_id=$3', [message.response ? JSON.stringify(message.response) : null, message.id, message.tenantId]); return message; }
+  async updateMessage(message: Message): Promise<Message> { await this.pool.query('UPDATE chat_messages SET masked_content=$1,response=$2 WHERE id=$3 AND tenant_id=$4', [message.maskedContent, message.response ? JSON.stringify(message.response) : null, message.id, message.tenantId]); return message; }
   async getMessageByClientId(sessionId: string, clientMessageId: string): Promise<Message | null> { const result = await this.pool.query('SELECT * FROM chat_messages WHERE session_id=$1 AND client_message_id=$2', [sessionId, clientMessageId]); return result.rows[0] ? this.message(result.rows[0]) : null; }
   async listMessages(sessionId: string, tenantId: string, limit?: number): Promise<Message[]> {
     const result = limit === undefined

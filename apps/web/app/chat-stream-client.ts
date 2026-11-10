@@ -70,7 +70,12 @@ export class ChatStreamClient {
   }
 
   async connect(sessionId: string, sessionToken: string): Promise<void> {
-    if (this.socket?.readyState === WebSocket.OPEN) return;
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      if (this.sessionId === sessionId && this.sessionToken === sessionToken) return;
+      this.socket.close();
+      this.socket = null;
+      this.lastEventId = '0-0';
+    }
     if (this.connectPromise) return this.connectPromise;
     this.closed = false;
     this.sessionId = sessionId;

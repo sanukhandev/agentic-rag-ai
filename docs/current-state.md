@@ -8,6 +8,18 @@
 
 On `fix/zara-conversation-engine-end-to-end-recovery`, the V2 public path now independently validates optional questions, claims and candidate intent plans; accepts trusted evidence from correlated read tools; evaluates mixed-polarity source clauses; preserves the V2 prompt cursor across public turns; recognizes reviewed natural formation aliases; accepts natural scoped confirmation phrasing; preserves verified business and masked contact facts through invalid non-knowledge citations; advances catalog contact requirements through consent; routes an explicit, purpose-consented Lead request through the existing Node action gate to an awaiting-confirmation proposal when the published binding is enabled; resolves canonical V2 outbox actions through catalog-declared n8n identity and durable claim correlation; contextualizes knowledge follow-ups; keeps synthetic tool provenance out of PostgreSQL source UUID lookups; preserves relevant short structured ingestion lines for deterministic grounded fallback; and stores package offerings against either legacy UUID or canonical V2 catalog identity without repinning. Focused/full local tests, local ingestion and tenant acceptance, public confirmation/fact/contact smoke, a rebuilt Docker API, and a 25-turn public persistence harness pass. The seven-stage journey, Salesforce sandbox, package/quotation data, browser E2E and three-run Azure acceptance remain unverified; this checkpoint does not replace the migration gaps below.
 
+## Deployment migration checkpoint — 2026-11-10
+
+VM deployment now starts PostgreSQL, runs the forward-only `scripts/migrate-vm.mjs`
+runner, and only then rebuilds the Compose services. The runner records migration
+checksums in `agentic_schema_migrations`, uses a PostgreSQL advisory lock, and
+requires an explicit `DB_MIGRATION_BASELINE` when an existing VM schema cannot
+be inferred. Current branch data changes are `072-intent-vocabulary-learning.sql`
+and `073-schema-migrations.sql`; editable catalog content still goes through the
+authenticated validate/draft/publish flow. The runner was exercised against the
+local Docker PostgreSQL volume and a second run applied zero migrations. VM
+execution remains pending until the database baseline is confirmed on that VM.
+
 ## Existing code topology — IMPLEMENTED
 
 | Responsibility | Verified location | What exists |
@@ -379,3 +391,11 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - The local `anc` tenant published catalog revision 12 was derived from the previous published catalog so existing enabled workflow bindings and package authorization were preserved while the structured company-formation goal data was added. Approved package offerings were re-pinned to the new catalog revision; the prior catalog remains retained as draft history.
 - A focused Azure live conversation recognized “I want to open a firm” semantically, requested explicit goal confirmation, then collected lead information. The live quote journey completed the development Lead, n8n quote action, authenticated PDF download and requirement-gated document upload; the PDF contained synthetic customer name, email, phone, package and mock-evidence text.
 - The 15-case Azure replay completed 14/15 cases; one turn returned a transient `V2_MODEL_INVALID_RESPONSE` 500 and the exact scenario passed on rerun. This remains a reliability follow-up rather than a catalog validation failure.
+
+## 2026-11-10 quote conversation remediation live check
+
+- The shared GPT-first turn controller now resolves short consent replies against the active consent requirement and provides a catalog-backed identity-document handoff when the model response is rejected or the post-quote requirement is pending. A greeting/exploration turn no longer falls back to an approved-knowledge abstention.
+- New Session clears the persisted session token and closes the old WebSocket; connecting a different session no longer reuses the previous open socket.
+- Live Azure Docker verification passed after rebuild: greeting, setup question, pre-confirmation document question, goal confirmation, contact collection, text `Yes` consent, Lead proposal, post-quote document prompt and synthetic document upload completed without a repeated assistant response or generic fallback. Quote action was approved, PDF download returned HTTP 200, and the upload returned HTTP 202.
+- Evidence: `docs/verification/quote-conversation-live-review.json` (`conversationAccepted: true`, `repeatedAssistantResponses: 0`, `fallbackResponses: 0`) and `docs/verification/quote-conversation-ws-smoke-2026-11-10.json`.
+- This is a development/mock quote acceptance through the current UI/API workflow. It does not prove official pricing, payment, contract signature or the full provider-backed seven-stage journey; package selection and action confirmation are still represented by the existing trusted UI/API action boundaries in the harness.

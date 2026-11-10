@@ -62,7 +62,11 @@ missing (unless intentionally using its test-only mock mode).
 `./data/n8n`, `./data/ingestion-staging`, and `./data/supporting-documents`
 are unchanged. Do not use `docker compose down -v` or remove `./data`.
 PostgreSQL init SQL only runs on an empty volume; apply outstanding migrations
-to an existing database through a separately reviewed migration procedure.
+to an existing database through `npm run db:migrate:vm` (see
+`docs/vm-deployment.md`). Set `DB_MIGRATION_BASELINE` in the VM `.env` on the
+first run when the existing schema predates the latest migration; do not guess
+the baseline. Catalog content changes must use the authenticated catalog
+validate/draft/publish flow, not direct SQL updates.
 
 For Azure GPT model setup see [model gateway](docs/model-gateway.md).
 Passing container health checks is not seven-stage provider or Azure dialogue
