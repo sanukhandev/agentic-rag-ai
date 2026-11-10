@@ -3758,7 +3758,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (errorType(error) === 'entity.too.large') { res.status(413).json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request payload is too large.', requestId } }); return; }
     if (errorType(error) === 'entity.parse.failed') { res.status(400).json({ error: { code: 'INVALID_JSON', message: 'Request body must be valid JSON.', requestId } }); return; }
     if (error instanceof HttpError) {
-      if (error.code === 'MODEL_QUEUE_OVERLOADED' || error.code === 'MODEL_RATE_LIMITED') {
+      if (error.code === 'MODEL_QUEUE_OVERLOADED' || error.code === 'MODEL_RATE_LIMITED' || error.code === 'MODEL_CIRCUIT_OPEN') {
         console.warn(JSON.stringify({ event: 'conversation.model_backpressure', requestId, code: error.code, status: error.status, message: error.message }));
       }
       res.status(error.status).json({ error: { code: error.code, message: error.message, requestId } }); return;

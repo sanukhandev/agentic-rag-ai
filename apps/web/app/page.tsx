@@ -24,6 +24,7 @@ import {
 } from './chat-utils';
 import { VoiceVisualizer } from './voice-visualizer';
 import { getSpeechRecognitionConstructor, type SpeechRecognitionLike } from './voice-recognition';
+import { chatStreamUrl, ChatStreamClient } from './chat-stream-client';
 
 type Config = {
   tenant: { name: string; slug: string };
@@ -74,6 +75,8 @@ export default function Home() {
   const [documentStatus, setDocumentStatus] = useState('');
   const [documents, setDocuments] = useState<ChatDocument[]>([]);
   const documentInputRef = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<ChatStreamClient | null>(null);
+  const sessionTokenRef = useRef<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -157,6 +160,7 @@ export default function Home() {
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       recognitionRef.current?.stop();
       if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+      streamRef.current?.close();
     };
   }, []);
 
@@ -185,6 +189,8 @@ export default function Home() {
       setMessages([]);
       setDocuments([]);
       setSessionCopied(false);
+      sessionTokenRef.current = null;
+      streamRef.current?.close();
       return;
     }
 
@@ -196,13 +202,18 @@ export default function Home() {
       .catch(() => setConfig(null));
 
     const savedSession = window.localStorage.getItem(`agentic-rag-session:${tenantSlug}`);
-    if (!savedSession) {
+    const savedSessionToken = window.localStorage.getItem(`agentic-rag-session-token:${tenantSlug}`);
+    if (!savedSession || !savedSessionToken) {
+      window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
+      window.localStorage.removeItem(`agentic-rag-session-token:${tenantSlug}`);
       setSessionId(null);
       setPendingIntentKey(null);
       setPendingRequirementKey(null);
       setMessages([]);
       setDocuments([]);
       setSessionCopied(false);
+      sessionTokenRef.current = null;
+      streamRef.current?.close();
       return;
     }
 
@@ -211,6 +222,7 @@ export default function Home() {
         if (!response.ok) throw new Error('Saved session is unavailable.');
         const body = (await response.json()) as { messages: ChatHistoryMessage[] };
         setSessionId(savedSession);
+        sessionTokenRef.current = savedSessionToken;
         setSessionCopied(false);
         const pendingMessage = [...body.messages].reverse().find((message) => message.role === 'assistant' && message.pendingRequirementKey);
         setPendingIntentKey(pendingMessage?.pendingIntentKey ?? null);
@@ -231,12 +243,15 @@ export default function Home() {
       })
       .catch(() => {
         window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
+        window.localStorage.removeItem(`agentic-rag-session-token:${tenantSlug}`);
         setSessionId(null);
         setPendingIntentKey(null);
         setPendingRequirementKey(null);
         setMessages([]);
         setDocuments([]);
         setSessionCopied(false);
+        sessionTokenRef.current = null;
+        streamRef.current?.close();
       });
   }, [tenantSlug]);
 
@@ -495,25 +510,26 @@ export default function Home() {
           body: JSON.stringify({ tenantSlug })
         });
         if (!sessionRes.ok) throw new Error('Could not open a secure conversation session.');
-        activeSession = ((await sessionRes.json()) as { sessionId: string }).sessionId;
+        const created = (await sessionRes.json()) as { sessionId: string; sessionToken: string };
+        activeSession = created.sessionId;
+        sessionTokenRef.current = created.sessionToken;
         setSessionId(activeSession);
         window.localStorage.setItem(`agentic-rag-session:${tenantSlug}`, activeSession);
+        window.localStorage.setItem(`agentic-rag-session-token:${tenantSlug}`, created.sessionToken);
       }
+      if (!activeSession) throw new Error('Could not open a secure conversation session.');
 
       const clientMessageId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `msg-${Date.now()}`;
-      const response = await fetch(`${api}/api/v1/chat/messages`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId: activeSession, type: postbackValue ? 'postback' : 'text', message: trimmed, ...(postbackValue ? { postbackValue } : {}), clientMessageId })
-      });
-      const body = (await response.json()) as ChatReply & { error?: { message?: string }; messageId?: string; requestId?: string };
-      if (!response.ok) throw new Error(body.error?.message ?? 'The assistant could not respond.');
+      const sessionToken = sessionTokenRef.current;
+      if (!sessionToken) throw new Error('The secure conversation session has expired. Please start again.');
+      if (!streamRef.current) streamRef.current = new ChatStreamClient(chatStreamUrl(api));
+      const body = await streamRef.current.send(activeSession, sessionToken, clientMessageId, trimmed, postbackValue);
 
       // Apply natural language formatting to technical abstentions (Requirement 9)
       const naturalText = formatNaturalAbstention(body.answer);
 
       const assistantMsg: DisplayMessage = {
-        id: body.messageId ?? `asst-${Date.now()}`,
+        id: (body as ChatReply & { messageId?: string }).messageId ?? `asst-${Date.now()}`,
         role: 'assistant',
         content: naturalText,
         grounded: body.grounded,

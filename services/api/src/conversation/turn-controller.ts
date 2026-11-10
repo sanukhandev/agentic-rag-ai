@@ -342,7 +342,12 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     ...(catalogV2 && v2Version ? { catalogV2: {
       versionRef: v2Version.catalogVersionRef,
       businessGoals: catalogV2.sheets.BusinessGoals.filter(goal => goal.active)
-        .map(goal => ({ key: goal.businessGoalKey, name: goal.name.slice(0, 120), confirmationRequired: goal.confirmationRequired })),
+        .map(goal => ({ key: goal.businessGoalKey, name: goal.name.slice(0, 120), description: goal.description.slice(0, 4_000),
+          keywords: goal.keywords.slice(0, 64), customerExpressions: goal.customerExpressions.slice(0, 24),
+          requiredInformation: goal.requiredInformation.slice(0, 24), requiredDocuments: goal.requiredDocuments.slice(0, 24),
+          orderedSteps: goal.orderedSteps.slice(0, 16), packageReferences: goal.packageReferences.slice(0, 24),
+          productReferences: goal.productReferences.slice(0, 24), authorizedToolKeys: goal.authorizedToolKeys.slice(0, 32),
+          completionConditions: goal.completionConditions.slice(0, 24), confirmationRequired: goal.confirmationRequired })),
       turnIntents: catalogV2.sheets.TurnIntents.filter(turn => turn.active)
         .map(turn => ({ key: turn.turnIntentKey, categoryKey: turn.categoryKey, businessGoalKey: turn.businessGoalKey })),
       signals: catalogV2.sheets.IntentSignals
@@ -403,8 +408,12 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   // Only validated proposals and independently observed signals influence
   // the candidate goal. High model confidence never confirms a goal.
   const validPlan = Boolean(planningDecision?.accepted);
-  const selectedV2Goal = existingConfirmedGoal ?? (validPlan && planningDecision?.score?.thresholdMet
-    && !planningDecision.score.ambiguous ? planningDecision.primaryGoalKey
+  const semanticGoalCandidate = Boolean(validPlan && modelPlan && planningDecision?.primaryGoalKey
+    && planningDecision.proposal?.turnCategory === 'business_goal'
+    && modelPlan.confidenceBand !== 'low'
+    && !planningDecision.score?.ambiguous);
+  const selectedV2Goal = existingConfirmedGoal ?? (validPlan && (planningDecision?.score?.thresholdMet || semanticGoalCandidate)
+    && !planningDecision?.score?.ambiguous ? planningDecision?.primaryGoalKey ?? null
     : intentDocument?.catalogSource === 'v2' ? intentDocument.businessGoalKey
       ?? (commercialDocumentRequest ? catalogV2?.sheets.BusinessGoals.find(goal => goal.active)?.businessGoalKey ?? null : null)
       : commercialDocumentRequest ? catalogV2?.sheets.BusinessGoals.find(goal => goal.active)?.businessGoalKey ?? null : null);
@@ -545,12 +554,12 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const shouldPrompt = Boolean(catalogV2 && requirementGoal?.confirmationRequired
     && !intentDocument?.goalConfirmed && !pendingDecision && !decision
     && (commercialDocumentRequest || (validPlan
-      && planningDecision?.score?.thresholdMet && !planningDecision.score.ambiguous
+      && (planningDecision?.score?.thresholdMet || semanticGoalCandidate) && !planningDecision?.score?.ambiguous
       && intentEvidence?.initiation === 'explicit'
-      && intentEvidence?.initiationSupported === true
       && intentEvidence.ambiguous === false
-      && intentEvidence.candidateGoalKeys.length === 1
-      && intentEvidence.candidateGoalKeys[0] === selectedV2Goal)));
+      && (semanticGoalCandidate || (intentEvidence.initiationSupported === true
+        && intentEvidence.candidateGoalKeys.length === 1
+        && intentEvidence.candidateGoalKeys[0] === selectedV2Goal)))));
   let goalConfirmation: GoalConfirmationRecord | null = previousDecision;
   let goalConfirmed = Boolean(intentDocument?.goalConfirmed);
   let nextGoalKey = intentDocument?.goalConfirmed ? intentDocument.businessGoalKey : selectedV2Goal;

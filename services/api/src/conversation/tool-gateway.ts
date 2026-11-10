@@ -281,7 +281,12 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         ? {
             versionRef: publishedV2.catalogVersionRef,
             businessGoals: publishedV2.catalog.sheets.BusinessGoals.filter(goal => goal.active)
-              .slice(0, 40).map(goal => ({ key: goal.businessGoalKey, name: bounded(goal.name, 120), confirmationRequired: goal.confirmationRequired })),
+              .slice(0, 40).map(goal => ({ key: goal.businessGoalKey, name: bounded(goal.name, 120), description: bounded(goal.description, 4_000),
+                keywords: goal.keywords.slice(0, 64), customerExpressions: goal.customerExpressions.slice(0, 24),
+                requiredInformation: goal.requiredInformation.slice(0, 24), requiredDocuments: goal.requiredDocuments.slice(0, 24),
+                orderedSteps: goal.orderedSteps.slice(0, 16), packageReferences: goal.packageReferences.slice(0, 24),
+                productReferences: goal.productReferences.slice(0, 24), authorizedToolKeys: goal.authorizedToolKeys.slice(0, 32),
+                completionConditions: goal.completionConditions.slice(0, 24), confirmationRequired: goal.confirmationRequired })),
             turnIntents: publishedV2.catalog.sheets.TurnIntents.filter(turn => turn.active)
               .slice(0, 80).map(turn => ({ key: turn.turnIntentKey, categoryKey: turn.categoryKey, businessGoalKey: turn.businessGoalKey })),
             requirements: publishedV2.catalog.sheets.RequirementPolicies.filter(req => req.required)

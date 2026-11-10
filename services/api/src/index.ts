@@ -38,6 +38,8 @@ const v2Coordinator = process.env.CONVERSATION_ENGINE_V2_ENABLED !== 'false' && 
 const { app } = createApp({ store, cache, nodeEnv, ...(model ? { model } : {}), ...(summaryModel ? { summaryModel } : {}), ...(embedding ? { embedding } : {}), ...(v2Coordinator ? { v2Coordinator } : {}) });
 const server = createServer(app);
 const streamError = (code: string, message: string): Error & { code: string } => Object.assign(new Error(message), { code });
+const streamResponse = (payload: unknown): Record<string, unknown> =>
+  typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {};
 const stream = attachChatStream(server, {
   ...(chatTurnQueue ? { queue: chatTurnQueue } : {}),
   allowedOrigins: new Set([process.env.WEB_ORIGIN ?? 'http://localhost', 'http://localhost', 'http://127.0.0.1']),
@@ -69,8 +71,8 @@ const stream = attachChatStream(server, {
         const errorRecord = typeof error === 'object' && error !== null ? error as Record<string, unknown> : null;
         throw streamError(typeof errorRecord?.code === 'string' ? errorRecord.code : 'CHAT_REQUEST_FAILED', typeof errorRecord?.message === 'string' ? errorRecord.message : 'The conversation could not continue right now.');
       }
-      const body = payload as { answer?: unknown; action?: Record<string, unknown>; citations?: unknown };
-      return { ...(typeof body.answer === 'string' ? { answer: body.answer } : {}), response: { ...(body.action ? { action: body.action } : {}), ...(Array.isArray(body.citations) ? { citations: body.citations } : {}) } };
+      const body = streamResponse(payload);
+      return { ...(typeof body.answer === 'string' ? { answer: body.answer } : {}), response: body };
     },
   } : {}),
   handleMessage: async (sessionId, sessionToken, frame, request) => {
@@ -87,10 +89,10 @@ const stream = attachChatStream(server, {
       const message = typeof errorRecord?.message === 'string' ? errorRecord.message : 'The conversation could not continue right now. Please try again.';
       throw streamError(code, message);
     }
-    const body = payload as { answer?: unknown; action?: Record<string, unknown>; citations?: unknown };
+    const body = streamResponse(payload);
     const result: { answer?: string; response?: Record<string, unknown> } = {};
     if (typeof body.answer === 'string') result.answer = body.answer;
-    result.response = { ...(body.action ? { action: body.action } : {}), ...(Array.isArray(body.citations) ? { citations: body.citations } : {}) };
+    result.response = body;
     return result;
   },
 });

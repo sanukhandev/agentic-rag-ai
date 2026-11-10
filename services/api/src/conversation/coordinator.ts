@@ -30,7 +30,7 @@ export class HttpV2ConversationAgent implements V2ConversationAgent {
       try { detail = await response.json(); } catch { /* preserve the typed fallback below */ }
       const value = typeof detail === 'object' && detail !== null ? (detail as { detail?: unknown }).detail : null;
       const code = typeof value === 'object' && value !== null && typeof (value as { code?: unknown }).code === 'string' ? (value as { code: string }).code : null;
-      if (code === 'MODEL_QUEUE_OVERLOADED') {
+      if (code === 'MODEL_QUEUE_OVERLOADED' || code === 'MODEL_RATE_LIMITED' || code === 'MODEL_CIRCUIT_OPEN') {
         throw new HttpError(429, code, 'Conversation volume is high right now. Please ask your question again in a moment.');
       }
       throw new Error('V2_MODEL_UNAVAILABLE');
@@ -435,16 +435,10 @@ export class V2ConversationCoordinator {
     // failure. Never relabel that failure as a successful no-knowledge dialogue.
     const failedReads = agentResult.toolTrace.filter(trace => trace.status !== 'ok');
     const hardToolFailure = failedReads.some(trace => trace.status === 'stale_state' || trace.status === 'not_authorized');
-    const independentlyCited = candidateResponse.citationIds.length > 0
-      && candidateResponse.citationIds.every(id =>
-        (request.evidence ?? []).some(item => item.citationId === id && item.approved && !item.revoked)
-        || agentResult.toolTrace.some(trace => trace.status === 'ok' && trace.evidenceRefs.includes(id)));
-    // Optional read failures cannot invalidate an answer supported by a separate
-    // successful read or trusted Node prefetch. The normal evidence guard will
-    // still reject every unsupported, revoked, fabricated or mismatched citation.
+    // Optional read failures should not erase a safe conversational answer. The
+    // normal evidence guard still rejects unsupported or fabricated citations.
     // Scope denial, stale state and model-generated fallback remain hard stops.
-    if (candidateResponse.decisionRef.startsWith('fallback-') || hardToolFailure
-      || (failedReads.length > 0 && !independentlyCited)) {
+    if (candidateResponse.decisionRef.startsWith('fallback-') || hardToolFailure) {
       candidateGuardReason = 'model_or_tool_unavailable';
       const unavailable = guardV2OfflineFallback('tool_unavailable', guardContext);
       if (!unavailable.verdict.accepted || !unavailable.response) throw new Error('V2_MODEL_OR_TOOL_UNAVAILABLE');

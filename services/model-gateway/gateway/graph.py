@@ -72,6 +72,13 @@ class LangGraphConversationAgent(BoundedConversationAgent):
         )
 
     def _failed(self, state: GraphTurnState, reason: str) -> dict[str, Any]:
+        logger.warning(
+            "langgraph.turn_fallback reason=%s model_requests=%s tool_calls=%s tool_statuses=%s",
+            reason,
+            state.get("model_count", 0),
+            state.get("tool_count", 0),
+            ",".join(trace.status for trace in state.get("traces", [])) or "none",
+        )
         return {
             "calls": [],
             "result": self._result(state, self._fallback(state["envelope"], reason)),
@@ -104,9 +111,11 @@ class LangGraphConversationAgent(BoundedConversationAgent):
                 return {**self._failed(next_state, "tool_budget_exhausted"), "model_count": next_count}
             return {"model_count": next_count, "latest_response": response, "calls": calls}
         except (BudgetExceeded, asyncio.TimeoutError):
+            logger.warning("langgraph.model_node_failed reason=turn_deadline_exceeded")
             return self._failed(state, "turn_deadline_exceeded")
-        except Exception:
-            # No model errors, raw prompts or credentials are included in the response.
+        except Exception as error:
+            # Keep failure detail in the private gateway logs without exposing prompts or credentials.
+            logger.error("langgraph.model_node_failed type=%s message=%s", type(error).__name__, _safe_error_message(error))
             return self._failed(state, "model_unavailable")
 
     @staticmethod
@@ -120,6 +129,8 @@ class LangGraphConversationAgent(BoundedConversationAgent):
         output = []
         for call in state["calls"]:
             result, trace = await self._execute(envelope, call, seen)
+            if trace.status != "ok":
+                logger.error("langgraph.tool_failed tool=%s status=%s", call.name, trace.status)
             seen[call.call_id] = result
             traces.append(trace)
             for item in self._evidence_from_result(call, result):
