@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { auditLegacyCatalogVersion, createLegacyCatalogV2Candidate, legacyCatalogAuditDigest } from './catalog-migration.js';
 import type { IntentCatalogVersion } from '../types.js';
 
-const catalog = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as Record<string, unknown>;
+const catalog = JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as Record<string, unknown>;
 const legacy: IntentCatalogVersion = {
   id: '11111111-1111-4111-8111-111111111111', tenantId: '22222222-2222-4222-8222-222222222222', version: 7, status: 'published',
   sourceFileName: 'legacy.xlsx', sourceHash: 'a'.repeat(64), parserVersion: 'intent-catalog-xlsx-1.2.0',

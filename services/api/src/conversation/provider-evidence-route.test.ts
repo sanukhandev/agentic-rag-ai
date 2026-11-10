@@ -20,7 +20,7 @@ import { completeLifecycleStage } from '../lifecycle-state.js';
 import { createApprovedQuote, proposePackageSelectionAfterLead } from '../business-lifecycle.js';
 
 const catalog = (providerType: string): CatalogV2Document => {
-  const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2-seven-stage.json', import.meta.url), 'utf8')));
+  const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2-seven-stage.json', import.meta.url), 'utf8')));
   if (!parsed.ok || !parsed.document) throw new Error('fixture invalid');
   const document = parsed.document;
   const tool = document.sheets.ToolBindings.find((candidate) => candidate.registryKey === 'crm.lead.create');

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { CatalogV2Document } from './catalog.js';
 import { authorizedV2ReadTools, authorizedV2ReadToolsForTurn, isV2ReadToolEnabled } from './tool-policy.js';
 import { V2_TOOL_NAMES } from './tool-gateway.js';
-const fixture = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url),'utf8')) as CatalogV2Document;
+const fixture = JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url),'utf8')) as CatalogV2Document;
 describe('published catalog controls V2 domain reads', () => {
   it('allows only implemented, enabled tenant reads and safe platform context', () => {
     expect(authorizedV2ReadTools(fixture, V2_TOOL_NAMES)).toContain('search_knowledge');

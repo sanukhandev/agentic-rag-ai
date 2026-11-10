@@ -5,7 +5,7 @@ import { isV2PackageQuestion } from './turn-controller.js';
 import { authorizedV2ReadToolsForTurn } from './tool-policy.js';
 import { V2_TOOL_NAMES } from './tool-gateway.js';
 
-const catalog = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
+const catalog = JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
 
 describe('V2 conversation quality boundaries', () => {
   it.each([

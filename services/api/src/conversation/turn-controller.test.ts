@@ -250,7 +250,7 @@ import { readFileSync } from 'node:fs';
 import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2, type CatalogV2Document } from './catalog.js';
 
 const publishPlannerFixture = async (store: MemoryStore, tenantId: string, tenantScope: string, fixture = 'ancfz-catalog-v2.json', configure?: (catalog: CatalogV2Document) => void) => {
-  const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/' + fixture, import.meta.url), 'utf8')));
+  const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('../fixtures/' + fixture, import.meta.url), 'utf8')));
   if (!parsed.ok || !parsed.document) throw new Error('UNIT_CATALOG_FIXTURE_INVALID');
   const catalogV2: CatalogV2Document = parsed.document;
   catalogV2.manifest.tenantScope = tenantScope;
@@ -436,7 +436,7 @@ describe('V2-only publication without a legacy V1 catalog', () => {
     const { store, tenant, input } = await prepared();
     store.getPublishedIntentCatalog = async () => null;
     store.getIntentCatalogVersion = async () => null;
-    const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
+    const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
     if (!parsed.document) throw new Error('V2_FIXTURE_INVALID');
     parsed.document.manifest.tenantScope = tenant.slug;
     parsed.document.sheets.CatalogManifest[0]!.tenantScope = tenant.slug;
@@ -954,7 +954,7 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
 
   it('fails closed when an unrelated V2 catalog revision replaces the pinned publication', async () => {
     const ctx = await proposalTurn();
-    const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
+    const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
     if (!parsed.document) throw new Error('UNIT_CATALOG_FIXTURE_INVALID');
     parsed.document.manifest.tenantScope = ctx.tenant.slug;
     parsed.document.sheets.CatalogManifest[0]!.tenantScope = ctx.tenant.slug;

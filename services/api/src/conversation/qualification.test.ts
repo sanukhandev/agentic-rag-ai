@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { evaluateV2Qualification } from './qualification.js';
 import type { CatalogV2Document } from './catalog.js';
 
-const fixture = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
+const fixture = JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
 const facts = (overrides: Record<string, string | number> = {}) => ({
   business_activity: { value: 'software consulting and AI services', source: 'customer' as const, messageSequence: 2, evidenceRefs: ['turn:2'] },
   entity_type: { value: 'LLC', source: 'customer' as const, messageSequence: 3, evidenceRefs: ['turn:3'] },

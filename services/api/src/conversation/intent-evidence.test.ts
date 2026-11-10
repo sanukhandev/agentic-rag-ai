@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { CatalogV2Document } from './catalog.js';
 import { resolveV2IntentEvidence } from './intent-evidence.js';
 
-const catalog = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
-const sevenStageCatalog = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2-seven-stage.json', import.meta.url), 'utf8')) as CatalogV2Document;
+const catalog = JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
+const sevenStageCatalog = JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2-seven-stage.json', import.meta.url), 'utf8')) as CatalogV2Document;
 const current = (message: string, recentCustomerTurns: Array<{ messageId: string; text: string }> = [], document = catalog) =>
   resolveV2IntentEvidence({ catalog: document, catalogVersionRef: 'anc:r1:verified-catalog',
     currentMessage: message, currentMessageId: 'current-message-12345678', recentCustomerTurns });

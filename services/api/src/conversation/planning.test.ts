@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { validateV2PlanningProposal } from './planning.js';
 import type { CatalogV2Document } from './catalog.js';
 
-const catalog = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
+const catalog = JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
 const context = { confirmedGoalKey: null, currentStageKey: 'lead_qualification', verifiedRequirementKeys: [], goalConfirmed: true, allowedToolKeys: ['knowledge.search', 'journey.read_state'] };
 const base = {
   turnCategory: 'business_goal', primaryGoalKey: 'anc.company_formation', candidateGoalKeys: ['anc.company_formation'], matchedSignalIds: ['signal.company.register'], supportingTopicKeys: [], runnerUpScore: 20,

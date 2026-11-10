@@ -147,7 +147,7 @@ describe('V2 trusted tool execution (isolated unit)', () => {
   });
   it('reads V2 package offerings by canonical catalog reference', async () => {
     const { store, tenant, persona, pinned, gateway } = await makeGateway();
-    const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
+    const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
     if (!parsed.ok || !parsed.document) throw new Error('UNIT_CATALOG_FIXTURE_INVALID');
     parsed.document.manifest.tenantScope = tenant.slug;
     parsed.document.sheets.CatalogManifest[0]!.tenantScope = tenant.slug;
@@ -262,7 +262,7 @@ describe('V2 trusted tool execution (isolated unit)', () => {
 describe('V2 catalog publication exposed through trusted read tool', () => {
   it('returns the canonical published V2 version and active business goals', async () => {
     const { store, tenant, gateway, request } = await makeGateway();
-    const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
+    const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
     if (!parsed.ok || !parsed.document) throw new Error('UNIT_CATALOG_FIXTURE_INVALID');
     const catalog = parsed.document;
     catalog.manifest.tenantScope = tenant.slug;

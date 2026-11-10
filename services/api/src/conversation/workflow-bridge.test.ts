@@ -6,7 +6,7 @@ import { MemoryStore } from '../store-memory.js';
 import { randomUUID } from 'node:crypto';
 
 const catalog = (): CatalogV2Document => {
-  const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2-seven-stage.json', import.meta.url), 'utf8')));
+  const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2-seven-stage.json', import.meta.url), 'utf8')));
   if (!parsed.ok || !parsed.document) throw new Error('fixture invalid');
   return parsed.document;
 };

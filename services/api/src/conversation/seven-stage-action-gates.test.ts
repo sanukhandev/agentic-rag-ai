@@ -4,7 +4,7 @@ import { deriveV2ActionReadiness, evaluateV2StageBoundary, evaluateV2StageTransi
 import type { ActionRequest, IntentCatalogV2Version, LifecycleState, UserIntentDocument } from '../types.js';
 import { readFileSync } from 'node:fs';
 
-const catalog = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
+const catalog = JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
 const pin = catalogV2VersionRef(catalog);
 const tenantId = 'tenant-test';
 const sessionId = 'session-test';

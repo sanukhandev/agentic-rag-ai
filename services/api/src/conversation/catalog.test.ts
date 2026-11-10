@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { catalogV2Sha256, catalogV2VersionRef, createLegacyCatalogMigrationCandidate, validateCatalogV2, type CatalogV2Document } from './catalog.js';
 
-const fixture = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as unknown;
-const scenarios = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2-scenarios.json', import.meta.url), 'utf8')) as { persona: { name: string; permittedLanguages: string[]; status: string }; qualificationVariants: Array<{ visaCount: number }>; remoteWritePolicy: { enabledToolCount: number; enabledWorkflowCount: number; providerEvidenceRequired: boolean } };
+const fixture = JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as unknown;
+const scenarios = JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2-scenarios.json', import.meta.url), 'utf8')) as { persona: { name: string; permittedLanguages: string[]; status: string }; qualificationVariants: Array<{ visaCount: number }>; remoteWritePolicy: { enabledToolCount: number; enabledWorkflowCount: number; providerEvidenceRequired: boolean } };
 
 describe('strict catalog v2 contract', () => {
   it('accepts the valid ANCFZ reference and produces a stable immutable version reference', () => {

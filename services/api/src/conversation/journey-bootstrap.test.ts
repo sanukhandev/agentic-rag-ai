@@ -11,7 +11,7 @@ const makeFixture = async () => {
   const store = new MemoryStore();
   const tenant = await store.createTenant({ name: 'Journey Guard Tenant', slug: 'journey-guard-tenant' });
   const session = await store.createSession(tenant.id);
-  const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
+  const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')));
   if (!parsed.ok || !parsed.document) throw new Error('V2_UNIT_CATALOG_INVALID');
   const catalog = parsed.document;
   catalog.manifest.tenantScope = tenant.slug;

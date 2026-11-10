@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { validateCatalogV2, catalogV2VersionRef } from './catalog.js';
 import { validatePublishedCatalogV2 } from './catalog-runtime.js';
-const catalog=JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2-seven-stage.json',import.meta.url),'utf8'));
+const catalog=JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2-seven-stage.json',import.meta.url),'utf8'));
 const stages=['lead_generation','lead_qualification','account_creation','package_selection','document_upload','payment_invoice','contract'];
 describe('ANCFZ seven-stage draft catalog',()=>{
  it('validates with seven sequential stages and stable revision',()=>{

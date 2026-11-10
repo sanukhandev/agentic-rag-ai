@@ -6,7 +6,7 @@ import type { IntentCatalogV2Version, LifecycleState, UserIntentDocument } from 
 import { MemoryStore } from '../store-memory.js';
 import { proposeV2CatalogAction, validateV2ActionConfirmation, validateV2ActionProposal, v2ActionConsentScope, type V2ActionGateContext } from './action-gate.js';
 
-const fixture = JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
+const fixture = JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url), 'utf8')) as CatalogV2Document;
 const catalog = structuredClone(fixture);
 catalog.sheets.ToolBindings = catalog.sheets.ToolBindings.map((binding) => binding.toolKey === 'account.propose_creation' ? { ...binding, enabled: true } : binding);
 catalog.sheets.WorkflowBindings = [...catalog.sheets.WorkflowBindings, { workflowKey: 'crm.account.create', registryKey: 'crm.account.create', providerType: 'sandbox', payloadSchemaRef: 'payload.account.v1', callbackSchemaRef: 'callback.account.v1', evidencePolicyKey: 'provider.account.verified', enabled: true }];
