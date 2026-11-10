@@ -1,7 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, catchError, of, switchMap, takeWhile, timer } from 'rxjs';
-import { IngestionJob, IntentCatalogVersion, IntentCatalogV2Version } from '../types/admin.types';
+import { IngestionJob, IntentCatalogVersion, IntentCatalogV2Version, IntentVocabularyCandidate } from '../types/admin.types';
 import { apiErrorMessage } from './api-error';
 import { AuthService } from './auth.service';
 import { isCatalogJobPending } from './intent-catalog-utils';
@@ -25,6 +25,7 @@ export class IntentCatalogService {
   private v2LoadRevision = 0;
   private readonly _catalogJob = signal<IngestionJob | null>(null);
   private readonly _catalogError = signal<string | null>(null);
+  private readonly _vocabulary = signal<IntentVocabularyCandidate[]>([]);
   private watchedJobId: string | null = null;
 
   readonly versions = this._versions.asReadonly();
@@ -33,6 +34,7 @@ export class IntentCatalogService {
   readonly v2Loading = this._v2Loading.asReadonly();
   readonly catalogJob = this._catalogJob.asReadonly();
   readonly catalogError = this._catalogError.asReadonly();
+  readonly vocabulary = this._vocabulary.asReadonly();
 
   // Observable streams for backwards compatibility
   private readonly versionsSubject = new BehaviorSubject<IntentCatalogVersion[]>([]);
@@ -53,11 +55,13 @@ export class IntentCatalogService {
     this.versionsSubject.next([]);
     this._catalogError.set(null);
     this.catalogErrorSubject.next(null);
+    this._vocabulary.set([]);
   }
 
   load(): void {
     if (!this.auth.token()) return;
     this.loadV2();
+    this.loadVocabulary();
     this._catalogError.set(null);
     this.catalogErrorSubject.next(null);
 
@@ -71,6 +75,28 @@ export class IntentCatalogService {
       const items = response.items ?? [];
       this._versions.set(items);
       this.versionsSubject.next(items);
+    });
+  }
+
+  loadVocabulary(): void {
+    if (!this.auth.token()) return;
+    this.http.get<{ items: IntentVocabularyCandidate[] }>(`${this.apiBase}/api/v1/admin/intent-vocabulary`).pipe(catchError((error) => {
+      this.toast.show('error', 'Vocabulary unavailable', apiErrorMessage(error, 'Could not load learned intent expressions.'));
+      return of({ items: [] });
+    })).subscribe(({ items }) => this._vocabulary.set(items ?? []));
+  }
+
+  rejectVocabulary(candidate: IntentVocabularyCandidate): void {
+    this.http.post(`${this.apiBase}/api/v1/admin/intent-vocabulary/${candidate.id}/reject`, {}).subscribe({
+      next: () => { this.loadVocabulary(); this.toast.show('success', 'Expression rejected', 'The expression will not be used for intent recognition.'); },
+      error: (error) => this.toast.show('error', 'Reject failed', apiErrorMessage(error, 'Could not reject the expression.'))
+    });
+  }
+
+  rollbackVocabulary(candidate: IntentVocabularyCandidate): void {
+    this.http.post(`${this.apiBase}/api/v1/admin/intent-vocabulary/${candidate.id}/rollback`, {}).subscribe({
+      next: () => { this.load(); this.toast.show('success', 'Vocabulary rolled back', 'The previous catalog revision is active again.'); },
+      error: (error) => this.toast.show('error', 'Rollback failed', apiErrorMessage(error, 'Could not roll back the expression.'))
     });
   }
 

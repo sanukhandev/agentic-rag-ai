@@ -6,8 +6,6 @@ import { basename, resolve } from 'node:path';
 const baseUrl = process.env.API_BASE_URL ?? 'http://127.0.0.1';
 const origin = process.env.API_ORIGIN ?? 'http://localhost:3000';
 const tenantSlug = process.env.TENANT_SLUG ?? 'anc';
-const internalSecret = process.env.N8N_WEBHOOK_SECRET ?? '';
-const leadWorkflowReady = process.env.V2_LEAD_WORKFLOW_READY === 'true';
 const reviewPath = resolve('docs/verification/quote-conversation-live-review.json');
 const artifactDir = resolve('artifacts/quote-sandbox-2026-11-10');
 const documents = [
@@ -176,24 +174,28 @@ if (leadCompleted && selectedPackage && packagesResponse.status === 200) {
     error: errorCode(response.body) ? { code: errorCode(response.body), message: redact(errorMessage(response.body) ?? '') } : null,
   };
   quoteAction = response.body?.action ?? null;
-  if (quoteAction?.id && internalSecret) {
-    const execute = await request('/api/internal/workflows/quote-pdf/execute', {
+  if (quoteAction?.id && packageSelection?.status >= 200 && packageSelection?.status < 300) {
+    const quoteActionResult = await pollAction(session, quoteAction.id);
+    const quoteResponse = await request(`/api/v1/chat/sessions/${session.sessionId}/packages/quotes`, {
       method: 'POST',
-      headers: { 'x-agentic-internal-secret': internalSecret },
-      body: JSON.stringify({ actionId: quoteAction.id, tenantId: session.tenantId, sessionId: session.sessionId }),
+      headers: chatHeaders(session.sessionToken),
+      body: JSON.stringify({ opportunityId: response.body?.selection?.opportunityId ?? null, packageOfferingId: selectedPackage.id }),
     });
+    const completedAction = quoteActionResult?.action;
+    const quote = quoteResponse.body?.quote;
     quoteExecution = {
-      status: execute.status,
-      verified: execute.body?.verified ?? false,
-      mock: execute.body?.mock ?? false,
-      quoteIdDigest: execute.body?.quote?.id ? digest(execute.body.quote.id) : null,
-      totalAed: execute.body?.quote?.totalAed ?? null,
-      artifact: execute.body?.artifact ? { fileName: execute.body.artifact.fileName, mimeType: execute.body.artifact.mimeType, sha256: execute.body.artifact.sha256 } : null,
-      error: errorCode(execute.body) ? { code: errorCode(execute.body), message: redact(errorMessage(execute.body) ?? '') } : null,
+      status: quoteResponse.status,
+      verified: completedAction?.state === 'completed' && quoteResponse.status === 200,
+      mock: completedAction?.result?.artifactId ? true : false,
+      n8nDispatched: completedAction?.state === 'completed',
+      quoteIdDigest: quote?.id ? digest(quote.id) : null,
+      totalAed: quote?.totalAed ?? null,
+      artifact: completedAction?.result?.artifactFileName ? { fileName: completedAction.result.artifactFileName, mimeType: completedAction.result.artifactMimeType, sha256: completedAction.result.artifactSha256 } : null,
+      error: completedAction?.state !== 'completed' || errorCode(quoteResponse.body) ? { code: errorCode(quoteResponse.body) ?? `QUOTE_ACTION_${completedAction?.state ?? 'UNKNOWN'}`, message: redact(errorMessage(quoteResponse.body) ?? 'The n8n quote workflow did not complete.') } : null,
     };
-    if (execute.body?.quote?.id && execute.body?.verified) {
+    if (quote?.id && quoteExecution.verified) {
       await mkdir(artifactDir, { recursive: true });
-      const download = await request(`/api/v1/chat/sessions/${session.sessionId}/quotes/${execute.body.quote.id}/download`, { headers: chatHeaders(session.sessionToken) });
+      const download = await request(`/api/v1/chat/sessions/${session.sessionId}/quotes/${quote.id}/download`, { headers: chatHeaders(session.sessionToken) });
       const filePath = resolve(artifactDir, 'quote-live-review.pdf');
       if (download.status === 200 && download.body instanceof ArrayBuffer) {
         await writeFile(filePath, Buffer.from(download.body));
@@ -237,7 +239,7 @@ if (leadCompleted && packageSelection?.status >= 200 && packageSelection?.status
 
 const report = {
   generatedAt: new Date().toISOString(),
-  environment: { baseUrl, tenantSlug, syntheticDataOnly: true, rawDocumentsPersistedInReport: false, leadWorkflowReady },
+  environment: { baseUrl, tenantSlug, syntheticDataOnly: true, rawDocumentsPersistedInReport: false, leadWorkflowReady: leadCompleted },
   session: sessionReview,
   consent,
   lead: { actionIdDigest: actionId ? digest(actionId) : null, intentKey: leadAction?.action?.intentKey ?? intentKey ?? null, actionKey: leadAction?.action?.actionKey ?? null, catalogVersionIdDigest: leadAction?.action?.catalogVersionId ? digest(leadAction.action.catalogVersionId) : null, state: leadAction?.action?.state ?? null, attempts: leadAction?.attempts ?? null, reconciliationFollowUp },
@@ -245,7 +247,7 @@ const report = {
   packageSelection,
   quote: { actionIdDigest: quoteAction?.id ? digest(quoteAction.id) : null, state: quoteAction?.state ?? null, execution: quoteExecution, download: quoteDownload, nextDocumentTurn: documentPrompt },
   documents: { configStatus: documentConfig.status, config: documentConfig.body?.enabled === undefined ? null : { enabled: documentConfig.body.enabled, workflowKey: documentConfig.body.workflowKey ?? null, allowedMimeTypes: documentConfig.body.allowedMimeTypes ?? [], requirements: (documentConfig.body.requirements ?? []).map((requirement) => ({ intentKey: requirement.intentKey, requirementKey: requirement.requirementKey, documentType: requirement.documentType })) }, uploads: documentUploads },
-  outcome: { quoteGenerated: Boolean(quoteExecution?.verified && quoteDownload?.status === 200), quoteDownloadable: Boolean(quoteDownload?.status === 200), documentPromptExposed: documentPromptMatchesPolicy, documentUploadAccepted: documentUploads.some((item) => item.accepted), leadActionCompleted: leadAction?.action?.state === 'completed', providerGate: !leadWorkflowReady ? 'v2_lead_workflow_not_ready' : leadAction?.action?.state === 'reconcile_required' ? 'salesforce_or_n8n_reconciliation_required' : null },
+  outcome: { quoteGenerated: Boolean(quoteExecution?.verified && quoteDownload?.status === 200), quoteDownloadable: Boolean(quoteDownload?.status === 200), documentPromptExposed: documentPromptMatchesPolicy, documentUploadAccepted: documentUploads.some((item) => item.accepted), leadActionCompleted: leadAction?.action?.state === 'completed', providerGate: leadAction?.action?.state === 'reconcile_required' ? 'salesforce_or_n8n_reconciliation_required' : leadCompleted ? null : 'lead_provider_not_verified' },
 };
 await writeFile(reviewPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
 console.log(JSON.stringify({ reviewPath, outcome: report.outcome, leadState: report.lead.state, quoteState: report.quote.state, quoteExecution: report.quote.execution, documentUploads: report.documents.uploads }, null, 2));

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { requiredDocumentSetComplete, requiredSf02DocumentSetComplete } from './document-stage-evidence.js';
 import { randomUUID } from 'node:crypto';
-import { v2DocumentProviderRequestSchema, DeterministicV2DocumentProvider } from './v2-document-provider.js';
+import { v2DocumentProviderRequestSchema, DeterministicV2DocumentProvider } from './conversation/document-provider.js';
 import type { SupportingDocument } from './types.js';
 
 const scope = { tenantId: 'tenant-a', sessionId: 'session-a', opportunityId: 'opportunity-a', intentKey: 'anc.company_formation', catalogVersionId: 'catalog-a' };

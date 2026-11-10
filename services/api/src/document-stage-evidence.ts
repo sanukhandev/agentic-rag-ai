@@ -1,6 +1,6 @@
 import type { SupportingDocument } from './types.js';
-import { validateV2DocumentProviderResult, type V2DocumentProviderRequest, type V2DocumentProviderResult } from './v2-document-provider.js';
-import type { V2TrustedProviderReadback } from './v2-provider-evidence.js';
+import { validateV2DocumentProviderResult, type V2DocumentProviderRequest, type V2DocumentProviderResult } from './conversation/document-provider.js';
+import type { V2TrustedProviderReadback } from './conversation/provider-evidence.js';
 
 export interface DocumentCompletionScope {
   tenantId: string;

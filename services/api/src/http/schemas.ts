@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { MAX_INGESTION_FILE_BYTES } from '../ingestion-staging.js';
 import { MAX_DOCUMENT_BYTES } from '../document-intake.js';
-import { v2ProviderCorrelationSchema } from '../v2-provider-correlation.js';
+import { v2ProviderCorrelationSchema } from './../conversation/provider-correlation.js';
 
 export const DEFAULT_CONTEXT_WINDOW_MESSAGES = 10;
 const MAX_KNOWLEDGE_CONTENT_CHARS = 1_000_000;

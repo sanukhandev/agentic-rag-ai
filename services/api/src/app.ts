@@ -11,30 +11,30 @@ import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedd
 import { addressesKnowledgeQuestion, classifyOfferReply, conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isControlledKnowledgeAbstention, isGuidedResponse, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, normalizePendingLeadName, openingGreeting, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, redactUnknownTokens, sanitizeKnowledgeText, sanitizeSensitiveText, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogIntentLabel, catalogNextFollowUpRequirement, catalogRequirementLabel, catalogSlotLabel, catalogSlotQuestion, isCrmWriteBinding, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
-import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './catalog-v2.js';
-import { auditLegacyCatalogVersion, createLegacyCatalogV2Candidate } from './catalog-v2-migration.js';
-import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
+import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './conversation/catalog.js';
+import { auditLegacyCatalogVersion, createLegacyCatalogV2Candidate } from './conversation/catalog-migration.js';
+import { validatePublishedCatalogV2 } from './conversation/catalog-runtime.js';
 import { reduceIntentJourney } from './intent-journey.js';
 import { completeLifecycleStage, newLifecycleState } from './lifecycle-state.js';
 import { normalizeFullTextQuery } from './search-query.js';
 import { exportIntentCatalogWorkbook } from './intent-catalog-xlsx.js';
-import { exportCatalogV2Workbook } from './catalog-v2-xlsx.js';
+import { exportCatalogV2Workbook } from './conversation/catalog-xlsx.js';
 import { composeConversationSummary, consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState, phaseFor, prompt } from './conversation-state.js';
 import { createOutboxEvent } from './events.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import { composeAdminDocumentDetails, composeDocumentMetadata, composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
 import { requiredDocumentSetComplete } from './document-stage-evidence.js';
-import { buildV2DocumentProviderRequest, DeterministicV2DocumentProvider, validateV2DocumentProviderResult } from './v2-document-provider.js';
-import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, DurableV2OtpChallengeService, V2OtpChallengeService, validateV2AccountProviderResult } from './v2-account-provider.js';
-import { buildV2LeadProviderRequest, DeterministicV2LeadProvider, validateV2LeadProviderResult } from './v2-lead-provider.js';
+import { buildV2DocumentProviderRequest, DeterministicV2DocumentProvider, validateV2DocumentProviderResult } from './conversation/document-provider.js';
+import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, DurableV2OtpChallengeService, V2OtpChallengeService, validateV2AccountProviderResult } from './conversation/account-provider.js';
+import { buildV2LeadProviderRequest, DeterministicV2LeadProvider, validateV2LeadProviderResult } from './conversation/lead-provider.js';
 import { SalesforceSandboxLeadProvider, type SalesforceSandboxAccountReadbackProvider, type SalesforceSandboxLeadMutationProvider, type SalesforceSandboxLeadReadbackProvider } from './salesforce-sandbox-lead-provider.js';
-import { buildV2PaymentProviderRequest, DeterministicV2PaymentProvider, validateV2PaymentProviderResult } from './v2-payment-provider.js';
-import { buildV2ContractProviderRequest, DeterministicV2ContractProvider, validateV2ContractProviderResult } from './v2-contract-provider.js';
+import { buildV2PaymentProviderRequest, DeterministicV2PaymentProvider, validateV2PaymentProviderResult } from './conversation/payment-provider.js';
+import { buildV2ContractProviderRequest, DeterministicV2ContractProvider, validateV2ContractProviderResult } from './conversation/contract-provider.js';
 import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
-import { validateV2ProviderCorrelation, v2ProviderCorrelationSchema, v2CallbackCorrelationSchema, type V2ProviderCorrelation } from './v2-provider-correlation.js';
+import { validateV2ProviderCorrelation, v2ProviderCorrelationSchema, v2CallbackCorrelationSchema, type V2ProviderCorrelation } from './conversation/provider-correlation.js';
 import type { ActionExecution, ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, FollowUpOfferOption, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, LifecycleStage, Message, PendingFollowUpOffer, Session, SourceStatus, Store, SupportingDocument } from './types.js';
 import { HttpError, parse } from './http/errors.js';
 import {
@@ -91,12 +91,13 @@ import { registerHealthRoutes } from './routes/health.js';
 import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 import { registerLifecycleRoutes } from './routes/lifecycle.js';
 import { createDevelopmentQuoteAfterLead } from './business-lifecycle.js';
-import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './v2-tool-gateway.js';
-import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
-import { chatTurnTimeoutMs, executeV2Turn, runGPTFirstChatTurn } from './v2-turn-controller.js';
-import { evaluatePersistedV2ActionConfirmation, evaluateV2CallbackStageCompletion } from './v2-journey-bootstrap.js';
-import type { V2ApprovedFallbackTemplateSet } from './v2-fallbacks.js';
-import type { PersonaComposedResponseV2 } from './python-model/v2-contracts.js';
+import { VocabularyLearningService } from './conversation/vocabulary.js';
+import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './conversation/tool-gateway.js';
+import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './conversation/coordinator.js';
+import { chatTurnTimeoutMs, executeV2Turn, runGPTFirstChatTurn } from './conversation/turn-controller.js';
+import { evaluatePersistedV2ActionConfirmation, evaluateV2CallbackStageCompletion } from './conversation/journey-bootstrap.js';
+import type { V2ApprovedFallbackTemplateSet } from './conversation/fallbacks.js';
+import type { PersonaComposedResponseV2 } from './python-model/contracts.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null; normalizationAttempts: number; normalizationFallbacks: number; normalizationFailures: number; normalizationLatencyMs: number };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -510,6 +511,7 @@ export const v2DiagnosticCaptureMetadata = (
 
 export const createApp = (dependencies: AppDependencies = {}) => {
   const store = dependencies.store ?? new MemoryStore();
+  const vocabulary = new VocabularyLearningService(store);
   const cache = dependencies.cache ?? createCache(process.env.REDIS_URL);
   const cacheFlights = new Singleflight();
   const tenantCachePrefix = (tenantId: string): string => cacheKey('tenant', tenantId);
@@ -529,6 +531,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const staticChannelTenantId = dependencies.staticChannelTenantId || process.env.OMNI_CHANNEL_TENANT_ID || undefined;
   const staticChannelTenantSlug = dependencies.staticChannelTenantSlug || process.env.OMNI_CHANNEL_TENANT_SLUG || undefined;
   const staticChannelName = dependencies.staticChannelName ?? process.env.OMNI_CHANNEL_NAME ?? 'omnichannel';
+  const chatStreamInternalSecret = process.env.CHAT_STREAM_INTERNAL_SECRET;
   const allowStaticChannelApiKey = dependencies.allowStaticChannelApiKey ?? process.env.OMNI_ALLOW_STATIC_API_KEY === 'true';
   if (staticChannelApiKey && ((!staticChannelTenantId && !staticChannelTenantSlug) || (staticChannelTenantId && staticChannelTenantSlug) || staticChannelApiKey.length < 32)) throw new Error('Static omnichannel API key requires exactly one tenant scope and at least 32 characters.');
   if (nodeEnv === 'production' && staticChannelApiKey && !allowStaticChannelApiKey) throw new Error('Production static omnichannel API keys require OMNI_ALLOW_STATIC_API_KEY=true; prefer signed channel credentials.');
@@ -1107,14 +1110,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     ? { apiKey: staticChannelApiKey, channel: staticChannelName, ...(staticChannelTenantId ? { tenantId: staticChannelTenantId } : { tenantSlug: staticChannelTenantSlug! }) }
     : undefined;
   const channelApi = channelAuthMiddleware(store, channelVault, staticChannelAuth);
+  const internalChatRequest = (req: Request): boolean => Boolean(chatStreamInternalSecret && req.header('x-agentic-internal-secret') === chatStreamInternalSecret && req.header('x-agentic-session-token-hash'));
   const chatApi = (req: Request, res: Response, next: NextFunction): void => {
     optionalApi(req, res, () => {
-      if (getAuth(req)) { next(); return; }
+      if (getAuth(req) || internalChatRequest(req)) { next(); return; }
       void channelApi(req, res, next).catch(next);
     });
   };
   const authorizeSessionAccessToken = async (req: Request, session: Session): Promise<void> => {
     if (getAuth(req)) return;
+    if (internalChatRequest(req) && await store.verifySessionAccessToken(session.id, req.header('x-agentic-session-token-hash')!)) return;
     const token = req.header('x-agentic-session-token');
     if (!sessionAccessTokenRequired && !token) return;
     if (!token || !(await store.verifySessionAccessToken(session.id, createHash('sha256').update(token).digest('hex')))) {
@@ -2140,6 +2145,18 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const transitionDenied = Boolean(pendingTransitionPrompt && !knowledgeQuestion && /^(?:no|nope|not now|later|decline|reject|stop)\b/iu.test(maskedMessage));
       const intentContinuity = publishedCatalog && !offerOwnsConversationState ? resolveIntentContinuity(publishedCatalog, { currentText: normalizedMessage, contextText: intentContextQuery, slotValues: catalogSlotValues, selectedIntentKey: transitionDenied ? state.selectedIntentKey : state.activeFollowUpIntentKey ?? state.selectedIntentKey, pendingPromptType: state.pendingPrompt?.type ?? null }) : null;
       let catalogResolution = intentContinuity?.primary ?? null;
+      if (catalogResolution?.intentKey && ['matched', 'missing_slots'].includes(catalogResolution.reason) && !knowledgeQuestion && !knowledgeOnlyTurn) {
+        void vocabulary.observe({
+          tenantId: session.tenantId,
+          intentKey: catalogResolution.intentKey,
+          phrase: masked.masked,
+          sessionId: session.id,
+          messageId: userMessage.id,
+          containsPii: masked.masked !== inputText,
+          isNegated: /\b(?:not|never|don't|do not|no longer)\b/iu.test(inputText),
+          isQuotedOrHypothetical: /(?:^|\s)["“].*["”](?:\s|$)|\b(?:hypothetical|for example|example of|if someone)\b/iu.test(inputText),
+        }).catch(() => undefined);
+      }
       const pendingJourneyConfirmation = state.pendingPrompt?.type === 'confirmation' && !pendingTransitionPrompt && state.pendingPrompt.requirementKey && state.pendingPrompt.intentKey
         ? publishedCatalog?.catalog.journeyRequirements?.some((requirement) => requirement.intentKey === state.pendingPrompt?.intentKey && requirement.requirementKey === state.pendingPrompt?.requirementKey && requirement.requirementType === 'confirmation') ?? false
         : false;
@@ -3730,6 +3747,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
   app.get('/api/v1/admin/crm/leads', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); res.json({ items: await Promise.all((await store.listCrmLeads(tenantId)).map(crmLeadForAdmin)) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/audit', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listAudit(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.get('/api/v1/admin/intent-vocabulary', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { res.json({ items: await vocabulary.list(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.post('/api/v1/admin/intent-vocabulary/:id/reject', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const reason = typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim().slice(0, 200) : undefined; res.json({ candidate: await vocabulary.reject(tenantId, routeParam(req, 'id'), reason) }); } catch (error) { next(error); } });
+  app.post('/api/v1/admin/intent-vocabulary/:id/rollback', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { res.json({ candidate: await vocabulary.rollback(await tenantForRequest(store, req), routeParam(req, 'id')) }); } catch (error) { next(error); } });
   app.get('/api/v1/chat/config', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const tenantSlug = typeof req.query.tenantSlug === 'string' ? req.query.tenantSlug : ''; if (channel && tenantSlug) throw new HttpError(400, 'CHANNEL_TENANT_INPUT_FORBIDDEN', 'Channel credentials resolve the tenant from the channel key.'); const tenant = channel ? await store.getTenant(channel.tenantId) : await store.getTenantBySlug(tenantSlug); if (!tenant || tenant.status !== 'active' || (!channel && !tenant.publicChatEnabled)) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); if (channel && channel.tenantId !== tenant.id) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.'); if (getAuth(req) && !ensureTenant(req, tenant.id)) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.'); if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv); const persona = await store.getPersona(tenant.id); res.json({ tenant: { slug: tenant.slug, name: tenant.name }, persona: persona ? { name: persona.name, greeting: persona.greeting, tone: persona.tone, speakingStyle: persona.speakingStyle, permittedLanguages: persona.permittedLanguages, voiceName: persona.voiceName, voiceLanguage: persona.voiceLanguage, voiceRate: persona.voiceRate, voicePitch: persona.voicePitch, voiceVolume: persona.voiceVolume } : null, documents: await documentConfig(tenant.id) }); } catch (error) { next(error); } });
 
   app.use((error: unknown, req: Request, res: Response, next: NextFunction) => {

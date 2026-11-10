@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createApprovedQuote, createContractDraft, createDevelopmentQuoteAfterLead, createInvoiceDraft, confirmPackageSelection, listEligiblePackages, proposeAccountConversion, proposePackageSelection, proposePackageSelectionAfterLead } from './business-lifecycle.js';
-import type { CatalogV2Document } from './catalog-v2.js';
+import type { CatalogV2Document } from './conversation/catalog.js';
 import { newConversationState, newIntentProgress } from './conversation-state.js';
 import { MemoryStore } from './store-memory.js';
 

@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, FoundryConversationBinding, IngestionJob, IntentCatalogV2Version, IntentCatalogVersion, IntentTurnAssessment, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, UserIntentDocument, V2OtpChallengeRecord, WorkflowActionClaim } from './types.js';
+import type { ActionExecution, ActionRequest, AuditEvent, AuthSession, ChannelCredential, Chunk, Contract, CrmAccount, CrmLead, CrmLeadAssociation, DocumentProcessingJob, EventInboxClaim, EventInboxState, FoundryConversationBinding, IngestionJob, IntentCatalogV2Version, IntentCatalogVersion, IntentTurnAssessment, IntentVocabularyCandidate, Invoice, Message, OutboxEvent, PackageOffering, PackageSelection, Persona, PersonaVersion, Quote, Session, Source, SourceStatus, SourceVersion, Store, SupportingDocument, Tenant, TenantDomain, TenantStatus, TenantStats, User, UserIntentDocument, V2OtpChallengeRecord, WorkflowActionClaim } from './types.js';
 import { newConversationState } from './conversation-state.js';
 import { formatCrmSummarySpec } from './crm-summary.js';
 import { createOutboxEvent } from './events.js';
 import { HttpError } from './http/errors.js';
 import { isWorkflowClaimableBinding } from './intent-catalog.js';
-import { resolveV2WorkflowRoute } from './v2-workflow-bridge.js';
+import { resolveV2WorkflowRoute } from './conversation/workflow-bridge.js';
 import { assertSafeIntentTurn, assertSafeUserIntentDocument } from './user-intent-document.js';
 
 const now = (): string => new Date().toISOString();
@@ -53,6 +53,7 @@ export class MemoryStore implements Store {
   private readonly inbox = new Map<string, { state: EventInboxState; attempts: number; leaseExpiresAt: number | null; retryAt: number | null; lastError: string | null; dlqEvent?: OutboxEvent; dlqReason?: string; dlqPublished?: boolean; dlqLeaseExpiresAt?: number | null }>();
   private readonly actionExecutions = new Map<string, ActionExecution>();
   private readonly audits: AuditEvent[] = [];
+  private readonly vocabularyCandidates = new Map<string, IntentVocabularyCandidate>();
 
   async countUsers(): Promise<number> { return this.users.size; }
 
@@ -813,6 +814,10 @@ export class MemoryStore implements Store {
   }
   async addAudit(event: AuditEvent): Promise<void> { this.audits.push(event); }
   async listAudit(tenantId: string): Promise<AuditEvent[]> { return this.audits.filter((event) => event.tenantId === tenantId); }
+  async createVocabularyCandidate(candidate: IntentVocabularyCandidate): Promise<IntentVocabularyCandidate> { const key = `${candidate.tenantId}:${candidate.intentKey}:${candidate.phrase}`; const existing = [...this.vocabularyCandidates.values()].find(item => `${item.tenantId}:${item.intentKey}:${item.phrase}` === key); if (existing) return structuredClone(existing); this.vocabularyCandidates.set(candidate.id, structuredClone(candidate)); return structuredClone(candidate); }
+  async listVocabularyCandidates(tenantId: string): Promise<IntentVocabularyCandidate[]> { return [...this.vocabularyCandidates.values()].filter(candidate => candidate.tenantId === tenantId).sort((left, right) => right.createdAt.localeCompare(left.createdAt)).map(candidate => structuredClone(candidate)); }
+  async getVocabularyCandidate(tenantId: string, id: string): Promise<IntentVocabularyCandidate | null> { const candidate = this.vocabularyCandidates.get(id); return candidate?.tenantId === tenantId ? structuredClone(candidate) : null; }
+  async updateVocabularyCandidate(candidate: IntentVocabularyCandidate): Promise<IntentVocabularyCandidate> { const current = this.vocabularyCandidates.get(candidate.id); if (!current || current.tenantId !== candidate.tenantId) throw new HttpError(404, 'VOCABULARY_CANDIDATE_NOT_FOUND', 'Vocabulary candidate not found.'); this.vocabularyCandidates.set(candidate.id, structuredClone(candidate)); return structuredClone(candidate); }
   async getTenantStats(tenantId: string): Promise<TenantStats> {
     const sources = [...this.sources.values()].filter((source) => source.tenantId === tenantId);
     const jobs = [...this.ingestionJobs.values()].filter((job) => job.tenantId === tenantId);

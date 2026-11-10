@@ -267,3 +267,17 @@ export interface IntentCatalogV2Version {
     };
   };
 }
+
+export interface IntentVocabularyCandidate {
+  id: string;
+  intentKey: string;
+  phrase: string;
+  sourceSessionIds: string[];
+  status: 'candidate' | 'promotable' | 'promoted' | 'rejected' | 'rolled_back';
+  reason: string;
+  catalogVersionId: string;
+  promotedCatalogVersionId: string | null;
+  createdAt: string;
+  evaluatedAt: string;
+  promotedAt: string | null;
+}

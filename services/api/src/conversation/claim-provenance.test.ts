@@ -1,0 +1,96 @@
+import { describe, expect, it } from 'vitest';
+import { evaluateV2ClaimProvenance, type V2ClaimSource } from './claim-provenance.js';
+
+const source = (text: string): V2ClaimSource => ({
+  citationId: 'approved-source-12345678',
+  text,
+  sourceVersion: 'version-12345678',
+  kind: 'source',
+});
+// Model the independent source-support gate, without relying on shared words.
+const semanticSupported = () => true;
+
+describe('V2 business outcome clauses and polarity', () => {
+  it('detects a positive payment outcome following a denied invoice outcome', async () => {
+    const { hasPositiveBusinessOutcomeClaim } = await import('./claim-provenance.js');
+    expect(hasPositiveBusinessOutcomeClaim('The invoice is not complete, but the payment has been processed.')).toBe(true);
+    expect(hasPositiveBusinessOutcomeClaim('The account is not created.')).toBe(false);
+    expect(hasPositiveBusinessOutcomeClaim("I won't assume that the account is complete.")).toBe(false);
+    expect(hasPositiveBusinessOutcomeClaim('Your company is approved.')).toBe(true);
+    expect(hasPositiveBusinessOutcomeClaim('Your business has been incorporated.')).toBe(true);
+    expect(hasPositiveBusinessOutcomeClaim('Your application was accepted.')).toBe(true);
+    expect(hasPositiveBusinessOutcomeClaim('The licence is activated.')).toBe(true);
+    expect(hasPositiveBusinessOutcomeClaim('The contract has been executed.')).toBe(true);
+    expect(hasPositiveBusinessOutcomeClaim('Company registration and licence issuance can be completed in as little as 2 hours.')).toBe(false);
+    expect(hasPositiveBusinessOutcomeClaim('Your company registration has been completed.')).toBe(true);
+  });
+});
+
+describe('V2 per-source claim verification without a lexical overlap threshold', () => {
+  it('accepts a claim with zero shared tokens when the cited source independently supports it', () => {
+    const result = evaluateV2ClaimProvenance(
+      'Alpha beta gamma delta epsilon.',
+      [source('Zeta eta theta kappa lambda.')],
+      () => false,
+      semanticSupported,
+    );
+    expect(result.supported).toBe(true);
+    expect(result.claims).toHaveLength(1);
+    expect(result.claims[0]?.citationIds).toEqual(['approved-source-12345678']);
+  });
+
+  it('rejects even exact lexical matches when independent source support fails', () => {
+    const result = evaluateV2ClaimProvenance(
+      'Alpha beta gamma delta epsilon.',
+      [source('Alpha beta gamma delta epsilon.')],
+      () => false,
+      () => false,
+    );
+    // Exact text is independently permitted, even without a semantic callback.
+    expect(result.supported).toBe(true);
+
+    const unverified = evaluateV2ClaimProvenance(
+      'Alpha beta gamma delta epsilon.',
+      [source('Alpha beta gamma delta zeta.')],
+      () => false,
+      () => false,
+    );
+    expect(unverified.supported).toBe(false);
+    expect(unverified.firstFailure).toEqual({ clauseOrdinal: 1, reason: 'single_source_support_not_established' });
+  });
+
+  it('retains hard numeric, negation, and provider-outcome checks', () => {
+    const examples = [
+      {
+        claim: 'The package costs 900 credits.',
+        evidence: 'The package costs 42 credits.',
+        reason: 'numeric_value_not_in_cited_source',
+      },
+      {
+        claim: 'The package does not include one visa.',
+        evidence: 'The package includes one visa.',
+        reason: 'claim_source_polarity_mismatch',
+      },
+      {
+        claim: 'The account is created.',
+        evidence: 'The account can be created after submitting documents.',
+        reason: 'unverified_provider_outcome',
+      },
+    ];
+    for (const item of examples) {
+      const result = evaluateV2ClaimProvenance(item.claim, [source(item.evidence)], () => false, semanticSupported);
+      expect(result.supported, item.claim).toBe(false);
+      expect(result.firstFailure?.reason, item.claim).toBe(item.reason);
+    }
+  });
+
+  it('evaluates polarity against the relevant source clause, not the whole chunk', () => {
+    const result = evaluateV2ClaimProvenance(
+      'The invoice is pending.',
+      [source('The invoice is pending and the payment is not recorded.')],
+      () => false,
+      semanticSupported,
+    );
+    expect(result.supported).toBe(true);
+  });
+});

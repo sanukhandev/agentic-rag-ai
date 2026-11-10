@@ -2,7 +2,7 @@ import { createClient } from 'redis';
 import { randomUUID } from 'node:crypto';
 import type { ActionExecution, Store, OutboxEvent } from './types.js';
 import { eventFields, eventFromFields } from './events.js';
-import { resolveV2WorkflowRoute } from './v2-workflow-bridge.js';
+import { resolveV2WorkflowRoute } from './conversation/workflow-bridge.js';
 
 export interface StreamMessage {
   id: string;

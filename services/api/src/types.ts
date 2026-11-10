@@ -800,6 +800,24 @@ export interface AuditEvent {
   createdAt: string;
 }
 
+export type VocabularyCandidateStatus = 'candidate' | 'promotable' | 'promoted' | 'rejected' | 'rolled_back';
+export interface IntentVocabularyCandidate {
+  id: string;
+  tenantId: string;
+  intentKey: string;
+  phrase: string;
+  sourceSessionIds: string[];
+  sourceMessageIds: string[];
+  catalogVersionId: string | null;
+  status: VocabularyCandidateStatus;
+  reason: string | null;
+  evaluation: Record<string, string | number | boolean | null>;
+  promotedCatalogVersionId: string | null;
+  createdAt: string;
+  evaluatedAt: string | null;
+  promotedAt: string | null;
+}
+
 export interface V2OtpChallengeRecord {
   challengeId: string;
   tenantId: string;
@@ -1076,6 +1094,10 @@ export interface Store {
   reconcileExpiredActionExecutions(now: string): Promise<ActionExecution[]>;
   addAudit(event: AuditEvent): Promise<void>;
   listAudit(tenantId: string): Promise<AuditEvent[]>;
+  createVocabularyCandidate(candidate: IntentVocabularyCandidate): Promise<IntentVocabularyCandidate>;
+  listVocabularyCandidates(tenantId: string): Promise<IntentVocabularyCandidate[]>;
+  getVocabularyCandidate(tenantId: string, id: string): Promise<IntentVocabularyCandidate | null>;
+  updateVocabularyCandidate(candidate: IntentVocabularyCandidate): Promise<IntentVocabularyCandidate>;
   getTenantStats(tenantId: string): Promise<TenantStats>;
 }
-import type { CatalogV2Document } from './catalog-v2.js';
+import type { CatalogV2Document } from './conversation/catalog.js';
