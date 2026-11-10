@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-10T05:40:51.545Z",
+  "generatedAt": "2026-11-10T09:14:44.352Z",
   "environment": {
     "baseUrl": "http://127.0.0.1",
     "tenantSlug": "anc",
@@ -8,7 +8,7 @@
     "leadWorkflowReady": true
   },
   "session": {
-    "sessionIdDigest": "156cb8808f43",
+    "sessionIdDigest": "bb0b32121177",
     "tenantIdDigest": "d4880ce54720",
     "turns": [
       {
@@ -94,8 +94,8 @@
         "user": "Yes",
         "assistant": {
           "status": 200,
-          "answer": "The published anc.company_formation policy lists identity_document as a required document at document_upload.",
-          "grounded": true,
+          "answer": "I can help you work through that. Could you tell me more about that requirement?",
+          "grounded": false,
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": "lead_crm_consent",
           "actionProposal": null,
@@ -112,7 +112,7 @@
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": "lead_action_confirmation",
           "actionProposal": {
-            "idDigest": "74b3a175f01b",
+            "idDigest": "926d1d6fc13f",
             "intent": "crm.lead.create",
             "consentRequired": false
           },
@@ -124,8 +124,8 @@
         "user": "Thanks. What do I need to provide next?",
         "assistant": {
           "status": 200,
-          "answer": "The published anc.company_formation policy lists identity_document as a required document at document_upload.",
-          "grounded": true,
+          "answer": "The approved information is temporarily unavailable.",
+          "grounded": false,
           "pendingIntentKey": "anc.company_formation",
           "pendingRequirementKey": "document.identity.review",
           "actionProposal": null,
@@ -141,7 +141,7 @@
     "error": null
   },
   "lead": {
-    "actionIdDigest": "74b3a175f01b",
+    "actionIdDigest": "926d1d6fc13f",
     "intentKey": "anc.company_formation",
     "actionKey": "lead.create",
     "catalogVersionIdDigest": "c72cbbd08ca2",
@@ -164,35 +164,35 @@
     "status": 202,
     "packageKey": "anc-r5-sample-growth-r6-r7-r8-r9-r10",
     "packageOfferingIdDigest": "4c075441593c",
-    "selectionIdDigest": "a1817493cf65",
+    "selectionIdDigest": "21b6f400030f",
     "error": null
   },
   "quote": {
-    "actionIdDigest": "719b921731a5",
+    "actionIdDigest": "7752bdcc381b",
     "state": "approved",
     "execution": {
       "status": 200,
       "verified": true,
       "mock": true,
-      "quoteIdDigest": "95a11d57b305",
+      "quoteIdDigest": "5484e3720571",
       "totalAed": null,
       "artifact": {
-        "fileName": "ancfz-development-quote-dac787cc-53e4-4574-ad0d-3fc36bde0f02.pdf",
+        "fileName": "quote-50f25841-b341-4aa2-af78-023f74504561.pdf",
         "mimeType": "application/pdf",
-        "sha256": "e477f072401acc739992b63cd4169514c10f3a1593ce22d7e5de424bab57dd62"
+        "sha256": "022e15f4db813e9bbcb4077564e914751c80f64f97620b05cb478f52d54794e8"
       },
       "error": null
     },
     "download": {
       "status": 200,
-      "path": "artifacts/ancfz-sandbox-2026-11-09/ancfz-development-quote-live-review.pdf",
-      "bytes": 2626,
-      "sha256": "e477f072401acc739992b63cd4169514c10f3a1593ce22d7e5de424bab57dd62"
+      "path": "artifacts/quote-sandbox/quote-live-review.pdf",
+      "bytes": 2613,
+      "sha256": "022e15f4db813e9bbcb4077564e914751c80f64f97620b05cb478f52d54794e8"
     },
     "nextDocumentTurn": {
       "status": 200,
-      "answer": "The published anc.company_formation policy lists identity_document as a required document at document_upload.",
-      "grounded": true,
+      "answer": "The approved information is temporarily unavailable.",
+      "grounded": false,
       "pendingIntentKey": "anc.company_formation",
       "pendingRequirementKey": "document.identity.review",
       "actionProposal": null,
@@ -223,8 +223,8 @@
         "mimeType": "image/png",
         "status": 202,
         "accepted": true,
-        "documentIdDigest": "49d7025241c7",
-        "jobIdDigest": "d84fd1b1a79b",
+        "documentIdDigest": "8951f2d19675",
+        "jobIdDigest": "8c0b6aec7160",
         "error": null
       }
     ]

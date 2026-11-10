@@ -1,5 +1,5 @@
 # Canonical single-file stack. Only Nginx publishes host port 80.
-# Preserve existing ./data bind mounts and optional ANCFZ named volumes.
+# Preserve existing ./data bind mounts and optional provider volumes.
 x-node-build: &node-build
   context: .
   dockerfile: Dockerfile
@@ -29,13 +29,23 @@ services:
     image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     container_name: agentic-redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    # Context is rebuildable from PostgreSQL; streams remain durable enough for
+    # worker recovery while Redis protects itself from unbounded growth.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -c
+      - |
+        set -- --appendonly yes --appendfsync everysec --save "" --maxmemory "${REDIS_MAXMEMORY:-256mb}" --maxmemory-policy "${REDIS_MAXMEMORY_POLICY:-noeviction}" --tcp-keepalive 60
+        if [ -n "$$REDIS_PASSWORD" ]; then set -- "$$@" --requirepass "$$REDIS_PASSWORD"; fi
+        exec redis-server "$$@"
     expose:
       - "6379"
     volumes:
       - ./data/redis:/data:rw
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -98,7 +108,8 @@ services:
       MODEL_MAX_CONCURRENCY: ${MODEL_MAX_CONCURRENCY:-2}
       MODEL_MIN_CALL_INTERVAL_SECONDS: ${MODEL_MIN_CALL_INTERVAL_SECONDS:-0.7}
       MODEL_MAX_REQUESTS_PER_MINUTE: ${MODEL_MAX_REQUESTS_PER_MINUTE:-60}
-      MODEL_TURN_TIMEOUT_SECONDS: ${MODEL_TURN_TIMEOUT_SECONDS:-90}
+      MODEL_TURN_TIMEOUT_SECONDS: ${MODEL_TURN_TIMEOUT_SECONDS:-120}
+      MODEL_MAX_QUEUE_DEPTH: ${MODEL_MAX_QUEUE_DEPTH:-4}
       MODEL_CIRCUIT_BREAKER_FAILURES: ${MODEL_CIRCUIT_BREAKER_FAILURES:-3}
       MODEL_CIRCUIT_BREAKER_COOLDOWN_SECONDS: ${MODEL_CIRCUIT_BREAKER_COOLDOWN_SECONDS:-30}
     healthcheck:
@@ -132,7 +143,11 @@ services:
       PORT: 4000
       STORE: postgres
       DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/agentic_rag
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_CONTEXT_TTL_SECONDS: ${REDIS_CONTEXT_TTL_SECONDS:-86400}
+      REDIS_CONTEXT_ABSOLUTE_TTL_SECONDS: ${REDIS_CONTEXT_ABSOLUTE_TTL_SECONDS:-604800}
+      REDIS_INSTRUCTION_TTL_SECONDS: ${REDIS_INSTRUCTION_TTL_SECONDS:-3600}
+      REDIS_STREAM_MAXLEN: ${REDIS_STREAM_MAXLEN:-100000}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
       CHANNEL_CREDENTIAL_KEY: ${CHANNEL_CREDENTIAL_KEY:?CHANNEL_CREDENTIAL_KEY required}
       OMNI_CHANNEL_API_KEY: ${OMNI_CHANNEL_API_KEY:-}
@@ -164,12 +179,13 @@ services:
       V2_DIAGNOSTIC_CAPTURE: ${V2_DIAGNOSTIC_CAPTURE:-false}
       PYTHON_MODEL_URL: http://model-gateway:8088
       MODEL_GATEWAY_SERVICE_KEY: ${MODEL_GATEWAY_SERVICE_KEY:?MODEL_GATEWAY_SERVICE_KEY required}
-      PYTHON_MODEL_TIMEOUT_MS: ${PYTHON_MODEL_TIMEOUT_MS:-90000}
+      PYTHON_MODEL_TIMEOUT_MS: ${PYTHON_MODEL_TIMEOUT_MS:-120000}
+      CHAT_TURN_TIMEOUT_MS: ${CHAT_TURN_TIMEOUT_MS:-120000}
       V2_GROUNDING_ENTAILMENT_MODE: ${V2_GROUNDING_ENTAILMENT_MODE:-off}
       V2_GROUNDING_TIMEOUT_MS: ${V2_GROUNDING_TIMEOUT_MS:-10000}
-      ANCFZ_PDF_INTERNAL_URL: http://ancfz-pdf:8097/v1/render
-      ANCFZ_PDF_API_KEY: ${ANCFZ_PDF_API_KEY:-}
-      ANCFZ_LOCAL_QUOTE_WORKFLOW: ${ANCFZ_LOCAL_QUOTE_WORKFLOW:-true}
+      QUOTE_PDF_RENDER_URL: http://quote-pdf:8097/v1/render
+      QUOTE_PDF_API_KEY: ${QUOTE_PDF_API_KEY:-}
+      QUOTE_WORKFLOW_ENABLED: ${QUOTE_WORKFLOW_ENABLED:-true}
       MOCK_PAYMENT_INTERNAL_URL: http://mock-payments:8098
       MOCK_PAYMENT_API_KEY: ${MOCK_PAYMENT_API_KEY:-}
       REMOTE_CRM_PROVIDER: ${REMOTE_CRM_PROVIDER:-}
@@ -206,7 +222,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/agentic_rag
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_STREAM_MAXLEN: ${REDIS_STREAM_MAXLEN:-100000}
     command: ["node", "services/api/dist/event-relay.js"]
 
   event-worker:
@@ -223,7 +240,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/agentic_rag
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_STREAM_MAXLEN: ${REDIS_STREAM_MAXLEN:-100000}
       N8N_INTERNAL_URL: http://n8n:5678
       N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:?N8N_WEBHOOK_SECRET required}
       N8N_DISPATCH_TIMEOUT_MS: ${N8N_DISPATCH_TIMEOUT_MS:-30000}
@@ -304,24 +322,24 @@ services:
       timeout: 5s
       retries: 6
 
-  # Opt-in development-only ANCFZ simulators; no published host ports.
-  ancfz-pdf:
-    profiles: [ancfz]
+  # Opt-in development-only provider simulators; no published host ports.
+  quote-pdf:
+    profiles: [quote]
     build:
       context: ./tools/anc/pdf_service
     restart: unless-stopped
     environment:
-      ANCFZ_PDF_ENABLED: "true"
-      ANCFZ_PDF_PRIVATE_DOCKER: "true"
-      ANCFZ_PDF_HOST: 0.0.0.0
-      ANCFZ_PDF_PORT: "8097"
-      ANCFZ_PDF_API_KEY: ${ANCFZ_PDF_API_KEY:-}
-      ANCFZ_PDF_OUTPUT_ROOT: /var/lib/ancfz-private
+      QUOTE_PDF_ENABLED: "true"
+      QUOTE_PDF_PRIVATE_DOCKER: "true"
+      QUOTE_PDF_HOST: 0.0.0.0
+      QUOTE_PDF_PORT: "8097"
+      QUOTE_PDF_API_KEY: ${QUOTE_PDF_API_KEY:-}
+      QUOTE_PDF_OUTPUT_ROOT: /var/lib/quote-pdf-private
     volumes:
-      - ancfz_mock_pdf_private:/var/lib/ancfz-private
+      - quote_pdf_private:/var/lib/quote-pdf-private
 
   mock-payments:
-    profiles: [ancfz]
+    profiles: [quote]
     build:
       context: ./tools/anc/payment_mock
     restart: unless-stopped
@@ -333,8 +351,8 @@ services:
       MOCK_PAYMENT_API_KEY: ${MOCK_PAYMENT_API_KEY:-}
       MOCK_PAYMENT_DB: /var/lib/mockpay/mock-payments.sqlite3
     volumes:
-      - ancfz_mock_payment_private:/var/lib/mockpay
+      - mock_payment_private:/var/lib/mockpay
 
 volumes:
-  ancfz_mock_pdf_private:
-  ancfz_mock_payment_private:
+  quote_pdf_private:
+  mock_payment_private:

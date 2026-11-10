@@ -8,8 +8,8 @@ const origin = process.env.API_ORIGIN ?? 'http://localhost:3000';
 const tenantSlug = process.env.TENANT_SLUG ?? 'anc';
 const internalSecret = process.env.N8N_WEBHOOK_SECRET ?? '';
 const leadWorkflowReady = process.env.V2_LEAD_WORKFLOW_READY === 'true';
-const reviewPath = resolve('docs/verification/document-upload-quote-contact-e2e-2026-11-09.json');
-const artifactDir = resolve('artifacts/ancfz-sandbox-2026-11-09');
+const reviewPath = resolve('docs/verification/quote-conversation-live-review.json');
+const artifactDir = resolve('artifacts/quote-sandbox-2026-11-10');
 const documents = [
   { fileName: 'synthetic-identity.png', mimeType: 'image/png', contentBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=' },
 ];
@@ -177,7 +177,7 @@ if (leadCompleted && selectedPackage && packagesResponse.status === 200) {
   };
   quoteAction = response.body?.action ?? null;
   if (quoteAction?.id && internalSecret) {
-    const execute = await request('/api/v1/internal/ancfz/quote-actions/execute', {
+    const execute = await request('/api/internal/workflows/quote-pdf/execute', {
       method: 'POST',
       headers: { 'x-agentic-internal-secret': internalSecret },
       body: JSON.stringify({ actionId: quoteAction.id, tenantId: session.tenantId, sessionId: session.sessionId }),
@@ -194,10 +194,10 @@ if (leadCompleted && selectedPackage && packagesResponse.status === 200) {
     if (execute.body?.quote?.id && execute.body?.verified) {
       await mkdir(artifactDir, { recursive: true });
       const download = await request(`/api/v1/chat/sessions/${session.sessionId}/quotes/${execute.body.quote.id}/download`, { headers: chatHeaders(session.sessionToken) });
-      const filePath = resolve(artifactDir, 'ancfz-development-quote-live-review.pdf');
+      const filePath = resolve(artifactDir, 'quote-live-review.pdf');
       if (download.status === 200 && download.body instanceof ArrayBuffer) {
         await writeFile(filePath, Buffer.from(download.body));
-        quoteDownload = { status: download.status, path: 'artifacts/ancfz-sandbox-2026-11-09/ancfz-development-quote-live-review.pdf', bytes: download.body.byteLength, sha256: createHash('sha256').update(Buffer.from(download.body)).digest('hex') };
+      quoteDownload = { status: download.status, path: 'artifacts/quote-sandbox-2026-11-10/quote-live-review.pdf', bytes: download.body.byteLength, sha256: createHash('sha256').update(Buffer.from(download.body)).digest('hex') };
       } else {
         quoteDownload = { status: download.status, error: errorCode(download.body) ? { code: errorCode(download.body), message: redact(errorMessage(download.body) ?? '') } : 'download did not return a PDF' };
       }

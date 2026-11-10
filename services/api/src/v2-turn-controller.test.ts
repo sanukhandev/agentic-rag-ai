@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { executeV2Turn } from './v2-turn-controller.js';
+import { chatTurnTimeoutMs, executeV2Turn } from './v2-turn-controller.js';
 import type { V2CoordinatorRequest, V2CoordinatorResult } from './v2-coordinator.js';
 
 const request = () => ({
@@ -14,6 +14,12 @@ const outcome = (modelRequestCount: number, toolCallCount: number): V2Coordinato
 }) as V2CoordinatorResult;
 
 describe('V2 turn execution boundary', () => {
+  it('uses a bounded configurable turn deadline that includes retry backoff', () => {
+    expect(chatTurnTimeoutMs({ CHAT_TURN_TIMEOUT_MS: '120000' })).toBe(120_000);
+    expect(chatTurnTimeoutMs({ CHAT_TURN_TIMEOUT_MS: '1000' })).toBe(120_000);
+    expect(chatTurnTimeoutMs({ CHAT_TURN_TIMEOUT_MS: '999999' })).toBe(300_000);
+  });
+
   it('preserves a bounded, already-guarded coordinator result', async () => {
     const result = outcome(2, 1);
     const run = vi.fn(async () => result);

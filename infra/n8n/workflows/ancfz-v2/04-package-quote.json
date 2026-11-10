@@ -32,7 +32,7 @@
       "position": [560, 200],
       "parameters": {
         "method": "POST",
-        "url": "http://api:4000/api/v1/internal/ancfz/quote-actions/execute",
+        "url": "http://api:4000/api/internal/workflows/quote-pdf/execute",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,

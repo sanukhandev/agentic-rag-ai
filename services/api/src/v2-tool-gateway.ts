@@ -16,6 +16,7 @@ import type { V2ApprovedEvidence } from './v2-evidence.js';
 
 export const V2_TOOL_NAMES = [
   'get_conversation_context',
+  'get_conversation_history_summary',
   'get_persona',
   'get_intent_catalog',
   'get_missing_requirements',
@@ -35,6 +36,7 @@ const searchArguments = z.object({
 }).strict();
 const argumentSchemas: Record<V2ToolName, z.ZodTypeAny> = {
   get_conversation_context: emptyArguments,
+  get_conversation_history_summary: emptyArguments,
   get_persona: emptyArguments,
   get_intent_catalog: emptyArguments,
   get_missing_requirements: emptyArguments,
@@ -244,6 +246,19 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         `The current conversation phase is ${phase} and the workflow status is ${workflowStatus}.`,
         intentKey ? `The active business goal is ${intentKey}.` : 'No business goal is currently active.',
         pendingRequirementKey ? `The next server-authorized requirement is ${pendingRequirementKey}.` : 'No server-authorized requirement is currently pending.',
+      ]);
+    }
+    case 'get_conversation_history_summary': {
+      const recentTurns = (await store.listMessages(scope.sessionId, scope.tenantId, 20))
+        .map((message) => ({ role: message.role, content: bounded(message.maskedContent, 600) }));
+      const summary = bounded(state?.rollingSummary ?? '', 6_000);
+      return resultWithToolEvidence(request, {
+        summary: summary || 'No stored conversation summary is available.',
+        recentTurns,
+        turnCount: recentTurns.length,
+      }, request.toolName as V2ToolName, stateSourceVersion, [
+        summary ? 'The server returned the current bounded conversation summary.' : 'The server has no stored conversation summary yet.',
+        `The server returned ${recentTurns.length} recent conversation turns for context.`
       ]);
     }
     case 'get_persona': {

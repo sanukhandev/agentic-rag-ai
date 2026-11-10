@@ -437,6 +437,20 @@ describe('V2ConversationCoordinator', () => {
     await expect(agent.turn(envelope())).resolves.toMatchObject({ modelRequestCount: 1, toolCallCount: 0 });
   });
 
+  it('surfaces model queue overload as a retryable customer-facing error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false,
+      status: 429,
+      json: async () => ({ detail: { code: 'MODEL_QUEUE_OVERLOADED', message: 'Conversation volume is high right now. Please ask your question again in a moment.' } }),
+    })));
+    const agent = new HttpV2ConversationAgent('http://model-gateway:8088', 'private-key');
+    await expect(agent.turn(envelope())).rejects.toMatchObject({
+      status: 429,
+      code: 'MODEL_QUEUE_OVERLOADED',
+      message: 'Conversation volume is high right now. Please ask your question again in a moment.',
+    });
+  });
+
   it('fails closed rather than bypassing an enforced reviewer for oversized factual answers', async () => {
     const request = envelope();
     request.customerMessageMasked = 'What are the company formation steps?';

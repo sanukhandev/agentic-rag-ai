@@ -196,10 +196,10 @@ describe('V2 provider evidence route', () => {
     const address = pdfServer.address();
     if (!address || typeof address === 'string') throw new Error('PDF test server did not bind.');
     const storageRoot = await mkdtemp(join(tmpdir(), 'anc-quote-api-'));
-    const previous = { local: process.env.ANCFZ_LOCAL_QUOTE_WORKFLOW, url: process.env.ANCFZ_PDF_INTERNAL_URL, key: process.env.ANCFZ_PDF_API_KEY };
-    process.env.ANCFZ_LOCAL_QUOTE_WORKFLOW = 'true';
-    process.env.ANCFZ_PDF_INTERNAL_URL = `http://127.0.0.1:${address.port}/v1/render`;
-    process.env.ANCFZ_PDF_API_KEY = 'synthetic-quote-api-key-1234567890';
+    const previous = { local: process.env.QUOTE_WORKFLOW_ENABLED, url: process.env.QUOTE_PDF_RENDER_URL, key: process.env.QUOTE_PDF_API_KEY };
+    process.env.QUOTE_WORKFLOW_ENABLED = 'true';
+    process.env.QUOTE_PDF_RENDER_URL = `http://127.0.0.1:${address.port}/v1/render`;
+    process.env.QUOTE_PDF_API_KEY = 'synthetic-quote-api-key-1234567890';
     try {
       const test = await makeFixture('deterministic_mock', undefined, undefined, undefined, storageRoot);
       const opportunityId = test.action.opportunityId!;
@@ -220,7 +220,7 @@ describe('V2 provider evidence route', () => {
       const selection = await proposePackageSelectionAfterLead(test.store, session, offering.id);
       const action = await test.store.createAction({ id: randomUUID(), tenantId: test.tenant.id, sessionId: session.id, workflowKey: 'package.confirm', intentKey: 'anc.company_formation', catalogVersionId: test.published.catalogVersionRef, opportunityId, actionKey: 'package.confirm', actionRevision: 1, idempotencyKey: `package-confirm:${selection.id}`, state: 'approved', opaqueReference: 'synthetic-quote-action', payload: { contactConsent: true, slotValues: { packageKey: offering.packageKey, packageOfferingId: offering.id, selectionId: selection.id, packageConfirmation: 'true', packageActionConsent: 'true' } }, createdAt: new Date().toISOString(), result: null });
       const body = { actionId: action.id, tenantId: test.tenant.id, sessionId: session.id };
-      const response = await request(test.runtime.app).post('/api/v1/internal/ancfz/quote-actions/execute').set('x-agentic-internal-secret', 'n'.repeat(64)).send(body);
+      const response = await request(test.runtime.app).post('/api/internal/workflows/quote-pdf/execute').set('x-agentic-internal-secret', 'n'.repeat(64)).send(body);
       expect(response.status, JSON.stringify(response.body)).toBe(200);
       expect(response.body).toMatchObject({ verified: true, mock: true, quote: { status: 'approved', amountMinor: 100000, currency: 'AED' }, artifact: { sha256: artifactHash, mimeType: 'application/pdf' }, action: { state: 'completed' } });
       expect(renderPayload).toMatchObject({ customer_name: 'Synthetic Customer', customer_email: 'synthetic.provider@example.test', customer_phone: '+971501234567' });
@@ -228,7 +228,7 @@ describe('V2 provider evidence route', () => {
       const transitionedSession = await test.store.getSession(session.id);
       expect(transitionedSession?.conversationState?.intentProgress?.entries[intentKey]).toMatchObject({ currentRequirementKey: 'document.identity.review', lifecycle: { currentStage: 'document_upload' } });
       const quoteId = response.body.quote.id as string;
-      const replay = await request(test.runtime.app).post('/api/v1/internal/ancfz/quote-actions/execute').set('x-agentic-internal-secret', 'n'.repeat(64)).send(body);
+      const replay = await request(test.runtime.app).post('/api/internal/workflows/quote-pdf/execute').set('x-agentic-internal-secret', 'n'.repeat(64)).send(body);
       expect(replay.status, JSON.stringify(replay.body)).toBe(200);
       expect(replay.body.action.result.externalReference).toBe(`quote-${quoteId}`);
       const persistedSelection = await test.store.getPackageSelection(selection.id, test.tenant.id);
@@ -239,9 +239,9 @@ describe('V2 provider evidence route', () => {
       expect(download.headers['content-type']).toMatch(/^application\/pdf/);
       expect(Buffer.compare(download.body, pdfBytes)).toBe(0);
     } finally {
-      if (previous.local === undefined) delete process.env.ANCFZ_LOCAL_QUOTE_WORKFLOW; else process.env.ANCFZ_LOCAL_QUOTE_WORKFLOW = previous.local;
-      if (previous.url === undefined) delete process.env.ANCFZ_PDF_INTERNAL_URL; else process.env.ANCFZ_PDF_INTERNAL_URL = previous.url;
-      if (previous.key === undefined) delete process.env.ANCFZ_PDF_API_KEY; else process.env.ANCFZ_PDF_API_KEY = previous.key;
+      if (previous.local === undefined) delete process.env.QUOTE_WORKFLOW_ENABLED; else process.env.QUOTE_WORKFLOW_ENABLED = previous.local;
+      if (previous.url === undefined) delete process.env.QUOTE_PDF_RENDER_URL; else process.env.QUOTE_PDF_RENDER_URL = previous.url;
+      if (previous.key === undefined) delete process.env.QUOTE_PDF_API_KEY; else process.env.QUOTE_PDF_API_KEY = previous.key;
       await rm(storageRoot, { recursive: true, force: true });
       await new Promise<void>((resolve, reject) => pdfServer.close((error) => error ? reject(error) : resolve()));
     }

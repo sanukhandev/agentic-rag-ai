@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { cacheKey, type CacheStore } from './cache.js';
+import { ConversationContextCache } from './conversation-context.js';
 import { classifyScopedGoalDecision, newConversationState, prompt } from './conversation-state.js';
 import { scoreCatalogV2CompetingGoals, validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
 import { resolveV2IntentEvidence } from './v2-intent-evidence.js';
@@ -66,6 +67,10 @@ export interface GPTFirstTurnInput {
 }
 
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
+export const chatTurnTimeoutMs = (env: NodeJS.ProcessEnv = process.env): number => {
+  const configured = Number(env.CHAT_TURN_TIMEOUT_MS ?? 120_000);
+  return Number.isFinite(configured) ? Math.min(300_000, Math.max(120_000, Math.floor(configured))) : 120_000;
+};
 const safeFactValue = (value: string | undefined, max: number): string | undefined =>
   value && value.trim().length <= max && !/[\r\n<>@]/u.test(value) && !/https?:\/\//iu.test(value)
     && !/\+?\d[\d()\s-]{7,}/u.test(value) ? value.trim() : undefined;
@@ -218,6 +223,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     ?? originalState.selectedIntentKey ?? intentDocument?.businessGoalKey ?? null;
   const entry = activeGoal ? originalState.intentProgress?.entries[activeGoal] : null;
   const opportunityId = entry?.journeyId ?? intentDocument?.opportunityId ?? null;
+  const contextCache = new ConversationContextCache(input.cache);
   // Interest in a goal is not a confirmed journey. Never expose a stale
   // qualification requirement on a knowledge-only or unconfirmed V2 turn.
   const priorPendingRequirement = catalogV2 && (!intentDocument?.goalConfirmed || !intentDocument.currentStageKey)
@@ -245,12 +251,16 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const pendingRequirement = nextContactRequirement ?? priorPendingRequirement;
   const { facts, evidence } = trustedFacts({ ...documentFacts, ...originalState.slotValues, ...(entry?.slotValues ?? {}) }, catalog.id);
   const sessionRevision = session.stateVersion ?? 0;
+  const cachedContext = await contextCache.get({ tenantId: tenant.id, sessionId: session.id, opportunityId });
   const priorMessages = (await store.listMessages(session.id, tenant.id, 12))
     .filter(msg => msg.id !== userMessage.id).slice(-8);
-  const history = priorMessages.map(msg => ({
+  const databaseHistory = priorMessages.map(msg => ({
     role: msg.role === 'user' ? 'customer' as const : 'assistant' as const,
     content: msg.maskedContent.slice(0, 2_000),
   }));
+  const history = cachedContext?.stateRevision === sessionRevision && cachedContext.recentTurns.length > 0
+    ? cachedContext.recentTurns.slice(-8).map(turn => ({ role: turn.role === 'user' ? 'customer' as const : 'assistant' as const, content: turn.content.slice(0, 2_000) }))
+    : databaseHistory;
   // Only prior customer-authored messages in this tenant/session may supply
   // bounded context evidence. Model/assistant text cannot create intent proof.
   const intentEvidence = catalogV2 && v2Version ? resolveV2IntentEvidence({
@@ -324,7 +334,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     schemaVersion: 2, requestId: input.requestId, clientMessageId: input.clientMessageId, scopeRef,
     sessionRevision, intentRevision: originalState.intentProgress?.journeyRevision ?? 0,
     catalogVersionId: catalog.id, personaVersionId: persona.id, customerMessageMasked: maskedMessage.slice(0, 5_000),
-    latestTurns: history, catalogDigest: hash(JSON.stringify(catalog.catalog)),
+    latestTurns: history, ...(cachedContext?.summary ? { conversationSummary: cachedContext.summary } : {}), catalogDigest: hash(JSON.stringify(catalog.catalog)),
     approvedKnowledge: approvedKnowledge.map(item => ({
       citationId: item.citationId, sourceVersion: item.sourceVersion,
       sourceRef: item.sourceRef!, text: item.text,
@@ -351,7 +361,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     intentProjection: { primaryGoalKey: activeGoal, goalConfirmed: intentDocument?.catalogSource === 'v2' ? intentDocument.goalConfirmed : Boolean(originalState.selectedIntentKey || intentDocument?.goalConfirmed),
       currentStageKey: entry?.lifecycle?.currentStage ?? null, pendingRequirementKey: pendingRequirement, confirmedCustomerFacts: facts },
     toolAllowlist: authorizedReadTools,
-    budgets: { maxModelRequests: 4, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + 90_000).toISOString() },
+    budgets: { maxModelRequests: 4, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + chatTurnTimeoutMs()).toISOString() },
   };
   const result = await executeV2Turn(coordinator, {
     envelope, evidence: approvedKnowledge, verifiedFacts: evidence, lastQuestionKey: originalState.pendingPrompt?.requirementKey ?? null,
@@ -925,6 +935,13 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
 
   const responseCacheKey = cacheKey('tenant', tenant.id, 'chat-response', session.id, hash(input.clientMessageId));
   await input.cache.set(responseCacheKey, { messageHash: input.messageHash, response: persisted }, input.responseCacheTtlSeconds);
+  try {
+    await contextCache.set({ tenantId: tenant.id, sessionId: session.id, opportunityId: nextDoc.opportunityId,
+      catalogVersionId: catalog.id, personaVersionId: persona.id, stateRevision: session.stateVersion ?? sessionRevision + 1,
+      summary: state.rollingSummary, recentTurns: [...priorMessages, userMessage, assistantMessage].map(message => ({ role: message.role, content: message.maskedContent })), createdAt: session.createdAt });
+  } catch {
+    // Redis is an accelerator; the committed PostgreSQL session remains authoritative.
+  }
   await store.addAudit({ id: randomUUID(), tenantId: tenant.id, actorId: null, eventName: 'v2.gpt_first.turn',
     metadata: { sessionId: session.id, clientMessageId: input.clientMessageId,
       catalogVersionId: catalog.id, personaVersionId: persona.id, modelRequestCount: result.modelRequestCount,

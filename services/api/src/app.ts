@@ -93,7 +93,7 @@ import { registerLifecycleRoutes } from './routes/lifecycle.js';
 import { createDevelopmentQuoteAfterLead } from './business-lifecycle.js';
 import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './v2-tool-gateway.js';
 import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
-import { executeV2Turn, runGPTFirstChatTurn } from './v2-turn-controller.js';
+import { chatTurnTimeoutMs, executeV2Turn, runGPTFirstChatTurn } from './v2-turn-controller.js';
 import { evaluatePersistedV2ActionConfirmation, evaluateV2CallbackStageCompletion } from './v2-journey-bootstrap.js';
 import type { V2ApprovedFallbackTemplateSet } from './v2-fallbacks.js';
 import type { PersonaComposedResponseV2 } from './python-model/v2-contracts.js';
@@ -543,14 +543,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const ingestionWorkerSecret = dependencies.ingestionWorkerSecret ?? process.env.INGESTION_WORKER_SECRET ?? '';
   const ingestionStaging = new IngestionStaging(dependencies.ingestionStagingRoot ?? process.env.INGESTION_STAGING_ROOT ?? join(process.cwd(), 'data', 'ingestion-staging'));
   const documentStorage = new PrivateDocumentStorage(dependencies.documentStorageRoot ?? process.env.SUPPORTING_DOCUMENT_ROOT ?? join(process.cwd(), 'data', 'supporting-documents'));
-  const localQuoteWorkflowEnabled = nodeEnv !== 'production' && process.env.ANCFZ_LOCAL_QUOTE_WORKFLOW === 'true';
-  // shortcut: local development uses Node as the verified quote/PDF boundary; upgrade when an approved quote provider and stage readback are wired.
-  const renderDevelopmentQuotePdf = async (quote: Awaited<ReturnType<typeof createDevelopmentQuoteAfterLead>>, packageName: string, customer: { name: string; email: string; phone: string }): Promise<{ artifactId: string; sha256: string; fileName: string; mimeType: 'application/pdf'; storageKey: string }> => {
-    const renderUrl = process.env.ANCFZ_PDF_INTERNAL_URL ?? '';
-    const apiKey = process.env.ANCFZ_PDF_API_KEY ?? '';
-    if (!renderUrl || !apiKey) throw new HttpError(503, 'QUOTE_PDF_UNAVAILABLE', 'The development PDF service is not configured.');
+  const quoteWorkflowEnabled = nodeEnv !== 'production' && process.env.QUOTE_WORKFLOW_ENABLED === 'true';
+  const renderQuotePdf = async (quote: Awaited<ReturnType<typeof createDevelopmentQuoteAfterLead>>, packageName: string, customer: { name: string; email: string; phone: string }, sellerLabel: string): Promise<{ artifactId: string; sha256: string; fileName: string; mimeType: 'application/pdf'; storageKey: string }> => {
+    const renderUrl = process.env.QUOTE_PDF_RENDER_URL ?? '';
+    const apiKey = process.env.QUOTE_PDF_API_KEY ?? '';
+    if (!renderUrl || !apiKey) throw new HttpError(503, 'QUOTE_PDF_UNAVAILABLE', 'The quote PDF service is not configured.');
     const amount = (quote.amountMinor / 100).toFixed(2);
-    const payload = { mode: 'MOCK', document_type: 'quote', reference: quote.id, issue_date: quote.createdAt.slice(0, 10), due_date: quote.validUntil.slice(0, 10), currency: quote.currency, customer_label: customer.name, customer_name: customer.name, customer_email: customer.email, customer_phone: customer.phone, seller_label: 'ANCFZ development workspace', tax_amount: '0.00', grand_total: amount, items: [{ description: packageName, quantity: '1', unit_price: amount }] };
+    const payload = { mode: 'MOCK', document_type: 'quote', reference: quote.id, issue_date: quote.createdAt.slice(0, 10), due_date: quote.validUntil.slice(0, 10), currency: quote.currency, customer_label: customer.name, customer_name: customer.name, customer_email: customer.email, customer_phone: customer.phone, seller_label: sellerLabel, tax_amount: '0.00', grand_total: amount, items: [{ description: packageName, quantity: '1', unit_price: amount }] };
     const rendered = await fetch(renderUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15_000) });
     if (!rendered.ok) throw new HttpError(502, 'QUOTE_PDF_RENDER_FAILED', 'The development quote PDF could not be rendered.');
     const metadata = await rendered.json() as { artifactId?: unknown; sha256?: unknown; bytes?: unknown };
@@ -564,7 +563,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const existing = await documentStorage.read(storageKey);
     if (existing) { if (documentSha256(existing) !== metadata.sha256) throw new HttpError(409, 'QUOTE_PDF_CONFLICT', 'A different quote PDF already exists for this quote.'); }
     else await documentStorage.write(storageKey, bytes);
-    return { artifactId: metadata.artifactId, sha256: metadata.sha256, fileName: `ancfz-development-quote-${quote.id}.pdf`, mimeType: 'application/pdf', storageKey };
+    return { artifactId: metadata.artifactId, sha256: metadata.sha256, fileName: `quote-${quote.id}.pdf`, mimeType: 'application/pdf', storageKey };
   };
   const resolveQuoteCustomer = async (session: Session): Promise<{ name: string; email: string; phone: string }> => {
     const lead = await store.getCrmLeadBySessionId(session.id, session.tenantId);
@@ -2338,7 +2337,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
                catalogDigest: contentHash(JSON.stringify(publishedCatalog.catalog)),
                intentProjection: { primaryGoalKey: state.selectedIntentKey ?? state.activeFollowUpIntentKey ?? null, goalConfirmed: Boolean(state.selectedIntentKey ?? state.activeFollowUpIntentKey), currentStageKey: activeLifecycleStage ?? state.phase.toLocaleLowerCase('en-US'), pendingRequirementKey: journeyRequirement?.requirementKey ?? state.pendingPrompt?.requirementKey ?? null, confirmedCustomerFacts },
                toolAllowlist: [...V2_TOOL_NAMES],
-               budgets: { maxModelRequests: 4, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + 90_000).toISOString() },
+               budgets: { maxModelRequests: 4, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + chatTurnTimeoutMs()).toISOString() },
              },
              evidence: evidence.map((item) => ({ citationId: item.citation.chunkId, text: item.content, sourceVersion: item.citation.versionId, approved: true, revoked: false, sourceRef: item.citation.sourceId })),
               verifiedFacts: trustedCustomerFacts,
@@ -3218,9 +3217,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.json({ action: updated, failure: { state: input.state, reasonCode: input.reasonCode, eventId: input.eventId, correlationId: input.correlationId, attempt: input.attempt } });
     } catch (error) { next(error); }
   });
-  app.post('/api/v1/internal/ancfz/quote-actions/execute', n8nInternalApi, async (req, res, next) => {
+  app.post('/api/internal/workflows/quote-pdf/execute', n8nInternalApi, async (req, res, next) => {
     try {
-      if (!localQuoteWorkflowEnabled) throw new HttpError(503, 'LOCAL_QUOTE_WORKFLOW_DISABLED', 'The development quote workflow is not enabled.');
+      if (!quoteWorkflowEnabled) throw new HttpError(503, 'QUOTE_WORKFLOW_DISABLED', 'The quote workflow is not enabled.');
       const input = parse(z.object({ actionId: z.string().guid(), tenantId: z.string().guid(), sessionId: z.string().guid() }).strict(), req.body);
       const action = await store.getAction(input.actionId);
       const session = await store.getSession(input.sessionId);
@@ -3237,7 +3236,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const quote = selection.quoteId ? await store.getQuote(selection.quoteId, input.tenantId) : await createDevelopmentQuoteAfterLead(store, session, offering.id);
       if (!quote) throw new HttpError(409, 'QUOTE_NOT_FOUND', 'The approved quote could not be loaded.');
       if (selection.status !== 'confirmed') await store.confirmPackageSelection(selection.id, input.tenantId, quote.id);
-      const artifact = await renderDevelopmentQuotePdf(quote, offering.name, customer);
+      const tenant = await store.getTenant(input.tenantId);
+      if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.');
+      const artifact = await renderQuotePdf(quote, offering.name, customer, tenant.name);
       const completed = await store.updateAction({ ...processing, state: 'completed', result: { externalReference: `quote-${quote.id}`, artifactId: artifact.artifactId, artifactSha256: artifact.sha256, artifactFileName: artifact.fileName, artifactMimeType: artifact.mimeType } });
       const currentDocument = await store.getUserIntentDocument(input.tenantId, input.sessionId);
       const documentRequirementKey = await resolveActiveDocumentRequirementKey(input.tenantId, action.catalogVersionId ?? currentDocument?.catalogVersionRef ?? session.conversationState?.catalogVersionId ?? null, action.intentKey ?? currentDocument?.businessGoalKey ?? null);
@@ -3264,7 +3265,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           if (!updated) throw new HttpError(409, 'V2_DOCUMENT_REQUIREMENT_CONFLICT', 'The document-upload requirement changed before the quote handoff completed.');
         }
       }
-      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'ancfz.development_quote.completed', metadata: { actionId: action.id, quoteId: quote.id, artifactId: artifact.artifactId, artifactSha256: artifact.sha256 }, createdAt: new Date().toISOString() });
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'quote.workflow.completed', metadata: { actionId: action.id, quoteId: quote.id, artifactId: artifact.artifactId, artifactSha256: artifact.sha256 }, createdAt: new Date().toISOString() });
       res.json({ verified: true, mock: true, quote, artifact: { artifactId: artifact.artifactId, sha256: artifact.sha256, fileName: artifact.fileName, mimeType: artifact.mimeType }, action: completed });
     } catch (error) { next(error); }
   });
@@ -3663,7 +3664,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const content = await documentStorage.read(documentStorage.key(session.tenantId, quote.id, 'application/pdf'));
       if (!content) throw new HttpError(404, 'QUOTE_PDF_NOT_FOUND', 'The quote PDF is not ready yet.');
       res.setHeader('content-type', 'application/pdf');
-      res.setHeader('content-disposition', `attachment; filename="ancfz-development-quote-${quote.id}.pdf"`);
+      res.setHeader('content-disposition', `attachment; filename="quote-${quote.id}.pdf"`);
       res.setHeader('cache-control', 'private, no-store');
       res.send(content);
     } catch (error) { next(error); }
@@ -3736,7 +3737,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (res.headersSent) { next(error); return; }
     if (errorType(error) === 'entity.too.large') { res.status(413).json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request payload is too large.', requestId } }); return; }
     if (errorType(error) === 'entity.parse.failed') { res.status(400).json({ error: { code: 'INVALID_JSON', message: 'Request body must be valid JSON.', requestId } }); return; }
-    if (error instanceof HttpError) { res.status(error.status).json({ error: { code: error.code, message: error.message, requestId } }); return; }
+    if (error instanceof HttpError) {
+      if (error.code === 'MODEL_QUEUE_OVERLOADED' || error.code === 'MODEL_RATE_LIMITED') {
+        console.warn(JSON.stringify({ event: 'conversation.model_backpressure', requestId, code: error.code, status: error.status, message: error.message }));
+      }
+      res.status(error.status).json({ error: { code: error.code, message: error.message, requestId } }); return;
+    }
     if (error instanceof CrmSummaryValidationError) { res.status(422).json({ error: { code: 'CRM_SUMMARY_INVALID', message: error.message, requestId } }); return; }
     if (errorCode(error) === '23505') { res.status(409).json({ error: { code: 'RESOURCE_CONFLICT', message: 'The requested resource already exists.', requestId } }); return; }
     if (errorCode(error) === '22P02') { res.status(400).json({ error: { code: 'INVALID_DATA', message: 'The request contains invalid data.', requestId } }); return; }

@@ -11,7 +11,7 @@ const catalogBindingByTool: Partial<Record<V2ToolName, string>> = {
   get_action_status: 'action.read_status',
 };
 const builtInTools = new Set<V2ToolName>([
-  'get_conversation_context', 'get_persona', 'get_intent_catalog', 'get_missing_requirements',
+  'get_conversation_context', 'get_conversation_history_summary', 'get_persona', 'get_intent_catalog', 'get_missing_requirements',
 ]);
 
 export const isV2ReadToolEnabled = (catalog: CatalogV2Document, toolName: V2ToolName): boolean => {

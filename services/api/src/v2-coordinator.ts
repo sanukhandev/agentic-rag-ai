@@ -7,6 +7,7 @@ import { proofsFromV2GroundingReview, type V2GroundingVerifier } from './v2-grou
 import type { V2ApprovedFallbackTemplateSet, V2FallbackFamily } from './v2-fallbacks.js';
 import { hasPositiveBusinessOutcomeClaim, type V2ClaimProvenance } from './v2-claim-provenance.js';
 import type { FollowUpOfferOption } from './types.js';
+import { HttpError } from './http/errors.js';
 
 export interface V2ConversationAgent {
   turn(envelope: TurnEnvelopeV2): Promise<unknown>;
@@ -24,7 +25,16 @@ export class HttpV2ConversationAgent implements V2ConversationAgent {
       body: JSON.stringify(envelope),
       signal: AbortSignal.timeout(this.timeoutMs),
     });
-    if (!response.ok) throw new Error('V2_MODEL_UNAVAILABLE');
+    if (!response.ok) {
+      let detail: unknown = null;
+      try { detail = await response.json(); } catch { /* preserve the typed fallback below */ }
+      const value = typeof detail === 'object' && detail !== null ? (detail as { detail?: unknown }).detail : null;
+      const code = typeof value === 'object' && value !== null && typeof (value as { code?: unknown }).code === 'string' ? (value as { code: string }).code : null;
+      if (code === 'MODEL_QUEUE_OVERLOADED') {
+        throw new HttpError(429, code, 'Conversation volume is high right now. Please ask your question again in a moment.');
+      }
+      throw new Error('V2_MODEL_UNAVAILABLE');
+    }
     const parsed = agentTurnResultSchema.safeParse(await response.json());
     if (!parsed.success) throw new Error('V2_MODEL_INVALID_RESPONSE');
     return parsed.data;

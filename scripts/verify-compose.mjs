@@ -9,7 +9,7 @@ for (const name of ['APP_BIND_ADDRESS', 'PUBLIC_ORIGIN']) delete env[name];
 for (const name of ['POSTGRES_PASSWORD', 'JWT_SECRET', 'CHANNEL_CREDENTIAL_KEY',
   'PII_VAULT_KEY', 'MODEL_GATEWAY_SERVICE_KEY', 'N8N_WEBHOOK_SECRET',
   'INGESTION_WORKER_SECRET']) env[name] = 'ci-static-placeholder-not-a-secret';
-const run = spawnSync(docker, ['compose', '--env-file', '.env.example', '-f', 'docker-compose.yml', '--profile', 'ancfz', 'config', '--format', 'json'], {
+const run = spawnSync(docker, ['compose', '--env-file', '.env.example', '-f', 'docker-compose.yml', '--profile', 'quote', 'config', '--format', 'json'], {
   cwd: root, env, shell: process.platform === 'win32', encoding: 'utf8',
 });
 if (run.error) throw run.error;
@@ -35,5 +35,5 @@ if (services['model-gateway'].environment.NODE_TOOL_GATEWAY_URL !== 'http://api:
 if (services.n8n.environment.N8N_PATH !== '/n8n/' || services['event-worker'].environment.N8N_INTERNAL_URL !== 'http://n8n:5678') throw new Error('n8n proxy path mismatch.');
 if (services.api.environment.V2_LEAD_WORKFLOW_READY !== 'false' && services.api.environment.V2_LEAD_WORKFLOW_READY !== '') throw new Error('Compose must not enable the Salesforce Lead workflow by default.');
 if (services.web.build.args.NEXT_PUBLIC_API_URL !== '/' || services.admin.build.args.ADMIN_BASE_HREF !== '/admin/') throw new Error('Proxy UI path mismatch.');
-for (const name of ['ancfz-pdf','mock-payments']) if (!services[name]?.profiles?.includes('ancfz')) throw new Error('Mock provider must be opt-in: '+name);
+for (const name of ['quote-pdf','mock-payments']) if (!services[name]?.profiles?.includes('quote')) throw new Error('Mock provider must be opt-in: '+name);
 console.log('Single-file Nginx port-80 Compose verified; private services and volumes preserved.');

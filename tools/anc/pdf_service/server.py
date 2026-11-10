@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Private, development-only HTTP adapter for reportlab quote/invoice renderer.
-Requires Authorization: Bearer <ANCFZ_PDF_API_KEY> and mode MOCK.
+Requires Authorization: Bearer <QUOTE_PDF_API_KEY> and mode MOCK.
 Do not expose this service on public ingress. Node verifies all stage/consent/amount prerequisites.
 """
 from __future__ import annotations
@@ -9,8 +9,8 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 from render import render
 
-KEY=os.environ.get('ANCFZ_PDF_API_KEY','')
-DEST=Path(os.environ.get('ANCFZ_PDF_OUTPUT_ROOT','./data/private-pdfs'))
+KEY=os.environ.get('QUOTE_PDF_API_KEY','')
+DEST=Path(os.environ.get('QUOTE_PDF_OUTPUT_ROOT','./data/private-pdfs'))
 
 class Handler(BaseHTTPRequestHandler):
     def reply(self,status,data):
@@ -41,11 +41,11 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self,format,*args):pass
 
 if __name__=='__main__':
-    if os.environ.get('ANCFZ_PDF_ENABLED')!='true':raise SystemExit('ANCFZ_PDF_ENABLED=true required for mock-only server')
-    if len(KEY)<24:raise SystemExit('Require random ANCFZ_PDF_API_KEY of >=24 characters')
-    host=os.environ.get('ANCFZ_PDF_HOST','127.0.0.1')
-    if host not in ('127.0.0.1','localhost','::1') and os.environ.get('ANCFZ_PDF_PRIVATE_DOCKER')!='true':raise SystemExit('Non-loopback bind not allowed outside private Docker')
-    port=int(os.environ.get('ANCFZ_PDF_PORT','8097'))
+    if os.environ.get('QUOTE_PDF_ENABLED')!='true':raise SystemExit('QUOTE_PDF_ENABLED=true required for mock-only server')
+    if len(KEY)<24:raise SystemExit('Require random QUOTE_PDF_API_KEY of >=24 characters')
+    host=os.environ.get('QUOTE_PDF_HOST','127.0.0.1')
+    if host not in ('127.0.0.1','localhost','::1') and os.environ.get('QUOTE_PDF_PRIVATE_DOCKER')!='true':raise SystemExit('Non-loopback bind not allowed outside private Docker')
+    port=int(os.environ.get('QUOTE_PDF_PORT','8097'))
     DEST.mkdir(parents=True,exist_ok=True)
-    print('ANCFZ PRIVATE MOCK PDF service',host,port)
+    print('PRIVATE MOCK QUOTE PDF service',host,port)
     ThreadingHTTPServer((host,port),Handler).serve_forever()

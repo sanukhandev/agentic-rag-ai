@@ -56,6 +56,7 @@ export const turnEnvelopeSchema = z.object({
   personaVersionId: opaqueRef,
   customerMessageMasked: boundedText,
   latestTurns: z.array(latestTurn).max(8),
+  conversationSummary: z.string().trim().max(6_000).optional(),
   persona,
   catalogDigest: z.string().regex(/^[a-f0-9]{64}$/u),
   /** Server-retrieved and version-checked public RAG snippets, not user text. */

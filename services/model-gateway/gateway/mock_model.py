@@ -154,7 +154,7 @@ class MockResponsesClient:
                     arguments=json.dumps({"query": message[:2000], "resultCount": 3}),
                 )
                 return SimpleNamespace(output=[call], output_text="")
-            for candidate in ("get_journey_state", "get_missing_requirements", "get_conversation_context"):
+            for candidate in ("get_journey_state", "get_missing_requirements", "get_conversation_context", "get_conversation_history_summary"):
                 if candidate in names:
                     call = SimpleNamespace(type="function_call", call_id="mock-call-0001", name=candidate, arguments="{}")
                     return SimpleNamespace(output=[call], output_text="")

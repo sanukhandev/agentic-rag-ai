@@ -1,5 +1,8 @@
+import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { createApp } from './app.js';
+import { attachChatStream } from './chat-stream.js';
 import { AzureEmbeddingProvider } from './embedding.js';
 import { pythonChatModelFromEnv, pythonSummaryModelFromEnv } from './python-model/chat-model-adapter.js';
 import { createCache } from './cache.js';
@@ -31,13 +34,48 @@ const v2Coordinator = process.env.CONVERSATION_ENGINE_V2_ENABLED !== 'false' && 
   )
   : undefined;
 const { app } = createApp({ store, cache, nodeEnv, ...(model ? { model } : {}), ...(summaryModel ? { summaryModel } : {}), ...(embedding ? { embedding } : {}), ...(v2Coordinator ? { v2Coordinator } : {}) });
-const server = app.listen(port, '0.0.0.0', () => console.log(`agentic-rag-api listening on ${port}`));
+const server = createServer(app);
+const streamError = (code: string, message: string): Error & { code: string } => Object.assign(new Error(message), { code });
+const stream = attachChatStream(server, {
+  allowedOrigins: new Set([process.env.WEB_ORIGIN ?? 'http://localhost', 'http://localhost', 'http://127.0.0.1']),
+  authorize: async (sessionId, sessionToken, request) => {
+    const session = await store.getSession(sessionId);
+    if (!session) throw streamError('SESSION_NOT_FOUND', 'Session not found.');
+    const valid = await store.verifySessionAccessToken(sessionId, createHash('sha256').update(sessionToken).digest('hex'));
+    if (!valid) throw streamError('SESSION_TOKEN_INVALID', 'A valid session access token is required.');
+    const tenant = await store.getTenant(session.tenantId);
+    if (!tenant || tenant.status !== 'active' || !tenant.publicChatEnabled) throw streamError('TENANT_UNAVAILABLE', 'This tenant is not accepting public chat.');
+    const origin = request.headers.origin;
+    if (tenant.publicOrigin && origin !== tenant.publicOrigin) throw streamError('CHAT_ORIGIN_FORBIDDEN', 'This chat channel is not authorized for the request origin.');
+  },
+  handleMessage: async (sessionId, sessionToken, frame, request) => {
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/chat/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-agentic-session-token': sessionToken, origin: request.headers.origin ?? process.env.WEB_ORIGIN ?? 'http://localhost' },
+      body: JSON.stringify({ sessionId, type: 'text', message: frame.message, clientMessageId: frame.clientMessageId, ...(frame.postbackValue ? { postbackValue: frame.postbackValue } : {}) }),
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const error = typeof payload === 'object' && payload !== null && 'error' in payload ? payload.error : null;
+      const errorRecord = typeof error === 'object' && error !== null ? error as Record<string, unknown> : null;
+      const code = typeof errorRecord?.code === 'string' ? errorRecord.code : 'CHAT_REQUEST_FAILED';
+      const message = typeof errorRecord?.message === 'string' ? errorRecord.message : 'The conversation could not continue right now. Please try again.';
+      throw streamError(code, message);
+    }
+    const body = payload as { answer?: unknown; action?: Record<string, unknown>; citations?: unknown };
+    const result: { answer?: string; response?: Record<string, unknown> } = {};
+    if (typeof body.answer === 'string') result.answer = body.answer;
+    result.response = { ...(body.action ? { action: body.action } : {}), ...(Array.isArray(body.citations) ? { citations: body.citations } : {}) };
+    return result;
+  },
+});
+server.listen(port, '0.0.0.0', () => console.log(`agentic-rag-api listening on ${port}`));
 let shuttingDown = false;
 const shutdown = async (): Promise<void> => {
   if (shuttingDown) return;
   shuttingDown = true;
   const closeServer = new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-  await Promise.allSettled([closeServer, cache.close(), pool?.end()]);
+  await Promise.allSettled([closeServer, stream.close(), cache.close(), pool?.end()]);
   process.exit(0);
 };
 process.once('SIGINT', () => { void shutdown(); });

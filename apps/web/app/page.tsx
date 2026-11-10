@@ -570,7 +570,7 @@ export default function Home() {
       setMessages((prev) => prev.map((item) => item.actionProposal?.id !== proposalId ? item : { ...item, actionState: state, actionProposal: isTerminalChatActionState(state) ? null : item.actionProposal }));
       if (isTerminalChatActionState(state)) {
         const externalReference = body.action?.result?.externalReference ?? '';
-        if (state === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: body.action?.result?.artifactFileName ?? 'ancfz-development-quote.pdf', mimeType: 'application/pdf' });
+        if (state === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: body.action?.result?.artifactFileName ?? 'quote.pdf', mimeType: 'application/pdf' });
         if (state === 'reconcile_required') await appendActionFollowUp(activeSessionId, proposalId);
         else appendActionOutcome(proposalId, state);
         return;
@@ -683,7 +683,7 @@ export default function Home() {
       if (state === 'approved' || state === 'processing') appendActionOutcome(proposalId, state);
       if (isTerminalChatActionState(state)) {
         const externalReference = body.action?.result?.externalReference ?? '';
-        if (state === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: body.action?.result?.artifactFileName ?? 'ancfz-development-quote.pdf', mimeType: 'application/pdf' });
+        if (state === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: body.action?.result?.artifactFileName ?? 'quote.pdf', mimeType: 'application/pdf' });
         if (state === 'reconcile_required') await appendActionFollowUp(activeSessionId, proposalId);
         else appendActionOutcome(proposalId, state);
         return;
@@ -702,7 +702,7 @@ export default function Home() {
         }));
         if (isTerminalChatActionState(nextState)) {
           const externalReference = statusBody.action?.result?.externalReference ?? '';
-          if (nextState === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: statusBody.action?.result?.artifactFileName ?? 'ancfz-development-quote.pdf', mimeType: 'application/pdf' });
+          if (nextState === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: statusBody.action?.result?.artifactFileName ?? 'quote.pdf', mimeType: 'application/pdf' });
           if (nextState === 'reconcile_required') await appendActionFollowUp(activeSessionId, proposalId);
           else appendActionOutcome(proposalId, nextState);
           return;
@@ -1239,7 +1239,7 @@ export default function Home() {
                         <input ref={documentInputRef} type="file" accept={config?.documents?.allowedMimeTypes.join(',') ?? ''} onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} className="max-w-full text-[11px]" aria-label="Choose a supporting document" />
                         <button type="button" onClick={() => void uploadDocument()} disabled={!selectedFile || !uploadConsent || uploading} className="rounded-lg bg-neutral-900 px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40">{uploading ? 'Registering…' : 'Register attachment'}</button>
                       </div>
-                      <label className="mt-2 flex items-start gap-2 text-[11px] text-neutral-600"><input type="checkbox" checked={uploadConsent} onChange={(event) => setUploadConsent(event.target.checked)} />I consent to ANCFZ processing this business document for this enquiry.</label>
+                      <label className="mt-2 flex items-start gap-2 text-[11px] text-neutral-600"><input type="checkbox" checked={uploadConsent} onChange={(event) => setUploadConsent(event.target.checked)} />I consent to the service provider processing this business document for this enquiry.</label>
                       {selectedFile && <p className="mt-1 text-[10px] text-neutral-500">Selected: {selectedFile.name}</p>}
                       {documentStatus && <p className="mt-1 text-[10px] text-emerald-700">{documentStatus}</p>}
                       {documents.length > 0 && <div className="mt-2 space-y-1">{documents.map((document) => <p key={document.id} className="text-[10px] text-neutral-500">{document.fileName} · {document.status}{document.errorCode ? ` · ${document.errorCode}` : ''}</p>)}</div>}

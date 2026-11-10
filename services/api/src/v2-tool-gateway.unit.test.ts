@@ -126,7 +126,7 @@ describe('V2 trusted tool execution (isolated unit)', () => {
     }]);
   });
 
-  it('returns correlated, bounded responses for all nine approved read tools', async () => {
+  it('returns correlated, bounded responses for all ten approved read tools', async () => {
     const { gateway, request, catalog } = await makeGateway();
     for (const name of V2_TOOL_NAMES) {
       const input = request(name, name === 'search_knowledge' ? { query: 'company formation', resultCount: 2 } : {});
@@ -215,6 +215,26 @@ describe('V2 trusted tool execution (isolated unit)', () => {
     const second = await gateway.execute(call);
     expect(second.status).toBe('ok');
     expect(second.result).toHaveProperty('recentTurns', [{ role: 'user', content: 'A new question' }]);
+  });
+  it('lets the model request a bounded history summary when recent context is insufficient', async () => {
+    const { store, tenant, catalog, pinned, gateway, request } = await makeGateway();
+    await store.updateSession({ ...pinned, conversationState: { ...pinned.conversationState!, rollingSummary: 'Customer is exploring company formation.' } });
+    await store.addMessage({
+      id: randomUUID(), sessionId: pinned.id, tenantId: tenant.id, role: 'user',
+      maskedContent: 'I need two visas', clientMessageId: randomUUID(), citations: [], response: null,
+      createdAt: new Date().toISOString(),
+    });
+    const current = await store.getSession(pinned.id);
+    const result = await gateway.execute({
+      ...request('get_conversation_history_summary'),
+      scopeRef: issueV2Scope({ tenantId: tenant.id, sessionId: pinned.id, opportunityId: null,
+        catalogVersionId: catalog.id, personaVersionId: pinned.personaVersionId!,
+        stateRevision: current!.stateVersion ?? 0, toolAllowlist: [...V2_TOOL_NAMES] }, secret),
+      expectedStateRevision: current!.stateVersion ?? 0,
+    });
+    expect(result.status).toBe('ok');
+    expect(result.result).toMatchObject({ summary: 'Customer is exploring company formation.', turnCount: 1 });
+    expect(result.result).toHaveProperty('recentTurns', [{ role: 'user', content: 'I need two visas' }]);
   });
   it('returns a safe timeout instead of delayed tool data', async () => {
     const { store, gateway, request } = await makeGateway();
