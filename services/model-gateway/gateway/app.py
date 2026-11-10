@@ -18,12 +18,12 @@ from .contracts import CrmSummaryRequest, CrmSummaryResult, PlanRequest, PlanRes
 from .agent import BoundedConversationAgent, HttpToolGateway
 from .graph import LangGraphConversationAgent
 from .mock_model import MockResponsesClient
-from .reliability import BudgetExceeded, CircuitBreaker, RateLimitExceeded, SlidingWindowRateLimiter, TurnBudget
+from .reliability import BudgetExceeded, CircuitBreaker, QueueAdmission, QueueOverloaded, RateLimitExceeded, SlidingWindowRateLimiter, TurnBudget, retry_delay_seconds
 from .v2_contracts import AgentTurnResultV2, TurnEnvelopeV2
 
 app = FastAPI(title="Private Conversation Model Gateway", docs_url=None, redoc_url=None, openapi_url=None)
 _max_concurrency = max(1, min(4, int(os.getenv("MODEL_MAX_CONCURRENCY", "2"))))
-_limit = asyncio.Semaphore(_max_concurrency)
+_admission = QueueAdmission(_max_concurrency, max(0, int(os.getenv("MODEL_MAX_QUEUE_DEPTH", "4"))))
 _pacing_lock = asyncio.Lock()
 _next_call_at = 0.0
 _client: Any | None = None
@@ -33,6 +33,7 @@ _circuit = CircuitBreaker(
     failure_threshold=int(os.getenv("MODEL_CIRCUIT_BREAKER_FAILURES", "3")),
     cooldown_seconds=float(os.getenv("MODEL_CIRCUIT_BREAKER_COOLDOWN_SECONDS", "30")),
 )
+_TRANSIENT_STATUS_CODES = {408, 409, 429}
 
 
 def _request_digest(payload: dict) -> str:
@@ -40,7 +41,8 @@ def _request_digest(payload: dict) -> str:
 
 
 def _log_event(event: str, payload: dict, **fields: object) -> None:
-    _logger.info(json.dumps({"event": event, "requestDigest": _request_digest(payload), **fields}, sort_keys=True))
+    record = json.dumps({"event": event, "requestDigest": _request_digest(payload), **fields}, sort_keys=True)
+    (_logger.error if event in {"model.failed", "model.deadline", "model.queue_overloaded", "model.circuit_open"} else _logger.info)(record)
 
 _PLAN_SCHEMA = {
     "type": "object",
@@ -115,7 +117,7 @@ def _client_get() -> Any:
         if not key or not deployment or not endpoint.startswith("https://") or not endpoint.rstrip("/").endswith("/openai/v1"):
             raise HTTPException(status_code=503, detail={"code": "MODEL_NOT_CONFIGURED"})
         _client = AsyncOpenAI(api_key=key, base_url=endpoint.rstrip("/") + "/", timeout=18.0,
-                              max_retries=3)
+                              max_retries=0)
     return _client
 
 
@@ -132,8 +134,9 @@ def model_readiness() -> dict[str, Any]:
         "deployment": deployment or None,
         "endpointPathValid": endpoint_valid if mode != "mock" else None,
         "retryPolicy": {"initialAttempt": 1, "maxRetries": 3},
-        "turnTimeoutSeconds": float(os.getenv("MODEL_TURN_TIMEOUT_SECONDS", "90")),
+        "turnTimeoutSeconds": float(os.getenv("MODEL_TURN_TIMEOUT_SECONDS", "120")),
         "maxConcurrency": _max_concurrency,
+        "maxQueueDepth": _admission.max_queue,
         "circuitState": "open" if _circuit.opened_until > time.monotonic() else "closed",
     }
 
@@ -143,7 +146,7 @@ def langgraph_conversation_enabled() -> bool:
 async def _model(system: str, payload: dict, schema: dict, name: str, deadline_at: str | None = None) -> tuple[dict, str | None]:
     global _next_call_at
     started = time.monotonic()
-    budget = TurnBudget.from_deadline(deadline_at, float(os.getenv("MODEL_TURN_TIMEOUT_SECONDS", "90")))
+    budget = TurnBudget.from_deadline(deadline_at, float(os.getenv("MODEL_TURN_TIMEOUT_SECONDS", "120")))
     if not _circuit.allow():
         _log_event("model.circuit_open", payload, operation=name)
         raise HTTPException(status_code=503, detail={"code": "MODEL_CIRCUIT_OPEN"})
@@ -151,27 +154,42 @@ async def _model(system: str, payload: dict, schema: dict, name: str, deadline_a
     acquired = False
     try:
         await _rate_limiter.acquire(budget)
-        await asyncio.wait_for(_limit.acquire(), timeout=max(0.001, budget.remaining()))
+        await _admission.acquire(budget)
         acquired = True
         async with _pacing_lock:
             now = time.monotonic()
             delay = max(0.0, _next_call_at - now)
             await budget.sleep(delay)
             _next_call_at = time.monotonic() + max(0.2, float(os.getenv("MODEL_MIN_CALL_INTERVAL_SECONDS", "0.7")))
-        timeout = min(78.0, budget.remaining())
-        if timeout <= 0:
-            raise BudgetExceeded("turn deadline exceeded")
-        response = await asyncio.wait_for(
-            client.responses.create(
-                model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
-                instructions=system,
-                input=json.dumps(payload, ensure_ascii=False),
-                text={"format": {"type": "json_schema", "name": name, "strict": True, "schema": schema}},
-                max_output_tokens=1700,
-                store=False,
-            ),
-            timeout=timeout,
-        )
+        request = {
+            "model": os.environ["AZURE_OPENAI_DEPLOYMENT"],
+            "instructions": system,
+            "input": json.dumps(payload, ensure_ascii=False),
+            "text": {"format": {"type": "json_schema", "name": name, "strict": True, "schema": schema}},
+            "max_output_tokens": 1700,
+            "store": False,
+        }
+        response = None
+        for retry_index in range(4):
+            try:
+                call_timeout = min(78.0, budget.remaining())
+                if call_timeout <= 0:
+                    raise BudgetExceeded("turn deadline exceeded")
+                response = await asyncio.wait_for(client.responses.create(**request), timeout=call_timeout)
+                break
+            except Exception as error:
+                status = getattr(error, "status_code", None)
+                transient = (
+                    isinstance(error, (asyncio.TimeoutError, ConnectionError, OSError))
+                    or isinstance(status, int) and (status in _TRANSIENT_STATUS_CODES or status >= 500)
+                )
+                if not transient or retry_index >= 3:
+                    raise
+                retry_after = getattr(error, "retry_after", None)
+                await budget.sleep(retry_delay_seconds(retry_index, retry_after if isinstance(retry_after, (int, float)) else None))
+                _log_event("model.retry", payload, operation=name, retryIndex=retry_index + 1, delaySeconds=retry_delay_seconds(retry_index, retry_after if isinstance(retry_after, (int, float)) else None), providerStatus=status)
+        if response is None:
+            raise RuntimeError("model response missing")
         if not response.output_text:
             raise ValueError("No structured model output")
         result = json.loads(response.output_text)
@@ -180,6 +198,9 @@ async def _model(system: str, payload: dict, schema: dict, name: str, deadline_a
         return result, getattr(response, "_request_id", None)
     except HTTPException:
         raise
+    except QueueOverloaded as error:
+        _log_event("model.queue_overloaded", payload, operation=name, retryAfterSeconds=error.retry_after, maxQueueDepth=_admission.max_queue)
+        raise HTTPException(status_code=429, detail={"code": "MODEL_QUEUE_OVERLOADED", "message": "Conversation volume is high right now. Please ask your question again in a moment."}, headers={"retry-after": str(math.ceil(error.retry_after))}) from error
     except RateLimitExceeded as error:
         _log_event("model.rate_limited", payload, operation=name, retryAfterSeconds=round(error.retry_after, 3))
         raise HTTPException(status_code=429, detail={"code": "MODEL_RATE_LIMITED"}, headers={"retry-after": str(max(1, math.ceil(error.retry_after)))}) from error
@@ -194,7 +215,7 @@ async def _model(system: str, payload: dict, schema: dict, name: str, deadline_a
         raise HTTPException(status_code=503, detail={"code": "MODEL_UNAVAILABLE"}) from error
     finally:
         if acquired:
-            _limit.release()
+            _admission.release()
 
 @app.get("/internal/health/live")
 async def live() -> dict:

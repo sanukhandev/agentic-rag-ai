@@ -2,7 +2,7 @@ import { createClient } from 'redis';
 import { randomUUID } from 'node:crypto';
 import type { ActionExecution, Store, OutboxEvent } from './types.js';
 import { eventFields, eventFromFields } from './events.js';
-import { resolveV2WorkflowRoute } from './v2-workflow-bridge.js';
+import { resolveV2WorkflowRoute } from './conversation/workflow-bridge.js';
 
 export interface StreamMessage {
   id: string;
@@ -25,9 +25,11 @@ export interface StreamBus {
 export class RedisStreamBus implements StreamBus {
   private readonly client: ReturnType<typeof createClient>;
   private connection: Promise<void> | null = null;
+  private readonly maxLength: number;
 
-  constructor(url: string) {
+  constructor(url: string, maxLength = Number(process.env.REDIS_STREAM_MAXLEN ?? 100_000)) {
     this.client = createClient({ url });
+    this.maxLength = Number.isSafeInteger(maxLength) && maxLength >= 1_000 ? maxLength : 100_000;
     this.client.on('error', () => undefined);
   }
 
@@ -47,7 +49,10 @@ export class RedisStreamBus implements StreamBus {
     try { await this.client.xGroupCreate(stream, group, '0-0', { MKSTREAM: true }); } catch (error) { if (!String(error).includes('BUSYGROUP')) throw error; }
   }
 
-  async append(event: OutboxEvent): Promise<string> { await this.connect(); return this.client.xAdd(event.stream, '*', eventFields(event)); }
+  async append(event: OutboxEvent): Promise<string> {
+    await this.connect();
+    return this.client.xAdd(event.stream, '*', eventFields(event), { TRIM: { strategy: 'MAXLEN', strategyModifier: '~', threshold: this.maxLength } });
+  }
 
   async read(stream: string, group: string, consumer: string, count: number, blockMs: number): Promise<StreamMessage[]> {
     await this.connect();
@@ -63,7 +68,10 @@ export class RedisStreamBus implements StreamBus {
 
   async acknowledge(stream: string, group: string, messageId: string): Promise<void> { await this.connect(); await this.client.xAck(stream, group, messageId); }
 
-  async deadLetter(event: OutboxEvent, reason: string): Promise<void> { await this.connect(); await this.client.xAdd('rag:v2:dead-letter', '*', { ...eventFields(event), reason: reason.slice(0, 500) }); }
+  async deadLetter(event: OutboxEvent, reason: string): Promise<void> {
+    await this.connect();
+    await this.client.xAdd('rag:v2:dead-letter', '*', { ...eventFields(event), reason: reason.slice(0, 500) }, { TRIM: { strategy: 'MAXLEN', strategyModifier: '~', threshold: this.maxLength } });
+  }
 }
 
 export class OutboxRelay {

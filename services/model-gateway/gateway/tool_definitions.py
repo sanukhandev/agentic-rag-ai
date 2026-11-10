@@ -11,6 +11,13 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": {"type": "object", "additionalProperties": False, "properties": {}, "required": []},
         "strict": True,
     },
+    "get_conversation_history_summary": {
+        "type": "function",
+        "name": "get_conversation_history_summary",
+        "description": "Read a bounded server-generated summary and recent turns when the current context is not enough to answer naturally.",
+        "parameters": {"type": "object", "additionalProperties": False, "properties": {}, "required": []},
+        "strict": True,
+    },
     "get_persona": {
         "type": "function",
         "name": "get_persona",

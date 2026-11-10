@@ -5,6 +5,7 @@ import {
   formatNaturalAbstention,
   formatAgentGreeting,
   actionOutcomeText,
+  formatSessionIdForDisplay,
   isChatActionState,
   isTerminalChatActionState,
   isValidTenantSlug,
@@ -23,6 +24,7 @@ import {
 } from './chat-utils';
 import { VoiceVisualizer } from './voice-visualizer';
 import { getSpeechRecognitionConstructor, type SpeechRecognitionLike } from './voice-recognition';
+import { chatStreamUrl, ChatStreamClient } from './chat-stream-client';
 
 type Config = {
   tenant: { name: string; slug: string };
@@ -58,6 +60,7 @@ export default function Home() {
   const [error, setError] = useState('');
   const [config, setConfig] = useState<Config | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [sessionCopied, setSessionCopied] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [voiceSpeaking, setVoiceSpeaking] = useState(false);
   const [voiceModeActive, setVoiceModeActive] = useState(false);
@@ -72,6 +75,8 @@ export default function Home() {
   const [documentStatus, setDocumentStatus] = useState('');
   const [documents, setDocuments] = useState<ChatDocument[]>([]);
   const documentInputRef = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<ChatStreamClient | null>(null);
+  const sessionTokenRef = useRef<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -155,6 +160,7 @@ export default function Home() {
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       recognitionRef.current?.stop();
       if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+      streamRef.current?.close();
     };
   }, []);
 
@@ -182,6 +188,9 @@ export default function Home() {
       setPendingRequirementKey(null);
       setMessages([]);
       setDocuments([]);
+      setSessionCopied(false);
+      sessionTokenRef.current = null;
+      streamRef.current?.close();
       return;
     }
 
@@ -193,12 +202,18 @@ export default function Home() {
       .catch(() => setConfig(null));
 
     const savedSession = window.localStorage.getItem(`agentic-rag-session:${tenantSlug}`);
-    if (!savedSession) {
+    const savedSessionToken = window.localStorage.getItem(`agentic-rag-session-token:${tenantSlug}`);
+    if (!savedSession || !savedSessionToken) {
+      window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
+      window.localStorage.removeItem(`agentic-rag-session-token:${tenantSlug}`);
       setSessionId(null);
       setPendingIntentKey(null);
       setPendingRequirementKey(null);
       setMessages([]);
       setDocuments([]);
+      setSessionCopied(false);
+      sessionTokenRef.current = null;
+      streamRef.current?.close();
       return;
     }
 
@@ -207,6 +222,8 @@ export default function Home() {
         if (!response.ok) throw new Error('Saved session is unavailable.');
         const body = (await response.json()) as { messages: ChatHistoryMessage[] };
         setSessionId(savedSession);
+        sessionTokenRef.current = savedSessionToken;
+        setSessionCopied(false);
         const pendingMessage = [...body.messages].reverse().find((message) => message.role === 'assistant' && message.pendingRequirementKey);
         setPendingIntentKey(pendingMessage?.pendingIntentKey ?? null);
         setPendingRequirementKey(pendingMessage?.pendingRequirementKey ?? null);
@@ -226,11 +243,15 @@ export default function Home() {
       })
       .catch(() => {
         window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
+        window.localStorage.removeItem(`agentic-rag-session-token:${tenantSlug}`);
         setSessionId(null);
         setPendingIntentKey(null);
         setPendingRequirementKey(null);
         setMessages([]);
         setDocuments([]);
+        setSessionCopied(false);
+        sessionTokenRef.current = null;
+        streamRef.current?.close();
       });
   }, [tenantSlug]);
 
@@ -489,25 +510,26 @@ export default function Home() {
           body: JSON.stringify({ tenantSlug })
         });
         if (!sessionRes.ok) throw new Error('Could not open a secure conversation session.');
-        activeSession = ((await sessionRes.json()) as { sessionId: string }).sessionId;
+        const created = (await sessionRes.json()) as { sessionId: string; sessionToken: string };
+        activeSession = created.sessionId;
+        sessionTokenRef.current = created.sessionToken;
         setSessionId(activeSession);
         window.localStorage.setItem(`agentic-rag-session:${tenantSlug}`, activeSession);
+        window.localStorage.setItem(`agentic-rag-session-token:${tenantSlug}`, created.sessionToken);
       }
+      if (!activeSession) throw new Error('Could not open a secure conversation session.');
 
       const clientMessageId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `msg-${Date.now()}`;
-      const response = await fetch(`${api}/api/v1/chat/messages`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId: activeSession, type: postbackValue ? 'postback' : 'text', message: trimmed, ...(postbackValue ? { postbackValue } : {}), clientMessageId })
-      });
-      const body = (await response.json()) as ChatReply & { error?: { message?: string }; messageId?: string; requestId?: string };
-      if (!response.ok) throw new Error(body.error?.message ?? 'The assistant could not respond.');
+      const sessionToken = sessionTokenRef.current;
+      if (!sessionToken) throw new Error('The secure conversation session has expired. Please start again.');
+      if (!streamRef.current) streamRef.current = new ChatStreamClient(chatStreamUrl(api));
+      const body = await streamRef.current.send(activeSession, sessionToken, clientMessageId, trimmed, postbackValue);
 
       // Apply natural language formatting to technical abstentions (Requirement 9)
       const naturalText = formatNaturalAbstention(body.answer);
 
       const assistantMsg: DisplayMessage = {
-        id: body.messageId ?? `asst-${Date.now()}`,
+        id: (body as ChatReply & { messageId?: string }).messageId ?? `asst-${Date.now()}`,
         role: 'assistant',
         content: naturalText,
         grounded: body.grounded,
@@ -564,7 +586,7 @@ export default function Home() {
       setMessages((prev) => prev.map((item) => item.actionProposal?.id !== proposalId ? item : { ...item, actionState: state, actionProposal: isTerminalChatActionState(state) ? null : item.actionProposal }));
       if (isTerminalChatActionState(state)) {
         const externalReference = body.action?.result?.externalReference ?? '';
-        if (state === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: body.action?.result?.artifactFileName ?? 'ancfz-development-quote.pdf', mimeType: 'application/pdf' });
+        if (state === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: body.action?.result?.artifactFileName ?? 'quote.pdf', mimeType: 'application/pdf' });
         if (state === 'reconcile_required') await appendActionFollowUp(activeSessionId, proposalId);
         else appendActionOutcome(proposalId, state);
         return;
@@ -677,7 +699,7 @@ export default function Home() {
       if (state === 'approved' || state === 'processing') appendActionOutcome(proposalId, state);
       if (isTerminalChatActionState(state)) {
         const externalReference = body.action?.result?.externalReference ?? '';
-        if (state === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: body.action?.result?.artifactFileName ?? 'ancfz-development-quote.pdf', mimeType: 'application/pdf' });
+        if (state === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: body.action?.result?.artifactFileName ?? 'quote.pdf', mimeType: 'application/pdf' });
         if (state === 'reconcile_required') await appendActionFollowUp(activeSessionId, proposalId);
         else appendActionOutcome(proposalId, state);
         return;
@@ -696,7 +718,7 @@ export default function Home() {
         }));
         if (isTerminalChatActionState(nextState)) {
           const externalReference = statusBody.action?.result?.externalReference ?? '';
-          if (nextState === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: statusBody.action?.result?.artifactFileName ?? 'ancfz-development-quote.pdf', mimeType: 'application/pdf' });
+          if (nextState === 'completed' && /^quote-[0-9a-f-]{36}$/iu.test(externalReference)) appendQuoteAttachment(proposalId, { quoteId: externalReference.slice(6), fileName: statusBody.action?.result?.artifactFileName ?? 'quote.pdf', mimeType: 'application/pdf' });
           if (nextState === 'reconcile_required') await appendActionFollowUp(activeSessionId, proposalId);
           else appendActionOutcome(proposalId, nextState);
           return;
@@ -710,6 +732,7 @@ export default function Home() {
   const reset = () => {
     window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
     setSessionId(null);
+    setSessionCopied(false);
     setPendingIntentKey(null);
     setPendingRequirementKey(null);
     setMessages([]);
@@ -725,6 +748,17 @@ export default function Home() {
       void navigator.clipboard.writeText(text);
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
+    }
+  };
+
+  const copySessionId = async () => {
+    if (!sessionId || typeof navigator === 'undefined' || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      setSessionCopied(true);
+      window.setTimeout(() => setSessionCopied(false), 2000);
+    } catch {
+      // Do not claim success when the browser rejects clipboard access.
     }
   };
 
@@ -796,6 +830,23 @@ export default function Home() {
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                 <span>Active Model: {activeModel}</span>
               </div>
+
+              {process.env.NODE_ENV !== 'production' && (
+                <div className="flex max-w-[190px] items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] text-amber-900 font-mono" title={sessionId ?? 'No active session'}>
+                  <span className="shrink-0 font-semibold">Session ID</span>
+                  <span className="min-w-0 truncate" aria-live="polite">{formatSessionIdForDisplay(sessionId)}</span>
+                  <button
+                    type="button"
+                    onClick={() => void copySessionId()}
+                    disabled={!sessionId}
+                    aria-label={sessionId ? `Copy session ID ${sessionId}` : 'Copy session ID (no active session)'}
+                    title={sessionId ? 'Copy session ID' : 'No active session to copy'}
+                    className="shrink-0 rounded p-0.5 text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {sessionCopied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              )}
 
               {/* Reset Session CTA */}
               <button
@@ -1204,7 +1255,7 @@ export default function Home() {
                         <input ref={documentInputRef} type="file" accept={config?.documents?.allowedMimeTypes.join(',') ?? ''} onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} className="max-w-full text-[11px]" aria-label="Choose a supporting document" />
                         <button type="button" onClick={() => void uploadDocument()} disabled={!selectedFile || !uploadConsent || uploading} className="rounded-lg bg-neutral-900 px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40">{uploading ? 'Registering…' : 'Register attachment'}</button>
                       </div>
-                      <label className="mt-2 flex items-start gap-2 text-[11px] text-neutral-600"><input type="checkbox" checked={uploadConsent} onChange={(event) => setUploadConsent(event.target.checked)} />I consent to ANCFZ processing this business document for this enquiry.</label>
+                      <label className="mt-2 flex items-start gap-2 text-[11px] text-neutral-600"><input type="checkbox" checked={uploadConsent} onChange={(event) => setUploadConsent(event.target.checked)} />I consent to the service provider processing this business document for this enquiry.</label>
                       {selectedFile && <p className="mt-1 text-[10px] text-neutral-500">Selected: {selectedFile.name}</p>}
                       {documentStatus && <p className="mt-1 text-[10px] text-emerald-700">{documentStatus}</p>}
                       {documents.length > 0 && <div className="mt-2 space-y-1">{documents.map((document) => <p key={document.id} className="text-[10px] text-neutral-500">{document.fileName} · {document.status}{document.errorCode ? ` · ${document.errorCode}` : ''}</p>)}</div>}

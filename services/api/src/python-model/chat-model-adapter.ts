@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ChatModel, CrmSummaryInput, ModelDraft, ModelEvidence, QueryNormalizationInput } from '../model.js';
-import type { CatalogV2Document } from '../catalog-v2.js';
-import { validateV2PlanningProposal, type V2PlanningContext, type V2PlanningDecision } from '../v2-planning.js';
+import type { CatalogV2Document } from './../conversation/catalog.js';
+import { validateV2PlanningProposal, type V2PlanningContext, type V2PlanningDecision } from './../conversation/planning.js';
 
 type DraftInput = Parameters<ChatModel['draft']>[0];
 type ComposeInput = Parameters<NonNullable<ChatModel['compose']>>[0];

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import time
 import os
 import re
@@ -16,6 +17,8 @@ from .reliability import BudgetExceeded, TurnBudget
 from .persona_composer import composer_instructions, validate_composed_response
 from .tool_definitions import TOOL_DEFINITIONS, definitions_for
 from .v2_contracts import AgentTurnResultV2, ApprovedEvidenceV2, PersonaComposedResponseV2, ToolRequestV2, ToolResultV2, ToolTraceV2, TurnEnvelopeV2
+
+logger = logging.getLogger("model-gateway")
 
 
 _FINAL_RESPONSE_SCHEMA: dict[str, Any] = {
@@ -74,9 +77,11 @@ class HttpToolGateway:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(f"{self.base_url}/internal/v2/tools/execute", json=request.model_dump(mode="json"), headers={"x-internal-service-key": self.service_key})
             if response.status_code != 200:
+                logger.error("tool_gateway.failed status=%s tool=%s", response.status_code, request.toolName)
                 return ToolResultV2(schemaVersion=2, toolCallId=request.toolCallId, status="temporarily_unavailable", result=None, evidenceRefs=[], sourceVersion=None, stateRevision=request.expectedStateRevision)
             return ToolResultV2.model_validate(response.json())
-        except Exception:
+        except Exception as error:
+            logger.error("tool_gateway.failed type=%s tool=%s", type(error).__name__, request.toolName)
             return ToolResultV2(schemaVersion=2, toolCallId=request.toolCallId, status="temporarily_unavailable", result=None, evidenceRefs=[], sourceVersion=None, stateRevision=request.expectedStateRevision)
 
 

@@ -26,7 +26,7 @@ test('all ANCFZ V2 workflows are structurally connected and non-executable by de
   assert.equal(w.nodes[0].parameters.responseMode,'onReceived');
   assert.ok(w.nodes.every(node=>!node.credentials||!Object.keys(node.credentials).length),'no credential ids allowed');
   if (file === '04-package-quote.json') {
-   assert.equal(w.nodes[2].parameters.url,'http://api:4000/api/v1/internal/ancfz/quote-actions/execute');
+   assert.equal(w.nodes[2].parameters.url,'http://api:4000/api/internal/workflows/quote-pdf/execute');
    assert.match(w.nodes[1].parameters.jsCode,/package\.confirm/);
    assert.match(w.nodes[1].parameters.jsCode,/ancfz-local-quote-pdf-v1/);
    assert.match(w.nodes[2].parameters.jsonBody,/actionId/);

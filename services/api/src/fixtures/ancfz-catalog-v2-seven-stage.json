@@ -46,8 +46,76 @@
     "BusinessGoals": [
       {
         "businessGoalKey": "anc.company_formation",
-        "name": "Company formation",
-        "description": "Guide a customer who explicitly confirms a company-formation goal through seven ordered stages with separate action consent and authoritative provider verification.",
+        "name": "Start a Company",
+        "description": "Help a customer understand, plan, and complete a company-formation process. The business goal is persistent across knowledge questions and requires explicit customer confirmation before any workflow action.",
+        "keywords": [
+          "start company",
+          "open business",
+          "business setup",
+          "company registration",
+          "business formation",
+          "incorporate company",
+          "establish business",
+          "launch company",
+          "trade license",
+          "free zone company"
+        ],
+        "customerExpressions": [
+          "I want to open my own company.",
+          "How can I establish a business?",
+          "I'm planning to launch a new operation.",
+          "Can you help me register a firm?",
+          "I need a trade license.",
+          "We want to get our business off the ground.",
+          "I need to establish a legal entity."
+        ],
+        "requiredInformation": [
+          "Business activity",
+          "Company or entity type",
+          "Number of shareholders",
+          "Visa requirements",
+          "Preferred start date",
+          "Customer contact details when CRM contact is requested",
+          "Purpose-specific consent and action confirmation"
+        ],
+        "requiredDocuments": [
+          "Retrieve the current required documents through get_document_requirements.",
+          "Request uploads only after the confirmed package and approved document policy require them.",
+          "Verify uploaded identity documents through the authorized document workflow before advancing the stage."
+        ],
+        "orderedSteps": [
+          "Lead Generation",
+          "Lead Qualification",
+          "Account Creation",
+          "Package Selection",
+          "Document Upload and Verification",
+          "Payment Details and Invoice",
+          "Contract"
+        ],
+        "packageReferences": [
+          "Retrieve currently approved packages through get_available_packages.",
+          "Never copy package prices or eligibility rules into the intent catalog."
+        ],
+        "productReferences": [
+          "Retrieve approved products and descriptions from authorized catalog sources."
+        ],
+        "authorizedToolKeys": [
+          "get_conversation_context",
+          "get_conversation_history_summary",
+          "get_intent_catalog",
+          "get_missing_requirements",
+          "search_knowledge",
+          "get_available_packages",
+          "get_document_requirements",
+          "get_journey_state",
+          "get_action_status"
+        ],
+        "completionConditions": [
+          "The customer goal is confirmed and all required information is validated.",
+          "Each stage is completed in order with its required evidence.",
+          "External completion is reported only after authoritative provider evidence.",
+          "The contract stage is complete only after verified signed-contract evidence."
+        ],
         "active": true,
         "confirmationRequired": true,
         "completionPolicyKey": "contract.verified"

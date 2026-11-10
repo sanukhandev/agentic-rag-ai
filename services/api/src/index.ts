@@ -1,12 +1,16 @@
+import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { createApp } from './app.js';
+import { attachChatStream, type ChatStreamMessageFrame } from './chat-stream.js';
 import { AzureEmbeddingProvider } from './embedding.js';
 import { pythonChatModelFromEnv, pythonSummaryModelFromEnv } from './python-model/chat-model-adapter.js';
 import { createCache } from './cache.js';
 import { MemoryStore } from './store-memory.js';
 import { PostgresStore } from './store-postgres.js';
-import { assertConversationEngineV2Configuration, HttpV2ConversationAgent, V2ConversationCoordinator } from './v2-coordinator.js';
-import { HttpV2GroundingVerifier } from './v2-grounding-verifier.js';
+import { assertConversationEngineV2Configuration, HttpV2ConversationAgent, V2ConversationCoordinator } from './conversation/coordinator.js';
+import { HttpV2GroundingVerifier } from './conversation/grounding-verifier.js';
+import { RedisChatTurnQueue } from './chat-turn-queue.js';
 
 const port = Number(process.env.PORT ?? 4000);
 const nodeEnv = process.env.NODE_ENV ?? 'development';
@@ -16,6 +20,7 @@ assertConversationEngineV2Configuration(nodeEnv);
 const pool = process.env.STORE === 'postgres' && process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL }) : undefined;
 const store = pool ? new PostgresStore(pool) : new MemoryStore();
 const cache = createCache(process.env.REDIS_URL);
+const chatTurnQueue = process.env.REDIS_URL && process.env.CHAT_STREAM_INTERNAL_SECRET ? new RedisChatTurnQueue(process.env.REDIS_URL) : undefined;
 const embedding = process.env.AZURE_AI_ENDPOINT && process.env.AZURE_AI_EMBEDDING_DEPLOYMENT && process.env.AZURE_AI_API_KEY && process.env.AZURE_AI_API_VERSION ? new AzureEmbeddingProvider(process.env.AZURE_AI_ENDPOINT, process.env.AZURE_AI_EMBEDDING_DEPLOYMENT, process.env.AZURE_AI_API_KEY, process.env.AZURE_AI_API_VERSION, Number(process.env.AZURE_AI_EMBEDDING_DIMENSION ?? 1536)) : undefined;
 // Python V1 planning is an emergency rollback path only, not a parallel GPT planner.
 const model = process.env.CONVERSATION_ENGINE_V2_ENABLED === 'false' ? pythonChatModelFromEnv() : undefined;
@@ -31,13 +36,73 @@ const v2Coordinator = process.env.CONVERSATION_ENGINE_V2_ENABLED !== 'false' && 
   )
   : undefined;
 const { app } = createApp({ store, cache, nodeEnv, ...(model ? { model } : {}), ...(summaryModel ? { summaryModel } : {}), ...(embedding ? { embedding } : {}), ...(v2Coordinator ? { v2Coordinator } : {}) });
-const server = app.listen(port, '0.0.0.0', () => console.log(`agentic-rag-api listening on ${port}`));
+const server = createServer(app);
+const streamError = (code: string, message: string): Error & { code: string } => Object.assign(new Error(message), { code });
+const streamResponse = (payload: unknown): Record<string, unknown> =>
+  typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {};
+const stream = attachChatStream(server, {
+  ...(chatTurnQueue ? { queue: chatTurnQueue } : {}),
+  allowedOrigins: new Set([process.env.WEB_ORIGIN ?? 'http://localhost', 'http://localhost', 'http://127.0.0.1']),
+  authorize: async (sessionId, sessionToken, request) => {
+    const session = await store.getSession(sessionId);
+    if (!session) throw streamError('SESSION_NOT_FOUND', 'Session not found.');
+    const valid = await store.verifySessionAccessToken(sessionId, createHash('sha256').update(sessionToken).digest('hex'));
+    if (!valid) throw streamError('SESSION_TOKEN_INVALID', 'A valid session access token is required.');
+    const tenant = await store.getTenant(session.tenantId);
+    if (!tenant || tenant.status !== 'active' || !tenant.publicChatEnabled) throw streamError('TENANT_UNAVAILABLE', 'This tenant is not accepting public chat.');
+    const origin = request.headers.origin;
+    if (tenant.publicOrigin && origin !== tenant.publicOrigin) throw streamError('CHAT_ORIGIN_FORBIDDEN', 'This chat channel is not authorized for the request origin.');
+  },
+  ...(chatTurnQueue ? {
+    resolveTenantId: async (sessionId: string) => {
+      const session = await store.getSession(sessionId);
+      if (!session) throw streamError('SESSION_NOT_FOUND', 'Session not found.');
+      return session.tenantId;
+    },
+    handleQueuedMessage: async (sessionId: string, sessionTokenHash: string, frame: ChatStreamMessageFrame, origin: string) => {
+      const response = await fetch(`http://127.0.0.1:${port}/api/v1/chat/messages`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-agentic-session-token-hash': sessionTokenHash, 'x-agentic-internal-secret': process.env.CHAT_STREAM_INTERNAL_SECRET!, origin: origin || process.env.WEB_ORIGIN || 'http://localhost' },
+        body: JSON.stringify({ sessionId, type: 'text', message: frame.message, clientMessageId: frame.clientMessageId, ...(frame.postbackValue ? { postbackValue: frame.postbackValue } : {}) }),
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const error = typeof payload === 'object' && payload !== null && 'error' in payload ? payload.error : null;
+        const errorRecord = typeof error === 'object' && error !== null ? error as Record<string, unknown> : null;
+        throw streamError(typeof errorRecord?.code === 'string' ? errorRecord.code : 'CHAT_REQUEST_FAILED', typeof errorRecord?.message === 'string' ? errorRecord.message : 'The conversation could not continue right now.');
+      }
+      const body = streamResponse(payload);
+      return { ...(typeof body.answer === 'string' ? { answer: body.answer } : {}), response: body };
+    },
+  } : {}),
+  handleMessage: async (sessionId, sessionToken, frame, request) => {
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/chat/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-agentic-session-token': sessionToken, origin: request.headers.origin ?? process.env.WEB_ORIGIN ?? 'http://localhost' },
+      body: JSON.stringify({ sessionId, type: 'text', message: frame.message, clientMessageId: frame.clientMessageId, ...(frame.postbackValue ? { postbackValue: frame.postbackValue } : {}) }),
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const error = typeof payload === 'object' && payload !== null && 'error' in payload ? payload.error : null;
+      const errorRecord = typeof error === 'object' && error !== null ? error as Record<string, unknown> : null;
+      const code = typeof errorRecord?.code === 'string' ? errorRecord.code : 'CHAT_REQUEST_FAILED';
+      const message = typeof errorRecord?.message === 'string' ? errorRecord.message : 'The conversation could not continue right now. Please try again.';
+      throw streamError(code, message);
+    }
+    const body = streamResponse(payload);
+    const result: { answer?: string; response?: Record<string, unknown> } = {};
+    if (typeof body.answer === 'string') result.answer = body.answer;
+    result.response = body;
+    return result;
+  },
+});
+server.listen(port, '0.0.0.0', () => console.log(`agentic-rag-api listening on ${port}`));
 let shuttingDown = false;
 const shutdown = async (): Promise<void> => {
   if (shuttingDown) return;
   shuttingDown = true;
   const closeServer = new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-  await Promise.allSettled([closeServer, cache.close(), pool?.end()]);
+  await Promise.allSettled([closeServer, stream.close(), cache.close(), pool?.end()]);
   process.exit(0);
 };
 process.once('SIGINT', () => { void shutdown(); });

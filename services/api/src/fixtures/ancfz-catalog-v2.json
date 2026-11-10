@@ -38,8 +38,17 @@
     "BusinessGoals": [
       {
         "businessGoalKey": "anc.company_formation",
-        "name": "Company formation",
-        "description": "Guide an approved customer through the configured company-formation journey.",
+        "name": "Start a Company",
+        "description": "Help a customer understand, plan, and complete a company-formation process. The goal remains active across supporting questions and requires explicit confirmation before workflow actions.",
+        "keywords": ["start company", "open business", "business setup", "company registration", "business formation", "trade license"],
+        "customerExpressions": ["I want to open my own company.", "How can I establish a business?", "I'm planning to launch a new operation.", "Can you help me register a firm?", "I need a trade license."],
+        "requiredInformation": ["Business activity", "Company or entity type", "Number of shareholders", "Visa requirements", "Preferred start date", "Contact details when CRM contact is requested", "Purpose-specific consent and action confirmation"],
+        "requiredDocuments": ["Retrieve the current required documents through get_document_requirements.", "Request uploads only when the confirmed package and approved policy require them."],
+        "orderedSteps": ["Lead Generation", "Lead Qualification", "Account Creation", "Package Selection", "Document Upload and Verification", "Payment Details and Invoice", "Contract"],
+        "packageReferences": ["Retrieve currently approved packages through get_available_packages.", "Current prices must come from trusted package records."],
+        "productReferences": ["Retrieve approved products and descriptions from authorized catalog sources."],
+        "authorizedToolKeys": ["get_conversation_context", "get_conversation_history_summary", "get_intent_catalog", "get_missing_requirements", "search_knowledge", "get_available_packages", "get_document_requirements", "get_journey_state", "get_action_status"],
+        "completionConditions": ["The customer goal and required information are verified.", "All seven stages complete in order with provider evidence.", "Contract completion requires verified signed-contract evidence."],
         "active": true,
         "confirmationRequired": true,
         "completionPolicyKey": "contract.verified"

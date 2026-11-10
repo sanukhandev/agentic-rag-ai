@@ -11,30 +11,30 @@ import { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedd
 import { addressesKnowledgeQuestion, classifyOfferReply, conversationalIntent, conversationalReply, DeterministicGroundedModel, detectedLanguage, extractLeadData, hasLeadIntent, hasSufficientEvidence, isCatalogSlotNonAnswer, isContextualReply, isControlledKnowledgeAbstention, isGuidedResponse, isKnowledgeQuestion, isPermittedLanguage, isSafeContinuityAnswer, leadCollectionReply, mergeLeadData, naturalAbstention, needsConversationContext, normalizeConversationQuery, normalizePendingLeadName, openingGreeting, permittedLanguageReply, preservesNormalizationFacts, validateCitations, type ChatModel, type ModelDraft, type ModelEvidence, type QueryNormalizationInput } from './model.js';
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, redactUnknownTokens, sanitizeKnowledgeText, sanitizeSensitiveText, TokenVault } from './privacy.js';
 import { catalogIntentClarification, catalogIntentLabel, catalogNextFollowUpRequirement, catalogRequirementLabel, catalogSlotLabel, catalogSlotQuestion, isCrmWriteBinding, journeyDocumentMatchesRequirement, resolveIntent, resolveIntentContinuity, validateIntentCatalog } from './intent-catalog.js';
-import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './catalog-v2.js';
-import { auditLegacyCatalogVersion, createLegacyCatalogV2Candidate } from './catalog-v2-migration.js';
-import { validatePublishedCatalogV2 } from './catalog-v2-runtime.js';
+import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './conversation/catalog.js';
+import { auditLegacyCatalogVersion, createLegacyCatalogV2Candidate } from './conversation/catalog-migration.js';
+import { validatePublishedCatalogV2 } from './conversation/catalog-runtime.js';
 import { reduceIntentJourney } from './intent-journey.js';
 import { completeLifecycleStage, newLifecycleState } from './lifecycle-state.js';
 import { normalizeFullTextQuery } from './search-query.js';
 import { exportIntentCatalogWorkbook } from './intent-catalog-xlsx.js';
-import { exportCatalogV2Workbook } from './catalog-v2-xlsx.js';
+import { exportCatalogV2Workbook } from './conversation/catalog-xlsx.js';
 import { composeConversationSummary, consentVersionForState, mergeConcurrentConversationState, mergeWorkflowCallbackState, newConversationState, phaseFor, prompt } from './conversation-state.js';
 import { createOutboxEvent } from './events.js';
 import { MemoryStore, contentHash } from './store-memory.js';
 import { hasValidFileSignature, IngestionStaging, MAX_INGESTION_FILE_BYTES } from './ingestion-staging.js';
 import { composeAdminDocumentDetails, composeDocumentMetadata, composeDocumentSummary, DEFAULT_DOCUMENT_MIME_TYPES, documentSha256, hasSupportingDocumentSignature, MAX_DOCUMENT_BYTES, PrivateDocumentStorage } from './document-intake.js';
 import { requiredDocumentSetComplete } from './document-stage-evidence.js';
-import { buildV2DocumentProviderRequest, DeterministicV2DocumentProvider, validateV2DocumentProviderResult } from './v2-document-provider.js';
-import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, DurableV2OtpChallengeService, V2OtpChallengeService, validateV2AccountProviderResult } from './v2-account-provider.js';
-import { buildV2LeadProviderRequest, DeterministicV2LeadProvider, validateV2LeadProviderResult } from './v2-lead-provider.js';
+import { buildV2DocumentProviderRequest, DeterministicV2DocumentProvider, validateV2DocumentProviderResult } from './conversation/document-provider.js';
+import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, DurableV2OtpChallengeService, V2OtpChallengeService, validateV2AccountProviderResult } from './conversation/account-provider.js';
+import { buildV2LeadProviderRequest, DeterministicV2LeadProvider, validateV2LeadProviderResult } from './conversation/lead-provider.js';
 import { SalesforceSandboxLeadProvider, type SalesforceSandboxAccountReadbackProvider, type SalesforceSandboxLeadMutationProvider, type SalesforceSandboxLeadReadbackProvider } from './salesforce-sandbox-lead-provider.js';
-import { buildV2PaymentProviderRequest, DeterministicV2PaymentProvider, validateV2PaymentProviderResult } from './v2-payment-provider.js';
-import { buildV2ContractProviderRequest, DeterministicV2ContractProvider, validateV2ContractProviderResult } from './v2-contract-provider.js';
+import { buildV2PaymentProviderRequest, DeterministicV2PaymentProvider, validateV2PaymentProviderResult } from './conversation/payment-provider.js';
+import { buildV2ContractProviderRequest, DeterministicV2ContractProvider, validateV2ContractProviderResult } from './conversation/contract-provider.js';
 import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
-import { validateV2ProviderCorrelation, v2ProviderCorrelationSchema, v2CallbackCorrelationSchema, type V2ProviderCorrelation } from './v2-provider-correlation.js';
+import { validateV2ProviderCorrelation, v2ProviderCorrelationSchema, v2CallbackCorrelationSchema, type V2ProviderCorrelation } from './conversation/provider-correlation.js';
 import type { ActionExecution, ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, FollowUpOfferOption, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, IntentCatalogSlot, LeadData, LifecycleStage, Message, PendingFollowUpOffer, Session, SourceStatus, Store, SupportingDocument } from './types.js';
 import { HttpError, parse } from './http/errors.js';
 import {
@@ -91,12 +91,13 @@ import { registerHealthRoutes } from './routes/health.js';
 import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 import { registerLifecycleRoutes } from './routes/lifecycle.js';
 import { createDevelopmentQuoteAfterLead } from './business-lifecycle.js';
-import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './v2-tool-gateway.js';
-import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './v2-coordinator.js';
-import { executeV2Turn, runGPTFirstChatTurn } from './v2-turn-controller.js';
-import { evaluatePersistedV2ActionConfirmation, evaluateV2CallbackStageCompletion } from './v2-journey-bootstrap.js';
-import type { V2ApprovedFallbackTemplateSet } from './v2-fallbacks.js';
-import type { PersonaComposedResponseV2 } from './python-model/v2-contracts.js';
+import { VocabularyLearningService } from './conversation/vocabulary.js';
+import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './conversation/tool-gateway.js';
+import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './conversation/coordinator.js';
+import { chatTurnTimeoutMs, executeV2Turn, runGPTFirstChatTurn } from './conversation/turn-controller.js';
+import { evaluatePersistedV2ActionConfirmation, evaluateV2CallbackStageCompletion } from './conversation/journey-bootstrap.js';
+import type { V2ApprovedFallbackTemplateSet } from './conversation/fallbacks.js';
+import type { PersonaComposedResponseV2 } from './python-model/contracts.js';
 
 type Telemetry = { requests: number; serverErrors: number; totalLatencyMs: number; lastRequestAt: string | null; chatResponses: number; groundedResponses: number; abstentions: number; actionProposals: number; estimatedInputTokens: number; estimatedOutputTokens: number; estimatedCostUsd: number | null; normalizationAttempts: number; normalizationFallbacks: number; normalizationFailures: number; normalizationLatencyMs: number };
 export type RateLimitEntry = { count: number; resetAt: number };
@@ -510,6 +511,7 @@ export const v2DiagnosticCaptureMetadata = (
 
 export const createApp = (dependencies: AppDependencies = {}) => {
   const store = dependencies.store ?? new MemoryStore();
+  const vocabulary = new VocabularyLearningService(store);
   const cache = dependencies.cache ?? createCache(process.env.REDIS_URL);
   const cacheFlights = new Singleflight();
   const tenantCachePrefix = (tenantId: string): string => cacheKey('tenant', tenantId);
@@ -529,6 +531,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const staticChannelTenantId = dependencies.staticChannelTenantId || process.env.OMNI_CHANNEL_TENANT_ID || undefined;
   const staticChannelTenantSlug = dependencies.staticChannelTenantSlug || process.env.OMNI_CHANNEL_TENANT_SLUG || undefined;
   const staticChannelName = dependencies.staticChannelName ?? process.env.OMNI_CHANNEL_NAME ?? 'omnichannel';
+  const chatStreamInternalSecret = process.env.CHAT_STREAM_INTERNAL_SECRET;
   const allowStaticChannelApiKey = dependencies.allowStaticChannelApiKey ?? process.env.OMNI_ALLOW_STATIC_API_KEY === 'true';
   if (staticChannelApiKey && ((!staticChannelTenantId && !staticChannelTenantSlug) || (staticChannelTenantId && staticChannelTenantSlug) || staticChannelApiKey.length < 32)) throw new Error('Static omnichannel API key requires exactly one tenant scope and at least 32 characters.');
   if (nodeEnv === 'production' && staticChannelApiKey && !allowStaticChannelApiKey) throw new Error('Production static omnichannel API keys require OMNI_ALLOW_STATIC_API_KEY=true; prefer signed channel credentials.');
@@ -543,14 +546,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const ingestionWorkerSecret = dependencies.ingestionWorkerSecret ?? process.env.INGESTION_WORKER_SECRET ?? '';
   const ingestionStaging = new IngestionStaging(dependencies.ingestionStagingRoot ?? process.env.INGESTION_STAGING_ROOT ?? join(process.cwd(), 'data', 'ingestion-staging'));
   const documentStorage = new PrivateDocumentStorage(dependencies.documentStorageRoot ?? process.env.SUPPORTING_DOCUMENT_ROOT ?? join(process.cwd(), 'data', 'supporting-documents'));
-  const localQuoteWorkflowEnabled = nodeEnv !== 'production' && process.env.ANCFZ_LOCAL_QUOTE_WORKFLOW === 'true';
-  // shortcut: local development uses Node as the verified quote/PDF boundary; upgrade when an approved quote provider and stage readback are wired.
-  const renderDevelopmentQuotePdf = async (quote: Awaited<ReturnType<typeof createDevelopmentQuoteAfterLead>>, packageName: string): Promise<{ artifactId: string; sha256: string; fileName: string; mimeType: 'application/pdf'; storageKey: string }> => {
-    const renderUrl = process.env.ANCFZ_PDF_INTERNAL_URL ?? '';
-    const apiKey = process.env.ANCFZ_PDF_API_KEY ?? '';
-    if (!renderUrl || !apiKey) throw new HttpError(503, 'QUOTE_PDF_UNAVAILABLE', 'The development PDF service is not configured.');
+  const quoteWorkflowEnabled = nodeEnv !== 'production' && process.env.QUOTE_WORKFLOW_ENABLED === 'true';
+  const renderQuotePdf = async (quote: Awaited<ReturnType<typeof createDevelopmentQuoteAfterLead>>, packageName: string, customer: { name: string; email: string; phone: string }, sellerLabel: string): Promise<{ artifactId: string; sha256: string; fileName: string; mimeType: 'application/pdf'; storageKey: string }> => {
+    const renderUrl = process.env.QUOTE_PDF_RENDER_URL ?? '';
+    const apiKey = process.env.QUOTE_PDF_API_KEY ?? '';
+    if (!renderUrl || !apiKey) throw new HttpError(503, 'QUOTE_PDF_UNAVAILABLE', 'The quote PDF service is not configured.');
     const amount = (quote.amountMinor / 100).toFixed(2);
-    const payload = { mode: 'MOCK', document_type: 'quote', reference: quote.id, issue_date: quote.createdAt.slice(0, 10), due_date: quote.validUntil.slice(0, 10), currency: quote.currency, customer_label: 'ANCFZ customer', seller_label: 'ANCFZ development workspace', tax_amount: '0.00', grand_total: amount, items: [{ description: packageName, quantity: '1', unit_price: amount }] };
+    const payload = { mode: 'MOCK', document_type: 'quote', reference: quote.id, issue_date: quote.createdAt.slice(0, 10), due_date: quote.validUntil.slice(0, 10), currency: quote.currency, customer_label: customer.name, customer_name: customer.name, customer_email: customer.email, customer_phone: customer.phone, seller_label: sellerLabel, tax_amount: '0.00', grand_total: amount, items: [{ description: packageName, quantity: '1', unit_price: amount }] };
     const rendered = await fetch(renderUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15_000) });
     if (!rendered.ok) throw new HttpError(502, 'QUOTE_PDF_RENDER_FAILED', 'The development quote PDF could not be rendered.');
     const metadata = await rendered.json() as { artifactId?: unknown; sha256?: unknown; bytes?: unknown };
@@ -564,7 +566,41 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const existing = await documentStorage.read(storageKey);
     if (existing) { if (documentSha256(existing) !== metadata.sha256) throw new HttpError(409, 'QUOTE_PDF_CONFLICT', 'A different quote PDF already exists for this quote.'); }
     else await documentStorage.write(storageKey, bytes);
-    return { artifactId: metadata.artifactId, sha256: metadata.sha256, fileName: `ancfz-development-quote-${quote.id}.pdf`, mimeType: 'application/pdf', storageKey };
+    return { artifactId: metadata.artifactId, sha256: metadata.sha256, fileName: `quote-${quote.id}.pdf`, mimeType: 'application/pdf', storageKey };
+  };
+  const resolveQuoteCustomer = async (session: Session): Promise<{ name: string; email: string; phone: string }> => {
+    const lead = await store.getCrmLeadBySessionId(session.id, session.tenantId);
+    const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm').trim();
+    const customer = { name: lead?.leadData.name ? rehydrate(lead.leadData.name) : '', email: lead?.leadData.email ? rehydrate(lead.leadData.email) : '', phone: lead?.leadData.phone ? rehydrate(lead.leadData.phone) : '' };
+    if (!lead?.validationPass || !isValidLeadName(customer.name) || !isValidLeadEmail(customer.email) || !isValidLeadPhone(customer.phone)) throw new HttpError(409, 'QUOTE_CUSTOMER_DETAILS_REQUIRED', 'The verified customer contact details are required before a quote can be rendered.');
+    return customer;
+  };
+  const resolveActiveDocumentRequirementKey = async (tenantId: string, catalogVersionRef: string | null, goalKey: string | null): Promise<string | null> => {
+    if (!catalogVersionRef || !goalKey) return null;
+    const version = (await store.listIntentCatalogV2Versions(tenantId)).find((candidate) => candidate.status === 'published' && (candidate.id === catalogVersionRef || candidate.catalogVersionRef === catalogVersionRef));
+    if (!version) return null;
+    const binding = version.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === 'anc.document.ocr.extract' && candidate.enabled);
+    const tool = version.catalog.sheets.ToolBindings.find((candidate) => ['document.ocr.extract', 'document.sf02_upload'].includes(candidate.toolKey) && candidate.goalKey === goalKey && candidate.enabled && candidate.stageKey === 'document_upload');
+    return binding && tool ? version.catalog.sheets.DocumentPolicies.find((policy) => policy.goalKey === goalKey && policy.stageKey === 'document_upload' && policy.required && policy.enabled)?.policyKey ?? null : null;
+  };
+  const handoffDevelopmentQuoteToDocumentStage = async (session: Session, opportunityId: string, requirementKey: string): Promise<void> => {
+    const current = await store.getSession(session.id);
+    const state = current?.conversationState;
+    const intentKey = state?.activeFollowUpIntentKey ?? state?.intentProgress?.activeIntentKey ?? state?.selectedIntentKey;
+    const entry = intentKey ? state?.intentProgress?.entries[intentKey] : null;
+    if (!current || !state || !entry || entry.journeyId !== opportunityId || !entry.lifecycle) return;
+    if (entry.lifecycle.currentStage !== 'document_upload') {
+      // The local Lead-to-quote shortcut intentionally omits Account creation;
+      // keep its verified quote handoff usable without enabling this bypass in production.
+      const lifecycle = { ...entry.lifecycle, currentStage: 'document_upload' as const, revision: entry.lifecycle.revision + 1, stages: { ...entry.lifecycle.stages, document_upload: { ...entry.lifecycle.stages.document_upload, status: 'awaiting_customer' as const } } };
+      const nextEntry = { ...entry, lifecycle, currentRequirementKey: requirementKey, revision: entry.revision + 1 };
+      const nextProgress = { ...(state.intentProgress!), entries: { ...(state.intentProgress?.entries ?? {}), [intentKey!]: nextEntry }, journeys: { ...(state.intentProgress?.journeys ?? {}), [entry.journeyId]: nextEntry }, journeyRevision: Math.max(state.intentProgress?.journeyRevision ?? 0, lifecycle.revision) };
+      await updateSessionSafely({ ...current, conversationState: { ...state, intentProgress: nextProgress } }, true, 'workflow');
+    } else if (entry.currentRequirementKey !== requirementKey) {
+      const nextEntry = { ...entry, currentRequirementKey: requirementKey, revision: entry.revision + 1 };
+      const nextProgress = { ...(state.intentProgress!), entries: { ...(state.intentProgress?.entries ?? {}), [intentKey!]: nextEntry }, journeys: { ...(state.intentProgress?.journeys ?? {}), [entry.journeyId]: nextEntry }, journeyRevision: state.intentProgress?.journeyRevision ?? 0 };
+      await updateSessionSafely({ ...current, conversationState: { ...state, intentProgress: nextProgress } }, true, 'workflow');
+    }
   };
   const mockDocumentProvider = dependencies.v2DocumentProvider ?? (process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2DocumentProvider() : null);
   const v2AccountOtp = dependencies.v2AccountOtp ?? new DurableV2OtpChallengeService(store, process.env.V2_OTP_SECRET ?? 'local-development-v2-otp-secret');
@@ -632,17 +668,24 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     }
     throw new HttpError(409, 'SESSION_STATE_CONFLICT', 'Another message changed this conversation. Retry with the latest prompt.');
   };
-  const advanceLifecycleStage = async (session: Session, stage: LifecycleStage, evidence: Record<string, string | number | boolean>): Promise<void> => {
+  const advanceLifecycleStage = async (session: Session, stage: LifecycleStage, evidence: Record<string, string | number | boolean>, nextRequirementKey: string | null = null): Promise<void> => {
     const current = await store.getSession(session.id);
     if (!current || current.tenantId !== session.tenantId) return;
     const state = current.conversationState ?? newConversationState();
     const intentKey = state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey;
     const entry = intentKey ? state.intentProgress?.entries[intentKey] : null;
     if (!entry || !entry.journeyId || !entry.lifecycle) return;
-    if (entry.lifecycle.stages[stage]?.status === 'completed') return;
+    if (entry.lifecycle.stages[stage]?.status === 'completed') {
+      if (entry.lifecycle.currentStage === 'document_upload' && entry.currentRequirementKey !== nextRequirementKey) {
+        const nextEntry = { ...entry, currentRequirementKey: nextRequirementKey, revision: entry.revision + 1 };
+        const nextProgress = { ...(state.intentProgress!), entries: { ...(state.intentProgress?.entries ?? {}), [intentKey!]: nextEntry }, journeys: { ...(state.intentProgress?.journeys ?? {}), [entry.journeyId]: nextEntry }, journeyRevision: state.intentProgress?.journeyRevision ?? 0 };
+        await updateSessionSafely({ ...current, conversationState: { ...state, intentProgress: nextProgress } }, true, 'workflow');
+      }
+      return;
+    }
     if (entry.lifecycle.currentStage !== stage) return;
     const lifecycle = completeLifecycleStage(entry.lifecycle ?? newLifecycleState(), stage, evidence);
-    const nextEntry = { ...entry, lifecycle, revision: entry.revision + 1 };
+    const nextEntry = { ...entry, lifecycle, revision: entry.revision + 1, ...(lifecycle.currentStage === 'document_upload' ? { currentRequirementKey: nextRequirementKey } : {}) };
     const nextProgress = { ...(state.intentProgress!), entries: { ...(state.intentProgress?.entries ?? {}), [intentKey!]: nextEntry }, journeys: { ...(state.intentProgress?.journeys ?? {}), [entry.journeyId]: nextEntry }, journeyRevision: Math.max(state.intentProgress?.journeyRevision ?? 0, lifecycle.revision) };
     await updateSessionSafely({ ...current, conversationState: { ...state, intentProgress: nextProgress } }, true, 'workflow');
     const document = await store.getUserIntentDocument(session.tenantId, session.id);
@@ -1067,14 +1110,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     ? { apiKey: staticChannelApiKey, channel: staticChannelName, ...(staticChannelTenantId ? { tenantId: staticChannelTenantId } : { tenantSlug: staticChannelTenantSlug! }) }
     : undefined;
   const channelApi = channelAuthMiddleware(store, channelVault, staticChannelAuth);
+  const internalChatRequest = (req: Request): boolean => Boolean(chatStreamInternalSecret && req.header('x-agentic-internal-secret') === chatStreamInternalSecret && req.header('x-agentic-session-token-hash'));
   const chatApi = (req: Request, res: Response, next: NextFunction): void => {
     optionalApi(req, res, () => {
-      if (getAuth(req)) { next(); return; }
+      if (getAuth(req) || internalChatRequest(req)) { next(); return; }
       void channelApi(req, res, next).catch(next);
     });
   };
   const authorizeSessionAccessToken = async (req: Request, session: Session): Promise<void> => {
     if (getAuth(req)) return;
+    if (internalChatRequest(req) && await store.verifySessionAccessToken(session.id, req.header('x-agentic-session-token-hash')!)) return;
     const token = req.header('x-agentic-session-token');
     if (!sessionAccessTokenRequired && !token) return;
     if (!token || !(await store.verifySessionAccessToken(session.id, createHash('sha256').update(token).digest('hex')))) {
@@ -2100,6 +2145,18 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const transitionDenied = Boolean(pendingTransitionPrompt && !knowledgeQuestion && /^(?:no|nope|not now|later|decline|reject|stop)\b/iu.test(maskedMessage));
       const intentContinuity = publishedCatalog && !offerOwnsConversationState ? resolveIntentContinuity(publishedCatalog, { currentText: normalizedMessage, contextText: intentContextQuery, slotValues: catalogSlotValues, selectedIntentKey: transitionDenied ? state.selectedIntentKey : state.activeFollowUpIntentKey ?? state.selectedIntentKey, pendingPromptType: state.pendingPrompt?.type ?? null }) : null;
       let catalogResolution = intentContinuity?.primary ?? null;
+      if (catalogResolution?.intentKey && ['matched', 'missing_slots'].includes(catalogResolution.reason) && !knowledgeQuestion && !knowledgeOnlyTurn) {
+        void vocabulary.observe({
+          tenantId: session.tenantId,
+          intentKey: catalogResolution.intentKey,
+          phrase: masked.masked,
+          sessionId: session.id,
+          messageId: userMessage.id,
+          containsPii: masked.masked !== inputText,
+          isNegated: /\b(?:not|never|don't|do not|no longer)\b/iu.test(inputText),
+          isQuotedOrHypothetical: /(?:^|\s)["“].*["”](?:\s|$)|\b(?:hypothetical|for example|example of|if someone)\b/iu.test(inputText),
+        }).catch(() => undefined);
+      }
       const pendingJourneyConfirmation = state.pendingPrompt?.type === 'confirmation' && !pendingTransitionPrompt && state.pendingPrompt.requirementKey && state.pendingPrompt.intentKey
         ? publishedCatalog?.catalog.journeyRequirements?.some((requirement) => requirement.intentKey === state.pendingPrompt?.intentKey && requirement.requirementKey === state.pendingPrompt?.requirementKey && requirement.requirementType === 'confirmation') ?? false
         : false;
@@ -2297,7 +2354,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
                catalogDigest: contentHash(JSON.stringify(publishedCatalog.catalog)),
                intentProjection: { primaryGoalKey: state.selectedIntentKey ?? state.activeFollowUpIntentKey ?? null, goalConfirmed: Boolean(state.selectedIntentKey ?? state.activeFollowUpIntentKey), currentStageKey: activeLifecycleStage ?? state.phase.toLocaleLowerCase('en-US'), pendingRequirementKey: journeyRequirement?.requirementKey ?? state.pendingPrompt?.requirementKey ?? null, confirmedCustomerFacts },
                toolAllowlist: [...V2_TOOL_NAMES],
-               budgets: { maxModelRequests: 4, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + 90_000).toISOString() },
+               budgets: { maxModelRequests: 4, maxToolCalls: 4, maxToolRounds: 2, deadlineAt: new Date(Date.now() + chatTurnTimeoutMs()).toISOString() },
              },
              evidence: evidence.map((item) => ({ citationId: item.citation.chunkId, text: item.content, sourceVersion: item.citation.versionId, approved: true, revoked: false, sourceRef: item.citation.sourceId })),
               verifiedFacts: trustedCustomerFacts,
@@ -3177,9 +3234,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       res.json({ action: updated, failure: { state: input.state, reasonCode: input.reasonCode, eventId: input.eventId, correlationId: input.correlationId, attempt: input.attempt } });
     } catch (error) { next(error); }
   });
-  app.post('/api/v1/internal/ancfz/quote-actions/execute', n8nInternalApi, async (req, res, next) => {
+  app.post('/api/internal/workflows/quote-pdf/execute', n8nInternalApi, async (req, res, next) => {
     try {
-      if (!localQuoteWorkflowEnabled) throw new HttpError(503, 'LOCAL_QUOTE_WORKFLOW_DISABLED', 'The development quote workflow is not enabled.');
+      if (!quoteWorkflowEnabled) throw new HttpError(503, 'QUOTE_WORKFLOW_DISABLED', 'The quote workflow is not enabled.');
       const input = parse(z.object({ actionId: z.string().guid(), tenantId: z.string().guid(), sessionId: z.string().guid() }).strict(), req.body);
       const action = await store.getAction(input.actionId);
       const session = await store.getSession(input.sessionId);
@@ -3188,6 +3245,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const packageOfferingId = action.payload.slotValues?.packageOfferingId;
       if (typeof selectionId !== 'string' || !/^[0-9a-f-]{36}$/iu.test(selectionId) || typeof packageOfferingId !== 'string' || !/^[0-9a-f-]{36}$/iu.test(packageOfferingId)) throw new HttpError(409, 'QUOTE_ACTION_PAYLOAD_INVALID', 'The approved package selection is incomplete.');
       if (action.state === 'completed' && action.result) { res.json({ verified: true, action }); return; }
+      const customer = await resolveQuoteCustomer(session);
       const processing = action.state === 'approved' ? await store.updateAction({ ...action, state: 'processing', result: null }) : action;
       const selection = await store.getPackageSelection(selectionId, input.tenantId);
       const offering = await store.getPackageOffering(packageOfferingId, input.tenantId);
@@ -3195,9 +3253,36 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const quote = selection.quoteId ? await store.getQuote(selection.quoteId, input.tenantId) : await createDevelopmentQuoteAfterLead(store, session, offering.id);
       if (!quote) throw new HttpError(409, 'QUOTE_NOT_FOUND', 'The approved quote could not be loaded.');
       if (selection.status !== 'confirmed') await store.confirmPackageSelection(selection.id, input.tenantId, quote.id);
-      const artifact = await renderDevelopmentQuotePdf(quote, offering.name);
+      const tenant = await store.getTenant(input.tenantId);
+      if (!tenant) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.');
+      const artifact = await renderQuotePdf(quote, offering.name, customer, tenant.name);
       const completed = await store.updateAction({ ...processing, state: 'completed', result: { externalReference: `quote-${quote.id}`, artifactId: artifact.artifactId, artifactSha256: artifact.sha256, artifactFileName: artifact.fileName, artifactMimeType: artifact.mimeType } });
-      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'ancfz.development_quote.completed', metadata: { actionId: action.id, quoteId: quote.id, artifactId: artifact.artifactId, artifactSha256: artifact.sha256 }, createdAt: new Date().toISOString() });
+      const currentDocument = await store.getUserIntentDocument(input.tenantId, input.sessionId);
+      const documentRequirementKey = await resolveActiveDocumentRequirementKey(input.tenantId, action.catalogVersionId ?? currentDocument?.catalogVersionRef ?? session.conversationState?.catalogVersionId ?? null, action.intentKey ?? currentDocument?.businessGoalKey ?? null);
+      await advanceLifecycleStage(session, 'package_selection', { actionId: action.id, quoteId: quote.id, artifactSha256: artifact.sha256 }, documentRequirementKey);
+      if (documentRequirementKey) {
+        const refreshedDocument = await store.getUserIntentDocument(input.tenantId, input.sessionId);
+        if (refreshedDocument && refreshedDocument.opportunityId === action.opportunityId && refreshedDocument.currentStageKey === 'document_upload' && refreshedDocument.pendingRequirementKey !== documentRequirementKey) {
+          const updated = await store.updateUserIntentDocument({ document: { ...refreshedDocument, pendingRequirementKey: documentRequirementKey, lastQuestion: null, updatedAt: new Date().toISOString(), revision: refreshedDocument.revision + 1 }, expectedRevision: refreshedDocument.revision });
+          if (!updated) throw new HttpError(409, 'V2_DOCUMENT_REQUIREMENT_CONFLICT', 'The document-upload requirement changed before the quote handoff completed.');
+        }
+        const afterAdvance = await store.getSession(input.sessionId);
+        const afterState = afterAdvance?.conversationState;
+        const afterIntentKey = afterState?.activeFollowUpIntentKey ?? afterState?.intentProgress?.activeIntentKey ?? afterState?.selectedIntentKey;
+        const afterEntry = afterIntentKey ? afterState?.intentProgress?.entries[afterIntentKey] : null;
+        const developmentHandoffAllowed = Boolean(afterEntry?.lifecycle && ['lead_generation', 'lead_qualification', 'account_creation', 'package_selection', 'document_upload'].includes(afterEntry.lifecycle.currentStage));
+        if (developmentHandoffAllowed && afterEntry?.lifecycle?.currentStage !== 'document_upload') await handoffDevelopmentQuoteToDocumentStage(session, action.opportunityId!, documentRequirementKey);
+        const handoffDocument = await store.getUserIntentDocument(input.tenantId, input.sessionId);
+        if (developmentHandoffAllowed && handoffDocument && handoffDocument.opportunityId === action.opportunityId && handoffDocument.currentStageKey !== 'document_upload') {
+          const handoffSession = await store.getSession(input.sessionId);
+          const handoffState = handoffSession?.conversationState;
+          const handoffIntentKey = handoffState?.activeFollowUpIntentKey ?? handoffState?.intentProgress?.activeIntentKey ?? handoffState?.selectedIntentKey;
+          const handoffEntry = handoffIntentKey ? handoffState?.intentProgress?.entries[handoffIntentKey] : null;
+          const updated = await store.updateUserIntentDocument({ document: { ...handoffDocument, currentStageKey: 'document_upload', stageRevision: handoffEntry?.lifecycle?.stages.document_upload.revision ?? handoffDocument.stageRevision, pendingRequirementKey: documentRequirementKey, lastQuestion: null, updatedAt: new Date().toISOString(), revision: handoffDocument.revision + 1 }, expectedRevision: handoffDocument.revision });
+          if (!updated) throw new HttpError(409, 'V2_DOCUMENT_REQUIREMENT_CONFLICT', 'The document-upload requirement changed before the quote handoff completed.');
+        }
+      }
+      await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'quote.workflow.completed', metadata: { actionId: action.id, quoteId: quote.id, artifactId: artifact.artifactId, artifactSha256: artifact.sha256 }, createdAt: new Date().toISOString() });
       res.json({ verified: true, mock: true, quote, artifact: { artifactId: artifact.artifactId, sha256: artifact.sha256, fileName: artifact.fileName, mimeType: artifact.mimeType }, action: completed });
     } catch (error) { next(error); }
   });
@@ -3596,7 +3681,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const content = await documentStorage.read(documentStorage.key(session.tenantId, quote.id, 'application/pdf'));
       if (!content) throw new HttpError(404, 'QUOTE_PDF_NOT_FOUND', 'The quote PDF is not ready yet.');
       res.setHeader('content-type', 'application/pdf');
-      res.setHeader('content-disposition', `attachment; filename="ancfz-development-quote-${quote.id}.pdf"`);
+      res.setHeader('content-disposition', `attachment; filename="quote-${quote.id}.pdf"`);
       res.setHeader('cache-control', 'private, no-store');
       res.send(content);
     } catch (error) { next(error); }
@@ -3662,6 +3747,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   });
   app.get('/api/v1/admin/crm/leads', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); res.json({ items: await Promise.all((await store.listCrmLeads(tenantId)).map(crmLeadForAdmin)) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/audit', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listAudit(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.get('/api/v1/admin/intent-vocabulary', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { res.json({ items: await vocabulary.list(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
+  app.post('/api/v1/admin/intent-vocabulary/:id/reject', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const reason = typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim().slice(0, 200) : undefined; res.json({ candidate: await vocabulary.reject(tenantId, routeParam(req, 'id'), reason) }); } catch (error) { next(error); } });
+  app.post('/api/v1/admin/intent-vocabulary/:id/rollback', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { res.json({ candidate: await vocabulary.rollback(await tenantForRequest(store, req), routeParam(req, 'id')) }); } catch (error) { next(error); } });
   app.get('/api/v1/chat/config', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const tenantSlug = typeof req.query.tenantSlug === 'string' ? req.query.tenantSlug : ''; if (channel && tenantSlug) throw new HttpError(400, 'CHANNEL_TENANT_INPUT_FORBIDDEN', 'Channel credentials resolve the tenant from the channel key.'); const tenant = channel ? await store.getTenant(channel.tenantId) : await store.getTenantBySlug(tenantSlug); if (!tenant || tenant.status !== 'active' || (!channel && !tenant.publicChatEnabled)) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); if (channel && channel.tenantId !== tenant.id) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.'); if (getAuth(req) && !ensureTenant(req, tenant.id)) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.'); if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv); const persona = await store.getPersona(tenant.id); res.json({ tenant: { slug: tenant.slug, name: tenant.name }, persona: persona ? { name: persona.name, greeting: persona.greeting, tone: persona.tone, speakingStyle: persona.speakingStyle, permittedLanguages: persona.permittedLanguages, voiceName: persona.voiceName, voiceLanguage: persona.voiceLanguage, voiceRate: persona.voiceRate, voicePitch: persona.voicePitch, voiceVolume: persona.voiceVolume } : null, documents: await documentConfig(tenant.id) }); } catch (error) { next(error); } });
 
   app.use((error: unknown, req: Request, res: Response, next: NextFunction) => {
@@ -3669,7 +3757,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (res.headersSent) { next(error); return; }
     if (errorType(error) === 'entity.too.large') { res.status(413).json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request payload is too large.', requestId } }); return; }
     if (errorType(error) === 'entity.parse.failed') { res.status(400).json({ error: { code: 'INVALID_JSON', message: 'Request body must be valid JSON.', requestId } }); return; }
-    if (error instanceof HttpError) { res.status(error.status).json({ error: { code: error.code, message: error.message, requestId } }); return; }
+    if (error instanceof HttpError) {
+      if (error.code === 'MODEL_QUEUE_OVERLOADED' || error.code === 'MODEL_RATE_LIMITED' || error.code === 'MODEL_CIRCUIT_OPEN') {
+        console.warn(JSON.stringify({ event: 'conversation.model_backpressure', requestId, code: error.code, status: error.status, message: error.message }));
+      }
+      res.status(error.status).json({ error: { code: error.code, message: error.message, requestId } }); return;
+    }
     if (error instanceof CrmSummaryValidationError) { res.status(422).json({ error: { code: 'CRM_SUMMARY_INVALID', message: error.message, requestId } }); return; }
     if (errorCode(error) === '23505') { res.status(409).json({ error: { code: 'RESOURCE_CONFLICT', message: 'The requested resource already exists.', requestId } }); return; }
     if (errorCode(error) === '22P02') { res.status(400).json({ error: { code: 'INVALID_DATA', message: 'The request contains invalid data.', requestId } }); return; }

@@ -26,7 +26,7 @@ REQUIRED_SHEETS = (
 HEADERS: dict[str, tuple[str, ...]] = {
     "README": ("key", "value"),
     "CatalogManifest": ("schema_version", "catalog_key", "tenant_scope", "revision", "policy_version"),
-    "BusinessGoals": ("business_goal_key", "name", "description", "active", "confirmation_required", "completion_policy_key"),
+    "BusinessGoals": ("business_goal_key", "name", "description", "keywords", "customer_expressions", "required_information", "required_documents", "ordered_steps", "package_references", "product_references", "authorized_tool_keys", "completion_conditions", "active", "confirmation_required", "completion_policy_key"),
     "IntentCategories": ("category_key", "name", "active"),
     "TurnIntents": ("turn_intent_key", "category_key", "business_goal_key", "active"),
     "IntentSignals": ("signal_id", "target_key", "signal_type", "value", "language", "weight", "min_weight", "max_weight"),
@@ -41,7 +41,7 @@ HEADERS: dict[str, tuple[str, ...]] = {
     "DocumentPolicies": ("policy_key", "goal_key", "stage_key", "doc_type", "required", "mime_types", "review_policy", "retention_class", "enabled"),
 }
 
-ARRAY_FIELDS = {"dependencies", "entry_requirements", "required_keys", "no_question_reasons", "permitted_languages", "mime_types"}
+ARRAY_FIELDS = {"dependencies", "entry_requirements", "required_keys", "no_question_reasons", "permitted_languages", "mime_types", "keywords", "customer_expressions", "required_information", "required_documents", "ordered_steps", "package_references", "product_references", "authorized_tool_keys", "completion_conditions"}
 BOOL_FIELDS = {"active", "confirmation_required", "required", "enabled", "citation_required"}
 INT_FIELDS = {"schema_version", "revision", "stage_order", "priority"}
 FLOAT_FIELDS = {"threshold", "ambiguity_margin", "weight", "min_weight", "max_weight"}

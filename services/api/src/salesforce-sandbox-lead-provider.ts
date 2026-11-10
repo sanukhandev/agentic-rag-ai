@@ -1,6 +1,6 @@
-import type { V2LeadProviderRequest } from './v2-lead-provider.js';
-import type { V2AccountProviderRequest } from './v2-account-provider.js';
-import type { V2TrustedProviderReadback } from './v2-provider-evidence.js';
+import type { V2LeadProviderRequest } from './conversation/lead-provider.js';
+import type { V2AccountProviderRequest } from './conversation/account-provider.js';
+import type { V2TrustedProviderReadback } from './conversation/provider-evidence.js';
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 

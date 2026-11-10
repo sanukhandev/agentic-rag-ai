@@ -54,6 +54,11 @@ jobs:
           npm run lint
       - name: Build
         run: npm run build
+      - name: Validate canonical catalog fixtures
+        run: |
+          test -f services/api/src/fixtures/ancfz-catalog-v2.json
+          test -f services/api/src/fixtures/ancfz-catalog-v2-seven-stage.json
+          test -f services/api/src/fixtures/ancfz-catalog-v2-scenarios.json
       - name: Node isolated unit tests
         run: npm run test:unit
       - name: Python isolated unit tests

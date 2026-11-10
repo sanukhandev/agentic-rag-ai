@@ -73,6 +73,7 @@ class TurnEnvelopeV2(StrictV2):
     personaVersionId: str = Field(min_length=8, max_length=256)
     customerMessageMasked: str = Field(max_length=5000)
     latestTurns: list[dict[str, str]] = Field(default_factory=list, max_length=8)
+    conversationSummary: str | None = Field(default=None, max_length=6000)
     persona: PersonaEnvelopeV2
     catalogDigest: str = Field(pattern=r"^[a-f0-9]{64}$")
     approvedKnowledge: list[ApprovedKnowledgeSnippetV2] = Field(default_factory=list, max_length=4)

@@ -5,6 +5,7 @@ import {
   escapeHtml,
   formatAgentGreeting,
   formatNaturalAbstention,
+  formatSessionIdForDisplay,
   formatVoiceCountdownText,
   getVoiceStateMeta,
   historyToReplies,
@@ -17,6 +18,12 @@ import {
 } from './chat-utils';
 
 describe('web chat utilities', () => {
+  it('formats the development session ID without exposing a long UUID in the chip', () => {
+    expect(formatSessionIdForDisplay(null)).toBe('Not started');
+    expect(formatSessionIdForDisplay('session-123')).toBe('session-123');
+    expect(formatSessionIdForDisplay('12345678-1234-4123-8123-123456789abc')).toBe('12345678…789abc');
+  });
+
   it('accepts only tenant-safe slugs', () => {
     expect(isValidTenantSlug('tenant-a')).toBe(true);
     expect(isValidTenantSlug('Tenant A')).toBe(false);

@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from gateway.reliability import CircuitBreaker, RateLimitExceeded, SlidingWindowRateLimiter, TurnBudget
+from gateway.reliability import CircuitBreaker, QueueAdmission, QueueOverloaded, RateLimitExceeded, SlidingWindowRateLimiter, TurnBudget, retry_delay_seconds
 
 
 def test_rate_limiter_returns_a_bounded_retry_after() -> None:
@@ -32,3 +32,21 @@ def test_circuit_breaker_opens_and_allows_one_probe() -> None:
         assert breaker.allow()
 
     asyncio.run(run())
+
+
+def test_queue_admission_rejects_when_conversation_volume_is_high() -> None:
+    async def run() -> None:
+        admission = QueueAdmission(max_concurrency=1, max_queue=0)
+        await admission.acquire(TurnBudget(time.time() + 1))
+        try:
+            with pytest.raises(QueueOverloaded) as error:
+                await admission.acquire(TurnBudget(time.time() + 1))
+            assert error.value.retry_after == 3.0
+        finally:
+            admission.release()
+
+    asyncio.run(run())
+
+
+def test_retry_delay_is_three_second_exponential_backoff() -> None:
+    assert [retry_delay_seconds(index) for index in range(3)] == [3.0, 6.0, 12.0]

@@ -325,3 +325,57 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Verification: API **65 files / 587 tests PASS**, API typecheck/lint PASS, lifecycle/catalog quote gate tests PASS, model-gateway **43 tests PASS**, Docker API rebuild/restart/health PASS, and secret-safe gateway readiness reports `mode=azure`, `deployment=gpt-5.4`, valid `/openai/v1`, one initial attempt plus up to three retries, 90-second deadline, concurrency 2, circuit closed.
 - Final local Docker Azure harness: **25/25 HTTP answers, 25 durable user messages, conversation gate PASS**. Licensing returned process evidence rather than package/cost prose; explicit package information remained catalog-backed; no CRM completion or later-stage completion was claimed. Evidence: `artifacts/ancfz/azure-intent-quote-retest-2026-11-09-final6-scored.json`.
 - Quote scope remains stage 1–4 only and development/mock-only. Existing lifecycle coverage verifies the approved package → quote artifact → authenticated download boundary; no new external Salesforce write, charge, signature, document upload, payment or contract action was triggered by this retest. Overall status remains **NOT_READY** for the full seven-stage acceptance and formal human-quality gate.
+
+## 2026-11-09 V2 natural contact-name cursor fix
+
+- V2 now recognizes a bounded natural name such as `Adnan Kazi` only while the catalog-pinned `lead_contact_name` requirement is active. The value is routed through the existing session token vault before persistence, Azure context, intent evidence and response composition; the default token-only `extractLeadData` contract is unchanged.
+- The contact cursor now owns non-knowledge, non-package turns while the name is missing, so qualification text cannot be mistaken for a name or leave the conversation in a generic model fallback. Package and knowledge questions remain answerable without creating a Lead.
+- Verification: focused V2/model tests **65 files / 589 tests PASS**, full workspace tests **admin 71, web 16, API 589, chat-utils 6, contracts 6 PASS**, typecheck/lint/build **PASS**, and the rebuilt local Docker API returned `ready` in Azure mode with deployment `gpt-5.4`.
+- Existing local Azure quote harness completed a synthetic Lead, development package selection, verified mock quote and authenticated PDF download; quote evidence remains development/mock-only. The exact bare-name regression is covered by the new V2 controller test; no production provider configuration was changed.
+
+## 2026-11-09 Dev session ID visibility flag
+
+- The web image always compiles with `NODE_ENV=production`, so the development Session ID chip is now controlled by the explicit build-time `NEXT_PUBLIC_DEV_SESSION_ID` flag instead of `NODE_ENV`.
+- Local `.env` and the VM `.env` use `NEXT_PUBLIC_DEV_SESSION_ID=true`; the example defaults to false. The chip remains opt-in and exposes only the existing session ID and copy action.
+
+## 2026-11-10 quote-to-document handoff and quote contact snapshot
+
+- The local development quote executor now resolves the verified CRM Lead for the same session, rehydrates name/email/phone only at the private PDF boundary, and renders all three fields as separate customer rows. Missing or invalid contact data fails with `QUOTE_CUSTOMER_DETAILS_REQUIRED` before a new artifact is rendered.
+- After a verified development quote, Node resolves the active required document policy from the session-pinned published catalog and OCR registry, persists the same opportunity at `document_upload`, and repairs the legacy pending cursor so the next Azure-composed turn exposes the active policy key. The development-only Lead-to-quote shortcut is explicitly handled; production quote workflow behavior is unchanged.
+- Docker verification on 2026-11-10 used Azure model mode (`gpt-5.4`) and synthetic data only: Lead `completed`, quote execution HTTP 200 (`verified: true`, `mock: true`), authenticated PDF download HTTP 200, PDF text contained synthetic name/email/phone, the next turn exposed `document.identity.review`, and consented synthetic PNG upload returned HTTP 202. Redacted export: `docs/verification/document-upload-quote-contact-e2e-2026-11-09.json`.
+- This remains development/mock quote evidence. It does not claim Account conversion, official ANCFZ pricing, Salesforce SF-02 attachment, payment, invoice settlement or contract completion.
+
+## 2026-11-10 reliability, context and local Docker retest
+
+- The feature branch was rebased onto `origin/main` at `17e42a6` before implementation. The Python gateway now applies one initial Azure attempt plus at most three transient retries, a bounded per-turn deadline, circuit protection and queue admission. Queue overload is logged with the real failure and returned to the customer as a safe retry message rather than an internal traceback.
+- Redis is configured for AOF `everysec`, `noeviction`, 256 MB default maxmemory, TCP keepalive, bounded stream trimming and optional password ACLs. Conversation context is an ephemeral, tenant/session/opportunity-scoped cache with idle and absolute TTLs; PostgreSQL remains authoritative, so Redis loss does not discard verified state. The local runtime was corrected from a host-loopback Redis URL to the Compose service name after reproducing the 504.
+- Nginx now has an exact WebSocket upgrade path with buffering disabled and bounded read/send timeouts. A live local Azure-backed handshake passed through Nginx with `authenticated → turn.accepted → assistant.message → turn.completed`; the adapter also exposes safe failed frames, including queue overload. The public HTTP chat contract remains available for local compatibility.
+- The full local Azure Docker quote retest passed: CRM Lead fields were populated, quote action completed, authenticated PDF download returned HTTP 200, the PDF artifact included synthetic name/email/phone/package/evidence data, the document requirement was exposed only after quote handoff, and a consented synthetic document upload returned HTTP 202. A prior quote 502 was reproduced as a root-owned private-volume permission error and fixed by running the PDF service as UID 10001 with an owned volume.
+- Verification after these changes: API **67 files / 595 tests PASS**, Python model-gateway **45 tests PASS**, API typecheck PASS, Compose verifier PASS and `git diff --check` PASS. The local Redis instance was inspected for the recommended runtime settings; password-enforced ACL mode and failover/consumer recovery were not exercised because the development `.env` has no Redis password.
+
+### Remaining blockers (status is still NOT_READY)
+
+- The repository still runs the existing `v2-*` Node path; the requested full neutral-module cutover and removal of old runtime names is not complete. The new WebSocket adapter currently bridges that path synchronously rather than running a Redis-streamed turn job with replay/reconnect semantics.
+- Automatic intent-vocabulary observe/validate/evaluate/promote/rollback and the admin audit view are not implemented yet. The history-summary read tool and Redis context cache are implemented, but they do not replace that lifecycle.
+- Quote rendering remains a protected Node boundary called by the inactive/local n8n template; the complete production dispatch must still be wired so n8n is the only execution path. Payment, contract and full provider-backed seven-stage acceptance remain environment-dependent.
+
+## 2026-11-10 neutral runtime, vocabulary, Redis streams and n8n quote retest
+
+- Active Node conversation source modules were moved from `services/api/src/v2-*` and `catalog-v2-*` filenames into `services/api/src/conversation/` with migrated callers. Historical migrations, evidence and semantic compatibility identifiers remain preserved; a full semantic route rename is not claimed.
+- Intent vocabulary learning now observes customer-origin expressions, rejects assistant text, PII, negation, quotations/hypotheticals, duplicates and competing phrases, promotes after two independent sessions, and exposes tenant-scoped admin reject/rollback/audit operations. It changes only intent vocabulary; RAG, documents, pricing and workflow policy remain protected.
+- WebSocket turns now use Redis Streams for tenant/session-scoped events and a durable turn-job consumer group, with hashed session-token authorization, duplicate client-message dedupe, replay cursors and pending-message reclaim. PostgreSQL remains business truth. A live Nginx/Azure handshake and reconnect replay passed.
+- The live quote harness no longer calls the private PDF executor directly. After synchronizing the persistent development n8n published history revision with the checked-in package workflow, the Azure-mode conversation passed Lead completion, n8n-dispatched package quote, verified mock PDF generation, authenticated PDF download, requirement-gated document prompt and consented document upload. The PDF was independently inspected for synthetic name, email, phone, package and development/mock evidence.
+- Verification for this checkpoint: `npm run typecheck`, workspace production build, Compose config validation, `git diff --check`, live Docker quote conversation and live WebSocket replay passed. No unit tests were run per the current execution instruction. Development Redis ACL/password and restart-recovery checks remain intentionally unexercised.
+
+### Remaining blockers
+
+- The quote provider remains development/mock evidence; official pricing, Account creation, SF-02 attachment readback, invoice/payment provider settlement and contract signature verification still require provider-backed seven-stage acceptance.
+- Semantic `v2` identifiers and compatibility route names remain in active code, even though the source filenames/import paths are neutralized. Removing those identifiers is a separate breaking API cutover and was not silently performed.
+- The persistent n8n workflow database is runtime state and is not updated by Docker image rebuild alone; deployment must import/publish the checked-in workflow revision before treating a fresh environment as quote-ready.
+
+## 2026-11-10 intent catalog contract and Azure live verification
+
+- The canonical `BusinessGoals` catalog contract now carries human-editable keywords, customer expressions, required information, document references, ordered business steps, package/product references, authorized read tools and completion conditions. The API schema, workbook headers, ingestion parser, Python model contract and GPT envelope/tool projection are aligned.
+- The local `anc` tenant published catalog revision 12 was derived from the previous published catalog so existing enabled workflow bindings and package authorization were preserved while the structured company-formation goal data was added. Approved package offerings were re-pinned to the new catalog revision; the prior catalog remains retained as draft history.
+- A focused Azure live conversation recognized “I want to open a firm” semantically, requested explicit goal confirmation, then collected lead information. The live quote journey completed the development Lead, n8n quote action, authenticated PDF download and requirement-gated document upload; the PDF contained synthetic customer name, email, phone, package and mock-evidence text.
+- The 15-case Azure replay completed 14/15 cases; one turn returned a transient `V2_MODEL_INVALID_RESPONSE` 500 and the exact scenario passed on rerun. This remains a reliability follow-up rather than a catalog validation failure.

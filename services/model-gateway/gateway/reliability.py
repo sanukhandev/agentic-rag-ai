@@ -7,6 +7,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 
+def retry_delay_seconds(retry_index: int, retry_after: float | None = None) -> float:
+    delay = 3.0 * (2 ** max(0, retry_index))
+    return max(delay, retry_after or 0.0)
+
+
 class BudgetExceeded(Exception):
     pass
 
@@ -15,6 +20,37 @@ class RateLimitExceeded(Exception):
     def __init__(self, retry_after: float) -> None:
         super().__init__("model rate limit exceeded")
         self.retry_after = retry_after
+
+
+class QueueOverloaded(Exception):
+    def __init__(self, retry_after: float = 3.0) -> None:
+        super().__init__("conversation model queue is overloaded")
+        self.retry_after = retry_after
+
+
+class QueueAdmission:
+    """Bound model work and fail fast when waiting work would exceed the queue budget."""
+
+    def __init__(self, max_concurrency: int, max_queue: int, retry_after: float = 3.0) -> None:
+        self._semaphore = asyncio.Semaphore(max(1, max_concurrency))
+        self.max_queue = max(0, max_queue)
+        self.retry_after = max(0.1, retry_after)
+        self._waiting = 0
+        self._lock = asyncio.Lock()
+
+    async def acquire(self, budget: "TurnBudget") -> None:
+        async with self._lock:
+            if self._semaphore.locked() and self._waiting >= self.max_queue:
+                raise QueueOverloaded(self.retry_after)
+            self._waiting += 1
+        try:
+            await asyncio.wait_for(self._semaphore.acquire(), timeout=max(0.001, budget.remaining()))
+        finally:
+            async with self._lock:
+                self._waiting -= 1
+
+    def release(self) -> None:
+        self._semaphore.release()
 
 
 class TurnBudget:

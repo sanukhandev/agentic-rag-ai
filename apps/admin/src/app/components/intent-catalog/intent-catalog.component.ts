@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
 import { IntentCatalogService } from '../../services/intent-catalog.service';
-import { IntentCatalogVersion, IntentCatalogV2Version, IngestionJob, Tenant } from '../../types/admin.types';
+import { IntentCatalogVersion, IntentCatalogV2Version, IngestionJob, IntentVocabularyCandidate, Tenant } from '../../types/admin.types';
 import { BadgeComponent } from '../shared/badge.component';
 import { IconComponent } from '../shared/icon.component';
 import { ConfirmDialogComponent } from '../shared/confirm-dialog.component';
@@ -60,6 +60,24 @@ import { catalogLoadScope } from '../../services/intent-catalog-utils';
           </p>
         </div>
       </div>
+
+      <section *ngIf="vocabulary.length > 0 && (!isPlatformAdmin || selectedTenant)" class="rounded-2xl border border-violet-200 bg-violet-50/60 p-5" aria-label="Learned intent vocabulary audit">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 class="text-lg font-semibold text-neutral-900">Learned intent vocabulary</h3>
+            <p class="mt-1 text-xs text-neutral-600">Customer expressions are promoted only after independent support. Review or roll back automatic updates here.</p>
+          </div>
+          <button type="button" (click)="service.loadVocabulary()" class="rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-900">Refresh</button>
+        </div>
+        <div class="mt-4 overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="text-[10px] uppercase tracking-wider text-neutral-500"><tr><th class="pb-2 pr-3">Expression</th><th class="pb-2 pr-3">Intent</th><th class="pb-2 pr-3">State</th><th class="pb-2 pr-3">Evidence</th><th class="pb-2">Action</th></tr></thead>
+            <tbody>
+              <tr *ngFor="let candidate of vocabulary" class="border-t border-violet-200/70"><td class="py-2 pr-3 font-medium text-neutral-900">{{ candidate.phrase }}</td><td class="py-2 pr-3 font-mono text-neutral-700">{{ candidate.intentKey }}</td><td class="py-2 pr-3">{{ candidate.status }}</td><td class="py-2 pr-3">{{ candidate.sourceSessionIds.length }} sessions</td><td class="py-2"><div class="flex gap-2"><button *ngIf="candidate.status === 'candidate' || candidate.status === 'promotable'" type="button" (click)="rejectVocabulary(candidate)" class="rounded border border-rose-300 bg-white px-2 py-1 text-[11px] font-semibold text-rose-800">Reject</button><button *ngIf="candidate.status === 'promoted'" type="button" (click)="rollbackVocabulary(candidate)" class="rounded border border-amber-300 bg-white px-2 py-1 text-[11px] font-semibold text-amber-800">Rollback</button></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <!-- Version 2 catalogs are stored separately from the legacy V1 schema. -->
       <section *ngIf="!isPlatformAdmin || selectedTenant" class="space-y-4" aria-label="Catalog V2 versions">
@@ -348,6 +366,7 @@ export class IntentCatalogComponent {
   get v2CatalogError(): string | null { return this.service.v2CatalogError(); }
   get v2Loading(): boolean { return this.service.v2Loading(); }
   get publishedVersion(): IntentCatalogVersion | null { return this.versions.find((version) => version.status === 'published') ?? null; }
+  get vocabulary(): IntentVocabularyCandidate[] { return this.service.vocabulary(); }
 
   private lastLoadedScope: string | null = null;
   private lastLoadedToken: string | null = null;
@@ -402,6 +421,9 @@ export class IntentCatalogComponent {
     this.service.load();
     this.service.resumePendingJob();
   }
+
+  rejectVocabulary(candidate: IntentVocabularyCandidate): void { this.service.rejectVocabulary(candidate); }
+  rollbackVocabulary(candidate: IntentVocabularyCandidate): void { this.service.rollbackVocabulary(candidate); }
 
   signalsFor(version: IntentCatalogVersion, intentKey: string): IntentCatalogVersion['catalog']['signals'] {
     return version.catalog.signals.filter((signal) => signal.intentKey === intentKey);
