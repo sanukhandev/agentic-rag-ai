@@ -174,9 +174,12 @@ describe('V2 provider evidence route', () => {
   it('generates and serves one development quote through the internal API boundary', async () => {
     const pdfBytes = Buffer.from('%PDF-1.4\nsynthetic quote fixture\n%%EOF');
     const artifactHash = createHash('sha256').update(pdfBytes).digest('hex');
+    let renderPayload: Record<string, unknown> | null = null;
     const pdfServer = createServer(async (req, res) => {
       if (req.method === 'POST' && req.url === '/v1/render') {
-        for await (const _chunk of req) { /* consume the request body */ }
+        let body = '';
+        for await (const chunk of req) body += chunk.toString();
+        renderPayload = JSON.parse(body) as Record<string, unknown>;
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ artifactId: artifactHash, sha256: artifactHash, bytes: pdfBytes.length }));
         return;
@@ -202,16 +205,28 @@ describe('V2 provider evidence route', () => {
       const opportunityId = test.action.opportunityId!;
       const currentSession = await test.store.getSession(test.session.id);
       if (!currentSession?.conversationState) throw new Error('session state missing');
-      const session = { ...currentSession, conversationState: { ...currentSession.conversationState, contactConsent: 'granted' as const } };
+      const intentKey = currentSession.conversationState.intentProgress?.activeIntentKey ?? 'anc.company_formation';
+      const entry = currentSession.conversationState.intentProgress?.entries[intentKey];
+      if (!entry?.lifecycle || !entry.journeyId) throw new Error('synthetic lifecycle missing');
+      const qualified = completeLifecycleStage(completeLifecycleStage(completeLifecycleStage(entry.lifecycle, 'lead_generation', { leadVerified: true }), 'lead_qualification', { qualificationVerified: true }), 'account_creation', { accountProviderVerified: true });
+      const advancedEntry = { ...entry, lifecycle: qualified, revision: entry.revision + 3 };
+      const session = { ...currentSession, conversationState: { ...currentSession.conversationState, contactConsent: 'granted' as const, intentProgress: { ...currentSession.conversationState.intentProgress!, activeIntentKey: intentKey, entries: { ...currentSession.conversationState.intentProgress!.entries, [intentKey]: advancedEntry }, journeys: { ...currentSession.conversationState.intentProgress!.journeys, [entry.journeyId]: advancedEntry } } } };
       await test.store.updateSession(session);
+      const currentDocument = await test.store.getUserIntentDocument(test.tenant.id, session.id);
+      if (!currentDocument) throw new Error('synthetic intent document missing');
+      await test.store.updateUserIntentDocument({ document: { ...currentDocument, currentStageKey: 'package_selection', stageRevision: qualified.stages.package_selection.revision, revision: currentDocument.revision + 1, updatedAt: new Date().toISOString() }, expectedRevision: currentDocument.revision });
       await test.store.createCrmLead({ id: randomUUID(), tenantId: test.tenant.id, actionId: test.action.id, sessionId: session.id, intent: 'anc.company_formation', secondaryIntentKeys: [], intentScore: 95, intentConfidence: 0.98, catalogVersionId: test.published.catalogVersionRef, score: 95, contactCompletenessScore: 100, validationPass: true, qualificationStatus: 'qualified', qualificationEvidence: { source: 'synthetic-quote-api-test' }, leadData: { name: '[NAME_1]', email: '[EMAIL_1]', phone: '[PHONE_1]' }, conversation: [], summary: null, summaryStatus: 'pending', leadId: '00Q-SYNTHETIC-QUOTE', remoteCrm: 'deterministic_mock', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-      const offering = await test.store.createPackageOffering({ id: randomUUID(), tenantId: test.tenant.id, catalogVersionId: null, catalogVersionRef: test.published.catalogVersionRef, packageKey: 'anc-live-quote-test', name: 'ANCFZ synthetic quote package', eligibleEntityTypes: [], eligibleActivities: [], includedVisaQuantity: 1, officeRequirement: 'shared', inclusions: ['synthetic quote'], priceMinor: 100000, currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [], processingTime: 'development', requiredDocuments: [], exclusions: ['mock only'], availability: 'development_only', approvalStatus: 'approved', sourceRefs: ['synthetic-quote-api-test'], createdAt: new Date().toISOString() });
+      const offering = await test.store.createPackageOffering({ id: randomUUID(), tenantId: test.tenant.id, catalogVersionId: null, catalogVersionRef: test.published.catalogVersionRef, packageKey: 'anc-live-quote-test', name: 'ANCFZ synthetic quote package', eligibleEntityTypes: [], eligibleActivities: [], includedVisaQuantity: 1, officeRequirement: 'shared', inclusions: ['synthetic quote'], priceMinor: 100000, currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [], processingTime: 'development', requiredDocuments: ['identity_document'], exclusions: ['mock only'], availability: 'development_only', approvalStatus: 'approved', sourceRefs: ['synthetic-quote-api-test'], createdAt: new Date().toISOString() });
       const selection = await proposePackageSelectionAfterLead(test.store, session, offering.id);
       const action = await test.store.createAction({ id: randomUUID(), tenantId: test.tenant.id, sessionId: session.id, workflowKey: 'package.confirm', intentKey: 'anc.company_formation', catalogVersionId: test.published.catalogVersionRef, opportunityId, actionKey: 'package.confirm', actionRevision: 1, idempotencyKey: `package-confirm:${selection.id}`, state: 'approved', opaqueReference: 'synthetic-quote-action', payload: { contactConsent: true, slotValues: { packageKey: offering.packageKey, packageOfferingId: offering.id, selectionId: selection.id, packageConfirmation: 'true', packageActionConsent: 'true' } }, createdAt: new Date().toISOString(), result: null });
       const body = { actionId: action.id, tenantId: test.tenant.id, sessionId: session.id };
       const response = await request(test.runtime.app).post('/api/v1/internal/ancfz/quote-actions/execute').set('x-agentic-internal-secret', 'n'.repeat(64)).send(body);
       expect(response.status, JSON.stringify(response.body)).toBe(200);
       expect(response.body).toMatchObject({ verified: true, mock: true, quote: { status: 'approved', amountMinor: 100000, currency: 'AED' }, artifact: { sha256: artifactHash, mimeType: 'application/pdf' }, action: { state: 'completed' } });
+      expect(renderPayload).toMatchObject({ customer_name: 'Synthetic Customer', customer_email: 'synthetic.provider@example.test', customer_phone: '+971501234567' });
+      expect(await test.store.getUserIntentDocument(test.tenant.id, session.id)).toMatchObject({ currentStageKey: 'document_upload', pendingRequirementKey: 'document.identity.review' });
+      const transitionedSession = await test.store.getSession(session.id);
+      expect(transitionedSession?.conversationState?.intentProgress?.entries[intentKey]).toMatchObject({ currentRequirementKey: 'document.identity.review', lifecycle: { currentStage: 'document_upload' } });
       const quoteId = response.body.quote.id as string;
       const replay = await request(test.runtime.app).post('/api/v1/internal/ancfz/quote-actions/execute').set('x-agentic-internal-secret', 'n'.repeat(64)).send(body);
       expect(replay.status, JSON.stringify(replay.body)).toBe(200);

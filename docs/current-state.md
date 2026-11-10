@@ -325,3 +325,22 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Verification: API **65 files / 587 tests PASS**, API typecheck/lint PASS, lifecycle/catalog quote gate tests PASS, model-gateway **43 tests PASS**, Docker API rebuild/restart/health PASS, and secret-safe gateway readiness reports `mode=azure`, `deployment=gpt-5.4`, valid `/openai/v1`, one initial attempt plus up to three retries, 90-second deadline, concurrency 2, circuit closed.
 - Final local Docker Azure harness: **25/25 HTTP answers, 25 durable user messages, conversation gate PASS**. Licensing returned process evidence rather than package/cost prose; explicit package information remained catalog-backed; no CRM completion or later-stage completion was claimed. Evidence: `artifacts/ancfz/azure-intent-quote-retest-2026-11-09-final6-scored.json`.
 - Quote scope remains stage 1–4 only and development/mock-only. Existing lifecycle coverage verifies the approved package → quote artifact → authenticated download boundary; no new external Salesforce write, charge, signature, document upload, payment or contract action was triggered by this retest. Overall status remains **NOT_READY** for the full seven-stage acceptance and formal human-quality gate.
+
+## 2026-11-09 V2 natural contact-name cursor fix
+
+- V2 now recognizes a bounded natural name such as `Adnan Kazi` only while the catalog-pinned `lead_contact_name` requirement is active. The value is routed through the existing session token vault before persistence, Azure context, intent evidence and response composition; the default token-only `extractLeadData` contract is unchanged.
+- The contact cursor now owns non-knowledge, non-package turns while the name is missing, so qualification text cannot be mistaken for a name or leave the conversation in a generic model fallback. Package and knowledge questions remain answerable without creating a Lead.
+- Verification: focused V2/model tests **65 files / 589 tests PASS**, full workspace tests **admin 71, web 16, API 589, chat-utils 6, contracts 6 PASS**, typecheck/lint/build **PASS**, and the rebuilt local Docker API returned `ready` in Azure mode with deployment `gpt-5.4`.
+- Existing local Azure quote harness completed a synthetic Lead, development package selection, verified mock quote and authenticated PDF download; quote evidence remains development/mock-only. The exact bare-name regression is covered by the new V2 controller test; no production provider configuration was changed.
+
+## 2026-11-09 Dev session ID visibility flag
+
+- The web image always compiles with `NODE_ENV=production`, so the development Session ID chip is now controlled by the explicit build-time `NEXT_PUBLIC_DEV_SESSION_ID` flag instead of `NODE_ENV`.
+- Local `.env` and the VM `.env` use `NEXT_PUBLIC_DEV_SESSION_ID=true`; the example defaults to false. The chip remains opt-in and exposes only the existing session ID and copy action.
+
+## 2026-11-10 quote-to-document handoff and quote contact snapshot
+
+- The local development quote executor now resolves the verified CRM Lead for the same session, rehydrates name/email/phone only at the private PDF boundary, and renders all three fields as separate customer rows. Missing or invalid contact data fails with `QUOTE_CUSTOMER_DETAILS_REQUIRED` before a new artifact is rendered.
+- After a verified development quote, Node resolves the active required document policy from the session-pinned published catalog and OCR registry, persists the same opportunity at `document_upload`, and repairs the legacy pending cursor so the next Azure-composed turn exposes the active policy key. The development-only Lead-to-quote shortcut is explicitly handled; production quote workflow behavior is unchanged.
+- Docker verification on 2026-11-10 used Azure model mode (`gpt-5.4`) and synthetic data only: Lead `completed`, quote execution HTTP 200 (`verified: true`, `mock: true`), authenticated PDF download HTTP 200, PDF text contained synthetic name/email/phone, the next turn exposed `document.identity.review`, and consented synthetic PNG upload returned HTTP 202. Redacted export: `docs/verification/document-upload-quote-contact-e2e-2026-11-09.json`.
+- This remains development/mock quote evidence. It does not claim Account conversion, official ANCFZ pricing, Salesforce SF-02 attachment, payment, invoice settlement or contract completion.
