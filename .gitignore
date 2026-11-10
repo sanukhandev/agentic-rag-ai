@@ -33,6 +33,7 @@ docs/feature-specs
 /artifacts/agentic-e2e/final-scorecard.json
 /artifacts/agentic-e2e/latest.*
 /artifacts/ancfz-sandbox*/
+/artifacts/quote-sandbox*/
 /artifacts/ancfz-single-journey/*.json
 /artifacts/ANCFZ_Intent_Catalog_Executable_Proposal_*.json
 /artifacts/ancfz-catalog-executable-proposal-*.json
