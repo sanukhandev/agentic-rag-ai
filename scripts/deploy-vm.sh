@@ -21,6 +21,8 @@ git pull --ff-only origin "$BRANCH"
 # No service list: this deliberately builds every service with a Dockerfile target.
 COMPOSE_FILES=(-f docker-compose.yml)
 docker compose --env-file .env "${COMPOSE_FILES[@]}" config --quiet
+docker compose --env-file .env "${COMPOSE_FILES[@]}" up -d postgres --wait
+node scripts/migrate-vm.mjs
 docker compose --env-file .env "${COMPOSE_FILES[@]}" build --pull
 docker compose --env-file .env "${COMPOSE_FILES[@]}" up --detach --force-recreate --remove-orphans --wait
 

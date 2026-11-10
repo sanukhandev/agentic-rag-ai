@@ -27,6 +27,7 @@
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose stop postgres",
     "db:migrate": "node scripts/migrate-local.mjs",
+    "db:migrate:vm": "node scripts/migrate-vm.mjs",
     "test:unit": "npm run test --workspaces --if-present"
   },
   "devDependencies": {

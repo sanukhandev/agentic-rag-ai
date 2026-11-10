@@ -1,0 +1,22 @@
+{
+  "generatedAt": "2026-11-10T12:32:00Z",
+  "environment": {
+    "entrypoint": "local nginx",
+    "origin": "http://localhost",
+    "azureModelMode": true,
+    "syntheticDataOnly": true
+  },
+  "events": [
+    "authenticated",
+    "turn.accepted",
+    "assistant.message",
+    "turn.completed"
+  ],
+  "clientMessageId": "live-ws-greeting-20261110",
+  "answer": "Hello! I can help you explore Start a Company. What would you like to understand first?",
+  "accepted": true,
+  "notes": [
+    "A preliminary probe with Origin http://localhost:3000 returned 502 because local public-origin allowlisting is http://localhost; the actual public origin passed.",
+    "No provider side effect was requested by this WebSocket smoke test."
+  ]
+}

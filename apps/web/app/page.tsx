@@ -731,6 +731,10 @@ export default function Home() {
 
   const reset = () => {
     window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
+    window.localStorage.removeItem(`agentic-rag-session-token:${tenantSlug}`);
+    sessionTokenRef.current = null;
+    streamRef.current?.close();
+    streamRef.current = null;
     setSessionId(null);
     setSessionCopied(false);
     setPendingIntentKey(null);

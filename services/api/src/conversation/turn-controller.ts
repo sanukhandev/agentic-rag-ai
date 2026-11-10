@@ -11,7 +11,7 @@ import { proposeV2CatalogAction, v2ActionConsentScope } from './action-gate.js';
 import { extractQuotedV2CustomerFacts, validateQuotedV2CustomerFacts } from './customer-fact-provenance.js';
 import { contextForConfirmedV2Action, initializeConfirmedV2Journey } from './journey-bootstrap.js';
 import type { ActionGateway } from '../actions.js';
-import { classifyOfferReplyDeterministically, extractLeadData } from '../model.js';
+import { classifyOfferReplyDeterministically, extractLeadData, normalizePendingLeadName } from '../model.js';
 import { HttpError } from '../http/errors.js';
 import { contextualizeV2KnowledgeQuery, isV2FactualKnowledgeQuestion, prefetchV2ApprovedKnowledge } from './knowledge-preflight.js';
 import { KnowledgeRetrievalError } from '../knowledge.js';
@@ -75,6 +75,15 @@ const safeFactValue = (value: string | undefined, max: number): string | undefin
   value && value.trim().length <= max && !/[\r\n<>@]/u.test(value) && !/https?:\/\//iu.test(value)
     && !/\+?\d[\d()\s-]{7,}/u.test(value) ? value.trim() : undefined;
 
+const safePendingLeadName = (value: string): string | undefined => {
+  const candidate = normalizePendingLeadName(value);
+  const namePart = String.raw`[\p{L}\p{M}][\p{L}\p{M}\d]*(?:['’.-][\p{L}\p{M}\d]+)*`;
+  return candidate.split(/\s+/u).filter(Boolean).length <= 6
+    && safeFactValue(candidate, 120)
+    && new RegExp(`^${namePart}(?:\\s+${namePart}){0,5}$`, 'u').test(candidate)
+    ? candidate : undefined;
+};
+
 export const isCommercialDocumentRequest = (message: string): boolean =>
   /\b(?:document|documents|paperwork)\b/iu.test(message)
   && !/\b(?:status|uploaded|submitted|already|missing)\b/iu.test(message);
@@ -134,13 +143,17 @@ const explicitLeadActionConfirmation = (message: string): boolean =>
   /\b(?:confirm|confirmed|authorize|authorized|approve|approved)\b[\s\S]{0,80}\b(?:lead|submission|submit)\b/iu.test(message)
   || /\bconfirm\s+the\s+authorized\s+submission\b/iu.test(message);
 
+const explicitContactConsent = (message: string): boolean =>
+  /^\s*(?:yes|yes,?\s*(?:please|i do)|i consent|i agree|go ahead)\s*[.!]?\s*$/iu.test(message)
+  || /\b(?:consent|permission|authorize)\b[\s\S]{0,80}\b(?:contact|details|use)\b/iu.test(message);
+
 export const isV2PackageQuestion = (message: string): boolean =>
   /\b(?:package|packages|price|prices|pricing|cost|costs|fee|fees)\b/iu.test(message)
   || /\b(?:package|plan|tier)\s+(?:option|options|choice|choices)\b/iu.test(message);
 
 /** Called after HTTP authentication and durable message-idempotency checks. */
 export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
-  const { store, session, tenant, userMessage, coordinator, maskedMessage } = input;
+  let { store, session, tenant, userMessage, coordinator, maskedMessage } = input;
   if (session.tenantId !== tenant.id || userMessage.sessionId !== session.id || userMessage.tenantId !== tenant.id) {
     throw new HttpError(403, 'V2_TENANT_SCOPE_DENIED', 'Conversation scope does not match.');
   }
@@ -232,15 +245,26 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     .filter(([, item]) => item.source === 'node' || item.source === 'visitor')
     .map(([key, item]) => [key, item.maskedValue])) : {};
   const persistedContact = { ...originalState.slotValues, ...(entry?.slotValues ?? {}) };
-  const contactFromMessage = extractLeadData(maskedMessage);
-  const contactSlots: Record<string, string> = Object.fromEntries(Object.entries(contactFromMessage).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
-  const contactValues = { ...persistedContact, ...contactSlots };
+  const extractedContact = extractLeadData(maskedMessage);
   const contactActive = Boolean(catalogV2 && intentDocument?.goalConfirmed
-    && (/(?:contact|crm_consent|action_confirmation)/iu.test(priorPendingRequirement ?? '') || Object.keys(contactFromMessage).length > 0));
+    && (/(?:contact|crm_consent|action_confirmation)/iu.test(priorPendingRequirement ?? '') || Object.keys(extractedContact).length > 0));
   const nameRequirementKey = catalogV2 ? contactRequirementKey(catalogV2, intentDocument?.businessGoalKey ?? null, 'contact_name') : null;
   const channelRequirementKey = catalogV2 ? contactRequirementKey(catalogV2, intentDocument?.businessGoalKey ?? null, 'contact_channel') : null;
   const consentRequirementKey = catalogV2 ? contactRequirementKey(catalogV2, intentDocument?.businessGoalKey ?? null, 'crm_consent') : null;
   const actionConfirmationRequirementKey = catalogV2 ? contactRequirementKey(catalogV2, intentDocument?.businessGoalKey ?? null, 'action_confirmation') : null;
+  const pendingNameCandidate = contactActive && Boolean(nameRequirementKey)
+    && priorPendingRequirement === nameRequirementKey && !extractedContact.name
+    ? safePendingLeadName(maskedMessage) : null;
+  const pendingNameToken = pendingNameCandidate
+    ? extractLeadData(maskPiiForSession(session, `My name is ${pendingNameCandidate}`, input.tokenVault)).name ?? null
+    : null;
+  if (pendingNameToken) {
+    maskedMessage = `My name is ${pendingNameToken}`;
+    userMessage = await store.updateMessage({ ...userMessage, maskedContent: maskedMessage });
+  }
+  const contactFromMessage = { ...extractedContact, ...(pendingNameToken ? { name: pendingNameToken } : {}) };
+  const contactSlots: Record<string, string> = Object.fromEntries(Object.entries(contactFromMessage).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+  const contactValues = { ...persistedContact, ...contactSlots };
   const resolvedConsentRequirementKey = consentRequirementKey ?? (/contact.*consent/iu.test(priorPendingRequirement ?? '') ? priorPendingRequirement : null);
   const nextContactRequirement = contactActive
     ? !contactValues.name ? nameRequirementKey
@@ -483,7 +507,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         ? prompt('slot', activeGoal, proposedRequirement.slotKey, proposedRequirement.requirementKey)
         : null);
   const contactDecision = contactActive && (pendingRequirement === resolvedConsentRequirementKey || nextContactRequirement === resolvedConsentRequirementKey)
-    ? input.postbackValue === 'v2:contact-consent:grant' ? 'granted' : null : null;
+    ? (input.postbackValue === 'v2:contact-consent:grant' || explicitContactConsent(maskedMessage)) ? 'granted' : null : null;
   const contactConsent = contactDecision ?? originalState.contactConsent;
   const contactRequirementAfterDecision = contactActive
     ? !contactValues.name ? nameRequirementKey
@@ -549,10 +573,12 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const at = new Date().toISOString();
   const requirementGoal = catalogV2?.sheets.BusinessGoals.find(goal => goal.active
     && goal.businessGoalKey === selectedV2Goal) ?? null;
+  const greetingTurn = /^(?:hello|hi|hey|good\s+(?:morning|afternoon|evening))\b/iu.test(maskedMessage);
+  const documentQuestion = /\b(?:document|documents|passport|identity|upload|provide|next)\b/iu.test(maskedMessage);
   // Advisory/knowledge-only turns cannot activate a business journey. A new
   // prompt must be tied to observed, validated business-goal planning.
   const shouldPrompt = Boolean(catalogV2 && requirementGoal?.confirmationRequired
-    && !intentDocument?.goalConfirmed && !pendingDecision && !decision
+    && !intentDocument?.goalConfirmed && !pendingDecision && !decision && !greetingTurn
     && (commercialDocumentRequest || (validPlan
       && (planningDecision?.score?.thresholdMet || semanticGoalCandidate) && !planningDecision?.score?.ambiguous
       && intentEvidence?.initiation === 'explicit'
@@ -599,7 +625,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         customerClientMessageId: input.clientMessageId, decidedAt: at,
         decisionSessionRevision: sessionRevision, decisionIntentRevision: intentDocument!.revision };
       effectivePendingRequirement = nameRequirementKey ?? 'lead_contact_name';
-      effectiveAnswer = `Understood. We’ll focus on ${goalName.toLowerCase()}. I’ll first register your enquiry, then guide you through the approved packages and quote. What full name should I use for the Lead?`;
+      effectiveAnswer = `Understood. We’ll focus on ${goalName}. I’ll first register your enquiry, then guide you through the approved packages and quote. What full name should I use for the Lead?`;
       effectiveQuestion = 'What full name should I use for the Lead?';
       overrideResponse = true;
     } else if (decision === 'rejected' || decision === 'corrected') {
@@ -633,7 +659,18 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       personaVersionId: persona.id, sessionRevision: sessionRevision + 1,
       intentRevision: (intentDocument?.revision ?? -1) + 1, issuedAt: at };
     effectiveQuestion = 'Would you like to proceed with ' + requirementGoal.name.toLowerCase() + '?';
-    effectiveAnswer = `I can help with ${requirementGoal.name.toLowerCase()}. Before we collect documents, I’ll register your enquiry, gather the necessary details, then show you the approved package options and prepare the quote. ${effectiveQuestion}`;
+    const requestedDocument = documentQuestion
+      ? catalogV2!.sheets.DocumentPolicies.find(policy => policy.goalKey === selectedV2Goal && policy.required && policy.enabled)
+      : null;
+    effectiveAnswer = requestedDocument
+      ? `For ${requirementGoal.name}, the current journey includes a required identity document step. I can collect it after you confirm the enquiry. ${effectiveQuestion}`
+      : `I can help with ${requirementGoal.name.toLowerCase()}. Before we collect documents, I’ll register your enquiry, gather the necessary details, then show you the approved package options and prepare the quote. ${effectiveQuestion}`;
+    overrideResponse = true;
+  }
+  if (greetingTurn && !intentDocument?.goalConfirmed && !pendingDecision && !isV2FactualKnowledgeQuestion(maskedMessage)) {
+    const goalLabel = requirementGoal?.name ?? 'your options';
+    effectiveAnswer = `Hello! I can help you explore ${goalLabel}. What would you like to understand first?`;
+    effectiveQuestion = 'What would you like to understand first?';
     overrideResponse = true;
   }
   if (pendingDecision && !overrideResponse
@@ -657,6 +694,18 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       effectiveAnswer = 'Thanks, I’ve recorded your contact consent. When you are ready, please explicitly confirm that you want me to submit the Lead.';
       effectiveQuestion = 'Would you like me to submit the Lead?';
     }
+    overrideResponse = true;
+  }
+  // A pending document requirement is authoritative context. If the model or
+  // response guard cannot produce a useful handoff, ask for that requirement
+  // directly instead of repeating the generic grounding fallback.
+  const pendingDocumentRequirement = Boolean(effectivePendingRequirement?.startsWith('document.'));
+  const documentAnswer = /\b(?:document|passport|identity|upload)\b/iu.test(effectiveAnswer);
+  if (catalogV2 && intentDocument?.goalConfirmed && pendingDocumentRequirement && documentQuestion
+      && (!documentAnswer || result.guardReason !== 'accepted')) {
+    const label = /identity/iu.test(effectivePendingRequirement ?? '') ? 'identity document' : 'required document';
+    effectiveAnswer = `To continue your company-formation enquiry, please provide your ${label}. You can upload it here when you’re ready.`;
+    effectiveQuestion = 'Would you like to upload it now?';
     overrideResponse = true;
   }
   // Persist only facts that Node already verified in its session/intent store.

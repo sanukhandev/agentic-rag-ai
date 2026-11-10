@@ -44,6 +44,7 @@ function responseSummary(response) {
     status: response.status,
     answer: typeof response.body.answer === 'string' ? redact(response.body.answer) : null,
     grounded: response.body.grounded ?? null,
+    citationCount: Array.isArray(response.body.citations) ? response.body.citations.length : 0,
     pendingIntentKey: response.body.pendingIntentKey ?? null,
     pendingRequirementKey: response.body.pendingRequirementKey ?? null,
     actionProposal: response.body.actionProposal ? {
@@ -189,7 +190,9 @@ if (leadCompleted && selectedPackage && packagesResponse.status === 200) {
       mock: completedAction?.result?.artifactId ? true : false,
       n8nDispatched: completedAction?.state === 'completed',
       quoteIdDigest: quote?.id ? digest(quote.id) : null,
-      totalAed: quote?.totalAed ?? null,
+      amountMinor: quote?.amountMinor ?? null,
+      currency: quote?.currency ?? null,
+      totalAed: Number.isFinite(quote?.amountMinor) && quote?.currency === 'AED' ? quote.amountMinor / 100 : null,
       artifact: completedAction?.result?.artifactFileName ? { fileName: completedAction.result.artifactFileName, mimeType: completedAction.result.artifactMimeType, sha256: completedAction.result.artifactSha256 } : null,
       error: completedAction?.state !== 'completed' || errorCode(quoteResponse.body) ? { code: errorCode(quoteResponse.body) ?? `QUOTE_ACTION_${completedAction?.state ?? 'UNKNOWN'}`, message: redact(errorMessage(quoteResponse.body) ?? 'The n8n quote workflow did not complete.') } : null,
     };
@@ -247,9 +250,31 @@ const report = {
   packageSelection,
   quote: { actionIdDigest: quoteAction?.id ? digest(quoteAction.id) : null, state: quoteAction?.state ?? null, execution: quoteExecution, download: quoteDownload, nextDocumentTurn: documentPrompt },
   documents: { configStatus: documentConfig.status, config: documentConfig.body?.enabled === undefined ? null : { enabled: documentConfig.body.enabled, workflowKey: documentConfig.body.workflowKey ?? null, allowedMimeTypes: documentConfig.body.allowedMimeTypes ?? [], requirements: (documentConfig.body.requirements ?? []).map((requirement) => ({ intentKey: requirement.intentKey, requirementKey: requirement.requirementKey, documentType: requirement.documentType })) }, uploads: documentUploads },
-  outcome: { quoteGenerated: Boolean(quoteExecution?.verified && quoteDownload?.status === 200), quoteDownloadable: Boolean(quoteDownload?.status === 200), documentPromptExposed: documentPromptMatchesPolicy, documentUploadAccepted: documentUploads.some((item) => item.accepted), leadActionCompleted: leadAction?.action?.state === 'completed', providerGate: leadAction?.action?.state === 'reconcile_required' ? 'salesforce_or_n8n_reconciliation_required' : leadCompleted ? null : 'lead_provider_not_verified' },
+  outcome: {},
+};
+const assistantAnswers = transcript.map((entry) => entry.assistant?.answer).filter((answer) => typeof answer === 'string' && answer.trim());
+const normalizedAnswers = assistantAnswers.map((answer) => answer.toLowerCase().replace(/\s+/g, ' ').trim());
+const repeatedAnswers = [...new Set(normalizedAnswers.filter((answer, index) => normalizedAnswers.indexOf(answer) !== index))];
+const fallbackAnswers = assistantAnswers.filter((answer) => /approved information is temporarily unavailable|couldn.t find approved|official setup guide is published|cannot verify that answer safely|could not continue the conversation/iu.test(answer));
+const documentQuestionTurns = transcript.filter((entry) => /\b(?:document|provide|upload|next)\b/iu.test(entry.user ?? ''));
+const documentAnswerPresent = documentQuestionTurns.some((entry) => Boolean(entry.assistant?.answer)
+  && /\b(?:document|passport|identity|upload)\b/iu.test(entry.assistant.answer)
+  && !/would you like me to proceed with|before we collect documents[\s\S]*proceed/iu.test(entry.assistant.answer));
+const conversationAccepted = fallbackAnswers.length === 0 && repeatedAnswers.length === 0 && documentAnswerPresent;
+report.outcome = {
+  conversationAccepted,
+  repeatedAssistantResponses: repeatedAnswers.length,
+  fallbackResponses: fallbackAnswers.length,
+  documentAnswerPresent,
+  quoteGenerated: Boolean(conversationAccepted && quoteExecution?.verified && quoteDownload?.status === 200),
+  quoteDownloadable: Boolean(conversationAccepted && quoteDownload?.status === 200),
+  documentPromptExposed: documentPromptMatchesPolicy,
+  documentUploadAccepted: documentUploads.some((item) => item.accepted),
+  leadActionCompleted: leadAction?.action?.state === 'completed',
+  providerGate: leadAction?.action?.state === 'reconcile_required' ? 'salesforce_or_n8n_reconciliation_required' : leadCompleted ? null : 'lead_provider_not_verified',
 };
 await writeFile(reviewPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
 console.log(JSON.stringify({ reviewPath, outcome: report.outcome, leadState: report.lead.state, quoteState: report.quote.state, quoteExecution: report.quote.execution, documentUploads: report.documents.uploads }, null, 2));
-if (!report.outcome.quoteGenerated) process.exitCode = 2;
+if (!report.outcome.conversationAccepted) process.exitCode = 4;
+else if (!report.outcome.quoteGenerated) process.exitCode = 2;
 else if (documentConfig.body?.enabled === true && !report.outcome.documentPromptExposed) process.exitCode = 3;
