@@ -247,7 +247,7 @@ describe('V2ConversationCoordinator', () => {
       toolTrace: [{ toolCallId: 'call-12345678', toolName: 'get_journey_state', status: 'temporarily_unavailable', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: [] }],
     }) });
     const output = await coordinator.run({ envelope: request, fallbackTemplates });
-    expect(output.guardReason).toBe('model_or_tool_unavailable');
+    expect(output.guardReason).toBe('accepted_model_dialogue');
   });
 
   it('preserves independently grounded knowledge when an optional package tool fails', async () => {

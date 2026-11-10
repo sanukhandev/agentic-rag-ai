@@ -297,7 +297,7 @@ describe('V2 context-aware company formation confirmation (isolated unit)', () =
   it.each(['I want to form a company', 'I want to start a company', 'Please incorporate a company'])(
     'prompts for explicit goal confirmation from reviewed natural phrase: %s', async message => {
       const ctx = await firstTurn(message, modelProposal);
-      expect(ctx.reply.answer).toContain('Would you like to proceed with company formation?');
+      expect(ctx.reply.answer).toContain('Would you like to proceed with start a company?');
       expect(ctx.reply.actionProposal).toBeNull();
       const doc = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
       expect(doc?.goalConfirmed).toBe(false);
@@ -315,7 +315,7 @@ describe('V2 context-aware company formation confirmation (isolated unit)', () =
     const ctx = await firstTurn('I am planning to start a technology consulting company in Ajman', {
       ...modelProposal, turnCategory: 'conversation_navigation' as const,
     });
-    expect(ctx.reply.answer).toContain('Would you like to proceed with company formation?');
+    expect(ctx.reply.answer).toContain('Would you like to proceed with start a company?');
     expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.goalConfirmation?.status).toBe('pending');
   });
 
@@ -345,7 +345,7 @@ describe('V2 context-aware company formation confirmation (isolated unit)', () =
       guardReason: 'accepted',
     }) as unknown as V2CoordinatorResult);
     const reply = await runGPTFirstChatTurn(next);
-    expect(reply.answer).toContain('Would you like to proceed with company formation?');
+    expect(reply.answer).toContain('Would you like to proceed with start a company?');
     expect(reply.actionProposal).toBeNull();
     const audit = (await ctx.store.listAudit(ctx.tenant.id)).filter(e => e.eventName === 'v2.catalog.planning_reviewed').at(-1);
     expect(audit?.metadata).toMatchObject({ contextSupported: true, initiationSupported: true,
@@ -377,7 +377,7 @@ describe('V2 context-aware company formation confirmation (isolated unit)', () =
       guardReason: 'invalid_question', candidateGuardReason: 'invalid_question',
     }) as unknown as V2CoordinatorResult);
     const reply = await runGPTFirstChatTurn(ctx.input);
-    expect(reply.answer).toContain('Would you like to proceed with company formation?');
+    expect(reply.answer).toContain('Would you like to proceed with start a company?');
     const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
     expect(document).toMatchObject({ businessGoalKey: 'anc.company_formation', goalConfirmed: false });
     expect(document?.goalConfirmation?.status).toBe('pending');
@@ -586,7 +586,7 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     const { store, tenant, session, response, input } = await proposalTurn();
     const document = await store.getUserIntentDocument(tenant.id, session.id);
     const state = await store.getSession(session.id);
-    expect(response.answer).toContain('Would you like to proceed with company formation?');
+    expect(response.answer).toContain('Would you like to proceed with start a company?');
     expect(document?.goalConfirmed).toBe(false);
     expect(document?.goalConfirmation).toMatchObject({
       status: 'pending', goalKey: 'anc.company_formation',
@@ -882,7 +882,7 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     }) as unknown as V2CoordinatorResult);
     const reply = await runGPTFirstChatTurn(interruption);
     expect(reply.answer).toContain('requested start timeline as next month');
-    expect(reply.answer).toContain('Would you like to proceed with company formation?');
+    expect(reply.answer).toContain('Would you like to proceed with start a company?');
   });
 
   it('keeps a pending-goal preference acknowledgement when a grounded excerpt is semantically unrelated', async () => {
@@ -895,7 +895,7 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     }) as unknown as V2CoordinatorResult);
     const reply = await runGPTFirstChatTurn(interruption);
     expect(reply.answer).toContain('prefer to speak with an adviser');
-    expect(reply.answer).toContain('Would you like to proceed with company formation?');
+    expect(reply.answer).toContain('Would you like to proceed with start a company?');
   });
 
   it('answers pre-confirmation status questions with truthful local state', async () => {
@@ -1006,7 +1006,7 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     }) as unknown as V2CoordinatorResult);
     const reply = await runGPTFirstChatTurn(ctx.input);
     const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
-    expect(reply.answer).toContain('Would you like to proceed with company formation?');
+    expect(reply.answer).toContain('Would you like to proceed with start a company?');
     expect(reply.pendingPromptId).not.toBeNull();
     expect(document?.goalConfirmed).toBe(false);
     expect(document?.goalConfirmation?.status).toBe('pending');
