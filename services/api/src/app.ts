@@ -545,12 +545,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const documentStorage = new PrivateDocumentStorage(dependencies.documentStorageRoot ?? process.env.SUPPORTING_DOCUMENT_ROOT ?? join(process.cwd(), 'data', 'supporting-documents'));
   const localQuoteWorkflowEnabled = nodeEnv !== 'production' && process.env.ANCFZ_LOCAL_QUOTE_WORKFLOW === 'true';
   // shortcut: local development uses Node as the verified quote/PDF boundary; upgrade when an approved quote provider and stage readback are wired.
-  const renderDevelopmentQuotePdf = async (quote: Awaited<ReturnType<typeof createDevelopmentQuoteAfterLead>>, packageName: string): Promise<{ artifactId: string; sha256: string; fileName: string; mimeType: 'application/pdf'; storageKey: string }> => {
+  const renderDevelopmentQuotePdf = async (quote: Awaited<ReturnType<typeof createDevelopmentQuoteAfterLead>>, packageName: string, customer: { name: string; email: string; phone: string }): Promise<{ artifactId: string; sha256: string; fileName: string; mimeType: 'application/pdf'; storageKey: string }> => {
     const renderUrl = process.env.ANCFZ_PDF_INTERNAL_URL ?? '';
     const apiKey = process.env.ANCFZ_PDF_API_KEY ?? '';
     if (!renderUrl || !apiKey) throw new HttpError(503, 'QUOTE_PDF_UNAVAILABLE', 'The development PDF service is not configured.');
     const amount = (quote.amountMinor / 100).toFixed(2);
-    const payload = { mode: 'MOCK', document_type: 'quote', reference: quote.id, issue_date: quote.createdAt.slice(0, 10), due_date: quote.validUntil.slice(0, 10), currency: quote.currency, customer_label: 'ANCFZ customer', seller_label: 'ANCFZ development workspace', tax_amount: '0.00', grand_total: amount, items: [{ description: packageName, quantity: '1', unit_price: amount }] };
+    const payload = { mode: 'MOCK', document_type: 'quote', reference: quote.id, issue_date: quote.createdAt.slice(0, 10), due_date: quote.validUntil.slice(0, 10), currency: quote.currency, customer_label: customer.name, customer_name: customer.name, customer_email: customer.email, customer_phone: customer.phone, seller_label: 'ANCFZ development workspace', tax_amount: '0.00', grand_total: amount, items: [{ description: packageName, quantity: '1', unit_price: amount }] };
     const rendered = await fetch(renderUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15_000) });
     if (!rendered.ok) throw new HttpError(502, 'QUOTE_PDF_RENDER_FAILED', 'The development quote PDF could not be rendered.');
     const metadata = await rendered.json() as { artifactId?: unknown; sha256?: unknown; bytes?: unknown };
@@ -565,6 +565,40 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     if (existing) { if (documentSha256(existing) !== metadata.sha256) throw new HttpError(409, 'QUOTE_PDF_CONFLICT', 'A different quote PDF already exists for this quote.'); }
     else await documentStorage.write(storageKey, bytes);
     return { artifactId: metadata.artifactId, sha256: metadata.sha256, fileName: `ancfz-development-quote-${quote.id}.pdf`, mimeType: 'application/pdf', storageKey };
+  };
+  const resolveQuoteCustomer = async (session: Session): Promise<{ name: string; email: string; phone: string }> => {
+    const lead = await store.getCrmLeadBySessionId(session.id, session.tenantId);
+    const rehydrate = (value: string): string => rehydrateForSession(session, value, tokenVault, 'admin_crm').trim();
+    const customer = { name: lead?.leadData.name ? rehydrate(lead.leadData.name) : '', email: lead?.leadData.email ? rehydrate(lead.leadData.email) : '', phone: lead?.leadData.phone ? rehydrate(lead.leadData.phone) : '' };
+    if (!lead?.validationPass || !isValidLeadName(customer.name) || !isValidLeadEmail(customer.email) || !isValidLeadPhone(customer.phone)) throw new HttpError(409, 'QUOTE_CUSTOMER_DETAILS_REQUIRED', 'The verified customer contact details are required before a quote can be rendered.');
+    return customer;
+  };
+  const resolveActiveDocumentRequirementKey = async (tenantId: string, catalogVersionRef: string | null, goalKey: string | null): Promise<string | null> => {
+    if (!catalogVersionRef || !goalKey) return null;
+    const version = (await store.listIntentCatalogV2Versions(tenantId)).find((candidate) => candidate.status === 'published' && (candidate.id === catalogVersionRef || candidate.catalogVersionRef === catalogVersionRef));
+    if (!version) return null;
+    const binding = version.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === 'anc.document.ocr.extract' && candidate.enabled);
+    const tool = version.catalog.sheets.ToolBindings.find((candidate) => ['document.ocr.extract', 'document.sf02_upload'].includes(candidate.toolKey) && candidate.goalKey === goalKey && candidate.enabled && candidate.stageKey === 'document_upload');
+    return binding && tool ? version.catalog.sheets.DocumentPolicies.find((policy) => policy.goalKey === goalKey && policy.stageKey === 'document_upload' && policy.required && policy.enabled)?.policyKey ?? null : null;
+  };
+  const handoffDevelopmentQuoteToDocumentStage = async (session: Session, opportunityId: string, requirementKey: string): Promise<void> => {
+    const current = await store.getSession(session.id);
+    const state = current?.conversationState;
+    const intentKey = state?.activeFollowUpIntentKey ?? state?.intentProgress?.activeIntentKey ?? state?.selectedIntentKey;
+    const entry = intentKey ? state?.intentProgress?.entries[intentKey] : null;
+    if (!current || !state || !entry || entry.journeyId !== opportunityId || !entry.lifecycle) return;
+    if (entry.lifecycle.currentStage !== 'document_upload') {
+      // The local Lead-to-quote shortcut intentionally omits Account creation;
+      // keep its verified quote handoff usable without enabling this bypass in production.
+      const lifecycle = { ...entry.lifecycle, currentStage: 'document_upload' as const, revision: entry.lifecycle.revision + 1, stages: { ...entry.lifecycle.stages, document_upload: { ...entry.lifecycle.stages.document_upload, status: 'awaiting_customer' as const } } };
+      const nextEntry = { ...entry, lifecycle, currentRequirementKey: requirementKey, revision: entry.revision + 1 };
+      const nextProgress = { ...(state.intentProgress!), entries: { ...(state.intentProgress?.entries ?? {}), [intentKey!]: nextEntry }, journeys: { ...(state.intentProgress?.journeys ?? {}), [entry.journeyId]: nextEntry }, journeyRevision: Math.max(state.intentProgress?.journeyRevision ?? 0, lifecycle.revision) };
+      await updateSessionSafely({ ...current, conversationState: { ...state, intentProgress: nextProgress } }, true, 'workflow');
+    } else if (entry.currentRequirementKey !== requirementKey) {
+      const nextEntry = { ...entry, currentRequirementKey: requirementKey, revision: entry.revision + 1 };
+      const nextProgress = { ...(state.intentProgress!), entries: { ...(state.intentProgress?.entries ?? {}), [intentKey!]: nextEntry }, journeys: { ...(state.intentProgress?.journeys ?? {}), [entry.journeyId]: nextEntry }, journeyRevision: state.intentProgress?.journeyRevision ?? 0 };
+      await updateSessionSafely({ ...current, conversationState: { ...state, intentProgress: nextProgress } }, true, 'workflow');
+    }
   };
   const mockDocumentProvider = dependencies.v2DocumentProvider ?? (process.env.REMOTE_CRM_PROVIDER === 'deterministic_mock' ? new DeterministicV2DocumentProvider() : null);
   const v2AccountOtp = dependencies.v2AccountOtp ?? new DurableV2OtpChallengeService(store, process.env.V2_OTP_SECRET ?? 'local-development-v2-otp-secret');
@@ -632,17 +666,24 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     }
     throw new HttpError(409, 'SESSION_STATE_CONFLICT', 'Another message changed this conversation. Retry with the latest prompt.');
   };
-  const advanceLifecycleStage = async (session: Session, stage: LifecycleStage, evidence: Record<string, string | number | boolean>): Promise<void> => {
+  const advanceLifecycleStage = async (session: Session, stage: LifecycleStage, evidence: Record<string, string | number | boolean>, nextRequirementKey: string | null = null): Promise<void> => {
     const current = await store.getSession(session.id);
     if (!current || current.tenantId !== session.tenantId) return;
     const state = current.conversationState ?? newConversationState();
     const intentKey = state.activeFollowUpIntentKey ?? state.intentProgress?.activeIntentKey ?? state.selectedIntentKey;
     const entry = intentKey ? state.intentProgress?.entries[intentKey] : null;
     if (!entry || !entry.journeyId || !entry.lifecycle) return;
-    if (entry.lifecycle.stages[stage]?.status === 'completed') return;
+    if (entry.lifecycle.stages[stage]?.status === 'completed') {
+      if (entry.lifecycle.currentStage === 'document_upload' && entry.currentRequirementKey !== nextRequirementKey) {
+        const nextEntry = { ...entry, currentRequirementKey: nextRequirementKey, revision: entry.revision + 1 };
+        const nextProgress = { ...(state.intentProgress!), entries: { ...(state.intentProgress?.entries ?? {}), [intentKey!]: nextEntry }, journeys: { ...(state.intentProgress?.journeys ?? {}), [entry.journeyId]: nextEntry }, journeyRevision: state.intentProgress?.journeyRevision ?? 0 };
+        await updateSessionSafely({ ...current, conversationState: { ...state, intentProgress: nextProgress } }, true, 'workflow');
+      }
+      return;
+    }
     if (entry.lifecycle.currentStage !== stage) return;
     const lifecycle = completeLifecycleStage(entry.lifecycle ?? newLifecycleState(), stage, evidence);
-    const nextEntry = { ...entry, lifecycle, revision: entry.revision + 1 };
+    const nextEntry = { ...entry, lifecycle, revision: entry.revision + 1, ...(lifecycle.currentStage === 'document_upload' ? { currentRequirementKey: nextRequirementKey } : {}) };
     const nextProgress = { ...(state.intentProgress!), entries: { ...(state.intentProgress?.entries ?? {}), [intentKey!]: nextEntry }, journeys: { ...(state.intentProgress?.journeys ?? {}), [entry.journeyId]: nextEntry }, journeyRevision: Math.max(state.intentProgress?.journeyRevision ?? 0, lifecycle.revision) };
     await updateSessionSafely({ ...current, conversationState: { ...state, intentProgress: nextProgress } }, true, 'workflow');
     const document = await store.getUserIntentDocument(session.tenantId, session.id);
@@ -3188,6 +3229,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const packageOfferingId = action.payload.slotValues?.packageOfferingId;
       if (typeof selectionId !== 'string' || !/^[0-9a-f-]{36}$/iu.test(selectionId) || typeof packageOfferingId !== 'string' || !/^[0-9a-f-]{36}$/iu.test(packageOfferingId)) throw new HttpError(409, 'QUOTE_ACTION_PAYLOAD_INVALID', 'The approved package selection is incomplete.');
       if (action.state === 'completed' && action.result) { res.json({ verified: true, action }); return; }
+      const customer = await resolveQuoteCustomer(session);
       const processing = action.state === 'approved' ? await store.updateAction({ ...action, state: 'processing', result: null }) : action;
       const selection = await store.getPackageSelection(selectionId, input.tenantId);
       const offering = await store.getPackageOffering(packageOfferingId, input.tenantId);
@@ -3195,8 +3237,33 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const quote = selection.quoteId ? await store.getQuote(selection.quoteId, input.tenantId) : await createDevelopmentQuoteAfterLead(store, session, offering.id);
       if (!quote) throw new HttpError(409, 'QUOTE_NOT_FOUND', 'The approved quote could not be loaded.');
       if (selection.status !== 'confirmed') await store.confirmPackageSelection(selection.id, input.tenantId, quote.id);
-      const artifact = await renderDevelopmentQuotePdf(quote, offering.name);
+      const artifact = await renderDevelopmentQuotePdf(quote, offering.name, customer);
       const completed = await store.updateAction({ ...processing, state: 'completed', result: { externalReference: `quote-${quote.id}`, artifactId: artifact.artifactId, artifactSha256: artifact.sha256, artifactFileName: artifact.fileName, artifactMimeType: artifact.mimeType } });
+      const currentDocument = await store.getUserIntentDocument(input.tenantId, input.sessionId);
+      const documentRequirementKey = await resolveActiveDocumentRequirementKey(input.tenantId, action.catalogVersionId ?? currentDocument?.catalogVersionRef ?? session.conversationState?.catalogVersionId ?? null, action.intentKey ?? currentDocument?.businessGoalKey ?? null);
+      await advanceLifecycleStage(session, 'package_selection', { actionId: action.id, quoteId: quote.id, artifactSha256: artifact.sha256 }, documentRequirementKey);
+      if (documentRequirementKey) {
+        const refreshedDocument = await store.getUserIntentDocument(input.tenantId, input.sessionId);
+        if (refreshedDocument && refreshedDocument.opportunityId === action.opportunityId && refreshedDocument.currentStageKey === 'document_upload' && refreshedDocument.pendingRequirementKey !== documentRequirementKey) {
+          const updated = await store.updateUserIntentDocument({ document: { ...refreshedDocument, pendingRequirementKey: documentRequirementKey, lastQuestion: null, updatedAt: new Date().toISOString(), revision: refreshedDocument.revision + 1 }, expectedRevision: refreshedDocument.revision });
+          if (!updated) throw new HttpError(409, 'V2_DOCUMENT_REQUIREMENT_CONFLICT', 'The document-upload requirement changed before the quote handoff completed.');
+        }
+        const afterAdvance = await store.getSession(input.sessionId);
+        const afterState = afterAdvance?.conversationState;
+        const afterIntentKey = afterState?.activeFollowUpIntentKey ?? afterState?.intentProgress?.activeIntentKey ?? afterState?.selectedIntentKey;
+        const afterEntry = afterIntentKey ? afterState?.intentProgress?.entries[afterIntentKey] : null;
+        const developmentHandoffAllowed = Boolean(afterEntry?.lifecycle && ['lead_generation', 'lead_qualification', 'account_creation', 'package_selection', 'document_upload'].includes(afterEntry.lifecycle.currentStage));
+        if (developmentHandoffAllowed && afterEntry?.lifecycle?.currentStage !== 'document_upload') await handoffDevelopmentQuoteToDocumentStage(session, action.opportunityId!, documentRequirementKey);
+        const handoffDocument = await store.getUserIntentDocument(input.tenantId, input.sessionId);
+        if (developmentHandoffAllowed && handoffDocument && handoffDocument.opportunityId === action.opportunityId && handoffDocument.currentStageKey !== 'document_upload') {
+          const handoffSession = await store.getSession(input.sessionId);
+          const handoffState = handoffSession?.conversationState;
+          const handoffIntentKey = handoffState?.activeFollowUpIntentKey ?? handoffState?.intentProgress?.activeIntentKey ?? handoffState?.selectedIntentKey;
+          const handoffEntry = handoffIntentKey ? handoffState?.intentProgress?.entries[handoffIntentKey] : null;
+          const updated = await store.updateUserIntentDocument({ document: { ...handoffDocument, currentStageKey: 'document_upload', stageRevision: handoffEntry?.lifecycle?.stages.document_upload.revision ?? handoffDocument.stageRevision, pendingRequirementKey: documentRequirementKey, lastQuestion: null, updatedAt: new Date().toISOString(), revision: handoffDocument.revision + 1 }, expectedRevision: handoffDocument.revision });
+          if (!updated) throw new HttpError(409, 'V2_DOCUMENT_REQUIREMENT_CONFLICT', 'The document-upload requirement changed before the quote handoff completed.');
+        }
+      }
       await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'ancfz.development_quote.completed', metadata: { actionId: action.id, quoteId: quote.id, artifactId: artifact.artifactId, artifactSha256: artifact.sha256 }, createdAt: new Date().toISOString() });
       res.json({ verified: true, mock: true, quote, artifact: { artifactId: artifact.artifactId, sha256: artifact.sha256, fileName: artifact.fileName, mimeType: artifact.mimeType }, action: completed });
     } catch (error) { next(error); }
