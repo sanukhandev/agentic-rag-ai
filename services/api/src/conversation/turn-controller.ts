@@ -5,7 +5,7 @@ import { classifyScopedGoalDecision, newConversationState, prompt } from '../con
 import { scoreCatalogV2CompetingGoals, validatePublishedCatalogV2 } from './catalog-runtime.js';
 import { resolveV2IntentEvidence } from './intent-evidence.js';
 import { authorizedPendingRequirement } from './conversation-decision.js';
-import { authorizedV2ReadToolsForTurn, catalogEnabledV2ReadTools } from './tool-policy.js';
+import { authorizedV2ReadToolsForTurn, catalogBindingKeyForV2Read, catalogEnabledV2ReadTools } from './tool-policy.js';
 import { validateV2PlanningProposal } from './planning.js';
 import { proposeV2CatalogAction, v2ActionConsentScope } from './action-gate.js';
 import { extractQuotedV2CustomerFacts, validateQuotedV2CustomerFacts } from './customer-fact-provenance.js';
@@ -461,7 +461,9 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   // Response wording and customer-intent planning are independent decisions.
   // A rejected draft must not erase a valid, still-unconfirmed goal proposal;
   // Node revalidates the candidate against catalog membership and customer text.
-  const modelPlan = result.candidateResponse?.planning ?? result.response.planning ?? null;
+  const rawModelPlan = result.candidateResponse?.planning ?? result.response.planning ?? null;
+  const modelPlan = rawModelPlan && rawModelPlan.proposedToolKey
+    ? { ...rawModelPlan, proposedToolKey: catalogBindingKeyForV2Read(rawModelPlan.proposedToolKey) } : rawModelPlan;
   const existingConfirmedGoal = intentDocument?.catalogSource === 'v2' && intentDocument.goalConfirmed
     ? intentDocument.businessGoalKey : null;
   const planningDecision = modelPlan && catalogV2 ? validateV2PlanningProposal(modelPlan, catalogV2, {
@@ -486,7 +488,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     && planningDecision.proposal?.turnCategory === 'business_goal'
     && modelPlan.confidenceBand !== 'low'
     && !planningDecision.score?.ambiguous
-    && intentEvidence?.initiationSupported === true);
+    && intentEvidence?.initiation === 'explicit'
+    && intentEvidence.ambiguous === false);
   const selectedV2Goal = existingConfirmedGoal ?? (validPlan && (planningDecision?.score?.thresholdMet || semanticGoalCandidate)
     && !planningDecision?.score?.ambiguous ? planningDecision?.primaryGoalKey ?? null
     : intentDocument?.catalogSource === 'v2' ? intentDocument.businessGoalKey
@@ -846,9 +849,9 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     },
   } : {};
   const incomingFacts = { ...(intentDocument?.verifiedFacts ?? {}), ...factPatch(facts as Record<string, string>, state.messageSequence), ...contactFactPatch, ...actionConfirmationFactPatch, ...acceptedCustomerFacts };
-  const effectiveCitationIds = packageFallback?.citationIds ?? (overrideResponse ? [] : result.response.citationIds);
-  const citations = packageFallback ? await resolvePublicCitations(store, tenant.id, effectiveCitationIds, approvedKnowledge) : (overrideResponse ? [] : modelCitations);
-  const grounded = Boolean(packageFallback) || (effectiveCitationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence'));
+  const effectiveCitationIds = overrideResponse ? [] : packageFallback?.citationIds ?? result.response.citationIds;
+  const citations = overrideResponse ? [] : packageFallback ? await resolvePublicCitations(store, tenant.id, effectiveCitationIds, approvedKnowledge) : modelCitations;
+  const grounded = !overrideResponse && (Boolean(packageFallback) || (effectiveCitationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence')));
   const packageSelectionReady = Boolean(crmLead?.leadId && crmLead.remoteCrm && contactConsent === 'granted');
   let answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
   assertKnownTokens(session, answerMasked, input.tokenVault);

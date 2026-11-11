@@ -434,5 +434,5 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 
 ## 2026-11-11 PR review fixes
 
-- The package evidence fallback now passes through the persona/evidence response guard and is disabled for model/tool hard stops. Package selection negation is fail-closed, expired package pricing is revalidated when an offer is selected, and the purposeful package follow-up is materialized before the response is persisted or returned.
+- The package evidence fallback now passes through the persona/evidence response guard and is disabled for model/tool hard stops. Package selection negation is fail-closed, expired package pricing is revalidated when an offer is selected, executable read-tool names are normalized before plan validation, semantic explicit goal pursuit remains eligible for model-led confirmation, and fallback grounding is cleared when a later override replaces the answer.
 - CI path drift was corrected for the workbook exporter, catalog validator, runtime safety tripwire, retirement guard and their current `conversation/` test fixtures. Hosted unit-only validation passed after these fixes.

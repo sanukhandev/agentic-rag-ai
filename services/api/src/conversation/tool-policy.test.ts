@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { CatalogV2Document } from './catalog.js';
-import { authorizedV2ReadTools, authorizedV2ReadToolsForTurn, catalogEnabledV2ReadTools, isV2ReadToolEnabled } from './tool-policy.js';
+import { authorizedV2ReadTools, authorizedV2ReadToolsForTurn, catalogBindingKeyForV2Read, catalogEnabledV2ReadTools, isV2ReadToolEnabled } from './tool-policy.js';
 import { V2_TOOL_NAMES } from './tool-gateway.js';
 const fixture = JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url),'utf8')) as CatalogV2Document;
 describe('published catalog controls V2 domain reads', () => {
@@ -42,5 +42,10 @@ describe('published catalog controls V2 domain reads', () => {
     if (!binding) throw Error('UNIT_BINDING_MISSING');
     binding.enabled = false;
     expect(catalogEnabledV2ReadTools(catalog, V2_TOOL_NAMES)).not.toContain('get_available_packages');
+  });
+  it('normalizes executable read names back to catalog bindings for plan validation', () => {
+    expect(catalogBindingKeyForV2Read('get_available_packages')).toBe('package.read_available');
+    expect(catalogBindingKeyForV2Read('package.read_available')).toBe('package.read_available');
+    expect(catalogBindingKeyForV2Read('unknown.read')).toBe('unknown.read');
   });
 });

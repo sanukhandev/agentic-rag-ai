@@ -55,6 +55,13 @@ describe('V2 catalog-backed contextual customer intent evidence', () => {
     expect(result.initiationSupported).toBe(true);
   });
 
+  it('keeps an explicit semantic pursuit request eligible for the model plan even without a literal signal', () => {
+    const result = current('I want to open a firm. How can I do that?', [], sevenStageCatalog);
+    expect(result.initiation).toBe('explicit');
+    expect(result.initiationSupported).toBe(false);
+    expect(result.ambiguous).toBe(false);
+  });
+
   it('uses an earlier CUSTOMER formation signal only for an explicit contextual start', () => {
     const history = [{ messageId: 'previous-customer-12345678', text: 'Tell me about company formation' }];
     const result = current("Let's start the process", history);
