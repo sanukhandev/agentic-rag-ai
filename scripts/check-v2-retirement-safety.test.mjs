@@ -45,7 +45,7 @@ test('allows the explicit index.ts rollback import but rejects a new production 
 }));
 
 test('rejects direct legacy planner invocation by the V2 turn controller', async () => fixture(async ({ root, put }) => {
-  await put('services/api/src/v2-turn-controller.ts', 'const result = resolveIntent(catalog, text);\n');
+  await put('services/api/src/conversation/turn-controller.ts', 'const result = resolveIntent(catalog, text);\n');
   assert.ok(has(await checkV2RetirementSafety(root), 'V1_PLANNER_IN_V2_ROUTE'));
 }));
 
