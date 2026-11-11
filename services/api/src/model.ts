@@ -119,8 +119,9 @@ export const classifyOfferReplyDeterministically = (maskedMessage: string, offer
     return candidateTokens.some((candidateToken) => messageTokens.some((messageToken) => messageToken === candidateToken
       || offerLevenshteinDistance(messageToken, candidateToken) <= (Math.max(messageToken.length, candidateToken.length) >= 7 ? 2 : 1)));
   }));
-  const packageSelectionIntent = /\b(?:choose|select|pick|take|prefer|go\s+with)\b/iu.test(message)
-    || (!offerReplyQuestion.test(message) && message.trim().split(/\s+/u).length <= 2);
+  const packageSelectionIntent = !offerReplyQuestion.test(message)
+    && (/\b(?:choose|select|pick|take|prefer|go\s+with)\b/iu.test(message)
+      || message.trim().split(/\s+/u).length <= 2);
   const explicitNegation = /\b(?:do not|don't|not|never|without|no)\b/iu.test(message);
   if (packageMatches.length === 1 && !explicitNegation && (/\b(?:package|packages|option|options)\b/iu.test(message) || packageSelectionIntent)) {
     return { action: 'select_option', optionKey: packageMatches[0]?.key ?? null, confidence: 1 };

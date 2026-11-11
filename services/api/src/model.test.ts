@@ -42,6 +42,7 @@ describe('Azure Foundry model adapter', () => {
     expect(classifyOfferReplyDeterministically('tell me about the groth package', offer)).toMatchObject({ action: 'select_option', optionKey: 'package_growth' });
     expect(classifyOfferReplyDeterministically('I will go with Growth', offer)).toMatchObject({ action: 'select_option', optionKey: 'package_growth' });
     expect(classifyOfferReplyDeterministically("Don't choose Growth", offer)).toMatchObject({ action: 'clarify' });
+    expect(classifyOfferReplyDeterministically('What documents do I need if I choose Growth?', offer)).toMatchObject({ action: 'new_request' });
     const publishedKeyOffer = { ...offer, options: [{ key: 'package_anc-r5-sample-growth-r6-r7-r8-r9-r10', label: 'ANCFZ Growth (sample)', retrievalHints: ['anc-r5-sample-growth-r6-r7-r8-r9-r10', 'ANCFZ Growth (sample)'] }] };
     expect(classifyOfferReplyDeterministically('I will go with Growth', publishedKeyOffer)).toMatchObject({ action: 'select_option', optionKey: 'package_anc-r5-sample-growth-r6-r7-r8-r9-r10' });
     const publishedMultiOffer = { ...publishedKeyOffer, options: [
