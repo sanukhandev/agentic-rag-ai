@@ -593,9 +593,23 @@ export class TopNavComponent {
     this.state.logout();
   }
 
+  private cachedMenuSection: NavSection | null = null;
+  private cachedTenantCount = -1;
+  private _cachedColumns: MegaMenuColumn[] = [];
+
   get currentColumns(): MegaMenuColumn[] {
     if (this.activeMegaMenu === 'organizations' && !this.isPlatformAdmin) return [];
-    switch (this.activeMegaMenu) {
+    if (this.cachedMenuSection === this.activeMegaMenu && this.cachedTenantCount === this.tenants.length) {
+      return this._cachedColumns;
+    }
+    this.cachedMenuSection = this.activeMegaMenu;
+    this.cachedTenantCount = this.tenants.length;
+    this._cachedColumns = this.buildColumns(this.activeMegaMenu);
+    return this._cachedColumns;
+  }
+
+  private buildColumns(menu: NavSection | null): MegaMenuColumn[] {
+    switch (menu) {
       case 'organizations':
         return [
           {

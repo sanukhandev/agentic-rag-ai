@@ -289,10 +289,28 @@ export class OrgTableComponent implements OnInit {
     return this.filteredTenants.slice(start, start + this.pageSize);
   }
 
+  private cachedTenantsRef: Tenant[] | null = null;
+  private cachedSearchQuery = '';
+  private cachedStatusFilter = '';
+  private _cachedFilteredTenants: Tenant[] = [];
+
   get filteredTenants(): Tenant[] {
-    return this.tenants.filter((t) => {
+    const currentTenants = this.tenants;
+    const q = this.searchQuery.toLowerCase().trim();
+    if (
+      this.cachedTenantsRef === currentTenants &&
+      this.cachedSearchQuery === q &&
+      this.cachedStatusFilter === this.selectedStatusFilter
+    ) {
+      return this._cachedFilteredTenants;
+    }
+
+    this.cachedTenantsRef = currentTenants;
+    this.cachedSearchQuery = q;
+    this.cachedStatusFilter = this.selectedStatusFilter;
+
+    this._cachedFilteredTenants = currentTenants.filter((t) => {
       const matchesStatus = this.selectedStatusFilter === 'all' || t.status === this.selectedStatusFilter;
-      const q = this.searchQuery.toLowerCase().trim();
       const matchesSearch =
         !q ||
         t.name.toLowerCase().includes(q) ||
@@ -300,6 +318,8 @@ export class OrgTableComponent implements OnInit {
         (t.primaryContact && t.primaryContact.toLowerCase().includes(q));
       return matchesStatus && matchesSearch;
     });
+
+    return this._cachedFilteredTenants;
   }
 
   getStatusVariant(status: TenantStatus): 'success' | 'warning' | 'neutral' {

@@ -398,16 +398,30 @@ export class IntentCatalogComponent {
     });
   }
 
+  private lastSearchQuery = '';
+  private readonly filteredIntentsCache = new Map<string, IntentCatalogVersion['catalog']['intents']>();
+  private readonly signalsMap = new WeakMap<IntentCatalogVersion, Map<string, IntentCatalogVersion['catalog']['signals']>>();
+
   filteredIntents(version: IntentCatalogVersion): IntentCatalogVersion['catalog']['intents'] {
     const q = this.searchQuery.trim().toLowerCase();
+    if (this.lastSearchQuery !== q) {
+      this.lastSearchQuery = q;
+      this.filteredIntentsCache.clear();
+    }
     if (!q) return version.catalog.intents;
-    return version.catalog.intents.filter(
+    const cacheKey = version.id;
+    const cached = this.filteredIntentsCache.get(cacheKey);
+    if (cached) return cached;
+
+    const filtered = version.catalog.intents.filter(
       (i) =>
         i.displayName.toLowerCase().includes(q) ||
         i.intentKey.toLowerCase().includes(q) ||
         i.workflowKey.toLowerCase().includes(q) ||
         this.signalsFor(version, i.intentKey).some((s) => s.value.toLowerCase().includes(q))
     );
+    this.filteredIntentsCache.set(cacheKey, filtered);
+    return filtered;
   }
 
   upload(event: Event): void {
@@ -426,7 +440,17 @@ export class IntentCatalogComponent {
   rollbackVocabulary(candidate: IntentVocabularyCandidate): void { this.service.rollbackVocabulary(candidate); }
 
   signalsFor(version: IntentCatalogVersion, intentKey: string): IntentCatalogVersion['catalog']['signals'] {
-    return version.catalog.signals.filter((signal) => signal.intentKey === intentKey);
+    let map = this.signalsMap.get(version);
+    if (!map) {
+      map = new Map();
+      for (const signal of version.catalog.signals) {
+        const arr = map.get(signal.intentKey) ?? [];
+        arr.push(signal);
+        map.set(signal.intentKey, arr);
+      }
+      this.signalsMap.set(version, map);
+    }
+    return map.get(intentKey) ?? [];
   }
 
   startEdit(version: IntentCatalogVersion): void {
