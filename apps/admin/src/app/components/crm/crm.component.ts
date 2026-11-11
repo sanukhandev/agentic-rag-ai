@@ -400,7 +400,11 @@ export class CrmComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     // Proactively fetch latest leads on mount
     this.state.loadCrmLeads();
-    this.refreshTimer = setInterval(() => this.state.loadCrmLeads(true), 5000);
+    this.refreshTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        this.state.loadCrmLeads(true);
+      }
+    }, 10000);
   }
 
   ngOnDestroy(): void {

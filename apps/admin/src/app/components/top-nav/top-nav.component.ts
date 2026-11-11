@@ -540,6 +540,9 @@ export class TopNavComponent {
 
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent): void {
+    if (!this.tenantDropdownOpen && !this.userMenuOpen && !this.mobileNavOpen && !this.activeMegaMenu) {
+      return;
+    }
     if (!this.elementRef.nativeElement.contains(event.target)) {
       this.closeMenu();
       this.tenantDropdownOpen = false;

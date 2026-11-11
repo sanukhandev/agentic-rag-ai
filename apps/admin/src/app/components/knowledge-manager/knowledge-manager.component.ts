@@ -530,15 +530,42 @@ export class KnowledgeManagerComponent implements OnInit {
     this.state.loadJobs();
   }
 
+  private cachedSourcesRef: Source[] | null = null;
+  private cachedStatus = '';
+  private cachedAudience = '';
+  private cachedQuery = '';
+  private cachedSortCol = '';
+  private cachedSortAsc = true;
+  private _cachedFilteredSources: Source[] = [];
+
   get filteredSources(): Source[] {
-    let result = this.sources;
+    const currentSources = this.sources;
+    const q = this.searchQuery.trim().toLowerCase();
+    if (
+      this.cachedSourcesRef === currentSources &&
+      this.cachedStatus === this.selectedStatus &&
+      this.cachedAudience === this.selectedAudience &&
+      this.cachedQuery === q &&
+      this.cachedSortCol === this.sortColumn &&
+      this.cachedSortAsc === this.sortAscending
+    ) {
+      return this._cachedFilteredSources;
+    }
+
+    this.cachedSourcesRef = currentSources;
+    this.cachedStatus = this.selectedStatus;
+    this.cachedAudience = this.selectedAudience;
+    this.cachedQuery = q;
+    this.cachedSortCol = this.sortColumn;
+    this.cachedSortAsc = this.sortAscending;
+
+    let result = currentSources;
     if (this.selectedStatus !== 'all') {
       result = result.filter((s) => s.status === this.selectedStatus);
     }
     if (this.selectedAudience !== 'all') {
       result = result.filter((s) => s.audience === this.selectedAudience);
     }
-    const q = this.searchQuery.trim().toLowerCase();
     if (q) {
       result = result.filter(
         (s) =>
@@ -547,14 +574,21 @@ export class KnowledgeManagerComponent implements OnInit {
           s.audience.toLowerCase().includes(q)
       );
     }
-    return [...result].sort((a, b) => {
+
+    const timestamps = new Map<Source, number>();
+    if (this.sortColumn === 'updatedAt') {
+      for (const s of result) {
+        timestamps.set(s, new Date(s.updatedAt || s.createdAt || 0).getTime());
+      }
+    }
+
+    this._cachedFilteredSources = [...result].sort((a, b) => {
       let valA: any = a[this.sortColumn] ?? '';
       let valB: any = b[this.sortColumn] ?? '';
       if (this.sortColumn === 'updatedAt') {
-        valA = new Date(a.updatedAt || a.createdAt || 0).getTime();
-        valB = new Date(b.updatedAt || b.createdAt || 0).getTime();
-      }
-      if (typeof valA === 'string') {
+        valA = timestamps.get(a) ?? 0;
+        valB = timestamps.get(b) ?? 0;
+      } else if (typeof valA === 'string') {
         valA = valA.toLowerCase();
         valB = (valB as string).toLowerCase();
       }
@@ -562,6 +596,8 @@ export class KnowledgeManagerComponent implements OnInit {
       if (valA > valB) return this.sortAscending ? 1 : -1;
       return 0;
     });
+
+    return this._cachedFilteredSources;
   }
 
   get totalPages(): number {
