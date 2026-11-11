@@ -91,7 +91,7 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 import { registerLifecycleRoutes } from './routes/lifecycle.js';
-import { createDevelopmentQuoteAfterLead, hasVerifiedLiveInvoiceDelivery } from './business-lifecycle.js';
+import { createDevelopmentQuoteAfterLead, hasVerifiedLiveInvoiceDelivery, hasVerifiedLivePayment } from './business-lifecycle.js';
 import { VocabularyLearningService } from './conversation/vocabulary.js';
 import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './conversation/tool-gateway.js';
 import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './conversation/coordinator.js';
@@ -3139,7 +3139,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       await assertV2ProviderCorrelation(action, input);
       const execution = await store.getActionExecution(action.id, action.tenantId);
       if (!execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.attempt) throw new HttpError(409, 'WORKFLOW_CORRELATION_MISMATCH', 'Provider evidence does not match the current workflow execution.');
-      if (completedReplay) { res.json({ ...v2BillingAttestationScope(input), accepted: true, status: invoice.provider === 'billing_live' ? 'provider_record_verified' : 'mock_verified', evidenceTier: invoice.provider === 'billing_live' ? 'provider_record_verified' : 'mock_verified', stageKey: input.stageKey, providerRecordRef: invoice.externalInvoiceId, invoice, action }); return; }
+      if (completedReplay) {
+        if (action.result?.externalReference !== input.providerRecordId || action.result.externalReference !== invoice.externalInvoiceId)
+          throw new HttpError(409, 'V2_INVOICE_REPLAY_RECORD_MISMATCH', 'Invoice readback replay has a different provider record.');
+        if (invoice.provider === 'billing_live' && !await hasVerifiedLiveInvoiceDelivery(store, session, invoice))
+          throw new HttpError(409, 'BILLING_INVOICE_DELIVERY_NOT_VERIFIED', 'Invoice replay has no completed readback proof.');
+        res.json({ ...v2BillingAttestationScope(input), accepted: true, status: invoice.provider === 'billing_live' ? 'provider_record_verified' : 'mock_verified', evidenceTier: invoice.provider === 'billing_live' ? 'provider_record_verified' : 'mock_verified', stageKey: input.stageKey, providerRecordRef: invoice.externalInvoiceId, invoice, action }); return;
+      }
       if (action.state !== 'processing') throw new HttpError(409, 'V2_PROVIDER_ACTION_NOT_PROCESSING', 'Provider evidence can only finalize a claimed V2 action.');
       const providerType = workflowBinding.providerType;
       if (input.providerType && input.providerType !== providerType) throw new HttpError(409, 'V2_PROVIDER_TYPE_MISMATCH', 'Provider evidence type does not match the published workflow binding.');
@@ -3193,6 +3199,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       await assertV2ProviderCorrelation(action, input);
       const execution = await store.getActionExecution(action.id, action.tenantId);
       if (!execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.attempt) throw new HttpError(409, 'WORKFLOW_CORRELATION_MISMATCH', 'Provider evidence does not match the current workflow execution.');
+      if (action.state === 'completed' && invoice.status === 'paid' && invoice.provider === 'billing_live') {
+        if (action.result?.externalReference !== input.providerRecordId
+          || !await hasVerifiedLivePayment(store, session, invoice))
+          throw new HttpError(409, 'BILLING_PAYMENT_REPLAY_RECORD_MISMATCH', 'Verified settlement replay does not match the original completed payment.');
+        res.json({ ...v2BillingAttestationScope(input), accepted: true, status: 'provider_record_verified', paymentVerified: true, evidenceTier: 'provider_record_verified', stageKey: input.stageKey, providerRecordRef: input.providerRecordId, invoice, action });
+        return;
+      }
       if (action.state !== 'processing') throw new HttpError(409, 'V2_PROVIDER_ACTION_NOT_PROCESSING', 'Provider evidence can only finalize a claimed V2 action.');
       const providerType = workflowBinding.providerType;
       if (input.providerType && input.providerType !== providerType) throw new HttpError(409, 'V2_PROVIDER_TYPE_MISMATCH', 'Provider evidence type does not match the published workflow binding.');
