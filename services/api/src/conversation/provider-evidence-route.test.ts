@@ -427,21 +427,18 @@ describe('V2 provider evidence route', () => {
     const paymentRecordId = `mockpay_${createHash('sha256').update(paymentAction!.idempotencyKey).digest('hex').slice(0, 32)}`;
     const paymentEvidence = await request(test.runtime.app).post('/api/v2/internal/provider-evidence/payment').set('x-agentic-internal-secret', 'n'.repeat(64)).send({ actionId: paymentAction!.id, tenantId: test.tenant.id, sessionId: test.session.id, opportunityId: paymentAction!.opportunityId, stageKey: 'payment_invoice', workflowKey: paymentAction!.workflowKey, providerType: 'deterministic_mock', providerRecordId: paymentRecordId, eventId: paymentEventId, correlationId: paymentCorrelationId, attempt: 1, idempotencyKey: paymentAction!.idempotencyKey, catalogVersionId: test.published.catalogVersionRef, actionKey: paymentAction!.actionKey, actionRevision: paymentAction!.actionRevision, settle: true, paymentConfirmation: true });
     expect(paymentEvidence.status, JSON.stringify(paymentEvidence.body)).toBe(200);
-    expect(paymentEvidence.body).toMatchObject({ accepted: true, paymentVerified: true, invoice: { status: 'paid' } });
-    expect((await test.store.getUserIntentDocument(test.tenant.id, test.session.id))?.currentStageKey).toBe('contract');
-    const contractProposal = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/contracts`).set('origin', 'http://localhost').send({ opportunityId: account.opportunityId, packageSelectionId: proposal.body.selection.id, invoiceId: invoice.id });
-    expect(contractProposal.status, JSON.stringify(contractProposal.body)).toBe(202);
-    const contractAction = await test.store.getAction(contractProposal.body.actionProposal.id);
-    expect(contractAction).toMatchObject({ workflowKey: 'contract.send', actionKey: 'contract.send' });
-    const contractEventId = randomUUID();
-    const contractCorrelationId = randomUUID();
-    await test.store.transitionAction(contractAction!.id, test.tenant.id, 'awaiting_confirmation', 'processing', null);
-    await test.store.claimActionExecution({ id: randomUUID(), actionId: contractAction!.id, tenantId: test.tenant.id, workflowKey: contractAction!.workflowKey, catalogVersionId: contractAction!.catalogVersionId ?? null, providerStatus: 'processing', n8nExecutionRef: 'n8n-contract-test', eventId: contractEventId, correlationId: contractCorrelationId, idempotencyKey: contractAction!.idempotencyKey, attempt: 1, deadlineAt: new Date(Date.now() + 60_000).toISOString(), outcome: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-    const contractRecordId = `mock-contract-${createHash('sha256').update(contractAction!.idempotencyKey).digest('hex').slice(0, 24)}`;
-    const contractEvidence = await request(test.runtime.app).post('/api/v2/internal/provider-evidence/contract').set('x-agentic-internal-secret', 'n'.repeat(64)).send({ actionId: contractAction!.id, tenantId: test.tenant.id, sessionId: test.session.id, opportunityId: contractAction!.opportunityId, stageKey: 'contract', workflowKey: contractAction!.workflowKey, providerType: 'deterministic_mock', providerRecordId: contractRecordId, eventId: contractEventId, correlationId: contractCorrelationId, attempt: 1, idempotencyKey: contractAction!.idempotencyKey, catalogVersionId: test.published.catalogVersionRef, actionKey: contractAction!.actionKey, actionRevision: contractAction!.actionRevision, sign: true, customerApproval: true, signatoryRef: 'synthetic-customer', signingExpiresAt: new Date(Date.now() + 86_400_000).toISOString() });
-    expect(contractEvidence.status, JSON.stringify(contractEvidence.body)).toBe(200);
-    expect(contractEvidence.body).toMatchObject({ accepted: true, contractVerified: true, contract: { status: 'signed', externalContractId: contractRecordId } });
-    expect((await test.store.getAction(contractAction!.id))?.state).toBe('completed');
+    // Mock results are useful for diagnostics, but must not be treated as
+    // financially settled or unlock the real contract stage.
+    expect(paymentEvidence.body).toMatchObject({
+      accepted: true, paymentVerified: false, simulationPaid: true,
+      invoice: { status: 'pending', provider: 'deterministic_mock' },
+      action: { state: 'processing' },
+    });
+    expect((await test.store.getUserIntentDocument(test.tenant.id, test.session.id))?.currentStageKey).toBe('payment_invoice');
+    const contractProposal = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/contracts`)
+      .set('origin', 'http://localhost')
+      .send({ opportunityId: account.opportunityId, packageSelectionId: proposal.body.selection.id, invoiceId: invoice.id });
+    expect(contractProposal.status, JSON.stringify(contractProposal.body)).toBe(409);
   });
 
   it('moves a Salesforce Account result to reconciliation without claiming completion', async () => {
