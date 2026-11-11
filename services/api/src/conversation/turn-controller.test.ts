@@ -891,7 +891,7 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     ctx.coordinator.run.mockImplementationOnce(async () => ({
       modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
       response: { citationIds: [], answer: 'I cannot verify that answer safely.', nextQuestion: null, nextQuestionKey: null },
-      guardReason: 'safe_no_evidence_dialogue',
+      guardReason: 'invalid_model',
     }) as unknown as V2CoordinatorResult);
     const reply = await runGPTFirstChatTurn({ ...packageQuestion, coordinator: ctx.coordinator });
     expect(reply.answer).toContain('Growth package');

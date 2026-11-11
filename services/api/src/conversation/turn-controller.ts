@@ -670,7 +670,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     && approvedKnowledge.length > 0
     && packageSummaryRequest
     && result.response.citationIds.length === 0
-    && (result.guardReason === 'safe_no_evidence_dialogue' || result.guardReason === 'accepted_model_dialogue' || result.guardReason === 'accepted')
+    && !['model_or_tool_unavailable', 'grounding_review_rejected'].includes(result.guardReason)
     ? buildPackageEvidenceFallback(maskedMessage, packageOptions, approvedKnowledge) : null;
   const packageFallback = packageFallbackCandidate
     ? guardPackageEvidenceFallback(persona, packageFallbackCandidate, approvedKnowledge) : null;
