@@ -9,9 +9,11 @@ import type { V2ApprovedEvidence } from './evidence.js';
  * Never treat a Business Goal catalog as a substantive knowledge document. */
 export const isV2FactualKnowledgeQuestion = (message: string): boolean => {
   const value = message.toLocaleLowerCase('en-US');
-  const factual = /\b(?:process|procedure|steps?|how (?:do|can|to|does)|what (?:is|are|documents?|requirements?)|tell me (?:about|how)|explain|costs?|pricing|prices?|fees?|licen[cs]e|eligib\w*|regulations?|rules?|timeline|how long|visa requirements?)\b/u.test(value);
-  const subject = /\b(?:company|companies|business|free[\s-]?zone|formation|incorporat\w*|registr\w*|setup|set[\s-]?up|license|licence|visas?|packages?|documents?|requirements?|ajman)\b/u.test(value);
-  return factual && subject;
+  const factual = /\b(?:process|procedure|steps?|how (?:do|can|to|does)|what (?:is|are|documents?|requirements?)|tell me (?:about|how)|explain|costs?|pricing|prices?|fees?|licen[cs]e|eligib\w*|regulations?|rules?|timeline|how long|visa requirements?)\b/u.test(value)
+    || /\b(?:can (?:i|we|you)|do (?:i|we|you)|is (?:it|there)|are (?:there|we))\b/u.test(value);
+  const subject = /\b(?:company|companies|business|free[\s-]?zone|formation|incorporat\w*|registr\w*|setup|set[\s-]?up|license|licence|visas?|packages?|documents?|requirements?|ajman|presence|present|physical|remote|remotely|desk|flexi|office|space|facility|facilities|bank|account|mainland)\b/u.test(value);
+  const arabic = /[\u0600-\u06FF]/u.test(value);
+  return (factual && subject) || arabic;
 };
 
 /** The model may understand "How does it work?" from conversation history,
@@ -34,11 +36,12 @@ export const resolveV2KnowledgeTopic = (message: string): V2KnowledgeTopic => {
   if (/\b(?:visa|visas)\b/u.test(value)) return 'visa';
   if (/\b(?:package|packages|price|prices|pricing|cost|costs|fee|fees)\b/u.test(value)) return 'package';
   if (/\beligib\w*|qualif\w*|criteria\b/u.test(value)) return 'eligibility';
-  if (/\b(?:option|options|type|types|structure|activity|activities)\b/u.test(value)) return 'setup_options';
+  if (/\b(?:option|options|type|types|structure|activity|activities|desk|flexi|office|space|facility|presence|physical|remote)\b/u.test(value)) return 'setup_options';
   if (/\b(?:document|documents|passport|proof of residence)\b/u.test(value)) return 'documents';
   if (/\b(?:timeline|how long|days?|weeks?|months?)\b/u.test(value)) return 'timeline';
   if (/\b(?:licen[cs]e|licensing)\b[\s\S]{0,80}\b(?:process|procedure|step|steps|application)\b|\b(?:process|procedure|step|steps|application)\b[\s\S]{0,80}\b(?:licen[cs]e|licensing)\b/u.test(value)) return 'licensing_process';
   if (/\b(?:process|procedure|step|steps|setup|set[- ]?up|formation|registration|incorporat\w*)\b/u.test(value)) return 'setup_process';
+  if (/\b(?:bank|account|mainland)\b/u.test(value)) return 'general';
   return 'general';
 };
 

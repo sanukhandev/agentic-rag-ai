@@ -3,6 +3,7 @@ import { cacheKey, type CacheStore } from '../cache.js';
 import { ConversationContextCache } from '../conversation-context.js';
 import { classifyScopedGoalDecision, newConversationState, prompt } from '../conversation-state.js';
 import { scoreCatalogV2CompetingGoals, validatePublishedCatalogV2 } from './catalog-runtime.js';
+import type { CatalogV2Document } from './catalog.js';
 import { resolveV2IntentEvidence } from './intent-evidence.js';
 import { authorizedPendingRequirement } from './conversation-decision.js';
 import { authorizedV2ReadToolsForTurn, catalogBindingKeyForV2Read, catalogEnabledV2ReadTools } from './tool-policy.js';
@@ -19,7 +20,7 @@ import type { EmbeddingProvider } from '../embedding.js';
 import { assertKnownTokens, maskPiiForSession, rehydrateForSession, TokenVault } from '../privacy.js';
 import { issueV2Scope, listApprovedV2PackageEvidence, listApprovedV2PackageOptions, packageEvidenceText, V2_TOOL_NAMES, type V2PackageOption } from './tool-gateway.js';
 import { assertSafeUserIntentDocument, assertSafeIntentTurn } from '../user-intent-document.js';
-import { type V2ConversationCoordinator, type V2CoordinatorRequest, type V2CoordinatorResult } from './coordinator.js';
+import { type ConversationTurnCoordinator, type V2CoordinatorRequest, type V2CoordinatorResult } from './coordinator.js';
 import type { V2ApprovedEvidence, V2VerifiedFact } from './evidence.js';
 import { guardV2Response } from './response-guard.js';
 import type { V2ApprovedFallbackTemplateSet } from './fallbacks.js';
@@ -27,7 +28,7 @@ import type { Citation, FollowUpOfferOption, GoalConfirmationRecord, Message, Pe
 
 /** A single guarded model turn. Never invokes the legacy planner or creates an action. */
 export const executeV2Turn = async (
-  coordinator: Pick<V2ConversationCoordinator, 'run'>,
+  coordinator: Pick<ConversationTurnCoordinator, 'run'>,
   request: V2CoordinatorRequest,
 ): Promise<V2CoordinatorResult> => {
   const result = await coordinator.run(request);
@@ -60,7 +61,7 @@ export interface GPTFirstTurnInput {
   postbackValue?: string | null;
   requestId: string;
   responseCacheTtlSeconds: number;
-  coordinator: Pick<V2ConversationCoordinator, 'run'>;
+  coordinator: Pick<ConversationTurnCoordinator, 'run'>;
   actionGateway?: Pick<ActionGateway, 'propose' | 'confirm'>;
   leadProviderReady?: boolean;
   scopeSecret: string;
@@ -128,15 +129,24 @@ export const isCommercialDocumentRequest = (message: string): boolean =>
   /\b(?:document|documents|paperwork)\b/iu.test(message)
   && !/\b(?:status|uploaded|submitted|already|missing)\b/iu.test(message);
 
-const fallbackTemplates = (persona: PersonaVersion): V2ApprovedFallbackTemplateSet => ({
-  approved: true, personaVersionId: persona.id, templateVersion: 'fallback-' + persona.id,
-  language: persona.permittedLanguages[0] ?? 'en',
-  templates: {
-    invalid_model: 'I cannot verify that answer safely. I can continue with confirmed information.',
-    tool_unavailable: 'The approved information is temporarily unavailable.',
-    reconciliation: 'I need to verify the request status before I confirm the outcome.',
-  },
-});
+const fallbackTemplates = (persona: PersonaVersion, customerMessage?: string): V2ApprovedFallbackTemplateSet => {
+  const isArabic = (persona.permittedLanguages.length === 1 && persona.permittedLanguages[0] === 'ar') || Boolean(customerMessage && /[\u0600-\u06FF]/u.test(customerMessage));
+  return {
+    approved: true, personaVersionId: persona.id, templateVersion: 'fallback-' + persona.id,
+    language: isArabic ? 'ar' : (persona.permittedLanguages[0] ?? 'en'),
+    templates: {
+      invalid_model: isArabic
+        ? 'لا يمكنني تأكيد هذه الإجابة بأمان في الوقت الحالي. يمكنني المتابعة بالمعلومات المؤكدة.'
+        : 'I cannot verify that answer safely. I can continue with confirmed information.',
+      tool_unavailable: isArabic
+        ? 'المعلومات المعتمدة غير متاحة مؤقتاً.'
+        : 'The approved information is temporarily unavailable.',
+      reconciliation: isArabic
+        ? 'أحتاج إلى التحقق من حالة الطلب قبل تأكيد النتيجة.'
+        : 'I need to verify the request status before I confirm the outcome.',
+    },
+  };
+};
 
 const trustedFacts = (values: Record<string, string>, catalogVersionId: string): { facts: NonNullable<V2CoordinatorRequest['envelope']['intentProjection']['confirmedCustomerFacts']>; evidence: V2VerifiedFact[] } => {
   const facts: NonNullable<V2CoordinatorRequest['envelope']['intentProjection']['confirmedCustomerFacts']> = {};
@@ -193,6 +203,29 @@ export const isV2PackageQuestion = (message: string, knownPackageNames: readonly
   /\b(?:package|packages|price|prices|pricing|cost|costs|fee|fees|quote|quotation)\b/iu.test(message)
   || /\b(?:package|plan|tier)\s+(?:option|options|choice|choices)\b/iu.test(message)
   || knownPackageNames.some((name) => name.trim().length > 0 && new RegExp(`\\b${escapedWordPattern(name)}\\b`, 'iu').test(message));
+
+export const isPackageSummaryRequest = (message: string): boolean =>
+  !/\b(?:document|documents|passport|identity|upload|provide|require\w*|eligible|eligibility|activit\w*|licen[cs]e|steps|recommend\w*|best)\b/iu.test(message)
+  && !/\b(?:selected|this|that)\s+package\b/iu.test(message)
+  && !/\b(?:quote|quotation)\b/iu.test(message)
+  && (/\b(?:price|prices|pricing|cost|costs|fee|fees|visa|visas|office|includ\w*|availab\w*|process(?:ing)?|compare|comparison|versus|vs\.?)\b/iu.test(message)
+    || (/\b(?:package|packages|plan|plans|tier|tiers)\b/iu.test(message)
+      && /\b(?:what|which|offer\w*|availab\w*|option\w*|choice\w*|compare|comparison|versus|vs\.?)\b/iu.test(message)));
+
+export const resolveDocumentRequirement = (
+  catalog: CatalogV2Document | null,
+  goalKey: string | null,
+  stageKey: string | null,
+  pendingRequirementKey: string | null,
+): string | null => {
+  if (!catalog || !goalKey || stageKey !== 'document_upload') return null;
+  const pendingIsDocumentRequirement = Boolean(pendingRequirementKey && (
+    pendingRequirementKey.startsWith('document.')
+    || catalog.sheets.RequirementPolicies.some(requirement => requirement.goalKey === goalKey
+      && requirement.stageKey === stageKey && requirement.requirementKey === pendingRequirementKey)));
+  if (pendingIsDocumentRequirement) return pendingRequirementKey;
+  return catalog.sheets.DocumentPolicies.find(policy => policy.goalKey === goalKey && policy.stageKey === stageKey && policy.required && policy.enabled)?.policyKey ?? null;
+};
 
 /** Called after HTTP authentication and durable message-idempotency checks. */
 export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
@@ -350,6 +383,9 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const preflightQuery = acceptedOfferOption ? contextualizedQuery : contextualizedQuery === maskedMessage ? contextualizedQuery : `${contextualizedQuery} process steps`;
   const statusOrRecapTurn = /\b(?:status|recap|summary|summarize|what did i tell you|without assuming)\b/iu.test(maskedMessage);
   const packageIntent = isV2PackageQuestion(maskedMessage, activeFollowUpOffer?.options.map(option => option.label));
+  const quoteContinuationRequest = Boolean(catalogV2 && packageIntent
+    && /\b(?:quote|quotation)\b/iu.test(maskedMessage)
+    && !intentDocument?.goalConfirmed);
   const authorizedReadTools = catalogV2
     ? authorizedV2ReadToolsForTurn(catalogV2, V2_TOOL_NAMES, packageIntent, isV2FactualKnowledgeQuestion(contextualizedQuery) || !statusOrRecapTurn)
     : [...V2_TOOL_NAMES];
@@ -457,7 +493,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   };
   const result = await executeV2Turn(coordinator, {
     envelope, evidence: approvedKnowledge, verifiedFacts: evidence, lastQuestionKey: originalState.pendingPrompt?.requirementKey ?? null,
-    questionPolicy: 'optional', fallbackTemplates: fallbackTemplates(persona),
+    questionPolicy: 'optional', fallbackTemplates: fallbackTemplates(persona, envelope.customerMessageMasked),
   });
   if (result.toolTrace.some(trace => trace.status === 'stale_state')) throw new HttpError(409, 'V2_STALE_TOOL_STATE', 'The conversation state changed; retry this message.');
   const current = await store.getSession(session.id);
@@ -506,8 +542,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const selectedV2Goal = existingConfirmedGoal ?? (validPlan && (planningDecision?.score?.thresholdMet || semanticGoalCandidate)
     && !planningDecision?.score?.ambiguous ? planningDecision?.primaryGoalKey ?? null
     : intentDocument?.catalogSource === 'v2' ? intentDocument.businessGoalKey
-      ?? (commercialDocumentRequest ? catalogV2?.sheets.BusinessGoals.find(goal => goal.active)?.businessGoalKey ?? null : null)
-      : commercialDocumentRequest ? catalogV2?.sheets.BusinessGoals.find(goal => goal.active)?.businessGoalKey ?? null : null);
+      ?? (commercialDocumentRequest || quoteContinuationRequest ? catalogV2?.sheets.BusinessGoals.find(goal => goal.active && goal.confirmationRequired)?.businessGoalKey ?? null : null)
+      : commercialDocumentRequest || quoteContinuationRequest ? catalogV2?.sheets.BusinessGoals.find(goal => goal.active && goal.confirmationRequired)?.businessGoalKey ?? null : null);
   const selectedTurnCategory = validPlan ? planningDecision?.proposal?.turnCategory ?? null : null;
   // The model may propose a goal, but only Node may interpret a customer
   // decision against the already persisted prompt and its optimistic cursor.
@@ -649,7 +685,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   // prompt must be tied to observed, validated business-goal planning.
   const shouldPrompt = Boolean(catalogV2 && requirementGoal?.confirmationRequired
     && !intentDocument?.goalConfirmed && !pendingDecision && !decision && !greetingTurn
-    && (commercialDocumentRequest || (validPlan
+    && (commercialDocumentRequest || (quoteContinuationRequest && /\bquotation\b/iu.test(result.response.nextQuestion ?? '')) || (validPlan
       && (planningDecision?.score?.thresholdMet || semanticGoalCandidate) && !planningDecision?.score?.ambiguous
       && intentEvidence?.initiation === 'explicit'
       && intentEvidence.ambiguous === false
@@ -662,10 +698,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   let effectiveAnswer = result.response.answer;
   let effectiveQuestion = result.response.nextQuestion;
   let overrideResponse = false;
-  const packageSummaryRequest = !/\b(?:document|documents|passport|identity|upload|provide|require\w*|eligible|eligibility|activit\w*|licen[cs]e|steps|recommend\w*|best)\b/iu.test(maskedMessage)
-    && (/\b(?:price|prices|pricing|cost|costs|fee|fees|quote|quotation|visa|visas|office|includ\w*|availab\w*|process(?:ing)?|compare|comparison|versus|vs\.?)\b/iu.test(maskedMessage)
-      || (/\b(?:package|packages|plan|plans|tier|tiers)\b/iu.test(maskedMessage)
-        && /\b(?:what|which|offer\w*|availab\w*|option\w*|choice\w*|compare|comparison|versus|vs\.?)\b/iu.test(maskedMessage)));
+  const packageSummaryRequest = isPackageSummaryRequest(maskedMessage);
   const packageFallbackCandidate = packageIntent && !acceptedOfferOption && packageOptions && packageOptions.length > 0
     && approvedKnowledge.length > 0
     && packageSummaryRequest
@@ -748,10 +781,15 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     const requestedDocument = documentQuestion
       ? catalogV2!.sheets.DocumentPolicies.find(policy => policy.goalKey === selectedV2Goal && policy.required && policy.enabled)
       : null;
-    effectiveAnswer = requestedDocument
+    const preserveQuoteContinuation = quoteContinuationRequest && /\bquotation\b/iu.test(result.response.nextQuestion ?? '');
+    if (preserveQuoteContinuation) {
+      effectiveQuestion = result.response.nextQuestion ?? effectiveQuestion;
+      effectiveAnswer = result.response.answer;
+      overrideResponse = false;
+    } else effectiveAnswer = requestedDocument
       ? `For ${requirementGoal.name}, the current journey includes a required identity document step. I can collect it after you confirm the enquiry. ${effectiveQuestion}`
       : `I can help with ${requirementGoal.name.toLowerCase()}. Before we collect documents, I’ll register your enquiry, gather the necessary details, then show you the approved package options and prepare the quote. ${effectiveQuestion}`;
-    overrideResponse = true;
+    if (!preserveQuoteContinuation) overrideResponse = true;
   }
   if (greetingTurn && !intentDocument?.goalConfirmed && !pendingDecision && !isV2FactualKnowledgeQuestion(maskedMessage)) {
     const goalLabel = requirementGoal?.name ?? 'your options';
@@ -785,7 +823,10 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   // A pending document requirement is authoritative context. If the model or
   // response guard cannot produce a useful handoff, ask for that requirement
   // directly instead of repeating the generic grounding fallback.
-  const pendingDocumentRequirement = Boolean(effectivePendingRequirement?.startsWith('document.'));
+  const documentStageKey = intentDocument?.currentStageKey ?? entry?.lifecycle?.currentStage ?? null;
+  const activeDocumentRequirement = resolveDocumentRequirement(catalogV2, intentDocument?.businessGoalKey ?? selectedV2Goal, documentStageKey, effectivePendingRequirement);
+  if (activeDocumentRequirement) effectivePendingRequirement = activeDocumentRequirement;
+  const pendingDocumentRequirement = Boolean(activeDocumentRequirement);
   const documentAnswer = /\b(?:document|passport|identity|upload)\b/iu.test(effectiveAnswer);
   if (catalogV2 && intentDocument?.goalConfirmed && pendingDocumentRequirement && documentQuestion
       && (!documentAnswer || result.guardReason !== 'accepted')) {

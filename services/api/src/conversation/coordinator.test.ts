@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertConversationEngineV2Configuration, HttpV2ConversationAgent, V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './coordinator.js';
+import { assertConversationEngineV2Configuration, ConversationTurnCoordinator, HttpV2ConversationAgent, V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './coordinator.js';
 import type { TurnEnvelopeV2 } from './../python-model/contracts.js';
 
 const envelope = (): TurnEnvelopeV2 => ({
@@ -29,6 +29,11 @@ describe('V2ConversationCoordinator', () => {
     expect(() => assertConversationEngineV2Configuration('production', { CONVERSATION_ENGINE_V2_ENABLED: 'true' })).toThrow('PYTHON_MODEL_URL');
     expect(() => assertConversationEngineV2Configuration('production', {})).toThrow('PYTHON_MODEL_URL');
     expect(() => assertConversationEngineV2Configuration('production', { CONVERSATION_ENGINE_V2_ENABLED: 'false' })).not.toThrow();
+  });
+
+  it('fails every runtime when the canonical conversation engine is required but unavailable', () => {
+    expect(() => assertConversationEngineV2Configuration('development', { CONVERSATION_ENGINE_V2_REQUIRED: 'true' })).toThrow('PYTHON_MODEL_URL');
+    expect(() => assertConversationEngineV2Configuration('test', { CONVERSATION_ENGINE_V2_REQUIRED: 'true', PYTHON_MODEL_URL: 'http://model-gateway:8088', MODEL_GATEWAY_SERVICE_KEY: 'private-key' })).not.toThrow();
   });
 
 
@@ -240,6 +245,16 @@ describe('V2ConversationCoordinator', () => {
     expect(output.response.answer).toBe(fallbackTemplates.templates.tool_unavailable);
   });
 
+  it('converts a gateway exception into the approved persona fallback', async () => {
+    const request = envelope();
+    request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'lead_qualification', pendingRequirementKey: null };
+    const coordinator = new ConversationTurnCoordinator({ turn: async () => { throw new Error('network down'); } });
+    const output = await coordinator.run({ envelope: request, fallbackTemplates });
+    expect(output.guardReason).toBe('model_or_tool_unavailable');
+    expect(output.response.answer).toBe(fallbackTemplates.templates.tool_unavailable);
+    expect(output.response.answer).not.toContain('network down');
+  });
+
   it('does not disguise failed tool calls as missing knowledge', async () => {
     const request = envelope();
     request.intentProjection = { primaryGoalKey: 'anc.company_formation', goalConfirmed: true, currentStageKey: 'lead_qualification', pendingRequirementKey: null };
@@ -339,6 +354,49 @@ describe('V2ConversationCoordinator', () => {
     expect(output.draft.followUpOptions).toEqual([
       { key: 'explain_more', label: 'explain this package in more detail', retrievalHints: ['growth'] },
     ]);
+  });
+
+  it('keeps a quote request contextual after a package was selected', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'Can I get the quote for Growth now?';
+    request.latestTurns = [
+      { role: 'customer', content: 'What packages do you have?' },
+      { role: 'assistant', content: 'Of course. Here are the package options.' },
+      { role: 'customer', content: 'I will go with Growth' },
+      { role: 'assistant', content: 'The approved package ANCFZ Growth includes 2 visas.' },
+    ];
+    const evidence = [{ citationId: 'package-growth', text: 'The published approved package ANCFZ Growth includes 2 visas and shared office, with a listed price of AED 4,999.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false }];
+    const candidateAnswer = 'The published approved package ANCFZ Growth includes 2 visas and shared office, with a listed price of AED 4,999.00.';
+    const candidate = result(candidateAnswer, {
+      response: { ...result('').response, answer: candidateAnswer, citationIds: ['package-growth'] },
+      approvedEvidence: evidence,
+      toolTrace: [{ toolCallId: 'package-call-12345678', toolName: 'get_available_packages', status: 'ok', resultDigest: 'a'.repeat(64), elapsedMs: 2, evidenceRefs: ['package-growth'] }],
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toContain('quotation');
+    expect(output.response.answer).not.toContain('explain how this applies');
+    expect(output.response.nextQuestion).toContain('quotation');
+  });
+
+  it('asks for the package name instead of repeating every option for an ambiguous package reference', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'Tell me more about the selected package.';
+    const evidence = [
+      { citationId: 'package-starter', text: 'The published approved package ANCFZ Starter has a listed price of AED 2,499.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-growth', text: 'The published approved package ANCFZ Growth has a listed price of AED 4,999.00.', sourceVersion: 'anc-r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+    ];
+    const candidate = result('Here are the available packages.', {
+      response: { ...result('').response, answer: 'Here are the available packages.', citationIds: evidence.map(item => item.citationId) },
+      approvedEvidence: evidence,
+      toolTrace: [{ toolCallId: 'package-call-ambiguous', toolName: 'get_available_packages', status: 'ok', resultDigest: 'c'.repeat(64), elapsedMs: 2, evidenceRefs: evidence.map(item => item.citationId) }],
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toContain('need the package name first');
+    expect(output.response.nextQuestion).toBe('Which package would you like to explore?');
+    expect(output.response.answer).not.toContain('ANCFZ Starter');
+    expect(output.response.answer).not.toContain('ANCFZ Growth');
   });
 
   it('isolates the guard result for a Growth answer carrying all package citations', async () => {

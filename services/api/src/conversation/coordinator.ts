@@ -153,8 +153,9 @@ export const conversationEngineV2EnabledForTenant = (tenantId: string, env: Node
 };
 
 export const assertConversationEngineV2Configuration = (nodeEnv: string, env: NodeJS.ProcessEnv = process.env): void => {
-  if (nodeEnv === 'production' && env.CONVERSATION_ENGINE_V2_ENABLED !== 'false' && !conversationEngineV2Configured(env)) {
-    throw new Error('Production Conversation Engine v2 requires PYTHON_MODEL_URL and MODEL_GATEWAY_SERVICE_KEY, or an explicit CONVERSATION_ENGINE_V2_ENABLED=false rollback.');
+  const required = env.CONVERSATION_ENGINE_V2_REQUIRED === 'true';
+  if ((required || (nodeEnv === 'production' && env.CONVERSATION_ENGINE_V2_ENABLED !== 'false')) && !conversationEngineV2Configured(env)) {
+    throw new Error('The canonical conversation engine requires PYTHON_MODEL_URL and MODEL_GATEWAY_SERVICE_KEY.');
   }
 };
 
@@ -213,8 +214,10 @@ const sourceExcerptResponse = (envelope: TurnEnvelopeV2, evidence: V2ApprovedEvi
   const queryText = [envelope.customerMessageMasked, ...envelope.latestTurns.filter(turn => turn.role === 'customer').map(turn => turn.content)].join(' ');
   const lastCustomerTurn = [...envelope.latestTurns].reverse().find(turn => turn.role === 'customer')?.content ?? '';
   const acknowledgement = /^(?:yes|yeah|yep|sure|okay|ok|please do|go ahead|tell me more|please explain)\b/iu.test(envelope.customerMessageMasked.trim());
-  const packageQuestion = /\b(?:package|packages|option|options|price|pricing|cost|costs|fee|fees|visa|visas)\b/iu.test(envelope.customerMessageMasked)
-    || acknowledgement && /\b(?:package|packages|option|options|price|pricing|cost|costs|fee|fees|visa|visas)\b/iu.test(lastCustomerTurn);
+  const packageQuestion = /\b(?:package|packages|option|options|price|pricing|cost|costs|fee|fees|quote|quotation|visa|visas)\b/iu.test(envelope.customerMessageMasked)
+    || acknowledgement && /\b(?:package|packages|option|options|price|pricing|cost|costs|fee|fees|quote|quotation|visa|visas)\b/iu.test(lastCustomerTurn);
+  const quoteRequest = /\b(?:quote|quotation)\b/iu.test(envelope.customerMessageMasked);
+  const ambiguousPackageReference = /\b(?:selected|this|that)\s+package\b/iu.test(envelope.customerMessageMasked);
   const genericPackageTerms = new Set(['ancfz', 'about', 'available', 'could', 'does', 'hello', 'how', 'offer', 'offers', 'package', 'packages', 'please', 'price', 'pricing', 'cost', 'costs', 'fee', 'fees', 'tell', 'that', 'what', 'which', 'would', 'visa', 'visas']);
   const queryTerms = new Set((queryText.toLocaleLowerCase('en-US').match(/[a-z]{4,}/gu) ?? []).filter(term => !genericPackageTerms.has(term)));
   const packageEvidence = evidence.filter(item => item.sourceRef === 'tool-get_available_packages');
@@ -224,14 +227,67 @@ const sourceExcerptResponse = (envelope: TurnEnvelopeV2, evidence: V2ApprovedEvi
     const score = [...queryTerms].filter(queryTerm => nameTerms.some(nameTerm => packageTokenMatches(queryTerm, nameTerm))).length;
     return { item, packageName, score };
   }).sort((left, right) => right.score - left.score);
-  const selectedPackage = packageMatches[0]?.score ? packageMatches[0] : null;
+    const selectedPackage = packageMatches[0]?.score ? packageMatches[0] : null;
   if (packageQuestion && packageEvidence.length > 0) {
     const selectedEvidence = selectedPackage ? [selectedPackage.item] : packageEvidence;
     const packageSpecific = Boolean(selectedPackage && selectedEvidence.length === 1);
+    if (ambiguousPackageReference && !packageSpecific) {
+      const lastAssistantTurn = [...envelope.latestTurns].reverse().find(turn => turn.role === 'assistant')?.content ?? '';
+      const alreadyAskedForPackage = lastAssistantTurn.includes('need the package name first') || lastAssistantTurn.includes('Which package would you like');
+      const nextQuestion = alreadyAskedForPackage
+        ? 'Please let me know whether you prefer Starter, Growth, or Premium so I can prepare the quotation.'
+        : 'Which package would you like to explore?';
+      const answer = alreadyAskedForPackage
+        ? `I can prepare the quotation, but please let me know which tier: Starter, Growth, or Premium?`
+        : `I can help with that, but I need the package name first. ${nextQuestion}`;
+      return { response: {
+        schemaVersion: 2, personaVersionId: envelope.personaVersionId,
+        language: envelope.persona.permittedLanguages[0] ?? 'en',
+        answer,
+        citationIds: [], nextQuestion, nextQuestionKey: 'conversation_focus', reasonNoQuestion: null,
+        decisionRef: `package-reference-${envelope.requestId.slice(0, 60)}`,
+      }, followUpOptions: [] };
+    }
+    const packageOptionsAlreadyDelivered = !packageSpecific && envelope.latestTurns.some(turn =>
+      turn.role === 'assistant' && (
+        turn.content.includes('Here are the package options') ||
+        (packageEvidence.length > 1 && packageEvidence.some(item => turn.content.includes(item.text.trim())))
+      )
+    );
+    if (!packageSpecific && packageOptionsAlreadyDelivered) {
+      const nextQuestion = 'Which package would you like to explore or compare for your business?';
+      const answer = `As shown above, the approved packages are Starter, Growth, and Premium. ${nextQuestion}`;
+      return {
+        response: {
+          schemaVersion: 2, personaVersionId: envelope.personaVersionId,
+          language: envelope.persona.permittedLanguages[0] ?? 'en',
+          answer,
+          citationIds: selectedEvidence.map(item => item.citationId),
+          nextQuestion, nextQuestionKey: 'conversation_focus',
+          reasonNoQuestion: null,
+          decisionRef: `package-options-continuation-${envelope.requestId.slice(0, 60)}`,
+        },
+        followUpOptions: selectedEvidence.map(item => packageNameFromEvidence(item.text)).filter((name): name is string => Boolean(name)).map(name => {
+          const displayName = name.replace(/\s*\(sample\)\s*$/iu, '').trim();
+          const packageKey = (displayName.split(/\s+/u).at(-1) ?? displayName).replace(/[^a-z0-9]+/giu, '_').replace(/^_|_$/gu, '').toLocaleLowerCase('en-US');
+          return {
+            key: `package_${packageKey}`,
+            label: displayName,
+            retrievalHints: [packageKey],
+          };
+        }),
+      };
+    }
+    const quoteContinuation = quoteRequest && packageSpecific;
     const alreadyDelivered = packageSpecific && envelope.latestTurns.some(turn => turn.role === 'assistant' && turn.content.includes(selectedEvidence[0]!.text));
     const continueWithoutRepeat = packageSpecific && alreadyDelivered && acknowledgement;
-    const nextQuestion = packageSpecific && !continueWithoutRepeat ? 'Would you like me to explain this package in more detail?' : packageSpecific ? null : 'Which package would you like to explore first?';
-    const followUpOptions: FollowUpOfferOption[] = packageSpecific && !continueWithoutRepeat
+    const packageLabel = selectedPackage?.packageName?.replace(/\s*\(sample\)\s*$/iu, '').trim() ?? 'the selected package';
+    const nextQuestion = quoteContinuation
+      ? envelope.intentProjection.goalConfirmed
+        ? `Would you like me to prepare a quotation for ${packageLabel}?`
+        : 'Would you like to proceed with the company-formation enquiry so I can prepare the quotation?'
+      : packageSpecific && !continueWithoutRepeat ? 'Would you like me to explain this package in more detail?' : packageSpecific ? null : 'Which package would you like to explore first?';
+    const followUpOptions: FollowUpOfferOption[] = quoteContinuation ? [] : packageSpecific && !continueWithoutRepeat
       ? [{ key: 'explain_more', label: 'explain this package in more detail', retrievalHints: [
         (selectedPackage?.packageName?.replace(/\s*\(sample\)\s*$/iu, '').split(/\s+/u).at(-1) ?? '').replace(/[^a-z0-9]+/giu, '_').replace(/^_|_$/gu, '').toLocaleLowerCase('en-US'),
       ].filter(Boolean) }]
@@ -244,7 +300,9 @@ const sourceExcerptResponse = (envelope: TurnEnvelopeV2, evidence: V2ApprovedEvi
         retrievalHints: [packageKey],
       };
       }) : [];
-    const answer = continueWithoutRepeat
+    const answer = quoteContinuation
+      ? `Of course. ${selectedEvidence[0]!.text.trim()} ${nextQuestion}`
+      : continueWithoutRepeat
       ? `Of course. ${selectedEvidence[0]!.text.trim()}`
       : packageSpecific
         ? `Of course. ${selectedEvidence.map(item => item.text.trim()).join(' ')} ${nextQuestion}`
@@ -370,7 +428,12 @@ const noEvidenceReply = (envelope: TurnEnvelopeV2, previousQuestionKey: string |
           : /^(?:my|i(?:'m| am| need| want| would like| have)|we(?:'re| are| need| want))\b/iu.test(normalizedMessage)
             ? 'Thanks for sharing that.'
           : null;
-  const question = pending ? (questionByRequirement[pending] ?? 'Could you tell me more about that requirement?') : questionByStage[stage] ?? (goal ? (acknowledgedFact ? 'What detail would you like to add next?' : 'Which part of your setup would you like to discuss first?') : 'What would you like help with?');
+  const lastAssistantTurn = [...envelope.latestTurns].reverse().find(turn => turn.role === 'assistant')?.content ?? '';
+  const alreadySaidWorkThrough = lastAssistantTurn.includes('I can help you work through that');
+  const defaultQuestion = lastAssistantTurn.includes('What would you like help with?')
+    ? 'What specific details or questions do you have in mind?'
+    : 'What would you like help with?';
+  const question = pending ? (questionByRequirement[pending] ?? 'Could you tell me more about that requirement?') : questionByStage[stage] ?? (goal ? (acknowledgedFact ? 'What detail would you like to add next?' : 'Which part of your setup would you like to discuss first?') : defaultQuestion);
   const stageContext = stage === 'account_creation'
       ? /\bdocument\b/iu.test(message)
       ? 'Account creation is still the next verified step; document handling follows package confirmation.'
@@ -390,7 +453,9 @@ const noEvidenceReply = (envelope: TurnEnvelopeV2, previousQuestionKey: string |
     ? 'I don’t have a verified answer to that specific detail yet, so I don’t want to guess.'
     : acknowledgedFact ?? stageContext ?? (repeated
       ? 'I’m keeping your company-formation request moving.'
-      : 'I can help you work through that.');
+      : alreadySaidWorkThrough
+        ? 'I’m here to guide your setup.'
+        : 'I can help you work through that.');
   return {
     schemaVersion: 2,
     personaVersionId: envelope.personaVersionId,
@@ -404,14 +469,50 @@ const noEvidenceReply = (envelope: TurnEnvelopeV2, previousQuestionKey: string |
   };
 };
 
-export class V2ConversationCoordinator {
+const unavailableAgentResult = (envelope: TurnEnvelopeV2, request: V2CoordinatorRequest): V2CoordinatorResult => {
+  const context: V2ResponseGuardContext = {
+    personaVersionId: envelope.personaVersionId,
+    assistantName: envelope.persona.assistantName,
+    permittedLanguages: envelope.persona.permittedLanguages,
+    pendingRequirementKey: envelope.intentProjection.pendingRequirementKey,
+    activeStageKey: envelope.intentProjection.currentStageKey,
+    lastQuestionKey: request.lastQuestionKey ?? null,
+    questionPolicy: request.questionPolicy ?? 'optional',
+    evidence: [],
+    verifiedFacts: request.verifiedFacts ?? [],
+    conversational: envelope.intentProjection.primaryGoalKey === null,
+    fallbackTemplateVersion: envelope.persona.fallbackTemplateVersion,
+    ...(request.fallbackTemplates ? { fallbackTemplates: request.fallbackTemplates } : {}),
+  };
+  const fallback = guardV2OfflineFallback('tool_unavailable', context);
+  if (!fallback.response) throw new Error('V2_FALLBACK_UNAVAILABLE');
+  return {
+    response: fallback.response,
+    candidateResponse: fallback.response,
+    repairApplied: false,
+    draft: toDraft(fallback.response),
+    toolTrace: [],
+    approvedEvidence: [],
+    claimProvenance: [],
+    modelRequestCount: 0,
+    toolCallCount: 0,
+    guardReason: 'model_or_tool_unavailable',
+    candidateGuardReason: 'model_or_tool_unavailable',
+  };
+};
+
+export class ConversationTurnCoordinator {
   constructor(private readonly agent: V2ConversationAgent, private readonly groundingVerifier?: V2GroundingVerifier) {}
 
   async run(request: V2CoordinatorRequest): Promise<V2CoordinatorResult> {
     const envelope = turnEnvelopeSchema.parse(request.envelope);
-    const rawResult = await this.agent.turn(envelope);
-    const parsed = agentTurnResultSchema.safeParse(rawResult);
-    if (!parsed.success) throw new Error('V2_MODEL_INVALID_RESPONSE');
+    let parsed: ReturnType<typeof agentTurnResultSchema.safeParse>;
+    try {
+      parsed = agentTurnResultSchema.safeParse(await this.agent.turn(envelope));
+    } catch {
+      return unavailableAgentResult(envelope, request);
+    }
+    if (!parsed.success) return unavailableAgentResult(envelope, request);
     const agentResult = parsed.data;
     const candidateResponse = repairFirstContactQuestionContract(repairTrailingQuestionContract(repairAuthoritativeStagePlaceholder(addVerifiedFactCitations(agentResult.response, request.verifiedFacts ?? []), envelope.intentProjection.currentStageKey)), envelope);
     const repairApplied = candidateResponse !== agentResult.response;
@@ -524,12 +625,33 @@ export class V2ConversationCoordinator {
       trustedReviewEvidence.some(evidence => evidence.citationId === id));
     const reviewClaims = buildV2GroundingReviewClaims(candidateResponse, trustedReviewEvidence);
     const lexicalOverlap = v2MeanLexicalOverlapPercent(reviewClaims);
+    let groundingReviewStatus: NonNullable<V2CoordinatorResult['groundingReviewStatus']> = this.groundingVerifier ? (hasTrustedCitedEvidence && reviewClaims.length === 0 ? 'unreviewable' : 'not_eligible') : 'not_configured';
+    const packageContextContinuation = (/\b(?:quote|quotation)\b|\b(?:selected|this|that)\s+package\b/iu.test(envelope.customerMessageMasked))
+      && trustedEvidence.some(item => item.sourceRef === 'tool-get_available_packages');
+    if (guarded.verdict.accepted && packageContextContinuation) {
+      const excerpt = sourceExcerptResponse(envelope, trustedEvidence);
+      if (excerpt) {
+        const excerptEvidence = excerpt.response.citationIds.map(citationId => trustedEvidence.find(item => item.citationId === citationId)).filter((item): item is V2ApprovedEvidence => Boolean(item));
+        const verifiedExcerpt = guardV2Response(excerpt.response, { ...guardContext, evidence: excerptEvidence, allowNonFactualDialogue: true });
+        if (verifiedExcerpt.verdict.accepted && verifiedExcerpt.response) return {
+          response: verifiedExcerpt.response, candidateResponse: agentResult.response,
+          repairApplied, draft: toDraft(verifiedExcerpt.response, excerpt.followUpOptions), toolTrace: agentResult.toolTrace,
+          approvedEvidence: guardContext.evidence ?? [], claimProvenance: verifiedExcerpt.claims,
+          modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount,
+          guardReason: 'accepted_knowledge_excerpt', candidateGuardReason,
+          questionFailureReason: verifiedExcerpt.questionFailureReason ?? null, knowledgeRepairStatus: 'not_eligible',
+          repairCitationCount: null, repairFailureReason: null, repairClaimFailureReason: null, repairFailedClauseOrdinal: null,
+          initialClaimFailureReason: null, initialFailedClauseOrdinal: null,
+          groundingReviewStatus, groundingLexicalOverlapPercent: lexicalOverlap,
+          diagnosticCandidate: agentResult.diagnosticCandidate ?? null,
+        };
+      }
+    }
     if (guarded.verdict.accepted && (!this.groundingVerifier || !hasTrustedCitedEvidence)) return { response: guarded.response, candidateResponse: agentResult.response, repairApplied, draft: toDraft(guarded.response), toolTrace: agentResult.toolTrace, approvedEvidence: guardContext.evidence ?? [], claimProvenance: guarded.claims, modelRequestCount: agentResult.modelRequestCount, toolCallCount: agentResult.toolCallCount, guardReason: 'accepted', candidateGuardReason, questionFailureReason: guarded.questionFailureReason ?? null, groundingLexicalOverlapPercent: lexicalOverlap, diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
     // When enabled, independent entailment must also review already accepted
     // public-source claims. Otherwise a high-overlap yet unsupported statement
     // would bypass grounding merely by matching keywords. Node's business
     // authority and deterministic checks remain final.
-    let groundingReviewStatus: NonNullable<V2CoordinatorResult['groundingReviewStatus']> = this.groundingVerifier ? (hasTrustedCitedEvidence && reviewClaims.length === 0 ? 'unreviewable' : 'not_eligible') : 'not_configured';
     let groundingReviewRequests = 0;
     const eligibleForEntailment = this.groundingVerifier && hasTrustedEvidence
       && !hasPositiveBusinessOutcomeClaim(candidateResponse.answer) && reviewClaims.length > 0
@@ -573,7 +695,7 @@ export class V2ConversationCoordinator {
         const excerptEvidence = excerpt.response.citationIds.map(citationId => trustedEvidence.find(item => item.citationId === citationId)).filter((item): item is V2ApprovedEvidence => Boolean(item));
         const verifiedExcerpt = excerptEvidence.length > 0
           ? guardV2Response(excerpt.response, { ...guardContext, evidence: excerptEvidence })
-          : guardV2Response(excerpt.response, guardContext);
+          : guardV2Response(excerpt.response, { ...guardContext, allowNonFactualDialogue: true });
         if (verifiedExcerpt.verdict.accepted && verifiedExcerpt.response) return {
           response: verifiedExcerpt.response, candidateResponse: agentResult.response,
           repairApplied, draft: toDraft(verifiedExcerpt.response, excerpt.followUpOptions), toolTrace: agentResult.toolTrace,
@@ -678,7 +800,7 @@ export class V2ConversationCoordinator {
         const excerptEvidence = excerpt.response.citationIds.map(citationId => trustedEvidence.find(item => item.citationId === citationId)).filter((item): item is V2ApprovedEvidence => Boolean(item));
         const verifiedExcerpt = excerptEvidence.length > 0
           ? guardV2Response(excerpt.response, { ...guardContext, evidence: excerptEvidence })
-          : guardV2Response(excerpt.response, guardContext);
+          : guardV2Response(excerpt.response, { ...guardContext, allowNonFactualDialogue: true });
         if (verifiedExcerpt.verdict.accepted && verifiedExcerpt.response) return {
           response: verifiedExcerpt.response, candidateResponse: agentResult.response,
           repairApplied, draft: toDraft(verifiedExcerpt.response, excerpt.followUpOptions), toolTrace: agentResult.toolTrace,
@@ -730,3 +852,6 @@ export class V2ConversationCoordinator {
       diagnosticCandidate: agentResult.diagnosticCandidate ?? null };
   }
 }
+
+/** @deprecated Use ConversationTurnCoordinator; retained only for test and rollback compatibility. */
+export { ConversationTurnCoordinator as V2ConversationCoordinator };
