@@ -439,12 +439,14 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       const status = await Promise.all(scoped.map(async (action) => {
         const execution = await store.getActionExecution(action.id, scope.tenantId);
         const evidenceStatus = deriveV2ProviderEvidenceStatus({ actionState: action.state, providerStatus: execution?.providerStatus ?? null, evidenceTier: execution?.outcome?.evidenceTier });
-        return { workflowKey: action.workflowKey, state: action.state, actionKey: action.actionKey ?? null, providerAcknowledged: Boolean(action.result?.externalReference), providerStatus: execution?.providerStatus ?? null, evidenceStatus, stageCompletionEligible: v2StageCompletionEligible(evidenceStatus) };
+        return { workflowKey: action.workflowKey, state: action.state, actionKey: action.actionKey ?? null, providerAcknowledged: Boolean(action.result?.externalReference), providerOutcome: action.result?.providerOutcome ?? null, artifactAvailable: Boolean(action.result?.artifactSha256), artifactFileName: action.result?.artifactFileName ?? null, providerStatus: execution?.providerStatus ?? null, evidenceStatus, stageCompletionEligible: v2StageCompletionEligible(evidenceStatus) };
       }));
       const claims = status.length > 0
         ? status.map((item) => {
           const label = actionLabel(item.workflowKey, item.actionKey);
           if (item.stageCompletionEligible) return `The verified provider outcome for ${label} is complete.`;
+          if (item.providerOutcome === 'pdf_generated') return `The quotation artifact for ${label} was generated and is awaiting provider verification.`;
+          if (item.providerOutcome === 'success' || item.providerOutcome === 'updated') return `The ${label} workflow returned ${item.providerOutcome}; independent provider verification is still pending.`;
           if (item.state === 'awaiting_confirmation') return `${label} is awaiting customer confirmation.`;
           return `${label} is awaiting verified provider evidence.`;
         })

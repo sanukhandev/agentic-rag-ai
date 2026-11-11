@@ -2,6 +2,7 @@ import type { IntentCatalogV2Version } from '../types.js';
 
 export type V2WorkflowRoute = {
   workflowKey: string;
+  providerType: string;
   webhookPath: string;
   n8nWorkflowId: string;
   payloadContract: string;
@@ -13,5 +14,5 @@ export const resolveV2WorkflowRoute = (version: IntentCatalogV2Version, workflow
     ? version.catalog.sheets.WorkflowBindings.find(candidate => candidate.workflowKey === workflowKey && candidate.enabled)
     : null;
   if (!binding?.n8nWorkflowId || !binding.webhookPath || !binding.payloadContract) return null;
-  return { workflowKey: binding.registryKey, webhookPath: binding.webhookPath, n8nWorkflowId: binding.n8nWorkflowId, payloadContract: binding.payloadContract };
+  return { workflowKey: binding.registryKey, providerType: binding.providerType, webhookPath: binding.webhookPath, n8nWorkflowId: binding.n8nWorkflowId, payloadContract: binding.payloadContract };
 };

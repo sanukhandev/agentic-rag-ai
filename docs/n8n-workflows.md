@@ -10,7 +10,7 @@ The Lead template retains error execution data and routes provider, readback, No
 
 The **Workflow & Event Engine is logical component 7**, not a separate conversational agent. Python's agent may request **read-only Node status/context tools** while planning, or return a **catalog action proposal**. The Node Action Gateway independently requires an authorized goal, correct stage-specific requirements, separate purpose-specific user consent/confirmation and stable idempotency before committing ActionRequest + outbox. Redis/n8n delivery, webhook 2xx and provider evidence are distinct progress levels. **Only verified provider-state policy can advance a stage**.
 
-Do not give Python n8n URLs, Salesforce credentials, uploaded passport bytes, OTP values, or direct write connections. Four reported ANCFZ `/webhook-test/` routes remain disabled pending auth, listener, response contract and callback verification. See [interfaces](conversation-engine-contracts.md), [P5–P6 integration plan](conversation-engine-delivery-plan.md) and [remote registry](remote-n8n-integration.md).
+Do not give Python n8n URLs, Salesforce credentials, uploaded passport bytes, OTP values, or direct write connections. The active Lead and quotation acceptance routes are `/n8n/webhook/salesforce-lead` and `/n8n/webhook/generate-quotation`; the remaining reported ANCFZ `/webhook-test/` routes remain disabled pending auth, listener, response contract and callback verification. See [interfaces](conversation-engine-contracts.md), [P5–P6 integration plan](conversation-engine-delivery-plan.md) and [remote registry](remote-n8n-integration.md).
 
 ## Catalog-driven tool model
 

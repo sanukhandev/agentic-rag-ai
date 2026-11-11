@@ -193,6 +193,10 @@ const explicitLeadActionConfirmation = (message: string): boolean =>
   /\b(?:confirm|confirmed|authorize|authorized|approve|approved)\b[\s\S]{0,80}\b(?:lead|submission|submit)\b/iu.test(message)
   || /\bconfirm\s+the\s+authorized\s+submission\b/iu.test(message);
 
+const explicitQuotationConsent = (message: string): boolean =>
+  /\b(?:yes|okay|ok|sure|agree|consent|permission|approve|proceed)\b[\s\S]{0,80}\b(?:quote|quotation)\b/iu.test(message)
+  || /\b(?:consent|permission|agree|approve)\b[\s\S]{0,80}\b(?:generate|prepare|issue)\b[\s\S]{0,40}\b(?:quote|quotation)\b/iu.test(message);
+
 const explicitContactConsent = (message: string): boolean =>
   /^\s*(?:yes|yes,?\s*(?:please|i do)|i consent|i agree|go ahead)\s*[.!]?\s*$/iu.test(message)
   || /\b(?:consent|permission|authorize)\b[\s\S]{0,80}\b(?:contact|details|use)\b/iu.test(message);
@@ -639,6 +643,17 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       ? planningDecision.proposedToolKey : null;
   const proposedActionBinding = proposedActionToolKey && catalogV2
     ? catalogV2.sheets.ToolBindings.find(binding => binding.toolKey === proposedActionToolKey) ?? null : null;
+  const proposedActionConfirmationRequirementKey = proposedActionBinding && catalogV2
+    ? proposedActionBinding.requiredKeys.find(key => catalogV2.sheets.RequirementPolicies.some(requirement => requirement.goalKey === proposedActionBinding.goalKey && requirement.stageKey === proposedActionBinding.stageKey && requirement.requirementKey === key && requirement.type === 'confirmation')) ?? actionConfirmationRequirementKey
+    : actionConfirmationRequirementKey;
+  const quotationAction = proposedActionToolKey === 'quotation.generate';
+  const quotationConsentRequirementKey = quotationAction && catalogV2
+    ? catalogV2.sheets.RequirementPolicies.find(requirement => requirement.goalKey === selectedV2Goal && requirement.requirementKey === 'quotation_consent')?.requirementKey ?? null
+    : null;
+  const quotationConsentScope = quotationAction && v2Version ? v2ActionConsentScope({ catalogVersionId: v2Version.catalogVersionRef }, proposedActionToolKey) : null;
+  const quotationConsentSatisfied = quotationAction
+    ? Boolean(quotationConsentScope && (originalState.consentVersion === quotationConsentScope || explicitQuotationConsent(maskedMessage)))
+    : contactConsent === 'granted';
   const leadCreateBinding = catalogV2?.sheets.ToolBindings.find(binding => binding.toolKey === 'lead.create') ?? null;
   const leadActionRequested = explicitLeadRequest;
   const leadActionConfirmed = explicitLeadActionConfirmation(maskedMessage);
@@ -648,7 +663,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const actionProposalRequested = Boolean(input.actionGateway && catalogV2 && v2Version && selectedV2Goal
     && proposedActionToolKey && proposedActionBinding
     && proposedActionBinding.sideEffectClass !== 'read_only'
-    && contactConsent === 'granted'
+    && quotationConsentSatisfied
     && !leadProviderUnavailable
     && (explicitLeadRequest || leadProposalAfterConsent || (validPlan && planningDecision?.proposal?.nextMove === 'propose_action')));
   const actionPurposeConsentScope = actionProposalRequested && proposedActionToolKey && catalogV2
@@ -657,7 +672,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     catalogSource: 'v2', goalConfirmed: Boolean(intentDocument?.goalConfirmed),
     businessGoalKey: intentDocument?.businessGoalKey ?? null,
     currentStageKey: intentDocument?.currentStageKey ?? null,
-    selectedRequirementKey: actionProposalRequested ? actionConfirmationRequirementKey : contactRequirementAfterDecision ?? selectedRequirement,
+    selectedRequirementKey: actionProposalRequested ? proposedActionConfirmationRequirementKey : contactRequirementAfterDecision ?? selectedRequirement,
     priorRequirementKey: actionProposalRequested ? null : priorPendingRequirement,
     goalDecision: decision,
   }) : nextPendingPrompt?.requirementKey ?? selectedRequirement ?? pendingRequirement;
@@ -901,13 +916,19 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
     } } : {}),
   } : {};
-  const actionConfirmationFactPatch = (actionProposalRequested || leadActionConfirmed) && actionConfirmationRequirementKey ? {
-    [actionConfirmationRequirementKey]: {
+  const actionConfirmationFactPatch = (actionProposalRequested || leadActionConfirmed) && proposedActionConfirmationRequirementKey ? {
+    [proposedActionConfirmationRequirementKey]: {
       maskedValue: 'true', source: 'visitor' as const, messageSequence: state.messageSequence,
       evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
     },
   } : {};
-  const incomingFacts = { ...(intentDocument?.verifiedFacts ?? {}), ...factPatch(facts as Record<string, string>, state.messageSequence), ...contactFactPatch, ...actionConfirmationFactPatch, ...acceptedCustomerFacts };
+  const quotationConsentFactPatch = actionProposalRequested && quotationAction && explicitQuotationConsent(maskedMessage) && quotationConsentRequirementKey ? {
+    [quotationConsentRequirementKey]: {
+      maskedValue: 'true', source: 'visitor' as const, messageSequence: state.messageSequence,
+      evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
+    },
+  } : {};
+  const incomingFacts = { ...(intentDocument?.verifiedFacts ?? {}), ...factPatch(facts as Record<string, string>, state.messageSequence), ...contactFactPatch, ...actionConfirmationFactPatch, ...quotationConsentFactPatch, ...acceptedCustomerFacts };
   const effectiveCitationIds = overrideResponse ? [] : packageFallback?.citationIds ?? result.response.citationIds;
   const citations = overrideResponse ? [] : packageFallback ? await resolvePublicCitations(store, tenant.id, effectiveCitationIds, approvedKnowledge) : modelCitations;
   const grounded = !overrideResponse && (Boolean(packageFallback) || (effectiveCitationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence')));
@@ -982,14 +1003,14 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     });
     if (context) {
       const factValue = (key: string): string => nextDoc.verifiedFacts[key]?.maskedValue ?? '';
+      const argumentsForBinding = Object.fromEntries(proposedActionBinding.requiredKeys.map(key => {
+        const policy = v2Version.catalog.sheets.RequirementPolicies.find(requirement => requirement.goalKey === proposedActionBinding.goalKey && requirement.stageKey === proposedActionBinding.stageKey && requirement.requirementKey === key);
+        return [key, policy?.type === 'fact' ? factValue(key) : true];
+      }));
       actionDecision = await proposeV2CatalogAction({
         schemaVersion: 2, toolKey: proposedActionToolKey, goalKey: nextDoc.businessGoalKey,
         stageKey: nextDoc.currentStageKey ?? 'lead_generation', actionRevision,
-        arguments: {
-          lead_contact_name: factValue(nameRequirementKey ?? 'lead_contact_name'),
-          lead_contact_channel: factValue(channelRequirementKey ?? 'lead_contact_channel'),
-          lead_crm_consent: true, lead_action_confirmation: true,
-        },
+        arguments: argumentsForBinding,
       }, catalogV2!, context, { gateway: input.actionGateway, store });
     }
   }
@@ -1045,7 +1066,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     } : null,
     actionProposal: actionDecision?.accepted && actionDecision.action ? {
       id: actionDecision.action.id, intent: actionDecision.action.workflowKey, consentRequired: false,
-      confirmation: 'Your Lead submission is ready to confirm.',
+      confirmation: proposedActionToolKey === 'quotation.generate' ? 'Your quotation request is ready to confirm.' : 'Your Lead submission is ready to confirm.',
       expiresAt: new Date(Date.parse(actionDecision.action.createdAt) + 15 * 60_000).toISOString(),
     } : null,
     pendingPromptId: goalConfirmation?.status === 'pending' ? goalConfirmation.promptId : nextPendingPrompt?.id ?? null, pendingIntentKey: nextDoc.businessGoalKey,

@@ -21,13 +21,24 @@ describe('V2 workflow bridge', () => {
     binding.webhookPath = 'ancfz/v2/lead-create';
     binding.payloadContract = 'ancfz-v2-stage-action-v1';
     const version = { id: 'v2', tenantId: 'tenant', version: 1, status: 'published' as const, sourceFileName: 'fixture', sourceHash: 'hash', parserVersion: 'test', catalog: document, catalogVersionRef: 'anc:v2:test', createdAt: new Date().toISOString(), publishedAt: new Date().toISOString() };
-    expect(resolveV2WorkflowRoute(version, 'crm.lead.create')).toEqual({ workflowKey: 'crm.lead.create', webhookPath: 'ancfz/v2/lead-create', n8nWorkflowId: 'ancfzV2LeadCreateR1', payloadContract: 'ancfz-v2-stage-action-v1' });
+    expect(resolveV2WorkflowRoute(version, 'crm.lead.create')).toEqual({ workflowKey: 'crm.lead.create', providerType: 'remote_n8n', webhookPath: 'ancfz/v2/lead-create', n8nWorkflowId: 'ancfzV2LeadCreateR1', payloadContract: 'ancfz-v2-stage-action-v1' });
   });
 
   it('fails closed for disabled or unbound transport identity', () => {
     const document = catalog();
+    const binding = document.sheets.WorkflowBindings.find(row => row.workflowKey === 'crm.lead.create');
+    if (!binding) throw new Error('lead binding missing');
+    binding.enabled = false;
     const version = { id: 'v2', tenantId: 'tenant', version: 1, status: 'published' as const, sourceFileName: 'fixture', sourceHash: 'hash', parserVersion: 'test', catalog: document, catalogVersionRef: 'anc:v2:test', createdAt: new Date().toISOString(), publishedAt: new Date().toISOString() };
     expect(resolveV2WorkflowRoute(version, 'crm.lead.create')).toBeNull();
+  });
+
+  it('resolves the supplied remote Lead and quotation routes from the published catalog', () => {
+    const document = catalog();
+    const version = { id: 'v2', tenantId: 'tenant', version: 1, status: 'published' as const, sourceFileName: 'fixture', sourceHash: 'hash', parserVersion: 'test', catalog: document, catalogVersionRef: 'anc:v2:test', createdAt: new Date().toISOString(), publishedAt: new Date().toISOString() };
+    expect(resolveV2WorkflowRoute(version, 'crm.lead.create')).toMatchObject({ providerType: 'remote_n8n', webhookPath: 'n8n/webhook/salesforce-lead', n8nWorkflowId: 'salesforce-lead', payloadContract: 'remote.salesforce-lead.v1' });
+    expect(resolveV2WorkflowRoute(version, 'sales.quote.generate')).toMatchObject({ providerType: 'remote_n8n', webhookPath: 'n8n/webhook/generate-quotation', n8nWorkflowId: 'generate-quotation', payloadContract: 'remote.generate-quotation.v1' });
+    expect(document.sheets.ToolBindings.find(row => row.toolKey === 'quotation.generate')).toMatchObject({ stageKey: 'package_selection', sideEffectClass: 'proposal', registryKey: 'sales.quote.generate', enabled: true });
   });
 
   it('claims a published V2 action by canonical catalog reference', async () => {

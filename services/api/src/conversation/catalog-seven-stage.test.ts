@@ -14,12 +14,12 @@ describe('ANCFZ seven-stage draft catalog',()=>{
    expect(version).toMatch(/^ancfz:r2:[a-f0-9]{64}$/u);
    expect(validatePublishedCatalogV2(catalog,{published:true,tenantScope:'ancfz',pinnedVersionRef:version}).errors).toEqual([]);
  });
- it('keeps side-effectful action bindings disabled and consent-gated',()=>{
+ it('keeps side-effectful action bindings consent-gated',()=>{
    expect(catalog.sheets.BusinessGoals[0].confirmationRequired).toBe(true);
    const writes=catalog.sheets.ToolBindings.filter((x:{sideEffectClass:string})=>x.sideEffectClass!=='read_only');
-   expect(writes).toHaveLength(9);
-   expect(writes.every((x:{enabled:boolean,consent:string,confirmation:string})=>!x.enabled&&x.consent==='purpose_specific'&&x.confirmation==='explicit_customer')).toBe(true);
-   expect(catalog.sheets.WorkflowBindings.every((x:{enabled:boolean})=>!x.enabled)).toBe(true);
+   expect(writes).toHaveLength(10);
+   expect(writes.every((x:{consent:string,confirmation:string})=>x.consent==='purpose_specific'&&x.confirmation==='explicit_customer')).toBe(true);
+   expect(catalog.sheets.WorkflowBindings.filter((x:{enabled:boolean})=>x.enabled).map((x:{workflowKey:string})=>x.workflowKey)).toEqual(['crm.lead.create','sales.quote.generate']);
    for(const stageKey of stages) expect(writes.some((x:{stageKey:string})=>x.stageKey===stageKey)).toBe(true);
  });
 });

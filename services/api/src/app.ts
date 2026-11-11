@@ -1811,7 +1811,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           if (unitPrice === null) throw new HttpError(422, 'REMOTE_QUOTATION_PACKAGE_UNAVAILABLE', 'The selected package has no approved price for quotation.');
           return { accountId, customerName, email, packageName: offering.name, currency: offering.currency, items: [{ description: offering.name, quantity: 1, unitPrice: unitPrice / 100 }] };
         })();
-      const result = await dispatchRemoteN8n({ baseUrl: process.env.REMOTE_N8N_BASE_URL ?? '', quotationApiKey: process.env.REMOTE_N8N_QUOTATION_API_KEY ?? '', route: remoteRoute, idempotencyKey: action.idempotencyKey, payload });
+      const result = await dispatchRemoteN8n({ baseUrl: process.env.REMOTE_N8N_BASE_URL ?? '', quotationApiKey: process.env.REMOTE_N8N_QUOTATION_API_KEY || process.env.REMOTE_N8N_QUOTE_API_KEY || '', route: remoteRoute, idempotencyKey: action.idempotencyKey, payload });
       res.json(result);
     } catch (error) {
       if (error instanceof RemoteN8nError) { next(new HttpError(error.retryable ? 503 : 502, error.code.toUpperCase(), 'The remote workflow could not be completed safely.')); return; }

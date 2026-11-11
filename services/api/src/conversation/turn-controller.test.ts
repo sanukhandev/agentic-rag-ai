@@ -822,7 +822,10 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
   });
 
   it('persists masked contact requirements and advances the V2 contact cursor', async () => {
-    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json');
+    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json', catalog => {
+      catalog.sheets.ToolBindings.find(binding => binding.toolKey === 'lead.create')!.enabled = false;
+      catalog.sheets.WorkflowBindings.find(binding => binding.workflowKey === 'crm.lead.create')!.enabled = false;
+    });
     await runGPTFirstChatTurn({
       ...await followUpTurn(ctx, 'Yes, proceed.'),
       coordinator: ctx.coordinator,
@@ -982,7 +985,10 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
   });
 
   it('keeps disabled Lead submission truthful and hides internal requirement keys', async () => {
-    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json');
+    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json', catalog => {
+      catalog.sheets.ToolBindings.find(binding => binding.toolKey === 'lead.create')!.enabled = false;
+      catalog.sheets.WorkflowBindings.find(binding => binding.workflowKey === 'crm.lead.create')!.enabled = false;
+    });
     await runGPTFirstChatTurn({ ...await followUpTurn(ctx, 'Yes, proceed.'), coordinator: ctx.coordinator });
     const confirmed = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
     if (!confirmed) throw new Error('UNIT_INTENT_DOCUMENT_MISSING');
