@@ -172,7 +172,8 @@ describe('GPT-first controller full-turn unit behavior', () => {
       response: { citationIds: [], answer: 'Here are the Starter package, Growth package, and Premium package options. Which package would you like to explore first?', nextQuestion: 'Which package would you like to explore first?', nextQuestionKey: 'package_selection' },
       guardReason: 'accepted',
     }) as unknown as V2CoordinatorResult);
-    await runGPTFirstChatTurn(ctx.input);
+    const packageListReply = await runGPTFirstChatTurn(ctx.input);
+    expect(packageListReply.answer).toContain('Which package would you like to explore first?');
     const afterList = await ctx.store.getSession(ctx.session.id);
     const offer = afterList?.conversationState?.pendingFollowUpOffer;
     expect(offer?.expiresAt && Date.parse(offer.expiresAt)).toBeGreaterThan(Date.now());

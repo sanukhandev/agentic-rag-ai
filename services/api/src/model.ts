@@ -121,7 +121,8 @@ export const classifyOfferReplyDeterministically = (maskedMessage: string, offer
   }));
   const packageSelectionIntent = /\b(?:choose|select|pick|take|prefer|go\s+with)\b/iu.test(message)
     || (!offerReplyQuestion.test(message) && message.trim().split(/\s+/u).length <= 2);
-  if (packageMatches.length === 1 && (/\b(?:package|packages|option|options)\b/iu.test(message) || packageSelectionIntent)) {
+  const explicitNegation = /\b(?:do not|don't|not|never|without|no)\b/iu.test(message);
+  if (packageMatches.length === 1 && !explicitNegation && (/\b(?:package|packages|option|options)\b/iu.test(message) || packageSelectionIntent)) {
     return { action: 'select_option', optionKey: packageMatches[0]?.key ?? null, confidence: 1 };
   }
   if (!offerAffirmation.test(message) && offerReplyQuestion.test(message)) return { action: 'new_request', confidence: 1 };

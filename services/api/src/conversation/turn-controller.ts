@@ -21,6 +21,7 @@ import { issueV2Scope, listApprovedV2PackageEvidence, listApprovedV2PackageOptio
 import { assertSafeUserIntentDocument, assertSafeIntentTurn } from '../user-intent-document.js';
 import { type V2ConversationCoordinator, type V2CoordinatorRequest, type V2CoordinatorResult } from './coordinator.js';
 import type { V2ApprovedEvidence, V2VerifiedFact } from './evidence.js';
+import { guardV2Response } from './response-guard.js';
 import type { V2ApprovedFallbackTemplateSet } from './fallbacks.js';
 import type { Citation, FollowUpOfferOption, GoalConfirmationRecord, Message, PendingFollowUpOffer, PersonaVersion, Session, Store, Tenant, UserIntentDocument, UserIntentFact } from '../types.js';
 
@@ -87,6 +88,18 @@ const buildPackageEvidenceFallback = (message: string, options: V2PackageOption[
     answer: `${usableEvidence.map(item => item.text).join('\n')}\n\nWhich package would you like to explore first?`,
     citationIds: usableEvidence.map(item => item.citationId),
   };
+};
+const guardPackageEvidenceFallback = (persona: PersonaVersion, fallback: ReturnType<typeof buildPackageEvidenceFallback>, evidence: V2ApprovedEvidence[]) => {
+  const decision = guardV2Response({
+    schemaVersion: 2, personaVersionId: persona.id, language: persona.permittedLanguages[0] ?? 'en',
+    answer: fallback.answer, citationIds: fallback.citationIds,
+    nextQuestion: 'Which package would you like to explore first?', nextQuestionKey: 'package_selection',
+    reasonNoQuestion: null, decisionRef: `package-evidence-${hash(JSON.stringify(fallback.citationIds))}`,
+  }, {
+    personaVersionId: persona.id, assistantName: persona.name, permittedLanguages: persona.permittedLanguages,
+    pendingRequirementKey: null, lastQuestionKey: null, questionPolicy: 'optional', evidence,
+  });
+  return decision.verdict.accepted ? decision.response : null;
 };
 export const chatTurnTimeoutMs = (env: NodeJS.ProcessEnv = process.env): number => {
   const configured = Number(env.CHAT_TURN_TIMEOUT_MS ?? 120_000);
@@ -621,13 +634,16 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   let effectiveAnswer = result.response.answer;
   let effectiveQuestion = result.response.nextQuestion;
   let overrideResponse = false;
-  const packageFallback = packageIntent && packageOptions && packageOptions.length > 0
+  const packageFallbackCandidate = packageIntent && packageOptions && packageOptions.length > 0
     && approvedKnowledge.length > 0
-    && result.response.citationIds.length === 0 && result.guardReason !== 'accepted'
+    && result.response.citationIds.length === 0
+    && (result.guardReason === 'safe_no_evidence_dialogue' || result.guardReason === 'accepted_model_dialogue')
     ? buildPackageEvidenceFallback(maskedMessage, packageOptions, approvedKnowledge) : null;
+  const packageFallback = packageFallbackCandidate
+    ? guardPackageEvidenceFallback(persona, packageFallbackCandidate, approvedKnowledge) : null;
   if (packageFallback) {
     effectiveAnswer = packageFallback.answer;
-    effectiveQuestion = 'Which package would you like to explore first?';
+    effectiveQuestion = packageFallback.nextQuestion;
   }
   // Contact details are not collected or used before the customer confirms the
   // business goal, but they still deserve a truthful privacy-safe response.
@@ -821,6 +837,11 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const effectiveCitationIds = packageFallback?.citationIds ?? (overrideResponse ? [] : result.response.citationIds);
   const citations = packageFallback ? await resolvePublicCitations(store, tenant.id, effectiveCitationIds, approvedKnowledge) : (overrideResponse ? [] : modelCitations);
   const grounded = Boolean(packageFallback) || (effectiveCitationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence'));
+  const packageOfferOptions = packageFollowUpOptions(packageOptions ?? []);
+  if (packageOfferOptions.length > 0 && !effectiveQuestion && !overrideResponse) {
+    effectiveQuestion = 'Which package would you like to explore first?';
+    if (!effectiveAnswer.trim().endsWith('?')) effectiveAnswer = `${effectiveAnswer.trim()} ${effectiveQuestion}`.trim();
+  }
   const packageSelectionReady = Boolean(crmLead?.leadId && crmLead.remoteCrm && contactConsent === 'granted');
   let answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
   assertKnownTokens(session, answerMasked, input.tokenVault);
@@ -916,11 +937,6 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     nextDoc.lastQuestion = effectiveQuestion;
   }
   const preserveGreetingFollowUp = greetingTurn && !pendingDecision && !intentDocument?.goalConfirmed && result.guardReason === 'accepted';
-  const packageOfferOptions = packageFollowUpOptions(packageOptions ?? []);
-  if (packageOfferOptions.length > 0 && !effectiveQuestion && !overrideResponse) {
-    effectiveQuestion = 'Which package would you like to explore first?';
-    if (!effectiveAnswer.trim().endsWith('?')) effectiveAnswer = `${effectiveAnswer.trim()} ${effectiveQuestion}`.trim();
-  }
   const followUpOptions = packageOfferOptions.length > 0
     ? packageOfferOptions
     : preserveGreetingFollowUp || !overrideResponse ? result.draft?.followUpOptions ?? [] : [];

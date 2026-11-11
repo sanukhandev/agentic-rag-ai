@@ -431,3 +431,8 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - The shared controller now treats an approved package question as a supporting knowledge turn even while `lead_contact_name` is pending. It loads approved package evidence, returns a guarded citation-backed package list, persists a short-lived package offer, and preserves the contact requirement for the next turn.
 - Regression coverage verifies the pending-contact package path, package offer expiry, package selection, and fail-closed behavior when package rows exist without approved evidence. The fallback never fabricates a package answer from empty evidence.
 - Fixed replay: `artifacts/ancfz/mock-real-time-quote-guidance-fixed-2026-11-11.md`. One transient `V2_MODEL_INVALID_RESPONSE` occurred on the first goal-confirmation attempt and succeeded on retry. The quote remained correctly gated by contact collection and explicit action confirmation; no CRM/provider operation ran.
+
+## 2026-11-11 PR review fixes
+
+- The package evidence fallback now passes through the persona/evidence response guard and is disabled for model/tool hard stops. Package selection negation is fail-closed, and the purposeful package follow-up is materialized before the response is persisted or returned.
+- CI path drift was corrected for the workbook exporter, catalog validator, runtime safety tripwire, retirement guard and their current `conversation/` test fixtures. Hosted unit-only validation passed after these fixes.
