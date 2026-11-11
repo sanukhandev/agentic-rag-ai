@@ -160,30 +160,40 @@
 
       <!-- Section: Knowledge -->
       <ng-container *ngIf="currentSection === 'knowledge'">
-        <app-knowledge-manager></app-knowledge-manager>
-        <app-activity-pipeline *ngIf="role === 'platform_admin'"></app-activity-pipeline>
+        @defer (when currentSection === 'knowledge') {
+          <app-knowledge-manager></app-knowledge-manager>
+          <app-activity-pipeline *ngIf="role === 'platform_admin'"></app-activity-pipeline>
+        }
       </ng-container>
 
       <!-- Section: Intent Catalog -->
       <ng-container *ngIf="currentSection === 'catalog'">
-        <app-intent-catalog></app-intent-catalog>
+        @defer (when currentSection === 'catalog') {
+          <app-intent-catalog></app-intent-catalog>
+        }
       </ng-container>
 
       <!-- Section: AI Studio -->
       <ng-container *ngIf="currentSection === 'studio'">
-        <app-ai-studio></app-ai-studio>
+        @defer (when currentSection === 'studio') {
+          <app-ai-studio></app-ai-studio>
+        }
       </ng-container>
 
       <!-- Section: Customer Chat -->
       <ng-container *ngIf="currentSection === 'chat'">
-        <div class="max-w-4xl mx-auto py-2">
-          <app-customer-chat [initialTenantSlug]="selectedTenant?.slug"></app-customer-chat>
-        </div>
+        @defer (when currentSection === 'chat') {
+          <div class="max-w-4xl mx-auto py-2">
+            <app-customer-chat [initialTenantSlug]="selectedTenant?.slug"></app-customer-chat>
+          </div>
+        }
       </ng-container>
 
       <!-- Section: CRM -->
       <ng-container *ngIf="currentSection === 'crm'">
-        <app-crm></app-crm>
+        @defer (when currentSection === 'crm') {
+          <app-crm></app-crm>
+        }
       </ng-container>
 
       <!-- Section: Observability -->
@@ -194,7 +204,9 @@
 
       <!-- Section: Settings -->
       <ng-container *ngIf="currentSection === 'settings'">
-        <app-settings-view></app-settings-view>
+        @defer (when currentSection === 'settings') {
+          <app-settings-view></app-settings-view>
+        }
       </ng-container>
 
     </main>

@@ -22,7 +22,9 @@ export function isNavSection(value: string | null): value is NavSection {
 function readStoredSection(): NavSection {
   if (typeof window === 'undefined') return 'overview';
   try {
-    const storedSection = window.sessionStorage.getItem(NAV_SECTION_STORAGE_KEY);
+    const hash = window.location?.hash ? window.location.hash.replace(/^#\/?/, '').split('?')[0] : '';
+    if (isNavSection(hash)) return hash;
+    const storedSection = window.sessionStorage?.getItem(NAV_SECTION_STORAGE_KEY);
     return isNavSection(storedSection) ? storedSection : 'overview';
   } catch {
     return 'overview';
@@ -38,6 +40,17 @@ export class UiNavigationService {
   private readonly _commandPaletteOpen = signal<boolean>(false);
   private readonly _createOrgDrawerOpen = signal<boolean>(false);
   private readonly _uploadSourceModalOpen = signal<boolean>(false);
+
+  constructor() {
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('hashchange', () => {
+        const hash = window.location?.hash ? window.location.hash.replace(/^#\/?/, '').split('?')[0] : '';
+        if (isNavSection(hash) && hash !== this._currentSection()) {
+          this.setSection(hash);
+        }
+      });
+    }
+  }
 
   // Angular Signals (Primary reactive state)
   readonly currentSection = this._currentSection.asReadonly();
@@ -64,7 +77,13 @@ export class UiNavigationService {
     this.currentSectionSubject.next(section);
     if (typeof window !== 'undefined') {
       try {
-        window.sessionStorage.setItem(NAV_SECTION_STORAGE_KEY, section);
+        window.sessionStorage?.setItem(NAV_SECTION_STORAGE_KEY, section);
+        if (window.location) {
+          const targetHash = `#/${section}`;
+          if (window.location.hash !== targetHash) {
+            window.location.hash = targetHash;
+          }
+        }
       } catch {
         // Session storage can be unavailable in privacy-restricted browsers.
       }
