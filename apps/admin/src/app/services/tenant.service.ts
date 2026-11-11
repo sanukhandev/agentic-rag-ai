@@ -34,6 +34,8 @@ export class TenantService {
   private readonly _selectedTenant = signal<Tenant | null>(null);
   private readonly _platformOverview = signal<PlatformOverview>(EMPTY_PLATFORM_OVERVIEW);
   private readonly _isLoading = signal<boolean>(false);
+  private tenantsInFlight = false;
+  private overviewInFlight = false;
 
   readonly tenants = this._tenants.asReadonly();
   readonly selectedTenant = this._selectedTenant.asReadonly();
@@ -59,17 +61,23 @@ export class TenantService {
   }
 
   loadTenants(): void {
-    if (!this.auth.token()) return;
-    this._isLoading.set(true);
-    this.isLoadingSubject.next(true);
+    if (!this.auth.token() || this.tenantsInFlight) return;
+    this.tenantsInFlight = true;
+    const hasData = this._tenants().length > 0;
+    if (!hasData) {
+      this._isLoading.set(true);
+      this.isLoadingSubject.next(true);
+    }
 
     if (!this.auth.isPlatformAdmin()) {
       this.http.get<{ tenant: Tenant | null }>(`${this.apiBase}/api/v1/admin/tenant`).pipe(
         catchError((error) => {
+          this.tenantsInFlight = false;
           this.toast.show('error', 'Workspace unavailable', apiErrorMessage(error, 'Could not load the current workspace.'));
           return of({ tenant: null });
         })
       ).subscribe((res) => {
+        this.tenantsInFlight = false;
         this._isLoading.set(false);
         this.isLoadingSubject.next(false);
         if (res?.tenant) {
@@ -85,10 +93,12 @@ export class TenantService {
 
     this.http.get<{ items: Tenant[] }>(`${this.apiBase}/api/v1/admin/tenants`).pipe(
       catchError((error) => {
+        this.tenantsInFlight = false;
         this.toast.show('error', 'Organizations unavailable', apiErrorMessage(error, 'Could not load organizations.'));
-        return of({ items: [] });
+        return of({ items: this._tenants() });
       })
     ).subscribe((res) => {
+      this.tenantsInFlight = false;
       this._isLoading.set(false);
       this.isLoadingSubject.next(false);
       const items = res.items ?? [];
@@ -107,13 +117,16 @@ export class TenantService {
   }
 
   loadPlatformOverview(): void {
-    if (!this.auth.token()) return;
+    if (!this.auth.token() || this.overviewInFlight) return;
+    this.overviewInFlight = true;
     this.http.get<PlatformOverview>(`${this.apiBase}/api/v1/admin/platform/overview`).pipe(
       catchError(() => {
+        this.overviewInFlight = false;
         this.toast.show('error', 'Load Failed', 'Could not load platform overview.');
-        return of(EMPTY_PLATFORM_OVERVIEW);
+        return of(this._platformOverview());
       })
     ).subscribe((data) => {
+      this.overviewInFlight = false;
       this._platformOverview.set(data);
       this.platformOverviewSubject.next(data);
     });

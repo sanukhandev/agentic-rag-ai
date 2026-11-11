@@ -19,6 +19,8 @@ export class KnowledgeService {
   private readonly _sources = signal<Source[]>([]);
   private readonly _jobs = signal<IngestionJob[]>([]);
   private readonly _isLoading = signal<boolean>(false);
+  private sourcesInFlight = false;
+  private jobsInFlight = false;
 
   readonly sources = this._sources.asReadonly();
   readonly jobs = this._jobs.asReadonly();
@@ -34,10 +36,12 @@ export class KnowledgeService {
   readonly isLoading$: Observable<boolean> = this.isLoadingSubject.asObservable();
 
   loadSources(): void {
-    if (!this.auth.token()) return;
+    if (!this.auth.token() || this.sourcesInFlight) return;
+    this.sourcesInFlight = true;
     this.http.get<{ items: Source[] }>(`${this.apiBase}/api/v1/admin/sources`).pipe(
-      catchError(() => of({ items: [] }))
+      catchError(() => of({ items: this._sources() }))
     ).subscribe((res) => {
+      this.sourcesInFlight = false;
       const items = res.items ?? [];
       this._sources.set(items);
       this.sourcesSubject.next(items);
@@ -45,10 +49,12 @@ export class KnowledgeService {
   }
 
   loadJobs(): void {
-    if (!this.auth.token()) return;
+    if (!this.auth.token() || this.jobsInFlight) return;
+    this.jobsInFlight = true;
     this.http.get<{ items: IngestionJob[] }>(`${this.apiBase}/api/v1/admin/ingestion-jobs`).pipe(
-      catchError(() => of({ items: [] }))
+      catchError(() => of({ items: this._jobs() }))
     ).subscribe((res) => {
+      this.jobsInFlight = false;
       const items = res.items ?? [];
       this._jobs.set(items);
       this.jobsSubject.next(items);

@@ -17,6 +17,7 @@ export class CrmService {
   // Angular Signals (Primary reactive state)
   private readonly _leads = signal<CrmLead[]>([]);
   private readonly _isLoading = signal<boolean>(false);
+  private leadsInFlight = false;
 
   readonly leads = this._leads.asReadonly();
   readonly isLoading = this._isLoading.asReadonly();
@@ -29,17 +30,21 @@ export class CrmService {
   readonly isLoading$: Observable<boolean> = this.isLoadingSubject.asObservable();
 
   loadLeads(silent = false): void {
-    if (!this.auth.token()) return;
-    if (!silent) {
+    if (!this.auth.token() || this.leadsInFlight) return;
+    this.leadsInFlight = true;
+    const hasData = this._leads().length > 0;
+    if (!silent && !hasData) {
       this._isLoading.set(true);
       this.isLoadingSubject.next(true);
     }
     this.http.get<{ items: CrmLead[] }>(`${this.apiBase}/api/v1/admin/crm/leads`).pipe(
       catchError((error) => {
+        this.leadsInFlight = false;
         if (!silent) this.toast.show('error', 'Leads unavailable', apiErrorMessage(error, 'Could not load CRM leads.'));
         return of({ items: this._leads() });
       }),
     ).subscribe((response) => {
+      this.leadsInFlight = false;
       const items = response.items ?? [];
       this._leads.set(items);
       this.leadsSubject.next(items);
