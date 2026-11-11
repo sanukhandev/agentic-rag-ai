@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
 import { IngestionJob, AuditEvent, WorkflowRun } from '../../types/admin.types';
@@ -8,6 +8,7 @@ import { BadgeComponent } from '../shared/badge.component';
 @Component({
   selector: 'app-activity-pipeline',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, IconComponent, BadgeComponent],
   template: `
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6" aria-label="Pipeline and Activity">

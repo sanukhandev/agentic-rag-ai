@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -12,6 +12,7 @@ import { PaginationComponent } from '../shared/pagination.component';
 @Component({
   selector: 'app-org-table',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, FormsModule, IconComponent, BadgeComponent, PaginationComponent],
   template: `
     <section class="rounded-2xl border border-neutral-200/90 bg-white p-6 shadow-card" aria-labelledby="org-heading">

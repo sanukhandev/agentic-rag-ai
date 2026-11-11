@@ -1,4 +1,4 @@
-import { Component, OnInit, effect, untracked, signal, inject } from '@angular/core';
+import { Component, OnInit, effect, untracked, signal, inject, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -12,6 +12,7 @@ import { ConfirmDialogComponent } from '../shared/confirm-dialog.component';
 @Component({
   selector: 'app-settings-view',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, FormsModule, IconComponent, BadgeComponent, ConfirmDialogComponent],
   template: `
     <div class="space-y-6">

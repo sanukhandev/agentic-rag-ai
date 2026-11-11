@@ -1,4 +1,4 @@
-import { Component, effect, untracked, inject } from '@angular/core';
+import { Component, effect, untracked, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -13,6 +13,7 @@ import { catalogLoadScope } from '../../services/intent-catalog-utils';
 @Component({
   selector: 'app-intent-catalog',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, FormsModule, BadgeComponent, IconComponent, ConfirmDialogComponent],
   template: `
     <section class="space-y-6">

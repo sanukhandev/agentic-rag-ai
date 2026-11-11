@@ -1,4 +1,4 @@
-import { Component, HostListener, effect, untracked, inject } from '@angular/core';
+import { Component, HostListener, effect, untracked, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -11,6 +11,7 @@ export type { CommandItem };
 @Component({
   selector: 'app-command-palette',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, FormsModule, IconComponent],
   template: `
     <div

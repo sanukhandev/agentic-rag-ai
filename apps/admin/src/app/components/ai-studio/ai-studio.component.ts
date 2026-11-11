@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef, effect, untracked, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, effect, untracked, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -11,6 +11,7 @@ import { BadgeComponent } from '../shared/badge.component';
 @Component({
   selector: 'app-ai-studio',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, FormsModule, IconComponent, BadgeComponent],
   template: `
     <div class="space-y-6">
