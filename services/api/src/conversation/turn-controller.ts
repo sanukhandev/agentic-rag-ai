@@ -77,11 +77,11 @@ const packageFollowUpOptions = (options: V2PackageOption[]): FollowUpOfferOption
   .filter(option => /^package_[a-z0-9][a-z0-9_.-]{0,79}$/u.test(option.key));
 const buildPackageEvidenceFallback = (message: string, options: V2PackageOption[], evidence: V2ApprovedEvidence[]) => {
   const messageTokens = new Set(message.toLocaleLowerCase('en-US').match(/[a-z0-9]{4,}/gu) ?? []);
-  const selected = options.find(option => [option.name, option.packageKey]
+  const matches = options.filter(option => [option.name, option.packageKey]
     .flatMap(value => value.toLocaleLowerCase('en-US').match(/[a-z0-9]{4,}/gu) ?? [])
     .some(token => !['ancfz', 'sample', 'package', 'option', 'options'].includes(token) && messageTokens.has(token)));
-  const selectedEvidence = selected
-    ? evidence.filter(item => item.text.toLocaleLowerCase('en-US').includes(selected.name.toLocaleLowerCase('en-US').split(' (')[0]!.trim()))
+  const selectedEvidence = matches.length === 1
+    ? evidence.filter(item => item.text.toLocaleLowerCase('en-US').includes(matches[0]!.name.toLocaleLowerCase('en-US').split(' (')[0]!.trim()))
     : evidence;
   const usableEvidence = selectedEvidence.length > 0 ? selectedEvidence : evidence;
   return {

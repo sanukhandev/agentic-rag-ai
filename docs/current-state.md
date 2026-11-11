@@ -436,4 +436,5 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 
 - The package evidence fallback now passes through the persona/evidence response guard and is disabled for model/tool hard stops. Package selection negation and conditional questions are fail-closed, expired package pricing is revalidated when an offer is selected, executable read-tool names are normalized before plan validation, semantic explicit goal pursuit remains eligible for model-led confirmation, and fallback grounding is cleared when a later override replaces the answer.
 - Package follow-up options are now attached only when the final guarded question explicitly asks which package to explore, preventing a conditional document/eligibility question from being interpreted as a package selection prompt.
+- Comparison wording now keeps all matched approved package evidence instead of narrowing to the first package returned by storage order.
 - CI path drift was corrected for the workbook exporter, catalog validator, runtime safety tripwire, retirement guard and their current `conversation/` test fixtures. Hosted unit-only validation passed after these fixes.

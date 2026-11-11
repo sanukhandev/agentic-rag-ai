@@ -148,6 +148,30 @@ describe('GPT-first controller full-turn unit behavior', () => {
     expect(reply.actionProposal).toBeNull();
   });
 
+  it('keeps all approved package evidence for comparison questions', async () => {
+    const ctx = await prepared();
+    const version = await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+    for (const [packageKey, name] of [['starter', 'Starter package'], ['growth', 'Growth package']] as const) {
+      await ctx.store.createPackageOffering({
+        id: randomUUID(), tenantId: ctx.tenant.id, catalogVersionId: null, catalogVersionRef: version.catalogVersionRef,
+        packageKey, name, eligibleEntityTypes: [], eligibleActivities: [], includedVisaQuantity: packageKey === 'starter' ? 1 : 2,
+        officeRequirement: 'shared', inclusions: ['company registration'], priceMinor: packageKey === 'starter' ? 249900 : 499900,
+        currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [], processingTime: 'development only',
+        requiredDocuments: [], exclusions: [], availability: 'development_only', approvalStatus: 'approved', sourceRefs: ['unit'], createdAt: new Date().toISOString(),
+      });
+    }
+    const initial = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+    if (!initial) throw new Error('UNIT_MESSAGE_MISSING');
+    const message = 'Compare the Starter and Growth packages';
+    await ctx.store.updateMessage({ ...initial, maskedContent: message });
+    ctx.input.userMessage = { ...initial, maskedContent: message };
+    ctx.input.maskedMessage = message;
+    ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
+    const reply = await runGPTFirstChatTurn(ctx.input);
+    expect(reply.answer).toContain('Starter package');
+    expect(reply.answer).toContain('Growth package');
+  });
+
   it('persists package options and resolves a natural package selection on the next turn', async () => {
     const ctx = await prepared();
     const version = await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
