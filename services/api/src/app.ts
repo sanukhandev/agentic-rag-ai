@@ -1194,7 +1194,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     modelConfigured: Boolean(dependencies.model || dependencies.summaryModel),
     embeddingConfigured: Boolean(dependencies.embedding),
   });
-  registerLifecycleRoutes(app, { store, gateway, chatApi, routeParam, authorizeSession: authorizeChatSession, advanceLifecycleStage });
+  registerLifecycleRoutes(app, { store, gateway, chatApi, routeParam, authorizeSession: authorizeChatSession, advanceLifecycleStage, allowSimulatedPayment: nodeEnv !== 'production' });
   app.post('/api/v1/admin/ingestion-jobs', protectedApi, requireRoles('tenant_admin', 'tenant_editor'), async (req, res, next) => {
     try {
       const tenantId = await tenantForRequest(store, req);
