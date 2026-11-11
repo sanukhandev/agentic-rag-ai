@@ -91,7 +91,7 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { runAgentTools, type AgentToolResult } from './agent-tools.js';
 import { registerLifecycleRoutes } from './routes/lifecycle.js';
-import { createDevelopmentQuoteAfterLead } from './business-lifecycle.js';
+import { createDevelopmentQuoteAfterLead, hasVerifiedLiveInvoiceDelivery } from './business-lifecycle.js';
 import { VocabularyLearningService } from './conversation/vocabulary.js';
 import { issueV2Scope, registerV2ToolGateway, V2_TOOL_NAMES } from './conversation/tool-gateway.js';
 import { V2ConversationCoordinator, conversationEngineV2EnabledForTenant } from './conversation/coordinator.js';
@@ -3145,10 +3145,8 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         return;
       }
       if (providerType === 'billing_live' && billingReadbackProvider) {
-        const deliveryProof = (await store.listAudit(input.tenantId)).find((event) => event.eventName === 'invoice.live_delivery_verified'
-          && event.metadata.invoiceId === invoice.id && event.metadata.quoteId === quote.id
-          && event.metadata.externalInvoiceId === invoice.externalInvoiceId && event.metadata.deliveryStatus === 'sent');
-        if (!deliveryProof || invoice.provider !== 'billing_live') throw new HttpError(409, 'BILLING_INVOICE_DELIVERY_NOT_VERIFIED', 'Invoice delivery must be verified before payment settlement.');
+        if (!await hasVerifiedLiveInvoiceDelivery(store, session, invoice))
+          throw new HttpError(409, 'BILLING_INVOICE_DELIVERY_NOT_VERIFIED', 'A completed invoice delivery action and independent readback proof are required before payment settlement.');
         const paymentRecord = await billingReadbackProvider.readPayment(input.providerRecordId);
         let verified;
         try { verified = verifyLivePaymentReadback(invoice, quote, input.providerRecordId, paymentRecord); }
