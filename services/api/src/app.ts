@@ -808,7 +808,19 @@ export const createApp = (dependencies: AppDependencies = {}) => {
                 && event.metadata.opportunityId === action.opportunityId && event.metadata.evidenceTier === 'provider_record_verified');
               if (!paidInvoice || paidInvoice.status !== 'paid' || paidInvoice.provider !== 'billing_live' || !proof)
                 throw new HttpError(409, 'PAYMENT_PROOF_REQUIRED', 'Verified real payment evidence is required to advance to contract.');
-              await advanceLifecycleStage(refreshed, stage, { actionId: action.id, invoiceId: paidInvoice.id, paymentId: String(proof.metadata.paymentId), invoiceIssued: true, paymentCompleted: true, evidenceTier: 'provider_record_verified', providerVerified: true });
+              const progress = refreshed.conversationState?.intentProgress;
+              const activeIntentKey = refreshed.conversationState?.activeFollowUpIntentKey ?? progress?.activeIntentKey ?? refreshed.conversationState?.selectedIntentKey;
+              const journey = activeIntentKey ? progress?.entries[activeIntentKey] : null;
+              if (!journey?.lifecycle || journey.journeyId !== action.opportunityId || journey.lifecycle.currentStage !== 'billing_invoice')
+                throw new HttpError(409, 'PAYMENT_LIFECYCLE_SCOPE_MISMATCH', 'The verified payment does not match the active billing lifecycle.');
+              const stageRevision = journey.lifecycle.stages.billing_invoice.revision + 1;
+              await advanceLifecycleStage(refreshed, stage, {
+                tenantId: action.tenantId, sessionId: action.sessionId, opportunityId: action.opportunityId!,
+                catalogVersionRef: v2Document.catalogVersionRef!, stageKey: 'payment_invoice', stageRevision,
+                evidenceRef: String(proof.metadata.paymentId), evidenceTier: 'provider_record_verified',
+                operationStatus: 'completed', actionId: action.id, invoiceId: paidInvoice.id,
+                paymentId: String(proof.metadata.paymentId), invoiceIssued: true, paymentCompleted: true, providerVerified: true,
+              });
             } else {
               await advanceLifecycleStage(refreshed, stage as LifecycleStage, { actionId: action.id, providerVerified: true });
             }
