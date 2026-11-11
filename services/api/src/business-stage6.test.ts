@@ -76,7 +76,7 @@ describe('Stage 6 → Stage 7 authoritative payment gate', () => {
     });
     const proof = {
       actionId, invoiceId: invoice.id, quoteId: quote.id, opportunityId,
-      externalInvoiceId: invoice.externalInvoiceId, paymentId: 'payment-verified-123',
+      externalInvoiceId: invoice.externalInvoiceId!, paymentId: 'payment-verified-123',
       amountMinor: invoice.amountMinor, currency: invoice.currency,
       evidenceTier: 'provider_record_verified',
     };
