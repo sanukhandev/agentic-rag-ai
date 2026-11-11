@@ -117,51 +117,50 @@ export class AdminStateService {
   readonly toasts$: Observable<ToastMessage[]> = this.toastService.toasts$;
 
   constructor() {
-    // Reactive signal effect for authentication state changes
+    // Unified reactive signal effect for authentication, tenant, and section transitions
+    let lastLoadedScopeKey = '';
     effect(() => {
       const authenticated = this.auth.isAuthenticated();
-      if (authenticated) {
-        untracked(() => this.refreshAllData());
+      if (!authenticated) {
+        lastLoadedScopeKey = '';
+        return;
       }
-    });
 
-    // Reactive signal effect for section changes
-    effect(() => {
+      const tenant = this.tenantService.selectedTenant();
+      const tenantId = tenant?.id ?? this.auth.selectedTenantId ?? 'all';
       const section = this.nav.currentSection();
-      if (this.auth.isAuthenticated()) {
+
+      if (!this.canAccessSection(section)) {
+        untracked(() => this.nav.setSection('overview'));
+        return;
+      }
+
+      const scopeKey = `${tenantId}:${section}`;
+      if (scopeKey !== lastLoadedScopeKey) {
+        lastLoadedScopeKey = scopeKey;
         untracked(() => {
-          if (!this.canAccessSection(section)) {
-            this.nav.setSection('overview');
-            return;
+          if (this.isPlatformAdmin()) {
+            this.tenantService.loadTenants();
+            this.tenantService.loadPlatformOverview();
           }
           this.loadSectionData(section);
         });
       }
     });
 
-    // Reactive signal effect for workspace/tenant selection
-    let lastScopedTenantId: string | null = null;
-    effect(() => {
-      const tenant = this.tenantService.selectedTenant();
-      const tenantId = tenant?.id ?? null;
-      if (this.auth.isAuthenticated() && tenantId && tenantId !== lastScopedTenantId) {
-        lastScopedTenantId = tenantId;
-        untracked(() => this.loadTenantScopedData());
-      } else if (!tenantId) {
-        lastScopedTenantId = null;
-      }
-    });
-
     if (typeof window !== 'undefined') {
+      let lastFocusRefreshTime = 0;
       window.addEventListener('focus', () => {
-        if (this.auth.isAuthenticated()) {
+        const now = Date.now();
+        if (this.auth.isAuthenticated() && now - lastFocusRefreshTime > 30000) {
+          lastFocusRefreshTime = now;
           this.refreshCurrentSection();
         }
       });
 
       this.ngZone.runOutsideAngular(() => {
         setInterval(() => {
-          if (this.auth.isAuthenticated()) {
+          if (this.auth.isAuthenticated() && typeof document !== 'undefined' && !document.hidden) {
             const sec = this.nav.currentSection();
             if (this.auth.isPlatformAdmin() && (sec === 'overview' || sec === 'observability')) {
               this.observability.loadHealth();
@@ -174,7 +173,7 @@ export class AdminStateService {
               }
             }
           }
-        }, 8000);
+        }, 15000);
       });
     }
   }
@@ -384,7 +383,9 @@ export class AdminStateService {
           this.tenantService.loadTenants();
           this.tenantService.loadPlatformOverview();
         } else {
-          this.loadTenantScopedData();
+          this.knowledge.loadSources();
+          this.personaService.loadPersona();
+          this.crm.loadLeads(true);
         }
         break;
       case 'organizations':
@@ -438,6 +439,6 @@ export class AdminStateService {
       this.tenantService.loadTenants();
       this.tenantService.loadPlatformOverview();
     }
-    this.loadTenantScopedData();
+    this.refreshCurrentSection();
   }
 }
