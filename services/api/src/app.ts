@@ -30,6 +30,7 @@ import { buildV2AccountProviderRequest, DeterministicV2AccountProvider, DurableV
 import { buildV2LeadProviderRequest, DeterministicV2LeadProvider, validateV2LeadProviderResult } from './conversation/lead-provider.js';
 import { SalesforceSandboxLeadProvider, type SalesforceSandboxAccountReadbackProvider, type SalesforceSandboxLeadMutationProvider, type SalesforceSandboxLeadReadbackProvider } from './salesforce-sandbox-lead-provider.js';
 import { buildV2PaymentProviderRequest, DeterministicV2PaymentProvider, validateV2PaymentProviderResult } from './conversation/payment-provider.js';
+import { HttpLiveBillingReadbackProvider, verifyLiveInvoiceReadback, verifyLivePaymentReadback, type LiveBillingReadbackProvider } from './conversation/billing-readback.js';
 import { buildV2ContractProviderRequest, DeterministicV2ContractProvider, validateV2ContractProviderResult } from './conversation/contract-provider.js';
 import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLeadPhone, scoreCrmLead } from './crm-scoring.js';
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
@@ -482,6 +483,7 @@ export interface AppDependencies {
   v2SalesforceAccountProvider?: SalesforceSandboxAccountReadbackProvider;
   v2DocumentProvider?: DeterministicV2DocumentProvider;
   v2PaymentProvider?: DeterministicV2PaymentProvider;
+  v2BillingReadbackProvider?: LiveBillingReadbackProvider;
   v2ContractProvider?: DeterministicV2ContractProvider;
 }
 
@@ -632,6 +634,10 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     ? salesforceLeadProvider.isLeadReadbackConfigured() && process.env.V2_LEAD_WORKFLOW_READY === 'true'
       : Boolean(salesforceLeadProvider);
   const mockPaymentProvider = dependencies.v2PaymentProvider ?? (process.env.REMOTE_PAYMENT_PROVIDER === 'deterministic_mock' ? new DeterministicV2PaymentProvider() : null);
+  const billingReadbackProvider = dependencies.v2BillingReadbackProvider
+    ?? (process.env.V2_BILLING_READBACK_BASE_URL && process.env.V2_BILLING_READBACK_TOKEN
+      ? new HttpLiveBillingReadbackProvider(process.env.V2_BILLING_READBACK_BASE_URL, process.env.V2_BILLING_READBACK_TOKEN)
+      : null);
   const mockContractProvider = dependencies.v2ContractProvider ?? (process.env.REMOTE_SIGNATURE_PROVIDER === 'deterministic_mock' ? new DeterministicV2ContractProvider() : null);
   if (nodeEnv === 'production' && !dependencies.v2AccountOtp && !process.env.V2_OTP_SECRET) throw new Error('V2_OTP_SECRET is required in production.');
   const chatSessionTtlMs = dependencies.chatSessionTtlMs ?? Number(process.env.CHAT_SESSION_TTL_MS ?? 10 * 60 * 1000);
@@ -793,7 +799,19 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         if (lifecycleStages.includes(stage as LifecycleStage)) {
           const refreshed = await store.getSession(action.sessionId);
           if (refreshed) {
-            await advanceLifecycleStage(refreshed, stage as LifecycleStage, { actionId: action.id, providerVerified: true });
+            if (stage === 'billing_invoice') {
+              if (action.actionKey !== 'payment.authorize') throw new HttpError(409, 'PAYMENT_ACTION_REQUIRED', 'Only verified payment settlement can finish the billing stage.');
+              const invoiceId = action.payload.slotValues?.invoiceId;
+              const paidInvoice = typeof invoiceId === 'string' ? await store.getInvoice(invoiceId, action.tenantId) : null;
+              const proof = (await store.listAudit(action.tenantId)).find((event) => event.eventName === 'payment.live_settlement_verified'
+                && event.metadata.actionId === action.id && event.metadata.invoiceId === invoiceId
+                && event.metadata.opportunityId === action.opportunityId && event.metadata.evidenceTier === 'provider_record_verified');
+              if (!paidInvoice || paidInvoice.status !== 'paid' || paidInvoice.provider !== 'billing_live' || !proof)
+                throw new HttpError(409, 'PAYMENT_PROOF_REQUIRED', 'Verified real payment evidence is required to advance to contract.');
+              await advanceLifecycleStage(refreshed, stage, { actionId: action.id, invoiceId: paidInvoice.id, paymentId: String(proof.metadata.paymentId), invoiceIssued: true, paymentCompleted: true, evidenceTier: 'provider_record_verified', providerVerified: true });
+            } else {
+              await advanceLifecycleStage(refreshed, stage as LifecycleStage, { actionId: action.id, providerVerified: true });
+            }
             const advanced = await store.getSession(action.sessionId);
             const state = advanced?.conversationState;
             const intentKey = state?.activeFollowUpIntentKey ?? state?.intentProgress?.activeIntentKey ?? state?.selectedIntentKey;
@@ -3104,10 +3122,38 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       await assertV2ProviderCorrelation(action, input);
       const execution = await store.getActionExecution(action.id, action.tenantId);
       if (!execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.attempt) throw new HttpError(409, 'WORKFLOW_CORRELATION_MISMATCH', 'Provider evidence does not match the current workflow execution.');
-      if (completedReplay) { res.json({ accepted: true, status: 'mock_verified', evidenceTier: 'mock_verified', stageKey: input.stageKey, providerRecordRef: invoice.externalInvoiceId, invoice, action }); return; }
+      if (completedReplay) { res.json({ accepted: true, status: invoice.provider === 'billing_live' ? 'provider_record_verified' : 'mock_verified', evidenceTier: invoice.provider === 'billing_live' ? 'provider_record_verified' : 'mock_verified', stageKey: input.stageKey, providerRecordRef: invoice.externalInvoiceId, invoice, action }); return; }
       if (action.state !== 'processing') throw new HttpError(409, 'V2_PROVIDER_ACTION_NOT_PROCESSING', 'Provider evidence can only finalize a claimed V2 action.');
       const providerType = workflowBinding.providerType;
       if (input.providerType && input.providerType !== providerType) throw new HttpError(409, 'V2_PROVIDER_TYPE_MISMATCH', 'Provider evidence type does not match the published workflow binding.');
+      if (providerType === 'billing_live' && billingReadbackProvider) {
+        const quote = await store.getQuote(invoice.quoteId, input.tenantId);
+        if (!quote) throw new HttpError(409, 'BILLING_QUOTE_MISSING', 'The approved source quote is missing.');
+        const invoiceRecord = await billingReadbackProvider.readInvoice(input.providerRecordId);
+        let verified;
+        try { verified = verifyLiveInvoiceReadback(invoice, quote, input.providerRecordId, invoiceRecord); }
+        catch { throw new HttpError(409, 'BILLING_INVOICE_READBACK_INVALID', 'The issued and sent invoice failed independent provider verification.'); }
+        const updatedInvoice = await store.updateInvoice({ ...invoice, externalInvoiceId: verified.externalInvoiceId, paymentUrl: verified.hostedPaymentUrl, provider: 'billing_live', status: 'pending', updatedAt: new Date().toISOString() });
+        await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'invoice.live_delivery_verified', metadata: { invoiceId: invoice.id, quoteId: quote.id, opportunityId: invoice.opportunityId, actionId: action.id, externalInvoiceId: verified.externalInvoiceId, artifactSha256: verified.artifactSha256, deliveryStatus: verified.deliveryStatus, amountMinor: verified.amountMinor, currency: verified.currency }, createdAt: new Date().toISOString() });
+        const completed = await transitionWorkflowAction(action, 'completed', verified.externalInvoiceId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, true);
+        res.json({ accepted: true, status: 'provider_record_verified', evidenceTier: 'provider_record_verified', stageKey: input.stageKey, providerRecordRef: verified.externalInvoiceId, invoice: updatedInvoice, action: completed });
+        return;
+      }
+      if (providerType === 'billing_live' && billingReadbackProvider) {
+        const deliveryProof = (await store.listAudit(input.tenantId)).find((event) => event.eventName === 'invoice.live_delivery_verified'
+          && event.metadata.invoiceId === invoice.id && event.metadata.quoteId === quote.id
+          && event.metadata.externalInvoiceId === invoice.externalInvoiceId && event.metadata.deliveryStatus === 'sent');
+        if (!deliveryProof || invoice.provider !== 'billing_live') throw new HttpError(409, 'BILLING_INVOICE_DELIVERY_NOT_VERIFIED', 'Invoice delivery must be verified before payment settlement.');
+        const paymentRecord = await billingReadbackProvider.readPayment(input.providerRecordId);
+        let verified;
+        try { verified = verifyLivePaymentReadback(invoice, quote, input.providerRecordId, paymentRecord); }
+        catch { throw new HttpError(409, 'BILLING_PAYMENT_READBACK_INVALID', 'Payment settlement has not been independently verified.'); }
+        const paidInvoice = await store.updateInvoice({ ...invoice, status: 'paid', provider: 'billing_live', updatedAt: new Date().toISOString() });
+        await store.addAudit({ id: randomUUID(), tenantId: input.tenantId, actorId: null, eventName: 'payment.live_settlement_verified', metadata: { invoiceId: invoice.id, quoteId: quote.id, opportunityId: invoice.opportunityId, actionId: action.id, externalInvoiceId: verified.externalInvoiceId, paymentId: verified.paymentId, amountMinor: verified.amountMinor, currency: verified.currency, settledAt: verified.settledAt, evidenceTier: 'provider_record_verified' }, createdAt: new Date().toISOString() });
+        const completed = await transitionWorkflowAction(action, 'completed', verified.paymentId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, true);
+        res.json({ accepted: true, status: 'provider_record_verified', paymentVerified: true, evidenceTier: 'provider_record_verified', stageKey: input.stageKey, providerRecordRef: verified.paymentId, invoice: paidInvoice, action: completed });
+        return;
+      }
       if (providerType !== 'deterministic_mock' || !mockPaymentProvider || nodeEnv === 'production') {
         const reconciledInvoice = await store.updateInvoice({ ...invoice, status: 'reconcile_required', provider: providerType, updatedAt: new Date().toISOString() });
         const reconciled = await transitionWorkflowAction(action, 'reconcile_required', undefined, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input);
@@ -3161,11 +3207,12 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const readback = result.status === 'mock_paid' ? { tenantId: input.tenantId, sessionId: session.id, opportunityId: input.opportunityId, providerType: 'deterministic_mock', idempotencyKey: action.idempotencyKey, recordRef: result.paymentId, evidenceTier: 'mock_verified' as const, verificationStatus: 'verified' as const } : undefined;
       const validation = validateV2PaymentProviderResult(providerRequest, result, readback);
       if (!validation.accepted) throw new HttpError(409, 'V2_PROVIDER_EVIDENCE_INVALID', `Deterministic Payment provider evidence was rejected (${validation.reasons.join(',')}).`);
-      const updatedInvoice = await store.updateInvoice({ ...invoice, provider: 'deterministic_mock', status: validation.paymentVerified ? 'paid' : 'pending', updatedAt: new Date().toISOString() });
+      // Simulation does not settle money and must never mark an invoice paid.
+      const updatedInvoice = await store.updateInvoice({ ...invoice, provider: 'deterministic_mock', status: 'pending', updatedAt: new Date().toISOString() });
       const updatedAction = validation.paymentVerified
-        ? await transitionWorkflowAction(action, 'completed', result.paymentId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, true)
+        ? await transitionWorkflowAction(action, 'completed', result.paymentId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, false)
         : await transitionWorkflowAction(action, 'processing', result.paymentId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, false);
-      res.json({ accepted: true, status: validation.status, paymentVerified: validation.paymentVerified, evidenceTier: validation.status, stageKey: input.stageKey, providerRecordRef: result.paymentId, invoice: updatedInvoice, action: updatedAction });
+      res.json({ accepted: true, status: validation.status, paymentVerified: false, simulationPaid: validation.paymentVerified, evidenceTier: validation.status, stageKey: input.stageKey, providerRecordRef: result.paymentId, invoice: updatedInvoice, action: updatedAction });
     } catch (error) { next(error); }
   });
   app.post('/api/v2/internal/provider-evidence/contract', n8nInternalApi, async (req, res, next) => {
