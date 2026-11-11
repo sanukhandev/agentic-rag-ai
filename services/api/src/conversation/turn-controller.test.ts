@@ -172,6 +172,28 @@ describe('GPT-first controller full-turn unit behavior', () => {
     expect(reply.answer).toContain('Growth package');
   });
 
+  it('preserves advisory document questions when package evidence cannot answer them', async () => {
+    const ctx = await prepared();
+    const version = await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+    await ctx.store.createPackageOffering({
+      id: randomUUID(), tenantId: ctx.tenant.id, catalogVersionId: null, catalogVersionRef: version.catalogVersionRef,
+      packageKey: 'growth', name: 'Growth package', eligibleEntityTypes: [], eligibleActivities: [], includedVisaQuantity: 2,
+      officeRequirement: 'shared', inclusions: ['company registration'], priceMinor: 499900, currency: 'AED',
+      pricingEffectiveFrom: null, pricingEffectiveTo: null, additionalFees: [], processingTime: 'development only',
+      requiredDocuments: [], exclusions: [], availability: 'development_only', approvalStatus: 'approved', sourceRefs: ['unit'], createdAt: new Date().toISOString(),
+    });
+    const initial = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+    if (!initial) throw new Error('UNIT_MESSAGE_MISSING');
+    const message = 'What documents are required for the Growth package?';
+    await ctx.store.updateMessage({ ...initial, maskedContent: message });
+    ctx.input.userMessage = { ...initial, maskedContent: message };
+    ctx.input.maskedMessage = message;
+    ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
+    const reply = await runGPTFirstChatTurn(ctx.input);
+    expect(reply.answer).toMatch(/document|identity|proceed/iu);
+    expect(reply.answer).not.toContain('Which package would you like to explore first?');
+  });
+
   it('persists package options and resolves a natural package selection on the next turn', async () => {
     const ctx = await prepared();
     const version = await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);

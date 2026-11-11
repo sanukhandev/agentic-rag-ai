@@ -651,6 +651,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   let overrideResponse = false;
   const packageFallbackCandidate = packageIntent && !acceptedOfferOption && packageOptions && packageOptions.length > 0
     && approvedKnowledge.length > 0
+    && !/\b(?:document|documents|passport|identity|upload|provide|require\w*|eligible|eligibility|activit\w*|licen[cs]e|steps|process(?:ing)?)\b/iu.test(maskedMessage)
     && result.response.citationIds.length === 0
     && (result.guardReason === 'safe_no_evidence_dialogue' || result.guardReason === 'accepted_model_dialogue' || result.guardReason === 'accepted')
     ? buildPackageEvidenceFallback(maskedMessage, packageOptions, approvedKnowledge) : null;
