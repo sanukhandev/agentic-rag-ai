@@ -30,6 +30,7 @@ if (!JSON.stringify(services.postgres.healthcheck?.test).includes('-h 127.0.0.1'
 if (!services.api.healthcheck || !services.nginx.healthcheck || !services['model-gateway'].healthcheck) throw new Error('Missing health checks.');
 if (services.api.environment.CHAT_MODEL_PROVIDER !== 'python-gpt'
   || services.api.environment.CONVERSATION_ENGINE_V2_ENABLED !== 'true'
+  || services.api.environment.CONVERSATION_ENGINE_V2_REQUIRED !== 'true'
   || services.api.environment.PYTHON_MODEL_URL !== 'http://model-gateway:8088') throw new Error('GPT-first API wiring invalid.');
 if (services['model-gateway'].environment.NODE_TOOL_GATEWAY_URL !== 'http://api:4000') throw new Error('Trusted Node tool gateway missing.');
 if (services.n8n.environment.N8N_PATH !== '/n8n/' || services['event-worker'].environment.N8N_INTERNAL_URL !== 'http://n8n:5678') throw new Error('n8n proxy path mismatch.');

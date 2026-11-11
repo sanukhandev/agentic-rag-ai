@@ -4,11 +4,11 @@ import { Pool } from 'pg';
 import { createApp } from './app.js';
 import { attachChatStream, type ChatStreamMessageFrame } from './chat-stream.js';
 import { AzureEmbeddingProvider } from './embedding.js';
-import { pythonChatModelFromEnv, pythonSummaryModelFromEnv } from './python-model/chat-model-adapter.js';
+import { pythonSummaryModelFromEnv } from './python-model/chat-model-adapter.js';
 import { createCache } from './cache.js';
 import { MemoryStore } from './store-memory.js';
 import { PostgresStore } from './store-postgres.js';
-import { assertConversationEngineV2Configuration, HttpV2ConversationAgent, V2ConversationCoordinator } from './conversation/coordinator.js';
+import { assertConversationEngineV2Configuration, ConversationTurnCoordinator, HttpV2ConversationAgent } from './conversation/coordinator.js';
 import { HttpV2GroundingVerifier } from './conversation/grounding-verifier.js';
 import { RedisChatTurnQueue } from './chat-turn-queue.js';
 
@@ -22,11 +22,12 @@ const store = pool ? new PostgresStore(pool) : new MemoryStore();
 const cache = createCache(process.env.REDIS_URL);
 const chatTurnQueue = process.env.REDIS_URL && process.env.CHAT_STREAM_INTERNAL_SECRET ? new RedisChatTurnQueue(process.env.REDIS_URL) : undefined;
 const embedding = process.env.AZURE_AI_ENDPOINT && process.env.AZURE_AI_EMBEDDING_DEPLOYMENT && process.env.AZURE_AI_API_KEY && process.env.AZURE_AI_API_VERSION ? new AzureEmbeddingProvider(process.env.AZURE_AI_ENDPOINT, process.env.AZURE_AI_EMBEDDING_DEPLOYMENT, process.env.AZURE_AI_API_KEY, process.env.AZURE_AI_API_VERSION, Number(process.env.AZURE_AI_EMBEDDING_DIMENSION ?? 1536)) : undefined;
-// Python V1 planning is an emergency rollback path only, not a parallel GPT planner.
-const model = process.env.CONVERSATION_ENGINE_V2_ENABLED === 'false' ? pythonChatModelFromEnv() : undefined;
+// The canonical turn coordinator is the only active chat planner. The legacy
+// model adapter remains available only for the separate CRM summary route.
+const model = undefined;
 const summaryModel = pythonSummaryModelFromEnv();
-const v2Coordinator = process.env.CONVERSATION_ENGINE_V2_ENABLED !== 'false' && process.env.PYTHON_MODEL_URL && process.env.MODEL_GATEWAY_SERVICE_KEY
-  ? new V2ConversationCoordinator(
+const v2Coordinator = process.env.PYTHON_MODEL_URL && process.env.MODEL_GATEWAY_SERVICE_KEY
+  ? new ConversationTurnCoordinator(
     new HttpV2ConversationAgent(process.env.PYTHON_MODEL_URL, process.env.MODEL_GATEWAY_SERVICE_KEY, Number(process.env.PYTHON_MODEL_TIMEOUT_MS ?? 90_000)),
     // Explicit opt-in during calibrated evaluation; not safe to enable
     // automatically until live unsupported-claim and false-rejection gates pass.
