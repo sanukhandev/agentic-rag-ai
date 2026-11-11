@@ -948,7 +948,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   }
   const preserveGreetingFollowUp = greetingTurn && !pendingDecision && !intentDocument?.goalConfirmed && result.guardReason === 'accepted';
   const packageOfferOptions = packageFollowUpOptions(packageOptions ?? []);
-  const followUpOptions = packageOfferOptions.length > 0
+  const packageSelectionQuestion = /\bwhich\s+package\s+would\s+you\s+like\s+to\s+explore\s+first\?/iu.test(effectiveQuestion ?? '');
+  const followUpOptions = packageOfferOptions.length > 0 && packageSelectionQuestion
     ? packageOfferOptions
     : preserveGreetingFollowUp || !overrideResponse ? result.draft?.followUpOptions ?? [] : [];
   state.pendingFollowUpOffer = followUpOptions.length > 0 && effectiveQuestion
