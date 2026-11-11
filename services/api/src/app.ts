@@ -756,7 +756,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       return false;
     }
   };
-  const syncWorkflowState = async (action: Pick<ActionRequest, 'id' | 'tenantId' | 'sessionId' | 'intentKey' | 'actionKey' | 'catalogVersionId' | 'workflowKey' | 'opportunityId'>, status: ActionState, trustedProviderEvidence = false): Promise<void> => {
+  const syncWorkflowState = async (action: Pick<ActionRequest, 'id' | 'tenantId' | 'sessionId' | 'intentKey' | 'actionKey' | 'catalogVersionId' | 'workflowKey' | 'opportunityId' | 'payload'>, status: ActionState, trustedProviderEvidence = false): Promise<void> => {
     const session = await store.getSession(action.sessionId);
     if (!session || session.tenantId !== action.tenantId) return;
     const currentState = session.conversationState;
