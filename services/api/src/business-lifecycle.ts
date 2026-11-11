@@ -218,6 +218,6 @@ export const createContractDraft = async (store: Store, session: Session, opport
     throw new HttpError(409, 'CONTRACT_AMOUNT_MISMATCH', 'The invoice and approved package quote must match.');
   if (!await hasVerifiedLivePayment(store, session, invoice))
     throw new HttpError(409, 'PAYMENT_PROOF_REQUIRED', 'An independently verified real payment is required before contract preparation.');
-  const account: CrmAccount = await requireVerifiedAccount(store, session, opportunityId);
+  await requireVerifiedAccount(store, session, opportunityId);
   return store.createContract({ id: randomUUID(), tenantId: session.tenantId, opportunityId, packageSelectionId: selection.id, invoiceId: invoice?.id ?? null, externalContractId: null, templateKey: 'ancfz-company-formation-v1', signingUrl: null, status: 'draft', provider: 'sandbox-pending', createdAt: now(), updatedAt: now() });
 };
