@@ -649,9 +649,13 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   let effectiveAnswer = result.response.answer;
   let effectiveQuestion = result.response.nextQuestion;
   let overrideResponse = false;
+  const packageSummaryRequest = !/\b(?:document|documents|passport|identity|upload|provide|require\w*|eligible|eligibility|activit\w*|licen[cs]e|steps|recommend\w*|best)\b/iu.test(maskedMessage)
+    && (/\b(?:price|prices|pricing|cost|costs|fee|fees|quote|quotation|visa|visas|office|includ\w*|availab\w*|process(?:ing)?|compare|comparison|versus|vs\.?)\b/iu.test(maskedMessage)
+      || (/\b(?:package|packages|plan|plans|tier|tiers)\b/iu.test(maskedMessage)
+        && /\b(?:what|which|offer\w*|availab\w*|option\w*|choice\w*|compare|comparison|versus|vs\.?)\b/iu.test(maskedMessage)));
   const packageFallbackCandidate = packageIntent && !acceptedOfferOption && packageOptions && packageOptions.length > 0
     && approvedKnowledge.length > 0
-    && !/\b(?:document|documents|passport|identity|upload|provide|require\w*|eligible|eligibility|activit\w*|licen[cs]e|steps|process(?:ing)?)\b/iu.test(maskedMessage)
+    && packageSummaryRequest
     && result.response.citationIds.length === 0
     && (result.guardReason === 'safe_no_evidence_dialogue' || result.guardReason === 'accepted_model_dialogue' || result.guardReason === 'accepted')
     ? buildPackageEvidenceFallback(maskedMessage, packageOptions, approvedKnowledge) : null;
