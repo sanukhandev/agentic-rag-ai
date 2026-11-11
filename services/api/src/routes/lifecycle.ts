@@ -3,7 +3,7 @@ import type { LifecycleStage, Session, Store } from '../types.js';
 import type { ActionGateway } from '../actions.js';
 import { parse, HttpError } from '../http/errors.js';
 import { lifecycleAccountProposalSchema, lifecycleContractSchema, lifecycleInvoiceSchema, lifecyclePackageProposalSchema, lifecyclePackageSelectionSchema, lifecyclePaymentSchema, lifecycleQuoteSchema, lifecycleSelectionConfirmationSchema } from '../http/schemas.js';
-import { accountConversionBinding, activeOpportunityId, confirmPackageSelection, createApprovedQuote, createContractDraft, createInvoiceDraft, hasVerifiedLivePayment, listEligiblePackages, proposeAccountConversion, proposePackageSelection, proposePackageSelectionAfterLead, v2LifecycleActionBinding } from '../business-lifecycle.js';
+import { accountConversionBinding, activeOpportunityId, confirmPackageSelection, createApprovedQuote, createContractDraft, createInvoiceDraft, hasVerifiedLiveInvoiceDelivery, hasVerifiedLivePayment, listEligiblePackages, proposeAccountConversion, proposePackageSelection, proposePackageSelectionAfterLead, v2LifecycleActionBinding } from '../business-lifecycle.js';
 
 export interface LifecycleRouteDependencies {
   store: Store;
@@ -105,6 +105,7 @@ export const registerLifecycleRoutes = (app: Pick<Application, 'get' | 'post'>, 
       const input = parse(lifecyclePaymentSchema, req.body);
       const invoice = await dependencies.store.getInvoice(input.invoiceId, session.tenantId);
       if (!invoice || invoice.opportunityId !== input.opportunityId || invoice.status !== 'pending' || !invoice.externalInvoiceId || !invoice.paymentUrl) throw new HttpError(409, 'INVOICE_NOT_READY', 'A verified invoice with a hosted payment link is required before payment.');
+      if (!await hasVerifiedLiveInvoiceDelivery(dependencies.store, session, invoice)) throw new HttpError(409, 'INVOICE_DELIVERY_NOT_VERIFIED', 'The invoice must be delivered and independently verified before payment authorization.');
       const binding = await v2LifecycleActionBinding(dependencies.store, session, 'payment.authorize', 'payment_invoice');
       if (!binding) throw new HttpError(409, 'PAYMENT_NOT_CONFIGURED', 'Payment authorization is not enabled for this pinned catalog.');
       const paymentDocument = await dependencies.store.getUserIntentDocument(session.tenantId, session.id);
