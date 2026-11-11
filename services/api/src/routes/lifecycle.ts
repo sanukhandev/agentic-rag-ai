@@ -8,6 +8,7 @@ import { accountConversionBinding, activeOpportunityId, confirmPackageSelection,
 export interface LifecycleRouteDependencies {
   store: Store;
   gateway: ActionGateway;
+  allowSimulatedPayment?: boolean;
   chatApi: RequestHandler;
   routeParam: (req: Request, name: string) => string;
   authorizeSession: (req: Request, session: Session) => Promise<void>;
@@ -105,7 +106,9 @@ export const registerLifecycleRoutes = (app: Pick<Application, 'get' | 'post'>, 
       const input = parse(lifecyclePaymentSchema, req.body);
       const invoice = await dependencies.store.getInvoice(input.invoiceId, session.tenantId);
       if (!invoice || invoice.opportunityId !== input.opportunityId || invoice.status !== 'pending' || !invoice.externalInvoiceId || !invoice.paymentUrl) throw new HttpError(409, 'INVOICE_NOT_READY', 'A verified invoice with a hosted payment link is required before payment.');
-      if (!await hasVerifiedLiveInvoiceDelivery(dependencies.store, session, invoice)) throw new HttpError(409, 'INVOICE_DELIVERY_NOT_VERIFIED', 'The invoice must be delivered and independently verified before payment authorization.');
+      const simulatedInvoice = dependencies.allowSimulatedPayment === true && invoice.provider === 'deterministic_mock';
+      if (!simulatedInvoice && !await hasVerifiedLiveInvoiceDelivery(dependencies.store, session, invoice))
+        throw new HttpError(409, 'INVOICE_DELIVERY_NOT_VERIFIED', 'The invoice must be delivered and independently verified before payment authorization.');
       const binding = await v2LifecycleActionBinding(dependencies.store, session, 'payment.authorize', 'payment_invoice');
       if (!binding) throw new HttpError(409, 'PAYMENT_NOT_CONFIGURED', 'Payment authorization is not enabled for this pinned catalog.');
       const paymentDocument = await dependencies.store.getUserIntentDocument(session.tenantId, session.id);
