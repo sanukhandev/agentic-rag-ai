@@ -171,6 +171,24 @@ export const createInvoiceDraft = async (store: Store, session: Session, opportu
   return store.createInvoice({ id: randomUUID(), tenantId: session.tenantId, opportunityId, quoteId: quote.id, externalInvoiceId: null, amountMinor: quote.amountMinor, currency: quote.currency, paymentUrl: null, status: 'pending', provider: 'sandbox-pending', createdAt: now(), updatedAt: now() });
 };
 
+/** Invoice delivery is provider-owned; a link or generated PDF alone is not sent proof. */
+export const hasVerifiedLiveInvoiceDelivery = async (store: Store, session: Session, invoice: Invoice): Promise<boolean> => {
+  if (invoice.tenantId !== session.tenantId || invoice.opportunityId !== activeOpportunityId(session)
+    || !invoice.externalInvoiceId || !invoice.paymentUrl || !invoice.paymentUrl.startsWith('https://')
+    || invoice.provider !== 'billing_live') return false;
+  const [actions, events] = await Promise.all([store.listActionsBySession(session.id, session.tenantId), store.listAudit(session.tenantId)]);
+  return actions.some((action) => action.state === 'completed' && action.actionKey === 'invoice.issue'
+    && action.opportunityId === invoice.opportunityId && action.payload.slotValues?.invoiceId === invoice.id
+    && action.result?.externalReference === invoice.externalInvoiceId
+    && events.some((event) => event.eventName === 'invoice.live_delivery_verified'
+      && event.metadata.actionId === action.id && event.metadata.invoiceId === invoice.id
+      && event.metadata.externalInvoiceId === invoice.externalInvoiceId
+      && event.metadata.quoteId === invoice.quoteId && event.metadata.opportunityId === invoice.opportunityId
+      && event.metadata.deliveryStatus === 'sent'
+      && event.metadata.amountMinor === invoice.amountMinor && event.metadata.currency === invoice.currency
+      && typeof event.metadata.artifactSha256 === 'string' && /^[a-f0-9]{64}$/u.test(event.metadata.artifactSha256)));
+};
+
 /** Real payment requires both an authenticated provider readback audit and its completed action. */
 export const hasVerifiedLivePayment = async (store: Store, session: Session, invoice: Invoice): Promise<boolean> => {
   if (invoice.tenantId !== session.tenantId || invoice.opportunityId !== activeOpportunityId(session)
