@@ -3,7 +3,7 @@ import type { LifecycleStage, Session, Store } from '../types.js';
 import type { ActionGateway } from '../actions.js';
 import { parse, HttpError } from '../http/errors.js';
 import { lifecycleAccountProposalSchema, lifecycleContractSchema, lifecycleInvoiceSchema, lifecyclePackageProposalSchema, lifecyclePackageSelectionSchema, lifecyclePaymentSchema, lifecycleQuoteSchema, lifecycleSelectionConfirmationSchema } from '../http/schemas.js';
-import { accountConversionBinding, activeOpportunityId, confirmPackageSelection, createApprovedQuote, createContractDraft, createInvoiceDraft, listEligiblePackages, proposeAccountConversion, proposePackageSelection, proposePackageSelectionAfterLead, v2LifecycleActionBinding } from '../business-lifecycle.js';
+import { accountConversionBinding, activeOpportunityId, confirmPackageSelection, createApprovedQuote, createContractDraft, createInvoiceDraft, hasVerifiedLivePayment, listEligiblePackages, proposeAccountConversion, proposePackageSelection, proposePackageSelectionAfterLead, v2LifecycleActionBinding } from '../business-lifecycle.js';
 
 export interface LifecycleRouteDependencies {
   store: Store;
@@ -96,7 +96,7 @@ export const registerLifecycleRoutes = (app: Pick<Application, 'get' | 'post'>, 
       const action = binding
         ? await dependencies.gateway.propose(session.tenantId, session.id, `invoice:${invoice.id}`, { contactConsent: true, interest: binding.intentKey, slotValues: { invoiceId: invoice.id, quoteId: input.quoteId } }, { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, intentKey: binding.intentKey, actionKey: binding.actionKey, catalogVersionId: binding.catalogVersionId, opportunityId: input.opportunityId })
         : await dependencies.gateway.propose(session.tenantId, session.id, `invoice:${invoice.id}`, { slotValues: { invoiceId: invoice.id } }, { workflowKey: 'finance.invoice.create', webhookPath: 'anc-invoice-generation-wf-1', intentKey: 'invoice.request', actionKey: 'invoice.request', catalogVersionId: session.conversationState?.catalogVersionId ?? null, opportunityId: input.opportunityId });
-      res.status(202).json({ invoice, verified: invoice.status === 'paid', actionProposal: { id: action.id, state: action.state } });
+      res.status(202).json({ invoice, verified: await hasVerifiedLivePayment(dependencies.store, session, invoice), actionProposal: { id: action.id, state: action.state } });
     } catch (error) { next(error); }
   });
   app.post('/api/v1/chat/sessions/:id/payments', dependencies.chatApi, async (req: Request, res: Response, next: NextFunction) => {
@@ -114,7 +114,7 @@ export const registerLifecycleRoutes = (app: Pick<Application, 'get' | 'post'>, 
     } catch (error) { next(error); }
   });
   app.get('/api/v1/chat/sessions/:id/invoices/:invoiceId', dependencies.chatApi, async (req: Request, res: Response, next: NextFunction) => {
-    try { const session = await loadSession(req); const invoice = await dependencies.store.getInvoice(dependencies.routeParam(req, 'invoiceId'), session.tenantId); if (!invoice || invoice.opportunityId !== activeOpportunityId(session)) throw new HttpError(404, 'INVOICE_NOT_FOUND', 'Invoice not found.'); res.json({ invoice, verified: invoice.status === 'paid' }); } catch (error) { next(error); }
+    try { const session = await loadSession(req); const invoice = await dependencies.store.getInvoice(dependencies.routeParam(req, 'invoiceId'), session.tenantId); if (!invoice || invoice.opportunityId !== activeOpportunityId(session)) throw new HttpError(404, 'INVOICE_NOT_FOUND', 'Invoice not found.'); res.json({ invoice, verified: await hasVerifiedLivePayment(dependencies.store, session, invoice) }); } catch (error) { next(error); }
   });
   app.post('/api/v1/chat/sessions/:id/contracts', dependencies.chatApi, async (req: Request, res: Response, next: NextFunction) => {
     try {
