@@ -117,7 +117,7 @@ def _client_get() -> Any:
         if not key or not deployment or not endpoint.startswith("https://") or not endpoint.rstrip("/").endswith("/openai/v1"):
             raise HTTPException(status_code=503, detail={"code": "MODEL_NOT_CONFIGURED"})
         _client = AsyncOpenAI(api_key=key, base_url=endpoint.rstrip("/") + "/", timeout=18.0,
-                              max_retries=0)
+                              max_retries=3)
     return _client
 
 

@@ -166,11 +166,14 @@ export class N8nEventBridge {
         const normalized = await response.json() as { providerStatus?: unknown; result?: ActionRequest['result']; outcome?: ActionExecution['outcome'] };
         if (normalized.providerStatus !== 'accepted' || !normalized.result?.externalReference || !normalized.outcome) throw new ReconcileRequiredDispatchError('remote n8n returned an invalid normalized result.');
         if (event.actionId) {
-          const updatedExecution = await this.store.updateActionExecution({ actionId: event.actionId, tenantId: event.tenantId, providerStatus: normalized.providerStatus, outcome: { eventId: event.eventId, correlationId: event.correlationId, ...normalized.outcome } });
+          const isPdf = normalized.result?.providerOutcome === 'pdf_generated';
+          const executionStatus = isPdf ? 'completed' : normalized.providerStatus;
+          const updatedExecution = await this.store.updateActionExecution({ actionId: event.actionId, tenantId: event.tenantId, providerStatus: executionStatus, outcome: { eventId: event.eventId, correlationId: event.correlationId, ...normalized.outcome } });
           if (!updatedExecution) throw new ReconcileRequiredDispatchError('remote n8n accepted the request but its execution result could not be recorded durably.');
           const current = await this.store.getAction(event.actionId);
           if (!current || current.tenantId !== event.tenantId) throw new ReconcileRequiredDispatchError('remote n8n accepted the request but its action could not be loaded durably.');
-          await this.store.updateAction({ ...current, state: current.state === 'approved' ? 'processing' : current.state, result: normalized.result });
+          const actionState = isPdf ? 'completed' : (current.state === 'approved' ? 'processing' : current.state);
+          await this.store.updateAction({ ...current, state: actionState, result: normalized.result });
         }
         await this.store.addAudit({ id: randomUUID(), tenantId: event.tenantId, actorId: null, eventName: 'workflow.remote_result_recorded', metadata: { eventId: event.eventId, actionId: event.actionId, workflowKey: route.workflowKey, providerStatus: normalized.providerStatus, providerOutcome: normalized.result.providerOutcome ?? null }, createdAt: new Date().toISOString() });
         return;

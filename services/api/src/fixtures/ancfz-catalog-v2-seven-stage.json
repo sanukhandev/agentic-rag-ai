@@ -360,11 +360,11 @@
           "help me set up my company",
           "set up my business",
           "open a company",
-            "open a consultancy",
-            "establish a company",
-            "set up a business",
-            "planning to start a business",
-            "thinking of setting up a business"
+          "open a consultancy",
+          "establish a company",
+          "set up a business",
+          "planning to start a business",
+          "thinking of setting up a business"
         ]
       },
       {
@@ -830,7 +830,8 @@
         "type": "consent",
         "required": true,
         "dependencies": [
-          "package_choice"
+          "package_choice",
+          "document_processing_consent"
         ],
         "validation": "explicit.purpose_specific.opt_in",
         "sourceOfTruth": "customer",
@@ -854,11 +855,11 @@
       {
         "requirementKey": "document_processing_consent",
         "goalKey": "anc.company_formation",
-        "stageKey": "document_upload",
+        "stageKey": "package_selection",
         "type": "consent",
         "required": true,
         "dependencies": [
-          "package_confirmation"
+          "package_choice"
         ],
         "validation": "explicit.purpose_specific.opt_in",
         "sourceOfTruth": "customer",
@@ -1152,6 +1153,7 @@
         "requiredKeys": [
           "account_provider_reference",
           "package_choice",
+          "document_processing_consent",
           "quotation_consent",
           "quotation_confirmation"
         ],

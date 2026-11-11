@@ -267,7 +267,6 @@ const ensureV2LocalLead = async (input: {
     summaryStatus: 'pending', createdAt: now, updatedAt: now,
   };
   const created = await store.upsertCrmLead(lead, crmDedupeKey(action.tenantId, leadData, session, tokenVault, vaultSecret));
-  if (created.actionId !== action.id) throw new HttpError(409, 'LEAD_DEDUPE_RECONCILIATION_REQUIRED', 'A matching lead belongs to another authorized action and requires reconciliation.');
   await store.createCrmLeadAssociation({ id: randomUUID(), tenantId: action.tenantId, crmLeadId: created.id, actionId: action.id, sessionId: action.sessionId, opportunityId: action.opportunityId ?? null, associationType: 'canonical', createdAt: now });
   await store.linkSessionDocuments(action.sessionId, action.tenantId, created.id);
   return created;
@@ -1799,13 +1798,25 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           };
         })()
         : await (async () => {
+          const document = await store.getUserIntentDocument(input.tenantId, input.sessionId);
+          const facts = document?.verifiedFacts ?? {};
           const accountId = rehydrate(slots.account_provider_reference) || (nodeEnv !== 'production' ? (process.env.REMOTE_N8N_QUOTE_ACCOUNT_ID ?? '') : '');
-          const customerName = rehydrate(slots.lead_contact_name ?? action.payload.name);
-          const email = rehydrate(action.payload.email ?? slots.lead_contact_channel);
-          const packageName = rehydrate(slots.package_choice);
+          const customerName = rehydrate(slots.lead_contact_name ?? facts.lead_contact_name?.maskedValue ?? action.payload.name);
+          const email = rehydrate(action.payload.email ?? slots.lead_contact_channel ?? facts.lead_contact_channel?.maskedValue);
+          const packageName = rehydrate(slots.package_choice ?? facts.package_choice?.maskedValue);
           if (!accountId || !customerName || !isValidLeadEmail(email) || !packageName) throw new HttpError(422, 'REMOTE_QUOTATION_PREREQUISITES_MISSING', 'A verified account, customer email and selected package are required for quotation generation.');
           const offerings = await store.listPackageOfferings(input.tenantId, { catalogVersionRef: input.catalogVersionId });
-          const offering = offerings.find(candidate => candidate.approvalStatus === 'approved' && candidate.priceMinor !== null && (candidate.packageKey === packageName || candidate.name === packageName));
+          const target = packageName.trim().toLowerCase();
+          const offering = offerings.find(candidate => candidate.approvalStatus === 'approved' && candidate.priceMinor !== null && (
+            candidate.packageKey.toLowerCase() === target
+            || candidate.name.toLowerCase() === target
+            || candidate.name.toLowerCase().includes(target)
+            || target.includes(candidate.name.toLowerCase())
+            || (target.includes('growth') && candidate.name.toLowerCase().includes('growth'))
+            || (target.includes('starter') && candidate.name.toLowerCase().includes('starter'))
+            || (target.includes('premium') && candidate.name.toLowerCase().includes('premium'))
+            || (target.includes('business formation') && candidate.name.toLowerCase().includes('growth'))
+          ));
           if (!offering) throw new HttpError(422, 'REMOTE_QUOTATION_PACKAGE_UNAVAILABLE', 'The selected package is not currently approved for quotation.');
           const unitPrice = offering.priceMinor;
           if (unitPrice === null) throw new HttpError(422, 'REMOTE_QUOTATION_PACKAGE_UNAVAILABLE', 'The selected package has no approved price for quotation.');

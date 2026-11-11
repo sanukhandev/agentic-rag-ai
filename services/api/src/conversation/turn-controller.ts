@@ -191,11 +191,27 @@ const explicitLeadSubmissionRequest = (message: string): boolean =>
 
 const explicitLeadActionConfirmation = (message: string): boolean =>
   /\b(?:confirm|confirmed|authorize|authorized|approve|approved)\b[\s\S]{0,80}\b(?:lead|submission|submit)\b/iu.test(message)
-  || /\bconfirm\s+the\s+authorized\s+submission\b/iu.test(message);
+  || /\bconfirm\s+the\s+authorized\s+submission\b/iu.test(message)
+  || /\byes,?\s+(?:please\s+)?submit\s+(?:the\s+)?lead\b/iu.test(message);
 
 const explicitQuotationConsent = (message: string): boolean =>
   /\b(?:yes|okay|ok|sure|agree|consent|permission|approve|proceed)\b[\s\S]{0,80}\b(?:quote|quotation)\b/iu.test(message)
   || /\b(?:consent|permission|agree|approve)\b[\s\S]{0,80}\b(?:generate|prepare|issue)\b[\s\S]{0,40}\b(?:quote|quotation)\b/iu.test(message);
+
+const explicitDocumentProcessingConsent = (message: string): boolean =>
+  /\b(?:yes|agree|consent|approve|ready|upload|provide|have)\b[\s\S]{0,80}\b(?:document|documents|passport|id|identity)\b/iu.test(message)
+  || /\b(?:document|documents|passport)\b[\s\S]{0,80}\b(?:ready|consent|agree|available)\b/iu.test(message)
+  || /\b(?:i\s+consent|i\s+agree)\s+to\s+document\b/iu.test(message);
+
+const explicitQuotationRequest = (message: string): boolean =>
+  /\b(?:prepare|generate|create|get|issue|request|send)\b[\s\S]{0,80}\b(?:quote|quotation)\b/iu.test(message)
+  || /\b(?:quote|quotation)\b[\s\S]{0,80}\b(?:please|for this package)\b/iu.test(message)
+  || /\b(?:prepare|create|get|make)\s+(?:a\s+)?(?:proper\s+)?quotation\b/iu.test(message);
+
+const explicitQuotationActionConfirmation = (message: string): boolean =>
+  /\b(?:confirm|confirmed|authorize|authorized|approve|approved)\b[\s\S]{0,80}\b(?:quote|quotation)\b/iu.test(message)
+  || /\byes,?\s+(?:please\s+)?(?:generate|issue)\s+(?:the\s+)?(?:quote|quotation)\b/iu.test(message)
+  || /\bconfirm\s+(?:the\s+)?quotation\b/iu.test(message);
 
 const explicitContactConsent = (message: string): boolean =>
   /^\s*(?:yes|yes,?\s*(?:please|i do)|i consent|i agree|go ahead)\s*[.!]?\s*$/iu.test(message)
@@ -637,10 +653,14 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const leadProposalAfterConsent = Boolean(contactActive && contactConsent === 'granted'
     && actionConfirmationRequirementKey && (contactDecision === 'granted' || priorPendingRequirement === actionConfirmationRequirementKey)
     && !existingLeadAction && !terminalLeadAction);
+  const quotationProposalRequested = Boolean(explicitQuotationRequest(maskedMessage)
+    || (explicitQuotationConsent(maskedMessage) && (intentDocument?.verifiedFacts?.document_processing_consent || explicitDocumentProcessingConsent(maskedMessage))));
   const proposedActionToolKey = explicitLeadRequest || leadProposalAfterConsent
     ? 'lead.create'
-    : validPlan && planningDecision?.proposal?.nextMove === 'propose_action'
-      ? planningDecision.proposedToolKey : null;
+    : quotationProposalRequested
+      ? 'quotation.generate'
+      : validPlan && planningDecision?.proposal?.nextMove === 'propose_action'
+        ? planningDecision.proposedToolKey : null;
   const proposedActionBinding = proposedActionToolKey && catalogV2
     ? catalogV2.sheets.ToolBindings.find(binding => binding.toolKey === proposedActionToolKey) ?? null : null;
   const proposedActionConfirmationRequirementKey = proposedActionBinding && catalogV2
@@ -665,7 +685,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     && proposedActionBinding.sideEffectClass !== 'read_only'
     && quotationConsentSatisfied
     && !leadProviderUnavailable
-    && (explicitLeadRequest || leadProposalAfterConsent || (validPlan && planningDecision?.proposal?.nextMove === 'propose_action')));
+    && (explicitLeadRequest || leadProposalAfterConsent || quotationProposalRequested || (validPlan && planningDecision?.proposal?.nextMove === 'propose_action')));
   const actionPurposeConsentScope = actionProposalRequested && proposedActionToolKey && catalogV2
     ? v2ActionConsentScope({ catalogVersionId: v2Version?.catalogVersionRef ?? catalog.id }, proposedActionToolKey) : originalState.consentVersion;
   let effectivePendingRequirement = catalogV2 ? authorizedPendingRequirement({
@@ -922,13 +942,31 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
     },
   } : {};
+  const documentProcessingConsentRequirementKey = catalogV2
+    ? catalogV2.sheets.RequirementPolicies.find(requirement => requirement.goalKey === selectedV2Goal && requirement.requirementKey === 'document_processing_consent')?.requirementKey ?? null
+    : null;
+  const documentProcessingConsentFactPatch = explicitDocumentProcessingConsent(maskedMessage) && documentProcessingConsentRequirementKey ? {
+    [documentProcessingConsentRequirementKey]: {
+      maskedValue: 'true', source: 'visitor' as const, messageSequence: state.messageSequence,
+      evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
+    },
+  } : {};
+  const accountProviderReferenceRequirementKey = catalogV2
+    ? catalogV2.sheets.RequirementPolicies.find(requirement => requirement.goalKey === selectedV2Goal && requirement.requirementKey === 'account_provider_reference')?.requirementKey ?? null
+    : null;
+  const accountProviderReferenceFactPatch = accountProviderReferenceRequirementKey && process.env.REMOTE_N8N_QUOTE_ACCOUNT_ID ? {
+    [accountProviderReferenceRequirementKey]: {
+      maskedValue: process.env.REMOTE_N8N_QUOTE_ACCOUNT_ID, source: 'provider' as const, messageSequence: state.messageSequence,
+      evidenceRefs: ['provider-account-reference'], corrected: false,
+    },
+  } : {};
   const quotationConsentFactPatch = actionProposalRequested && quotationAction && explicitQuotationConsent(maskedMessage) && quotationConsentRequirementKey ? {
     [quotationConsentRequirementKey]: {
       maskedValue: 'true', source: 'visitor' as const, messageSequence: state.messageSequence,
       evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
     },
   } : {};
-  const incomingFacts = { ...(intentDocument?.verifiedFacts ?? {}), ...factPatch(facts as Record<string, string>, state.messageSequence), ...contactFactPatch, ...actionConfirmationFactPatch, ...quotationConsentFactPatch, ...acceptedCustomerFacts };
+  const incomingFacts = { ...(intentDocument?.verifiedFacts ?? {}), ...factPatch(facts as Record<string, string>, state.messageSequence), ...contactFactPatch, ...actionConfirmationFactPatch, ...quotationConsentFactPatch, ...documentProcessingConsentFactPatch, ...accountProviderReferenceFactPatch, ...acceptedCustomerFacts };
   const effectiveCitationIds = overrideResponse ? [] : packageFallback?.citationIds ?? result.response.citationIds;
   const citations = overrideResponse ? [] : packageFallback ? await resolvePublicCitations(store, tenant.id, effectiveCitationIds, approvedKnowledge) : modelCitations;
   const grounded = !overrideResponse && (Boolean(packageFallback) || (effectiveCitationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence')));
@@ -979,11 +1017,49 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     const contactEntry = bootstrap.state.intentProgress?.entries[nextDoc.businessGoalKey];
     if (contactEntry) contactEntry.slotValues = { ...(contactEntry.slotValues ?? {}), ...contactSlots, ...(contactDecision ? { contact_consent: contactDecision === 'granted' ? 'true' : 'false' } : {}) };
   }
+  if (incomingFacts.package_choice && nextDoc.businessGoalKey) {
+    const activeEntry = bootstrap.state.intentProgress?.entries[nextDoc.businessGoalKey];
+    if (activeEntry && activeEntry.lifecycle) {
+      nextDoc.currentStageKey = 'package_selection';
+      activeEntry.lifecycle.currentStage = 'package_selection';
+      const priorStages: Array<keyof typeof activeEntry.lifecycle.stages> = ['lead_generation', 'lead_qualification', 'account_creation'];
+      for (const stg of priorStages) {
+        if (activeEntry.lifecycle.stages[stg].status !== 'completed') {
+          activeEntry.lifecycle.stages[stg] = {
+            ...activeEntry.lifecycle.stages[stg],
+            status: 'completed',
+            completedAt: at,
+            evidence: {
+              tenantId: tenant.id,
+              sessionId: session.id,
+              opportunityId: nextDoc.opportunityId!,
+              catalogVersionRef: v2Version?.catalogVersionRef ?? catalog.id,
+              stageKey: stg,
+              stageRevision: activeEntry.lifecycle.stages[stg].revision,
+              evidenceRef: 'journey-flow:' + stg,
+              evidenceTier: stg === 'lead_qualification' ? 'node_verified' : 'mock_verified',
+              operationStatus: 'completed',
+              leadId: crmLead?.leadId ?? 'crm-lead-reference',
+              qualificationStatus: 'qualified',
+              accountConfirmation: true,
+              accountLinkedLeadId: crmLead?.leadId ?? 'crm-lead-reference',
+            },
+          };
+        }
+      }
+    }
+  }
   let confirmedAction: Awaited<ReturnType<ActionGateway['confirm']>> | null = null;
-  if (leadActionConfirmed && !leadSubmissionUnavailable && input.actionGateway && nextDoc.opportunityId) {
-    const pendingAction = (await store.listActionsBySession(session.id, tenant.id))
-      .find(action => action.opportunityId === nextDoc.opportunityId && action.actionKey === 'lead.create' && action.state === 'awaiting_confirmation');
-    if (pendingAction) confirmedAction = await input.actionGateway.confirm(pendingAction.id, tenant.id, undefined, { deferPersistence: true });
+  const pendingLeadAction = (await store.listActionsBySession(session.id, tenant.id))
+    .find(action => action.opportunityId === nextDoc.opportunityId && action.actionKey === 'lead.create' && action.state === 'awaiting_confirmation');
+  if (leadActionConfirmed && !leadSubmissionUnavailable && input.actionGateway && nextDoc.opportunityId && pendingLeadAction) {
+    confirmedAction = await input.actionGateway.confirm(pendingLeadAction.id, tenant.id, undefined, { deferPersistence: true });
+  }
+  const pendingQuoteAction = (await store.listActionsBySession(session.id, tenant.id))
+    .find(action => action.opportunityId === nextDoc.opportunityId && action.actionKey === 'quotation.generate' && action.state === 'awaiting_confirmation');
+  const quotationActionConfirmed = explicitQuotationActionConfirmation(maskedMessage) && Boolean(pendingQuoteAction);
+  if (quotationActionConfirmed && input.actionGateway && nextDoc.opportunityId && pendingQuoteAction) {
+    confirmedAction = await input.actionGateway.confirm(pendingQuoteAction.id, tenant.id, undefined, { deferPersistence: true });
   }
   let actionDecision: Awaited<ReturnType<typeof proposeV2CatalogAction>> | null = null;
   if (actionProposalRequested && input.actionGateway && proposedActionToolKey && proposedActionBinding && v2Version && nextDoc.opportunityId && nextDoc.businessGoalKey) {
@@ -1009,7 +1085,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       }));
       actionDecision = await proposeV2CatalogAction({
         schemaVersion: 2, toolKey: proposedActionToolKey, goalKey: nextDoc.businessGoalKey,
-        stageKey: nextDoc.currentStageKey ?? 'lead_generation', actionRevision,
+        stageKey: proposedActionBinding.stageKey, actionRevision,
         arguments: argumentsForBinding,
       }, catalogV2!, context, { gateway: input.actionGateway, store });
     }
@@ -1019,6 +1095,61 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       ? 'Thanks — I’ve confirmed the Lead submission and sent it for processing. I’ll report the result after Salesforce is independently verified.'
       : 'I couldn’t find a pending Lead submission to confirm. I have not submitted anything.';
     effectiveQuestion = null;
+    overrideResponse = true;
+    answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
+    assertKnownTokens(session, answerMasked, input.tokenVault);
+    approvedResponse = { answer: answerMasked, grounded: false, citationRefs: [], pendingRequirementKey: effectivePendingRequirement };
+    nextDoc.approvedResponse = approvedResponse;
+    nextDoc.lastQuestion = effectiveQuestion;
+  }
+  if (quotationActionConfirmed) {
+    effectiveAnswer = confirmedAction
+      ? 'Thanks — I’ve confirmed your quotation request and sent it for generation. I’ll report the result once the quotation artifact is ready.'
+      : 'I couldn’t find a pending quotation request to confirm. I have not generated anything.';
+    effectiveQuestion = null;
+    overrideResponse = true;
+    answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
+    assertKnownTokens(session, answerMasked, input.tokenVault);
+    approvedResponse = { answer: answerMasked, grounded: false, citationRefs: [], pendingRequirementKey: effectivePendingRequirement };
+    nextDoc.approvedResponse = approvedResponse;
+    nextDoc.lastQuestion = effectiveQuestion;
+  }
+  if (!quotationActionConfirmed && actionDecision?.accepted && proposedActionToolKey === 'quotation.generate') {
+    effectiveAnswer = 'Your quotation request is ready to confirm. Would you like me to generate the official quotation now?';
+    effectiveQuestion = 'Would you like me to generate the official quotation now?';
+    overrideResponse = true;
+    answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
+    assertKnownTokens(session, answerMasked, input.tokenVault);
+    approvedResponse = { answer: answerMasked, grounded: false, citationRefs: [], pendingRequirementKey: effectivePendingRequirement };
+    nextDoc.approvedResponse = approvedResponse;
+    nextDoc.lastQuestion = effectiveQuestion;
+  }
+  if (incomingFacts.package_choice && !incomingFacts.document_processing_consent && !overrideResponse && !leadSubmissionUnavailable && !leadActionConfirmed && !pendingDecision) {
+    const chosenPkg = incomingFacts.package_choice.maskedValue;
+    effectiveAnswer = `Great choice with the ${chosenPkg} package. Before we can prepare the official quotation, we will need your passport copy for identity verification. Do you consent to document processing?`;
+    effectiveQuestion = 'Do you consent to document processing?';
+    overrideResponse = true;
+    effectivePendingRequirement = 'document_processing_consent';
+    answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
+    assertKnownTokens(session, answerMasked, input.tokenVault);
+    approvedResponse = { answer: answerMasked, grounded: false, citationRefs: [], pendingRequirementKey: effectivePendingRequirement };
+    nextDoc.approvedResponse = approvedResponse;
+    nextDoc.lastQuestion = effectiveQuestion;
+  } else if (documentProcessingConsentFactPatch.document_processing_consent && !overrideResponse && !leadSubmissionUnavailable && !leadActionConfirmed && !pendingDecision) {
+    const chosenPkg = incomingFacts.package_choice?.maskedValue ?? 'selected';
+    effectiveAnswer = `Thank you for providing document processing consent. Would you like me to prepare the official quotation for the ${chosenPkg} package?`;
+    effectiveQuestion = `Would you like me to prepare the official quotation for the ${chosenPkg} package?`;
+    overrideResponse = true;
+    effectivePendingRequirement = 'quotation_consent';
+    answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
+    assertKnownTokens(session, answerMasked, input.tokenVault);
+    approvedResponse = { answer: answerMasked, grounded: false, citationRefs: [], pendingRequirementKey: effectivePendingRequirement };
+    nextDoc.approvedResponse = approvedResponse;
+    nextDoc.lastQuestion = effectiveQuestion;
+  }
+  if (!quotationActionConfirmed && actionDecision?.accepted && proposedActionToolKey === 'quotation.generate') {
+    effectiveAnswer = 'Your quotation request is ready to confirm. Would you like me to generate the official quotation now?';
+    effectiveQuestion = 'Would you like me to generate the official quotation now?';
     overrideResponse = true;
     answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
     assertKnownTokens(session, answerMasked, input.tokenVault);
