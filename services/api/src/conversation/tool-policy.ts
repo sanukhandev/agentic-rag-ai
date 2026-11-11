@@ -27,6 +27,10 @@ export const isV2ReadToolEnabled = (catalog: CatalogV2Document, toolName: V2Tool
 export const authorizedV2ReadTools = (catalog: CatalogV2Document, implementedTools: readonly V2ToolName[]): V2ToolName[] =>
   implementedTools.filter(name => isV2ReadToolEnabled(catalog, name));
 
+/** Executable names exposed as catalog capabilities to the model. */
+export const catalogEnabledV2ReadTools = (catalog: CatalogV2Document, implementedTools: readonly V2ToolName[]): V2ToolName[] =>
+  implementedTools.filter(name => Boolean(catalogBindingByTool[name]) && isV2ReadToolEnabled(catalog, name));
+
 /** Limit high-specificity domain reads to turns that actually request them. */
 export const authorizedV2ReadToolsForTurn = (
   catalog: CatalogV2Document,

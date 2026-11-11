@@ -341,6 +341,27 @@ describe('V2ConversationCoordinator', () => {
     ]);
   });
 
+  it('isolates the guard result for a Growth answer carrying all package citations', async () => {
+    const request = envelope();
+    request.customerMessageMasked = 'tell me about the Growth package';
+    const packageEvidence = [
+      { citationId: 'package-starter', text: 'The published approved package ANCFZ Starter has a listed price of AED 2,499.00.', sourceVersion: 'anc:r12-v1', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-growth', text: 'The published approved package ANCFZ Growth includes 2 visas and shared office, with a listed price of AED 4,999.00.', sourceVersion: 'anc:r12-v1', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-premium', text: 'The published approved package ANCFZ Premium has a listed price of AED 7,899.00.', sourceVersion: 'anc:r12-v1', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+    ];
+    const candidate = result('The Growth package includes 2 visas and shared office.', {
+      response: { ...result('').response, answer: 'The Growth package includes 2 visas and shared office.', citationIds: packageEvidence.map(item => item.citationId) },
+      approvedEvidence: packageEvidence,
+      toolTrace: [{ toolCallId: 'package-call-23456789', toolName: 'get_available_packages', status: 'ok', resultDigest: 'b'.repeat(64), elapsedMs: 2, evidenceRefs: packageEvidence.map(item => item.citationId) }],
+    });
+    const output = await new V2ConversationCoordinator({ turn: async () => candidate }).run({ envelope: request, questionPolicy: 'optional', fallbackTemplates });
+    expect(output.candidateGuardReason).toBe('unsupported_claim');
+    expect(output.guardReason).toBe('accepted_knowledge_excerpt');
+    expect(output.response.answer).toContain('ANCFZ Growth');
+    expect(output.response.answer).not.toContain('ANCFZ Starter');
+    expect(output.response.answer).not.toContain('ANCFZ Premium');
+  });
+
   it('continues an accepted explanation without repeating the same fallback question', async () => {
     const request = envelope();
     request.customerMessageMasked = 'yes please explain';

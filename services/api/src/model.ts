@@ -107,14 +107,21 @@ const offerLevenshteinDistance = (left: string, right: string): number => {
 export const classifyOfferReplyDeterministically = (maskedMessage: string, offer: PendingFollowUpOffer): ModelOfferReply => {
   const message = offerReplyText(maskedMessage);
   if (offerRejection.test(message)) return { action: 'reject', confidence: 1 };
-  const packageMatches = offer.options.filter((option) => option.key.startsWith('package_')
-    && [option.label, ...option.retrievalHints].some((candidate) => {
-      const candidateTokens = offerReplyText(candidate).match(/[a-z]{4,}/gu) ?? [];
-      const messageTokens = message.match(/[a-z]{4,}/gu) ?? [];
-      return candidateTokens.some((candidateToken) => messageTokens.some((messageToken) => messageToken === candidateToken
-        || offerLevenshteinDistance(messageToken, candidateToken) <= (Math.max(messageToken.length, candidateToken.length) >= 7 ? 2 : 1)));
-    }));
-  if (packageMatches.length === 1 && /\b(?:package|packages|option|options)\b/iu.test(message)) {
+  const packageOptions = offer.options.filter((option) => option.key.startsWith('package_'));
+  const packageTokenCounts = new Map<string, number>();
+  for (const option of packageOptions) {
+    const tokens = new Set([option.label, ...option.retrievalHints].flatMap(candidate => offerReplyText(candidate).match(/[a-z]{4,}/gu) ?? []));
+    for (const token of tokens) packageTokenCounts.set(token, (packageTokenCounts.get(token) ?? 0) + 1);
+  }
+  const packageMatches = packageOptions.filter((option) => [option.label, ...option.retrievalHints].some((candidate) => {
+    const candidateTokens = (offerReplyText(candidate).match(/[a-z]{4,}/gu) ?? []).filter(token => packageTokenCounts.get(token) === 1);
+    const messageTokens = message.match(/[a-z]{4,}/gu) ?? [];
+    return candidateTokens.some((candidateToken) => messageTokens.some((messageToken) => messageToken === candidateToken
+      || offerLevenshteinDistance(messageToken, candidateToken) <= (Math.max(messageToken.length, candidateToken.length) >= 7 ? 2 : 1)));
+  }));
+  const packageSelectionIntent = /\b(?:choose|select|pick|take|prefer|go\s+with)\b/iu.test(message)
+    || (!offerReplyQuestion.test(message) && message.trim().split(/\s+/u).length <= 2);
+  if (packageMatches.length === 1 && (/\b(?:package|packages|option|options)\b/iu.test(message) || packageSelectionIntent)) {
     return { action: 'select_option', optionKey: packageMatches[0]?.key ?? null, confidence: 1 };
   }
   if (!offerAffirmation.test(message) && offerReplyQuestion.test(message)) return { action: 'new_request', confidence: 1 };

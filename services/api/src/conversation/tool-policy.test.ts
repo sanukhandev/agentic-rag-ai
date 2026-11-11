@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { CatalogV2Document } from './catalog.js';
-import { authorizedV2ReadTools, authorizedV2ReadToolsForTurn, isV2ReadToolEnabled } from './tool-policy.js';
+import { authorizedV2ReadTools, authorizedV2ReadToolsForTurn, catalogEnabledV2ReadTools, isV2ReadToolEnabled } from './tool-policy.js';
 import { V2_TOOL_NAMES } from './tool-gateway.js';
 const fixture = JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2.json', import.meta.url),'utf8')) as CatalogV2Document;
 describe('published catalog controls V2 domain reads', () => {
@@ -33,5 +33,14 @@ describe('published catalog controls V2 domain reads', () => {
     expect(authorizedV2ReadToolsForTurn(fixture, V2_TOOL_NAMES, true)).toContain('get_available_packages');
     expect(authorizedV2ReadToolsForTurn(fixture, V2_TOOL_NAMES, false, false)).not.toContain('search_knowledge');
     expect(authorizedV2ReadToolsForTurn(fixture, V2_TOOL_NAMES, false, true)).toContain('search_knowledge');
+  });
+  it('exposes executable tool names for the model envelope', () => {
+    expect(catalogEnabledV2ReadTools(fixture, V2_TOOL_NAMES)).toEqual(expect.arrayContaining(['search_knowledge', 'get_available_packages']));
+    expect(catalogEnabledV2ReadTools(fixture, V2_TOOL_NAMES)).not.toContain('package.read_available');
+    const catalog = structuredClone(fixture);
+    const binding = catalog.sheets.ToolBindings.find(tool => tool.toolKey === 'package.read_available');
+    if (!binding) throw Error('UNIT_BINDING_MISSING');
+    binding.enabled = false;
+    expect(catalogEnabledV2ReadTools(catalog, V2_TOOL_NAMES)).not.toContain('get_available_packages');
   });
 });
