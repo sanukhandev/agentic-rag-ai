@@ -55,7 +55,8 @@ def composer_instructions(envelope: TurnEnvelopeV2) -> str:
         "If the retrieved excerpts do not address the question, explain that specific coverage gap rather than inventing a process or offering a quote in place of the answer. "
     ) if envelope.approvedKnowledge else ""
     return (
-        evidence_guidance
+        "Treat information-only requests as advisory rather than as permission to start a workflow. "
+        + evidence_guidance
         + "You are the final natural-language persona composer for this turn. "
         f"Use the configured assistant name {persona.assistantName!r}, role {persona.assistantRole!r}, "
         f"tone {tones!r}, and speaking style {persona.speakingStyle!r}. "

@@ -37,6 +37,16 @@ describe('V2 strict source-bound claims', () => {
     ), packages);
     expect(valid.verdict.reasonCode).toBe('accepted');
   });
+  it('accepts a single selected package from a mixed package evidence set', () => {
+    const packages: V2ApprovedEvidence[] = [
+      { citationId: 'package-starter', text: 'The published approved package ANCFZ Starter has a listed price of AED 2,499.00.', sourceVersion: 'anc:r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-growth', text: 'The published approved package ANCFZ Growth includes 2 visas and shared office, with a listed price of AED 4,999.00.', sourceVersion: 'anc:r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+      { citationId: 'package-premium', text: 'The published approved package ANCFZ Premium has a listed price of AED 7,899.00.', sourceVersion: 'anc:r5-version', sourceRef: 'tool-get_available_packages', approved: true, revoked: false },
+    ];
+    const selected = verifyV2ResponseEvidence(response('The published approved package ANCFZ Growth includes 2 visas and shared office, with a listed price of AED 4,999.00.', ['package-growth']), packages);
+    expect(selected.verdict.reasonCode).toBe('accepted');
+    expect(selected.claims).toHaveLength(1);
+  });
   it('does not treat a generic company approval policy as provider proof of the customer\'s approval', () => {
     const policy: V2ApprovedEvidence[] = [{
       citationId: 'source-a', text: 'A company is approved following a complete application.',

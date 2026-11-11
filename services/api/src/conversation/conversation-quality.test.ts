@@ -14,7 +14,29 @@ describe('V2 conversation quality boundaries', () => {
     ['How many visas will I need?', false],
     ['What visa package options are available?', true],
     ['What are the package prices?', true],
+    ['what is the quote for two visas?', true],
+    ['quotation for the selected package', true],
   ])('routes %s as package intent=%s', (message, packageIntent) => {
+    expect(isV2PackageQuestion(message)).toBe(packageIntent);
+    const tools = authorizedV2ReadToolsForTurn(catalog, V2_TOOL_NAMES, packageIntent);
+    expect(tools.includes('get_available_packages')).toBe(packageIntent);
+  });
+
+  it.each([
+    ['Growth', true],
+    ['I will go with Growth', true],
+    ['compare Growth and Premium', true],
+  ])('routes known package expression %s as package intent=%s', (message, packageIntent) => {
+    expect(isV2PackageQuestion(message, ['Starter', 'Growth', 'Premium'])).toBe(packageIntent);
+    const tools = authorizedV2ReadToolsForTurn(catalog, V2_TOOL_NAMES, packageIntent);
+    expect(tools.includes('get_available_packages')).toBe(packageIntent);
+  });
+
+  it.each([
+    ['Hi', false],
+    ['Can you recap what I told you?', false],
+    ['What visa requirements apply?', false],
+  ])('does not route %s as package intent', (message, packageIntent) => {
     expect(isV2PackageQuestion(message)).toBe(packageIntent);
     const tools = authorizedV2ReadToolsForTurn(catalog, V2_TOOL_NAMES, packageIntent);
     expect(tools.includes('get_available_packages')).toBe(packageIntent);

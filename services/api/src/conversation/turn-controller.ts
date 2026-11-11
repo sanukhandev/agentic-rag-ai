@@ -5,7 +5,7 @@ import { classifyScopedGoalDecision, newConversationState, prompt } from '../con
 import { scoreCatalogV2CompetingGoals, validatePublishedCatalogV2 } from './catalog-runtime.js';
 import { resolveV2IntentEvidence } from './intent-evidence.js';
 import { authorizedPendingRequirement } from './conversation-decision.js';
-import { authorizedV2ReadToolsForTurn } from './tool-policy.js';
+import { authorizedV2ReadToolsForTurn, catalogBindingKeyForV2Read, catalogEnabledV2ReadTools } from './tool-policy.js';
 import { validateV2PlanningProposal } from './planning.js';
 import { proposeV2CatalogAction, v2ActionConsentScope } from './action-gate.js';
 import { extractQuotedV2CustomerFacts, validateQuotedV2CustomerFacts } from './customer-fact-provenance.js';
@@ -21,6 +21,7 @@ import { issueV2Scope, listApprovedV2PackageEvidence, listApprovedV2PackageOptio
 import { assertSafeUserIntentDocument, assertSafeIntentTurn } from '../user-intent-document.js';
 import { type V2ConversationCoordinator, type V2CoordinatorRequest, type V2CoordinatorResult } from './coordinator.js';
 import type { V2ApprovedEvidence, V2VerifiedFact } from './evidence.js';
+import { guardV2Response } from './response-guard.js';
 import type { V2ApprovedFallbackTemplateSet } from './fallbacks.js';
 import type { Citation, FollowUpOfferOption, GoalConfirmationRecord, Message, PendingFollowUpOffer, PersonaVersion, Session, Store, Tenant, UserIntentDocument, UserIntentFact } from '../types.js';
 
@@ -67,6 +68,39 @@ export interface GPTFirstTurnInput {
 }
 
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
+const packageFollowUpOptions = (options: V2PackageOption[]): FollowUpOfferOption[] => options
+  .map(option => ({
+    key: `package_${option.packageKey.toLocaleLowerCase('en-US').replace(/[^a-z0-9_.-]+/gu, '_')}`,
+    label: option.name,
+    retrievalHints: [option.packageKey, option.name],
+  }))
+  .filter(option => /^package_[a-z0-9][a-z0-9_.-]{0,79}$/u.test(option.key));
+const buildPackageEvidenceFallback = (message: string, options: V2PackageOption[], evidence: V2ApprovedEvidence[]) => {
+  const messageTokens = new Set(message.toLocaleLowerCase('en-US').match(/[a-z0-9]{4,}/gu) ?? []);
+  const matches = options.filter(option => [option.name, option.packageKey]
+    .flatMap(value => value.toLocaleLowerCase('en-US').match(/[a-z0-9]{4,}/gu) ?? [])
+    .some(token => !['ancfz', 'sample', 'package', 'option', 'options'].includes(token) && messageTokens.has(token)));
+  const selectedEvidence = matches.length === 1
+    ? evidence.filter(item => item.text.toLocaleLowerCase('en-US').includes(matches[0]!.name.toLocaleLowerCase('en-US').split(' (')[0]!.trim()))
+    : evidence;
+  const usableEvidence = selectedEvidence.length > 0 ? selectedEvidence : evidence;
+  return {
+    answer: `${usableEvidence.map(item => item.text).join('\n')}\n\nWhich package would you like to explore first?`,
+    citationIds: usableEvidence.map(item => item.citationId),
+  };
+};
+const guardPackageEvidenceFallback = (persona: PersonaVersion, fallback: ReturnType<typeof buildPackageEvidenceFallback>, evidence: V2ApprovedEvidence[]) => {
+  const decision = guardV2Response({
+    schemaVersion: 2, personaVersionId: persona.id, language: persona.permittedLanguages[0] ?? 'en',
+    answer: fallback.answer, citationIds: fallback.citationIds,
+    nextQuestion: 'Which package would you like to explore first?', nextQuestionKey: 'package_selection',
+    reasonNoQuestion: null, decisionRef: `package-evidence-${hash(JSON.stringify(fallback.citationIds))}`,
+  }, {
+    personaVersionId: persona.id, assistantName: persona.name, permittedLanguages: persona.permittedLanguages,
+    pendingRequirementKey: null, lastQuestionKey: null, questionPolicy: 'optional', evidence,
+  });
+  return decision.verdict.accepted ? decision.response : null;
+};
 export const chatTurnTimeoutMs = (env: NodeJS.ProcessEnv = process.env): number => {
   const configured = Number(env.CHAT_TURN_TIMEOUT_MS ?? 120_000);
   return Number.isFinite(configured) ? Math.min(300_000, Math.max(120_000, Math.floor(configured))) : 120_000;
@@ -147,9 +181,12 @@ const explicitContactConsent = (message: string): boolean =>
   /^\s*(?:yes|yes,?\s*(?:please|i do)|i consent|i agree|go ahead)\s*[.!]?\s*$/iu.test(message)
   || /\b(?:consent|permission|authorize)\b[\s\S]{0,80}\b(?:contact|details|use)\b/iu.test(message);
 
-export const isV2PackageQuestion = (message: string): boolean =>
-  /\b(?:package|packages|price|prices|pricing|cost|costs|fee|fees)\b/iu.test(message)
-  || /\b(?:package|plan|tier)\s+(?:option|options|choice|choices)\b/iu.test(message);
+const escapedWordPattern = (value: string): string => value.trim().replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+
+export const isV2PackageQuestion = (message: string, knownPackageNames: readonly string[] = []): boolean =>
+  /\b(?:package|packages|price|prices|pricing|cost|costs|fee|fees|quote|quotation)\b/iu.test(message)
+  || /\b(?:package|plan|tier)\s+(?:option|options|choice|choices)\b/iu.test(message)
+  || knownPackageNames.some((name) => name.trim().length > 0 && new RegExp(`\\b${escapedWordPattern(name)}\\b`, 'iu').test(message));
 
 /** Called after HTTP authentication and durable message-idempotency checks. */
 export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
@@ -306,32 +343,52 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     : contextualizeV2KnowledgeQuery(maskedMessage, contextualTopic);
   const preflightQuery = acceptedOfferOption ? contextualizedQuery : contextualizedQuery === maskedMessage ? contextualizedQuery : `${contextualizedQuery} process steps`;
   const statusOrRecapTurn = /\b(?:status|recap|summary|summarize|what did i tell you|without assuming)\b/iu.test(maskedMessage);
+  const packageIntent = isV2PackageQuestion(maskedMessage, activeFollowUpOffer?.options.map(option => option.label));
   const authorizedReadTools = catalogV2
-    ? authorizedV2ReadToolsForTurn(catalogV2, V2_TOOL_NAMES, isV2PackageQuestion(maskedMessage), isV2FactualKnowledgeQuestion(contextualizedQuery) || !statusOrRecapTurn)
+    ? authorizedV2ReadToolsForTurn(catalogV2, V2_TOOL_NAMES, packageIntent, isV2FactualKnowledgeQuestion(contextualizedQuery) || !statusOrRecapTurn)
     : [...V2_TOOL_NAMES];
   let approvedKnowledge: V2ApprovedEvidence[] = [];
   let packageOptions: V2PackageOption[] | null = null;
-  if (acceptedOfferOption?.key === 'explain_more' && acceptedOfferOption.retrievalHints[0]) {
+  if (acceptedOfferOption && (acceptedOfferOption.key === 'explain_more' || acceptedOfferOption.key.startsWith('package_')) && acceptedOfferOption.retrievalHints[0]) {
     const packageHint = acceptedOfferOption.retrievalHints[0].toLocaleLowerCase('en-US');
     const packageSourceVersion = v2Version?.catalogVersionRef ?? legacyCatalog?.id ?? catalog.id;
     try {
-      const offerings = await store.listPackageOfferings(tenant.id, v2Version
-        ? { catalogVersionRef: v2Version.catalogVersionRef }
-        : { catalogVersionId: legacyCatalog?.id ?? catalog.id });
-      const selected = offerings.find(offering => offering.packageKey.toLocaleLowerCase('en-US') === packageHint
-        || offering.name.toLocaleLowerCase('en-US').replace(/\s*\(sample\)\s*$/iu, '').split(/\s+/u).at(-1) === packageHint);
-      if (selected) {
-        const text = packageEvidenceText(selected, v2Version ? 'The published approved package' : 'The approved package', v2Version ? 'listed' : 'verified');
-        approvedKnowledge = [{
-          citationId: `tool-${hash(`${packageSourceVersion}:${selected.id}:${text}`).slice(0, 32)}`,
-          sourceVersion: packageSourceVersion, sourceRef: 'tool-get_available_packages', text, approved: true, revoked: false,
-        }];
+      if (v2Version) {
+        const now = Date.now();
+        const offerings = await store.listPackageOfferings(tenant.id, { catalogVersionRef: v2Version.catalogVersionRef });
+        const selected = offerings.find(offering => (offering.packageKey.toLocaleLowerCase('en-US') === packageHint
+          || offering.name.toLocaleLowerCase('en-US').replace(/\s*\(sample\)\s*$/iu, '').split(/\s+/u).at(-1) === packageHint)
+          && offering.approvalStatus === 'approved'
+          && (!offering.pricingEffectiveFrom || Date.parse(offering.pricingEffectiveFrom) <= now)
+          && (!offering.pricingEffectiveTo || Date.parse(offering.pricingEffectiveTo) > now));
+        if (selected) {
+          const text = packageEvidenceText(selected, 'The approved package', 'verified');
+          approvedKnowledge = [{
+            citationId: `tool-${hash(`${v2Version.catalogVersionRef}:${selected.id}:${text}`).slice(0, 32)}`,
+            sourceVersion: v2Version.catalogVersionRef, sourceRef: 'tool-get_available_packages', text, approved: true, revoked: false,
+          }];
+        }
+      } else {
+        const now = Date.now();
+        const offerings = await store.listPackageOfferings(tenant.id, { catalogVersionId: legacyCatalog?.id ?? catalog.id });
+        const selected = offerings.find(offering => offering.approvalStatus === 'approved'
+          && (!offering.pricingEffectiveFrom || Date.parse(offering.pricingEffectiveFrom) <= now)
+          && (!offering.pricingEffectiveTo || Date.parse(offering.pricingEffectiveTo) > now)
+          && (offering.packageKey.toLocaleLowerCase('en-US') === packageHint
+            || offering.name.toLocaleLowerCase('en-US').replace(/\s*\(sample\)\s*$/iu, '').split(/\s+/u).at(-1) === packageHint));
+        if (selected) {
+          const text = packageEvidenceText(selected, 'The approved package', 'verified');
+          approvedKnowledge = [{
+            citationId: `tool-${hash(`${packageSourceVersion}:${selected.id}:${text}`).slice(0, 32)}`,
+            sourceVersion: packageSourceVersion, sourceRef: 'tool-get_available_packages', text, approved: true, revoked: false,
+          }];
+        }
       }
     } catch {
       approvedKnowledge = [];
     }
   }
-  if (approvedKnowledge.length === 0 && v2Version && isV2PackageQuestion(maskedMessage)) {
+  if (approvedKnowledge.length === 0 && v2Version && packageIntent) {
     try {
       approvedKnowledge = await listApprovedV2PackageEvidence(store, tenant.id, v2Version.catalogVersionRef);
       packageOptions = await listApprovedV2PackageOptions(store, tenant.id, v2Version.catalogVersionRef);
@@ -380,7 +437,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         .map(topic => ({ topicKey: topic.topicKey, goalKey: topic.goalKey, citationRequired: topic.citationRequired })),
       requirementKeys: catalogV2.sheets.RequirementPolicies.filter(req => req.required).map(req => req.requirementKey),
       enabledReadToolKeys: catalogV2.sheets.ToolBindings.filter(tool => tool.enabled && tool.sideEffectClass === 'read_only')
-        .map(tool => tool.toolKey).slice(0, 32),
+        .length > 0 ? catalogEnabledV2ReadTools(catalogV2, V2_TOOL_NAMES).slice(0, 32) : [],
       enabledActionToolKeys,
     } } : {}),
     persona: { personaVersionId: persona.id, assistantName: persona.name, assistantRole: 'AI assistant',
@@ -411,7 +468,9 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   // Response wording and customer-intent planning are independent decisions.
   // A rejected draft must not erase a valid, still-unconfirmed goal proposal;
   // Node revalidates the candidate against catalog membership and customer text.
-  const modelPlan = result.candidateResponse?.planning ?? result.response.planning ?? null;
+  const rawModelPlan = result.candidateResponse?.planning ?? result.response.planning ?? null;
+  const modelPlan = rawModelPlan && rawModelPlan.proposedToolKey
+    ? { ...rawModelPlan, proposedToolKey: catalogBindingKeyForV2Read(rawModelPlan.proposedToolKey) } : rawModelPlan;
   const existingConfirmedGoal = intentDocument?.catalogSource === 'v2' && intentDocument.goalConfirmed
     ? intentDocument.businessGoalKey : null;
   const planningDecision = modelPlan && catalogV2 ? validateV2PlanningProposal(modelPlan, catalogV2, {
@@ -435,7 +494,9 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const semanticGoalCandidate = Boolean(validPlan && modelPlan && planningDecision?.primaryGoalKey
     && planningDecision.proposal?.turnCategory === 'business_goal'
     && modelPlan.confidenceBand !== 'low'
-    && !planningDecision.score?.ambiguous);
+    && !planningDecision.score?.ambiguous
+    && intentEvidence?.initiation === 'explicit'
+    && intentEvidence.ambiguous === false);
   const selectedV2Goal = existingConfirmedGoal ?? (validPlan && (planningDecision?.score?.thresholdMet || semanticGoalCandidate)
     && !planningDecision?.score?.ambiguous ? planningDecision?.primaryGoalKey ?? null
     : intentDocument?.catalogSource === 'v2' ? intentDocument.businessGoalKey
@@ -461,6 +522,9 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     }
   }
   const decision = pendingDecision ? classifyScopedGoalDecision(maskedMessage) : null;
+  const pendingGoalName = pendingDecision
+    ? catalogV2?.sheets.BusinessGoals.find(goal => goal.active && goal.businessGoalKey === pendingDecision.goalKey)?.name.toLowerCase() ?? 'this service'
+    : 'this service';
   const selectedTurnIntent = validPlan && selectedV2Goal && selectedTurnCategory && catalogV2
     ? catalogV2.sheets.TurnIntents.find(turn =>
         turn.active && turn.businessGoalKey === selectedV2Goal && turn.categoryKey === selectedTurnCategory)?.turnIntentKey ?? null
@@ -592,6 +656,22 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   let effectiveAnswer = result.response.answer;
   let effectiveQuestion = result.response.nextQuestion;
   let overrideResponse = false;
+  const packageSummaryRequest = !/\b(?:document|documents|passport|identity|upload|provide|require\w*|eligible|eligibility|activit\w*|licen[cs]e|steps|recommend\w*|best)\b/iu.test(maskedMessage)
+    && (/\b(?:price|prices|pricing|cost|costs|fee|fees|quote|quotation|visa|visas|office|includ\w*|availab\w*|process(?:ing)?|compare|comparison|versus|vs\.?)\b/iu.test(maskedMessage)
+      || (/\b(?:package|packages|plan|plans|tier|tiers)\b/iu.test(maskedMessage)
+        && /\b(?:what|which|offer\w*|availab\w*|option\w*|choice\w*|compare|comparison|versus|vs\.?)\b/iu.test(maskedMessage)));
+  const packageFallbackCandidate = packageIntent && !acceptedOfferOption && packageOptions && packageOptions.length > 0
+    && approvedKnowledge.length > 0
+    && packageSummaryRequest
+    && result.response.citationIds.length === 0
+    && (result.guardReason === 'safe_no_evidence_dialogue' || result.guardReason === 'accepted_model_dialogue' || result.guardReason === 'accepted')
+    ? buildPackageEvidenceFallback(maskedMessage, packageOptions, approvedKnowledge) : null;
+  const packageFallback = packageFallbackCandidate
+    ? guardPackageEvidenceFallback(persona, packageFallbackCandidate, approvedKnowledge) : null;
+  if (packageFallback) {
+    effectiveAnswer = packageFallback.answer;
+    effectiveQuestion = packageFallback.nextQuestion;
+  }
   // Contact details are not collected or used before the customer confirms the
   // business goal, but they still deserve a truthful privacy-safe response.
   const contactSubmittedBeforeGoalConfirmation = Object.keys(contactFromMessage).length > 0
@@ -617,7 +697,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     overrideResponse = true;
   }
   if (pendingDecision) {
-    const goalName = catalogV2?.sheets.BusinessGoals.find(goal => goal.businessGoalKey === pendingDecision.goalKey)?.name ?? 'this service';
+    const goalName = pendingGoalName;
     if (decision === 'confirmed') {
       goalConfirmed = true;
       nextGoalKey = pendingDecision.goalKey;
@@ -732,31 +812,31 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       .map(([key, value]) => `${factLabels[key] ?? key} as ${value.maskedValue}`);
     const verb = changed.length > 0 ? 'updated' : 'noted';
     effectiveAnswer = isRecap
-      ? `Here’s what I have noted: ${values.join('; ')}. Would you like to proceed with company formation?`
-      : `Thanks, I’ve ${verb} ${values.join(' and ')}. Would you like to proceed with company formation?`;
-    effectiveQuestion = 'Would you like to proceed with company formation?';
+      ? `Here’s what I have noted: ${values.join('; ')}. Would you like to proceed with ${pendingGoalName}?`
+      : `Thanks, I’ve ${verb} ${values.join(' and ')}. Would you like to proceed with ${pendingGoalName}?`;
+    effectiveQuestion = `Would you like to proceed with ${pendingGoalName}?`;
     overrideResponse = true;
   }
   if (pendingDecision && decision !== 'confirmed' && decision !== 'rejected' && decision !== 'corrected' && !overrideResponse) {
     if (/\b(?:prefer|would like|want)\b[\s\S]{0,50}\b(?:advisor|adviser)\b/iu.test(maskedMessage)) {
-      effectiveAnswer = 'Of course. I’ve noted that you prefer to speak with an adviser. Would you like to proceed with company formation?';
-      effectiveQuestion = 'Would you like to proceed with company formation?';
+      effectiveAnswer = `Of course. I’ve noted that you prefer to speak with an adviser. Would you like to proceed with ${pendingGoalName}?`;
+      effectiveQuestion = `Would you like to proceed with ${pendingGoalName}?`;
       overrideResponse = true;
     } else if (/\b(?:do not|don’t|don't)\b[\s\S]{0,60}\b(?:disclose|share)\b[\s\S]{0,60}(?:\bcustomer\b|\binformation\b|\bother\b|\[(?:ID|EMAIL|PHONE)_\d+\])/iu.test(maskedMessage)) {
-      effectiveAnswer = 'Understood. I won’t disclose information about other customers. Would you like to proceed with company formation?';
-      effectiveQuestion = 'Would you like to proceed with company formation?';
+      effectiveAnswer = `Understood. I won’t disclose information about other customers. Would you like to proceed with ${pendingGoalName}?`;
+      effectiveQuestion = `Would you like to proceed with ${pendingGoalName}?`;
       overrideResponse = true;
     } else if (/\b(?:consent|permission)\b/iu.test(maskedMessage)) {
-      effectiveAnswer = 'I’ve noted your contact preference. It will not authorize any action until you confirm company formation. Would you like to proceed with company formation?';
-      effectiveQuestion = 'Would you like to proceed with company formation?';
+      effectiveAnswer = `I’ve noted your contact preference. It will not authorize any action until you confirm ${pendingGoalName}. Would you like to proceed with ${pendingGoalName}?`;
+      effectiveQuestion = `Would you like to proceed with ${pendingGoalName}?`;
       overrideResponse = true;
     } else if (/\bbudget\b[\s\S]{0,40}\b(?:not fixed|uncertain|undecided|open)\b/iu.test(maskedMessage)) {
-      effectiveAnswer = 'I’ve noted that your budget is not fixed yet. We can keep exploring the approved options without treating a budget as confirmed. Would you like to proceed with company formation?';
-      effectiveQuestion = 'Would you like to proceed with company formation?';
+      effectiveAnswer = `I’ve noted that your budget is not fixed yet. We can keep exploring the approved options without treating a budget as confirmed. Would you like to proceed with ${pendingGoalName}?`;
+      effectiveQuestion = `Would you like to proceed with ${pendingGoalName}?`;
       overrideResponse = true;
     } else if (result.guardReason === 'policy_denied' && /\bpackage(?:s)?\b/iu.test(maskedMessage)) {
-      effectiveAnswer = 'I can’t provide a reliable package summary from the approved sources yet, so I won’t guess. Would you like to proceed with company formation?';
-      effectiveQuestion = 'Would you like to proceed with company formation?';
+      effectiveAnswer = `I can’t provide a reliable package summary from the approved sources yet, so I won’t guess. Would you like to proceed with ${pendingGoalName}?`;
+      effectiveQuestion = `Would you like to proceed with ${pendingGoalName}?`;
       overrideResponse = true;
     }
   }
@@ -781,9 +861,9 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     },
   } : {};
   const incomingFacts = { ...(intentDocument?.verifiedFacts ?? {}), ...factPatch(facts as Record<string, string>, state.messageSequence), ...contactFactPatch, ...actionConfirmationFactPatch, ...acceptedCustomerFacts };
-  const effectiveCitationIds = overrideResponse ? [] : result.response.citationIds;
-  const citations = overrideResponse ? [] : modelCitations;
-  const grounded = effectiveCitationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence');
+  const effectiveCitationIds = overrideResponse ? [] : packageFallback?.citationIds ?? result.response.citationIds;
+  const citations = overrideResponse ? [] : packageFallback ? await resolvePublicCitations(store, tenant.id, effectiveCitationIds, approvedKnowledge) : modelCitations;
+  const grounded = !overrideResponse && (Boolean(packageFallback) || (effectiveCitationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence')));
   const packageSelectionReady = Boolean(crmLead?.leadId && crmLead.remoteCrm && contactConsent === 'granted');
   let answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
   assertKnownTokens(session, answerMasked, input.tokenVault);
@@ -803,7 +883,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     turnIntentKey: intentDocument.catalogSource === 'v2' ? (nextGoalKey ? selectedTurnIntent ?? intentDocument.turnIntentKey : null) : intentDocument.turnIntentKey,
     pendingRequirementKey: effectivePendingRequirement,
     toolRefs: result.toolTrace.map(trace => trace.toolCallId),
-    sourceRefs: [...result.response.citationIds, ...catalogSignalRefs], summary: state.rollingSummary,
+    sourceRefs: [...effectiveCitationIds, ...catalogSignalRefs], summary: state.rollingSummary,
     summaryRevision: intentDocument.summaryRevision + 1,
     revision: intentDocument.revision + 1, updatedAt: at,
   } : {
@@ -816,7 +896,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     stageRevision: entry?.lifecycle?.revision ?? 0,
     goalConfirmed: catalogV2 ? goalConfirmed : Boolean(originalState.selectedIntentKey), verifiedFacts: incomingFacts,
     pendingRequirementKey: effectivePendingRequirement, lastQuestion: effectiveQuestion, approvedResponse,
-    toolRefs: result.toolTrace.map(trace => trace.toolCallId), sourceRefs: [...result.response.citationIds, ...catalogSignalRefs],
+    toolRefs: result.toolTrace.map(trace => trace.toolCallId), sourceRefs: [...effectiveCitationIds, ...catalogSignalRefs],
     summary: state.rollingSummary, summaryRevision: 1, revision: 0, createdAt: at, updatedAt: at,
   };
   // Initialize an opportunity only after a customer has explicitly confirmed
@@ -878,7 +958,12 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     nextDoc.approvedResponse = approvedResponse;
     nextDoc.lastQuestion = effectiveQuestion;
   }
-  const followUpOptions = !overrideResponse ? result.draft?.followUpOptions ?? [] : [];
+  const preserveGreetingFollowUp = greetingTurn && !pendingDecision && !intentDocument?.goalConfirmed && result.guardReason === 'accepted';
+  const packageOfferOptions = packageFollowUpOptions(packageOptions ?? []);
+  const packageSelectionQuestion = /\bwhich\s+package\s+would\s+you\s+like\s+to\s+explore\s+first\?/iu.test(effectiveQuestion ?? '');
+  const followUpOptions = packageOfferOptions.length > 0 && packageSelectionQuestion
+    ? packageOfferOptions
+    : preserveGreetingFollowUp || !overrideResponse ? result.draft?.followUpOptions ?? [] : [];
   state.pendingFollowUpOffer = followUpOptions.length > 0 && effectiveQuestion
     ? { offerKey: randomUUID(), intentKey: state.selectedIntentKey, sourceMessageId: responseId, sourceQuery: contextualizedQuery, options: followUpOptions, issuedAt: at, expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() }
     : acceptedOfferOption || offerReply?.action === 'reject' || offerReply?.action === 'new_request' ? null : activeFollowUpOffer;

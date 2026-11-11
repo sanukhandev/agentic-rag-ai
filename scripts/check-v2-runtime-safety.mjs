@@ -7,13 +7,13 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 
 export const V2_AUDITED_RUNTIME_FILES = Object.freeze([
-  'services/api/src/v2-coordinator.ts',
-  'services/api/src/v2-turn-controller.ts',
-  'services/api/src/v2-response-guard.ts',
-  'services/api/src/v2-evidence.ts',
-  'services/api/src/v2-claim-provenance.ts',
-  'services/api/src/v2-action-gate.ts',
-  'services/api/src/v2-tool-gateway.ts',
+  'services/api/src/conversation/coordinator.ts',
+  'services/api/src/conversation/turn-controller.ts',
+  'services/api/src/conversation/response-guard.ts',
+  'services/api/src/conversation/evidence.ts',
+  'services/api/src/conversation/claim-provenance.ts',
+  'services/api/src/conversation/action-gate.ts',
+  'services/api/src/conversation/tool-gateway.ts',
   'services/model-gateway/gateway/agent.py',
   'services/model-gateway/gateway/persona_composer.py',
   'services/model-gateway/gateway/v2_contracts.py',

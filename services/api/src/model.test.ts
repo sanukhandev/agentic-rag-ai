@@ -40,6 +40,22 @@ describe('Azure Foundry model adapter', () => {
   it('selects a typo-tolerant package option from a package question', () => {
     const offer = { offerKey: 'packages-1', intentKey: null, sourceMessageId: null, sourceQuery: 'what packages do you offer', options: [{ key: 'package_growth', label: 'ANCFZ Growth', retrievalHints: ['growth'] }], issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString() };
     expect(classifyOfferReplyDeterministically('tell me about the groth package', offer)).toMatchObject({ action: 'select_option', optionKey: 'package_growth' });
+    expect(classifyOfferReplyDeterministically('I will go with Growth', offer)).toMatchObject({ action: 'select_option', optionKey: 'package_growth' });
+    expect(classifyOfferReplyDeterministically("Don't choose Growth", offer)).toMatchObject({ action: 'clarify' });
+    expect(classifyOfferReplyDeterministically('What documents do I need if I choose Growth?', offer)).toMatchObject({ action: 'new_request' });
+    const publishedKeyOffer = { ...offer, options: [{ key: 'package_anc-r5-sample-growth-r6-r7-r8-r9-r10', label: 'ANCFZ Growth (sample)', retrievalHints: ['anc-r5-sample-growth-r6-r7-r8-r9-r10', 'ANCFZ Growth (sample)'] }] };
+    expect(classifyOfferReplyDeterministically('I will go with Growth', publishedKeyOffer)).toMatchObject({ action: 'select_option', optionKey: 'package_anc-r5-sample-growth-r6-r7-r8-r9-r10' });
+    const publishedMultiOffer = { ...publishedKeyOffer, options: [
+      ...publishedKeyOffer.options,
+      { key: 'package_anc-r5-sample-premium-r6-r7-r8-r9-r10', label: 'ANCFZ Premium (sample)', retrievalHints: ['anc-r5-sample-premium-r6-r7-r8-r9-r10', 'ANCFZ Premium (sample)'] },
+      { key: 'package_anc-r5-sample-starter-r6-r7-r8-r9-r10', label: 'ANCFZ Starter (sample)', retrievalHints: ['anc-r5-sample-starter-r6-r7-r8-r9-r10', 'ANCFZ Starter (sample)'] },
+    ] };
+    expect(classifyOfferReplyDeterministically('ANCFZ Starter', publishedMultiOffer)).toMatchObject({ action: 'select_option', optionKey: 'package_anc-r5-sample-starter-r6-r7-r8-r9-r10' });
+  });
+
+  it('keeps contact extraction aligned with the suffixed session token contract', () => {
+    expect(extractLeadData('email [EMAIL_1] phone [PHONE_1]')).toEqual({ email: '[EMAIL_1]', phone: '[PHONE_1]' });
+    expect(extractLeadData('email [EMAIL] phone [PHONE]')).toEqual({});
   });
 
   it('does not echo raw evidence when the external generation model is unavailable', async () => {
