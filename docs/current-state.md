@@ -439,4 +439,5 @@ The pending formation-confirmation path now also handles unfixed budget preferen
 - Comparison wording now keeps all matched approved package evidence instead of narrowing to the first package returned by storage order.
 - Package-summary fallback is now limited to approved summary fields (pricing, visas, office, inclusions, availability, processing, options and comparisons); document, eligibility, activity and licensing questions preserve the composer/advisory path.
 - Selected-package reloads now generate evidence from the exact approved, effective-dated offering identity, preventing similarly named variants from leaking competing prices or terms.
+- Pending contact-name extraction now rejects question/request vocabulary, preventing package questions from being recorded as customer names while the Lead contact cursor is active.
 - CI path drift was corrected for the workbook exporter, catalog validator, runtime safety tripwire, retirement guard and their current `conversation/` test fixtures. Hosted unit-only validation passed after these fixes.

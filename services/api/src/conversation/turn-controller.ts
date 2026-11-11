@@ -110,8 +110,14 @@ const safeFactValue = (value: string | undefined, max: number): string | undefin
     && !/\+?\d[\d()\s-]{7,}/u.test(value) ? value.trim() : undefined;
 
 const safePendingLeadName = (value: string): string | undefined => {
+  const raw = value.trim();
   const candidate = normalizePendingLeadName(value);
   const namePart = String.raw`[\p{L}\p{M}][\p{L}\p{M}\d]*(?:['’.-][\p{L}\p{M}\d]+)*`;
+  if (/[?]/u.test(raw)
+    || /^(?:what|which|how|where|when|why)\b/iu.test(candidate)
+    || /^(?:can|could|would)\s+(?:i|you|we)\b/iu.test(candidate)
+    || /^i\s+(?:choose|select|want|need|prefer|proceed)\b/iu.test(candidate)
+    || /^(?:yes|no)$/iu.test(candidate)) return undefined;
   return candidate.split(/\s+/u).filter(Boolean).length <= 6
     && safeFactValue(candidate, 120)
     && new RegExp(`^${namePart}(?:\\s+${namePart}){0,5}$`, 'u').test(candidate)

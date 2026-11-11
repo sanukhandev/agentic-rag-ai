@@ -887,7 +887,7 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     await ctx.store.updateUserIntentDocument({
       document: { ...confirmed, pendingRequirementKey: 'lead_contact_name' }, expectedRevision: confirmed.revision,
     });
-    const packageQuestion = await followUpTurn(ctx, 'What packages do you offer?');
+    const packageQuestion = await followUpTurn(ctx, 'What packages are available?');
     ctx.coordinator.run.mockImplementationOnce(async () => ({
       modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
       response: { citationIds: [], answer: 'I cannot verify that answer safely.', nextQuestion: null, nextQuestionKey: null },
@@ -897,6 +897,26 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect(reply.answer).toContain('Growth package');
     expect(reply.answer).toContain('AED 4,999.00');
     expect(reply.pendingRequirementKey).toBe('lead_contact_name');
+  });
+
+  it.each(['John Price', 'Sarah Fee', 'Can Yilmaz'])('accepts a legitimate contact name containing request vocabulary: %s', async name => {
+    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json');
+    await runGPTFirstChatTurn({ ...await followUpTurn(ctx, 'Yes, proceed.'), coordinator: ctx.coordinator });
+    const confirmed = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    if (!confirmed) throw new Error('UNIT_INTENT_DOCUMENT_MISSING');
+    await ctx.store.updateUserIntentDocument({
+      document: { ...confirmed, pendingRequirementKey: 'lead_contact_name' }, expectedRevision: confirmed.revision,
+    });
+    const next = await followUpTurn(ctx, name);
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'Thanks. What email address should I use?', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted',
+    }) as unknown as V2CoordinatorResult);
+    await runGPTFirstChatTurn(next);
+    const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document?.verifiedFacts.lead_contact_name?.source).toBe('visitor');
+    expect(document?.pendingRequirementKey).toBe('lead_contact_channel');
   });
 
   it('creates a catalog-gated Lead proposal only after contact consent and an explicit submission request', async () => {
