@@ -32,16 +32,16 @@ export const BASELINE_MIGRATIONS = `
 export const PROTECTED_V2_SOURCES = [
   'services/api/src/index.ts',
   'services/api/src/app.ts',
-  'services/api/src/v2-turn-controller.ts',
-  'services/api/src/v2-coordinator.ts',
-  'services/api/src/v2-planning.ts',
-  'services/api/src/catalog-v2.ts',
-  'services/api/src/catalog-v2-runtime.ts',
+  'services/api/src/conversation/turn-controller.ts',
+  'services/api/src/conversation/coordinator.ts',
+  'services/api/src/conversation/planning.ts',
+  'services/api/src/conversation/catalog.ts',
+  'services/api/src/conversation/catalog-runtime.ts',
   'services/api/src/user-intent-document.ts',
-  'services/api/src/v2-tool-gateway.ts',
-  'services/api/src/v2-action-gate.ts',
-  'services/api/src/v2-provider-evidence.ts',
-  'services/api/src/v2-provider-correlation.ts',
+  'services/api/src/conversation/tool-gateway.ts',
+  'services/api/src/conversation/action-gate.ts',
+  'services/api/src/conversation/provider-evidence.ts',
+  'services/api/src/conversation/provider-correlation.ts',
   'services/api/src/store-postgres.ts',
   'services/api/src/store-memory.ts',
   'services/api/src/privacy.ts',
@@ -55,7 +55,7 @@ export const PROTECTED_V2_SOURCES = [
 
 export const APPROVED_PYTHON_READ_TOOLS = [
   'get_conversation_context', 'get_persona', 'get_intent_catalog',
-  'get_missing_requirements', 'search_knowledge', 'get_journey_state',
+  'get_conversation_history_summary', 'get_missing_requirements', 'search_knowledge', 'get_journey_state',
   'get_available_packages', 'get_document_requirements', 'get_action_status',
 ];
 
@@ -108,7 +108,7 @@ export async function checkV2RetirementSafety(root = rootFromScript) {
     /\bplanV2\s*\(/u, /\b(?:model\.)?(?:draft|normalizeQuery)\s*\(/u,
     /\/internal\/v1\/model\/(?:plan|normalize)/u,
   ];
-  for (const path of ['services/api/src/v2-turn-controller.ts', 'services/api/src/v2-coordinator.ts']) {
+  for (const path of ['services/api/src/conversation/turn-controller.ts', 'services/api/src/conversation/coordinator.ts']) {
     const body = await fileText(root, path);
     if (!body) continue; // Missing module is already reported above.
     for (const expression of forbiddenV2PlannerCalls) {

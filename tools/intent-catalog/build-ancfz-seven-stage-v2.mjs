@@ -1,7 +1,7 @@
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {resolve,dirname} from 'node:path';
-import {validateCatalogV2} from '../../services/api/src/catalog-v2.ts';
-import {exportCatalogV2Workbook} from '../../services/api/src/catalog-v2-xlsx.ts';
+import {validateCatalogV2} from '../../services/api/src/conversation/catalog.ts';
+import {exportCatalogV2Workbook} from '../../services/api/src/conversation/catalog-xlsx.ts';
 const input=resolve('services/api/src/fixtures/ancfz-catalog-v2-seven-stage.json');
 const output=resolve('artifacts/ancfz/ANCFZ_Seven_Stage_Intent_Catalog_V2_DRAFT.xlsx');
 const parsed=validateCatalogV2(JSON.parse(readFileSync(input,'utf8')));
