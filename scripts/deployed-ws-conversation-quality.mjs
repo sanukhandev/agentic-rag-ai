@@ -121,7 +121,7 @@ async function uploadDocument(session, responseSummary, profile) {
 function isDocumentRequested(answer, responseSummary) {
   const requirement = String(responseSummary.pendingRequirementKey ?? '');
   if (/passport|identity|document/iu.test(requirement)) return true;
-  return /(?:please|need|required|provide|upload|ready).{0,80}(?:passport|identity document|identity proof|document)|(?:passport|identity document).{0,80}(?:provide|upload|processing|consent)/iu.test(String(answer ?? ''));
+  return /(?:please|need|must|provide|upload|attach|submit|share|send).{0,80}(?:passport|identity document|identity proof)|(?:passport|identity document|identity proof).{0,80}(?:provide|upload|attach|submit|share|send|processing|consent)/iu.test(String(answer ?? ''));
 }
 
 class ConversationSocket {
