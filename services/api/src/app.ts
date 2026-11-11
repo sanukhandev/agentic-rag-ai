@@ -3209,9 +3209,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       if (!validation.accepted) throw new HttpError(409, 'V2_PROVIDER_EVIDENCE_INVALID', `Deterministic Payment provider evidence was rejected (${validation.reasons.join(',')}).`);
       // Simulation does not settle money and must never mark an invoice paid.
       const updatedInvoice = await store.updateInvoice({ ...invoice, provider: 'deterministic_mock', status: 'pending', updatedAt: new Date().toISOString() });
-      const updatedAction = validation.paymentVerified
-        ? await transitionWorkflowAction(action, 'completed', result.paymentId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, false)
-        : await transitionWorkflowAction(action, 'processing', result.paymentId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, false);
+      // A deterministic settlement remains a simulation. The authoritative
+      // workflow must not complete or advance Stage 6 from mock settlement.
+      const updatedAction = await transitionWorkflowAction(action, 'processing', result.paymentId, null, execution.n8nExecutionRef ?? undefined, input.eventId, input.correlationId, input.attempt, input, false);
       res.json({ accepted: true, status: validation.status, paymentVerified: false, simulationPaid: validation.paymentVerified, evidenceTier: validation.status, stageKey: input.stageKey, providerRecordRef: result.paymentId, invoice: updatedInvoice, action: updatedAction });
     } catch (error) { next(error); }
   });
