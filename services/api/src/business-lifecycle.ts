@@ -171,13 +171,35 @@ export const createInvoiceDraft = async (store: Store, session: Session, opportu
   return store.createInvoice({ id: randomUUID(), tenantId: session.tenantId, opportunityId, quoteId: quote.id, externalInvoiceId: null, amountMinor: quote.amountMinor, currency: quote.currency, paymentUrl: null, status: 'pending', provider: 'sandbox-pending', createdAt: now(), updatedAt: now() });
 };
 
+/** Real payment requires both an authenticated provider readback audit and its completed action. */
+export const hasVerifiedLivePayment = async (store: Store, session: Session, invoice: Invoice): Promise<boolean> => {
+  if (invoice.tenantId !== session.tenantId || invoice.opportunityId !== activeOpportunityId(session)
+    || invoice.status !== 'paid' || invoice.provider !== 'billing_live' || !invoice.externalInvoiceId) return false;
+  const [actions, events] = await Promise.all([store.listActionsBySession(session.id, session.tenantId), store.listAudit(session.tenantId)]);
+  return actions.some((action) => action.state === 'completed' && action.actionKey === 'payment.authorize'
+    && action.opportunityId === invoice.opportunityId && action.payload.slotValues?.invoiceId === invoice.id
+    && events.some((event) => event.eventName === 'payment.live_settlement_verified'
+      && event.metadata.actionId === action.id && event.metadata.invoiceId === invoice.id
+      && event.metadata.externalInvoiceId === invoice.externalInvoiceId
+      && event.metadata.opportunityId === invoice.opportunityId
+      && event.metadata.evidenceTier === 'provider_record_verified'
+      && event.metadata.paymentId === action.result?.externalReference
+      && event.metadata.amountMinor === invoice.amountMinor && event.metadata.currency === invoice.currency));
+};
+
 export const createContractDraft = async (store: Store, session: Session, opportunityId: string, selectionId: string, invoiceId: string): Promise<Contract> => {
   requireOpportunity(session, opportunityId);
   const selection = await store.getPackageSelection(selectionId, session.tenantId);
   if (!selection || selection.opportunityId !== opportunityId || selection.status !== 'confirmed') throw new HttpError(409, 'PACKAGE_NOT_CONFIRMED', 'The package must be confirmed before preparing a contract.');
   const invoice = await store.getInvoice(invoiceId, session.tenantId);
   if (!invoice || invoice.opportunityId !== opportunityId || invoice.status !== 'paid') throw new HttpError(409, 'PAYMENT_NOT_VERIFIED', 'A verified paid invoice is required before contract preparation.');
-  const account: CrmAccount | null = await store.getCrmAccountByOpportunity(opportunityId, session.tenantId);
-  if (account && account.status !== 'verified') throw new HttpError(409, 'ACCOUNT_NOT_VERIFIED', 'The Salesforce Account conversion has not been verified for this opportunity.');
+  if (!selection.quoteId || invoice.quoteId !== selection.quoteId) throw new HttpError(409, 'CONTRACT_QUOTE_MISMATCH', 'The paid invoice must belong to the confirmed package quote.');
+  const quote = await store.getQuote(invoice.quoteId, session.tenantId);
+  if (!quote || quote.opportunityId !== opportunityId || quote.packageOfferingId !== selection.packageOfferingId
+    || quote.amountMinor !== invoice.amountMinor || quote.currency !== invoice.currency)
+    throw new HttpError(409, 'CONTRACT_AMOUNT_MISMATCH', 'The invoice and approved package quote must match.');
+  if (!await hasVerifiedLivePayment(store, session, invoice))
+    throw new HttpError(409, 'PAYMENT_PROOF_REQUIRED', 'An independently verified real payment is required before contract preparation.');
+  const account: CrmAccount = await requireVerifiedAccount(store, session, opportunityId);
   return store.createContract({ id: randomUUID(), tenantId: session.tenantId, opportunityId, packageSelectionId: selection.id, invoiceId: invoice?.id ?? null, externalContractId: null, templateKey: 'ancfz-company-formation-v1', signingUrl: null, status: 'draft', provider: 'sandbox-pending', createdAt: now(), updatedAt: now() });
 };
