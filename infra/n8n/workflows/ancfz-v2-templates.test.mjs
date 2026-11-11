@@ -4,6 +4,7 @@ import { readFile, readdir } from 'node:fs/promises';
 const root = new URL('./ancfz-v2/', import.meta.url);
 const manifest = JSON.parse(await readFile(new URL('./ancfz-v2-manifest.json', import.meta.url),'utf8'));
 const names=['Receive Node Dispatch','Validate Dispatch Envelope','Claim Authorized Action','Require V2 Stage Authorization','Call Provider - Configure Credential','Read Back Provider State','Ask Node to Verify Provider Evidence','Require Trusted Node Attestation','Complete Correlated Action'];
+const billingNames=names.slice(0,-1); // Dedicated provider evidence endpoint commits completion; no second generic completion.
 const leadNames=['Receive Node Dispatch','Validate Dispatch Envelope','Claim Authorized Action','Require V2 Stage Authorization','Call Provider - Configure Credential','Read Back Provider State','Build Provider Evidence Payload','Ask Node to Verify Provider Evidence','Require Trusted Node Attestation','Complete Correlated Action','Report Correlated Failure'];
 const localQuoteNames=['Receive Node Dispatch','Validate Internal Dispatch','Create Quote and Verify PDF'];
 test('all ANCFZ V2 workflows are structurally connected and non-executable by default',async()=>{
@@ -16,7 +17,8 @@ test('all ANCFZ V2 workflows are structurally connected and non-executable by de
   assert.equal(w.active,false,file);
   assert.equal(w.settings.saveDataSuccessExecution,'none');
   assert.equal(w.settings.saveDataErrorExecution,file === '01-lead-create.json' ? 'all' : 'none');
-  const expectedNames=file === '01-lead-create.json' ? leadNames : file === '04-package-quote.json' ? localQuoteNames : names;
+  const billing=file === '06a-invoice-issue.json' || file === '06b-payment-verify.json';
+  const expectedNames=file === '01-lead-create.json' ? leadNames : file === '04-package-quote.json' ? localQuoteNames : billing ? billingNames : names;
   assert.equal(w.nodes.length,expectedNames.length,file);
   assert.deepEqual(w.nodes.map(node=>node.name),expectedNames,file);
   assert.ok(!ids.has(w.id),'duplicate workflow id');ids.add(w.id);
@@ -65,7 +67,11 @@ test('all ANCFZ V2 workflows are structurally connected and non-executable by de
    continue;
   }
   const evidenceIndex=file === '01-lead-create.json' ? 7 : 6;
-  assert.equal(w.nodes[evidenceIndex].parameters.url,file === '03c-account-create.json' ? 'http://api:4000/api/v2/internal/provider-evidence/account' : 'http://api:4000/api/v2/internal/provider-evidence/verify');
+  const expectedEvidenceRoute = file === '03c-account-create.json' ? 'account'
+    : file === '06a-invoice-issue.json' ? 'invoice'
+      : file === '06b-payment-verify.json' ? 'payment' : 'verify';
+  assert.equal(w.nodes[evidenceIndex].parameters.url,`http://api:4000/api/v2/internal/provider-evidence/${expectedEvidenceRoute}`);
+  if (file === '06b-payment-verify.json') assert.match(w.nodes[evidenceIndex].parameters.jsonBody,/paymentConfirmation:true/);
   assert.equal(w.nodes[2].parameters.url,'http://api:4000/api/v1/internal/workflow-events/claim');
   assert.match(w.nodes[2].parameters.jsonBody,/n8nWorkflowId:\s*\$workflow\.id/);
   assert.match(w.nodes[2].parameters.jsonBody,/limit:1/);
@@ -74,7 +80,8 @@ test('all ANCFZ V2 workflows are structurally connected and non-executable by de
   const attestationIndex=file === '01-lead-create.json' ? 8 : 7;
   const completionIndex=file === '01-lead-create.json' ? 9 : 8;
   assert.match(w.nodes[attestationIndex].parameters.jsCode,/result\.evidenceTier !== 'provider_record_verified'/);
-  assert.match(w.nodes[completionIndex].parameters.jsonBody,/state:'completed'/);
+  if (!billing) assert.match(w.nodes[completionIndex].parameters.jsonBody,/state:'completed'/);
+  else assert.equal(w.nodes.some(node => node.name === 'Complete Correlated Action'), false, 'billing completion must be committed by Node only');
   for(const node of w.nodes.filter(node=>node.type==='n8n-nodes-base.httpRequest'))assert.ok(node.parameters.authentication==='predefinedCredentialType'||node.parameters.authentication==='genericCredentialType');
   for(let n=0;n<expectedNames.length-1;n++){
    if(file === '01-lead-create.json' && n === 9) assert.deepEqual(w.connections[expectedNames[n]].main[0],[]);
