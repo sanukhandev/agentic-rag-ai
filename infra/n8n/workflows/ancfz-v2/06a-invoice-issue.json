@@ -145,7 +145,7 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "http://api:4000/api/v2/internal/provider-evidence/verify",
+        "url": "http://api:4000/api/v2/internal/provider-evidence/invoice",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -155,7 +155,7 @@
           "timeout": 30000
         }
       },
-      "notes": "PLANNED PROVIDER-SPECIFIC NODE ADAPTER; NOT WIRED in current V2 API. This intentionally blocks all completion until a security-reviewed adapter performs provider readback, correlation and evidence checks. Assign internal Header Auth credential."
+      "notes": "Dedicated Node-owned evidence adapter; n8n response alone never proves payment. Node must retrieve and validate an authenticated provider record. Install internal Header Auth credential."
     },
     {
       "id": "ancfzV2InvoiceIssueR1-attest",
