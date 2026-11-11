@@ -353,17 +353,29 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     const packageHint = acceptedOfferOption.retrievalHints[0].toLocaleLowerCase('en-US');
     const packageSourceVersion = v2Version?.catalogVersionRef ?? legacyCatalog?.id ?? catalog.id;
     try {
-      const offerings = await store.listPackageOfferings(tenant.id, v2Version
-        ? { catalogVersionRef: v2Version.catalogVersionRef }
-        : { catalogVersionId: legacyCatalog?.id ?? catalog.id });
-      const selected = offerings.find(offering => offering.packageKey.toLocaleLowerCase('en-US') === packageHint
-        || offering.name.toLocaleLowerCase('en-US').replace(/\s*\(sample\)\s*$/iu, '').split(/\s+/u).at(-1) === packageHint);
-      if (selected) {
-        const text = packageEvidenceText(selected, v2Version ? 'The published approved package' : 'The approved package', v2Version ? 'listed' : 'verified');
-        approvedKnowledge = [{
-          citationId: `tool-${hash(`${packageSourceVersion}:${selected.id}:${text}`).slice(0, 32)}`,
-          sourceVersion: packageSourceVersion, sourceRef: 'tool-get_available_packages', text, approved: true, revoked: false,
-        }];
+      if (v2Version) {
+        const offerings = await listApprovedV2PackageOptions(store, tenant.id, v2Version.catalogVersionRef);
+        const selected = offerings.find(offering => offering.packageKey.toLocaleLowerCase('en-US') === packageHint
+          || offering.name.toLocaleLowerCase('en-US').replace(/\s*\(sample\)\s*$/iu, '').split(/\s+/u).at(-1) === packageHint);
+        const evidence = await listApprovedV2PackageEvidence(store, tenant.id, v2Version.catalogVersionRef);
+        approvedKnowledge = selected
+          ? evidence.filter(item => item.text.toLocaleLowerCase('en-US').includes(selected.name.toLocaleLowerCase('en-US').split(' (')[0]!.trim()))
+          : [];
+      } else {
+        const now = Date.now();
+        const offerings = await store.listPackageOfferings(tenant.id, { catalogVersionId: legacyCatalog?.id ?? catalog.id });
+        const selected = offerings.find(offering => offering.approvalStatus === 'approved'
+          && (!offering.pricingEffectiveFrom || Date.parse(offering.pricingEffectiveFrom) <= now)
+          && (!offering.pricingEffectiveTo || Date.parse(offering.pricingEffectiveTo) > now)
+          && (offering.packageKey.toLocaleLowerCase('en-US') === packageHint
+            || offering.name.toLocaleLowerCase('en-US').replace(/\s*\(sample\)\s*$/iu, '').split(/\s+/u).at(-1) === packageHint));
+        if (selected) {
+          const text = packageEvidenceText(selected, 'The approved package', 'verified');
+          approvedKnowledge = [{
+            citationId: `tool-${hash(`${packageSourceVersion}:${selected.id}:${text}`).slice(0, 32)}`,
+            sourceVersion: packageSourceVersion, sourceRef: 'tool-get_available_packages', text, approved: true, revoked: false,
+          }];
+        }
       }
     } catch {
       approvedKnowledge = [];
@@ -634,10 +646,10 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   let effectiveAnswer = result.response.answer;
   let effectiveQuestion = result.response.nextQuestion;
   let overrideResponse = false;
-  const packageFallbackCandidate = packageIntent && packageOptions && packageOptions.length > 0
+  const packageFallbackCandidate = packageIntent && !acceptedOfferOption && packageOptions && packageOptions.length > 0
     && approvedKnowledge.length > 0
     && result.response.citationIds.length === 0
-    && (result.guardReason === 'safe_no_evidence_dialogue' || result.guardReason === 'accepted_model_dialogue')
+    && (result.guardReason === 'safe_no_evidence_dialogue' || result.guardReason === 'accepted_model_dialogue' || result.guardReason === 'accepted')
     ? buildPackageEvidenceFallback(maskedMessage, packageOptions, approvedKnowledge) : null;
   const packageFallback = packageFallbackCandidate
     ? guardPackageEvidenceFallback(persona, packageFallbackCandidate, approvedKnowledge) : null;
@@ -837,11 +849,6 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const effectiveCitationIds = packageFallback?.citationIds ?? (overrideResponse ? [] : result.response.citationIds);
   const citations = packageFallback ? await resolvePublicCitations(store, tenant.id, effectiveCitationIds, approvedKnowledge) : (overrideResponse ? [] : modelCitations);
   const grounded = Boolean(packageFallback) || (effectiveCitationIds.length > 0 && !result.guardReason.startsWith('safe_no_evidence'));
-  const packageOfferOptions = packageFollowUpOptions(packageOptions ?? []);
-  if (packageOfferOptions.length > 0 && !effectiveQuestion && !overrideResponse) {
-    effectiveQuestion = 'Which package would you like to explore first?';
-    if (!effectiveAnswer.trim().endsWith('?')) effectiveAnswer = `${effectiveAnswer.trim()} ${effectiveQuestion}`.trim();
-  }
   const packageSelectionReady = Boolean(crmLead?.leadId && crmLead.remoteCrm && contactConsent === 'granted');
   let answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
   assertKnownTokens(session, answerMasked, input.tokenVault);
@@ -937,6 +944,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     nextDoc.lastQuestion = effectiveQuestion;
   }
   const preserveGreetingFollowUp = greetingTurn && !pendingDecision && !intentDocument?.goalConfirmed && result.guardReason === 'accepted';
+  const packageOfferOptions = packageFollowUpOptions(packageOptions ?? []);
   const followUpOptions = packageOfferOptions.length > 0
     ? packageOfferOptions
     : preserveGreetingFollowUp || !overrideResponse ? result.draft?.followUpOptions ?? [] : [];
