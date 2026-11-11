@@ -169,29 +169,6 @@
       "parameters": {
         "jsCode": "const source = $('Require V2 Stage Authorization').first().json;\nconst result = $json;\nif (result.accepted !== true || result.evidenceTier !== 'provider_record_verified' || result.stageKey !== \"payment_invoice\") throw new Error('Node has not independently verified provider state.');\nfor (const key of ['actionId','tenantId','sessionId','opportunityId','catalogVersionId','idempotencyKey','actionKey','actionRevision','eventId','correlationId','attempt']) if (result[key] !== source[key]) throw new Error('Node attestation scope mismatch: '+key);\nif (typeof result.providerRecordRef !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(result.providerRecordRef)) throw new Error('Invalid provider attestation record reference.');\nreturn [{json:{...result,executionReference:$execution.id}}];"
       }
-    },
-    {
-      "id": "ancfzV2PaymentVerifyR1-complete",
-      "name": "Complete Correlated Action",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2110,
-        200
-      ],
-      "parameters": {
-        "method": "POST",
-        "url": "http://api:4000/api/v1/internal/workflow-events/complete",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({actionId:$json.actionId,tenantId:$json.tenantId,sessionId:$json.sessionId,opportunityId:$json.opportunityId,catalogVersionId:$json.catalogVersionId,idempotencyKey:$json.idempotencyKey,actionKey:$json.actionKey,actionRevision:$json.actionRevision,state:'completed',externalReference:$json.providerRecordRef,executionReference:$execution.id,eventId:$json.eventId,correlationId:$json.correlationId,attempt:$json.attempt}) }}",
-        "options": {
-          "timeout": 30000
-        }
-      },
-      "notes": "Credential deliberately not assigned; configure via the n8n Credentials UI, never in this repository."
     }
   ],
   "connections": {
@@ -271,20 +248,9 @@
           }
         ]
       ]
-    },
-    "Require Trusted Node Attestation": {
-      "main": [
-        [
-          {
-            "node": "Complete Correlated Action",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
     }
   },
   "pinData": {},
   "staticData": null,
-  "notes": "UNPUBLISHED / INERT TEMPLATE. No raw card data. A payment request/redirect is not proof of paid status; Node needs independent provider paid-state readback. Node V2 claim/dispatch and provider-specific readback adapter are not wired. No credentials are included; never enable without Node gate, provider credentials, readback, callbacks and synthetic E2E tests."
+  "notes": "UNPUBLISHED / INERT TEMPLATE. No raw card data. A payment request/redirect is not proof of paid status; Node needs independent provider paid-state readback. Node V2 claim/dispatch and provider-specific readback adapter are not wired. No credentials are included; never enable without Node gate, provider credentials, readback, callbacks and synthetic E2E tests.\nStage 6 completion is committed by the dedicated Node provider-evidence endpoint. Do not call generic workflow-events/complete after Node attestation; it would repeat an unauthenticated completion path."
 }
