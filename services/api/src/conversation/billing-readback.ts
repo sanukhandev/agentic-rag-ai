@@ -82,9 +82,9 @@ export class HttpLiveBillingReadbackProvider implements LiveBillingReadbackProvi
   constructor(baseUrl: string, private readonly bearerToken: string, private readonly fetcher: typeof fetch = fetch) {
     const parsed = new URL(baseUrl);
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash
-      || parsed.port || /^(?:localhost|.*\\.localhost|127\\.|10\\.|192\\.168\\.|169\\.254\\.|172\\.(?:1[6-9]|2\\d|3[01])\\.|0\\.|\\[)/iu.test(parsed.hostname)
+      || parsed.port || /^(?:localhost|.*\.localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(?:1[6-9]|2\d|3[01])\.|0\.|\[)/iu.test(parsed.hostname)
       || bearerToken.length < 16) throw new Error('BILLING_READBACK_CONFIGURATION_INVALID');
-    this.base = parsed.href.replace(/\\/$/u, '');
+    this.base = parsed.href.replace(/\/$/u, '');
   }
   private async read(resource: 'invoices' | 'payments', recordId: string): Promise<unknown> {
     if (!ref.safeParse(recordId).success) throw new Error('BILLING_RECORD_ID_INVALID');
