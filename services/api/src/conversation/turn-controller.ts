@@ -354,13 +354,20 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     const packageSourceVersion = v2Version?.catalogVersionRef ?? legacyCatalog?.id ?? catalog.id;
     try {
       if (v2Version) {
-        const offerings = await listApprovedV2PackageOptions(store, tenant.id, v2Version.catalogVersionRef);
-        const selected = offerings.find(offering => offering.packageKey.toLocaleLowerCase('en-US') === packageHint
-          || offering.name.toLocaleLowerCase('en-US').replace(/\s*\(sample\)\s*$/iu, '').split(/\s+/u).at(-1) === packageHint);
-        const evidence = await listApprovedV2PackageEvidence(store, tenant.id, v2Version.catalogVersionRef);
-        approvedKnowledge = selected
-          ? evidence.filter(item => item.text.toLocaleLowerCase('en-US').includes(selected.name.toLocaleLowerCase('en-US').split(' (')[0]!.trim()))
-          : [];
+        const now = Date.now();
+        const offerings = await store.listPackageOfferings(tenant.id, { catalogVersionRef: v2Version.catalogVersionRef });
+        const selected = offerings.find(offering => (offering.packageKey.toLocaleLowerCase('en-US') === packageHint
+          || offering.name.toLocaleLowerCase('en-US').replace(/\s*\(sample\)\s*$/iu, '').split(/\s+/u).at(-1) === packageHint)
+          && offering.approvalStatus === 'approved'
+          && (!offering.pricingEffectiveFrom || Date.parse(offering.pricingEffectiveFrom) <= now)
+          && (!offering.pricingEffectiveTo || Date.parse(offering.pricingEffectiveTo) > now));
+        if (selected) {
+          const text = packageEvidenceText(selected, 'The approved package', 'verified');
+          approvedKnowledge = [{
+            citationId: `tool-${hash(`${v2Version.catalogVersionRef}:${selected.id}:${text}`).slice(0, 32)}`,
+            sourceVersion: v2Version.catalogVersionRef, sourceRef: 'tool-get_available_packages', text, approved: true, revoked: false,
+          }];
+        }
       } else {
         const now = Date.now();
         const offerings = await store.listPackageOfferings(tenant.id, { catalogVersionId: legacyCatalog?.id ?? catalog.id });

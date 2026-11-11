@@ -194,6 +194,48 @@ describe('GPT-first controller full-turn unit behavior', () => {
     expect(reply.answer).not.toContain('Which package would you like to explore first?');
   });
 
+  it('reloads only the selected package variant after an offer reply', async () => {
+    const ctx = await prepared();
+    const version = await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+    for (const [packageKey, name, priceMinor] of [['growth_annual', 'Growth (Annual)', 499900], ['growth_monthly', 'Growth (Monthly)', 59900]] as const) {
+      await ctx.store.createPackageOffering({
+        id: randomUUID(), tenantId: ctx.tenant.id, catalogVersionId: null, catalogVersionRef: version.catalogVersionRef,
+        packageKey, name, eligibleEntityTypes: [], eligibleActivities: [], includedVisaQuantity: 2, officeRequirement: 'shared',
+        inclusions: ['company registration'], priceMinor, currency: 'AED', pricingEffectiveFrom: null, pricingEffectiveTo: null,
+        additionalFees: [], processingTime: 'development only', requiredDocuments: [], exclusions: [], availability: 'development_only',
+        approvalStatus: 'approved', sourceRefs: ['unit'], createdAt: new Date().toISOString(),
+      });
+    }
+    const current = await ctx.store.getSession(ctx.session.id);
+    if (!current) throw new Error('UNIT_SESSION_MISSING');
+    const state = newConversationState();
+    state.pendingFollowUpOffer = {
+      offerKey: randomUUID(), intentKey: null, sourceMessageId: randomUUID(), sourceQuery: 'What packages do you offer?',
+      options: [
+        { key: 'package_growth_annual', label: 'Growth (Annual)', retrievalHints: ['growth_annual', 'Growth (Annual)'] },
+        { key: 'package_growth_monthly', label: 'Growth (Monthly)', retrievalHints: ['growth_monthly', 'Growth (Monthly)'] },
+      ], issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 1_800_000).toISOString(),
+    };
+    await ctx.store.updateSession({ ...current, conversationState: state });
+    const initial = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+    if (!initial) throw new Error('UNIT_MESSAGE_MISSING');
+    const message = "I'll take Growth (Annual)";
+    await ctx.store.updateMessage({ ...initial, maskedContent: message });
+    ctx.input.userMessage = { ...initial, maskedContent: message };
+    ctx.input.session = (await ctx.store.getSession(ctx.session.id))!;
+    ctx.input.maskedMessage = message;
+    ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
+    ctx.coordinator.run.mockImplementationOnce(async request => {
+      expect(request.envelope.approvedKnowledge).toHaveLength(1);
+      expect(request.envelope.approvedKnowledge?.[0]?.text).toContain('Growth (Annual)');
+      expect(request.envelope.approvedKnowledge?.[0]?.text).not.toContain('Growth (Monthly)');
+      return { modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+        response: { citationIds: [], answer: 'Growth (Annual) selected.', nextQuestion: null, nextQuestionKey: null }, guardReason: 'accepted' } as unknown as V2CoordinatorResult;
+    });
+    const reply = await runGPTFirstChatTurn(ctx.input);
+    expect(reply.answer).toContain('Growth (Annual)');
+  });
+
   it('persists package options and resolves a natural package selection on the next turn', async () => {
     const ctx = await prepared();
     const version = await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
