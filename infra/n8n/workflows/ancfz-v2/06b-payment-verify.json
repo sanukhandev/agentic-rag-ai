@@ -145,17 +145,17 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "http://api:4000/api/v2/internal/provider-evidence/verify",
+        "url": "http://api:4000/api/v2/internal/provider-evidence/payment",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({actionId:$('Require V2 Stage Authorization').first().json.actionId,tenantId:$('Require V2 Stage Authorization').first().json.tenantId,sessionId:$('Require V2 Stage Authorization').first().json.sessionId,opportunityId:$('Require V2 Stage Authorization').first().json.opportunityId,catalogVersionId:$('Require V2 Stage Authorization').first().json.catalogVersionId,idempotencyKey:$('Require V2 Stage Authorization').first().json.idempotencyKey,actionKey:$('Require V2 Stage Authorization').first().json.actionKey,actionRevision:$('Require V2 Stage Authorization').first().json.actionRevision,stageKey:\"payment_invoice\",workflowKey:\"payment.authorize\",providerRecordId:$('Call Provider - Configure Credential').first().json[\"paymentId\"],providerReadback:$('Read Back Provider State').first().json,eventId:$('Require V2 Stage Authorization').first().json.eventId,correlationId:$('Require V2 Stage Authorization').first().json.correlationId,attempt:$('Require V2 Stage Authorization').first().json.attempt}) }}",
+        "jsonBody": "={{ JSON.stringify({actionId:$('Require V2 Stage Authorization').first().json.actionId,tenantId:$('Require V2 Stage Authorization').first().json.tenantId,sessionId:$('Require V2 Stage Authorization').first().json.sessionId,opportunityId:$('Require V2 Stage Authorization').first().json.opportunityId,catalogVersionId:$('Require V2 Stage Authorization').first().json.catalogVersionId,idempotencyKey:$('Require V2 Stage Authorization').first().json.idempotencyKey,actionKey:$('Require V2 Stage Authorization').first().json.actionKey,actionRevision:$('Require V2 Stage Authorization').first().json.actionRevision,stageKey:\"payment_invoice\",workflowKey:\"payment.authorize\",providerRecordId:$('Call Provider - Configure Credential').first().json[\"paymentId\"],providerReadback:$('Read Back Provider State').first().json,eventId:$('Require V2 Stage Authorization').first().json.eventId,correlationId:$('Require V2 Stage Authorization').first().json.correlationId,attempt:$('Require V2 Stage Authorization').first().json.attempt,paymentConfirmation:true}) }}",
         "options": {
           "timeout": 30000
         }
       },
-      "notes": "PLANNED PROVIDER-SPECIFIC NODE ADAPTER; NOT WIRED in current V2 API. This intentionally blocks all completion until a security-reviewed adapter performs provider readback, correlation and evidence checks. Assign internal Header Auth credential."
+      "notes": "Dedicated Node-owned evidence adapter; n8n response alone never proves payment. Node must retrieve and validate an authenticated provider record. Install internal Header Auth credential."
     },
     {
       "id": "ancfzV2PaymentVerifyR1-attest",
