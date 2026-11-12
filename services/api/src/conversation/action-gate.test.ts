@@ -99,6 +99,44 @@ describe('v2 catalog action gate', () => {
     expect(await store.listActions('tenant-a')).toHaveLength(1);
   });
 
+  it('carries verified contact facts into a quotation action payload', async () => {
+    const quoteCatalog = structuredClone(JSON.parse(readFileSync(new URL('../fixtures/ancfz-catalog-v2-seven-stage.json', import.meta.url), 'utf8')) as CatalogV2Document);
+    const quotePin = catalogV2VersionRef(quoteCatalog);
+    const lifecycle = makeLifecycle();
+    lifecycle.currentStage = 'package_selection';
+    for (const stage of Object.values(lifecycle.stages)) stage.evidence.catalogVersionRef = quotePin;
+    lifecycle.stages.account_creation = {
+      ...lifecycle.stages.account_creation,
+      status: 'completed', completedAt: new Date().toISOString(),
+      evidence: {
+        tenantId: 'tenant-a', sessionId: 'session-a', opportunityId: 'opportunity-a', catalogVersionRef: quotePin,
+        stageKey: 'account_creation', stageRevision: 1, evidenceRef: 'verified:account_creation', evidenceTier: 'mock_verified',
+        operationStatus: 'completed', leadId: 'original-lead', accountConfirmation: true, accountLinkedLeadId: 'original-lead',
+      },
+    };
+    lifecycle.stages.package_selection = { ...lifecycle.stages.package_selection, status: 'ready' };
+    const fact = (maskedValue: string, source: 'visitor' | 'provider' = 'visitor') => ({ maskedValue, source, messageSequence: 3, evidenceRefs: ['customer-message-3'], corrected: false });
+    const context = baseContext({
+      catalogVersionId: quotePin, currentStageKey: 'package_selection',
+      verifiedRequirementKeys: ['account_provider_reference', 'package_choice', 'document_processing_consent', 'quotation_consent'],
+      purposeConsentScope: v2ActionConsentScope({ catalogVersionId: quotePin }, 'quotation.generate'), purposeConsentGranted: true,
+      lifecycle,
+      intentDocument: {
+        ...baseContext().intentDocument!, catalogVersionRef: quotePin, currentStageKey: 'package_selection', stageRevision: 1,
+        verifiedFacts: {
+          account_provider_reference: fact('acct-123', 'provider'), package_choice: fact('Growth'),
+          document_processing_consent: fact('true'), lead_contact_name: fact('[NAME_1]'), lead_contact_channel: fact('[EMAIL_1]'),
+        },
+      },
+      pinnedCatalogVersion: { tenantId: 'tenant-a', status: 'published', catalogVersionRef: quotePin, catalog: quoteCatalog } as IntentCatalogV2Version,
+    });
+    const proposal = { schemaVersion: 2 as const, toolKey: 'quotation.generate', goalKey: 'anc.company_formation', stageKey: 'package_selection', actionRevision: 1,
+      arguments: { account_provider_reference: 'acct-123', package_choice: 'Growth', document_processing_consent: 'true', quotation_consent: 'true' } };
+    const store = new MemoryStore();
+    const decision = await proposeV2CatalogAction(proposal, quoteCatalog, context, { gateway: new ActionGateway(store), store });
+    expect(decision).toMatchObject({ accepted: true, action: { payload: { name: '[NAME_1]', email: '[EMAIL_1]' } } });
+  });
+
   it('gateway authorization is a separate integration boundary from this pure gate', async () => {
     const store = new MemoryStore();
     const gateway = new ActionGateway(store);

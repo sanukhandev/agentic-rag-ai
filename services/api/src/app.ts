@@ -873,9 +873,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
     const session = await store.getSession(lead.sessionId);
     const documents = await store.listSupportingDocuments(lead.tenantId, undefined, lead.id);
     if (!session) return { ...lead, quality, documents };
-    const rehydrate = (value: string): string => rehydrateForSession(session, redactUnknownTokens(session, value, tokenVault), tokenVault, 'admin_crm');
+    const rehydrate = (value: string): string => rehydrateForSession(session, redactUnknownTokens(session, value, tokenVault, 'admin_crm'), tokenVault, 'admin_crm');
     const summary = lead.summary ? (() => { try { return formatCrmSummarySpec(lead.summary); } catch { return lead.summary; } })() : null;
-    const adminDocumentDetails = composeAdminDocumentDetails(documents, (value) => redactUnknownTokens(session, value, tokenVault));
+    const adminDocumentDetails = composeAdminDocumentDetails(documents, rehydrate);
     const adminSummary = [summary, adminDocumentDetails].filter(Boolean).join('\n');
     return { ...lead, quality, leadData: { ...(lead.leadData.name ? { name: rehydrate(lead.leadData.name) } : {}), ...(lead.leadData.email ? { email: rehydrate(lead.leadData.email) } : {}), ...(lead.leadData.phone ? { phone: rehydrate(lead.leadData.phone) } : {}), ...(lead.leadData.interest ? { interest: lead.leadData.interest } : {}), ...(lead.leadData.slotValues ? { slotValues: Object.fromEntries(Object.entries(lead.leadData.slotValues).map(([key, value]) => [key, rehydrate(value)])) } : {}) }, conversation: lead.conversation.map((message) => ({ ...message, content: rehydrate(message.content) })), summary: adminSummary ? rehydrate(formatCrmSummarySpec(adminSummary)) : null, documents: documents.map((document) => ({ ...document, extractedText: document.extractedText ? rehydrate(document.extractedText) : null, summary: document.summary ? rehydrate(document.summary) : null })) };
   };

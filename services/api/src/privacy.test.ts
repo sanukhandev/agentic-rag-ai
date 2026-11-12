@@ -60,6 +60,24 @@ describe('privacy boundary', () => {
     expect(safe).not.toContain('[PHONE_99]');
   });
 
+  it('does not redact known tokens for admin_crm even when the session TTL has expired', () => {
+    const session = { id: 'session-expired-admin', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
+    const vault = new TokenVault('expired-admin-secret-2026', -1);
+    const known = maskPii('My name is Alice Karim, email is alice@example.com, phone is +971 50 123 4567.');
+    saveTokens(session, known.tokens, vault);
+    const safeAdmin = redactUnknownTokens(session, `${known.masked} [PHONE_99]`, vault, 'admin_crm');
+    expect(safeAdmin).toContain('[NAME_1]');
+    expect(safeAdmin).toContain('[EMAIL_1]');
+    expect(safeAdmin).toContain('[PHONE_1]');
+    expect(safeAdmin).toContain('[REDACTED]');
+    expect(safeAdmin).not.toContain('[PHONE_99]');
+    const rehydrated = rehydrateForSession(session, safeAdmin, vault, 'admin_crm');
+    expect(rehydrated).toContain('Alice Karim');
+    expect(rehydrated).toContain('alice@example.com');
+    expect(rehydrated).toContain('+971 50 123 4567');
+    expect(rehydrated).toContain('[REDACTED]');
+  });
+
   it('keeps assistant persona names separate from a later visitor name', () => {
     const session = { id: 'session-persona-name', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
     const vault = new TokenVault('persona-name-vault-secret-2026');
