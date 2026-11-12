@@ -45,6 +45,9 @@ export class P5PinnedCatalogReader {
         keywords: goal.keywords.slice(0, 32).map(value => value.slice(0, 160)),
         customerExpressions: goal.customerExpressions.slice(0, 12).map(value => value.slice(0, 300)),
         requiredInformation: goal.requiredInformation.slice(0, 32).map(value => value.slice(0, 300)),
+        factRequirementKeys: catalog.sheets.RequirementPolicies.filter(row =>
+          row.goalKey === goal.businessGoalKey && row.type === 'fact' && row.sourceOfTruth === 'customer')
+          .map(row => row.requirementKey).slice(0, 64),
         requiredDocuments: goal.requiredDocuments.slice(0, 32).map(value => value.slice(0, 300)),
         orderedSteps: goal.orderedSteps.slice(0, 16).map(value => value.slice(0, 300)),
         availableActionKeys: catalog.sheets.ToolBindings.filter(binding =>

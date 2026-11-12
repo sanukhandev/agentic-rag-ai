@@ -166,7 +166,8 @@ export class ConversationTurnEngine {
     const modelEnvelope = this.enricher ? await this.enricher.enrich(actor, snapshot, maskedEnvelope) : maskedEnvelope;
     // P5 may add a published catalog projection, not change the verified
     // customer message, tenant, scopes, tools, budgets or config pins.
-    const { p5Catalog: _projection, ...trustedFields } = modelEnvelope;
+    const trustedFields = { ...modelEnvelope };
+    delete trustedFields.p5Catalog;
     if (JSON.stringify(trustedFields) !== JSON.stringify(maskedEnvelope)) {
       throw new ConversationInvariantError('INVALID_INPUT', 'Model context enrichment modified trusted fields');
     }

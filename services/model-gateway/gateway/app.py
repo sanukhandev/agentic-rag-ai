@@ -447,6 +447,8 @@ async def p4_turn(body: P4TurnEnvelope, x_internal_service_key: str | None = Hea
     await _auth(x_internal_service_key)
     if os.getenv("P4_GATEWAY_ENABLED", "false").lower() != "true":
         raise HTTPException(status_code=404, detail={"code": "P4_DISABLED"})
+    if body.p5Catalog is not None and os.getenv("P5_CANDIDATE_ENABLED", "false").lower() != "true":
+        raise HTTPException(status_code=404, detail={"code": "P5_DISABLED"})
     node_url = os.getenv("NODE_TOOL_GATEWAY_URL", "")
     private_key = os.getenv("MODEL_GATEWAY_SERVICE_KEY", "")
     if not node_url or not private_key:

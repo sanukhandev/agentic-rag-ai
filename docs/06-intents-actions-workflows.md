@@ -84,3 +84,11 @@ Node commits action request and outbox event transactionally; worker forwards vi
 
 ## Administration and evolution
 Tenant administrators cannot publish cross-tenant tool bindings, unsafe URLs, unknown action types, invalid graphs or broadened permissions without review. Runtime rollouts must support previously pinned revisions. Maintain audit trails for catalog changes, action authorization, provider evidence and customer-visible state.
+
+## P5 isolated implementation (not public runtime)
+
+P5's candidate reads existing immutable Catalog V2 records for the authenticated tenant/session and supplies bounded plain-text business-goal descriptions, customer expressions, keywords, requirements, documents, ordered steps and permitted action keys to the GPT-first model. GPT selects provisional goals from *all relevant conversation context* and asks clarification only on ambiguity; Node checks that the goal is in the active pinned catalog. This is not a deterministic keyword classifier.
+
+P5 can submit customer fact proposals only for verified exact spans in the customer's masked current utterance and fact keys declared by the published catalog. A possible business action stays a **proposal**, contingent on server-verified consent, authorization, pinned goal/stage and requirements. The `P5ActionStateReader` interface is deliberately not wired to any external dispatch provider: no CRM/quote/payment side effects are possible from the model output alone.
+
+Python selects this mode only when both `P4_GATEWAY_ENABLED` and `P5_CANDIDATE_ENABLED` are true and the internal request contains a verified, version-pinned P5 catalog projection. The production V2 controller is unchanged.

@@ -55,3 +55,14 @@ A `completed` value in the legacy action table **cannot** be represented as veri
 - Run API TypeScript/lint/Vitest and Python tests in the developer checkout; Docker/CI and real Azure UAT are not yet verified.
 - Confirm an independent claim-coverage audit on held-out natural-language cases. Model-declared claims alone do not establish that every factual assertion was exhaustively extracted.
 - Integrate durable encrypted PII vault before any end-to-end customer turn/persistence enablement (P6), plus latency and quality baselines.
+
+## P5 — Tenant-defined goals, verified fact collection and action-proposal gating (isolated candidate)
+
+- `p5-catalog.ts`: re-reads the **tenant-pinned published** Catalog V2, validates the catalog checksum/reference and active-goal set, then projects bounded plain-text goal names, descriptions, keywords, examples, requirements, documents, steps and enabled action keys for GPT. No model-provided catalog identity or tenant scope.
+- `p5-proposal-validator.ts`: accepts verified customer fact patches only for a **single unambiguous active goal** when the value appears verbatim in the current *masked* customer utterance, the supporting turn ID matches and the key is an authorized customer-source fact requirement. Does not infer facts from model or knowledge text.
+- `P5ActionStateReader` must be supplied by the future P6 server-side adapter. It must return tenant/session/catalog-bound persisted lifecycle state, verified requirements, exact customer authorization and purpose-scoped consent. Without it, model action suggestions **cannot** become persisted action proposals.
+- `p5-candidate-factory.ts`: composes P5-only catalog enrichment and proposal checking around the existing P4 verifier/LLM. `createP4CandidateEngine` still uses `ReadOnlyP2ProposalValidator`.
+- Python P5 mode is available only when `P4_GATEWAY_ENABLED=true` and `P5_CANDIDATE_ENABLED=true` on the **private** gateway; a P5 catalog field selects a strict candidate schema, while default P4 mode continues to require empty fact/action proposals.
+- Even accepted P5 action proposals are only persisted as `pendingActionProposal` in a conversation response. They do not dispatch to n8n, Salesforce, CRM, payments or the outbox. A separate Node action gate is required to execute authorized actions.
+
+**Not complete:** P5 is not connected to public chat, no trusted `P5ActionStateReader` implementation has been wired, catalog admin JSON/YAML authoring additions are not part of this change, and production vault + Azure quality/tenant UAT remain release blockers. No knowledge source, embedding, ingestion record, catalog version or database schema was mutated.
