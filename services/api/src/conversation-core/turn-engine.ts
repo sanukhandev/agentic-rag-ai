@@ -61,7 +61,7 @@ function readCandidate(raw: unknown): ModelCandidate {
   if (c.claimSupports !== undefined && (!Array.isArray(c.claimSupports) || c.claimSupports.length > 8
     || c.claimSupports.some(claim => !claim || !requiredString(claim.text, 1500)
       || !Array.isArray(claim.citationIds) || claim.citationIds.length < 1 || claim.citationIds.length > 8
-      || claim.citationIds.some(ref => !requiredString(ref, 256))))) {
+      || claim.citationIds.some((ref: unknown) => !requiredString(ref, 256))))) {
     throw new ConversationInvariantError('INVALID_MODEL_OUTPUT', 'Invalid claim provenance');
   }
   if (c.evidenceReceipts !== undefined && (!Array.isArray(c.evidenceReceipts) || c.evidenceReceipts.length > 24

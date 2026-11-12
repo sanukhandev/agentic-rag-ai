@@ -76,10 +76,10 @@ export class P4ClaimVerifier implements ClaimVerifier {
     if (!expected) return { ok: false, reason: 'unclaimed_consequential_text' };
     const reviewClaims = claims.map((claim, index) => ({
       claimId: String(index + 1), text: claim.text,
-      evidence: claim.citationIds.map(id => {
+      evidence: claim.citationIds.map((id: string) => {
         const source = sources.get(id);
         return source ? { citationId: id, sourceVersion: source.versionId, text: source.content } : null;
-      }).filter((value): value is { citationId: string; sourceVersion: string; text: string } => value !== null),
+      }).filter((value: { citationId: string; sourceVersion: string; text: string } | null): value is { citationId: string; sourceVersion: string; text: string } => value !== null),
     }));
     if (reviewClaims.some((claim, index) => claim.evidence.length === 0
       || claim.evidence.length !== claims[index]?.citationIds.length)) return { ok: false, reason: 'unknown_claim_citation' };
@@ -92,7 +92,7 @@ export class P4ClaimVerifier implements ClaimVerifier {
       if (mapped.size !== verdicts.length) return { ok: false, reason: 'invalid_grounding_result' };
       for (const claim of reviewClaims) {
         const verdict = mapped.get(claim.claimId);
-        if (!verdict || verdict.verdict !== 'supported' || !claim.evidence.some(row => row.citationId === verdict.citationId)) {
+        if (!verdict || verdict.verdict !== 'supported' || !claim.evidence.some((row: { citationId: string }) => row.citationId === verdict.citationId)) {
           return { ok: false, reason: 'unsupported_claim' };
         }
       }
