@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Express } from 'express';
 import { z } from 'zod';
 import type { Store, Citation } from '../../types.js';
+import { sanitizeKnowledgeText } from '../../privacy.js';
 import type { ConversationTurnEngine } from '../turn-engine.js';
 import type { SqlPool } from './postgres-repository.js';
 import { customerActorFromSessionToken } from './session-authorizer.js';
@@ -36,8 +37,8 @@ async function currentCitations(pool: SqlPool, tenantId: string, refs: readonly 
       if (typeof row.chunk_id !== 'string' || !refs.includes(row.chunk_id)) throw new Error('P6_INVALID_EVIDENCE');
       byId.set(row.chunk_id, {
         sourceId: String(row.source_id), versionId: String(row.version_id),
-        chunkId: row.chunk_id, title: String(row.title).slice(0, 160),
-        locator: String(row.locator).slice(0, 160),
+        chunkId: row.chunk_id, title: sanitizeKnowledgeText(String(row.title)).slice(0, 160),
+        locator: sanitizeKnowledgeText(String(row.locator)).slice(0, 160),
       });
     }
     if (byId.size !== refs.length) throw new Error('P6_EVIDENCE_REVOKED');
