@@ -1,0 +1,69 @@
+sequenceDiagram
+    autonumber
+    actor User as Visitor / User
+    participant Web as Next.js Web UI
+    participant NodeAPI as Node.js API (Coordinator)
+    participant Vault as Token Vault & State
+    participant Catalog as Intent Catalog v2
+    participant Vector as PostgreSQL (pgvector)
+    participant PyGateway as Python Model Gateway
+    participant Guard as Node Response Guard
+    participant ActionGate as Action Gate
+    participant Redis as Redis Outbox
+    participant Worker as Event Worker
+    participant n8n as Remote n8n Webhook
+
+    User->>Web: Sends message: "can you help me start a company"
+    Web->>NodeAPI: POST /api/chat/stream (WebSocket or HTTP)
+    
+    rect rgb(240, 248, 255)
+        note over NodeAPI,Vault: Ingress Privacy & Tokenization
+        NodeAPI->>Vault: Mask incoming PII
+        Vault-->>NodeAPI: [NAME_1], [EMAIL_1], [PHONE_1]
+    end
+
+    rect rgb(255, 250, 240)
+        note over NodeAPI,Vector: Catalog Preflight & Evidence Assembly
+        NodeAPI->>Catalog: Evaluate deterministic signals & policies
+        NodeAPI->>Vector: Retrieve approved knowledge embeddings (if factual)
+        Vector-->>NodeAPI: Approved public knowledge snippets
+        NodeAPI->>NodeAPI: Issue scoped HMAC scopeRef token
+    end
+
+    rect rgb(245, 255, 245)
+        note over NodeAPI,PyGateway: Inference & Read-Only Tool Execution Loop
+        NodeAPI->>PyGateway: POST /internal/v2/conversation/turn (Envelope + Scoped Token)
+        PyGateway->>PyGateway: LangGraph Plan turn (Category: business_goal, Next: confirm_goal)
+        opt Tool Execution Needed
+            PyGateway->>NodeAPI: Request tool: get_available_packages / get_persona
+            NodeAPI->>NodeAPI: Authorize scope & tool allowlist
+            NodeAPI-->>PyGateway: Validated Tool Result
+        end
+        PyGateway->>PyGateway: Persona Composer drafts Zara's response
+        PyGateway-->>NodeAPI: Candidate Response { answer, citationIds, planning }
+    end
+
+    rect rgb(255, 240, 245)
+        note over NodeAPI,Guard: Node Response Guard & Verification
+        NodeAPI->>Guard: Validate candidate answer, citations, factual claims
+        alt Factual Claim without Citation
+            Guard->>Guard: Trigger Knowledge Repair or Offline Fallback
+        else Valid Conversational / Grounded Answer
+            Guard-->>NodeAPI: Approved Response Verdict
+        end
+    end
+
+    rect rgb(255, 255, 240)
+        note over NodeAPI,n8n: Action Confirmation & Asynchronous Side-Effects
+        opt Action Proposal or Execution Triggered
+            NodeAPI->>ActionGate: Verify stage prerequisites, consent, customer confirmation
+            ActionGate->>Redis: Append event to Redis Streams (e.g. intent.action.requested.v1)
+            Redis-->>Worker: Claim event execution
+            Worker->>n8n: Dispatch payload (e.g. /webhook/salesforce-lead)
+            n8n-->>Worker: HTTP 200 { success: true, leadId: "00QFW..." }
+            Worker->>NodeAPI: Update crm_leads with leadId & remote_crm
+        end
+    end
+
+    NodeAPI-->>Web: Streamed turn.completed event
+    Web-->>User: Zara speaks in natural tone with single contextual follow-up

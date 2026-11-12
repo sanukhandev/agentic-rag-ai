@@ -1,0 +1,153 @@
+flowchart TD
+    subgraph Clients["1. Ingress Layer"]
+        Web["Next.js Web Chat"]
+        Admin["Angular Admin Portal"]
+        Nginx["Nginx Reverse Proxy<br/>(:80 / :443 SSL termination)"]
+        Web -->|REST / WebSocket| Nginx
+        Admin -->|REST API| Nginx
+    end
+
+    subgraph NodeIngress["2. Node Express API & Security Gateway"]
+        Nginx --> Express["Node Express Server<br/>(services/api)"]
+        
+        subgraph PrivacySecurity["Privacy & Session Boundary"]
+            TokenVault["Token Vault<br/>(services/api/src/privacy.ts)"]
+            Masking["PII Ingress Masker<br/>[NAME_1], [EMAIL_1], [PHONE_1]"]
+            Rehydration["PII Egress Rehydration<br/>(Admin & Webhook Dispatches)"]
+            SessionManager["Session & State Manager<br/>(chat_sessions & state revisions)"]
+        end
+        Express --> PrivacySecurity
+    end
+
+    subgraph IntentEngine["3. Intent Catalog v2 & Knowledge Engine"]
+        CatalogLoader["Published Intent Catalog v2<br/>(intent_catalog_v2_versions)"]
+        
+        subgraph CatalogSheets["7-Sheet Authoritative Catalog Schema"]
+            Goals["BusinessGoals"]
+            TurnIntents["TurnIntents"]
+            Signals["IntentSignals"]
+            ReqPolicies["RequirementPolicies"]
+            ToolBindings["ToolBindings"]
+            WorkflowBindings["WorkflowBindings"]
+            DocPolicies["DocumentPolicies"]
+        end
+        CatalogLoader --> CatalogSheets
+
+        Preflight["Knowledge Preflight<br/>(knowledge-preflight.ts)"]
+        VectorDB[("PostgreSQL pgvector<br/>(embedding cosine search)")]
+        DeterministicEvidence["Deterministic Evidence Resolver<br/>(intent-evidence.ts)"]
+        
+        CatalogSheets --> DeterministicEvidence
+        Preflight --> VectorDB
+    end
+
+    subgraph CoordinatorModule["4. Conversation Turn Coordinator"]
+        TurnCoordinator["ConversationTurnCoordinator<br/>(turn-controller.ts)"]
+        ScopeGenerator["V2 Scope Token Issuer<br/>(tool-gateway.ts HMAC nonces)"]
+        
+        PrivacySecurity --> TurnCoordinator
+        DeterministicEvidence --> TurnCoordinator
+        Preflight --> TurnCoordinator
+        TurnCoordinator --> ScopeGenerator
+    end
+
+    subgraph PythonGateway["5. Private Python Model Gateway (Inference Only)"]
+        FastAPI["FastAPI Model Gateway<br/>(services/model-gateway :8088)"]
+        
+        subgraph LangGraphEngine["Agent Planning & Intent Engine"]
+            LangGraphAgent["LangGraph Agent / Planner<br/>(gateway/agent.py)"]
+            TurnClassifier["Goal & Next-Move Classifier<br/>(confirm_goal, collect_fact, etc.)"]
+        end
+
+        subgraph ReadOnlyToolLoop["Authorized Read-Only Tool Gateway"]
+            direction TB
+            T1["get_conversation_context"]
+            T2["get_conversation_history_summary"]
+            T3["get_persona"]
+            T4["get_intent_catalog"]
+            T5["get_missing_requirements"]
+            T6["search_knowledge"]
+            T7["get_journey_state"]
+            T8["get_available_packages"]
+            T9["get_document_requirements"]
+            T10["get_action_status"]
+        end
+
+        PersonaComposer["Persona Response Composer<br/>(persona_composer.py / Zara)"]
+        
+        FastAPI --> LangGraphEngine
+        LangGraphEngine <--> ReadOnlyToolLoop
+        ReadOnlyToolLoop <-->|"Scope-Authorized Read Callbacks"| Express
+        LangGraphEngine --> PersonaComposer
+    end
+
+    ScopeGenerator -->|"HMAC Scoped Envelope"| FastAPI
+
+    subgraph GuardVerification["6. Node Response Guard & Verification Gates"]
+        ResponseGuard["Node Response Guard<br/>(response-guard.ts)"]
+        
+        subgraph GuardChecks["Exhaustive Guard Checks"]
+            C1["Citation Validity & ID Scoping"]
+            C2["Single-Source Factual Entailment"]
+            C3["Numeric & Currency Exact Match"]
+            C4["Claim Polarity Check"]
+            C5["Anti-Hallucination Outcome Filter"]
+            C6["Metadata Leak Filter (UUIDs, tokens)"]
+            C7["Persona Language & Identity Rule"]
+        end
+        
+        ResponseGuard --> GuardChecks
+        
+        subgraph FallbackEngine["Safe Fallback Engine"]
+            Repair["Single Knowledge Repair Pass<br/>(Read-only, no tools)"]
+            OfflineTemplates["Offline Persona Fallbacks<br/>(invalid_model / tool_unavailable)"]
+        end
+
+        GuardChecks -->|Failed| Repair
+        Repair -->|Failed Again| OfflineTemplates
+    end
+
+    PersonaComposer --> ResponseGuard
+
+    subgraph SideEffectGate["7. Action Gate & Outbox Persistence"]
+        ActionGate["V2 Action Gate<br/>(action-gate.ts)"]
+        
+        subgraph StageEnforcement["7-Stage Lifecycle Enforcement"]
+            S1["Stage 1: Lead Capture (lead.create)"]
+            S2["Stage 2: Lead Qualification"]
+            S3["Stage 3: Account Creation"]
+            S4["Stage 4: Package & Quotation (quotation.generate)"]
+            S5["Stage 5: Document Upload & Review"]
+            S6["Stage 6: Payment Details & Invoice"]
+            S7["Stage 7: Contract Execution"]
+        end
+
+        ActionGate --> StageEnforcement
+        
+        PostgresIntentDoc[("PostgreSQL Source of Truth<br/>user_intent_documents & audit_events")]
+        RedisOutbox[("Redis Streams Outbox<br/>(stream:outbox)")]
+        
+        ActionGate --> PostgresIntentDoc
+        ActionGate --> RedisOutbox
+    end
+
+    ResponseGuard -->|Approved Candidate| ActionGate
+
+    subgraph EventWorkerWorkers["8. Event Worker & External Integrations"]
+        EventWorker["Event Consumer Worker<br/>(services/api/src/event-bus.ts)"]
+        RedisOutbox --> EventWorker
+
+        subgraph RemoteAdapters["External Workflow Bridges"]
+            N8nSalesforceLead["Salesforce Lead Webhook<br/>ai.techcarrot.ae/n8n/webhook/salesforce-lead"]
+            N8nQuotation["Quotation PDF Generator<br/>ai.techcarrot.ae/n8n/webhook/generate-quotation"]
+            PythonIngestion["Python Ingestion / OCR Worker<br/>(worker.py - Passport Extraction)"]
+        end
+
+        EventWorker --> N8nSalesforceLead
+        EventWorker --> N8nQuotation
+        EventWorker --> PythonIngestion
+        
+        N8nSalesforceLead -->|"Lead ID Confirmation"| PostgresIntentDoc
+        N8nQuotation -->|"PDF Artifact Attachment"| PostgresIntentDoc
+        PythonIngestion -->|"Extracted OCR Text"| PostgresIntentDoc
+    end
