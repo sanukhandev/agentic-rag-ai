@@ -69,3 +69,20 @@ Capture correlation ID, tenant-safe identifiers, model/provider version, selecte
 An opt-in Python LangGraph GPT-first controller and private Node callback now use the isolated P2/P3 contracts. The private callback verifies the P3 session-token/catalog scope for every read and issues signed evidence receipts. Returned model citations must match receipts from the current turn; the Node claim verifier performs a fresh authorization/source revision read and requests independent entailment from the existing private grounding service. Raw lexical overlap is not required.
 
 The candidate still needs a real encrypted privacy-vault binding, complete claim-coverage and tenant-isolation UAT, remote CI, live Azure evaluation and P6 feature-gated API wiring. The legacy V2 controller continues handling production chat. Never treat this documentation as proof of production readiness.
+
+### P4 engineering progress matrix (candidate, updated 2026-11-12)
+
+| Workstream | Implementation | Validation | Gate |
+| --- | --- | --- | --- |
+| P4-A Protocol and Python route | Done | Python syntax compiled; real Docker test pending | Open |
+| P4-B GPT-first LangGraph | Done | 6 synthetic tool-loop tests passed with local graph substitute; real LangGraph CI pending | Open |
+| P4-C Node/Python service authentication | Done | Source reviewed; integration/API tests pending | Open |
+| P4-D Tenant-scoped private read execution | Done | P3 13/13 previously passed; P4 route integration pending | Open |
+| P4-E Signed on-turn evidence receipts | Done | Node test suite added, not executed in checkout | Open |
+| P4-F Claim provenance + independent entailment | Done (candidate) | Held-out semantic/false-rejection evaluation pending | Open |
+| P4-G Model-to-Node adapter and core assembly | Done (isolated) | Node TypeScript/lint and full unit suite pending | Open |
+| P4-H Durable scoped privacy vault | Not connected | Production gate | Blocked |
+| P4-I Real Azure GPT UAT and p95 latency | Not executed | Live evaluation required | Open |
+| P4-J Production chat cutover | Intentionally disabled | P6/P7 acceptance required | Blocked |
+
+Run `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run build --workspaces --if-present`, plus `pytest -q services/model-gateway/tests/test_p4_graph.py` in an environment with project Python requirements installed. Docker must be configured with real provider credentials for live UAT. No result from mock tests alone authorizes production cutover.

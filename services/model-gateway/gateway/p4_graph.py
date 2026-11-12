@@ -56,7 +56,7 @@ _FINAL_SCHEMA: dict[str, Any] = {
         "message": {"type": "string"},
         "evidenceRefs": {"type": "array", "items": {"type": "string"}},
         "goalCandidateKeys": {"type": "array", "items": {"type": "string"}},
-        "proposedFacts": {"type": "array", "items": {"type": "object"}, "maxItems": 0},
+        "proposedFacts": {"type": "array", "items": {"type": "object", "additionalProperties": False, "properties": {}, "required": []}, "maxItems": 0},
         "actionProposal": {"type": "null"},
         "claimSupports": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,

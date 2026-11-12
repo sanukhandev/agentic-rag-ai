@@ -69,8 +69,10 @@ export class P4ClaimVerifier implements ClaimVerifier {
         ? { ok: true } : { ok: false, reason: 'unused_evidence' };
     }
     if (claims.length === 0 || receipts.length === 0) return { ok: false, reason: 'missing_claim_proof' };
+    const supportedIds = new Set(claims.flatMap(claim => claim.citationIds));
+    if ([...cited].some(id => !supportedIds.has(id))) return { ok: false, reason: 'unused_evidence' };
     const expected = consequential.every(part => claims.some(claim => candidate.message.includes(claim.text)
-      && (claim.text.includes(part) || part.includes(claim.text))));
+      && (claim.text === part || claim.text.includes(part))));
     if (!expected) return { ok: false, reason: 'unclaimed_consequential_text' };
     const reviewClaims = claims.map((claim, index) => ({
       claimId: String(index + 1), text: claim.text,

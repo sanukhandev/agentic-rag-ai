@@ -68,6 +68,17 @@ describe('P4 on-turn evidence provenance and claim entailment', () => {
     const reply = { ...candidate, message: 'Hello, how can I help?', evidenceRefs: [], claimSupports: [], evidenceReceipts: [] };
     expect(await f.verifier.verify(actor, reply, snapshot, scope)).toEqual({ ok: true });
   });
+  it('refuses a small fragment masquerading as a complete supported claim', async () => {
+    const f = fixture();
+    const reply = { ...f.combined, claimSupports: [{ text: 'Licensing', citationIds: [chunk.id] }] };
+    expect(await f.verifier.verify(actor, reply, snapshot, scope)).toMatchObject({ ok: false, reason: 'unclaimed_consequential_text' });
+  });
+  it('refuses unused evidence references', async () => {
+    const f = fixture();
+    const reply = { ...f.combined, claimSupports: [{ text: 'Licensing requires a signed application form.', citationIds: [] }] };
+    expect(await f.verifier.verify(actor, reply, snapshot, scope)).toMatchObject({ ok: false, reason: 'unused_evidence' });
+  });
+
   it('rejects uncited consequential business claims', async () => {
     const f = fixture();
     const reply = { ...candidate, message: 'Our company registration costs 100 AED.', evidenceRefs: [], claimSupports: [], evidenceReceipts: [] };
