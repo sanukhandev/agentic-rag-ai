@@ -41,36 +41,48 @@ jobs:
             tools/ingestion/requirements.txt
 
       - name: Install locked Node dependencies
+        id: node-deps
         run: npm ci
 
       - name: Install Python test dependencies
+        id: python-deps
+        if: ${{ !cancelled() }}
         run: |
           python -m pip install -r services/model-gateway/requirements-dev.txt
           python -m pip install -r tools/ingestion/requirements.txt
 
       - name: Enforce strict TypeScript null checks
+        if: ${{ !cancelled() && steps.node-deps.outcome == 'success' }}
         run: npm run check:null-safety
 
       - name: Typecheck all TypeScript workspaces
+        if: ${{ !cancelled() && steps.node-deps.outcome == 'success' }}
         run: npm run typecheck
 
       - name: Lint API, customer web and admin
+        if: ${{ !cancelled() && steps.node-deps.outcome == 'success' }}
         run: npm run lint
 
       - name: Verify Compose configuration statically
+        if: ${{ !cancelled() && steps.node-deps.outcome == 'success' }}
         run: npm run verify:compose
 
       - name: Build all declared workspaces
+        if: ${{ !cancelled() && steps.node-deps.outcome == 'success' }}
         run: npm run build --workspaces --if-present
 
       - name: Run Node workspace unit tests
+        if: ${{ !cancelled() && steps.node-deps.outcome == 'success' }}
         run: npm run test:unit
 
       - name: Run Python model gateway tests
+        if: ${{ !cancelled() && steps.python-deps.outcome == 'success' }}
         run: PYTHONPATH=services/model-gateway python -m pytest -q services/model-gateway/tests
 
       - name: Run Python ingestion tests
+        if: ${{ !cancelled() && steps.python-deps.outcome == 'success' }}
         run: PYTHONPATH=tools/ingestion python -m unittest discover -s tools/ingestion -p 'test_*.py'
 
       - name: Validate n8n workflow templates offline
+        if: ${{ !cancelled() && steps.node-deps.outcome == 'success' }}
         run: node --test infra/n8n/workflows/*.test.mjs
