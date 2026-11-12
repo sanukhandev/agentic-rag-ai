@@ -30,8 +30,8 @@ function parseSearch(input: unknown): { query: string; resultCount: number } {
   const value = input as Record<string, unknown>;
   if (Object.keys(value).some(key => !['query', 'resultCount'].includes(key))
     || typeof value.query !== 'string' || value.query.trim().length < 1 || value.query.length > 400
-    || (value.resultCount !== undefined && (!Number.isSafeInteger(value.resultCount)
-      || typeof value.resultCount !== 'number' || value.resultCount < 1 || value.resultCount > 5))) {
+    || (value.resultCount !== undefined && (typeof value.resultCount !== 'number' || !Number.isSafeInteger(value.resultCount)
+      || value.resultCount < 1 || value.resultCount > 5))) {
     throw new Error('Invalid search request');
   }
   return { query: value.query.trim(), resultCount: typeof value.resultCount === 'number' ? value.resultCount : 4 };

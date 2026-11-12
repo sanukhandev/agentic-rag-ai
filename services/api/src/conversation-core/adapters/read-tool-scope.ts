@@ -38,10 +38,10 @@ function isScope(value: unknown): value is ScopeClaims {
     && typeof v.sessionId === 'string' && v.sessionId.length > 0 && v.sessionId.length <= 128
     && typeof v.principalId === 'string' && /^[a-f0-9]{64}$/u.test(v.principalId)
     && typeof v.catalogVersionId === 'string' && v.catalogVersionId.length > 0 && v.catalogVersionId.length <= 128
-    && Number.isSafeInteger(v.revision) && Number(v.revision) >= 0
+    && typeof v.revision === 'number' && Number.isSafeInteger(v.revision) && v.revision >= 0
     && Array.isArray(v.tools) && v.tools.length <= P3_NAMES.size && new Set(v.tools).size === v.tools.length
     && v.tools.every(item => typeof item === 'string' && P3_NAMES.has(item))
-    && Number.isSafeInteger(v.expiresAt) && Number(v.expiresAt) > 0
+    && typeof v.expiresAt === 'number' && Number.isSafeInteger(v.expiresAt) && v.expiresAt > 0
     && typeof v.nonce === 'string' && /^[0-9a-f-]{36}$/u.test(v.nonce);
 }
 

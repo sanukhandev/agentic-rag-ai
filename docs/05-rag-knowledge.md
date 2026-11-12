@@ -39,3 +39,33 @@ Record tenant-safe query digest, retrieval/tool latency, source/version IDs, ans
 
 ## Acceptance
 Preserve a snapshot/checksum inventory of protected source and embedding tables before implementation. Confirm no unauthorized writes in conversation-only code paths, zero cross-tenant evidence leakage and correct abstention on unsupported business claims.
+
+## P3 — Implemented, isolated tenant-authorized read tools
+
+**Implementation commit:** signed, server-side scoped read tools under `services/api/src/conversation-core/adapters/`. The existing `conversation/` route is unchanged.
+
+### Supported model-readable operations
+
+| Tool | Input | Permission | Result |
+| --- | --- | --- | --- |
+| `search_knowledge` | `{ "query": "...", "resultCount": 1..5 }` | Authenticated customer session **and enabled pinned `knowledge.search` read-only catalog binding** | Redacted, bounded public RAG excerpts with immutable source-version/chunk citation IDs |
+| `get_conversation_summary` | `{}` | Authenticated customer session | Redacted durable session summary |
+| `get_verified_customer_facts` | `{}` | Authenticated customer session | Session-scoped verified facts; not raw PII vault values |
+| `list_supported_goals` | `{}` | Authenticated customer session | Enabled business-goal keys for the session-pinned catalog |
+
+### Trust boundary
+
+1. P2 repository validates the customer session token and derives the authoritative tenant.
+2. Registry lists reviewed executable tool definitions only.
+3. Node signs a **120-second HMAC-SHA256** scope for exactly the authenticated tenant, session, token hash, pinned catalog ID, current revision and allowed tool names. Never put the signing key in Python, a browser, or a model prompt.
+4. A private, independently service-authenticated adapter (P4) will call `executeBound(scope, name, input, signal)`; it must not expose this method as a public route. Scope authorization is checked again before and after a read.
+5. RAG retrieval calls the existing `retrieveApprovedKnowledge` with **public audience** and the verified tenant. Every returned hit is rechecked against the current source and chunk tenant, active status, public scope and source version before exposing redacted, length-bounded source text.
+6. No read tool authorizes a CRM/quote/provider write, promotes retrieved text to an instruction, or treats retrieval success as claim-level entailment.
+
+### Limitations and rollout gates
+
+- The P3 implementation is **not connected to Python/LangGraph or to the live chat route**. Wiring the private gateway, observed read-tool-call budgets, evidence ledger and response claim verifier is P4 work.
+- Revocation is rechecked before returning the result; an atomic source-revocation/read transaction is not yet supplied by the existing Store read interface. Revalidate evidence again when accepting factual claims in P4.
+- Neither `source_chunks`, `knowledge_sources`, embeddings, ingestion, catalogs nor historical customer data are modified. No SQL migration is introduced.
+- P2 encrypted session-vault production integration is still pending and remains a cutover blocker.
+- Run `npm run typecheck`, `npm run lint` and `npm run test:unit`, then add adversarial multi-tenant and live PostgreSQL evidence revocation/ACL tests before runtime activation.
