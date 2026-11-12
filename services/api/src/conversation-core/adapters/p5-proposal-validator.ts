@@ -6,6 +6,7 @@ import { P5PinnedCatalogReader } from './p5-catalog.js';
 
 /** Must be loaded by Node from authenticated tenant/session records, never from GPT. */
 export interface P5TrustedActionState {
+  readonly sessionRevision: number;
   readonly tenantId: string;
   readonly sessionId: string;
   readonly catalogVersionId: string;
@@ -103,7 +104,7 @@ export class P5ProposalValidator implements ProposalValidator {
     const catalog = await this.reader.load(actor, snapshot);
     const state = await this.actions.load(actor, snapshot);
     if (!state || state.tenantId !== actor.tenantId || state.sessionId !== actor.sessionId
-      || state.catalogVersionId !== snapshot.catalogVersionId
+      || state.sessionRevision !== snapshot.revision || state.catalogVersionId !== snapshot.catalogVersionId
       || state.goalKey !== candidate.goalCandidateKeys[0]
       || !state.confirmedGoal || !state.customerAuthorized || !state.consentGranted
       || state.consentScope !== `${snapshot.catalogVersionId}:${proposed.actionKey}`) return null;
@@ -131,7 +132,7 @@ export class P5ProposalValidator implements ProposalValidator {
       if (policy.type === 'fact') {
         const value = state.verifiedArguments[key];
         const stored = snapshot.verifiedFacts.find(fact => fact.key === key && fact.value === value
-          && fact.source === 'customer' && fact.revision <= snapshot.revision);
+          && fact.source === policy.sourceOfTruth && fact.revision <= snapshot.revision);
         if (!value || !stored) return null;
       }
     }

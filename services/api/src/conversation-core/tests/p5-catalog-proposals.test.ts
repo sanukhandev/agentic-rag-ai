@@ -38,6 +38,7 @@ function candidateFact(key: string, value: string, supportingTurnId = 'customer-
 }
 function actionState(overrides: Partial<P5TrustedActionState> = {}): P5TrustedActionState {
   return {
+    sessionRevision: snapshot.revision,
     tenantId, sessionId: actor.sessionId, catalogVersionId: snapshot.catalogVersionId,
     goalKey: goal, stageKey: 'lead_generation', confirmedGoal: true,
     customerAuthorized: true, consentGranted: true,
@@ -137,6 +138,7 @@ describe('P5 provider-independent business action authorization', () => {
       { consentGranted: false }, { customerAuthorized: false }, { confirmedGoal: false },
       { stageKey: 'lead_qualification' }, { tenantId: 'tenant-foreign' },
       { verifiedRequirementKeys: [] }, { catalogVersionId: 'stale' },
+      { sessionRevision: 2 },
       { consentScope: 'other:lead.create' },
     ] as const) {
       expect(await authorized(changes).validateActionProposal(actor, withAction, persistedFacts)).toBeNull();
