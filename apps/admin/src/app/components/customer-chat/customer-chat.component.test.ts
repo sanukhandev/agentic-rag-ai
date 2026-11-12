@@ -1,6 +1,6 @@
 import '@angular/compiler';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { Injector, runInInjectionContext, signal, EnvironmentInjector } from '@angular/core';
+import { runInInjectionContext, signal, EnvironmentInjector } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { BrowserDynamicTestingModule, platformBrowserDynamicTesting } from '@angular/platform-browser-dynamic/testing';
 import { HttpClient } from '@angular/common/http';

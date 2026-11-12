@@ -127,7 +127,7 @@ export class PaginationComponent implements OnChanges {
     return pages;
   }
 
-  ngOnChanges(changes: SimpleChanges): void {
+  ngOnChanges(_changes: SimpleChanges): void {
     if (this.totalItems > 0 && this.currentPage > this.totalPages) {
       this.pageChange.emit(this.totalPages);
     }

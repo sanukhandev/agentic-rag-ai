@@ -132,7 +132,7 @@ describe('intent catalog', () => {
   });
 
   it('accepts the proposed OCR catalog extensions without activating the pending OCR binding', () => {
-    const catalog = JSON.parse(readFileSync(new URL('../../../docs/feature-specs/dynamic-ocr/ANCFZ-intent-catalog-OCR-WF1-proposed.json', import.meta.url), 'utf8')) as unknown;
+    const catalog = JSON.parse(readFileSync(new URL('./fixtures/ancfz-ocr-catalog-proposal.json', import.meta.url), 'utf8')) as unknown;
     const result = validateIntentCatalog(catalog);
     expect(result.errors).toEqual([]);
     expect(result.catalog?.documentPolicies).toHaveLength(16);
