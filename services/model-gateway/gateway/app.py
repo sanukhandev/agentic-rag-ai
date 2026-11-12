@@ -113,14 +113,14 @@ def model_provider_config() -> dict[str, str]:
         raise HTTPException(status_code=503, detail={"code": "MODEL_NOT_CONFIGURED"})
 
     if provider == "openai":
-        base_url = os.getenv("AI_BASE_URL") or os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1"
-        model = os.getenv("AI_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-5.4"
-        api_key = os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY", "")
+        base_url = os.getenv("OPENAI_BASE_URL") or os.getenv("AI_BASE_URL") or "https://api.openai.com/v1"
+        model = os.getenv("OPENAI_MODEL") or os.getenv("AI_MODEL") or "gpt-5.4"
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("AI_API_KEY", "")
         endpoint_valid = base_url.rstrip("/").endswith("/v1")
     else:
-        base_url = os.getenv("AI_BASE_URL") or os.getenv("AZURE_OPENAI_BASE_URL", "")
-        model = os.getenv("AI_MODEL") or os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
-        api_key = os.getenv("AI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY", "")
+        base_url = os.getenv("AZURE_OPENAI_BASE_URL") or os.getenv("AI_BASE_URL", "")
+        model = os.getenv("AZURE_OPENAI_DEPLOYMENT") or os.getenv("AI_MODEL", "")
+        api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("AI_API_KEY", "")
         endpoint_valid = base_url.rstrip("/").endswith("/openai/v1")
 
     if not api_key or not model or not base_url.startswith("https://") or not endpoint_valid:
