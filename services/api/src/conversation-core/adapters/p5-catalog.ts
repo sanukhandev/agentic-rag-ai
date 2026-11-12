@@ -3,6 +3,7 @@ import type { Store } from '../../types.js';
 import { sanitizeKnowledgeText } from '../../privacy.js';
 import type { ModelEnvelopeEnricher } from '../turn-engine.js';
 import type { ModelTurnEnvelope, P5CatalogProjection, SessionSnapshot, TrustedActor } from '../contracts.js';
+import type { P5ActionStateReader } from './p5-proposal-validator.js';
 
 type CatalogStore = Pick<Store, 'getIntentCatalogV2Version'>;
 
@@ -69,10 +70,24 @@ export class P5PinnedCatalogReader {
 /** The only authority here is the published tenant catalog; GPT still interprets its prose. */
 export class P5CatalogEnvelopeEnricher implements ModelEnvelopeEnricher {
   constructor(private readonly catalogReader: P5PinnedCatalogReader,
-    private readonly includeActionProposals = false) {}
+    private readonly actionState?: P5ActionStateReader) {}
   async enrich(actor: TrustedActor, pinned: SessionSnapshot, envelope: ModelTurnEnvelope): Promise<ModelTurnEnvelope> {
     const catalog = await this.catalogReader.load(actor, pinned);
-    return { ...envelope, p5Catalog: this.catalogReader.project(catalog, pinned.catalogVersionId,
-      pinned.provisionalGoalKeys ?? [], this.includeActionProposals) };
+    const trustedState = this.actionState ? await this.actionState.load(actor, pinned) : null;
+    const permitted = trustedState?.confirmedGoal && trustedState.customerAuthorized
+      && trustedState.consentGranted && trustedState.sessionRevision === pinned.revision
+      ? catalog.sheets.ToolBindings.filter(row => row.enabled
+        && row.goalKey === trustedState.goalKey && row.stageKey === trustedState.stageKey
+        && row.sideEffectClass !== 'read_only'
+        && trustedState.consentScope === `${catalogV2VersionRef(catalog)}:${row.toolKey}`)
+        .map(row => row.toolKey) : [];
+    const projection = this.catalogReader.project(catalog, pinned.catalogVersionId,
+      pinned.provisionalGoalKeys ?? [], permitted.length > 0);
+    return {
+      ...envelope,
+      p5Catalog: { ...projection, goals: projection.goals.map(goal => ({
+        ...goal, availableActionKeys: goal.availableActionKeys.filter(key => permitted.includes(key)),
+      })) },
+    };
   }
 }

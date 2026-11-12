@@ -1,4 +1,4 @@
-import type { CatalogV2Document } from '../../conversation/catalog.js';
+import { catalogV2VersionRef, type CatalogV2Document } from '../../conversation/catalog.js';
 import type {
   CandidateActionProposal, ModelCandidate, ProposalValidator, SessionSnapshot, TrustedActor, VerifiedFact,
 } from '../contracts.js';
@@ -107,7 +107,7 @@ export class P5ProposalValidator implements ProposalValidator {
       || state.sessionRevision !== snapshot.revision || state.catalogVersionId !== snapshot.catalogVersionId
       || state.goalKey !== candidate.goalCandidateKeys[0]
       || !state.confirmedGoal || !state.customerAuthorized || !state.consentGranted
-      || state.consentScope !== `${snapshot.catalogVersionId}:${proposed.actionKey}`) return null;
+      || state.consentScope !== `${catalogV2VersionRef(catalog)}:${proposed.actionKey}`) return null;
     const binding = catalog.sheets.ToolBindings.find(row => row.toolKey === proposed.actionKey
       && row.goalKey === state.goalKey && row.stageKey === state.stageKey
       && row.enabled && row.sideEffectClass !== 'read_only'
