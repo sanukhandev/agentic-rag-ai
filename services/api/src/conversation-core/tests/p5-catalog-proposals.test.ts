@@ -57,6 +57,7 @@ describe('P5 tenant-pinned catalog projection', () => {
     expect(projection.versionId).toBe(snapshot.catalogVersionId);
     expect(projection.goals[0]?.key).toBe(goal);
     expect(projection.goals[0]?.description).toContain('company');
+    expect(r.project(loaded, snapshot.catalogVersionId, [goal]).previousGoalCandidateKeys).toEqual([goal]);
     expect(projection.goals[0]?.factRequirementKeys).toContain('business_activity');
     expect(projection.goals[0]?.availableActionKeys).toContain('lead.create');
     expect(JSON.stringify(projection)).not.toContain('n8nWorkflowId');

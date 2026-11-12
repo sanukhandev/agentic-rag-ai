@@ -59,6 +59,7 @@ class P5GoalSummary(StrictP4):
 
 class P5CatalogProjection(StrictP4):
     versionId: str = Field(min_length=1, max_length=128)
+    previousGoalCandidateKeys: list[str] = Field(default_factory=list, max_length=8)
     goals: list[P5GoalSummary] = Field(max_length=100)
 
 

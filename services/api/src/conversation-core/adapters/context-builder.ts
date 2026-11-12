@@ -48,6 +48,8 @@ function safeString(value: unknown, limit = 6_000): string {
 
 export interface CoreMemory {
   readonly catalogVersionId?: string;
+  /** Provisional model suggestions only; never goal confirmation or action approval. */
+  readonly provisionalGoalKeys?: readonly string[];
   readonly verifiedFacts?: readonly VerifiedFact[];
   readonly summary?: string;
   readonly summaryRevision?: number;
@@ -64,8 +66,13 @@ export function extractCoreMemory(conversationState: unknown): CoreMemory {
       && typeof fact.sourceReference === 'string'
       && Number.isSafeInteger(fact.revision) && Number(fact.revision) >= 0;
   });
+  const provisionalGoalKeys = Array.isArray(raw.provisionalGoalKeys)
+    ? raw.provisionalGoalKeys.filter((key): key is string =>
+      typeof key === 'string' && /^[a-z][a-z0-9._-]{1,79}$/u.test(key)).slice(0, 8)
+    : [];
   return {
     ...(typeof raw.catalogVersionId === 'string' ? { catalogVersionId: raw.catalogVersionId } : {}),
+    provisionalGoalKeys,
     verifiedFacts,
     ...(typeof raw.summary === 'string' ? { summary: raw.summary } : {}),
     ...(Number.isSafeInteger(raw.summaryRevision) ? { summaryRevision: Number(raw.summaryRevision) } : {}),
@@ -151,6 +158,8 @@ export function buildSessionSnapshot(input: {
     recentTurns,
     verifiedFacts: [...facts.values()],
     publishedGoalKeys: goalKeys(catalog?.catalog_json),
+    provisionalGoalKeys: (core.provisionalGoalKeys ?? []).filter(key =>
+      goalKeys(catalog?.catalog_json).includes(key)),
     pendingActionStatus,
   };
 }

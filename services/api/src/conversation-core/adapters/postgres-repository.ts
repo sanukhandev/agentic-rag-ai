@@ -232,6 +232,10 @@ export class PostgresConversationRepository implements ConversationRepository {
       const corePatch = {
         catalogVersionId: input.catalogVersionId,
         verifiedFacts: [...facts.values()],
+        // These are unconfirmed hypotheses, not consent or authorization.
+        provisionalGoalKeys: input.response.goalCandidateKeys.length > 0
+          ? [...new Set(input.response.goalCandidateKeys)].slice(0, 8)
+          : (memory.provisionalGoalKeys ?? []),
         ...(memory.summary !== undefined ? { summary: memory.summary } : {}),
         ...(memory.summaryRevision !== undefined ? { summaryRevision: memory.summaryRevision } : {}),
       };

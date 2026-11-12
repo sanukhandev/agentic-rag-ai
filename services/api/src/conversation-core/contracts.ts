@@ -41,6 +41,7 @@ export interface SessionSnapshot {
   readonly recentTurns: readonly HistoryTurn[];
   readonly verifiedFacts: readonly VerifiedFact[];
   readonly publishedGoalKeys: readonly string[];
+  readonly provisionalGoalKeys?: readonly string[];
   readonly pendingActionStatus: readonly {
     actionId: string;
     actionKey: string;
@@ -69,6 +70,7 @@ export interface P5GoalSummary {
 
 export interface P5CatalogProjection {
   readonly versionId: string;
+  readonly previousGoalCandidateKeys: readonly string[];
   readonly goals: readonly P5GoalSummary[];
 }
 

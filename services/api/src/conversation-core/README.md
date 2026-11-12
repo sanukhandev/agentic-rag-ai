@@ -66,3 +66,7 @@ A `completed` value in the legacy action table **cannot** be represented as veri
 - Even accepted P5 action proposals are only persisted as `pendingActionProposal` in a conversation response. They do not dispatch to n8n, Salesforce, CRM, payments or the outbox. A separate Node action gate is required to execute authorized actions.
 
 **Not complete:** P5 is not connected to public chat, no trusted `P5ActionStateReader` implementation has been wired, catalog admin JSON/YAML authoring additions are not part of this change, and production vault + Azure quality/tenant UAT remain release blockers. No knowledge source, embedding, ingestion record, catalog version or database schema was mutated.
+
+### P5 provisional goal continuity
+
+The P2 namespaced `conversationCore` JSON now retains bounded `provisionalGoalKeys` as *unconfirmed model hypotheses* after an authorized turn commit. The next P5 model context can use them alongside the durable summary and recent turns; they are never permission, customer authorization or goal confirmation. Invalid/unpublished keys are filtered at projection time. Published goal descriptions/examples and requirements are redacted before model access. The persisted customer facts remain subject to the existing encrypted privacy boundary.
