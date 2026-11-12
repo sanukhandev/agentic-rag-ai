@@ -92,3 +92,19 @@ P5's candidate reads existing immutable Catalog V2 records for the authenticated
 P5 can submit customer fact proposals only for verified exact spans in the customer's masked current utterance and fact keys declared by the published catalog. A possible business action stays a **proposal**, contingent on server-verified consent, authorization, pinned goal/stage and requirements. The `P5ActionStateReader` interface is deliberately not wired to any external dispatch provider: no CRM/quote/payment side effects are possible from the model output alone.
 
 Python selects this mode only when both `P4_GATEWAY_ENABLED` and `P5_CANDIDATE_ENABLED` are true and the internal request contains a verified, version-pinned P5 catalog projection. The production V2 controller is unchanged.
+
+### P5 implementation and validation matrix
+
+| Track | Implementation | Evidence / acceptance |
+| --- | --- | --- |
+| P5-01 Immutable tenant catalog projection | Done, isolated | Tenant/pin/hash negative tests added |
+| P5-02 Model-led natural goal interpretation | P5 Python mode implemented | Offline contract tests added; real Azure UAT pending |
+| P5-03 Current-customer fact provenance | Done, isolated | Exact masked-turn/value tests added |
+| P5-04 Generic catalog stage/requirement checks | Done for proposal authorization | Real PostgreSQL/lifecycle integration pending |
+| P5-05 Consent + explicit customer authorization | Required by Node validator | Trusted action-state provider not connected |
+| P5-06 Provider workflow execution | Intentionally NOT implemented here | Existing Node V2 authorization/outbox boundary retained |
+| P5-07 Multi-tenant isolation | Tenant/version checks implemented | Cross-tenant unit tests added; end-to-end UAT pending |
+| P5-08 End-to-end Azure dialogue | Not run | Gated |
+| P5-09 Production chat cutover | Not enabled | P6 + encrypted vault + quality gates |
+
+Validation commands from repository root: `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run build --workspaces --if-present`. Python: `cd services/model-gateway; python -m pytest -q tests`. These must pass on the committed P5 branch; prior P4 passes do not count as P5 acceptance.

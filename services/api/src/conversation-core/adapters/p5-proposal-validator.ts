@@ -32,6 +32,7 @@ export class P5ProposalError extends Error {
 
 const safeField = /^[a-z][a-z0-9._-]{1,79}$/u;
 const forbidden = /(?:^|[._-])(?:password|secret|token|otp|cvv|pan)(?:$|[._-])/iu;
+const rawContact = /(?:[^\s@]+@[^\s@]+\.[^\s@]+|\b\d{12,19}\b|\+\d[\d ()-]{7,}\d)/u;
 
 /** An exact bounded customer-span check, not a word-overlap rule for GPT responses. */
 function directCustomerSpan(message: string, proposed: string): boolean {
@@ -82,7 +83,7 @@ export class P5ProposalValidator implements ProposalValidator {
     for (const fact of candidate.proposedFacts) {
       if (!safeField.test(fact.key) || forbidden.test(fact.key) || !allowed.has(fact.key)
         || fact.supportingTurnId !== clientMessageId || seen.has(fact.key)
-        || !directCustomerSpan(maskedCustomerMessage, fact.value)) {
+        || rawContact.test(fact.value) || !directCustomerSpan(maskedCustomerMessage, fact.value)) {
         throw new P5ProposalError('unsupported_fact');
       }
       seen.add(fact.key);
