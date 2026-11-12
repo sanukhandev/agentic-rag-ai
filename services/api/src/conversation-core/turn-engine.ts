@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   CandidateActionProposal, CandidateFactUpdate, ClaimVerifier, ConversationRepository,
   CustomerTurn, ModelCandidate, ModelGateway, ModelTurnEnvelope, PersistedTurn,
@@ -98,7 +99,9 @@ export class ConversationTurnEngine {
     turn.signal?.throwIfAborted();
     const snapshot = await this.repository.loadAuthorizedSnapshot(actor);
     validateSnapshot(actor, snapshot);
-    const prior = await this.repository.findExistingTurn(actor, turn.clientMessageId);
+    // Bind idempotency to the original request, not just the client-supplied key.
+    const requestDigest = createHash('sha256').update(turn.text, 'utf8').digest('hex');
+    const prior = await this.repository.findExistingTurn(actor, turn.clientMessageId, requestDigest);
     if (prior) return prior; // Idempotency is enforced again in commitTurn.
     const authorizedTools = await this.tools.listFor(actor, snapshot.catalogVersionId);
     // This is metadata only. The Python agent must call the independently
@@ -169,6 +172,9 @@ export class ConversationTurnEngine {
     return this.repository.commitTurn(actor, {
       expectedRevision: snapshot.revision,
       clientMessageId: turn.clientMessageId,
+      requestDigest,
+      personaVersionId: snapshot.personaVersionId,
+      catalogVersionId: snapshot.catalogVersionId,
       customerMessage: maskedEnvelope.customerMessage,
       response,
     });

@@ -1,20 +1,32 @@
-# New conversation core — isolated replacement candidate
+# Conversation core — P2 durable state and session-security integration
 
-**Not connected to the existing public chat route.** This is a clean new boundary
-that must pass adapter integration and security tests before the current
-conversation controllers can be removed.
+**Status:** Candidate runtime, **not connected** to `/api/v1/chat/messages`.
 
-- `contracts.ts`: typed tenant context, verified facts, durable summary, and
-  model/Node interface boundaries.
-- `turn-engine.ts`: one response owner (model), typed validation, idempotency,
-  immutable revision checks, durable summary in the actual model envelope,
-  and **no** automatic external action execution.
-- `read-tool-registry.ts`: allowlisted, schema-validated, tenant-authorized
-  read tool execution with size and error limits.
+## Included
 
-These contracts deliberately do **not** implement PostgreSQL, Azure calls,
-LangGraph, semantic entailment or n8n. Implement adapters and run full
-contract/tenant-isolation tests before this runtime can replace live chat.
+- `turn-engine.ts`: a single conversational-response owner with validation and a request-content-bound idempotency key.
+- `adapters/postgres-repository.ts`: tenant-scoped PostgreSQL adapter using the existing tables and transactional `state_version` CAS; atomically writes customer/assistant messages, versioned response, pinned catalog/persona and verified fact patches.
+- `adapters/context-builder.ts`: deterministic projection of published persona and catalog, `user_intent_documents` facts, durable summaries, recent messages and conservative provider status.
+- `adapters/session-authorizer.ts`: authenticated customer-session tokens via the existing Store's `verifySessionAccessToken`; fail-closed for arbitrary administrator roles in P2.
+- `adapters/privacy-adapter.ts`: requires a **durable encrypted session-scoped vault implementation** for mask/assert operations; it deliberately has no permissive default.
+- `adapters/proposal-validator.ts`: forbids model-created facts and all action proposals until P5 installs authoritative validators.
+- `tests/`: native Vitest tests for context, authentication, masking and P2 refusal behavior.
 
-Do not introduce deterministic customer dialogue scripts, direct provider writes,
-RAG mutations or a second response planner when integrating this module.
+## Persistence compatibility
+
+Uses the existing migrations and the columns on `chat_sessions`, `chat_messages`, `persona_versions`, `intent_catalog_v2_versions`, `user_intent_documents`, `action_requests` and `tenants`. Adds only a namespaced `conversationCore` JSON object inside existing `chat_sessions.conversation_state` when a candidate turn is committed. No schema migration and no RAG or n8n changes.
+
+The new adapter is restricted to **authenticated customer sessions**. The server must create `TrustedActor` from the authenticated bearer token; `principalId` must not come from a request body. The adapter rechecks the existing session-token record and the tenant/session/closed status on each operation. Platform administrator access will require a separately reviewed capability in P6.
+
+`requestDigest` is SHA-256 of the original customer request and is checked on duplicate client message IDs before response reuse. The original masked message, typed result and a versioned response envelope persist atomically. A changed-content replay is rejected.
+
+A `completed` value in the legacy action table **cannot** be represented as verified completion in P2. The status stays `reconciliation_required` until P5 can consult authoritative provider evidence.
+
+## What P2 does NOT claim
+
+- It does not hook into current production API, Python/LangGraph, Azure, n8n, or the real PII vault. P3-P6 provide those integrations.
+- It does not autonomously generate a new semantic summary: `updateDurableSummary` persists a **validated, already-masked** update; model-driven summary generation is part of P4.
+- It does not automatically persist model-proposed customer facts; P5 must verify source, consent and data type before enabling that capability.
+- The local SQL test harness is deterministic and simulates transaction rollback. It does **not** substitute for a real PostgreSQL integration test against a disposable, migrated database.
+
+**Do not delete the active `conversation/` V2 controller.** The candidate must pass real database/tenant security, provider and quality gates before P6/P7 cutover.

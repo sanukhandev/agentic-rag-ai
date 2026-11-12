@@ -24,7 +24,7 @@ export interface HistoryTurn {
 export interface VerifiedFact {
   readonly key: string;
   readonly value: string;
-  readonly source: 'customer' | 'catalog' | 'provider';
+  readonly source: 'customer' | 'catalog' | 'node' | 'provider';
   readonly sourceReference: string;
   readonly revision: number;
 }
@@ -112,18 +112,22 @@ export interface VerifiedResponse {
 export interface PersistedTurn {
   readonly sessionId: string;
   readonly clientMessageId: string;
+  readonly requestDigest: string;
   readonly revision: number;
   readonly response: VerifiedResponse;
 }
 
 export interface ConversationRepository {
-  findExistingTurn(actor: TrustedActor, clientMessageId: string): Promise<PersistedTurn | null>;
+  findExistingTurn(actor: TrustedActor, clientMessageId: string, requestDigest: string): Promise<PersistedTurn | null>;
   loadAuthorizedSnapshot(actor: TrustedActor): Promise<SessionSnapshot>;
   /** Must atomically compare expectedRevision, persist turn and customer facts. */
   commitTurn(actor: TrustedActor, input: {
     readonly expectedRevision: number;
     readonly clientMessageId: string;
     readonly customerMessage: string;
+    readonly requestDigest: string;
+    readonly personaVersionId: string;
+    readonly catalogVersionId: string;
     readonly response: VerifiedResponse;
   }): Promise<PersistedTurn>;
 }
