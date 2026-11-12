@@ -19,8 +19,8 @@ export class KnowledgeService {
   private readonly _sources = signal<Source[]>([]);
   private readonly _jobs = signal<IngestionJob[]>([]);
   private readonly _isLoading = signal<boolean>(false);
-  private sourcesInFlight = false;
-  private jobsInFlight = false;
+  private sourcesInFlightScope: string | null = null;
+  private jobsInFlightScope: string | null = null;
 
   readonly sources = this._sources.asReadonly();
   readonly jobs = this._jobs.asReadonly();
@@ -35,13 +35,20 @@ export class KnowledgeService {
   readonly jobs$: Observable<IngestionJob[]> = this.jobsSubject.asObservable();
   readonly isLoading$: Observable<boolean> = this.isLoadingSubject.asObservable();
 
+  private requestScope(): string {
+    return `${this.auth.selectedTenantId ?? 'default'}:${this.auth.token()}`;
+  }
+
   loadSources(): void {
-    if (!this.auth.token() || this.sourcesInFlight) return;
-    this.sourcesInFlight = true;
+    if (!this.auth.token()) return;
+    const requestScope = this.requestScope();
+    if (this.sourcesInFlightScope === requestScope) return;
+    this.sourcesInFlightScope = requestScope;
     this.http.get<{ items: Source[] }>(`${this.apiBase}/api/v1/admin/sources`).pipe(
       catchError(() => of({ items: this._sources() }))
     ).subscribe((res) => {
-      this.sourcesInFlight = false;
+      if (this.requestScope() !== requestScope) return;
+      this.sourcesInFlightScope = null;
       const items = res.items ?? [];
       this._sources.set(items);
       this.sourcesSubject.next(items);
@@ -49,12 +56,15 @@ export class KnowledgeService {
   }
 
   loadJobs(): void {
-    if (!this.auth.token() || this.jobsInFlight) return;
-    this.jobsInFlight = true;
+    if (!this.auth.token()) return;
+    const requestScope = this.requestScope();
+    if (this.jobsInFlightScope === requestScope) return;
+    this.jobsInFlightScope = requestScope;
     this.http.get<{ items: IngestionJob[] }>(`${this.apiBase}/api/v1/admin/ingestion-jobs`).pipe(
       catchError(() => of({ items: this._jobs() }))
     ).subscribe((res) => {
-      this.jobsInFlight = false;
+      if (this.requestScope() !== requestScope) return;
+      this.jobsInFlightScope = null;
       const items = res.items ?? [];
       this._jobs.set(items);
       this.jobsSubject.next(items);

@@ -183,6 +183,17 @@ describe('guardV2Response', () => {
     }
   });
 
+  it('uses the approved fallback language when it differs from the first permitted language', () => {
+    const templates = fallbackTemplates();
+    const result = guardV2OfflineFallback('tool_unavailable', context({
+      permittedLanguages: ['en', 'ar'],
+      fallbackTemplates: { ...templates, language: 'ar' },
+      fallbackTemplateVersion: templates.templateVersion,
+    }));
+    expect(result.verdict.accepted).toBe(true);
+    expect(result.response?.language).toBe('ar');
+  });
+
   it('fails closed for an unknown or unapproved fallback set', () => {
     const result = guardV2OfflineFallback('tool_unavailable', context({ fallbackTemplates: { ...fallbackTemplates(), approved: false }, fallbackTemplateVersion: 'fallback-12345678' }));
     expect(result.response).toBeNull();
