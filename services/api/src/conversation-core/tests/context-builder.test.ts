@@ -54,6 +54,17 @@ describe('P2 durable conversation projection', () => {
     expect(snapshot.conversationSummary).toBe('Core persisted summary');
   });
 
+  it('preserves catalog-scoped provisional goal candidates without confirming them', () => {
+    const projected = buildSessionSnapshot({
+      ...base,
+      session: { ...session, conversation_state: {
+        conversationCore: { provisionalGoalKeys: ['company_formation', 'unpublished_goal'] },
+      } },
+    });
+    expect(projected.provisionalGoalKeys).toEqual(['company_formation']);
+    expect(projected.publishedGoalKeys).toEqual(['company_formation']);
+  });
+
   it('ignores invalid fact rows without inventing new facts', () => {
     expect(extractCoreMemory({ conversationCore: { verifiedFacts: [null, 'junk', { key: '', value: 'x' }] } }).verifiedFacts).toEqual([]);
   });

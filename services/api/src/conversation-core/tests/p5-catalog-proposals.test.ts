@@ -60,7 +60,7 @@ describe('P5 tenant-pinned catalog projection', () => {
     expect(r.project(loaded, snapshot.catalogVersionId, [goal]).previousGoalCandidateKeys).toEqual([goal]);
     expect(projection.goals[0]?.factRequirementKeys).toContain('business_activity');
     expect(projection.goals[0]?.availableActionKeys).toContain('lead.create');
-    expect(new P5CatalogEnvelopeEnricher(r).enrich(actor, snapshot, {
+    await expect(new P5CatalogEnvelopeEnricher(r).enrich(actor, snapshot, {
       tenantId, sessionId: actor.sessionId, catalogVersionId: snapshot.catalogVersionId,
     } as unknown as Parameters<P5CatalogEnvelopeEnricher['enrich']>[2])).resolves
       .toMatchObject({ p5Catalog: { goals: [expect.objectContaining({ availableActionKeys: [] })] } });
