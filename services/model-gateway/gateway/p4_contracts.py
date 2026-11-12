@@ -53,6 +53,8 @@ class P5GoalSummary(StrictP4):
     requiredInformation: list[str] = Field(default_factory=list, max_length=32)
     factRequirementKeys: list[str] = Field(default_factory=list, max_length=64)
     requiredDocuments: list[str] = Field(default_factory=list, max_length=32)
+    packageReferences: list[str] = Field(default_factory=list, max_length=32)
+    productReferences: list[str] = Field(default_factory=list, max_length=32)
     orderedSteps: list[str] = Field(default_factory=list, max_length=16)
     availableActionKeys: list[str] = Field(default_factory=list, max_length=32)
 

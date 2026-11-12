@@ -26,6 +26,6 @@ export function createP5CandidateEngine(input: {
     new P5ProposalValidator(input.catalogReader, input.actions),
     input.privacy,
     undefined,
-    new P5CatalogEnvelopeEnricher(input.catalogReader),
+    new P5CatalogEnvelopeEnricher(input.catalogReader, input.actions !== undefined),
   );
 }

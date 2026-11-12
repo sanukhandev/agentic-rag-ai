@@ -36,7 +36,7 @@ export class P5PinnedCatalogReader {
     return checked.document;
   }
 
-  project(catalog: CatalogV2Document, versionId: string, provisional: readonly string[] = []): P5CatalogProjection {
+  project(catalog: CatalogV2Document, versionId: string, provisional: readonly string[] = [], includeActions = true): P5CatalogProjection {
     const safeText = (value: string, max: number): string => sanitizeKnowledgeText(value).slice(0, max);
     return {
       versionId,
@@ -53,12 +53,14 @@ export class P5PinnedCatalogReader {
           row.goalKey === goal.businessGoalKey && row.type === 'fact' && row.sourceOfTruth === 'customer')
           .map(row => row.requirementKey).slice(0, 64),
         requiredDocuments: goal.requiredDocuments.slice(0, 32).map(value => safeText(value, 300)),
+        packageReferences: goal.packageReferences.slice(0, 32).map(value => safeText(value, 200)),
+        productReferences: goal.productReferences.slice(0, 32).map(value => safeText(value, 200)),
         orderedSteps: goal.orderedSteps.slice(0, 16).map(value => safeText(value, 300)),
-        availableActionKeys: catalog.sheets.ToolBindings.filter(binding =>
+        availableActionKeys: includeActions ? catalog.sheets.ToolBindings.filter(binding =>
           binding.enabled && binding.goalKey === goal.businessGoalKey && binding.sideEffectClass !== 'read_only'
           && catalog.sheets.WorkflowBindings.some(workflow =>
             workflow.registryKey === binding.registryKey && workflow.enabled))
-          .map(binding => binding.toolKey).slice(0, 32),
+          .map(binding => binding.toolKey).slice(0, 32) : [],
       })),
     };
   }
@@ -66,10 +68,11 @@ export class P5PinnedCatalogReader {
 
 /** The only authority here is the published tenant catalog; GPT still interprets its prose. */
 export class P5CatalogEnvelopeEnricher implements ModelEnvelopeEnricher {
-  constructor(private readonly catalogReader: P5PinnedCatalogReader) {}
+  constructor(private readonly catalogReader: P5PinnedCatalogReader,
+    private readonly includeActionProposals = false) {}
   async enrich(actor: TrustedActor, pinned: SessionSnapshot, envelope: ModelTurnEnvelope): Promise<ModelTurnEnvelope> {
     const catalog = await this.catalogReader.load(actor, pinned);
     return { ...envelope, p5Catalog: this.catalogReader.project(catalog, pinned.catalogVersionId,
-      pinned.provisionalGoalKeys ?? []) };
+      pinned.provisionalGoalKeys ?? [], this.includeActionProposals) };
   }
 }

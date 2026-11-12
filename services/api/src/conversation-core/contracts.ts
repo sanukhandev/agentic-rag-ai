@@ -64,6 +64,8 @@ export interface P5GoalSummary {
   readonly requiredInformation: readonly string[];
   readonly factRequirementKeys: readonly string[];
   readonly requiredDocuments: readonly string[];
+  readonly packageReferences: readonly string[];
+  readonly productReferences: readonly string[];
   readonly orderedSteps: readonly string[];
   readonly availableActionKeys: readonly string[];
 }

@@ -19,6 +19,7 @@ CATALOG = {
             "requiredInformation": ["Business activity"],
             "factRequirementKeys": ["business_activity"],
             "requiredDocuments": ["Passport copy"],
+            "packageReferences": ["business-startup"], "productReferences": [],
             "orderedSteps": ["Select activity", "Prepare application"],
             "availableActionKeys": ["lead.create"],
         },
