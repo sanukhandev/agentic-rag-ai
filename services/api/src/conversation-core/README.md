@@ -84,3 +84,9 @@ Remaining before release: code and integration CI, expired-token/revocation test
 ### P6 indexed citation lookup
 
 The preview route resolves candidate citation IDs with a single indexable PostgreSQL join across current active/public source versions and tenant-owned chunks. It rejects missing/revoked citations instead of returning an answer with stale or invented source metadata. No whole-tenant source loading is used.
+
+### Session-engine isolation and action authority
+
+P6 candidate sessions must be fresh. The canary endpoint rejects any session already containing a V2-format customer turn; the standard V2 endpoint rejects a recent P6-format customer turn when the candidate feature is enabled. This avoids two independent persistence controllers advancing one conversation. Canary browser storage is namespaced separately.
+
+The new conversation-core `verifiedFactPatches` and `goalCandidateKeys` do **not** create an authoritative V2 `user_intent_documents` goal confirmation or lifecycle record. Therefore the P6 action-state reader normally returns no authority for fresh candidate sessions. The user-facing preview supports safe informational dialogue and fact collection, **not** seven-stage dispatch, CRM writes, payment initiation or contract execution. Those require an explicit audited lifecycle integration, purpose-specific consent UI and authoritative action gate before cutover.

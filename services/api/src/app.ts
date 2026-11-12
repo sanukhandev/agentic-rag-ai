@@ -1642,6 +1642,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const channel = getChannel(req);
       const session = await store.getSession(input.sessionId);
       if (!session) throw new HttpError(404, 'SESSION_NOT_FOUND', 'Session not found.');
+      // P6 candidate sessions persist the new core-turn response wrapper and
+      // must never be handed back to the V2 persistence controller.
+      // The check only runs when P6 is explicitly enabled.
+      if (dependencies.p6CandidateApi) {
+        const recent = await store.listMessages(session.id, session.tenantId, 4);
+        if (recent.some(row => row.role === 'user' && row.response?.coreTurnVersion === 1)) {
+          throw new HttpError(409, 'P6_SESSION_ISOLATION',
+            'This candidate session cannot be resumed through the V2 conversation route.');
+        }
+      }
       ensureLiveSession(session.lastActivityAt, session.closedAt);
       const tenant = await activeTenant(store, session.tenantId);
       await authorizeSessionAccessToken(req, session);
