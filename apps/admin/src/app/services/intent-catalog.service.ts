@@ -1,6 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { BehaviorSubject, Observable, catchError, of, switchMap, takeWhile, timer } from 'rxjs';
+import { BehaviorSubject, Observable, Subscription, catchError, of, switchMap, takeWhile, timer } from 'rxjs';
 import { IngestionJob, IntentCatalogVersion, IntentCatalogV2Version, IntentVocabularyCandidate } from '../types/admin.types';
 import { apiErrorMessage } from './api-error';
 import { AuthService } from './auth.service';
@@ -27,6 +27,7 @@ export class IntentCatalogService {
   private readonly _catalogError = signal<string | null>(null);
   private readonly _vocabulary = signal<IntentVocabularyCandidate[]>([]);
   private watchedJobId: string | null = null;
+  private watchedJobSub?: Subscription;
 
   readonly versions = this._versions.asReadonly();
   readonly v2Versions = this._v2Versions.asReadonly();
@@ -46,6 +47,7 @@ export class IntentCatalogService {
   readonly catalogError$: Observable<string | null> = this.catalogErrorSubject.asObservable();
 
   clearCatalogView(): void {
+    this.cancelJobWatch();
     // Invalidate in-flight V2 responses when switching identity/tenant.
     this.v2LoadRevision += 1;
     this._v2Versions.set([]);
@@ -183,10 +185,19 @@ export class IntentCatalogService {
     reader.readAsDataURL(file);
   }
 
+  cancelJobWatch(): void {
+    if (this.watchedJobSub) {
+      this.watchedJobSub.unsubscribe();
+      this.watchedJobSub = undefined;
+    }
+    this.watchedJobId = null;
+  }
+
   private watchJob(jobId: string): void {
-    if (this.watchedJobId === jobId) return;
+    if (this.watchedJobId === jobId && this.watchedJobSub && !this.watchedJobSub.closed) return;
+    this.cancelJobWatch();
     this.watchedJobId = jobId;
-    timer(0, 2000).pipe(
+    this.watchedJobSub = timer(0, 2000).pipe(
       switchMap(() => this.http.get<{ job: IngestionJob }>(`${this.apiBase}/api/v1/admin/ingestion-jobs/${jobId}`)),
       takeWhile(({ job }) => isCatalogJobPending(job.status), true),
       catchError((error) => {
@@ -196,6 +207,7 @@ export class IntentCatalogService {
         this._catalogError.set(message);
         this.catalogErrorSubject.next(message);
         this.toast.show('error', 'Catalog status unavailable', message);
+        this.cancelJobWatch();
         return of(null);
       })
     ).subscribe({
@@ -218,7 +230,11 @@ export class IntentCatalogService {
           this.toast.show('error', 'Catalog import failed', job.errorCode || 'The workbook could not be imported.');
         }
       },
-      complete: () => { if (this.watchedJobId === jobId) this.watchedJobId = null; }
+      complete: () => {
+        if (this.watchedJobId === jobId) {
+          this.cancelJobWatch();
+        }
+      }
     });
   }
 

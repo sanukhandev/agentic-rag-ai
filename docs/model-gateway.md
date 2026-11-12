@@ -2,28 +2,30 @@
 
 **Status: TARGET beyond scaffold.** An initial private Python FastAPI model-gateway scaffold exists, but **persona-final composition, full agent tool continuation and Node final response guard are not implemented**. Do not substitute a named Foundry Agent project endpoint for a GPT model deployment.
 
-## Azure API/key selection
+## Configurable provider and API/key selection
 
-Use the OpenAI Python SDK against an Azure OpenAI **model deployment**. Microsoft documents the Responses API and key auth:
+Use the OpenAI Python SDK against either OpenAI or an Azure OpenAI/Foundry **model deployment**. The active provider is selected by `AI_PROVIDER`; the conversation and Node boundaries do not change:
 
 ```python
 import os
 from openai import OpenAI
 
 client = OpenAI(
-    api_key=os.environ["AZURE_OPENAI_API_KEY"],
-    base_url=os.environ["AZURE_OPENAI_BASE_URL"],  # e.g. https://<resource>.openai.azure.com/openai/v1/
+    api_key=os.environ["AI_API_KEY"],
+    base_url=os.environ["AI_BASE_URL"],
     max_retries=3,
     timeout=20.0,
 )
 response = client.responses.create(
-    model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
+    model=os.environ["AI_MODEL"],
     input="Approved, bounded request context",
 )
 answer = response.output_text
 ```
 
-`AZURE_OPENAI_DEPLOYMENT` is the **deployment name**, not merely `gpt-4.1-mini` unless the deployment was actually named that. The key belongs to the **model resource**, not a `foundryApiKey` project-agent tool connection. Confirm current deployment, region, quota and Responses availability before use. The OpenAI SDK may also connect to OpenAI's own endpoint, but Azure is the first target. Keep a provider interface so credentials and base URL are provider-specific.
+The OpenAI profile uses `AI_BASE_URL=https://api.openai.com/v1` and `AI_MODEL=gpt-5.4`. The Azure profile uses a model resource endpoint such as `https://<resource>.openai.azure.com/openai/v1/` and `AI_MODEL=gpt-5.4` when that is the actual deployment name. Existing `AZURE_OPENAI_BASE_URL`, `AZURE_OPENAI_DEPLOYMENT`, and `AZURE_OPENAI_API_KEY` values remain supported as fallbacks. The key belongs to the selected model resource, not a Foundry project-agent tool connection. Confirm deployment, region, quota and Responses availability before live use.
+
+`MODEL_MODE=mock` selects the deterministic offline client. Any other mode uses the selected provider. Provider changes require a gateway restart; there is no automatic cross-provider failover.
 
 Sources:
 - https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/responses

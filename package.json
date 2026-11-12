@@ -9,7 +9,9 @@
   "scripts": {
     "build": "npm run build --workspace packages/chat-utils && npm run build --workspaces --if-present",
     "verify:compose": "node scripts/verify-compose.mjs",
+    "verify:conversation-boundary": "node scripts/verify-conversation-engine-boundary.mjs",
     "verify:n8n:salesforce": "node scripts/verify-n8n-salesforce-lead-runtime.mjs",
+    "acceptance:n8n:remote": "node scripts/acceptance-remote-n8n.mjs",
     "activate:n8n:dev": "node scripts/activate-ancfz-n8n-dev.mjs --confirm-dev",
     "test:salesforce:webhook:mock": "node scripts/test-salesforce-lead-webhook.mjs",
     "verify:secrets": "node scripts/verify-secrets.mjs",

@@ -46,7 +46,6 @@ const argumentSchemas: Record<V2ToolName, z.ZodTypeAny> = {
   get_document_requirements: emptyArguments,
   get_action_status: emptyArguments,
 };
-
 type ScopePayload = {
   tenantId: string;
   sessionId: string;
@@ -76,7 +75,7 @@ const scopePayloadSchema = z.object({
   nonce: z.string().regex(/^[A-Za-z0-9_-]{22}$/u),
 }).strict();
 const SCOPE_MAX_LIFETIME_MS = 5 * 60_000;
-const TOOL_MAX_DEADLINE_MS = 90_000;
+const TOOL_MAX_DEADLINE_MS = 180_000;
 const MAX_SCOPE_REF_LENGTH = 2_048;
 const scopePart = (value: string): string => Buffer.from(value, 'utf8').toString('base64url');
 const unscopePart = (value: string): string => Buffer.from(value, 'base64url').toString('utf8');
@@ -324,10 +323,11 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
         const source = await store.getSource(item.citation.sourceId);
         return source && source.tenantId === scope.tenantId && source.status === 'active' && source.versionId === item.citation.versionId ? item : null;
       }))).filter((item): item is NonNullable<typeof item> => Boolean(item));
-      const evidenceRefs = approved.map(item => item.citation.chunkId);
+      const knowledgeEvidence = approved.map(item => toV2KnowledgeEvidence(item, normalizedQuery)).filter(item => item.text.trim().length > 0);
+      const evidenceRefs = knowledgeEvidence.map(item => item.citationId);
       const sourceVersions = [...new Set(approved.map((item) => item.citation.versionId))];
       // A mixed-version retrieval has per-citation provenance, not a single source version.
-      return result(request, 'ok', { grounded: approved.length > 0, evidence: approved.map(item => toV2KnowledgeEvidence(item, normalizedQuery)) }, sourceVersions.length === 1 ? sourceVersions[0]! : null, evidenceRefs);
+      return result(request, 'ok', { grounded: knowledgeEvidence.length > 0, evidence: knowledgeEvidence }, sourceVersions.length === 1 ? sourceVersions[0]! : null, evidenceRefs);
     }
     case 'get_journey_state': {
       const lifecycle = entry?.lifecycle ?? null;
@@ -439,12 +439,14 @@ const toolResultFor = async (request: ToolRequestV2, scope: ScopePayload, sessio
       const status = await Promise.all(scoped.map(async (action) => {
         const execution = await store.getActionExecution(action.id, scope.tenantId);
         const evidenceStatus = deriveV2ProviderEvidenceStatus({ actionState: action.state, providerStatus: execution?.providerStatus ?? null, evidenceTier: execution?.outcome?.evidenceTier });
-        return { workflowKey: action.workflowKey, state: action.state, actionKey: action.actionKey ?? null, providerAcknowledged: Boolean(action.result?.externalReference), providerStatus: execution?.providerStatus ?? null, evidenceStatus, stageCompletionEligible: v2StageCompletionEligible(evidenceStatus) };
+        return { workflowKey: action.workflowKey, state: action.state, actionKey: action.actionKey ?? null, providerAcknowledged: Boolean(action.result?.externalReference), providerOutcome: action.result?.providerOutcome ?? null, artifactAvailable: Boolean(action.result?.artifactSha256), artifactFileName: action.result?.artifactFileName ?? null, providerStatus: execution?.providerStatus ?? null, evidenceStatus, stageCompletionEligible: v2StageCompletionEligible(evidenceStatus) };
       }));
       const claims = status.length > 0
         ? status.map((item) => {
           const label = actionLabel(item.workflowKey, item.actionKey);
           if (item.stageCompletionEligible) return `The verified provider outcome for ${label} is complete.`;
+          if (item.providerOutcome === 'pdf_generated') return `The quotation artifact for ${label} was generated and is awaiting provider verification.`;
+          if (item.providerOutcome === 'success' || item.providerOutcome === 'updated') return `The ${label} workflow returned ${item.providerOutcome}; independent provider verification is still pending.`;
           if (item.state === 'awaiting_confirmation') return `${label} is awaiting customer confirmation.`;
           return `${label} is awaiting verified provider evidence.`;
         })

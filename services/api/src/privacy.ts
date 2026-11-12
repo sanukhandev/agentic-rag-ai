@@ -62,7 +62,9 @@ export class TokenVault {
     return before - session.tokenMap.size;
   }
 
-  has(session: Session, placeholder: string): boolean { return this.resolveValue(session, placeholder, false) !== null; }
+  has(session: Session, placeholder: string, purpose: RehydrationPurpose = 'assistant_response'): boolean {
+    return this.resolveValue(session, placeholder, purpose === 'admin_crm') !== null;
+  }
 
   resolve(session: Session, placeholder: string, purpose: RehydrationPurpose): string | null {
     if (purpose === 'admin_crm') return this.resolveValue(session, placeholder, true);
@@ -103,7 +105,7 @@ export const maskPii = (input: string): MaskResult => {
   replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, 'EMAIL');
   replace(/(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)/g, 'PHONE');
   const nameComponent = String.raw`[\p{L}\d]+(?:['’\-][\p{L}\d]+)*`;
-  const nonNameOpeners = new Set(['a', 'an', 'available', 'based', 'building', 'calling', 'contacting', 'exploring', 'from', 'happy', 'here', 'interested', 'looking', 'need', 'new', 'planning', 'ready', 'seeking', 'setting', 'starting', 'the', 'trying', 'unable', 'want']);
+  const nonNameOpeners = new Set(['a', 'an', 'available', 'based', 'building', 'calling', 'confirming', 'contacting', 'exploring', 'from', 'happy', 'here', 'interested', 'looking', 'need', 'new', 'planning', 'ready', 'seeking', 'setting', 'starting', 'the', 'trying', 'unable', 'want']);
   const introductionName = new RegExp(String.raw`\b(?:my name(?:\s+for\s+(?:this\s+)?(?:synthetic\s+)?test)?\s+is|i am|i'm)\s+(${nameComponent}(?:\s+(?!(?:and|but|i|i'm|im|need|want|for|from|with|please)\b)${nameComponent}){0,3})(?=\s*(?:[,.!?;]|$|\b(?:and|but|i|i'm|im|need|want|for|from|with|please)\b))`, 'giu');
   replaceName(introductionName, (name) => !nonNameOpeners.has(name.split(/\s+/u)[0]?.toLocaleLowerCase('en-US') ?? ''));
   replace(/\b(?:passport|account|customer|member)[ #:-]*[A-Z0-9-]{4,}\b/gi, 'ID');
@@ -129,8 +131,13 @@ export const assertKnownTokens = (session: Session, text: string, vault: TokenVa
   for (const placeholder of placeholders) if (!vault.has(session, placeholder)) throw new Error('Model returned an unknown privacy token.');
 };
 
-export const redactUnknownTokens = (session: Session, text: string, vault: TokenVault = defaultVault): string =>
-  text.replace(/\[(?:EMAIL|PHONE|NAME|ID)_\d+\]/g, (placeholder) => vault.has(session, placeholder) ? placeholder : '[REDACTED]');
+export const redactUnknownTokens = (
+  session: Session,
+  text: string,
+  vault: TokenVault = defaultVault,
+  purpose: RehydrationPurpose = 'assistant_response',
+): string =>
+  text.replace(/\[(?:EMAIL|PHONE|NAME|ID)_\d+\]/g, (placeholder) => (vault.has(session, placeholder, purpose) ? placeholder : '[REDACTED]'));
 
 export const saveTokens = (session: Session, values: MaskResult['tokens'], vault: TokenVault = defaultVault): void => vault.save(session, values);
 

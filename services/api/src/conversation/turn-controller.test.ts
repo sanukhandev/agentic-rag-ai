@@ -43,7 +43,7 @@ import { MemoryStore } from '../store-memory.js';
 import { MemoryCache } from '../cache.js';
 import { TokenVault } from '../privacy.js';
 import { newConversationState } from '../conversation-state.js';
-import { isCommercialDocumentRequest, isV2PackageQuestion, resolvePublicCitations, runGPTFirstChatTurn } from './turn-controller.js';
+import { isCommercialDocumentRequest, isPackageSummaryRequest, isV2PackageQuestion, resolvePublicCitations, runGPTFirstChatTurn } from './turn-controller.js';
 import { createV2ToolGateway, verifyV2Scope } from './tool-gateway.js';
 import { DeterministicEmbeddingProvider } from '../embedding.js';
 import { ActionGateway } from '../actions.js';
@@ -164,6 +164,11 @@ describe('GPT-first controller full-turn unit behavior', () => {
     if (!initial) throw new Error('UNIT_MESSAGE_MISSING');
     const message = 'Compare the Starter and Growth packages';
     await ctx.store.updateMessage({ ...initial, maskedContent: message });
+    ctx.input.coordinator.run = vi.fn(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'For the Growth package, required documents include a passport copy and identity proof.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted',
+    } as unknown as V2CoordinatorResult));
     ctx.input.userMessage = { ...initial, maskedContent: message };
     ctx.input.maskedMessage = message;
     ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
@@ -185,6 +190,11 @@ describe('GPT-first controller full-turn unit behavior', () => {
     const initial = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
     if (!initial) throw new Error('UNIT_MESSAGE_MISSING');
     const message = 'What documents are required for the Growth package?';
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'For the Growth package, required documents include a passport copy and identity proof.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'accepted',
+    } as unknown as V2CoordinatorResult));
     await ctx.store.updateMessage({ ...initial, maskedContent: message });
     ctx.input.userMessage = { ...initial, maskedContent: message };
     ctx.input.maskedMessage = message;
@@ -481,6 +491,68 @@ describe('V2 context-aware company formation confirmation (isolated unit)', () =
       });
     },
   );
+
+  it.each([
+    'Yes, please proceed with the company-formation enquiry.',
+    'That sounds good — let us go ahead with the company setup.',
+    'Confirmed. Start the enquiry.',
+  ])('accepts an affirmative initiation without asking for a duplicate goal confirmation: %s', async message => {
+    const ctx = await firstTurn(message, modelProposal);
+    const doc = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(doc).toMatchObject({ businessGoalKey: 'anc.company_formation', goalConfirmed: true });
+    expect(doc?.goalConfirmation?.status).toBe('confirmed');
+    expect(doc?.pendingRequirementKey).toBe('lead_contact_name');
+    expect(ctx.reply.answer).toContain('What full name should I use for the Lead?');
+    expect(ctx.reply.answer).not.toContain('Would you like to proceed with start a company?');
+  });
+
+  it.each([
+    'I only want the package information for now, without submitting any contact details.',
+    'Please share the package details only.',
+  ])('recognizes package-information follow-ups without requiring contact collection: %s', (message) => {
+    expect(isPackageSummaryRequest(message)).toBe(true);
+  });
+
+  it('confirms an explicitly observed goal when the model is temporarily unavailable', async () => {
+    const ctx = await prepared();
+    await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+    const message = 'Yes, please proceed with the company-formation enquiry.';
+    const current = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+    if (!current) throw Error('UNIT_CUSTOMER_MESSAGE_MISSING');
+    await ctx.store.updateMessage({ ...current, maskedContent: message });
+    ctx.input.userMessage = { ...current, maskedContent: message };
+    ctx.input.maskedMessage = message;
+    ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 0, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'The approved information is temporarily unavailable.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'model_or_tool_unavailable', fallbackApplied: true,
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(ctx.input);
+    const document = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(document).toMatchObject({ businessGoalKey: 'anc.company_formation', goalConfirmed: true, pendingRequirementKey: 'lead_contact_name' });
+    expect(reply.answer).toContain('What full name should I use for the Lead?');
+  });
+
+  it('prompts for an explicitly observed goal when the first model turn is temporarily unavailable', async () => {
+    const ctx = await prepared();
+    await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+    const message = 'I want to start a company in the free zone.';
+    const current = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+    if (!current) throw Error('UNIT_CUSTOMER_MESSAGE_MISSING');
+    await ctx.store.updateMessage({ ...current, maskedContent: message });
+    ctx.input.userMessage = { ...current, maskedContent: message };
+    ctx.input.maskedMessage = message;
+    ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
+    ctx.coordinator.run.mockImplementationOnce(async () => ({
+      modelRequestCount: 0, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
+      response: { citationIds: [], answer: 'The approved information is temporarily unavailable.', nextQuestion: null, nextQuestionKey: null },
+      guardReason: 'model_or_tool_unavailable', fallbackApplied: true,
+    }) as unknown as V2CoordinatorResult);
+    const reply = await runGPTFirstChatTurn(ctx.input);
+    expect(reply.answer).toContain('Would you like to proceed with start a company?');
+    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.goalConfirmation?.status).toBe('pending');
+  });
 
   it('uses independently observed initiation evidence when the model turn category is navigation', async () => {
     const ctx = await firstTurn('I am planning to start a technology consulting company in Ajman', {
@@ -822,7 +894,10 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
   });
 
   it('persists masked contact requirements and advances the V2 contact cursor', async () => {
-    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json');
+    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json', catalog => {
+      catalog.sheets.ToolBindings.find(binding => binding.toolKey === 'lead.create')!.enabled = false;
+      catalog.sheets.WorkflowBindings.find(binding => binding.workflowKey === 'crm.lead.create')!.enabled = false;
+    });
     await runGPTFirstChatTurn({
       ...await followUpTurn(ctx, 'Yes, proceed.'),
       coordinator: ctx.coordinator,
@@ -940,8 +1015,11 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     };
     await turn('[NAME_1]');
     await turn('[EMAIL_1]');
-    const consentReply = await turn('Consent to use my contact details', 'Thanks.', { postbackValue: 'v2:contact-consent:grant' });
+    const consentOnly = await turn('Consent to use my contact details', 'Thanks.', { postbackValue: 'v2:contact-consent:grant' });
+    expect(consentOnly.actionProposal).toBeNull();
+    const consentReply = await turn('Please submit the Lead');
     expect(consentReply.actionProposal).toMatchObject({ intent: 'crm.lead.create', consentRequired: false });
+    expect(consentReply.answer).toContain('ready to confirm');
     let actions = await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id);
     expect(actions).toHaveLength(1);
     expect(actions[0]).toMatchObject({ actionKey: 'lead.create', workflowKey: 'crm.lead.create', state: 'awaiting_confirmation' });
@@ -949,7 +1027,7 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     if (!persistedSession || !actions[0]) throw new Error('UNIT_ACTION_STATE_MISSING');
     await expect(evaluatePersistedV2ActionConfirmation(ctx.store, persistedSession, actions[0])).resolves.toMatchObject({ applies: true, accepted: true });
     expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.pendingRequirementKey).toBe('lead_action_confirmation');
-    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.verifiedFacts.lead_action_confirmation).toMatchObject({ maskedValue: 'true', source: 'visitor' });
+    expect((await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id))?.verifiedFacts.lead_action_confirmation).toBeUndefined();
     await ctx.store.updateAction({ ...actions[0], state: 'reconcile_required', result: { externalReference: 'n8n-404' } });
     const unrelatedTurn = await followUpTurn(ctx, 'Can you explain the available packages?');
     ctx.coordinator.run.mockImplementationOnce(async () => ({
@@ -970,7 +1048,7 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     await runGPTFirstChatTurn({ ...packageQuestion, coordinator: ctx.coordinator });
     actions = await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id);
     expect(actions).toHaveLength(1);
-    const confirmation = await followUpTurn(ctx, 'I confirm the authorized submission.');
+    const confirmation = await followUpTurn(ctx, 'Yes, I am confirming the lead submission.');
     ctx.coordinator.run.mockImplementationOnce(async () => ({
       modelRequestCount: 1, toolCallCount: 0, toolTrace: [], approvedEvidence: [],
       response: { citationIds: [], answer: 'Confirmed.', nextQuestion: null, nextQuestionKey: null },
@@ -982,7 +1060,10 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
   });
 
   it('keeps disabled Lead submission truthful and hides internal requirement keys', async () => {
-    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json');
+    const ctx = await proposalTurn('ancfz-catalog-v2-seven-stage.json', catalog => {
+      catalog.sheets.ToolBindings.find(binding => binding.toolKey === 'lead.create')!.enabled = false;
+      catalog.sheets.WorkflowBindings.find(binding => binding.workflowKey === 'crm.lead.create')!.enabled = false;
+    });
     await runGPTFirstChatTurn({ ...await followUpTurn(ctx, 'Yes, proceed.'), coordinator: ctx.coordinator });
     const confirmed = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
     if (!confirmed) throw new Error('UNIT_INTENT_DOCUMENT_MISSING');
@@ -1039,7 +1120,9 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     await turn('[EMAIL_1]');
     const consentReply = await turn('Consent to use my contact details', { postbackValue: 'v2:contact-consent:grant' });
     expect(consentReply.actionProposal).toBeNull();
-    expect(consentReply.answer).toContain('Salesforce');
+    const submitReply = await turn('Please submit the Lead');
+    expect(submitReply.actionProposal).toBeNull();
+    expect(submitReply.answer).toContain('Salesforce');
     expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
   });
 
@@ -1232,5 +1315,83 @@ describe('Catalog V2 customer-confirmed Business Goal (isolated unit)', () => {
     expect(document?.goalConfirmed).toBe(false);
     expect(document?.goalConfirmation?.status).toBe('pending');
     expect(await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id)).toEqual([]);
+  });
+  it('does not promote commercial facts into verified facts when goalConfirmed is false', async () => {
+    const ctx = await prepared();
+    await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+    const initial = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+    if (!initial) throw new Error('UNIT_MESSAGE_MISSING');
+    const message = 'The Growth package is the one I want.';
+    await ctx.store.updateMessage({ ...initial, maskedContent: message });
+    ctx.input.userMessage = { ...initial, maskedContent: message };
+    ctx.input.maskedMessage = message;
+    ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
+    await runGPTFirstChatTurn(ctx.input);
+    const doc = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(doc?.goalConfirmed).toBe(false);
+    expect(doc?.verifiedFacts['package_choice']).toBeUndefined();
+  });
+
+  it('fails closed on explicit document refusal and blocks quotation generation', async () => {
+    const ctx = await prepared();
+    const version = await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug, 'ancfz-catalog-v2-seven-stage.json');
+    const initial = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+    if (!initial) throw new Error('UNIT_MESSAGE_MISSING');
+    const now = new Date().toISOString();
+    await ctx.store.createUserIntentDocument({
+      id: randomUUID(), tenantId: ctx.tenant.id, sessionId: ctx.session.id,
+      catalogSource: 'v2', catalogVersionRef: version.catalogVersionRef, personaVersionId: ctx.session.personaVersionId,
+      opportunityId: null, businessGoalKey: 'anc.company_formation', turnIntentKey: 'goal.company_formation',
+      currentStageKey: null, stageRevision: 0, goalConfirmed: true,
+      goalConfirmation: {
+        status: 'confirmed', goalKey: 'anc.company_formation', proposalMessageId: initial.id,
+        promptId: 'prompt-1', catalogVersionRef: version.catalogVersionRef,
+        personaVersionId: ctx.session.personaVersionId!, sessionRevision: 1, intentRevision: 0,
+        issuedAt: now, customerMessageId: initial.id, customerClientMessageId: initial.clientMessageId ?? randomUUID(), decidedAt: now,
+      },
+      verifiedFacts: { package_choice: { maskedValue: 'Growth', source: 'visitor', messageSequence: 1, evidenceRefs: [], corrected: false } },
+      pendingRequirementKey: null, lastQuestion: null, approvedResponse: null,
+      toolRefs: [], sourceRefs: [], summary: '', summaryRevision: 0, revision: 1,
+      createdAt: now, updatedAt: now,
+    });
+    const message = 'I do not consent to sharing or processing an identity document. Please generate the quote anyway.';
+    await ctx.store.updateMessage({ ...initial, maskedContent: message });
+    ctx.input.userMessage = { ...initial, maskedContent: message };
+    ctx.input.maskedMessage = message;
+    ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
+    const reply = await runGPTFirstChatTurn(ctx.input);
+    expect(reply.answer).toContain('declined document processing');
+    expect(reply.answer).toContain('cannot prepare or generate the quotation');
+    const actions = await ctx.store.listActionsBySession(ctx.session.id, ctx.tenant.id);
+    expect(actions.filter(a => a.actionKey === 'quotation.generate')).toHaveLength(0);
+    const doc = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(doc?.verifiedFacts['document_processing_consent']?.maskedValue).toBe('false');
+  });
+
+  it('persists a pending goal confirmation record when contact details arrive before goal confirmation', async () => {
+    const ctx = await prepared();
+    const version = await publishPlannerFixture(ctx.store, ctx.tenant.id, ctx.tenant.slug);
+    const initial = await ctx.store.getMessageByClientId(ctx.session.id, ctx.input.clientMessageId);
+    if (!initial) throw new Error('UNIT_MESSAGE_MISSING');
+    const now = new Date().toISOString();
+    await ctx.store.createUserIntentDocument({
+      id: randomUUID(), tenantId: ctx.tenant.id, sessionId: ctx.session.id,
+      catalogSource: 'v2', catalogVersionRef: version.catalogVersionRef, personaVersionId: ctx.session.personaVersionId,
+      opportunityId: null, businessGoalKey: 'anc.company_formation', turnIntentKey: 'goal.company_formation',
+      currentStageKey: null, stageRevision: 0, goalConfirmed: false,
+      goalConfirmation: null, verifiedFacts: {}, pendingRequirementKey: null, lastQuestion: null,
+      approvedResponse: null, toolRefs: [], sourceRefs: [], summary: '', summaryRevision: 0, revision: 1,
+      createdAt: now, updatedAt: now,
+    });
+    const message = 'My name is [NAME_1], email is [EMAIL_1].';
+    await ctx.store.updateMessage({ ...initial, maskedContent: message });
+    ctx.input.userMessage = { ...initial, maskedContent: message };
+    ctx.input.maskedMessage = message;
+    ctx.input.messageHash = createHash('sha256').update(message).digest('hex');
+    const reply = await runGPTFirstChatTurn(ctx.input);
+    expect(reply.answer).toContain('I can collect contact details once you confirm');
+    const doc = await ctx.store.getUserIntentDocument(ctx.tenant.id, ctx.session.id);
+    expect(doc?.goalConfirmation?.status).toBe('pending');
+    expect(doc?.goalConfirmation?.goalKey).toBe('anc.company_formation');
   });
 });

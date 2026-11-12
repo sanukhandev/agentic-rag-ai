@@ -1,4 +1,4 @@
-import { Component, ElementRef, HostListener, inject } from '@angular/core';
+import { Component, ElementRef, HostListener, inject, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -23,6 +23,7 @@ interface MegaMenuColumn {
 @Component({
   selector: 'app-top-nav',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, FormsModule, IconComponent, BadgeComponent],
   template: `
     <header class="sticky top-0 z-40 w-full border-b border-neutral-200/80 bg-white/95 backdrop-blur-md">
@@ -539,6 +540,9 @@ export class TopNavComponent {
 
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent): void {
+    if (!this.tenantDropdownOpen && !this.userMenuOpen && !this.mobileNavOpen && !this.activeMegaMenu) {
+      return;
+    }
     if (!this.elementRef.nativeElement.contains(event.target)) {
       this.closeMenu();
       this.tenantDropdownOpen = false;
@@ -593,9 +597,23 @@ export class TopNavComponent {
     this.state.logout();
   }
 
+  private cachedMenuSection: NavSection | null = null;
+  private cachedTenantCount = -1;
+  private _cachedColumns: MegaMenuColumn[] = [];
+
   get currentColumns(): MegaMenuColumn[] {
     if (this.activeMegaMenu === 'organizations' && !this.isPlatformAdmin) return [];
-    switch (this.activeMegaMenu) {
+    if (this.cachedMenuSection === this.activeMegaMenu && this.cachedTenantCount === this.tenants.length) {
+      return this._cachedColumns;
+    }
+    this.cachedMenuSection = this.activeMegaMenu;
+    this.cachedTenantCount = this.tenants.length;
+    this._cachedColumns = this.buildColumns(this.activeMegaMenu);
+    return this._cachedColumns;
+  }
+
+  private buildColumns(menu: NavSection | null): MegaMenuColumn[] {
+    switch (menu) {
       case 'organizations':
         return [
           {

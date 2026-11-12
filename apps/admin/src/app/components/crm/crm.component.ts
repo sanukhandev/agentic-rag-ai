@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -11,6 +11,7 @@ import { PaginationComponent } from '../shared/pagination.component';
 @Component({
   selector: 'app-crm',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, FormsModule, BadgeComponent, IconComponent, PaginationComponent],
   template: `
     <section class="space-y-6 animate-fade-in">
@@ -399,7 +400,11 @@ export class CrmComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     // Proactively fetch latest leads on mount
     this.state.loadCrmLeads();
-    this.refreshTimer = setInterval(() => this.state.loadCrmLeads(true), 5000);
+    this.refreshTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        this.state.loadCrmLeads(true);
+      }
+    }, 10000);
   }
 
   ngOnDestroy(): void {
@@ -444,16 +449,80 @@ export class CrmComponent implements OnInit, OnDestroy {
     this.state.setSection('chat');
   }
 
+  private cachedLeadsRef: CrmLead[] | null = null;
+  private cachedSearchQuery = '';
+  private cachedQualityFilter = '';
+  private _cachedFilteredLeads: CrmLead[] = [];
+  private _cachedHotCount = 0;
+  private _cachedWarmCount = 0;
+  private _cachedValidatedCount = 0;
+
+  get filteredLeads(): CrmLead[] {
+    const currentLeads = this.leads;
+    const query = this.searchQuery.trim().toLowerCase();
+    if (
+      this.cachedLeadsRef === currentLeads &&
+      this.cachedSearchQuery === query &&
+      this.cachedQualityFilter === this.qualityFilter
+    ) {
+      return this._cachedFilteredLeads;
+    }
+
+    this.cachedLeadsRef = currentLeads;
+    this.cachedSearchQuery = query;
+    this.cachedQualityFilter = this.qualityFilter;
+
+    let hot = 0;
+    let warm = 0;
+    let valid = 0;
+    for (const lead of currentLeads) {
+      if (lead.quality === 'hot') hot++;
+      else if (lead.quality === 'warm') warm++;
+      if (lead.validationPass) valid++;
+    }
+    this._cachedHotCount = hot;
+    this._cachedWarmCount = warm;
+    this._cachedValidatedCount = valid;
+
+    this._cachedFilteredLeads = currentLeads.filter((lead) => {
+      // Quality filter
+      if (this.qualityFilter !== 'all') {
+        if (this.qualityFilter === 'new') {
+          if (lead.quality !== 'new' && lead.quality !== 'nurture') return false;
+        } else if (lead.quality !== this.qualityFilter) {
+          return false;
+        }
+      }
+
+      // Search query
+      if (query) {
+        const name = (lead.leadData.name || '').toLowerCase();
+        const email = (lead.leadData.email || '').toLowerCase();
+        const phone = (lead.leadData.phone || '').toLowerCase();
+        const intent = (lead.leadData.interest || lead.intent || '').toLowerCase();
+        const summary = (lead.summary || '').toLowerCase();
+        return name.includes(query) || email.includes(query) || phone.includes(query) || intent.includes(query) || summary.includes(query);
+      }
+
+      return true;
+    });
+
+    return this._cachedFilteredLeads;
+  }
+
   get hotCount(): number {
-    return this.leads.filter((l) => l.quality === 'hot').length;
+    this.filteredLeads;
+    return this._cachedHotCount;
   }
 
   get warmCount(): number {
-    return this.leads.filter((l) => l.quality === 'warm').length;
+    this.filteredLeads;
+    return this._cachedWarmCount;
   }
 
   get validatedCount(): number {
-    return this.leads.filter((l) => l.validationPass).length;
+    this.filteredLeads;
+    return this._cachedValidatedCount;
   }
 
   get totalPages(): number {
@@ -475,32 +544,6 @@ export class CrmComponent implements OnInit, OnDestroy {
     this.synchronizePagination();
     const start = (this.currentPage - 1) * this.pageSize;
     return this.filteredLeads.slice(start, start + this.pageSize);
-  }
-
-  get filteredLeads(): CrmLead[] {
-    return this.leads.filter((lead) => {
-      // Quality filter
-      if (this.qualityFilter !== 'all') {
-        if (this.qualityFilter === 'new') {
-          if (lead.quality !== 'new' && lead.quality !== 'nurture') return false;
-        } else if (lead.quality !== this.qualityFilter) {
-          return false;
-        }
-      }
-
-      // Search query
-      if (this.searchQuery.trim()) {
-        const query = this.searchQuery.toLowerCase();
-        const name = (lead.leadData.name || '').toLowerCase();
-        const email = (lead.leadData.email || '').toLowerCase();
-        const phone = (lead.leadData.phone || '').toLowerCase();
-        const intent = (lead.leadData.interest || lead.intent || '').toLowerCase();
-        const summary = (lead.summary || '').toLowerCase();
-        return name.includes(query) || email.includes(query) || phone.includes(query) || intent.includes(query) || summary.includes(query);
-      }
-
-      return true;
-    });
   }
 
   getLeadInitial(lead: CrmLead): string {

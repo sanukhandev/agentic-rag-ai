@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AzureEmbeddingProvider, DeterministicEmbeddingProvider } from './embedding.js';
+import { AzureEmbeddingProvider, DeterministicEmbeddingProvider, OpenAIEmbeddingProvider, embeddingProviderFromEnv } from './embedding.js';
 
 describe('Azure embedding adapter', () => {
   it('sends only the supplied text and validates the response dimension', async () => {
@@ -50,5 +50,49 @@ describe('deterministic embedding adapter', () => {
   it('supports the migrated PostgreSQL vector dimension for credential-free local runs', async () => {
     const provider = new DeterministicEmbeddingProvider(1536);
     await expect(provider.embed('local fallback')).resolves.toHaveLength(1536);
+  });
+});
+
+describe('OpenAI embedding adapter', () => {
+  it('uses the OpenAI-compatible endpoint and bearer authentication', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), { status: 200 }));
+    const provider = new OpenAIEmbeddingProvider('https://api.openai.com/v1', 'text-embedding-3-large', 'server-key', 2);
+    await expect(provider.embed('masked [EMAIL_1]')).resolves.toEqual([0.1, 0.2]);
+    expect(fetchMock).toHaveBeenCalledWith('https://api.openai.com/v1/embeddings', expect.objectContaining({
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer server-key' },
+      body: JSON.stringify({ model: 'text-embedding-3-large', input: ['masked [EMAIL_1]'], dimensions: 2 }),
+    }));
+    fetchMock.mockRestore();
+  });
+});
+
+describe('embedding provider configuration', () => {
+  it('selects OpenAI embeddings when the active AI provider is OpenAI', () => {
+    const provider = embeddingProviderFromEnv({
+      AI_PROVIDER: 'openai',
+      AI_BASE_URL: 'https://api.openai.com/v1',
+      OPENAI_API_KEY: 'server-key',
+      OPENAI_EMBEDDING_MODEL: 'text-embedding-3-large',
+      OPENAI_EMBEDDING_DIMENSION: '1536',
+    });
+    expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
+    expect(provider?.model).toBe('text-embedding-3-large');
+    expect(provider?.dimension).toBe(1536);
+  });
+
+  it('falls back from blank optional OpenAI embedding variables to the active model profile', () => {
+    const provider = embeddingProviderFromEnv({
+      AI_PROVIDER: 'openai',
+      AI_BASE_URL: 'https://api.openai.com/v1',
+      OPENAI_API_KEY: 'server-key',
+      OPENAI_EMBEDDING_BASE_URL: '',
+      OPENAI_EMBEDDING_API_KEY: '',
+      OPENAI_EMBEDDING_MODEL: '',
+      OPENAI_EMBEDDING_DIMENSION: '',
+    });
+    expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
+    expect(provider?.model).toBe('text-embedding-3-large');
+    expect(provider?.dimension).toBe(1536);
   });
 });

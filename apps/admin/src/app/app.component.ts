@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject } from '@angular/core';
+import { Component, OnInit, computed, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from './services/admin-state.service';
 import { NavSection, Tenant } from './types/admin.types';
@@ -25,6 +25,7 @@ import { canAccessAdminSection } from './services/admin-navigation';
 @Component({
   selector: 'app-root',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
     TopNavComponent,

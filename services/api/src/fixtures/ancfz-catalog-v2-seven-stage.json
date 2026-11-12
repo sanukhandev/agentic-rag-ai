@@ -11,7 +11,7 @@
     "README": [
       {
         "key": "status",
-        "value": "DRAFT. Review and publish through the tenant admin; remote writes are disabled until verified."
+        "value": "DEVELOPMENT. Publish as a new version after local validation; remote writes require consent, confirmation, and provider evidence."
       },
       {
         "key": "goal",
@@ -31,7 +31,7 @@
       },
       {
         "key": "publication",
-        "value": "Workflows and external-write tools are deliberately disabled pending provider integration and tenant review."
+        "value": "Development bindings include the active remote n8n lead and quotation workflows; retain prior published versions for rollback."
       }
     ],
     "CatalogManifest": [
@@ -108,7 +108,9 @@
           "get_available_packages",
           "get_document_requirements",
           "get_journey_state",
-          "get_action_status"
+          "get_action_status",
+          "lead.create",
+          "quotation.generate"
         ],
         "completionConditions": [
           "The customer goal is confirmed and all required information is validated.",
@@ -358,11 +360,11 @@
           "help me set up my company",
           "set up my business",
           "open a company",
-            "open a consultancy",
-            "establish a company",
-            "set up a business",
-            "planning to start a business",
-            "thinking of setting up a business"
+          "open a consultancy",
+          "establish a company",
+          "set up a business",
+          "planning to start a business",
+          "thinking of setting up a business"
         ]
       },
       {
@@ -808,13 +810,56 @@
         "priority": 50
       },
       {
-        "requirementKey": "document_processing_consent",
+        "requirementKey": "account_provider_reference",
         "goalKey": "anc.company_formation",
-        "stageKey": "document_upload",
+        "stageKey": "package_selection",
+        "type": "fact",
+        "required": true,
+        "dependencies": [
+          "account_confirmation"
+        ],
+        "validation": "provider.account.reference",
+        "sourceOfTruth": "provider",
+        "promptKey": "ask.account_provider_reference",
+        "priority": 10
+      },
+      {
+        "requirementKey": "quotation_consent",
+        "goalKey": "anc.company_formation",
+        "stageKey": "package_selection",
         "type": "consent",
         "required": true,
         "dependencies": [
-          "package_confirmation"
+          "package_choice",
+          "document_processing_consent"
+        ],
+        "validation": "explicit.purpose_specific.opt_in",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.quotation_consent",
+        "priority": 50
+      },
+      {
+        "requirementKey": "quotation_confirmation",
+        "goalKey": "anc.company_formation",
+        "stageKey": "package_selection",
+        "type": "confirmation",
+        "required": true,
+        "dependencies": [
+          "quotation_consent"
+        ],
+        "validation": "explicit.customer.confirmation",
+        "sourceOfTruth": "customer",
+        "promptKey": "ask.quotation_confirmation",
+        "priority": 50
+      },
+      {
+        "requirementKey": "document_processing_consent",
+        "goalKey": "anc.company_formation",
+        "stageKey": "package_selection",
+        "type": "consent",
+        "required": true,
+        "dependencies": [
+          "package_choice"
         ],
         "validation": "explicit.purpose_specific.opt_in",
         "sourceOfTruth": "customer",
@@ -1097,7 +1142,25 @@
         "consent": "purpose_specific",
         "confirmation": "explicit_customer",
         "registryKey": "crm.lead.create",
-        "enabled": false
+        "enabled": true
+      },
+      {
+        "toolKey": "quotation.generate",
+        "goalKey": "anc.company_formation",
+        "stageKey": "package_selection",
+        "sideEffectClass": "proposal",
+        "argumentsSchemaRef": "tool.quotation-generate.v1",
+        "requiredKeys": [
+          "account_provider_reference",
+          "package_choice",
+          "document_processing_consent",
+          "quotation_consent",
+          "quotation_confirmation"
+        ],
+        "consent": "purpose_specific",
+        "confirmation": "explicit_customer",
+        "registryKey": "sales.quote.generate",
+        "enabled": true
       },
       {
         "toolKey": "qualification.verify",
@@ -1161,7 +1224,7 @@
         "consent": "purpose_specific",
         "confirmation": "explicit_customer",
         "registryKey": "document.sf02.upload",
-        "enabled": false
+        "enabled": true
       },
       {
         "toolKey": "invoice.issue",
@@ -1228,11 +1291,26 @@
       {
         "workflowKey": "crm.lead.create",
         "registryKey": "crm.lead.create",
-        "providerType": "salesforce_sandbox",
-        "payloadSchemaRef": "payload.crm.lead.create.v1",
-        "callbackSchemaRef": "callback.crm.lead.create.v1",
+        "providerType": "remote_n8n",
+        "payloadSchemaRef": "payload.remote.salesforce-lead.v1",
+        "callbackSchemaRef": "callback.remote.salesforce-lead.v1",
         "evidencePolicyKey": "lead.verified",
-        "enabled": false
+        "n8nWorkflowId": "salesforce-lead",
+        "webhookPath": "n8n/webhook/salesforce-lead",
+        "payloadContract": "remote.salesforce-lead.v1",
+        "enabled": true
+      },
+      {
+        "workflowKey": "sales.quote.generate",
+        "registryKey": "sales.quote.generate",
+        "providerType": "remote_n8n",
+        "payloadSchemaRef": "payload.remote.generate-quotation.v1",
+        "callbackSchemaRef": "callback.remote.generate-quotation.v1",
+        "evidencePolicyKey": "quote.artifact.received",
+        "n8nWorkflowId": "generate-quotation",
+        "webhookPath": "n8n/webhook/generate-quotation",
+        "payloadContract": "remote.generate-quotation.v1",
+        "enabled": true
       },
       {
         "workflowKey": "lead.qualification",
@@ -1268,7 +1346,7 @@
         "payloadSchemaRef": "payload.document.sf02.upload.v1",
         "callbackSchemaRef": "callback.document.sf02.upload.v1",
         "evidencePolicyKey": "document.sf02_verified",
-        "enabled": false
+        "enabled": true
       },
       {
         "workflowKey": "invoice.issue",

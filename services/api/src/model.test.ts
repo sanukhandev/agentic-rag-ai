@@ -18,6 +18,9 @@ describe('Azure Foundry model adapter', () => {
   it('normalizes natural name introductions for the active name slot', () => {
     expect(normalizePendingLeadName('I m Rakshitha chandran')).toBe('Rakshitha chandran');
     expect(normalizePendingLeadName('My name is Rakshitha chandran')).toBe('Rakshitha chandran');
+    expect(normalizePendingLeadName('Please register the enquiry under Rakshitha chandran.')).toBe('Rakshitha chandran');
+    expect(normalizePendingLeadName('You can put the enquiry under Rakshitha chandran.')).toBe('Rakshitha chandran');
+    expect(normalizePendingLeadName('Name: Rakshitha chandran.')).toBe('Rakshitha chandran');
   });
 
   it('resolves short replies only against the active offer', async () => {

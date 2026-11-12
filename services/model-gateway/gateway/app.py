@@ -104,6 +104,29 @@ async def _auth(x_internal_service_key: str | None) -> None:
     if not secret or not x_internal_service_key or not secrets.compare_digest(secret, x_internal_service_key):
         raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED"})
 
+def model_provider_config() -> dict[str, str]:
+    """Resolve the active provider without exposing its credential."""
+    provider = os.getenv("AI_PROVIDER", "azure").strip().lower()
+    if provider == "azure_openai":
+        provider = "azure"
+    if provider not in {"openai", "azure"}:
+        raise HTTPException(status_code=503, detail={"code": "MODEL_NOT_CONFIGURED"})
+
+    if provider == "openai":
+        base_url = os.getenv("OPENAI_BASE_URL") or os.getenv("AI_BASE_URL") or "https://api.openai.com/v1"
+        model = os.getenv("OPENAI_MODEL") or os.getenv("AI_MODEL") or "gpt-5.4"
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("AI_API_KEY", "")
+        endpoint_valid = base_url.rstrip("/").endswith("/v1")
+    else:
+        base_url = os.getenv("AZURE_OPENAI_BASE_URL") or os.getenv("AI_BASE_URL", "")
+        model = os.getenv("AZURE_OPENAI_DEPLOYMENT") or os.getenv("AI_MODEL", "")
+        api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("AI_API_KEY", "")
+        endpoint_valid = base_url.rstrip("/").endswith("/openai/v1")
+
+    if not api_key or not model or not base_url.startswith("https://") or not endpoint_valid:
+        raise HTTPException(status_code=503, detail={"code": "MODEL_NOT_CONFIGURED"})
+    return {"provider": provider, "base_url": base_url.rstrip("/"), "model": model, "api_key": api_key}
+
 def _client_get() -> Any:
     global _client
     if os.getenv("MODEL_MODE", "azure").lower() == "mock":
@@ -111,28 +134,45 @@ def _client_get() -> Any:
             _client = MockResponsesClient()
         return _client
     if _client is None:
-        key = os.getenv("AZURE_OPENAI_API_KEY", "")
-        endpoint = os.getenv("AZURE_OPENAI_BASE_URL", "")
-        deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
-        if not key or not deployment or not endpoint.startswith("https://") or not endpoint.rstrip("/").endswith("/openai/v1"):
-            raise HTTPException(status_code=503, detail={"code": "MODEL_NOT_CONFIGURED"})
-        _client = AsyncOpenAI(api_key=key, base_url=endpoint.rstrip("/") + "/", timeout=18.0,
-                              max_retries=0)
+        config = model_provider_config()
+        _client = AsyncOpenAI(api_key=config["api_key"], base_url=config["base_url"] + "/", timeout=18.0,
+                              max_retries=3)
     return _client
 
 
 def model_readiness() -> dict[str, Any]:
     mode = os.getenv("MODEL_MODE", "azure").lower()
-    endpoint = os.getenv("AZURE_OPENAI_BASE_URL", "").rstrip("/")
-    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
-    endpoint_valid = endpoint.startswith("https://") and endpoint.endswith("/openai/v1")
-    configured = mode == "mock" or bool(os.getenv("AZURE_OPENAI_API_KEY")) and bool(deployment) and endpoint_valid
+    if mode == "mock":
+        return {
+            "status": "configured",
+            "mode": mode,
+            "provider": "mock",
+            "deployment": None,
+            "model": None,
+            "endpointPathValid": None,
+            "retryPolicy": {"initialAttempt": 1, "maxRetries": 3},
+            "turnTimeoutSeconds": float(os.getenv("MODEL_TURN_TIMEOUT_SECONDS", "120")),
+            "maxConcurrency": _max_concurrency,
+            "maxQueueDepth": _admission.max_queue,
+            "circuitState": "open" if _circuit.opened_until > time.monotonic() else "closed",
+        }
+    try:
+        config = model_provider_config()
+    except HTTPException:
+        configured = False
+        config = {"provider": os.getenv("AI_PROVIDER", "azure").lower(), "model": "", "base_url": "", "api_key": ""}
+        endpoint_valid = False
+    else:
+        configured = True
+        endpoint_valid = True
+    public_provider = "openai" if config["provider"] == "openai" else "azure_openai"
     return {
         "status": "configured" if configured else "not_configured",
         "mode": mode,
-        "provider": "mock" if mode == "mock" else "azure_openai",
-        "deployment": deployment or None,
-        "endpointPathValid": endpoint_valid if mode != "mock" else None,
+        "provider": public_provider,
+        "deployment": config["model"] or None,
+        "model": config["model"] or None,
+        "endpointPathValid": endpoint_valid,
         "retryPolicy": {"initialAttempt": 1, "maxRetries": 3},
         "turnTimeoutSeconds": float(os.getenv("MODEL_TURN_TIMEOUT_SECONDS", "120")),
         "maxConcurrency": _max_concurrency,
@@ -150,6 +190,7 @@ async def _model(system: str, payload: dict, schema: dict, name: str, deadline_a
     if not _circuit.allow():
         _log_event("model.circuit_open", payload, operation=name)
         raise HTTPException(status_code=503, detail={"code": "MODEL_CIRCUIT_OPEN"})
+    config = model_provider_config()
     client = _client_get()
     acquired = False
     try:
@@ -162,7 +203,7 @@ async def _model(system: str, payload: dict, schema: dict, name: str, deadline_a
             await budget.sleep(delay)
             _next_call_at = time.monotonic() + max(0.2, float(os.getenv("MODEL_MIN_CALL_INTERVAL_SECONDS", "0.7")))
         request = {
-            "model": os.environ["AZURE_OPENAI_DEPLOYMENT"],
+            "model": config["model"],
             "instructions": system,
             "input": json.dumps(payload, ensure_ascii=False),
             "text": {"format": {"type": "json_schema", "name": name, "strict": True, "schema": schema}},
@@ -336,7 +377,7 @@ async def agent_turn(body: TurnEnvelopeV2, x_internal_service_key: str | None = 
         raise HTTPException(status_code=503, detail={"code": "TOOL_GATEWAY_NOT_CONFIGURED"})
     try:
         agent_cls = LangGraphConversationAgent if langgraph_conversation_enabled() else BoundedConversationAgent
-        agent = agent_cls(_client_get(), HttpToolGateway(gateway_url, os.getenv("MODEL_GATEWAY_SERVICE_KEY", "")), os.environ["AZURE_OPENAI_DEPLOYMENT"])
+        agent = agent_cls(_client_get(), HttpToolGateway(gateway_url, os.getenv("MODEL_GATEWAY_SERVICE_KEY", "")), model_provider_config()["model"])
         return await agent.run(body)
     except ValueError as error:
         raise HTTPException(status_code=503, detail={"code": "TOOL_GATEWAY_NOT_CONFIGURED"}) from error

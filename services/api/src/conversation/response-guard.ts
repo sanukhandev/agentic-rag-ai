@@ -169,7 +169,7 @@ export const guardV2OfflineFallback = (family: V2FallbackFamily, context: V2Resp
   const response = selectV2OfflineFallback({
     personaVersionId: context.personaVersionId,
     templateVersion: context.fallbackTemplateVersion ?? '',
-    language: context.permittedLanguages[0] ?? 'en',
+    language: context.fallbackTemplates?.language ?? context.permittedLanguages[0] ?? 'en',
     family,
   }, context.fallbackTemplates);
   if (!response) {

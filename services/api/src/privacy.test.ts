@@ -27,6 +27,7 @@ describe('privacy boundary', () => {
     expect(rehydrateForSession(session, result.masked, vault, 'workflow_payload')).not.toContain('Alice Karim');
     expect(rehydrateForSession(session, result.masked, vault, 'assistant_response')).toContain('Alice Karim');
     expect(maskPii('I am interested in a demo.').masked).toBe('I am interested in a demo.');
+    expect(maskPii('Yes, I am confirming the lead submission.').masked).toBe('Yes, I am confirming the lead submission.');
     expect(maskPii('I am Alice.').masked).toBe('[NAME_1].');
     expect(maskPii('My name is N8n Tester.').masked).toBe('[NAME_1].');
     expect(maskPii('My name is Alice smith.').masked).toBe('[NAME_1].');
@@ -57,6 +58,24 @@ describe('privacy boundary', () => {
     expect(rehydrateForSession(session, safe, vault, 'admin_crm')).toContain('Alice Karim');
     expect(safe).toContain('[REDACTED]');
     expect(safe).not.toContain('[PHONE_99]');
+  });
+
+  it('does not redact known tokens for admin_crm even when the session TTL has expired', () => {
+    const session = { id: 'session-expired-admin', tenantId: 'tenant', createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>() };
+    const vault = new TokenVault('expired-admin-secret-2026', -1);
+    const known = maskPii('My name is Alice Karim, email is alice@example.com, phone is +971 50 123 4567.');
+    saveTokens(session, known.tokens, vault);
+    const safeAdmin = redactUnknownTokens(session, `${known.masked} [PHONE_99]`, vault, 'admin_crm');
+    expect(safeAdmin).toContain('[NAME_1]');
+    expect(safeAdmin).toContain('[EMAIL_1]');
+    expect(safeAdmin).toContain('[PHONE_1]');
+    expect(safeAdmin).toContain('[REDACTED]');
+    expect(safeAdmin).not.toContain('[PHONE_99]');
+    const rehydrated = rehydrateForSession(session, safeAdmin, vault, 'admin_crm');
+    expect(rehydrated).toContain('Alice Karim');
+    expect(rehydrated).toContain('alice@example.com');
+    expect(rehydrated).toContain('+971 50 123 4567');
+    expect(rehydrated).toContain('[REDACTED]');
   });
 
   it('keeps assistant persona names separate from a later visitor name', () => {

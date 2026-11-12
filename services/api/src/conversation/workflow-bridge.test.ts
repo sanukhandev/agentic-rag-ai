@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { validateCatalogV2, type CatalogV2Document } from './catalog.js';
-import { resolveV2WorkflowRoute } from './workflow-bridge.js';
+import { resolveV2WorkflowRoute, resolveV2DocumentRoute } from './workflow-bridge.js';
 import { MemoryStore } from '../store-memory.js';
 import { randomUUID } from 'node:crypto';
 
@@ -21,13 +21,55 @@ describe('V2 workflow bridge', () => {
     binding.webhookPath = 'ancfz/v2/lead-create';
     binding.payloadContract = 'ancfz-v2-stage-action-v1';
     const version = { id: 'v2', tenantId: 'tenant', version: 1, status: 'published' as const, sourceFileName: 'fixture', sourceHash: 'hash', parserVersion: 'test', catalog: document, catalogVersionRef: 'anc:v2:test', createdAt: new Date().toISOString(), publishedAt: new Date().toISOString() };
-    expect(resolveV2WorkflowRoute(version, 'crm.lead.create')).toEqual({ workflowKey: 'crm.lead.create', webhookPath: 'ancfz/v2/lead-create', n8nWorkflowId: 'ancfzV2LeadCreateR1', payloadContract: 'ancfz-v2-stage-action-v1' });
+    expect(resolveV2WorkflowRoute(version, 'crm.lead.create')).toEqual({ workflowKey: 'crm.lead.create', providerType: 'remote_n8n', webhookPath: 'ancfz/v2/lead-create', n8nWorkflowId: 'ancfzV2LeadCreateR1', payloadContract: 'ancfz-v2-stage-action-v1' });
   });
 
   it('fails closed for disabled or unbound transport identity', () => {
     const document = catalog();
+    const binding = document.sheets.WorkflowBindings.find(row => row.workflowKey === 'crm.lead.create');
+    if (!binding) throw new Error('lead binding missing');
+    binding.enabled = false;
     const version = { id: 'v2', tenantId: 'tenant', version: 1, status: 'published' as const, sourceFileName: 'fixture', sourceHash: 'hash', parserVersion: 'test', catalog: document, catalogVersionRef: 'anc:v2:test', createdAt: new Date().toISOString(), publishedAt: new Date().toISOString() };
     expect(resolveV2WorkflowRoute(version, 'crm.lead.create')).toBeNull();
+  });
+
+  it('resolves the supplied remote Lead and quotation routes from the published catalog', () => {
+    const document = catalog();
+    const version = { id: 'v2', tenantId: 'tenant', version: 1, status: 'published' as const, sourceFileName: 'fixture', sourceHash: 'hash', parserVersion: 'test', catalog: document, catalogVersionRef: 'anc:v2:test', createdAt: new Date().toISOString(), publishedAt: new Date().toISOString() };
+    expect(resolveV2WorkflowRoute(version, 'crm.lead.create')).toMatchObject({ providerType: 'remote_n8n', webhookPath: 'n8n/webhook/salesforce-lead', n8nWorkflowId: 'salesforce-lead', payloadContract: 'remote.salesforce-lead.v1' });
+    expect(resolveV2WorkflowRoute(version, 'sales.quote.generate')).toMatchObject({ providerType: 'remote_n8n', webhookPath: 'n8n/webhook/generate-quotation', n8nWorkflowId: 'generate-quotation', payloadContract: 'remote.generate-quotation.v1' });
+    expect(document.sheets.ToolBindings.find(row => row.toolKey === 'quotation.generate')).toMatchObject({ stageKey: 'package_selection', sideEffectClass: 'proposal', registryKey: 'sales.quote.generate', enabled: true });
+  });
+
+  it('asserts seven-stage catalog ordering, document policy, and resolves document route by catalog registry key', () => {
+    const document = catalog();
+    const version = { id: 'v2', tenantId: 'tenant', version: 1, status: 'published' as const, sourceFileName: 'fixture', sourceHash: 'hash', parserVersion: 'test', catalog: document, catalogVersionRef: 'anc:v2:test', createdAt: new Date().toISOString(), publishedAt: new Date().toISOString() };
+
+    // 1. Stage order: package_selection precedes document_upload
+    const packageStage = document.sheets.BusinessStages.find(s => s.stageKey === 'package_selection');
+    const docStage = document.sheets.BusinessStages.find(s => s.stageKey === 'document_upload');
+    expect(packageStage).toBeDefined();
+    expect(docStage).toBeDefined();
+    expect(packageStage!.stageOrder).toBeLessThan(docStage!.stageOrder);
+
+    // 2. Document policy: document.identity.review for company formation
+    const docPolicy = document.sheets.DocumentPolicies.find(p => p.goalKey === 'anc.company_formation' && p.stageKey === 'document_upload');
+    expect(docPolicy).toBeDefined();
+    expect(docPolicy!.policyKey).toBe('document.identity.review');
+    expect(docPolicy!.docType).toBe('identity_document');
+
+    // 3. Document tool registry key resolves to document.sf02.upload, NOT anc.document.ocr.extract
+    const docTool = document.sheets.ToolBindings.find(t => t.stageKey === 'document_upload' && t.goalKey === 'anc.company_formation' && t.sideEffectClass === 'proposal');
+    expect(docTool).toBeDefined();
+    expect(docTool!.registryKey).toBe('document.sf02.upload');
+    expect(docTool!.registryKey).not.toBe('anc.document.ocr.extract');
+
+    // 4. resolveV2DocumentRoute resolves from catalog registryKey
+    const resolved = resolveV2DocumentRoute(version, 'anc.company_formation');
+    expect(resolved).toBeDefined();
+    expect(resolved!.registryKey).toBe('document.sf02.upload');
+    expect(resolved!.workflowKey).toBe('document.sf02.upload');
+    expect(resolved!.enabled).toBe(true);
   });
 
   it('claims a published V2 action by canonical catalog reference', async () => {

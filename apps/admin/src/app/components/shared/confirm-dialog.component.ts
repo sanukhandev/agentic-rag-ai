@@ -1,5 +1,4 @@
-import {
-  Component,
+import { Component,
   ElementRef,
   EventEmitter,
   HostListener,
@@ -8,14 +7,14 @@ import {
   OnDestroy,
   Output,
   SimpleChanges,
-  ViewChild
-} from '@angular/core';
+  ViewChild, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IconComponent } from './icon.component';
 
 @Component({
   selector: 'app-confirm-dialog',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, IconComponent],
   template: `
     <div

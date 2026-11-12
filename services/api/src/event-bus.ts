@@ -1,6 +1,6 @@
 import { createClient } from 'redis';
 import { randomUUID } from 'node:crypto';
-import type { ActionExecution, Store, OutboxEvent } from './types.js';
+import type { ActionExecution, ActionRequest, Store, OutboxEvent } from './types.js';
 import { eventFields, eventFromFields } from './events.js';
 import { resolveV2WorkflowRoute } from './conversation/workflow-bridge.js';
 
@@ -124,7 +124,7 @@ export class TransientEventDispatchError extends Error {}
 export class PermanentEventDispatchError extends Error {}
 
 export class N8nEventBridge {
-  constructor(private readonly store: Store, private readonly baseUrl: string, private readonly secret: string, private readonly timeoutMs = 5_000, private readonly completionDeadlineMs = 15 * 60_000) {}
+  constructor(private readonly store: Store, private readonly baseUrl: string, private readonly secret: string, private readonly timeoutMs = 5_000, private readonly completionDeadlineMs = 15 * 60_000, private readonly nodeUrl = process.env.NODE_INTERNAL_URL ?? 'http://api:4000') {}
 
   async dispatch(event: OutboxEvent, attempt = Math.max(1, event.attempts)): Promise<void> {
     const route = event.eventType === 'intent.action.requested.v1' ? await this.actionRoute(event) : event.eventType === 'document.extraction.requested.v1' ? await this.documentRoute(event) : null;
@@ -156,6 +156,27 @@ export class N8nEventBridge {
           }
           if (!claim.claimed) return;
         }
+      }
+      if (route.providerType === 'remote_n8n') {
+        const response = await fetch(`${this.nodeUrl.replace(/\/$/u, '')}/api/v2/internal/remote-workflows/execute`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-agentic-internal-secret': this.secret, 'x-agentic-event-id': event.eventId }, body: JSON.stringify({ actionId: event.actionId, tenantId: event.tenantId, sessionId: event.sessionId, workflowKey: route.workflowKey, catalogVersionId: actionForDispatch?.catalogVersionId ?? null, n8nWorkflowId: route.n8nWorkflowId, eventId: event.eventId, correlationId: event.correlationId, attempt }), signal: AbortSignal.timeout(this.timeoutMs) });
+        if (!response.ok) {
+          if ([408, 425, 429, 500, 502, 503, 504].includes(response.status)) throw new TransientEventDispatchError(`remote n8n dispatch returned transient status ${response.status}.`);
+          throw new PermanentEventDispatchError(`remote n8n dispatch returned permanent status ${response.status}.`);
+        }
+        const normalized = await response.json() as { providerStatus?: unknown; result?: ActionRequest['result']; outcome?: ActionExecution['outcome'] };
+        if (normalized.providerStatus !== 'accepted' || !normalized.result?.externalReference || !normalized.outcome) throw new ReconcileRequiredDispatchError('remote n8n returned an invalid normalized result.');
+        if (event.actionId) {
+          const isPdf = normalized.result?.providerOutcome === 'pdf_generated';
+          const executionStatus = isPdf ? 'completed' : normalized.providerStatus;
+          const updatedExecution = await this.store.updateActionExecution({ actionId: event.actionId, tenantId: event.tenantId, providerStatus: executionStatus, outcome: { eventId: event.eventId, correlationId: event.correlationId, ...normalized.outcome } });
+          if (!updatedExecution) throw new ReconcileRequiredDispatchError('remote n8n accepted the request but its execution result could not be recorded durably.');
+          const current = await this.store.getAction(event.actionId);
+          if (!current || current.tenantId !== event.tenantId) throw new ReconcileRequiredDispatchError('remote n8n accepted the request but its action could not be loaded durably.');
+          const actionState = isPdf ? 'completed' : (current.state === 'approved' ? 'processing' : current.state);
+          await this.store.updateAction({ ...current, state: actionState, result: normalized.result });
+        }
+        await this.store.addAudit({ id: randomUUID(), tenantId: event.tenantId, actorId: null, eventName: 'workflow.remote_result_recorded', metadata: { eventId: event.eventId, actionId: event.actionId, workflowKey: route.workflowKey, providerStatus: normalized.providerStatus, providerOutcome: normalized.result.providerOutcome ?? null }, createdAt: new Date().toISOString() });
+        return;
       }
       const response = await fetch(`${this.baseUrl.replace(/\/$/u, '')}/webhook/${route.webhookPath.replace(/^\/+/, '')}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-agentic-internal-secret': this.secret, 'x-agentic-event-id': event.eventId }, body, signal: AbortSignal.timeout(this.timeoutMs) });
       if (!response.ok) {
@@ -200,22 +221,22 @@ export class N8nEventBridge {
     }
   }
 
-  private async actionRoute(event: OutboxEvent): Promise<{ workflowKey: string; webhookPath: string; n8nWorkflowId?: string; payloadContract?: string } | null> {
+  private async actionRoute(event: OutboxEvent): Promise<{ workflowKey: string; providerType: string; webhookPath: string; n8nWorkflowId?: string; payloadContract?: string } | null> {
     if (!event.actionId) return null;
     const action = await this.store.getAction(event.actionId);
     if (!action || action.tenantId !== event.tenantId || !['approved', 'processing'].includes(action.state)) return null;
-    if (!action.catalogVersionId) return { workflowKey: action.workflowKey, webhookPath: action.webhookPath ?? 'lead-capture' };
+    if (!action.catalogVersionId) return { workflowKey: action.workflowKey, providerType: 'internal_n8n', webhookPath: action.webhookPath ?? 'lead-capture' };
     const v2Version = (await this.store.listIntentCatalogV2Versions(action.tenantId)).find(candidate => candidate.status === 'published' && candidate.catalogVersionRef === action.catalogVersionId);
     const v2Route = v2Version ? resolveV2WorkflowRoute(v2Version, action.workflowKey) : null;
-    if (v2Version) return v2Route ? { workflowKey: v2Route.workflowKey, webhookPath: v2Route.webhookPath, n8nWorkflowId: v2Route.n8nWorkflowId, payloadContract: v2Route.payloadContract } : null;
+    if (v2Version) return v2Route ? { workflowKey: v2Route.workflowKey, providerType: v2Route.providerType, webhookPath: v2Route.webhookPath, n8nWorkflowId: v2Route.n8nWorkflowId, payloadContract: v2Route.payloadContract } : null;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(action.catalogVersionId)) return null;
     const version = await this.store.getIntentCatalogVersion(action.tenantId, action.catalogVersionId);
     const binding = version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === action.workflowKey && candidate.active);
-    if (binding) return { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, n8nWorkflowId: binding.n8nWorkflowId, payloadContract: binding.payloadContract };
+    if (binding) return { workflowKey: binding.workflowKey, providerType: 'internal_n8n', webhookPath: binding.webhookPath, n8nWorkflowId: binding.n8nWorkflowId, payloadContract: binding.payloadContract };
     return null;
   }
 
-  private async documentRoute(event: OutboxEvent): Promise<{ workflowKey: string; webhookPath: string; n8nWorkflowId?: string; payloadContract?: string } | null> {
+  private async documentRoute(event: OutboxEvent): Promise<{ workflowKey: string; providerType: string; webhookPath: string; n8nWorkflowId?: string; payloadContract?: string } | null> {
     const job = await this.store.getDocumentProcessingJob(event.payloadRef, event.tenantId);
     if (!job || job.tenantId !== event.tenantId || !['queued', 'processing'].includes(job.status)) return null;
     const document = await this.store.getSupportingDocument(job.documentId, event.tenantId);
@@ -223,10 +244,10 @@ export class N8nEventBridge {
       ? (await this.store.listIntentCatalogV2Versions(event.tenantId)).find((candidate) => candidate.status === 'published' && candidate.catalogVersionRef === document.catalogVersionId)
       : null;
     const v2Binding = v2Version?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === job.workflowKey && candidate.enabled);
-    if (v2Binding?.webhookPath) return { workflowKey: v2Binding.workflowKey, webhookPath: v2Binding.webhookPath, ...(v2Binding.n8nWorkflowId ? { n8nWorkflowId: v2Binding.n8nWorkflowId } : {}), ...(v2Binding.payloadContract ? { payloadContract: v2Binding.payloadContract } : {}) };
+    if (v2Binding?.webhookPath) return { workflowKey: v2Binding.workflowKey, providerType: v2Binding.providerType, webhookPath: v2Binding.webhookPath, ...(v2Binding.n8nWorkflowId ? { n8nWorkflowId: v2Binding.n8nWorkflowId } : {}), ...(v2Binding.payloadContract ? { payloadContract: v2Binding.payloadContract } : {}) };
     const version = await this.store.getPublishedIntentCatalog(job.tenantId);
     const binding = version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === job.workflowKey && candidate.active);
-    return binding ? { workflowKey: binding.workflowKey, webhookPath: binding.webhookPath, n8nWorkflowId: binding.n8nWorkflowId, payloadContract: binding.payloadContract } : null;
+    return binding ? { workflowKey: binding.workflowKey, providerType: 'internal_n8n', webhookPath: binding.webhookPath, n8nWorkflowId: binding.n8nWorkflowId, payloadContract: binding.payloadContract } : null;
   }
 }
 

@@ -758,11 +758,11 @@
     ],
     [
       "crm.lead.create",
-      "ANCLeadCaptureWF1",
-      "anc-lead-capture-wf-1",
-      "anc-lead-capture-v1",
+      "salesforce-lead",
+      "salesforce-lead",
+      "remote.salesforce-lead.v1",
       "crm_write",
-      false
+      true
     ],
     [
       "crm.account.convert",
@@ -774,11 +774,11 @@
     ],
     [
       "sales.quote.generate",
-      "ANCQuotePDFWF1",
-      "anc-quote-pdf-wf-1",
-      "anc-pdf-quote-v1",
+      "generate-quotation",
+      "generate-quotation",
+      "remote.generate-quotation.v1",
       "crm_write",
-      false
+      true
     ],
     [
       "anc.document.ocr.extract",

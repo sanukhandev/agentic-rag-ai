@@ -1,6 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { BehaviorSubject, Observable, catchError, of } from 'rxjs';
+import { BehaviorSubject, Observable, catchError, finalize, of } from 'rxjs';
 import { Health, Metrics, WorkflowRun, AuditEvent } from '../types/admin.types';
 import { API_BASE_URL } from './tokens';
 import { AuthService } from './auth.service';
@@ -63,6 +63,8 @@ export class ObservabilityService {
   private readonly workflowRunsSubject = new BehaviorSubject<WorkflowRun[]>([]);
   private readonly auditEventsSubject = new BehaviorSubject<AuditEvent[]>([]);
   private readonly isLoadingSubject = new BehaviorSubject<boolean>(false);
+  private healthInFlight = false;
+  private metricsInFlight = false;
 
   readonly health$: Observable<Health> = this.healthSubject.asObservable();
   readonly metrics$: Observable<Metrics> = this.metricsSubject.asObservable();
@@ -71,8 +73,10 @@ export class ObservabilityService {
   readonly isLoading$: Observable<boolean> = this.isLoadingSubject.asObservable();
 
   loadHealth(): void {
-    if (!this.auth.token()) return;
+    if (!this.auth.token() || this.healthInFlight) return;
+    this.healthInFlight = true;
     this.http.get<Health>(`${this.apiBase}/api/v1/admin/services/health`).pipe(
+      finalize(() => { this.healthInFlight = false; }),
       catchError(() => {
         const current = this._health();
         if (current?.checkedAt && Object.keys(current.checks).length > 0) {
@@ -99,8 +103,10 @@ export class ObservabilityService {
   }
 
   loadMetrics(): void {
-    if (!this.auth.token()) return;
+    if (!this.auth.token() || this.metricsInFlight) return;
+    this.metricsInFlight = true;
     this.http.get<{ metrics: Metrics }>(`${this.apiBase}/api/v1/admin/dashboard/overview`).pipe(
+      finalize(() => { this.metricsInFlight = false; }),
       catchError(() => of({ metrics: EMPTY_METRICS }))
     ).subscribe((res) => {
       const metrics = res.metrics ?? EMPTY_METRICS;

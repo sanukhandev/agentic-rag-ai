@@ -17,7 +17,7 @@ export const v2PlanningProposalSchema = z.object({
   proposedToolKey: z.string().trim().min(1).max(80).nullable(),
   confidenceBand: z.enum(['low', 'medium', 'high']),
   proposedFacts: z.array(z.object({
-    key: z.enum(['business_activity', 'entity_type', 'visa_count', 'timeline']),
+    key: z.enum(['business_activity', 'entity_type', 'visa_count', 'timeline', 'package_choice']),
     maskedValue: z.string().trim().min(1).max(180),
     supportingQuote: z.string().trim().min(1).max(300),
   }).strict()).max(8).default([]),

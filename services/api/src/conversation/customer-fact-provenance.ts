@@ -78,5 +78,14 @@ export const extractQuotedV2CustomerFacts = (
   const timelinePattern = /\b(?:next|this|within)\s*[- ]\s*(?:month|months|week|weeks)\b|\b(?:one|two|three|four|five|six|seven|eight|nine|ten)\s+months?\b|\b(?:asap|immediately|urgent)\b/giu;
   const timeline = [...customerMessage.matchAll(timelinePattern)].find(match => !negatedBefore(customerMessage, match.index ?? 0));
   if (timeline) proposals.push({ key: 'timeline', maskedValue: timeline[0]!, supportingQuote: timeline[0]! });
+  const pkgMatch = customerMessage.match(/\b(starter|growth|premium|business formation)\b/iu);
+  if (pkgMatch && !negatedBefore(customerMessage, pkgMatch.index ?? 0)) {
+    const raw = pkgMatch[0]!;
+    const name = /growth/iu.test(raw) ? 'Growth'
+      : /starter/iu.test(raw) ? 'Starter'
+      : /premium/iu.test(raw) ? 'Premium'
+      : raw;
+    proposals.push({ key: 'package_choice', maskedValue: name, supportingQuote: raw });
+  }
   return validateQuotedV2CustomerFacts(proposals, customerMessage, messageId, messageSequence);
 };

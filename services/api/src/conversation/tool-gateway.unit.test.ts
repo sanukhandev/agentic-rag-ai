@@ -199,6 +199,7 @@ describe('V2 trusted tool execution (isolated unit)', () => {
     expect((await gateway.execute({ ...request('get_persona'), scopeRef: issueV2Scope(scope, secret) })).status).toBe('not_authorized');
     expect((await gateway.execute({ ...request('get_persona'), scopeRef: issueV2Scope({ ...scope, tenantId: tenant.id, personaVersionId: 'wrong-persona-12345678' }, secret) })).status).toBe('stale_state');
     expect((await gateway.execute({ ...request('get_persona'), deadlineAt: new Date(Date.now() + 300_000).toISOString() })).status).toBe('temporarily_unavailable');
+    expect((await gateway.execute({ ...request('get_persona'), deadlineAt: new Date(Date.now() + 120_000).toISOString() })).status).toBe('ok');
     expect(() => issueV2Scope({ ...scope, tenantId: tenant.id, stateRevision: -1 }, secret)).toThrow();
   });
   it('refreshes session-backed results instead of replaying stale dynamic evidence', async () => {

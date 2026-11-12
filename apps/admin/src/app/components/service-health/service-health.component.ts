@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -17,6 +17,7 @@ interface ServiceNode {
 @Component({
   selector: 'app-service-health',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, IconComponent, BadgeComponent],
   template: `
     <section class="rounded-2xl border border-neutral-200/90 bg-white p-6 shadow-card" aria-labelledby="observability-title">

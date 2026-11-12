@@ -100,8 +100,11 @@ const validateProposal = (proposalInput: unknown, catalog: CatalogV2Document, co
   if (proposal.actionRevision !== context.expectedActionRevision) return denied(['action_revision_stale']);
   const requiredPolicies = context.pinnedCatalogVersion?.catalog.sheets.RequirementPolicies ?? [];
   const missing = binding.requiredKeys.filter((requiredKey) => {
-    if (!context.verifiedRequirementKeys.includes(requiredKey)) return true;
     const policy = requiredPolicies.find(row => row.goalKey === proposal.goalKey && row.stageKey === proposal.stageKey && row.requirementKey === requiredKey);
+    // Confirmation is a separate customer step. A proposal must be allowed to
+    // exist before that confirmation is recorded.
+    if (policy?.type === 'confirmation') return false;
+    if (!context.verifiedRequirementKeys.includes(requiredKey)) return true;
     if (!policy) return true;
     if (policy.type !== 'fact') return false;
     const fact = context.intentDocument?.verifiedFacts?.[requiredKey];
@@ -136,7 +139,19 @@ export const proposeV2CatalogAction = async (proposalInput: unknown, catalog: Ca
   const { proposal, binding } = result;
   const idempotencyKey = `v2-${digest(`${context.tenantId}:${context.sessionId}:${context.opportunityId}:${proposal.toolKey}:${proposal.actionRevision}`).slice(0, 48)}`;
   const existing = await dependencies.store.getActionByIdentity({ tenantId: context.tenantId, opportunityId: context.opportunityId, actionKey: proposal.toolKey, actionRevision: proposal.actionRevision });
-  const slots = Object.fromEntries(Object.entries(proposal.arguments).sort(([a], [b]) => a.localeCompare(b)).map(([name, value]) => [name, String(value)]));
+  const verifiedFacts = context.intentDocument?.verifiedFacts ?? {};
+  const contactName = proposal.toolKey === 'quotation.generate' ? verifiedFacts.lead_contact_name?.maskedValue.trim() : undefined;
+  const contactChannel = proposal.toolKey === 'quotation.generate' ? verifiedFacts.lead_contact_channel?.maskedValue.trim() : undefined;
+  const contactPayload = {
+    ...(contactName ? { name: contactName } : {}),
+    ...(contactChannel && /^\[EMAIL_\d+\]$/u.test(contactChannel) ? { email: contactChannel } : {}),
+    ...(contactChannel && /^\[PHONE_\d+\]$/u.test(contactChannel) ? { phone: contactChannel } : {}),
+  };
+  const slots = Object.fromEntries(Object.entries({
+    ...proposal.arguments,
+    ...(contactName ? { lead_contact_name: contactName } : {}),
+    ...(contactChannel ? { lead_contact_channel: contactChannel } : {}),
+  }).sort(([a], [b]) => a.localeCompare(b)).map(([name, value]) => [name, String(value)]));
   if (existing) {
     const priorSlots = Object.fromEntries(Object.entries(existing.payload.slotValues ?? {}).sort(([a], [b]) => a.localeCompare(b)));
     const same = existing.tenantId === context.tenantId && existing.sessionId === context.sessionId
@@ -144,6 +159,7 @@ export const proposeV2CatalogAction = async (proposalInput: unknown, catalog: Ca
       && existing.workflowKey === binding.registryKey && existing.actionKey === proposal.toolKey
       && existing.actionRevision === proposal.actionRevision && existing.idempotencyKey === idempotencyKey
       && existing.payload.interest === proposal.goalKey && existing.payload.contactConsent === true
+      && existing.payload.name === contactPayload.name && existing.payload.email === contactPayload.email && existing.payload.phone === contactPayload.phone
       && JSON.stringify(priorSlots) === JSON.stringify(slots);
     if (!same) return denied(['action_payload_conflict'], existing);
     if (existing.state === 'reconcile_required' || existing.state === 'failed') return denied(['action_reconciliation_required'], existing);
@@ -151,6 +167,7 @@ export const proposeV2CatalogAction = async (proposalInput: unknown, catalog: Ca
   }
   const action = await dependencies.gateway.propose(context.tenantId, context.sessionId, idempotencyKey, {
     interest: proposal.goalKey,
+    ...contactPayload,
     slotValues: slots,
     contactConsent: true,
   }, {
@@ -167,6 +184,7 @@ export const proposeV2CatalogAction = async (proposalInput: unknown, catalog: Ca
     || action.actionKey !== proposal.toolKey || action.actionRevision !== proposal.actionRevision
     || action.workflowKey !== binding.registryKey || action.idempotencyKey !== idempotencyKey
     || action.payload.interest !== proposal.goalKey || action.payload.contactConsent !== true
+    || action.payload.name !== contactPayload.name || action.payload.email !== contactPayload.email || action.payload.phone !== contactPayload.phone
     || JSON.stringify(returnedSlots) !== JSON.stringify(slots)) return denied(['action_payload_conflict'], action);
   if (['failed', 'reconcile_required'].includes(action.state)) return denied(['action_reconciliation_required'], action);
   const status = action.state === 'awaiting_confirmation' ? 'created' : 'existing';

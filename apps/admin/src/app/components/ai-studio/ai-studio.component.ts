@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef, effect, untracked, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, effect, untracked, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminStateService } from '../../services/admin-state.service';
@@ -11,6 +11,7 @@ import { BadgeComponent } from '../shared/badge.component';
 @Component({
   selector: 'app-ai-studio',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, FormsModule, IconComponent, BadgeComponent],
   template: `
     <div class="space-y-6">
@@ -452,14 +453,24 @@ export class AiStudioComponent implements OnInit, OnDestroy {
     return `${voice.name}|${voice.lang}`;
   }
 
+  private cachedVoicesRef: SpeechSynthesisVoice[] | null = null;
+  private cachedVoiceLang = '';
+  private _cachedOrderedVoices: SpeechSynthesisVoice[] = [];
+
   get orderedVoices(): SpeechSynthesisVoice[] {
     const language = (this.persona.voiceLanguage || this.persona.permittedLanguages[0] || 'en-US').toLowerCase();
+    if (this.cachedVoicesRef === this.availableVoices && this.cachedVoiceLang === language) {
+      return this._cachedOrderedVoices;
+    }
+    this.cachedVoicesRef = this.availableVoices;
+    this.cachedVoiceLang = language;
     const baseLanguage = language.split('-')[0];
-    return [...this.availableVoices].sort((left, right) => {
+    this._cachedOrderedVoices = [...this.availableVoices].sort((left, right) => {
       const leftRank = left.lang.toLowerCase() === language ? 0 : left.lang.toLowerCase().startsWith(baseLanguage) ? 1 : 2;
       const rightRank = right.lang.toLowerCase() === language ? 0 : right.lang.toLowerCase().startsWith(baseLanguage) ? 1 : 2;
       return leftRank - rightRank || left.name.localeCompare(right.name);
     });
+    return this._cachedOrderedVoices;
   }
 
   onVoiceChange(selection: string): void {
