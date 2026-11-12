@@ -86,8 +86,22 @@ dbSuite('P2 disposable PostgreSQL integration', () => {
     expect(result.revision).toBe(1);
     const replay = await new PostgresConversationRepository(pool!, authorizer, assertMasked).commitTurn(actor, params);
     expect(replay).toEqual(result);
+    // Both rows use DEFAULT now() inside the SAME transaction. PostgreSQL
+    // assigns them an identical timestamp, so random UUID sorting alone
+    // must never determine their conversational order.
+    const stored = await pool!.query<{ role: string; created_at: Date }>(
+      `SELECT role, created_at FROM chat_messages WHERE tenant_id = $1 AND session_id = $2
+        AND (client_message_id = $3 OR (role = 'assistant' AND masked_content = $4))`,
+      [tenantId, sessionId, params.clientMessageId, response.message],
+    );
+    expect(stored.rows).toHaveLength(2);
+    expect(new Set(stored.rows.map(row => row.created_at.getTime())).size).toBe(1);
+
     const loaded = await repo.loadAuthorizedSnapshot(actor);
     expect(loaded.recentTurns.map(row => row.role)).toEqual(['customer', 'assistant']);
+    expect(loaded.recentTurns.map(row => row.text)).toEqual([
+      'Start a business', response.message,
+    ]);
     expect(loaded.catalogVersionId).toBe(catalogId);
     expect(loaded.personaVersionId).toBe(personaId);
     await expect(repo.commitTurn(actor, {

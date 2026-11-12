@@ -148,7 +148,13 @@ export class PostgresConversationRepository implements ConversationRepository {
       const messages = await client.query(`
         SELECT role, masked_content FROM chat_messages
          WHERE tenant_id = $1 AND session_id = $2
-         ORDER BY created_at DESC, id DESC LIMIT 16
+         -- now() is transaction-stable: a customer and assistant message
+         -- committed in one turn have identical created_at values. Break the
+         -- tie by turn role, not random UUID, so reversing newest-first
+         -- rows always yields customer -> assistant for each committed turn.
+         ORDER BY created_at DESC,
+                  CASE role WHEN 'assistant' THEN 1 ELSE 0 END DESC,
+                  id DESC LIMIT 16
       `, [actor.tenantId, actor.sessionId]);
       const actions = await client.query(`
         SELECT id, workflow_key, state FROM action_requests
