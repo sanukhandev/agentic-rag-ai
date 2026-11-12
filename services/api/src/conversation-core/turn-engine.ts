@@ -22,6 +22,11 @@ export interface TurnPolicy {
   readonly deadlineMs: number;
 }
 
+/** Optional tenant-bound projection after privacy masking. May only add p5Catalog. */
+export interface ModelEnvelopeEnricher {
+  enrich(actor: TrustedActor, pinned: SessionSnapshot, envelope: ModelTurnEnvelope): Promise<ModelTurnEnvelope>;
+}
+
 const DEFAULT_POLICY: TurnPolicy = Object.freeze({
   maxRecentTurns: 16, maxTextLength: 4000, maxSummaryLength: 6000,
   maxModelCalls: 4, maxToolCalls: 8, maxToolRounds: 3, deadlineMs: 60_000,
@@ -99,6 +104,7 @@ export class ConversationTurnEngine {
     private readonly proposals: ProposalValidator,
     private readonly privacy: PrivacyBoundary,
     private readonly policy: TurnPolicy = DEFAULT_POLICY,
+    private readonly enricher?: ModelEnvelopeEnricher,
   ) {}
 
   async process(actor: TrustedActor, turn: CustomerTurn): Promise<PersistedTurn> {
@@ -157,7 +163,15 @@ export class ConversationTurnEngine {
       throw new ConversationInvariantError('INVALID_INPUT', 'Privacy boundary changed trusted scope');
     }
     signal.throwIfAborted();
-    const candidate = readCandidate(await this.gateway.runTurn(maskedEnvelope, signal));
+    const modelEnvelope = this.enricher ? await this.enricher.enrich(actor, snapshot, maskedEnvelope) : maskedEnvelope;
+    // P5 may add a published catalog projection, not change the verified
+    // customer message, tenant, scopes, tools, budgets or config pins.
+    const { p5Catalog: _projection, ...trustedFields } = modelEnvelope;
+    if (JSON.stringify(trustedFields) !== JSON.stringify(maskedEnvelope)) {
+      throw new ConversationInvariantError('INVALID_INPUT', 'Model context enrichment modified trusted fields');
+    }
+    signal.throwIfAborted();
+    const candidate = readCandidate(await this.gateway.runTurn(modelEnvelope, signal));
     await this.privacy.validateMaskedResponse(actor, candidate);
     signal.throwIfAborted();
     if (candidate.goalCandidateKeys.some(k => !snapshot.publishedGoalKeys.includes(k))) {
@@ -166,7 +180,7 @@ export class ConversationTurnEngine {
     const check = await this.verifier.verify(actor, candidate, snapshot, readToolScopeRef);
     if (!check.ok) throw new ConversationInvariantError('UNSUPPORTED_CLAIM', 'Ungrounded or unauthorized model response');
     const [verifiedFactPatches, pendingActionProposal] = await Promise.all([
-      this.proposals.validateFacts(actor, candidate, snapshot),
+      this.proposals.validateFacts(actor, candidate, snapshot, maskedEnvelope.customerMessage, turn.clientMessageId),
       this.proposals.validateActionProposal(actor, candidate, snapshot),
     ]);
     if (candidate.actionProposal !== null && pendingActionProposal === null) {

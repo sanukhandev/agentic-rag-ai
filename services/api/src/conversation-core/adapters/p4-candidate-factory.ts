@@ -21,3 +21,6 @@ export function createP4CandidateEngine(input: {
     input.tools, input.verifier, new ReadOnlyP2ProposalValidator(), input.privacy,
   );
 }
+
+// P5 lives in a separate factory: P4 intentionally keeps the read-only P2
+// proposal validator. Never enable business proposals by changing P4 defaults.

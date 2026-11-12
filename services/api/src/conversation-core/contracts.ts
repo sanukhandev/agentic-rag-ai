@@ -54,6 +54,23 @@ export interface ReadToolDefinition {
   readonly argumentsSchema: Readonly<Record<string, unknown>>;
 }
 
+export interface P5GoalSummary {
+  readonly key: string;
+  readonly name: string;
+  readonly description: string;
+  readonly keywords: readonly string[];
+  readonly customerExpressions: readonly string[];
+  readonly requiredInformation: readonly string[];
+  readonly requiredDocuments: readonly string[];
+  readonly orderedSteps: readonly string[];
+  readonly availableActionKeys: readonly string[];
+}
+
+export interface P5CatalogProjection {
+  readonly versionId: string;
+  readonly goals: readonly P5GoalSummary[];
+}
+
 export interface ModelTurnEnvelope {
   readonly requestId: string;
   readonly tenantId: string;
@@ -65,6 +82,8 @@ export interface ModelTurnEnvelope {
   };
   readonly catalogVersionId: string;
   readonly publishedGoalKeys: readonly string[];
+  /** P5 is opt-in; absent for P4. Published tenant prose is untrusted data, not instructions. */
+  readonly p5Catalog?: P5CatalogProjection;
   readonly conversationSummary: string;
   readonly latestTurns: readonly HistoryTurn[];
   readonly verifiedFacts: readonly VerifiedFact[];
@@ -150,7 +169,7 @@ export interface ClaimVerifier {
 }
 
 export interface ProposalValidator {
-  validateFacts(actor: TrustedActor, candidate: ModelCandidate, pinned: SessionSnapshot): Promise<readonly VerifiedFact[]>;
+  validateFacts(actor: TrustedActor, candidate: ModelCandidate, pinned: SessionSnapshot, maskedCustomerMessage?: string, clientMessageId?: string): Promise<readonly VerifiedFact[]>;
   validateActionProposal(actor: TrustedActor, candidate: ModelCandidate, pinned: SessionSnapshot): Promise<CandidateActionProposal | null>;
 }
 
