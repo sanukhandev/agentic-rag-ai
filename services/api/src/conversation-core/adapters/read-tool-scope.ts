@@ -64,6 +64,11 @@ export class ScopedP3ReadTools implements ReadToolCatalog {
     this.key = Buffer.from(secret, 'utf8');
   }
 
+  /** Read only after executeBound has authenticated the session and token. */
+  verifiedTenantForScope(token: string): string {
+    return this.readScope(token).tenantId;
+  }
+
   private mac(payload: string): Buffer {
     return createHmac('sha256', this.key).update(payload).digest();
   }

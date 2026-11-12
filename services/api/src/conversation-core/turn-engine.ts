@@ -58,6 +58,17 @@ function readCandidate(raw: unknown): ModelCandidate {
     || !validActionProposal(c.actionProposal)) {
     throw new ConversationInvariantError('INVALID_MODEL_OUTPUT', 'Model candidate failed strict validation');
   }
+  if (c.claimSupports !== undefined && (!Array.isArray(c.claimSupports) || c.claimSupports.length > 8
+    || c.claimSupports.some(claim => !claim || !requiredString(claim.text, 1500)
+      || !Array.isArray(claim.citationIds) || claim.citationIds.length < 1 || claim.citationIds.length > 8
+      || claim.citationIds.some(ref => !requiredString(ref, 256))))) {
+    throw new ConversationInvariantError('INVALID_MODEL_OUTPUT', 'Invalid claim provenance');
+  }
+  if (c.evidenceReceipts !== undefined && (!Array.isArray(c.evidenceReceipts) || c.evidenceReceipts.length > 24
+    || c.evidenceReceipts.some(row => !row || !requiredString(row.citationId, 256)
+      || !requiredString(row.receipt, 6000)))) {
+    throw new ConversationInvariantError('INVALID_MODEL_OUTPUT', 'Invalid evidence receipts');
+  }
   if (c.evidenceRefs.length > 24 || c.goalCandidateKeys.length > 8 || c.proposedFacts.length > 30) {
     throw new ConversationInvariantError('INVALID_MODEL_OUTPUT', 'Model candidate exceeded response limits');
   }
@@ -152,7 +163,7 @@ export class ConversationTurnEngine {
     if (candidate.goalCandidateKeys.some(k => !snapshot.publishedGoalKeys.includes(k))) {
       throw new ConversationInvariantError('INVALID_MODEL_OUTPUT', 'Model invented an unsupported tenant goal');
     }
-    const check = await this.verifier.verify(actor, candidate, snapshot);
+    const check = await this.verifier.verify(actor, candidate, snapshot, readToolScopeRef);
     if (!check.ok) throw new ConversationInvariantError('UNSUPPORTED_CLAIM', 'Ungrounded or unauthorized model response');
     const [verifiedFactPatches, pendingActionProposal] = await Promise.all([
       this.proposals.validateFacts(actor, candidate, snapshot),

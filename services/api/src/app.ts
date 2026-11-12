@@ -1,4 +1,4 @@
-import express, { type NextFunction, type Request, type Response } from 'express';
+import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -302,6 +302,8 @@ export interface AppDependencies {
   catalogQueryNormalizationEnabled?: boolean;
   sessionAccessTokenRequired?: boolean;
   v2Coordinator?: ConversationTurnCoordinator;
+  /** Private P4 callback, opt-in and not exposed through /api routes. */
+  p4ReadGateway?: (app: Express) => void;
   v2AccountOtp?: V2OtpChallengeService | DurableV2OtpChallengeService;
   v2AccountProvider?: DeterministicV2AccountProvider;
   v2SalesforceLeadProvider?: SalesforceSandboxLeadReadbackProvider;
@@ -852,6 +854,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   // shortcut: one bounded JSON parser supports local 20 MiB base64 uploads; replace with streaming/object storage before production.
   app.use(express.json({ limit: '30mb' }));
   registerV2ToolGateway(app, { store, embedding, serviceKey: process.env.MODEL_GATEWAY_SERVICE_KEY ?? '' });
+  dependencies.p4ReadGateway?.(app);
   app.use((req, res, next) => { const started = Date.now(); res.once('finish', () => { const elapsed = Date.now() - started; const failed = res.statusCode >= 500 ? 1 : 0; const timestamp = new Date().toISOString(); telemetry.requests += 1; telemetry.serverErrors += failed; telemetry.totalLatencyMs += elapsed; telemetry.lastRequestAt = timestamp; const tenantId = (req as AuthedRequest).auth?.tenantId; if (tenantId) { const scoped = tenantTelemetry.get(tenantId) ?? newTelemetry(); scoped.requests += 1; scoped.serverErrors += failed; scoped.totalLatencyMs += elapsed; scoped.lastRequestAt = timestamp; tenantTelemetry.set(tenantId, scoped); } }); next(); });
   app.use((req, res, next) => {
     if (!req.path.startsWith('/api/')) { next(); return; }

@@ -1,4 +1,12 @@
 import { createServer } from 'node:http';
+import type { Express } from 'express';
+import { NodeReadToolRegistry } from './conversation-core/read-tool-registry.js';
+import { ExistingSessionTokenAuthorizer } from './conversation-core/adapters/session-authorizer.js';
+import { PostgresConversationRepository } from './conversation-core/adapters/postgres-repository.js';
+import { registerP3ReadTools } from './conversation-core/adapters/rag-read-tool.js';
+import { ScopedP3ReadTools } from './conversation-core/adapters/read-tool-scope.js';
+import { P4EvidenceSigner } from './conversation-core/adapters/evidence-receipt.js';
+import { registerP4ReadRoute } from './conversation-core/adapters/p4-read-route.js';
 import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { createApp } from './app.js';
@@ -36,7 +44,19 @@ const v2Coordinator = process.env.PYTHON_MODEL_URL && process.env.MODEL_GATEWAY_
       : undefined,
   )
   : undefined;
-const { app } = createApp({ store, cache, nodeEnv, ...(model ? { model } : {}), ...(summaryModel ? { summaryModel } : {}), ...(embedding ? { embedding } : {}), ...(v2Coordinator ? { v2Coordinator } : {}) });
+let p4ReadGateway: ((app: Express) => void) | undefined;
+if (process.env.P4_INTERNAL_READS_ENABLED === 'true') {
+  if (!pool || !embedding) throw new Error('P4 private tool gateway requires PostgreSQL and configured embeddings.');
+  const readOnlyRepository = new PostgresConversationRepository(pool, new ExistingSessionTokenAuthorizer(store), {
+    async assertSafeMaskedText(): Promise<void> { throw new Error('P4 read-only gateway cannot persist conversation data'); },
+  });
+  const registry = new NodeReadToolRegistry();
+  registerP3ReadTools(registry, { repository: readOnlyRepository, store, embedding });
+  const tools = new ScopedP3ReadTools(process.env.P4_READ_SCOPE_SECRET ?? '', readOnlyRepository, store, registry);
+  const signer = new P4EvidenceSigner(process.env.P4_EVIDENCE_SIGNING_KEY ?? '');
+  p4ReadGateway = (app: Express) => registerP4ReadRoute(app, tools, signer, process.env.MODEL_GATEWAY_SERVICE_KEY ?? '');
+}
+const { app } = createApp({ store, cache, nodeEnv, ...(model ? { model } : {}), ...(summaryModel ? { summaryModel } : {}), ...(embedding ? { embedding } : {}), ...(v2Coordinator ? { v2Coordinator } : {}), ...(p4ReadGateway ? { p4ReadGateway } : {}) });
 const server = createServer(app);
 const streamError = (code: string, message: string): Error & { code: string } => Object.assign(new Error(message), { code });
 const streamResponse = (payload: unknown): Record<string, unknown> =>

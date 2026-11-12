@@ -63,3 +63,9 @@ This is a desired minimal contract, not a declaration of existing API compatibil
 
 ## Observability
 Capture correlation ID, tenant-safe identifiers, model/provider version, selected read tools, latency/tokens, evidence refs, guard reasons, tool budgets, action proposals and human-quality evaluation metadata. Never log raw credentials, unmasked PII or sensitive source excerpts.
+
+## P4 candidate status (implementation, not production activation)
+
+An opt-in Python LangGraph GPT-first controller and private Node callback now use the isolated P2/P3 contracts. The private callback verifies the P3 session-token/catalog scope for every read and issues signed evidence receipts. Returned model citations must match receipts from the current turn; the Node claim verifier performs a fresh authorization/source revision read and requests independent entailment from the existing private grounding service. Raw lexical overlap is not required.
+
+The candidate still needs a real encrypted privacy-vault binding, complete claim-coverage and tenant-isolation UAT, remote CI, live Azure evaluation and P6 feature-gated API wiring. The legacy V2 controller continues handling production chat. Never treat this documentation as proof of production readiness.

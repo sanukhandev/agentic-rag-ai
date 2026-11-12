@@ -98,6 +98,9 @@ export interface ModelCandidate {
   readonly goalCandidateKeys: readonly string[];
   readonly proposedFacts: readonly CandidateFactUpdate[];
   readonly actionProposal: CandidateActionProposal | null;
+  /** P4 evidence references are signed by Node and never model-authored. */
+  readonly evidenceReceipts?: readonly { readonly citationId: string; readonly receipt: string }[];
+  readonly claimSupports?: readonly { readonly text: string; readonly citationIds: readonly string[] }[];
 }
 
 export interface VerifiedResponse {
@@ -143,7 +146,7 @@ export interface ReadToolCatalog {
 
 export interface ClaimVerifier {
   /** Should fail closed for consequential factual claims and reported side effects. */
-  verify(actor: TrustedActor, candidate: ModelCandidate, pinned: SessionSnapshot): Promise<{ readonly ok: boolean; readonly reason?: string }>;
+  verify(actor: TrustedActor, candidate: ModelCandidate, pinned: SessionSnapshot, readToolScopeRef?: string): Promise<{ readonly ok: boolean; readonly reason?: string }>;
 }
 
 export interface ProposalValidator {

@@ -39,3 +39,19 @@ A `completed` value in the legacy action table **cannot** be represented as veri
 - Tools and the signed-scope executor independently reauthenticate the session. Unknown tools, changed session revision, stale/invalid tokens, cross-tenant results and disabled catalog bindings fail closed.
 
 **Still isolated:** P3 does not publish a new external or internal HTTP endpoint, connect the new Python gateway, or replace the production chat controller. P4 must add a private authenticated gateway integration and claim-level entailment/evidence verification. A tool's successful retrieval does not prove a consequential claim or completed CRM action. P2's real encrypted privacy-vault connection remains a production cutover prerequisite. No migrations or source/embedding mutations are part of P3.
+
+## P4 — Candidate GPT/LangGraph integration (not active in public chat)
+
+- `adapters/p4-model-gateway.ts` sends only P2-masked model context to the private Python `/internal/p4/conversation/turn` endpoint with a bounded cancellation/deadline and validates returned call counts.
+- `gateway/p4_contracts.py` and `gateway/p4_graph.py` define a distinct GPT-first LangGraph loop using catalog-permitted model-selected read tools. The model never receives session scopes, signing keys, evidence receipts or action-write tools.
+- `adapters/p4-read-route.ts` exposes an internal-only server callback at `/internal/p4/tools/execute`, guarded by the independently configured service key and P3 HMAC session scope, only when `P4_INTERNAL_READS_ENABLED=true`.
+- `adapters/evidence-receipt.ts` signs each actual retrieved excerpt with source/version/chunk, scope digest, tenant and expiration; Python may return receipts but cannot mint or edit them.
+- `adapters/p4-evidence-verifier.ts` checks receipts, revalidates current active/public source/chunk and independently asks the existing grounding model whether declared consequential claims are entailed. Unsupported claims fail closed; **word overlap is not a rejection gate**.
+- `adapters/p4-candidate-factory.ts` constructs the isolated turn engine. P2's privacy boundary is mandatory; the production encrypted scoped vault is not yet connected, so there is **no P4 public chat route**.
+- The normal V2 API and n8n workflows remain unchanged; no RAG or SQL migrations were introduced. Both new feature flags default to false.
+
+### Remaining gates
+
+- Run API TypeScript/lint/Vitest and Python tests in the developer checkout; Docker/CI and real Azure UAT are not yet verified.
+- Confirm an independent claim-coverage audit on held-out natural-language cases. Model-declared claims alone do not establish that every factual assertion was exhaustively extracted.
+- Integrate durable encrypted PII vault before any end-to-end customer turn/persistence enablement (P6), plus latency and quality baselines.

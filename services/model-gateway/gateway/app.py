@@ -20,6 +20,8 @@ from .graph import LangGraphConversationAgent
 from .mock_model import MockResponsesClient
 from .reliability import BudgetExceeded, CircuitBreaker, QueueAdmission, QueueOverloaded, RateLimitExceeded, SlidingWindowRateLimiter, TurnBudget, retry_delay_seconds
 from .v2_contracts import AgentTurnResultV2, TurnEnvelopeV2
+from .p4_contracts import P4TurnEnvelope, P4TurnResult
+from .p4_graph import P4LangGraphAgent, HttpP4ToolGateway, P4GatewayError
 
 app = FastAPI(title="Private Conversation Model Gateway", docs_url=None, redoc_url=None, openapi_url=None)
 _max_concurrency = max(1, min(4, int(os.getenv("MODEL_MAX_CONCURRENCY", "2"))))
@@ -437,3 +439,22 @@ async def summarize(body: CrmSummaryRequest, x_internal_service_key: str | None 
         return CrmSummaryResult.model_validate(raw)
     except ValidationError:
         raise HTTPException(status_code=503, detail={"code": "MODEL_INVALID_RESULT"})
+
+
+@app.post("/internal/p4/conversation/turn", response_model=P4TurnResult)
+async def p4_turn(body: P4TurnEnvelope, x_internal_service_key: str | None = Header(default=None)) -> P4TurnResult:
+    """Opt-in P4 candidate. Does not replace the production V2 conversation endpoint."""
+    await _auth(x_internal_service_key)
+    if os.getenv("P4_GATEWAY_ENABLED", "false").lower() != "true":
+        raise HTTPException(status_code=404, detail={"code": "P4_DISABLED"})
+    node_url = os.getenv("NODE_TOOL_GATEWAY_URL", "")
+    private_key = os.getenv("MODEL_GATEWAY_SERVICE_KEY", "")
+    if not node_url or not private_key:
+        raise HTTPException(status_code=503, detail={"code": "P4_TOOL_GATEWAY_NOT_CONFIGURED"})
+    try:
+        config = model_provider_config()
+        agent = P4LangGraphAgent(_client_get(), HttpP4ToolGateway(node_url, private_key), config["model"])
+        return await agent.run(body)
+    except P4GatewayError as error:
+        _logger.warning("p4.turn_rejected code=%s", type(error).__name__)
+        raise HTTPException(status_code=503, detail={"code": "P4_TURN_REJECTED"}) from error
