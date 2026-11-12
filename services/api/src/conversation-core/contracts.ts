@@ -138,7 +138,7 @@ export interface ModelGateway {
 
 export interface ReadToolCatalog {
   listFor(actor: TrustedActor, catalogVersionId: string): Promise<readonly ReadToolDefinition[]>;
-  issueBoundScope(actor: TrustedActor, catalogVersionId: string, tools: readonly ReadToolDefinition[]): Promise<string>;
+  issueBoundScope(actor: TrustedActor, catalogVersionId: string, tools: readonly ReadToolDefinition[], sessionRevision: number): Promise<string>;
 }
 
 export interface ClaimVerifier {

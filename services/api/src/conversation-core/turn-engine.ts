@@ -109,7 +109,7 @@ export class ConversationTurnEngine {
     if (authorizedTools.some(t => !/^[a-z][a-z0-9_]{1,79}$/.test(t.name))) {
       throw new ConversationInvariantError('INVALID_INPUT', 'Invalid read tool registration');
     }
-    const readToolScopeRef = await this.tools.issueBoundScope(actor, snapshot.catalogVersionId, authorizedTools);
+    const readToolScopeRef = await this.tools.issueBoundScope(actor, snapshot.catalogVersionId, authorizedTools, snapshot.revision);
     if (!requiredString(readToolScopeRef, 4096)) {
       throw new ConversationInvariantError('INVALID_INPUT', 'Missing signed read tool scope');
     }

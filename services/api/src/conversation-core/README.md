@@ -30,3 +30,12 @@ A `completed` value in the legacy action table **cannot** be represented as veri
 - The local SQL test harness is deterministic and simulates transaction rollback. It does **not** substitute for a real PostgreSQL integration test against a disposable, migrated database.
 
 **Do not delete the active `conversation/` V2 controller.** The candidate must pass real database/tenant security, provider and quality gates before P6/P7 cutover.
+
+## P3 — Authorized read tools (isolated candidate)
+
+- `adapters/rag-read-tool.ts` reuses the existing hybrid/semantic retrieval, strictly uses server-derived tenant + public audience and rechecks source status, tenant, source version and chunk ownership before exposing evidence. Returns bounded, redacted, **untrusted source data** with stable chunk citation IDs.
+- `adapters/read-tool-scope.ts` implements `ReadToolCatalog` using HMAC-SHA256-signed, 120-second capabilities bound to tenant, session-token hash, pinned catalog, session revision and an explicit tool allowlist. Requires an independently configured secret of at least 32 bytes.
+- Four reviewed read operations are registered: `search_knowledge` (only with an enabled published/pinned read-only catalog binding), `get_conversation_summary`, `get_verified_customer_facts`, `list_supported_goals`. No arbitrary SQL, URLs or external writes.
+- Tools and the signed-scope executor independently reauthenticate the session. Unknown tools, changed session revision, stale/invalid tokens, cross-tenant results and disabled catalog bindings fail closed.
+
+**Still isolated:** P3 does not publish a new external or internal HTTP endpoint, connect the new Python gateway, or replace the production chat controller. P4 must add a private authenticated gateway integration and claim-level entailment/evidence verification. A tool's successful retrieval does not prove a consequential claim or completed CRM action. P2's real encrypted privacy-vault connection remains a production cutover prerequisite. No migrations or source/embedding mutations are part of P3.
