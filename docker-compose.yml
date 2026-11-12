@@ -290,6 +290,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: /
         AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-Azure GPT-4.1-mini}
+        NEXT_PUBLIC_P6_PREVIEW_ENABLED: ${NEXT_PUBLIC_P6_PREVIEW_ENABLED:-false}
     container_name: agentic-web
     restart: unless-stopped
     depends_on:

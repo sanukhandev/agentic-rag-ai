@@ -25,6 +25,7 @@ import {
 import { VoiceVisualizer } from './voice-visualizer';
 import { getSpeechRecognitionConstructor, type SpeechRecognitionLike } from './voice-recognition';
 import { chatStreamUrl, ChatStreamClient } from './chat-stream-client';
+import { sendP6CandidateTurn } from './p6-candidate-client';
 
 type Config = {
   tenant: { name: string; slug: string };
@@ -47,7 +48,10 @@ type ChatDocument = { id: string; fileName: string; mimeType: string; sizeBytes:
 
 const configuredApi = process.env.NEXT_PUBLIC_API_URL?.trim();
 const api = configuredApi && configuredApi !== '/' ? configuredApi.replace(/\/$/u, '') : '';
-const activeModel = process.env.NEXT_PUBLIC_ACTIVE_MODEL?.trim() || 'Azure GPT-4.1-mini';
+const p6CandidatePreview = process.env.NEXT_PUBLIC_P6_PREVIEW_ENABLED === 'true';
+const activeModel = p6CandidatePreview ? 'P6 Candidate Preview' : process.env.NEXT_PUBLIC_ACTIVE_MODEL?.trim() || 'Azure GPT-4.1-mini';
+const sessionStorageKey = (slug: string): string => `${p6CandidatePreview ? 'agentic-rag-p6-session' : 'agentic-rag-session'}:${slug}`;
+const sessionTokenStorageKey = (slug: string): string => `${p6CandidatePreview ? 'agentic-rag-p6-session-token' : 'agentic-rag-session-token'}:${slug}`;
 
 export default function Home() {
   const [tenantSlug, setTenantSlug] = useState('');
@@ -201,11 +205,11 @@ export default function Home() {
       })
       .catch(() => setConfig(null));
 
-    const savedSession = window.localStorage.getItem(`agentic-rag-session:${tenantSlug}`);
-    const savedSessionToken = window.localStorage.getItem(`agentic-rag-session-token:${tenantSlug}`);
+    const savedSession = window.localStorage.getItem(sessionStorageKey(tenantSlug));
+    const savedSessionToken = window.localStorage.getItem(sessionTokenStorageKey(tenantSlug));
     if (!savedSession || !savedSessionToken) {
-      window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
-      window.localStorage.removeItem(`agentic-rag-session-token:${tenantSlug}`);
+      window.localStorage.removeItem(sessionStorageKey(tenantSlug));
+      window.localStorage.removeItem(sessionTokenStorageKey(tenantSlug));
       setSessionId(null);
       setPendingIntentKey(null);
       setPendingRequirementKey(null);
@@ -242,8 +246,8 @@ export default function Home() {
         setMessages(restored);
       })
       .catch(() => {
-        window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
-        window.localStorage.removeItem(`agentic-rag-session-token:${tenantSlug}`);
+        window.localStorage.removeItem(sessionStorageKey(tenantSlug));
+        window.localStorage.removeItem(sessionTokenStorageKey(tenantSlug));
         setSessionId(null);
         setPendingIntentKey(null);
         setPendingRequirementKey(null);
@@ -514,16 +518,20 @@ export default function Home() {
         activeSession = created.sessionId;
         sessionTokenRef.current = created.sessionToken;
         setSessionId(activeSession);
-        window.localStorage.setItem(`agentic-rag-session:${tenantSlug}`, activeSession);
-        window.localStorage.setItem(`agentic-rag-session-token:${tenantSlug}`, created.sessionToken);
+        window.localStorage.setItem(sessionStorageKey(tenantSlug), activeSession);
+        window.localStorage.setItem(sessionTokenStorageKey(tenantSlug), created.sessionToken);
       }
       if (!activeSession) throw new Error('Could not open a secure conversation session.');
 
       const clientMessageId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `msg-${Date.now()}`;
       const sessionToken = sessionTokenRef.current;
       if (!sessionToken) throw new Error('The secure conversation session has expired. Please start again.');
-      if (!streamRef.current) streamRef.current = new ChatStreamClient(chatStreamUrl(api));
-      const body = await streamRef.current.send(activeSession, sessionToken, clientMessageId, trimmed, postbackValue);
+      const body = p6CandidatePreview
+        ? await sendP6CandidateTurn(api, activeSession, sessionToken, clientMessageId, trimmed)
+        : await (async () => {
+          if (!streamRef.current) streamRef.current = new ChatStreamClient(chatStreamUrl(api));
+          return streamRef.current.send(activeSession, sessionToken, clientMessageId, trimmed, postbackValue);
+        })();
 
       // Apply natural language formatting to technical abstentions (Requirement 9)
       const naturalText = formatNaturalAbstention(body.answer);
@@ -636,7 +644,7 @@ export default function Home() {
         const sessionRes = await fetch(`${api}/api/v1/chat/sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tenantSlug }) });
         if (!sessionRes.ok) throw new Error('Could not open a secure conversation session.');
         activeSession = ((await sessionRes.json()) as { sessionId: string }).sessionId;
-        setSessionId(activeSession); window.localStorage.setItem(`agentic-rag-session:${tenantSlug}`, activeSession);
+        setSessionId(activeSession); window.localStorage.setItem(sessionStorageKey(tenantSlug), activeSession);
       }
       const base64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] ?? ''); reader.onerror = () => reject(new Error('The document could not be read.')); reader.readAsDataURL(selectedFile); });
       const response = await fetch(`${api}/api/v1/chat/sessions/${activeSession}/documents`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fileName: selectedFile.name, mimeType: selectedFile.type, contentBase64: base64, processingConsent: true, ...(pendingRequirementKey ? { requirementKey: pendingRequirementKey } : {}) }) });
@@ -730,8 +738,8 @@ export default function Home() {
   };
 
   const reset = () => {
-    window.localStorage.removeItem(`agentic-rag-session:${tenantSlug}`);
-    window.localStorage.removeItem(`agentic-rag-session-token:${tenantSlug}`);
+    window.localStorage.removeItem(sessionStorageKey(tenantSlug));
+    window.localStorage.removeItem(sessionTokenStorageKey(tenantSlug));
     sessionTokenRef.current = null;
     streamRef.current?.close();
     streamRef.current = null;
