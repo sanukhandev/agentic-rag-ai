@@ -80,3 +80,7 @@ The P2 namespaced `conversationCore` JSON now retains bounded `provisionalGoalKe
 - Private P4 tool callbacks remain independently authenticated. P6 model responses still pass verified evidence, privacy and action gates before the P2 repository commits them.
 
 Remaining before release: code and integration CI, expired-token/revocation tests, real Azure UAT and grounded false-rejection audit, external stage/consent workflow confirmation, and controlled API/UI canary end-to-end benchmarks. No migration, RAG data mutation, external CRM write or main-branch merge was made by P6.
+
+### P6 indexed citation lookup
+
+The preview route resolves candidate citation IDs with a single indexable PostgreSQL join across current active/public source versions and tenant-owned chunks. It rejects missing/revoked citations instead of returning an answer with stale or invented source metadata. No whole-tenant source loading is used.

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Express } from 'express';
 import { z } from 'zod';
-import type { Store, Citation, Source } from '../../types.js';
+import type { Store, Citation } from '../../types.js';
 import type { ConversationTurnEngine } from '../turn-engine.js';
 import type { SqlPool } from './postgres-repository.js';
 import { customerActorFromSessionToken } from './session-authorizer.js';
@@ -13,26 +13,36 @@ const requestSchema = z.object({
   message: z.string().trim().min(1).max(4_000),
 }).strict();
 
-type CandidateStore = Pick<Store, 'getSession' | 'getTenant' | 'verifySessionAccessToken'
-  | 'listSources' | 'listSourceChunks'>;
+type CandidateStore = Pick<Store, 'getSession' | 'getTenant' | 'verifySessionAccessToken'>;
 
-async function currentCitations(store: CandidateStore, tenantId: string, refs: readonly string[]): Promise<Citation[]> {
+/** Bounded indexed citation read, no whole-tenant source/chunk enumeration. */
+async function currentCitations(pool: SqlPool, tenantId: string, refs: readonly string[]): Promise<Citation[]> {
   if (refs.length === 0) return [];
-  const byId = new Map<string, Citation>();
-  const sources = (await store.listSources(tenantId)).filter((source: Source) =>
-    source.tenantId === tenantId && source.status === 'active' && source.audience === 'public');
-  for (const source of sources) {
-    const chunks = await store.listSourceChunks(source.id, tenantId);
-    for (const chunk of chunks) {
-      if (chunk.tenantId !== tenantId || chunk.versionId !== source.versionId) continue;
-      if (refs.includes(chunk.id)) byId.set(chunk.id, {
-        sourceId: source.id, versionId: source.versionId, chunkId: chunk.id,
-        title: source.title.slice(0, 160), locator: chunk.locator.slice(0, 160),
+  if (refs.length > 24 || new Set(refs).size !== refs.length
+    || refs.some(ref => !/^[0-9a-f-]{36}$/iu.test(ref))) throw new Error('P6_INVALID_EVIDENCE');
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT c.id AS chunk_id, c.source_id, c.version_id, c.locator, s.title
+        FROM source_chunks c
+        JOIN knowledge_sources s ON s.id = c.source_id
+         AND s.version_id = c.version_id AND s.tenant_id = c.tenant_id
+       WHERE c.tenant_id = $1 AND s.tenant_id = $1
+         AND s.status = 'active' AND s.audience = 'public'
+         AND c.id = ANY($2::uuid[])
+    `, [tenantId, refs]);
+    const byId = new Map<string, Citation>();
+    for (const row of result.rows) {
+      if (typeof row.chunk_id !== 'string' || !refs.includes(row.chunk_id)) throw new Error('P6_INVALID_EVIDENCE');
+      byId.set(row.chunk_id, {
+        sourceId: String(row.source_id), versionId: String(row.version_id),
+        chunkId: row.chunk_id, title: String(row.title).slice(0, 160),
+        locator: String(row.locator).slice(0, 160),
       });
     }
-  }
-  if (refs.some(ref => !byId.has(ref))) throw new Error('P6_EVIDENCE_REVOKED');
-  return refs.map(ref => byId.get(ref)!);
+    if (byId.size !== refs.length) throw new Error('P6_EVIDENCE_REVOKED');
+    return refs.map(ref => byId.get(ref)!);
+  } finally { client.release(); }
 }
 
 /**
@@ -102,7 +112,7 @@ export function registerP6CandidateRoute(app: Express, input: {
       } finally { legacy.release(); }
 
       const result = await input.engine.process(actor, { clientMessageId, text: message });
-      const citations = await currentCitations(input.store, actor.tenantId, result.response.evidenceRefs);
+      const citations = await currentCitations(input.pool, actor.tenantId, result.response.evidenceRefs);
       const answer = await input.vault.restoreForCustomer(actor, result.response.message);
       res.setHeader('X-Chat-Engine', 'p6-candidate');
       res.setHeader('Cache-Control', 'no-store');

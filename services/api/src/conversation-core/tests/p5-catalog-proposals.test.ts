@@ -42,7 +42,7 @@ function actionState(overrides: Partial<P5TrustedActionState> = {}): P5TrustedAc
     tenantId, sessionId: actor.sessionId, catalogVersionId: snapshot.catalogVersionId,
     goalKey: goal, stageKey: 'lead_generation', confirmedGoal: true,
     customerAuthorized: true, consentGranted: true,
-    consentScope: snapshot.catalogVersionId + ':lead.create',
+    consentScope: catalogV2VersionRef(catalog) + ':lead.create',
     verifiedRequirementKeys: ['lead_contact_name', 'lead_contact_channel', 'lead_crm_consent', 'lead_action_confirmation'],
     verifiedArguments: { lead_contact_name: 'Mina', lead_contact_channel: '[EMAIL_1]' },
     ...overrides,
