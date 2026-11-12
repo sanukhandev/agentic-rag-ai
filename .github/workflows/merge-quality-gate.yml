@@ -1,0 +1,76 @@
+name: Merge Quality Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            services/model-gateway/requirements-dev.txt
+            tools/ingestion/requirements.txt
+
+      - name: Install locked Node dependencies
+        run: npm ci
+
+      - name: Install Python test dependencies
+        run: |
+          python -m pip install -r services/model-gateway/requirements-dev.txt
+          python -m pip install -r tools/ingestion/requirements.txt
+
+      - name: Enforce strict TypeScript null checks
+        run: npm run check:null-safety
+
+      - name: Typecheck all TypeScript workspaces
+        run: npm run typecheck
+
+      - name: Lint API, customer web and admin
+        run: npm run lint
+
+      - name: Verify Compose configuration statically
+        run: npm run verify:compose
+
+      - name: Build all declared workspaces
+        run: npm run build --workspaces --if-present
+
+      - name: Run Node workspace unit tests
+        run: npm run test:unit
+
+      - name: Run Python model gateway tests
+        run: PYTHONPATH=services/model-gateway python -m pytest -q services/model-gateway/tests
+
+      - name: Run Python ingestion tests
+        run: PYTHONPATH=tools/ingestion python -m unittest discover -s tools/ingestion -p 'test_*.py'
+
+      - name: Validate n8n workflow templates offline
+        run: node --test infra/n8n/workflows/*.test.mjs
