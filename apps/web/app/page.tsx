@@ -221,7 +221,10 @@ export default function Home() {
       return;
     }
 
-    void fetch(`${api}/api/v1/chat/sessions/${savedSession}`)
+    void fetch(`${api}/api/v1/chat/sessions/${savedSession}`, {
+      headers: { 'x-agentic-session-token': savedSessionToken },
+      cache: 'no-store',
+    })
       .then(async (response) => {
         if (!response.ok) throw new Error('Saved session is unavailable.');
         const body = (await response.json()) as { messages: ChatHistoryMessage[] };
