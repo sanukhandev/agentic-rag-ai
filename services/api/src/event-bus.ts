@@ -129,6 +129,10 @@ export class N8nEventBridge {
   async dispatch(event: OutboxEvent, attempt = Math.max(1, event.attempts)): Promise<void> {
     const route = event.eventType === 'intent.action.requested.v1' ? await this.actionRoute(event) : event.eventType === 'document.extraction.requested.v1' ? await this.documentRoute(event) : null;
     if (!route) {
+      if (event.eventType === 'document.extraction.requested.v1') {
+        await this.store.addAudit({ id: randomUUID(), tenantId: event.tenantId, actorId: null, eventName: 'document.worker_dispatch_queued', metadata: { eventId: event.eventId, jobId: event.payloadRef }, createdAt: new Date().toISOString() });
+        return;
+      }
       if (event.eventType === 'crm.contact.upsert.requested.v1' || event.eventType === 'crm.summary.update.requested.v1' || event.eventType === 'crm.reconcile.requested.v1' || event.eventType === 'conversation.notification.requested.v1') {
         await this.store.addAudit({ id: randomUUID(), tenantId: event.tenantId, actorId: null, eventName: 'event.intentional_noop', metadata: { eventId: event.eventId, eventType: event.eventType, correlationId: event.correlationId }, createdAt: new Date().toISOString() });
         return;
@@ -174,6 +178,17 @@ export class N8nEventBridge {
           if (!current || current.tenantId !== event.tenantId) throw new ReconcileRequiredDispatchError('remote n8n accepted the request but its action could not be loaded durably.');
           const actionState = isPdf ? 'completed' : (current.state === 'approved' ? 'processing' : current.state);
           await this.store.updateAction({ ...current, state: actionState, result: normalized.result });
+          if (route.workflowKey === 'crm.lead.create' && normalized.result?.externalReference) {
+            const lead = await this.store.getCrmLeadByActionId(event.actionId, event.tenantId);
+            if (lead) {
+              await this.store.updateCrmLeadRemote({
+                id: lead.id,
+                tenantId: event.tenantId,
+                leadId: String(normalized.result.externalReference),
+                remoteCrm: 'salesforce',
+              });
+            }
+          }
         }
         await this.store.addAudit({ id: randomUUID(), tenantId: event.tenantId, actorId: null, eventName: 'workflow.remote_result_recorded', metadata: { eventId: event.eventId, actionId: event.actionId, workflowKey: route.workflowKey, providerStatus: normalized.providerStatus, providerOutcome: normalized.result.providerOutcome ?? null }, createdAt: new Date().toISOString() });
         return;
@@ -242,11 +257,11 @@ export class N8nEventBridge {
     const document = await this.store.getSupportingDocument(job.documentId, event.tenantId);
     const v2Version = document?.catalogVersionId
       ? (await this.store.listIntentCatalogV2Versions(event.tenantId)).find((candidate) => candidate.status === 'published' && candidate.catalogVersionRef === document.catalogVersionId)
-      : null;
-    const v2Binding = v2Version?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === job.workflowKey && candidate.enabled);
+      : (await this.store.listIntentCatalogV2Versions(event.tenantId)).find((candidate) => candidate.status === 'published');
+    const v2Binding = v2Version?.catalog.sheets.WorkflowBindings.find((candidate) => (candidate.workflowKey === job.workflowKey || candidate.registryKey === job.workflowKey) && candidate.enabled);
     if (v2Binding?.webhookPath) return { workflowKey: v2Binding.workflowKey, providerType: v2Binding.providerType, webhookPath: v2Binding.webhookPath, ...(v2Binding.n8nWorkflowId ? { n8nWorkflowId: v2Binding.n8nWorkflowId } : {}), ...(v2Binding.payloadContract ? { payloadContract: v2Binding.payloadContract } : {}) };
     const version = await this.store.getPublishedIntentCatalog(job.tenantId);
-    const binding = version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === job.workflowKey && candidate.active);
+    const binding = version?.catalog?.workflowBindings?.find((candidate) => candidate.workflowKey === job.workflowKey && candidate.active);
     return binding ? { workflowKey: binding.workflowKey, providerType: 'internal_n8n', webhookPath: binding.webhookPath, n8nWorkflowId: binding.n8nWorkflowId, payloadContract: binding.payloadContract } : null;
   }
 }

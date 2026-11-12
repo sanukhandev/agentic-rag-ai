@@ -9,9 +9,9 @@ const wsUrl = process.env.WS_URL
 const origin = process.env.ORIGIN ?? apiBase;
 const tenantSlug = process.env.TENANT_SLUG ?? 'anc';
 const caseLimit = Number.parseInt(process.env.CASE_LIMIT ?? '11', 10);
-const turnTimeoutMs = Number.parseInt(process.env.TURN_TIMEOUT_MS ?? '60_000', 10);
-const betweenTurnsMs = Number.parseInt(process.env.BETWEEN_TURNS_MS ?? '800', 10);
-const betweenCasesMs = Number.parseInt(process.env.BETWEEN_CASES_MS ?? '1_500', 10);
+const turnTimeoutMs = Number.parseInt((process.env.TURN_TIMEOUT_MS ?? '60000').replaceAll('_', ''), 10);
+const betweenTurnsMs = Number.parseInt((process.env.BETWEEN_TURNS_MS ?? '800').replaceAll('_', ''), 10);
+const betweenCasesMs = Number.parseInt((process.env.BETWEEN_CASES_MS ?? '1500').replaceAll('_', ''), 10);
 const runId = `${new Date().toISOString().replace(/[:.]/gu, '-')}-${randomUUID().slice(0, 8)}`;
 const runDir = resolve(process.env.RUN_REPORT_DIR ?? join('artifacts', 'conversation-quality-runs', runId));
 const transcriptDir = join(runDir, 'transcripts');
@@ -605,6 +605,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`[conversation-quality] ${error instanceof Error ? error.message : String(error)}`);
+  console.error('[conversation-quality]', error.stack || error);
   process.exitCode = 1;
 });

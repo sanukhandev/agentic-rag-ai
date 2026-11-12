@@ -34,6 +34,7 @@ import { contactCompletenessScore, isValidLeadEmail, isValidLeadName, isValidLea
 import { CrmSummaryValidationError, formatCrmSummarySpec } from './crm-summary.js';
 import { assertPiiVaultSecret } from './runtime-security.js';
 import { dispatchRemoteN8n, RemoteN8nError } from './remote-n8n.js';
+import { formatSalesforceLeadPayload } from './conversation/salesforce-lead-trigger.js';
 import { validateV2ProviderCorrelation, v2ProviderCorrelationSchema, v2CallbackCorrelationSchema, type V2ProviderCorrelation } from './conversation/provider-correlation.js';
 import type { ActionExecution, ActionRequest, ActionState, ChannelCredential, CrmLead, DocumentProcessingJob, IngestionJob, IngestionJobStatus, IntentCatalogQualityRule, LeadData, LifecycleStage, Message, Session, SourceStatus, Store, SupportingDocument } from './types.js';
 import { HttpError, parse } from './http/errors.js';
@@ -248,24 +249,26 @@ const ensureV2LocalLead = async (input: {
   const validName = Boolean(name && isValidLeadName(name));
   const validEmail = Boolean(email && isValidLeadEmail(email));
   const validPhone = Boolean(phone && isValidLeadPhone(phone));
+  const validContact = Boolean(validEmail || validPhone);
   const conversationText = conversation.filter((message) => message.role === 'user').map((message) => message.content).join(' ');
   const score = scoreCrmLead({
     commercialIntent: true,
     timelineMentioned: /\b(?:today|tomorrow|urgent|asap|next\s+(?:week|month)|this\s+(?:week|month)|deadline|quarter)\b/i.test(conversationText),
     businessFit: /\b(?:company|business|licen[cs]e|visa|it|software|platform|quote|demo|service|setup)\b/i.test(conversationText),
     validName,
-    validContact: validEmail && validPhone,
+    validContact,
     engagedUserTurns: conversation.filter((message) => message.role === 'user').length,
   }).total;
-  if (!validName || !validEmail || !validPhone || action.payload.contactConsent !== true || score < 70) throw new HttpError(422, 'LEAD_VALIDATION_FAILED', 'The authorized V2 action does not contain a complete verified lead.');
+  if (!validName || !validContact || action.payload.contactConsent !== true || score < 70) throw new HttpError(422, 'LEAD_VALIDATION_FAILED', 'The authorized V2 action does not contain a complete verified lead.');
   const now = new Date().toISOString();
+  const initialSummary = `Customer company-formation inquiry: ${name || 'Lead'} interested in ${action.intentKey ?? 'company formation'}.`;
   const lead: CrmLead = {
     id: randomUUID(), tenantId: action.tenantId, actionId: action.id, sessionId: action.sessionId,
     intent: action.intentKey ?? action.workflowKey, secondaryIntentKeys: [], intentScore: action.intentScore ?? 0,
     intentConfidence: action.intentConfidence ?? 0, catalogVersionId: action.catalogVersionId ?? null, score,
     contactCompletenessScore: contactCompletenessScore({ validName, validEmail, validPhone }), validationPass: true,
-    qualificationStatus: 'pending', qualificationEvidence: {}, leadData, conversation, summary: null,
-    summaryStatus: 'pending', createdAt: now, updatedAt: now,
+    qualificationStatus: 'pending', qualificationEvidence: {}, leadData, conversation, summary: initialSummary,
+    summaryStatus: 'completed', createdAt: now, updatedAt: now,
   };
   const created = await store.upsertCrmLead(lead, crmDedupeKey(action.tenantId, leadData, session, tokenVault, vaultSecret));
   await store.createCrmLeadAssociation({ id: randomUUID(), tenantId: action.tenantId, crmLeadId: created.id, actionId: action.id, sessionId: action.sessionId, opportunityId: action.opportunityId ?? null, associationType: 'canonical', createdAt: now });
@@ -810,7 +813,7 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const remoteWorkflowExecutionSchema = z.object({
     actionId: z.string().uuid(), tenantId: z.string().uuid(), sessionId: z.string().uuid(),
     workflowKey: z.string().trim().min(1).max(120), catalogVersionId: z.string().trim().min(1).max(200),
-    n8nWorkflowId: z.string().trim().min(1).max(120), eventId: z.string().uuid(), correlationId: z.string().uuid(),
+    n8nWorkflowId: z.string().trim().min(1).max(120).optional(), eventId: z.string().uuid(), correlationId: z.string().uuid(),
     attempt: z.number().int().positive(),
   }).strict();
   const auth = new AuthService(store, jwtSecret);
@@ -1791,13 +1794,14 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           const contactChannel = lead.leadData.email ?? lead.leadData.phone ?? slots.lead_contact_channel;
           const email = rehydrate(lead.leadData.email ?? (/^\[EMAIL_\d+\]$/u.test(contactChannel ?? '') ? contactChannel : undefined));
           const phone = rehydrate(lead.leadData.phone ?? (/^\[PHONE_\d+\]$/u.test(contactChannel ?? '') ? contactChannel : undefined));
-          return {
-            Name: rehydrate(lead.leadData.name ?? slots.lead_contact_name),
-            Company: rehydrate(slots.company) || tenant.name,
-            Phone: phone,
-            Email: email,
-            Description: `AI Chatbot Lead. Interest: ${action.intentKey ?? 'company formation'}. Remarks: ${rehydrate(slots.remarks) || 'Customer company-formation enquiry.'}`,
-          };
+          return formatSalesforceLeadPayload({
+            name: rehydrate(lead.leadData.name ?? slots.lead_contact_name),
+            company: rehydrate(slots.company) || tenant.name,
+            phone,
+            email,
+            interest: action.intentKey ?? 'Company formation',
+            remarks: rehydrate(slots.remarks) || 'Customer company-formation enquiry.',
+          }, tenant.name);
         })()
         : await (async () => {
           const document = await store.getUserIntentDocument(input.tenantId, input.sessionId);
@@ -1825,6 +1829,17 @@ export const createApp = (dependencies: AppDependencies = {}) => {
           return { accountId, customerName, email, packageName: offering.name, currency: offering.currency, items: [{ description: offering.name, quantity: 1, unitPrice: unitPrice / 100 }] };
         })();
       const result = await dispatchRemoteN8n({ baseUrl: process.env.REMOTE_N8N_BASE_URL ?? '', quotationApiKey: process.env.REMOTE_N8N_QUOTATION_API_KEY || process.env.REMOTE_N8N_QUOTE_API_KEY || '', route: remoteRoute, idempotencyKey: action.idempotencyKey, payload });
+      if (contract === 'remote.salesforce-lead.v1' && result.result?.externalReference) {
+        const localLead = await store.getCrmLeadByActionId(action.id, action.tenantId);
+        if (localLead) {
+          await store.updateCrmLeadRemote({
+            id: localLead.id,
+            tenantId: action.tenantId,
+            leadId: String(result.result.externalReference),
+            remoteCrm: 'salesforce',
+          });
+        }
+      }
       res.json(result);
     } catch (error) {
       if (error instanceof RemoteN8nError) { next(new HttpError(error.retryable ? 503 : 502, error.code.toUpperCase(), 'The remote workflow could not be completed safely.')); return; }
